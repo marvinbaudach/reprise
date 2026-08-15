@@ -1,15 +1,64 @@
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library_doctor::{
-    DoctorReviewGroup, DoctorReviewGroupId, DoctorUnresolvedGroup, DoctorValue,
+    DoctorReviewGroup, DoctorReviewGroupId, DoctorUnresolvedGroup, DoctorValue, LibraryDoctor,
 };
 
 use super::review_model::{candidate_description, candidate_label, field_label};
 use crate::ui::strings;
 
 type OnChoose = Rc<dyn Fn(DoctorReviewGroupId, &DoctorValue)>;
+
+type ConflictFingerprint = Vec<(DoctorReviewGroupId, Option<DoctorValue>)>;
+
+pub(super) fn acknowledge_skipped_scan(db: &Db, scan_id: i64) -> Result<(), String> {
+    LibraryDoctor::new(db)
+        .set_reviewed_scan(scan_id)
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Default)]
+pub(super) struct ReviewConflictsSlot {
+    fingerprint: RefCell<ConflictFingerprint>,
+    index: Cell<Option<u32>>,
+}
+
+impl ReviewConflictsSlot {
+    pub(super) fn fingerprint(groups: &[DoctorReviewGroup]) -> ConflictFingerprint {
+        groups
+            .iter()
+            .map(|group| (group.id, group.chosen.clone()))
+            .collect()
+    }
+
+    pub(super) fn is_current(&self, fingerprint: &ConflictFingerprint) -> bool {
+        self.index.get().is_some() && *self.fingerprint.borrow() == *fingerprint
+    }
+
+    pub(super) fn index(&self) -> Option<u32> {
+        self.index.get()
+    }
+
+    pub(super) fn remember(&self, fingerprint: ConflictFingerprint, index: u32) {
+        self.fingerprint.replace(fingerprint);
+        self.index.set(Some(index));
+    }
+
+    pub(super) fn relocate(&self, index: u32) {
+        if self.index.get().is_some() {
+            self.index.set(Some(index));
+        }
+    }
+
+    pub(super) fn clear(&self) -> Option<u32> {
+        self.fingerprint.borrow_mut().clear();
+        self.index.take()
+    }
+}
 
 pub(super) struct ReviewConflicts {
     pub(super) root: gtk4::Box,

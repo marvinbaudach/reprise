@@ -13,18 +13,20 @@ use reprise_core::db::Db;
 use reprise_core::library_doctor::{
     DoctorApplyPlan, DoctorReviewFilter, DoctorReviewGroupId, DoctorReviewRowId,
     DoctorReviewRowState, DoctorReviewSession, DoctorScan, DoctorValue, DoctorWriteReport,
-    DoctorWriteRowState, LibraryDoctor,
+    DoctorWriteRowState,
 };
 
-use super::review_conflicts::ReviewConflicts;
+use super::review_conflicts::{acknowledge_skipped_scan, ReviewConflicts, ReviewConflictsSlot};
 use super::review_filter_bar::ReviewFilterBar;
 use super::review_header::{
-    album_header_factory, master_check_state, OnSelect, ReviewColumnGroups, ReviewHeader,
+    album_header_factory, master_check_state, AlbumHeaderRegistry, OnSelect, ReviewColumnGroups,
+    ReviewHeader,
 };
 use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
 };
+use super::review_snapshot::{review_ready_count, splice_selection_rows, ReviewSnapshot};
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -48,9 +50,16 @@ struct ReviewState {
     select_all: gtk4::CheckButton,
     select_all_handler: RefCell<Option<glib::SignalHandlerId>>,
     controls_locked: Cell<bool>,
+    full_refresh_only: bool,
     layout: Rc<Cell<ReviewLayout>>,
     column_groups: ReviewColumnGroups,
     outcomes: RefCell<HashMap<DoctorReviewRowId, ReviewOutcome>>,
+    ready_count: Cell<usize>,
+    snapshot: Rc<RefCell<ReviewSnapshot>>,
+    album_headers: AlbumHeaderRegistry,
+    conflicts: ReviewConflictsSlot,
+    #[cfg(test)]
+    selection_requests: Cell<u32>,
     on_reviewed: Rc<dyn Fn()>,
 }
 
@@ -71,9 +80,17 @@ impl ReviewState {
         self.filter_bar.set_categories(&categories);
         let stale_notice = review_stale_notice(&session);
         let ready_count = review_ready_count(&session);
+        self.ready_count.set(ready_count);
         let grouped_rows_started = Instant::now();
-        let objects = grouped_rows_for(&self.scan, &session, &self.outcomes.borrow())
-            .into_iter()
+        let snapshot = ReviewSnapshot::from_rows(grouped_rows_for(
+            &self.scan,
+            &session,
+            &self.outcomes.borrow(),
+        ));
+        let objects = snapshot
+            .rows
+            .iter()
+            .cloned()
             .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
             .collect::<Vec<_>>();
         tracing::debug!(
@@ -85,8 +102,14 @@ impl ReviewState {
         self.stale_notice.set_visible(stale_notice.is_some());
         self.stale_notice_label
             .set_label(stale_notice.as_deref().unwrap_or_default());
+        let old_row_count = self.snapshot.borrow().rows.len();
+        *self.snapshot.borrow_mut() = snapshot;
         let splice_started = Instant::now();
-        self.store.splice(0, self.store.n_items(), &objects);
+        self.store.splice(
+            0,
+            u32::try_from(old_row_count).expect("review row count fits u32"),
+            &objects,
+        );
         tracing::debug!(
             stage = "store.splice",
             elapsed_us = splice_started.elapsed().as_micros(),
@@ -99,22 +122,13 @@ impl ReviewState {
             elapsed_us = conflicts_started.elapsed().as_micros(),
             "DOCTOR_REVIEW_REFRESH stage"
         );
-        self.filter.changed(gtk4::FilterChange::Different);
         let count = self.sorted.n_items();
         self.content
             .set_visible_child_name(if count == 0 { "empty" } else { "rows" });
         if count > 0 && selected != gtk4::INVALID_LIST_POSITION {
             self.selection.set_selected(selected.min(count - 1));
         }
-        let summary = self.session.borrow().summary();
-        self.apply
-            .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
-        self.apply.set_sensitive(summary.tag_change_count > 0);
-        self.change_summary.set_label(&review_footer_summary(
-            summary,
-            self.category.get(),
-            ready_count,
-        ));
+        self.refresh_action_summary(ready_count);
         let aggregate_started = Instant::now();
         self.refresh_filter_summary();
         self.refresh_master_check();
@@ -131,6 +145,7 @@ impl ReviewState {
         );
     }
 
+    #[cfg(test)]
     fn visible_rows(&self) -> Vec<ReviewRowModel> {
         (0..self.sorted.n_items())
             .filter_map(|position| row_at(&self.sorted, position))
@@ -138,21 +153,15 @@ impl ReviewState {
     }
 
     fn refresh_filter_summary(&self) {
-        let (changes, albums) = review_header_counts(&self.visible_rows());
-        self.filter_bar.set_summary(changes, albums);
+        let snapshot = self.snapshot.borrow();
+        let totals = snapshot.totals;
+        debug_assert_eq!(totals.albums, snapshot.albums.len());
+        self.filter_bar.set_summary(totals.changes, totals.albums);
     }
 
     fn refresh_master_check(&self) {
-        let rows = self.visible_rows();
-        let selected = rows
-            .iter()
-            .map(|row| row.selected_change_count)
-            .sum::<usize>();
-        let selectable = rows
-            .iter()
-            .map(|row| row.selectable_row_ids.len())
-            .sum::<usize>();
-        let check = master_check_state(selected, selectable);
+        let totals = self.snapshot.borrow().totals;
+        let check = master_check_state(totals.selected, totals.selectable);
         let handler = self.select_all_handler.borrow_mut().take();
         if let Some(handler) = handler.as_ref() {
             self.select_all.block_signal(handler);
@@ -167,15 +176,90 @@ impl ReviewState {
         *self.select_all_handler.borrow_mut() = handler;
     }
 
+    fn refresh_action_summary(&self, ready_count: usize) {
+        let summary = self.session.borrow().summary();
+        self.apply
+            .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
+        self.apply.set_sensitive(summary.tag_change_count > 0);
+        self.change_summary.set_label(&review_footer_summary(
+            summary,
+            self.category.get(),
+            ready_count,
+        ));
+    }
+
     fn set_selected(self: &Rc<Self>, row_ids: &[DoctorReviewRowId], selected: bool) {
+        #[cfg(test)]
+        self.selection_requests
+            .set(self.selection_requests.get() + 1);
         let mut session = self.session.borrow_mut();
+        let mut session_changed = false;
         for row_id in row_ids {
-            if let Err(error) = session.set_selected(*row_id, selected) {
-                tracing::warn!(%error, "could not update Library Doctor review selection");
+            match session.set_selected(*row_id, selected) {
+                Ok(()) => session_changed = true,
+                Err(error) => {
+                    tracing::warn!(%error, "could not update Library Doctor review selection");
+                }
             }
         }
         drop(session);
-        self.refresh();
+        self.apply_selection(session_changed);
+    }
+
+    fn apply_selection(self: &Rc<Self>, session_changed: bool) {
+        if !session_changed {
+            return;
+        }
+        if self.full_refresh_only {
+            self.refresh();
+            return;
+        }
+        let started = Instant::now();
+        let changed = {
+            let snapshot = self.snapshot.borrow();
+            let session = self.session.borrow();
+            snapshot.selection_diff(&session)
+        };
+        if changed.is_empty() {
+            tracing::debug!(
+                path = "selection",
+                touched = 0,
+                elapsed_us = started.elapsed().as_micros(),
+                "DOCTOR_REVIEW_REFRESH path"
+            );
+            return;
+        }
+        let row_count = self.snapshot.borrow().rows.len();
+        let affected = changed
+            .iter()
+            .map(|(_, row)| row.album_key.clone())
+            .collect::<HashSet<_>>();
+        let snapshot = std::mem::take(&mut *self.snapshot.borrow_mut());
+        let snapshot = snapshot.with_selection(&changed);
+        *self.snapshot.borrow_mut() = snapshot;
+        let affected_albums = {
+            let snapshot = self.snapshot.borrow();
+            affected
+                .iter()
+                .filter_map(|album_key| {
+                    snapshot
+                        .albums
+                        .get(album_key)
+                        .cloned()
+                        .map(|counts| (album_key.clone(), counts))
+                })
+                .collect::<HashMap<_, _>>()
+        };
+        splice_selection_rows(&self.store, &changed, row_count);
+        self.refresh_action_summary(self.ready_count.get());
+        self.refresh_master_check();
+        self.album_headers.push_selection(&affected_albums);
+        tracing::debug!(
+            path = "selection",
+            touched = changed.len(),
+            elapsed_us = started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH path"
+        );
     }
 
     fn toggle_position(self: &Rc<Self>, position: u32) {
@@ -198,6 +282,7 @@ impl ReviewState {
         self.session
             .borrow_mut()
             .set_category_filter(category.map(ReviewCategory::problem_classes));
+        self.filter.changed(gtk4::FilterChange::Different);
         self.refresh();
     }
 
@@ -248,7 +333,27 @@ impl ReviewState {
                 .cloned()
                 .collect::<Vec<_>>()
         };
+        let fingerprint = ReviewConflictsSlot::fingerprint(&groups);
+        let row_count =
+            u32::try_from(self.snapshot.borrow().rows.len()).expect("review row count fits u32");
+        let panel_present = self.store.n_items() == row_count + 1
+            && self
+                .store
+                .item(row_count)
+                .is_some_and(|item| item.is::<gtk4::Widget>());
+        if panel_present {
+            self.conflicts.relocate(row_count);
+        }
         if groups.is_empty() {
+            let tracked = self.conflicts.clear();
+            if panel_present {
+                debug_assert_eq!(tracked, Some(row_count));
+                self.store.splice(row_count, 1, &[] as &[glib::Object]);
+            }
+            return;
+        }
+        if self.conflicts.is_current(&fingerprint) && panel_present {
+            self.conflicts.remember(fingerprint, row_count);
             return;
         }
         let weak = Rc::downgrade(self);
@@ -271,7 +376,15 @@ impl ReviewState {
                 }
             });
         }
-        self.store.append(&panel.root);
+        if panel_present {
+            debug_assert_eq!(self.conflicts.index(), Some(row_count));
+            self.store.splice(row_count, 1, &[panel.root]);
+        } else {
+            self.conflicts.clear();
+            debug_assert_eq!(self.store.n_items(), row_count);
+            self.store.append(&panel.root);
+        }
+        self.conflicts.remember(fingerprint, row_count);
     }
 
     fn skip_all_conflicts(self: &Rc<Self>) {
@@ -310,12 +423,7 @@ impl ReviewState {
     }
 }
 
-fn acknowledge_skipped_scan(db: &Db, scan_id: i64) -> Result<(), String> {
-    LibraryDoctor::new(db)
-        .set_reviewed_scan(scan_id)
-        .map_err(|error| error.to_string())
-}
-
+#[cfg(test)]
 fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> {
     let object = model
         .item(position)?
@@ -333,14 +441,10 @@ fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> 
 /// Apply button answer "what will be written". Mixing the two produced
 /// "1 changes · 2 albums", where the first number followed the checkbox and the
 /// second did not.
+#[cfg(test)]
 fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
-    let changes = rows.iter().map(|row| row.selectable_row_ids.len()).sum();
-    let albums = rows
-        .iter()
-        .map(|row| row.album_key.as_str())
-        .collect::<HashSet<_>>()
-        .len();
-    (changes, albums)
+    let totals = ReviewSnapshot::from_rows(rows.to_vec()).totals;
+    (totals.changes, totals.albums)
 }
 
 fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
@@ -351,14 +455,6 @@ fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
         .filter(|row| row.state == DoctorReviewRowState::Stale)
         .count();
     (count > 0).then(|| strings::doctor_stale_notice(count))
-}
-
-fn review_ready_count(session: &DoctorReviewSession) -> usize {
-    session
-        .rows()
-        .iter()
-        .filter(|row| row.state == DoctorReviewRowState::Ready)
-        .count()
 }
 
 fn review_footer_summary(
@@ -518,6 +614,9 @@ impl LibraryDoctorReviewPage {
         footer.append(&change_summary);
         footer.append(&apply);
         let layout = Rc::new(Cell::new(ReviewLayout::Wide));
+        let album_headers = AlbumHeaderRegistry::default();
+        let full_refresh_only =
+            std::env::var("REPRISE_DOCTOR_FULL_REFRESH").is_ok_and(|value| value == "1");
         let state = Rc::new(ReviewState {
             conn: conn.clone(),
             scan: scan.clone(),
@@ -537,9 +636,16 @@ impl LibraryDoctorReviewPage {
             select_all: header.select_all.clone(),
             select_all_handler: RefCell::new(None),
             controls_locked: Cell::new(false),
+            full_refresh_only,
             layout,
             column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
+            ready_count: Cell::new(0),
+            snapshot: Rc::new(RefCell::new(ReviewSnapshot::default())),
+            album_headers,
+            conflicts: ReviewConflictsSlot::default(),
+            #[cfg(test)]
+            selection_requests: Cell::new(0),
             on_reviewed,
         });
         let on_select = {
@@ -554,7 +660,12 @@ impl LibraryDoctorReviewPage {
             &header.groups,
             &state.layout,
         )));
-        rows.set_header_factory(Some(&album_header_factory(&state.sorted, &on_select)));
+        rows.set_header_factory(Some(&album_header_factory(
+            &state.sorted,
+            &on_select,
+            &state.snapshot,
+            &state.album_headers,
+        )));
         {
             let state = state.clone();
             rows.connect_activate(move |_, position| state.toggle_position(position));
@@ -576,7 +687,7 @@ impl LibraryDoctorReviewPage {
                     } else {
                         state.session.borrow_mut().none();
                     }
-                    state.refresh();
+                    state.apply_selection(true);
                 }
             ));
             *state.select_all_handler.borrow_mut() = Some(handler);
@@ -674,6 +785,10 @@ impl LibraryDoctorReviewPage {
 #[cfg(test)]
 #[path = "review_page_perf_tests.rs"]
 mod review_page_perf_tests;
+
+#[cfg(test)]
+#[path = "review_refresh_tests.rs"]
+mod review_refresh_tests;
 
 #[cfg(test)]
 #[path = "review_page_tests.rs"]
