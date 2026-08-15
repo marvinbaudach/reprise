@@ -338,3 +338,32 @@ fn doc_12a_search_and_category_compose_as_an_intersection() {
         0
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_the_shared_entry_reaches_the_review_page() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+
+    page.set_search_query("second");
+
+    assert_eq!(page.state.query.borrow().as_str(), "second");
+    assert_eq!(page.state.sorted.n_items(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_clear_all_drops_both_the_query_and_the_category() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&album_change_scan());
+    page.set_search_query("Track 1");
+    page.state
+        .set_category(Some(super::super::review_model::ReviewCategory::Year));
+
+    page.clear_all_filters();
+
+    assert!(page.state.query.borrow().is_empty());
+    assert_eq!(page.state.category.get(), None);
+}

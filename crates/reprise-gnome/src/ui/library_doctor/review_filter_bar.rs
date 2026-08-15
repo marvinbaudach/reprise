@@ -13,10 +13,7 @@ type OnChanged = Rc<dyn Fn(Option<ReviewCategory>)>;
 pub(super) struct ReviewFilterBar {
     pub(super) root: gtk4::Box,
     slot: gtk4::Box,
-    // The shared search controller calls this surface in Task 10.
-    #[allow(dead_code)]
     search: gtk4::Box,
-    #[allow(dead_code)]
     clear_search: Rc<dyn Fn()>,
     toggle: RefCell<adw::ToggleGroup>,
     categories: RefCell<Vec<ReviewCategory>>,
@@ -106,7 +103,6 @@ impl ReviewFilterBar {
             .set_label(&strings::doctor_review_subtitle(albums));
     }
 
-    #[allow(dead_code)]
     pub(super) fn set_committed_query(&self, query: &str) {
         while let Some(child) = self.search.first_child() {
             self.search.remove(&child);
@@ -129,6 +125,10 @@ impl ReviewFilterBar {
         let clear_search = self.clear_search.clone();
         chip.connect_clicked(move |_| clear_search());
         self.search.append(&chip);
+    }
+
+    pub(super) fn reset_category(&self) {
+        self.toggle.borrow().set_active_name(Some("all"));
     }
 
     pub(super) fn set_sensitive(&self, sensitive: bool) {

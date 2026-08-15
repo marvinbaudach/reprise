@@ -466,12 +466,29 @@ pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
     state: Rc<ReviewState>,
     rows: gtk4::ListView,
-    // Task 10 installs the shared-entry sink after the lazy page exists.
-    #[allow(dead_code)]
     clear_search: SearchClearSlot,
 }
 
 impl LibraryDoctorReviewPage {
+    pub(in crate::ui) fn set_search_query(&self, query: &str) {
+        self.state.set_query(query);
+    }
+
+    pub(in crate::ui) fn set_committed_search_query(&self, query: &str) {
+        self.state.filter_bar.set_committed_query(query);
+    }
+
+    pub(in crate::ui) fn clear_all_filters(&self) {
+        self.state.set_query("");
+        self.state.set_category(None);
+        self.state.filter_bar.reset_category();
+    }
+
+    pub(super) fn set_on_search_query_changed(&self, callback: Rc<dyn Fn(&str)>) {
+        self.clear_search
+            .replace(Some(Rc::new(move || callback(""))));
+    }
+
     pub(super) fn new(
         conn: &Rc<Db>,
         _parent: &adw::ApplicationWindow,

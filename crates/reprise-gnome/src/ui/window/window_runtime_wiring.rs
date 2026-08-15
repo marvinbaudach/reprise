@@ -225,7 +225,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
 
     let menu_preferences = preferences.clone();
     let findings_library_doctor = library_doctor.clone();
-    let menu_library_doctor = library_doctor;
+    let menu_library_doctor = library_doctor.clone();
     let stop_player = player.as_ref().map(|player| {
         let player = Rc::downgrade(player);
         Rc::new(move || {
@@ -453,6 +453,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             radio_view,
             releases_view,
             concerts_view,
+            library_doctor: &library_doctor,
         },
     );
 
