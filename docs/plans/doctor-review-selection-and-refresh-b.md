@@ -674,3 +674,65 @@ this file trips the gate without it.
 **Still owed: V-4(c) and V-4(d)** — the real-library re-measurement and the
 `DOC-9b` count per arm. Both need the GUI and are the only proof that the
 2,328 ms growth and the ~65 px scroll-anchor displacement are actually gone.
+
+### V-4(c)/(d) — real library, both arms, 15.08.2026
+
+Release build of this branch, isolated XDG profile on a copy of the 254 MB
+library, scan 3, **330 visible rows**, same album both arms
+(*ALL IS BEAUTIFUL… BECAUSE WE'RE DOOMED* / We Came As Romans, 41 proposals,
+all selectable — picked from the database, not hunted in the UI). The user drove
+the GUI; this session read the logs.
+
+**Deviation, stated:** two runs, not one session. `REPRISE_DOCTOR_FULL_REFRESH`
+is read once where the `ReviewState` literal is built and the review page is
+reused across navigation, so a process cannot switch arms. Same build, same
+album, same order — which is what R-18 protects against.
+
+**Control arm** (`REPRISE_DOCTOR_FULL_REFRESH=1`), twelve album toggles, whole
+path in ms, in order:
+
+```
+13 · 87 · 131 · 198 · 200 · 230 · 266 · 334 · 388 · 468 · 543 · 667
+```
+
+Monotonic. Median 248 ms; `store.splice` 290,689 µs of it (~96 %),
+`grouped_rows_for` 9,449 µs. Against B-0's pre-fix profile (241,277 µs /
+9,150 µs / ~254 ms) those two stages match, so the switch really does select the
+old path. **Caveat:** `refresh_conflicts` fell 424 → 5 µs and the aggregate
+1,987 → 6 µs, because B-1's cache and B-5's fingerprint live *inside* `refresh()`
+and are not switchable. The control arm is "old splice plus B-1", not a pure
+pre-fix build. Those two stages were 1 % of the cost, so the comparison holds —
+but it is not a clean revert and should not be described as one.
+
+**Fix arm**, same interaction, `path="selection"` with `touched=5`, in ms:
+
+```
+30 · 36 · 11 · 18 · 26 · 14 · 12 · 8 · 25 · 8 · 8 · 13
+```
+
+Median **13.6 ms**, and — the point of the strand — **no trend**: the last three
+toggles are among the cheapest. The growth is gone, not merely reduced.
+One structural `path="full"` refresh at startup: 22 ms for 330 rows.
+
+| | Control | Fix |
+|---|---|---|
+| median per album toggle | 248 ms | **13.6 ms** |
+| range over twelve toggles | 13 → 667 ms, rising | 8–36 ms, flat |
+| ratio at the median | — | **~18×** |
+
+**Select-all is unchanged and expected to be:** four operations with
+`touched=237` cost 106–279 ms. The diff legitimately covers every row there, which
+is the honest budget the plan named.
+
+**V-4(d).** Control arm: **356** `DOC-9b` warnings. Fix arm: **66** — and none of
+them follows an album toggle. The twelve toggles occupy log lines 2109–2177; the
+warning burst runs 2186–2292, after the last toggle and before the select-all
+operations, i.e. during scrolling. All carry `start=end=4294967295`
+(`INVALID_LIST_POSITION`), which is the early return the plan deliberately kept.
+**The check V-4(d) was written for passes: a selection toggle produces none.**
+That 66 warnings still arise from another trigger is a separate observation and
+belongs in a follow-up, not in this strand.
+
+**User-observed, same session:** scrolling noticeably faster and no stutter when
+toggling. Recorded because the B-0 report named scroll slowness as a symptom —
+and now it has numbers next to it rather than standing alone.
