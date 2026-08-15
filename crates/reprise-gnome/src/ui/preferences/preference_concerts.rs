@@ -22,10 +22,13 @@ fn location_reference_copy(
     radius_km: u32,
 ) -> (String, String) {
     match location {
-        Some(location) => (
-            strings::location_reference(&location.name, radius_km),
-            strings::text(strings::LOCATION_CHANGE_IN_LOCATION),
-        ),
+        Some(location) => {
+            let name = strings::concerts_location_name(&location.name, location.country.as_deref());
+            (
+                strings::location_reference(&name, radius_km),
+                strings::text(strings::LOCATION_CHANGE_IN_LOCATION),
+            )
+        }
         None => (
             strings::text(strings::LOCATION_REFERENCE_NOT_SET),
             strings::text(strings::LOCATION_SET_LOCATION),

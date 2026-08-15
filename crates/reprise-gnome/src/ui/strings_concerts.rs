@@ -105,6 +105,21 @@ pub fn concerts_location_radius(city: &str, radius: u32) -> String {
     )
 }
 
+pub fn concerts_location_name(city: &str, country: Option<&str>) -> String {
+    country
+        .map(str::trim)
+        .filter(|country| !country.is_empty())
+        .map_or_else(
+            || city.to_owned(),
+            |country| {
+                formatted(
+                    N_!("{city}, {country}"),
+                    &[("city", city), ("country", country)],
+                )
+            },
+        )
+}
+
 pub fn concerts_radius_off(radius: u32) -> String {
     formatted(N_!("{radius} km · off"), &[("radius", &radius.to_string())])
 }
@@ -205,5 +220,16 @@ mod tests {
     #[test]
     fn show_all_concerts_formats_count() {
         assert_eq!(show_all_concerts(14), "Show all 14 concerts");
+    }
+
+    #[test]
+    fn set_15_location_name_omits_the_separator_without_a_country() {
+        assert_eq!(
+            concerts_location_name("Zürich", Some("Schweiz")),
+            "Zürich, Schweiz"
+        );
+        assert_eq!(concerts_location_name("Zürich", None), "Zürich");
+        assert_eq!(concerts_location_name("Zürich", Some("")), "Zürich");
+        assert_eq!(concerts_location_name("Zürich", Some("  ")), "Zürich");
     }
 }

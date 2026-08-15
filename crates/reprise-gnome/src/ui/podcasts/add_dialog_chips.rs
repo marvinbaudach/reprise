@@ -75,6 +75,7 @@ mod tests {
             latitude: 47.0,
             longitude: 8.0,
             name: "Somewhere".to_owned(),
+            country: None,
             country_code: country_code.map(str::to_owned),
         }
     }
