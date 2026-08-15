@@ -25,6 +25,11 @@ pub fn online_content_show_sources(count: usize) -> String {
 }
 
 pub const PREFERENCES_ONLINE_SOURCES: &str = N_!("Online sources");
+pub const ONBOARDING_ONLINE_SOURCES_BODY: &str = N_!(
+    "Three sources may reach the network. Off makes this a local player: no requests, no downloads, and their sidebar entries stay hidden."
+);
+pub const ONBOARDING_ONLINE_SOURCES_FOOTER: &str =
+    N_!("You can change this any time in Preferences · Plugins.");
 pub const ONLINE_SOURCES_MASTER_TITLE: &str = N_!("Use online sources");
 pub const ONLINE_SOURCES_MASTER_BODY: &str = N_!(
     "Off makes this a local player only: no requests, no downloads, nothing hidden — the three entries disappear from the sidebar."
