@@ -407,7 +407,7 @@ fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
 }
 
 @Test
-fun restoringLibraryLoadsOnlyTheDefaultDestinationThroughTheCorePort() {
+fun restoringLibraryLoadsTheDefaultDestinationAndOnlyCountsTheRestThroughTheCorePort() {
     val title = testBrowseTrack("title")
     val titleWindow = LibraryWindow(total = 1_824, rows = listOf(title), hasMore = true)
     val port = RecordingBrowsePort(
@@ -426,10 +426,13 @@ fun restoringLibraryLoadsOnlyTheDefaultDestinationThroughTheCorePort() {
         state,
     )
     assertEquals(
+        // d568a00770 intentionally added count-only off-tab queries; this mirrors the
+        // already-updated remembered-destination assertion in LibraryScreenStateTest.
         listOf(
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "search::0:200",
+            "artists:0:1",
             "search-albums::0:1",
         ),
         port.operations,
