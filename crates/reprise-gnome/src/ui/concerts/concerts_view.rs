@@ -22,7 +22,7 @@ use super::concerts_filter_bar::ConcertsFilterBar;
 use super::concerts_location_banner::ConcertsLocationBanner;
 use super::concerts_location_columns::LocationColumns;
 use super::concerts_model::ConcertsModel;
-use super::concerts_presentation::{sort_rows, ConcertSortKey, SortDirection};
+use super::concerts_presentation::{sort_key_for_id, sort_rows, SortDirection};
 use super::concerts_search::concerts_matching;
 use super::concerts_worker::{request_allowed, ConcertsRequest, ConcertsResponse, ConcertsRuntime};
 use crate::ui::external_link::{self, LaunchErrorSlot};
@@ -757,9 +757,8 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
     let Some(column) = sorter.primary_sort_column() else {
         return;
     };
-    let key = match column.id().as_deref() {
-        Some("distance") => ConcertSortKey::Distance,
-        _ => ConcertSortKey::Date,
+    let Some(key) = sort_key_for_id(column.id().as_deref()) else {
+        return;
     };
     let direction = if sorter.primary_sort_order() == gtk4::SortType::Descending {
         SortDirection::Descending

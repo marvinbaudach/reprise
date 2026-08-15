@@ -171,6 +171,7 @@ pub(super) fn source_column(view: &gtk4::ColumnView) {
         .factory(&factory)
         .resizable(true)
         .build();
+    column.set_sorter(Some(&super::concerts_columns::header_sorter()));
     widths::pin(&column, widths::LABEL);
     view.append_column(&column);
 }
