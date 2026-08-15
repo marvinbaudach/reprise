@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn style_10_only_table_pages_resolve_an_editor_model() {
+    fn style_13_only_table_pages_resolve_an_editor_model() {
         let model: Rc<dyn crate::ui::table_columns::EditorModel> = Rc::new(Fake);
         for page in ["library", "concerts", "releases", "radio"] {
             assert!(model_for_page(page, &model, &model, &model, &model).is_some());
