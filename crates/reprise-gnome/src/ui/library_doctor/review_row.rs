@@ -392,5 +392,47 @@ fn list_item_key(item: &gtk4::ListItem) -> usize {
 }
 
 #[cfg(test)]
+pub(super) fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> {
+    let object = model
+        .item(position)?
+        .downcast::<glib::BoxedAnyObject>()
+        .ok()?;
+    let row = object.borrow::<ReviewRowModel>().clone();
+    Some(row)
+}
+
+/// The list's order: albums first, then the row's place inside its album.
+///
+/// `section_only` compares album position alone, which is what a `SectionSorter`
+/// needs — a section boundary must not depend on the order *within* a section.
+pub(super) fn compare_rows(
+    left: &glib::Object,
+    right: &glib::Object,
+    section_only: bool,
+) -> gtk4::Ordering {
+    let left = left.downcast_ref::<glib::BoxedAnyObject>();
+    let right = right.downcast_ref::<glib::BoxedAnyObject>();
+    let (Some(left), Some(right)) = (left, right) else {
+        return match (left.is_some(), right.is_some()) {
+            (true, false) => gtk4::Ordering::Smaller,
+            (false, true) => gtk4::Ordering::Larger,
+            _ => gtk4::Ordering::Equal,
+        };
+    };
+    let left = left.borrow::<ReviewRowModel>();
+    let right = right.borrow::<ReviewRowModel>();
+    let ordering = if section_only {
+        left.album_position.cmp(&right.album_position)
+    } else {
+        (left.album_position, left.row_position).cmp(&(right.album_position, right.row_position))
+    };
+    match ordering {
+        std::cmp::Ordering::Less => gtk4::Ordering::Smaller,
+        std::cmp::Ordering::Equal => gtk4::Ordering::Equal,
+        std::cmp::Ordering::Greater => gtk4::Ordering::Larger,
+    }
+}
+
+#[cfg(test)]
 #[path = "review_row_contract_tests.rs"]
 pub(in crate::ui::library_doctor) mod contract_tests;

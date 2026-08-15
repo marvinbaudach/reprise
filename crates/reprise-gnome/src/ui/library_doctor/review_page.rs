@@ -26,7 +26,13 @@ use super::review_model::{
     available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
     ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
 };
+use super::review_row::compare_rows;
+#[cfg(test)]
+use super::review_row::row_at;
 use super::review_snapshot::{review_ready_count, splice_selection_rows, ReviewSnapshot};
+#[cfg(test)]
+use super::review_summary::review_header_counts;
+use super::review_summary::{review_footer_summary, review_stale_notice};
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -420,81 +426,6 @@ impl ReviewState {
         }
         drop(outcomes);
         self.refresh();
-    }
-}
-
-#[cfg(test)]
-fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> {
-    let object = model
-        .item(position)?
-        .downcast::<glib::BoxedAnyObject>()
-        .ok()?;
-    let row = object.borrow::<ReviewRowModel>().clone();
-    Some(row)
-}
-
-/// What the header states: the changes on screen and the albums they sit in.
-///
-/// This is the inventory, not the selection — the (possibly filtered) rows the
-/// page is showing. Unchecking a row leaves it standing, which is the whole
-/// point of the split: the header answers "what is here", the footer and the
-/// Apply button answer "what will be written". Mixing the two produced
-/// "1 changes · 2 albums", where the first number followed the checkbox and the
-/// second did not.
-#[cfg(test)]
-fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
-    let totals = ReviewSnapshot::from_rows(rows.to_vec()).totals;
-    (totals.changes, totals.albums)
-}
-
-fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
-    let count = session
-        .rows()
-        .iter()
-        .filter(|row| session.category_filter_matches(row.problem_class))
-        .filter(|row| row.state == DoctorReviewRowState::Stale)
-        .count();
-    (count > 0).then(|| strings::doctor_stale_notice(count))
-}
-
-fn review_footer_summary(
-    summary: reprise_core::library_doctor::DoctorReviewSummary,
-    category: Option<ReviewCategory>,
-    ready_count: usize,
-) -> String {
-    category.map_or_else(
-        || strings::doctor_apply_summary(summary.tag_change_count, ready_count, summary.file_count),
-        |category| {
-            strings::doctor_filter_scope(
-                summary.tag_change_count,
-                summary.total_tag_change_count,
-                &strings::text(category.label()),
-            )
-        },
-    )
-}
-
-fn compare_rows(left: &glib::Object, right: &glib::Object, section_only: bool) -> gtk4::Ordering {
-    let left = left.downcast_ref::<glib::BoxedAnyObject>();
-    let right = right.downcast_ref::<glib::BoxedAnyObject>();
-    let (Some(left), Some(right)) = (left, right) else {
-        return match (left.is_some(), right.is_some()) {
-            (true, false) => gtk4::Ordering::Smaller,
-            (false, true) => gtk4::Ordering::Larger,
-            _ => gtk4::Ordering::Equal,
-        };
-    };
-    let left = left.borrow::<ReviewRowModel>();
-    let right = right.borrow::<ReviewRowModel>();
-    let ordering = if section_only {
-        left.album_position.cmp(&right.album_position)
-    } else {
-        (left.album_position, left.row_position).cmp(&(right.album_position, right.row_position))
-    };
-    match ordering {
-        std::cmp::Ordering::Less => gtk4::Ordering::Smaller,
-        std::cmp::Ordering::Equal => gtk4::Ordering::Equal,
-        std::cmp::Ordering::Greater => gtk4::Ordering::Larger,
     }
 }
 
