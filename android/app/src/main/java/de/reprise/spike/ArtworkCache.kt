@@ -52,6 +52,28 @@ internal class ArtworkCache(
         }
     }
 
+    /**
+     * Best immediate visual for a surface that will still resolve its own size.
+     * Reusing another size here keeps list-to-detail navigation continuous;
+     * [artwork] stays exact-size so this seed can never suppress that resolve.
+     */
+    @Synchronized
+    fun seedArtwork(request: ArtworkRequest): ArtworkVisual? {
+        artwork(request)?.let { return it }
+        val sourceKey = visuals.keys
+            .filterIsInstance<TrackArtworkKey>()
+            .lastOrNull { key -> key.matchesIdentity(request) }
+        sourceKey?.let { key -> visuals[key]?.let { return it } }
+        val fallbackKey = resolvedFallbacks.entries
+            .lastOrNull { (key, _) -> key.matchesIdentity(request) }
+            ?.value
+        fallbackKey?.let { key -> visuals[key]?.let { return it } }
+        val generatedKey = visuals.keys
+            .filterIsInstance<GeneratedArtworkKey>()
+            .lastOrNull { key -> key.matchesIdentity(request) }
+        return generatedKey?.let(visuals::get)
+    }
+
     @Synchronized
     fun putArtwork(request: ArtworkRequest, visual: ArtworkVisual) {
         visuals[request.trackKey()] = visual
@@ -97,6 +119,14 @@ internal class ArtworkCache(
         size = size,
         kind = kind,
     )
+
+    private fun TrackArtworkKey.matchesIdentity(request: ArtworkRequest): Boolean =
+        trackUri == request.trackUri && kind == request.kind
+
+    private fun GeneratedArtworkKey.matchesIdentity(request: ArtworkRequest): Boolean =
+        title == request.title.trim().lowercase() &&
+            artist == request.artist.trim().lowercase() &&
+            kind == request.kind
 
     private fun <K, V> lruMap(capacity: Int) =
         object : LinkedHashMap<K, V>(capacity + 1, 0.75f, true) {

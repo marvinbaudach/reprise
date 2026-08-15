@@ -21,6 +21,51 @@ private const val ARTIST_WAIT_SECONDS = 5L
 @Config(sdk = [36])
 class ArtistArtworkTest {
     @Test
+    fun detailStartsWithTheArtworkAlreadyVisibleInTheArtistRow() {
+        val rowPortrait = bitmap(Color.RED)
+        val detailPortrait = bitmap(Color.BLUE)
+        val cache = ArtworkCache()
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> error("the portrait must win before the album cover") },
+            resolveArtistPortraitCached = { _, _ -> "row-portrait" },
+            resolveArtistPortraitFetched = { _, _ -> "detail-portrait" },
+            decode = { path ->
+                when (path) {
+                    "row-portrait" -> rowPortrait
+                    "detail-portrait" -> detailPortrait
+                    else -> null
+                }
+            },
+            fallback = { _, _, _ -> bitmap(Color.MAGENTA) },
+            cache = cache,
+            onMainThread = { work -> work() },
+        )
+
+        try {
+            assertSame(
+                rowPortrait,
+                resolveArtist(artwork, AndroidArtworkSize.LIST, allowFetch = false),
+            )
+            val detailRequest = ArtworkRequest(
+                trackUri = "content://albums/representative",
+                size = AndroidArtworkSize.ARTIST_DETAIL,
+                title = "The Artist",
+                kind = ArtworkKind.ARTIST,
+                artistName = "The Artist",
+                allowFetch = true,
+            )
+
+            assertSame(rowPortrait, artwork.seedVisual(detailRequest).image.asAndroidBitmap())
+            assertSame(
+                detailPortrait,
+                resolveArtist(artwork, AndroidArtworkSize.ARTIST_DETAIL, allowFetch = true),
+            )
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
+    @Test
     fun aRowResolutionNeverCallsTheFetcher() {
         val cachedCalls = AtomicInteger()
         val fetchCalls = AtomicInteger()
