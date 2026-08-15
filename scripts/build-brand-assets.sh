@@ -77,11 +77,12 @@ build_surface_tree() {
   mkdir -p "$brand"
 
   icon=$brand/reprise-icon.svg
-  python3 "$lib/compose_icon.py" "$plate" "$mark" "$icon" --native
+  cp "$mark" "$icon"
 
   mkdir -p "$icons/scalable/apps"
   cp "$icon" "$icons/scalable/apps/io.github.marvinbaudach.Reprise.svg"
-  # Every stage from 22px up comes from the 96-unit drawing. 16px comes from
+  # Desktop icons keep the mark on transparency. Every stage from 22px up
+  # comes from the 96-unit drawing. 16px comes from
   # its own grid-aligned source: rasterising the 96-unit mark that small turns
   # the dots into two specks below the noise floor, and no amount of scaling
   # fixes a feature that is under a pixel.

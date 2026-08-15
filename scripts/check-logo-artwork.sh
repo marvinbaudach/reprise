@@ -66,6 +66,7 @@ for name, (small, large) in colours.items():
     assert not re.search(r"(?:linear|radial)Gradient", ET.tostring(root, encoding="unicode"))
 hinted = (
     ("reprise-mark-16.svg", (palette["reprise_coral"], palette["reprise_teal"])),
+    ("reprise-icon-16.svg", (palette["reprise_coral"], palette["reprise_teal"])),
     ("reprise-mark-16-mono.svg", None),
 )
 hinted_geometry = (
@@ -87,13 +88,6 @@ for name, fills in hinted:
             assert node.attrib["fill"] == (fills[0] if index < 3 else fills[1]), (name, index)
     if fills is None:
         assert root.attrib["fill"] == "currentColor", name
-icon16 = ET.parse(brand / "reprise-icon-16.svg").getroot()
-assert icon16.attrib["viewBox"] == "0 0 16 16"
-carrier = list(icon16)[0]
-assert carrier.attrib == {
-    "x": "1", "y": "1", "width": "14", "height": "14",
-    "rx": "4", "fill": palette["reprise_plate"],
-}
 mono = ET.parse(brand / "reprise-mark-mono.svg").getroot()
 assert mono.attrib["viewBox"] == "0 0 96 96"
 assert mono.attrib["fill"] == "currentColor"
@@ -109,7 +103,7 @@ assert rects[0].attrib == {
 }
 PY
   then
-    ok "source geometry: 96-unit sign, 16-unit hinted stage, 1:3 barlines, solid carriers"
+    ok "source geometry: 96-unit sign, transparent 16-unit desktop stage, 1:3 barlines, platform plate"
   else
     bad "source geometry differs from the specified 96-unit drawing"
   fi
@@ -370,6 +364,30 @@ check_delivery() {
   fi
 }
 
+check_desktop_transparency() {
+  local size icon groups
+  for size in 16 22 24 32 48 64 128 256 512; do
+    icon="data/icons/hicolor/${size}x${size}/apps/io.github.marvinbaudach.Reprise.png"
+    groups=$("${measure[@]}" ink-component-sizes "$icon" | wc -w)
+    if [[ $groups -eq $MARK_PARTS ]]; then
+      ok "desktop ${size}px icon has $groups separate ink components on transparency"
+    else
+      bad "desktop ${size}px icon has $groups ink components instead of $MARK_PARTS — a carrier still joins the mark"
+    fi
+  done
+
+  icon=$tmp/desktop-scalable.png
+  rsvg-convert -w 512 -h 512 -a \
+    data/icons/hicolor/scalable/apps/io.github.marvinbaudach.Reprise.svg \
+    -o "$icon"
+  groups=$("${measure[@]}" ink-component-sizes "$icon" | wc -w)
+  if [[ $groups -eq $MARK_PARTS ]]; then
+    ok "desktop scalable icon has $groups separate ink components on transparency"
+  else
+    bad "desktop scalable icon has $groups ink components instead of $MARK_PARTS — a carrier still joins the mark"
+  fi
+}
+
 self_test() {
   cat > "$tmp/blob.svg" <<'EOF'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28"/></svg>
@@ -411,12 +429,14 @@ check_all() {
   echo "Palette ownership and delivery"
   check_palette_single_source
   check_delivery
+  check_desktop_transparency
   echo "Generated-file provenance"
   ./scripts/build-brand-assets.sh --check || fail=1
 }
 
 case ${1:-} in
   --all) check_all ;;
+  --desktop) check_desktop_transparency ;;
   --self-test) self_test ;;
   --mark)
     check_source_contract
@@ -424,7 +444,7 @@ case ${1:-} in
     report_components "${2:-a}"
     ;;
   *)
-    printf 'usage: %s --all | --self-test | --mark [a|b]\n' "$0" >&2
+    printf 'usage: %s --all | --desktop | --self-test | --mark [a|b]\n' "$0" >&2
     exit 2
     ;;
 esac

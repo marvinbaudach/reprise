@@ -9,8 +9,10 @@ dot-to-barline gap binds the four shapes without collapsing them.
 `data/brand/palette.toml` is the only maintained colour source. The mark puts
 `#FF6F5E` on the three small elements — the two dots and the thin barline — and
 `#4FDBD4` on the thick barline. The light-ground form replaces them with
-`#C4362A` and `#00706B`. The carrier is a solid `#33363F` rounded 88-unit
-square. Nothing uses a gradient.
+`#C4362A` and `#00706B`. Android and web surfaces that require a carrier use a
+solid `#33363F` rounded 88-unit square. The GNOME desktop icon carries only the
+four-part mark on transparency, so the shell supplies its surrounding shape.
+Nothing uses a gradient.
 
 The split was chosen against the alternative that swapped the two colours,
 compared at dock size. Teal on the thick barline reads farther because the
@@ -39,9 +41,9 @@ measured.
 The 96-unit geometry is therefore not used at 16 px. That stage ships from
 `reprise-mark-16.svg`, the same sign redrawn on the 16-unit grid with every
 edge on a whole raster line: dots 3x3 at (3,5) and (3,9), barlines 1 and 3
-units wide at x 7 and x 9, all spanning y 3–12, on a 14-unit carrier inset by
-one. It renders four groups of 30, 10, 9 and 9 pixels — every element at least
-three times the noise floor, and the 1:3 ratio still legible.
+units wide at x 7 and x 9, all spanning y 3–12 on transparency. It renders four
+groups of 30, 10, 9 and 9 pixels — every element at least three times the noise
+floor, and the 1:3 ratio still legible.
 
 The dots are 3x3 rather than 2x2 deliberately. At 2x2 they measure 4 pixels
 against a 3-pixel floor: countable, but one rounding decision away from
