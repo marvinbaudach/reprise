@@ -410,10 +410,15 @@ Zeitpunkt bereits gelandet.
 
 ## Aufgabe 10 — Sichtprüfung am Gerät
 
-**Status: OFFEN.** Aufgaben 1–9 sind gelandet, diese nicht. Sie braucht ein
-echtes Telefon und einen Release-Build, läuft deshalb unter Aufsicht und wurde
-aus dem headless Codex-Lauf bewusst ausgeschlossen. `phase: shipped` in diesem
-Statusblock bezieht sich auf den Code, nicht auf diese Abnahme.
+**Status: ABGENOMMEN am 14.08.2026, 21:20–21:35 Uhr.** Pixel 10 Pro XL,
+Android 17, Release-Build von `8188bcf29a` (`assembleRelease`, arm64-v8a).
+Alle drei Aufnahmen liegen vor; Belege und Abweichungen stehen unten unter
+„Ergebnis der Abnahme".
+
+Sie brauchte ein echtes Telefon und einen Release-Build, lief deshalb unter
+Aufsicht und war aus dem headless Codex-Lauf bewusst ausgeschlossen.
+`phase: shipped` in diesem Statusblock bezog sich auf den Code, nicht auf diese
+Abnahme.
 
 **Dateien:** keine.
 
@@ -450,3 +455,65 @@ dem Hauptthread — es kann also keinen Frame reißen, sondern nur seine eigene 
 verstopfen und Bilder verspätet liefern. Wenn Porträts beim Scrollen sichtbar
 nachhinken, ist das der erste Verdächtige; wenn die Liste selbst stockt, ist es
 nicht dieser Pfad.
+
+### Ergebnis der Abnahme
+
+Gerät: Pixel 10 Pro XL, Android 17, NordVPN aktiv. Build: `assembleRelease` aus
+`8188bcf29a`, arm64-v8a, mit dem Debug-Schlüssel signiert (so ist der
+`release`-Buildtyp konfiguriert). Bibliothek: 64 Interpreten, 156 Alben,
+751 Titel unter `Music/Reprise`.
+
+**Aufnahme 1 — Zeile: bestanden.** Alle drei Zustände in derselben Aufnahme,
+unmittelbar untereinander: Fallback-Farbe (violetter Verlauf mit Notenglyphe),
+darunter zwei geladene Porträts (Carnifex, Chelsea Grin), darüber und darunter
+Album-Cover-Rückfälle. Avatare rund, auf der Textgrundlinie.
+
+**Aufnahme 2 — Detailkopf: bestanden, mit einer Abweichung.** Der Nachweis, dass
+nichts springt, ist gemessen statt betrachtet: der Pixeldiff zwischen dem
+Zustand direkt nach dem Öffnen und dem Zustand nach dem Porträt-Tausch ist auf
+**genau einen 512 × 512-Kasten an (284, 526)** begrenzt — das Kopfbild. Die
+Sektion „Albums" und alles darunter ist pixelgleich. Der Interpretenname steht
+auf beiden Aufnahmen genau einmal, in der Zurück-Zeile.
+
+*Abweichung:* Der Plan erwartet direkt nach dem Öffnen ein **Album-Cover**.
+Tatsächlich steht dort die **Fallback-Farbe**, obwohl der Interpret Alben mit
+Covern hat und die Listenzeile davor ein Cover zeigte. Der Kopf fordert 210 dp
+über die Full-Size-Lane an; das Cover ist dort noch nicht entschieden, wenn der
+erste Frame steht. Der Tausch zum Porträt kam nach ~3,3 s. Für die Frage, die
+die Aufnahme beantworten soll — springt das Layout? — ist das gleichwertig, für
+den Ersteindruck der Seite ist es schlechter als das, was der Plan annahm.
+
+**Aufnahme 3 — Scrollen: bestanden, mit Reserve.** 25 s Bildschirmaufnahme,
+20 Wischer durch die 64er-Liste, `gfxinfo` unmittelbar vor dem Fenster
+zurückgesetzt:
+
+```
+Total frames rendered: 2172
+Janky frames: 0 (0.00%)   |  legacy: 16 (0.74%)
+50th 5ms  90th 7ms  95th 8ms  99th 8ms
+Missed Vsync 0  |  Slow UI thread 0  |  Slow bitmap uploads 0
+höchster belegter Eimer: 11ms (1 Frame)
+GPU: 50th 2ms  90th 3ms
+```
+
+Kein Frame über 11 ms. Der im Plan benannte Verdächtige (`thumbnail_with_source`
+auf der Full-Size-Lane) reißt nichts.
+
+### Zwei Befunde, die die Abnahme nebenbei gefunden hat
+
+- **Entzogene Netzwerkberechtigung ist im Log nicht von einem Netzausfall zu
+  unterscheiden.** Vor dem Lauf war Reprise auf dem Gerät die
+  Netzwerkberechtigung entzogen. Der Porträt-Abruf meldete
+  `artist portrait request failed error=MusicBrainz transport failed` — derselbe
+  Text wie bei jedem echten Transportfehler. `classify_error`
+  (`musicbrainz.rs:174`) wirft den ureq-Fehler weg, bevor er ins Log kommt; er
+  war erst mit einer eingebauten Diagnosezeile sichtbar. Die Oberfläche zeigt in
+  diesem Fall stumm das Album-Cover. Kostete hier ~40 Minuten Fehlersuche in
+  Richtung VPN und IPv6.
+- **Die Android-App kann fehlende Titel nicht aufräumen.** Für Aufnahme 1 fehlte
+  ein Interpret ohne jedes Cover, also wurde eine coverlose Sonde in den
+  Scan-Ordner gelegt. Nach dem Löschen der Datei blieb der Interpret in der
+  Liste: `scanner_vanish.rs` **markiert** verschwundene Dateien als fehlend
+  statt sie zu löschen (richtig, wegen Relink), und die Android-Oberfläche hat
+  weder Doctor noch Relink noch Purge — das FFI exportiert dafür nichts.
+  Bereinigt wurde am Ende über `pm clear` samt Neuaufbau der Bibliothek.
