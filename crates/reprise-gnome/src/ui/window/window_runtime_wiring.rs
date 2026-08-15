@@ -533,6 +533,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             track_list.current_source()
         });
     }
+    section_search.observe_doctor_review(library_doctor_navigation);
     super::podcast_refresh_scheduler::arm(conn, db_path, podcasts_runtime, podcasts_view);
 
     let track_list_weak = Rc::downgrade(track_list);

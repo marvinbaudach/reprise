@@ -6,7 +6,7 @@ use libadwaita as adw;
 use super::review_page::LibraryDoctorReviewPage;
 
 const ROOT_TAG: &str = "library-doctor";
-const REVIEW_TAG: &str = "library-doctor-review";
+pub(super) const REVIEW_TAG: &str = "library-doctor-review";
 #[derive(Clone)]
 pub(super) struct DoctorNavigation {
     content_navigation: adw::NavigationView,
@@ -69,6 +69,11 @@ impl DoctorNavigation {
 
     pub(super) fn is_visible(&self) -> bool {
         self.content_stack.visible_child_name().as_deref() == Some(ROOT_TAG)
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn navigation_view(&self) -> &adw::NavigationView {
+        &self.doctor_navigation
     }
 
     fn show_content(&self) {
