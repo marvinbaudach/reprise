@@ -2,7 +2,7 @@
 slug: feed-tags-mark-the-exception
 worktree: /home/marvin/Projects/reprise-feed-tags-mark-the-exception
 branch: feature/feed-tags-mark-the-exception
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-15
 ---
