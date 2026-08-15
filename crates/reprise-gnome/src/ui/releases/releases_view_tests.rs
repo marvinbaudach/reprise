@@ -1,4 +1,5 @@
 use super::*;
+use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
 fn history_entry(title: &str, artist: &str) -> HistoryEntry {
     HistoryEntry {
@@ -15,6 +16,84 @@ fn history_entry(title: &str, artist: &str) -> HistoryEntry {
         announce_url: None,
         track_count: None,
         local_track_count: 0,
+    }
+}
+
+fn sortable_history_entry(
+    title: &str,
+    artist: &str,
+    release_type: &str,
+    date: &str,
+) -> HistoryEntry {
+    let mut entry = history_entry(title, artist);
+    entry.release_type = release_type.into();
+    entry.first_release_date = date.into();
+    entry
+}
+
+fn column_by_id(view: &gtk4::ColumnView, id: &str) -> gtk4::ColumnViewColumn {
+    let columns = view.columns();
+    (0..columns.n_items())
+        .filter_map(|index| columns.item(index).and_downcast::<gtk4::ColumnViewColumn>())
+        .find(|column| column.id().as_deref() == Some(id))
+        .unwrap_or_else(|| panic!("missing column {id}"))
+}
+
+fn release_titles(view: &ReleasesView) -> Vec<String> {
+    let store = view.shared.model.store();
+    (0..store.n_items())
+        .map(|index| {
+            store
+                .item(index)
+                .and_downcast::<ReleaseObject>()
+                .expect("the Releases model stores release objects")
+                .entry()
+                .title
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn every_sortable_releases_header_orders_its_own_column() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = ReleasesView::new(Rc::new(crate::test_db::open().unwrap()), PathBuf::new());
+    let rows = vec![
+        sortable_history_entry("Zulu", "Bravo", "album", "2026-02"),
+        sortable_history_entry("Alpha", "Charlie", "ep", "2026-03"),
+        sortable_history_entry("Mike", "Alpha", "single", "2026-01"),
+    ];
+    view.shared.rows.replace(rows.clone());
+    view.shared.model.replace(rows);
+
+    for (key, expected) in [
+        (ReleaseColumn::Date, ["Mike", "Zulu", "Alpha"]),
+        (ReleaseColumn::Title, ["Alpha", "Mike", "Zulu"]),
+        (ReleaseColumn::Artist, ["Mike", "Zulu", "Alpha"]),
+        (ReleaseColumn::Type, ["Zulu", "Alpha", "Mike"]),
+    ] {
+        let column = column_by_id(&view.shared.column_view, key.as_str());
+        view.shared
+            .column_view
+            .sort_by_column(Some(&column), gtk4::SortType::Ascending);
+        assert_eq!(release_titles(&view), expected, "{key:?}");
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_cover_status_and_link_headers_carry_no_sorter() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = ReleasesView::new(Rc::new(crate::test_db::open().unwrap()), PathBuf::new());
+    let columns = view.shared.column_view.columns();
+    for index in [0, 5, 6] {
+        let column = columns
+            .item(index)
+            .and_downcast::<gtk4::ColumnViewColumn>()
+            .expect("the Releases view owns seven columns");
+        assert!(column.sorter().is_none(), "column {index} became sortable");
     }
 }
 

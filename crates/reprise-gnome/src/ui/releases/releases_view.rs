@@ -24,7 +24,7 @@ use super::releases_failure_ui::{
 };
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::{ReleaseObject, ReleasesModel};
-use super::releases_presentation::{releases_row_action, ReleasesRowAction};
+use super::releases_presentation::{releases_row_action, sort_key_for_id, ReleasesRowAction};
 use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::feed_footer::{FeedFooter, FeedFooterState};
 use crate::ui::source_empty_state::SourceFailureState;
@@ -648,20 +648,32 @@ fn wire_sorting(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         tracing::warn!("Releases table has no ColumnViewSorter");
         return;
     };
-    let shared = shared.clone();
-    sorter.connect_primary_sort_order_notify(move |sorter| {
-        let direction = if sorter.primary_sort_order() == gtk4::SortType::Ascending {
-            ReleaseSortDirection::Ascending
-        } else {
-            ReleaseSortDirection::Descending
-        };
-        let rows = shared.rows.borrow().clone();
-        shared.model.replace(artist_news::sort_release_rows(
-            rows,
-            artist_news::ReleaseSortKey::Date,
-            direction,
-        ));
-    });
+    {
+        let shared = shared.clone();
+        sorter.connect_primary_sort_column_notify(move |sorter| apply_sort(&shared, sorter));
+    }
+    {
+        let shared = shared.clone();
+        sorter.connect_primary_sort_order_notify(move |sorter| apply_sort(&shared, sorter));
+    }
+}
+
+fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
+    let Some(key) = sorter
+        .primary_sort_column()
+        .and_then(|column| sort_key_for_id(column.id().as_deref()))
+    else {
+        return;
+    };
+    let direction = if sorter.primary_sort_order() == gtk4::SortType::Ascending {
+        ReleaseSortDirection::Ascending
+    } else {
+        ReleaseSortDirection::Descending
+    };
+    let rows = shared.rows.borrow().clone();
+    shared
+        .model
+        .replace(artist_news::sort_release_rows(rows, key, direction));
 }
 
 #[cfg(test)]
