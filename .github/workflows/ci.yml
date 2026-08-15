@@ -51,7 +51,11 @@ jobs:
   quality:
     name: Quality gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # The gate needs about an hour of its own: the serialized display suite
+    # (DISPLAY_TEST_JOBS: 1) is ~45 minutes of it. At 60 it was cutting runs off
+    # roughly a minute short of the end — measured on #503 and #504, which
+    # change nothing but documents and still died at exactly 60m06s.
+    timeout-minutes: 90
     container:
       image: archlinux:latest
     env:
