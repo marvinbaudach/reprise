@@ -5,9 +5,13 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// `Neutral` is the Releases-only outlined tone. `NeutralFilled` and `Quiet`
+/// mirror the Concerts table's off-sale and unknown ticket tones.
 pub(super) enum TagTone {
     Accent,
     Neutral,
+    NeutralFilled,
+    Quiet,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +35,15 @@ pub(super) struct FeedRow {
     #[cfg(test)]
     pub activation: gtk4::Button,
     pub dismiss: gtk4::Button,
+}
+
+pub(super) const fn tone_class(tone: TagTone) -> &'static str {
+    match tone {
+        TagTone::Accent => "updates-tag-accent",
+        TagTone::Neutral => "updates-tag-neutral",
+        TagTone::NeutralFilled => "updates-tag-neutral-filled",
+        TagTone::Quiet => "updates-tag-quiet",
+    }
 }
 
 pub(super) fn build(
@@ -73,10 +86,7 @@ pub(super) fn build(
         let label = gtk4::Label::new(Some(&tag.text));
         label.set_valign(gtk4::Align::Center);
         label.add_css_class("updates-tag");
-        label.add_css_class(match tag.tone {
-            TagTone::Accent => "updates-tag-accent",
-            TagTone::Neutral => "updates-tag-neutral",
-        });
+        label.add_css_class(tone_class(tag.tone));
         content.append(&label);
     }
 
@@ -111,5 +121,35 @@ pub(super) fn build(
         #[cfg(test)]
         activation,
         dismiss,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::{tone_class, TagTone};
+
+    #[test]
+    fn every_tag_tone_maps_to_its_own_css_class() {
+        let classes = [
+            TagTone::Accent,
+            TagTone::Neutral,
+            TagTone::NeutralFilled,
+            TagTone::Quiet,
+        ]
+        .map(tone_class);
+
+        assert!(
+            classes
+                .iter()
+                .all(|class| class.starts_with("updates-tag-")),
+            "every tone class must use the updates-tag- prefix: {classes:?}"
+        );
+        assert_eq!(
+            classes.into_iter().collect::<BTreeSet<_>>().len(),
+            4,
+            "every tag tone must map to a distinct CSS class"
+        );
     }
 }
