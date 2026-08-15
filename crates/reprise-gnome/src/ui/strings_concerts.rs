@@ -229,5 +229,7 @@ mod tests {
             "Zürich, Schweiz"
         );
         assert_eq!(concerts_location_name("Zürich", None), "Zürich");
+        assert_eq!(concerts_location_name("Zürich", Some("")), "Zürich");
+        assert_eq!(concerts_location_name("Zürich", Some("  ")), "Zürich");
     }
 }

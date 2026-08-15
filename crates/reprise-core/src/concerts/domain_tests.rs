@@ -98,7 +98,7 @@ fn rad_5_geocode_parses_the_addressdetails_country_code_when_present() {
 fn conc_2_geocode_uses_the_localized_city_and_country() {
     let location = parse_geocode(
         r#"[{"place_id":174820104,"lat":"47.3744489","lon":"8.5410422",
-             "display_name":"Zürich, Bezirk Zürich, Zürich, Schweiz",
+             "display_name":"Zürich (Kreis 1), Bezirk Zürich, Zürich, Schweiz",
              "address":{"city":"Zürich","county":"Bezirk Zürich",
                         "state":"Zürich","country":"Schweiz","country_code":"ch"}}]"#,
     )
@@ -107,6 +107,19 @@ fn conc_2_geocode_uses_the_localized_city_and_country() {
 
     assert_eq!(location.city, "Zürich");
     assert_eq!(location.country.as_deref(), Some("Schweiz"));
+}
+
+#[test]
+fn conc_2_geocode_prefers_town_over_village_and_municipality() {
+    let location = parse_geocode(
+        r#"[{"lat":"47.4988","lon":"8.7241","display_name":"Fallback district, Schweiz",
+             "address":{"town":"Winterthur","village":"Töss",
+                        "municipality":"Bezirk Winterthur"}}]"#,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(location.city, "Winterthur");
 }
 
 #[test]
