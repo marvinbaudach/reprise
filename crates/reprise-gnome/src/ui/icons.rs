@@ -51,16 +51,6 @@ mod tests {
             "library_doctor::doctor_glyph, and sidebar_presentation::NavIcon::LibraryDoctor \
              through nav_icon's theme check, both → system-search-symbolic",
         ),
-        (
-            "reprise-radio-symbolic",
-            "sidebar_presentation::NavIcon::Radio through nav_icon's theme check \
-             → audio-x-generic-symbolic",
-        ),
-        (
-            "reprise-stats-symbolic",
-            "sidebar_presentation::NavIcon::MyStats through nav_icon's theme check \
-             → view-list-symbolic",
-        ),
     ];
 
     fn ui_root() -> PathBuf {
@@ -126,6 +116,20 @@ mod tests {
             "the scan must guard the app-ID-prefixed first-aid icon: {names:?}"
         );
         assert!(names.len() > 40, "only {} names found", names.len());
+    }
+
+    #[test]
+    fn embedded_private_symbolics_need_no_system_fallback_guard() {
+        let guarded = GUARDED
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<BTreeSet<_>>();
+        for name in ["reprise-radio-symbolic", "reprise-stats-symbolic"] {
+            assert!(
+                !guarded.contains(name),
+                "{name} is embedded and must be checked as directly drawable"
+            );
+        }
     }
 
     #[test]
