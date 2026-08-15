@@ -65,6 +65,42 @@ fn two_row_review() -> DoctorReviewSession {
     )
 }
 
+fn tie_review() -> DoctorReviewSession {
+    let unresolved = DoctorUnresolvedGroup {
+        field: DoctorField::Artist,
+        group_key: "same-key".into(),
+        candidates: ["A", "B", "C"]
+            .into_iter()
+            .map(|value| DoctorCandidate {
+                value: DoctorValue::Text(value.into()),
+                count: 1,
+                evidence: Vec::new(),
+            })
+            .collect(),
+        members: [(1, "A"), (2, "B"), (3, "C")]
+            .into_iter()
+            .map(|(track_id, current)| DoctorGroupMember {
+                track_id,
+                current: DoctorValue::Text(current.into()),
+            })
+            .collect(),
+        local_fallback: None,
+    };
+    let mut source = scan(Vec::new());
+    source.checked_tracks = 3;
+    source.track_ids = vec![1, 2, 3];
+    source.tracks = source.track_ids.iter().copied().map(track).collect();
+    source.unresolved_groups = vec![unresolved];
+    DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview)
+}
+
+fn choose(review: &mut DoctorReviewSession, candidate: &str) {
+    let group_id = review.groups()[0].id;
+    review
+        .choose_candidate(group_id, &DoctorValue::Text(candidate.into()))
+        .unwrap();
+}
+
 #[test]
 fn doc_12a_the_query_scope_limits_the_frozen_plan() {
     let mut review = two_row_review();
@@ -167,4 +203,58 @@ fn doc_12a_the_query_scope_intersects_the_category_filter() {
     review.set_category_filter(Some(HashSet::from([ProblemClass::MissingWrongYear])));
 
     assert_eq!(review.freeze_plan().tag_change_count(), 0);
+}
+
+#[test]
+fn doc_12a_all_and_none_preserve_out_of_scope_tie_selection() {
+    let mut all_review = tie_review();
+    choose(&mut all_review, "A");
+    let included = all_review
+        .rows()
+        .iter()
+        .find(|row| row.track_id == 2)
+        .unwrap()
+        .id;
+    let excluded = all_review
+        .rows()
+        .iter()
+        .find(|row| row.track_id == 3)
+        .unwrap()
+        .id;
+    all_review.set_selected(excluded, false).unwrap();
+    all_review.set_query_scope(Some(HashSet::from([included])));
+
+    all_review.all();
+    choose(&mut all_review, "B");
+
+    assert!(
+        !all_review
+            .rows()
+            .iter()
+            .find(|row| row.track_id == 3)
+            .unwrap()
+            .selected
+    );
+
+    let mut none_review = tie_review();
+    choose(&mut none_review, "A");
+    let included = none_review
+        .rows()
+        .iter()
+        .find(|row| row.track_id == 2)
+        .unwrap()
+        .id;
+    none_review.set_query_scope(Some(HashSet::from([included])));
+
+    none_review.none();
+    choose(&mut none_review, "B");
+
+    assert!(
+        none_review
+            .rows()
+            .iter()
+            .find(|row| row.track_id == 3)
+            .unwrap()
+            .selected
+    );
 }
