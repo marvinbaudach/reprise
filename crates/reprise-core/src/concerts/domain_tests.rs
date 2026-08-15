@@ -54,7 +54,7 @@ fn haversine_matches_the_munich_berlin_reference() {
 #[test]
 fn geocode_url_and_parser_are_tolerant_and_pure() {
     assert_eq!(
-        geocode_url("München & Umgebung"),
+        geocode_url("München & Umgebung", None),
         "https://nominatim.openstreetmap.org/search?q=M%C3%BCnchen%20%26%20Umgebung&format=json&limit=1&addressdetails=1"
     );
     let location =
@@ -62,7 +62,7 @@ fn geocode_url_and_parser_are_tolerant_and_pure() {
             .unwrap()
             .unwrap();
     assert_eq!(location.lat, 48.13);
-    assert_eq!(location.display_name, "Munich, Bavaria");
+    assert_eq!(location.city, "Munich");
     assert_eq!(location.country_code, None);
     assert_eq!(parse_geocode("[]").unwrap(), None);
     assert!(parse_geocode("{broken").is_err());
@@ -92,6 +92,54 @@ fn rad_5_geocode_parses_the_addressdetails_country_code_when_present() {
             .unwrap()
             .unwrap();
     assert_eq!(without_address.country_code, None);
+}
+
+#[test]
+fn conc_2_geocode_uses_the_localized_city_and_country() {
+    let location = parse_geocode(
+        r#"[{"place_id":174820104,"lat":"47.3744489","lon":"8.5410422",
+             "display_name":"Zürich (Kreis 1), Bezirk Zürich, Zürich, Schweiz",
+             "address":{"city":"Zürich","county":"Bezirk Zürich",
+                        "state":"Zürich","country":"Schweiz","country_code":"ch"}}]"#,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(location.city, "Zürich");
+    assert_eq!(location.country.as_deref(), Some("Schweiz"));
+}
+
+#[test]
+fn conc_2_geocode_prefers_town_over_village_and_municipality() {
+    let location = parse_geocode(
+        r#"[{"lat":"47.4988","lon":"8.7241","display_name":"Fallback district, Schweiz",
+             "address":{"town":"Winterthur","village":"Töss",
+                        "municipality":"Bezirk Winterthur"}}]"#,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(location.city, "Winterthur");
+}
+
+#[test]
+fn conc_2_geocode_falls_back_to_the_first_display_name_segment() {
+    let location = parse_geocode(
+        r#"[{"lat":"46.948","lon":"7.4474","display_name":"  Bern , Espace Mittelland",
+             "address":{"road":"Bundesplatz"}}]"#,
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(location.city, "Bern");
+    assert_eq!(location.country, None);
+}
+
+#[test]
+fn conc_2_geocode_url_uses_accept_language_http_syntax() {
+    assert!(geocode_url("Zürich", Some("de")).ends_with("&accept-language=de"));
+    assert!(geocode_url("Zürich", Some("zh_CN")).ends_with("&accept-language=zh-CN"));
+    assert!(!geocode_url("Zürich", None).contains("accept-language"));
 }
 
 #[test]
@@ -290,6 +338,7 @@ fn query_filters_distance_country_horizon_and_similar_rows() {
         latitude: 48.1372,
         longitude: 11.5756,
         name: "Munich".into(),
+        country: None,
         country_code: Some("DE".into()),
     });
 
@@ -321,6 +370,7 @@ fn conc_2_radius_does_not_filter_or_reduce_the_count_without_a_location() {
         latitude: 48.1372,
         longitude: 11.5756,
         name: "Munich".into(),
+        country: None,
         country_code: Some("DE".into()),
     };
     assert!(query_events(&conn, &filter, Some(&munich), today)

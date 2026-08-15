@@ -9,13 +9,14 @@ fn concerts_location_reference_copy_distinguishes_missing_and_stored_values() {
     let location = reprise_core::location::AppLocation {
         latitude: 52.52,
         longitude: 13.405,
-        name: "Berlin, DE".to_owned(),
+        name: "Berlin".to_owned(),
+        country: Some("Deutschland".to_owned()),
         country_code: Some("DE".to_owned()),
     };
     assert_eq!(
         location_reference_copy(Some(&location), 1_000),
         (
-            "Location · Berlin, DE, within 1000 km".to_owned(),
+            "Location · Berlin, Deutschland, within 1000 km".to_owned(),
             "Change in Location →".to_owned(),
         )
     );
@@ -155,11 +156,18 @@ fn set_15_concerts_location_reference_is_first_and_refreshes_on_app_broadcast() 
         .location_reference
         .property::<bool>("sensitive"));
 
-    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, DE", Some("DE")).unwrap();
+    reprise_core::location::store(
+        &conn,
+        52.52,
+        13.405,
+        reprise_core::location::LocationName::with_country("Berlin", Some("Deutschland")),
+        Some("DE"),
+    )
+    .unwrap();
     broadcast.notify();
     assert_eq!(
         preferences.inner.location_reference.title(),
-        "Location · Berlin, DE, within 1000 km"
+        "Location · Berlin, Deutschland, within 1000 km"
     );
 }
 

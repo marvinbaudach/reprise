@@ -1212,11 +1212,13 @@ result.
   and Default radius, and names every reader under Used by: Concerts, Radio's
   Near you, and Podcasts' Popular in country chart (`SRC-19`). Optional
   capability pages only link to Location; they never duplicate or own its
-  controls. Clearing Location removes only latitude, longitude, name, and
-  country code: it preserves the default radius, view filters, module choices,
-  and online-source choice. Disabling Concerts or online sources never makes
-  the stored location or radius unreadable and never suppresses the app-wide
-  location-change announcement.
+  controls. Clearing Location removes only latitude, longitude, name, country
+  name, and country code: it preserves the default radius, view filters, module
+  choices, and online-source choice. On this page, City displays
+  `{city}, {country}` and falls back to `{city}` when no country name is stored
+  (`set_15_location_name_omits_the_separator_without_a_country`). Disabling
+  Concerts or online sources never makes the stored location or radius
+  unreadable and never suppresses the app-wide location-change announcement.
 
 ## G. Feedback vocabulary
 
@@ -5119,7 +5121,13 @@ available. The player plays only finished files.
   choice; setting a location restores the exact prior visibility and sort.
   With location, the active chip reads `{city} · {radius} km` (or just the
   radius for a blank city name), Distance returns according to that stored
-  choice, and the banner disappears.
+  choice, and the banner disappears. The city comes from Nominatim's `address`
+  object in `city` → `town` → `village` → `municipality` order, falling back to
+  the first comma-delimited `display_name` segment
+  (`conc_2_geocode_uses_the_localized_city_and_country`,
+  `conc_2_geocode_falls_back_to_the_first_display_name_segment`). Reprise asks
+  Nominatim for that address in the active UI language
+  (`conc_2_geocode_url_uses_accept_language_http_syntax`).
 - **CONC-3** [replaced by CONC-13] — Double-click/Enter on a row and the
   ticket cell open the same external target: offer URL, otherwise the
   event page. Without either, the cell is empty and activation is a

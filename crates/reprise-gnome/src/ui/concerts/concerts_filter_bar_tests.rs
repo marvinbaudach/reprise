@@ -155,6 +155,7 @@ fn conc_2_filter_header_has_fixed_height_and_disabled_radius_hint() {
         latitude: 47.376,
         longitude: 8.541,
         name: "Zürich".into(),
+        country: None,
         country_code: Some("CH".into()),
     };
     bar.set_context(Some(&location), false, false);

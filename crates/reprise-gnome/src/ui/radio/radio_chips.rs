@@ -151,6 +151,7 @@ mod tests {
             latitude: 52.52,
             longitude: 13.405,
             name: "Berlin, Deutschland".into(),
+            country: None,
             country_code: country_code.map(str::to_owned),
         }
     }
