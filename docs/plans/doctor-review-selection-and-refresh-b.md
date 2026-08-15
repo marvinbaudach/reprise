@@ -2,7 +2,7 @@
 slug: doctor-review-selection-and-refresh-b
 worktree: /home/marvin/Projects/reprise-doctor-review-selection-and-refresh-b
 branch: feature/doctor-review-selection-and-refresh-b
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-08-14
 ---
@@ -622,3 +622,55 @@ read-only global advisory cache. The first aggregate display attempt became
 invalid when `/tmp` filled before the script could print its summary; the final
 unmodified script passed with its supported four-worker mode and temporary
 root on the worktree's disk.
+
+### Review round and independent re-measurement, 15.08.2026
+
+Three HIGH review findings were raised and each was verified adversarially.
+
+- *"The aggregates lost the category filter."* **Refuted.** The filter is applied
+  in `album_from_seed` (`grouping.rs:111`) before grouping, via
+  `session.category_filter_matches`, so the snapshot is the visible set — R-9's
+  premise holds. `doc_9b_the_snapshot_is_the_visible_row_set` pins it with a
+  `Some(ReviewCategory::Year)` arm and passes.
+- *"The header registry closes a strong `Rc<ReviewState>` cycle."* **Refuted.**
+  `connect_teardown` (`review_header.rs`) removes the entry, and GTK guarantees
+  `teardown` is the last signal emitted for a `ListHeader` on every destruction
+  path.
+- *"`apply_selection` splices before it updates the snapshot."* **Confirmed,
+  low severity.** Instrumented under Xvfb: toggling an interior row causes 0
+  header rebinds, toggling a section's first row causes exactly 1, and that
+  rebind did read the stale snapshot — but `push_selection` overwrote it inside
+  the same synchronous call, so no frame was ever painted wrong. Fixed anyway,
+  for consistency with `refresh()` and to drop the wasted rebind.
+
+Also fixed: the `row_id → position` map now keeps the **first** position and logs
+a collision through `tracing::error!` instead of silently overwriting in release
+builds, where a duplicate id would have written one row's content into another
+row's store slot.
+
+**The first fix cost measurable time and was re-done.** Closing the `mem::take`
+window by cloning the snapshot put a full deep copy on the selection path:
+measured 435 µs → 623 µs at 192 rows, with the `full` arm unchanged as a control.
+The window is now closed without a copy — `affected_albums` is computed after the
+assignment, reading from `self.snapshot`.
+
+Final independent measurement on this branch, this session's own runs:
+
+| Path | Median | Max |
+|---|---|---|
+| `full` (control arm, `REPRISE_DOCTOR_FULL_REFRESH=1`) | 5,264 µs | 5,470 µs |
+| `selection` | **422 µs** | 564 µs |
+
+`scripts/check-display-tests.sh`, run unmodified with `DISPLAY_TEST_JOBS=4`:
+**708 passed, 0 failed, and `matched no executing test binary` = 0.**
+
+**Open follow-up, deliberately not done here.** `review_page.rs` is at 795 of the
+800-line cap in `scripts/check-architecture.sh`. The identified extraction is
+`refresh_conflicts` + `skip_all_conflicts` (~74 lines) into `review_conflicts.rs`,
+which already owns `ReviewConflictsSlot` and `ReviewConflicts`; that lands the
+file near 715 and leaves the index-critical code untouched. The next change to
+this file trips the gate without it.
+
+**Still owed: V-4(c) and V-4(d)** — the real-library re-measurement and the
+`DOC-9b` count per arm. Both need the GUI and are the only proof that the
+2,328 ms growth and the ~65 px scroll-anchor displacement are actually gone.
