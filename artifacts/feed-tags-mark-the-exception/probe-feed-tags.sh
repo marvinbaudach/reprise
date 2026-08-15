@@ -6,6 +6,12 @@ repo_root=$(cd "$(dirname "$0")/../.." && pwd)
 artifact_dir="$repo_root/artifacts/feed-tags-mark-the-exception"
 pinned_base=b6be7cdc61
 screen_resolution=1600x900x24
+current_worktree_state=${current_worktree_state:-not-recorded}
+current_popover_unknown_tag=not-reached
+current_popover_on_sale_tag=not-reached
+current_table_all_three_ticket_values=not-reached
+control_popover_unknown_tag=not-reached
+control_popover_on_sale_tag=not-reached
 
 # shellcheck source=../../scripts/cua-common/session.sh
 source "$repo_root/scripts/cua-common/session.sh"
@@ -92,7 +98,7 @@ profile_database() {
 }
 
 initialize_profile() {
-  local arm=$1 app_binary=$2 profile_root=$3 app_pid database
+  local arm=$1 app_binary=$2 profile_root=$3 app_pid database wait_status
 
   mkdir -p "$profile_root/data" "$profile_root/cache" "$profile_root/config"
   database=$(profile_database "$profile_root")
@@ -109,7 +115,10 @@ initialize_profile() {
     REPRISE_SMOKE_QUIT=1 \
     REPRISE_SMOKE_QUIT_DELAY_SECS=4 \
     "$app_binary" >"$CUA_E2E_OUT_DIR/$arm-schema.log" 2>&1 &
-  app_pid=$!
+  APP_PID=$!
+  CUA_E2E_APP_PID=$APP_PID
+  export CUA_E2E_APP_PID
+  app_pid=$APP_PID
   for _ in $(seq 1 40); do
     [[ -f "$database" ]] && break
     kill -0 "$app_pid" 2>/dev/null || break
@@ -120,7 +129,13 @@ initialize_profile() {
     tail -n 40 "$CUA_E2E_OUT_DIR/$arm-schema.log" >&2 || true
     return 1
   fi
-  wait "$app_pid"
+  if wait "$app_pid"; then
+    wait_status=0
+  else
+    wait_status=$?
+  fi
+  stop_app
+  return "$wait_status"
 }
 
 seed_profile() {
@@ -306,8 +321,18 @@ capture_current_arm() {
   popover_snapshot=$(cua_wait_for_label "$APP_PID" "$WINDOW_ID" "B Off Sale Probe" current-popover)
   assert_snapshot_contains "$popover_snapshot" "C Unknown Probe"
   assert_snapshot_contains "$popover_snapshot" "Off sale"
-  assert_snapshot_contains "$popover_snapshot" "Unknown"
-  assert_snapshot_absent "$popover_snapshot" "On sale"
+  if assert_snapshot_contains "$popover_snapshot" "Unknown"; then
+    current_popover_unknown_tag=observed
+  else
+    current_popover_unknown_tag=not-observed
+    return 1
+  fi
+  if assert_snapshot_absent "$popover_snapshot" "On sale"; then
+    current_popover_on_sale_tag=not-observed
+  else
+    current_popover_on_sale_tag=observed
+    return 1
+  fi
   cua_driver list_windows "$(jq -nc --argjson pid "$APP_PID" '{pid: $pid}')" \
     >"$CUA_E2E_OUT_DIR/current-popover-windows.json"
   escalate_to_desktop_capture current-popover
@@ -326,9 +351,14 @@ capture_current_arm() {
   cua_click_label "$APP_PID" "$WINDOW_ID" "Updates" current-close-updates
   table_snapshot=$(cua_snapshot "$APP_PID" "$WINDOW_ID" current-table-unobscured)
   assert_snapshot_absent "$table_snapshot" "Dismiss"
-  assert_snapshot_contains "$table_snapshot" "On sale"
-  assert_snapshot_contains "$table_snapshot" "Off sale"
-  assert_snapshot_contains "$table_snapshot" "Unknown"
+  if assert_snapshot_contains "$table_snapshot" "On sale" \
+    && assert_snapshot_contains "$table_snapshot" "Off sale" \
+    && assert_snapshot_contains "$table_snapshot" "Unknown"; then
+    current_table_all_three_ticket_values=observed
+  else
+    current_table_all_three_ticket_values=not-observed
+    return 1
+  fi
   current_table_snapshot=$table_snapshot
   escalate_to_desktop_capture current-table
   cua_desktop_snapshot 02-concerts-table-tags
@@ -346,8 +376,18 @@ capture_control_arm() {
   cua_click_label "$APP_PID" "$WINDOW_ID" "Updates" control-open-updates
   popover_snapshot=$(cua_wait_for_label "$APP_PID" "$WINDOW_ID" "B Off Sale Probe" control-popover)
   assert_snapshot_contains "$popover_snapshot" "Off sale"
-  assert_snapshot_absent "$popover_snapshot" "Unknown"
-  assert_snapshot_absent "$popover_snapshot" "On sale"
+  if assert_snapshot_absent "$popover_snapshot" "Unknown"; then
+    control_popover_unknown_tag=not-observed
+  else
+    control_popover_unknown_tag=observed
+    return 1
+  fi
+  if assert_snapshot_absent "$popover_snapshot" "On sale"; then
+    control_popover_on_sale_tag=not-observed
+  else
+    control_popover_on_sale_tag=observed
+    return 1
+  fi
   escalate_to_desktop_capture control-popover
   cua_desktop_snapshot control-01-popover-pinned-base
   control_popover_snapshot=$popover_snapshot
@@ -399,9 +439,10 @@ write_manifest() {
   local manifest_path="$CUA_E2E_OUT_DIR/manifest.txt"
 
   {
-    printf 'schema_version=1\n'
+    printf 'schema_version=2\n'
     printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'current_commit=%s\n' "$current_commit"
+    printf 'current_worktree_state=%s\n' "$current_worktree_state"
     printf 'control_commit=%s\n' "$pinned_base"
     printf 'scratch_path=%s\n' "$CUA_E2E_OUT_DIR"
     printf 'display_backend=x11-xvfb\n'
@@ -418,11 +459,12 @@ write_manifest() {
     printf 'control_popover_off_sale_coordinate=%s,%s\n' \
       "$control_popover_x" "$control_popover_y"
     printf 'control_popover_off_sale_rgb=%s\n' "${control_popover_rgb// /,}"
-    printf 'current_popover_unknown_tag=present\n'
-    printf 'current_popover_on_sale_tag=absent\n'
-    printf 'current_table_all_three_ticket_values=present\n'
-    printf 'control_popover_unknown_tag=absent\n'
-    printf 'control_popover_on_sale_tag=absent\n'
+    printf 'current_popover_unknown_tag=%s\n' "$current_popover_unknown_tag"
+    printf 'current_popover_on_sale_tag=%s\n' "$current_popover_on_sale_tag"
+    printf 'current_table_all_three_ticket_values=%s\n' \
+      "$current_table_all_three_ticket_values"
+    printf 'control_popover_unknown_tag=%s\n' "$control_popover_unknown_tag"
+    printf 'control_popover_on_sale_tag=%s\n' "$control_popover_on_sale_tag"
     printf 'current_popover_image=%s/01-popover-tags.png\n' "$CUA_E2E_OUT_DIR"
     printf 'current_table_image=%s/02-concerts-table-tags.png\n' "$CUA_E2E_OUT_DIR"
     printf 'control_popover_image=%s/control-01-popover-pinned-base.png\n' \
@@ -435,21 +477,23 @@ write_blocked_manifest() {
   local manifest_path="$CUA_E2E_OUT_DIR/manifest.txt"
 
   {
-    printf 'schema_version=1\n'
+    printf 'schema_version=2\n'
     printf 'status=blocked\n'
     printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'current_commit=%s\n' "$current_commit"
+    printf 'current_worktree_state=%s\n' "$current_worktree_state"
     printf 'control_commit=%s\n' "$pinned_base"
     printf 'scratch_path=%s\n' "$CUA_E2E_OUT_DIR"
     printf 'display_backend=x11-xvfb\n'
     printf 'screen_resolution=%s\n' "$screen_resolution"
     printf 'cua_driver_version=%s\n' "$(cua-driver --version)"
     printf 'magick_version=%s\n' "$(magick --version | head -1)"
-    printf 'current_popover_unknown_tag=present\n'
-    printf 'current_popover_on_sale_tag=absent\n'
-    printf 'current_table_all_three_ticket_values=present\n'
-    printf 'control_popover_unknown_tag=absent\n'
-    printf 'control_popover_on_sale_tag=absent\n'
+    printf 'current_popover_unknown_tag=%s\n' "$current_popover_unknown_tag"
+    printf 'current_popover_on_sale_tag=%s\n' "$current_popover_on_sale_tag"
+    printf 'current_table_all_three_ticket_values=%s\n' \
+      "$current_table_all_three_ticket_values"
+    printf 'control_popover_unknown_tag=%s\n' "$control_popover_unknown_tag"
+    printf 'control_popover_on_sale_tag=%s\n' "$control_popover_on_sale_tag"
     printf 'current_popover_image=%s/01-popover-tags.png\n' "$CUA_E2E_OUT_DIR"
     printf 'current_table_image=%s/02-concerts-table-tags.png\n' "$CUA_E2E_OUT_DIR"
     printf 'control_popover_image=%s/control-01-popover-pinned-base.png\n' \
@@ -491,6 +535,7 @@ run_private_session() {
 
 if [[ "${1:-}" == "--private-session" ]]; then
   shift
+  pinned_base=$(git -C "$repo_root" rev-parse --verify "$pinned_base^{commit}")
   run_private_session "$@"
   exit 0
 fi
@@ -507,7 +552,16 @@ for required_executable in /usr/lib/at-spi-bus-launcher /usr/lib/at-spi2-registr
 done
 
 current_commit=$(git -C "$repo_root" rev-parse HEAD)
-git -C "$repo_root" cat-file -e "$pinned_base^{commit}"
+pinned_base=$(git -C "$repo_root" rev-parse --verify "$pinned_base^{commit}")
+if [[ -n "${REPRISE_FEED_TAGS_CONTROL_BINARY:-}" ]]; then
+  echo "REPRISE_FEED_TAGS_CONTROL_BINARY is unsupported because its provenance cannot be verified" >&2
+  exit 2
+fi
+if [[ -n $(git -C "$repo_root" status --porcelain) ]]; then
+  current_worktree_state=dirty
+else
+  current_worktree_state=clean
+fi
 cargo build -p reprise-gnome
 current_binary="$repo_root/target/debug/reprise"
 
@@ -524,24 +578,16 @@ private_runtime="$repo_root/target/rt-$run_id"
 mkdir -p "$output_dir"
 control_source=""
 control_target=""
-if [[ -n "${REPRISE_FEED_TAGS_CONTROL_BINARY:-}" ]]; then
-  control_binary=$REPRISE_FEED_TAGS_CONTROL_BINARY
-  if [[ ! -x "$control_binary" ]]; then
-    echo "the supplied pinned control binary is not executable: $control_binary" >&2
-    exit 2
-  fi
-else
-  control_source="$scratch_root/control-source"
-  control_target="$scratch_root/control-target"
-  mkdir -p "$control_source"
-  git -C "$repo_root" archive "$pinned_base" | tar -x -C "$control_source"
-  (
-    cd "$control_source"
-    REPRISE_GIT_SHA="$pinned_base" CARGO_TARGET_DIR="$control_target" \
-      cargo build -p reprise-gnome
-  )
-  control_binary="$control_target/debug/reprise"
-fi
+control_source="$scratch_root/control-source"
+control_target="$scratch_root/control-target"
+mkdir -p "$control_source"
+git -C "$repo_root" archive "$pinned_base" | tar -x -C "$control_source"
+(
+  cd "$control_source"
+  REPRISE_GIT_SHA="$pinned_base" CARGO_TARGET_DIR="$control_target" \
+    cargo build -p reprise-gnome
+)
+control_binary="$control_target/debug/reprise"
 
 outer_cleanup() {
   local exit_code=$?
@@ -575,7 +621,7 @@ cua_common_exec_private \
   CUA_E2E_SESSION="$CUA_E2E_SESSION" \
   CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
   current_commit="$current_commit" \
-  pinned_base="$pinned_base" \
+  current_worktree_state="$current_worktree_state" \
   screen_resolution="$screen_resolution" \
   run_id="$run_id" \
   "$0" --private-session "$current_binary" "$control_binary"
