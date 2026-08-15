@@ -2,7 +2,7 @@
 slug: doctor-review-search
 worktree: /home/marvin/Projects/reprise-doctor-review-search
 branch: feature/doctor-review-search
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-15
 ---
