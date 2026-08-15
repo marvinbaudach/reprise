@@ -312,12 +312,17 @@ fn bind_album_header(
     snapshot: &Rc<RefCell<ReviewSnapshot>>,
     registry: &AlbumHeaderRegistry,
 ) {
+    // Not an anomaly: GTK rebinds a recycled `ListHeader` before it has assigned
+    // the section range, so `start`/`end` are both `INVALID_LIST_POSITION` for a
+    // moment during ordinary scrolling. Measured on the real library, this fired
+    // 66 times in one session — at `warn!` it buried the two genuinely unexpected
+    // cases below, which is the opposite of what a warning is for.
     if header.start() == gtk4::INVALID_LIST_POSITION || header.end() == gtk4::INVALID_LIST_POSITION
     {
-        tracing::warn!(
+        tracing::debug!(
             start = header.start(),
             end = header.end(),
-            "DOC-9b kept the last known header while its section row was unavailable"
+            "DOC-9b kept the last known header while its section range was unassigned"
         );
         return;
     }

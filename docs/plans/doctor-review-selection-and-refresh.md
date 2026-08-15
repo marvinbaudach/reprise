@@ -4,7 +4,7 @@ strands: a,b
 merge_order: a,b
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
@@ -1066,6 +1066,36 @@ Each of these needs a file or a channel the strand that caused it does not own.
    and B's `review_snapshot.rs` still agree on what "the visible row set" means —
    §F-3's test is the mechanised half; the DOC-3c wording is the other half and
    has to be read once with both diffs in hand.
+
+### J. Result — all nine done, 15.08.2026
+
+1–2 were run when A landed (#478). 3–9 were run against the merged `dev`
+(`21a32c5fc3`, B as #505), in a worktree cut from that commit:
+
+| # | Evidence |
+|---|---|
+| 3 | `…review_page::tests::doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check` — `running 1 test`, ok |
+| 4 | `…review_row::contract_tests::doc_9b_a_stale_row_names_its_reason_where_the_click_happens` — `running 1 test`, ok |
+| 5 | `…review_page::tests::doc_9b_activating_an_unselectable_row_selects_nothing` — `running 1 test`, ok |
+| 6 | Both §E-4 `include_str!` tests are plain `#[test]` and ran inside the suite: **1874 passed, 0 failed, 716 ignored** |
+| 7 | `scripts/check-architecture.sh` — passed; `review_page.rs` was at 795 of 800 |
+| 8 | §F-4(c)/(d) were measured on the identical tree before the merge and are recorded in `-b.md`: median 248 → 13.6 ms, twelve toggles monotonic → flat, `DOC-9b` 356 → 66 |
+| 9 | Read with both diffs in hand — see below |
+
+**On 3–5, the balance sheet is not the evidence.** The first attempt passed the
+bare function name to `cargo test … --exact`, which matches nothing: each run
+reported `0 passed; 2590 filtered out`, `ok`, and exit 0. Only the full test
+path executes anything. Every row above was confirmed by `running 1 test`.
+
+**On 9:** they agree, and the check is not vacuous. `ReviewSnapshot::from_rows`
+is fed exactly `grouped_rows_for(…)` (`review_page.rs:85`) — the visible,
+category-filtered set that is also what gets spliced into the store, which is
+what DOC-3c's "mirrors the visible selection" requires. The one thing that
+looked wrong is not: `AlbumCounts::changes` counts `row_ids`, `ReviewTotals::changes`
+counts `selectable_row_ids`. Two meanings under one field name, but each matches
+its consumer's pre-B computation exactly — the album header summed `row_ids`
+(dev `review_header.rs:237`) and the filter bar summed `selectable_row_ids`
+(dev `review_page.rs:337`).
 
 ---
 
