@@ -35,6 +35,35 @@ class SettingsContentTest {
     }
 
     @Test
+    fun equalizerPresetsAreSelectableOnTheAudioRoute() {
+        val flat = listOf(
+            EqualizerCurvePoint(29.0, 0.0),
+            EqualizerCurvePoint(15_011.0, 0.0),
+        )
+        val rock = listOf(
+            EqualizerCurvePoint(29.0, 4.0),
+            EqualizerCurvePoint(15_011.0, 4.0),
+        )
+        val replacements = mutableListOf<List<EqualizerCurvePoint>>()
+        showSettings(
+            equalizerBands = emptyList(),
+            equalizerCurve = flat,
+            equalizerPresets = listOf(
+                EqualizerPresetUi("Flat", flat),
+                EqualizerPresetUi("Rock", rock),
+            ),
+            onReplaceEqualizerCurve = { replacements += it },
+        )
+
+        compose.onNodeWithContentDescription("Open Audio").performClick()
+        compose.onNodeWithText("Flat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Choose equalizer preset").performClick()
+        compose.onNodeWithText("Rock").performClick()
+
+        assertEquals(listOf(rock), replacements)
+    }
+
+    @Test
     fun appearanceKeepsTheStoredThemeAndMaterialYouChoiceTogether() {
         showSettings(dynamicAvailable = true)
 
@@ -100,6 +129,13 @@ class SettingsContentTest {
         folderName: String? = "Music",
         onClose: () -> Unit = {},
         onRescan: () -> Unit = {},
+        equalizerBands: List<EqualizerBandUi> = listOf(
+            EqualizerBandUi(125.0, -2.0, -12.0, 12.0),
+            EqualizerBandUi(1_000.0, 1.0, -12.0, 12.0),
+        ),
+        equalizerCurve: List<EqualizerCurvePoint> = emptyList(),
+        equalizerPresets: List<EqualizerPresetUi> = emptyList(),
+        onReplaceEqualizerCurve: (List<EqualizerCurvePoint>) -> Unit = {},
     ) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
@@ -112,10 +148,9 @@ class SettingsContentTest {
                     state = PlaybackSettingsUiState(
                         equalizerEnabled = true,
                         gaplessEnabled = true,
-                        equalizerBands = listOf(
-                            EqualizerBandUi(125.0, -2.0, -12.0, 12.0),
-                            EqualizerBandUi(1_000.0, 1.0, -12.0, 12.0),
-                        ),
+                        equalizerBands = equalizerBands,
+                        equalizerCurve = equalizerCurve,
+                        equalizerPresets = equalizerPresets,
                     ),
                     titleCount = 1_824,
                     albumCount = 143,
@@ -126,7 +161,7 @@ class SettingsContentTest {
                     chooseFolder = {},
                     rescan = onRescan,
                     setEqualizerEnabled = {},
-                    replaceEqualizerCurve = {},
+                    replaceEqualizerCurve = onReplaceEqualizerCurve,
                     setGaplessEnabled = {},
                     selectTheme = {},
                 )

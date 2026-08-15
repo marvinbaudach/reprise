@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -40,6 +42,11 @@ internal data class EqualizerBandUi(
     val maximumGainDb: Double,
 )
 
+internal data class EqualizerPresetUi(
+    val name: String,
+    val curve: List<EqualizerCurvePoint>,
+)
+
 /**
  * Why there are no bands to show. Read only when the list is empty — the screen
  * must not name a cause it does not know, and "start playback" is false while a
@@ -59,6 +66,8 @@ internal data class PlaybackSettingsUiState(
     val equalizerBands: List<EqualizerBandUi>,
     val equalizerBandsAbsence: EqualizerBandsAbsence = EqualizerBandsAbsence.NO_PLAYBACK_YET,
     val error: String? = null,
+    val equalizerCurve: List<EqualizerCurvePoint> = emptyList(),
+    val equalizerPresets: List<EqualizerPresetUi> = emptyList(),
 )
 
 /**
@@ -130,6 +139,17 @@ internal fun PlaybackSettingsScreen(
                     checked = state.equalizerEnabled,
                     onCheckedChange = setEqualizerEnabled,
                 )
+            }
+            if (state.equalizerPresets.isNotEmpty()) {
+                item {
+                    EqualizerPresetPicker(
+                        presets = state.equalizerPresets,
+                        selected = state.equalizerPresets.firstOrNull { preset ->
+                            preset.curve == state.equalizerCurve
+                        },
+                        select = { preset -> replaceEqualizerCurve(preset.curve) },
+                    )
+                }
             }
             if (bands.isEmpty()) {
                 item {
@@ -206,6 +226,42 @@ internal fun PlaybackSettingsScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun EqualizerPresetPicker(
+    presets: List<EqualizerPresetUi>,
+    selected: EqualizerPresetUi?,
+    select: (EqualizerPresetUi) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column {
+        Text("Preset", style = MaterialTheme.typography.bodyLarge)
+        androidx.compose.foundation.layout.Box {
+            Button(
+                onClick = { expanded = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "Choose equalizer preset" },
+            ) {
+                Text(selected?.name ?: "Custom")
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                presets.forEach { preset ->
+                    DropdownMenuItem(
+                        text = { Text(preset.name) },
+                        onClick = {
+                            expanded = false
+                            select(preset)
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
