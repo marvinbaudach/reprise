@@ -4703,7 +4703,10 @@ means deterministic and high-confidence, never „without review".
   inventory, and both come out of one selection state, so they can never
   disagree with each other. Filtered and everything selected, all three name the
   same number; unchecking makes the footer and the button fall below the header,
-  which is what unchecking means. *Tests:*
+  which is what unchecking means. If an active search or category filter leaves
+  no visible rows, the page uses a neutral nothing-matches state that names the
+  active filters and offers to clear them; the success state appears only when
+  no filter is active. *Tests:*
   `doc_9d_the_filter_scope_line_names_shown_total_and_filter`,
   `doc_9d_a_filtered_apply_writes_only_the_filtered_set`,
   `doc_9d_all_and_none_operate_on_the_filtered_set`,
@@ -4795,14 +4798,16 @@ means deterministic and high-confidence, never „without review".
   it, and the footer states the scope. A row the query hides keeps its
   selection and stays out of the plan until the query is removed, exactly as
   under a category filter; there is no extra confirmation and no search-only
-  label. A query with no matches shows its own state, naming the query and the
-  number of fixes it is hiding and offering to clear it — never the
-  nothing-to-review success page. Leaving Review drops the query, entry and
-  chip in one step, as a section switch does (SEARCH-8a).
+  label. A query, category, or both with no matches shows a neutral filtered
+  state, naming every active filter and the number of fixes it is hiding and
+  offering to clear the filters — never the nothing-to-review success page.
+  Leaving Review drops the query, entry and chip in one step, as a section
+  switch does (SEARCH-8a).
   *Tests:* `doc_12a_the_review_search_matches_track_album_and_artist`,
   `doc_12a_search_and_category_compose_as_an_intersection`,
   `doc_12a_apply_writes_only_the_searched_set`,
   `doc_12a_a_query_with_no_matches_shows_its_own_state`,
+  `doc_12a_a_category_with_no_matches_shows_its_own_state`,
   `doc_12a_leaving_review_drops_the_scope_and_the_query`.
 ## Z. Single-pane track browser
 

@@ -195,6 +195,68 @@ fn doc_12a_a_query_with_no_matches_shows_its_own_state() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_a_category_with_no_matches_shows_its_own_state() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+    let window = adw::ApplicationWindow::builder()
+        .content(page.navigation_page())
+        .build();
+    let clear_all = gtk4::gio::SimpleAction::new("clear-all-filters", None);
+    let weak_page = Rc::downgrade(&page);
+    clear_all.connect_activate(move |_, _| {
+        if let Some(page) = weak_page.upgrade() {
+            page.clear_all_filters();
+        }
+    });
+    window.add_action(&clear_all);
+    page.state
+        .category
+        .set(Some(super::super::review_model::ReviewCategory::Year));
+    page.state.session.borrow_mut().set_category_filter(Some(
+        super::super::review_model::ReviewCategory::Year.problem_classes(),
+    ));
+    page.state.filter.changed(gtk4::FilterChange::Different);
+    page.state.set_content_child();
+
+    assert_eq!(page.state.sorted.n_items(), 0);
+    assert_eq!(
+        page.state.content.visible_child_name().as_deref(),
+        Some("no-match")
+    );
+    let no_match = page
+        .state
+        .content
+        .child_by_name("no-match")
+        .and_downcast::<adw::StatusPage>()
+        .unwrap();
+    assert_eq!(
+        no_match.icon_name().as_deref(),
+        Some("system-search-symbolic")
+    );
+    assert_eq!(no_match.title(), "No matches in Year");
+    assert_eq!(
+        no_match.description().as_deref(),
+        Some("3 fixes are hidden by the Year filter.")
+    );
+    let clear = no_match.child().and_downcast::<gtk4::Button>().unwrap();
+    assert_eq!(clear.label().as_deref(), Some("Clear Filters"));
+    assert_eq!(
+        clear.action_name().as_deref(),
+        Some("win.clear-all-filters")
+    );
+    clear.emit_clicked();
+
+    assert_eq!(page.state.category.get(), None);
+    assert_eq!(page.state.sorted.n_items(), 3);
+    assert_eq!(
+        page.state.content.visible_child_name().as_deref(),
+        Some("rows")
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn doc_12a_clearing_the_query_restores_every_row() {
     let _guard = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

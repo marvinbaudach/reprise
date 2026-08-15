@@ -11,8 +11,9 @@ pub(super) fn no_match_page(on_clear: Rc<dyn Fn()>) -> adw::StatusPage {
         .build();
     let clear = gtk4::Button::builder()
         .label(crate::ui::strings::text(
-            crate::ui::strings::DOCTOR_CLEAR_SEARCH,
+            crate::ui::strings::DOCTOR_CLEAR_FILTERS,
         ))
+        .action_name("win.clear-all-filters")
         .css_classes(["pill"])
         .halign(gtk4::Align::Center)
         .build();
@@ -60,30 +61,44 @@ impl super::ReviewState {
     }
 
     pub(super) fn set_content_child(&self) {
+        let query = self.query.borrow().clone();
+        let category = self.category.get();
         let name = if self.sorted.n_items() > 0 {
             "rows"
-        } else if self.query.borrow().is_empty() {
-            "empty"
-        } else {
+        } else if !query.is_empty() || category.is_some() {
             "no-match"
+        } else {
+            "empty"
         };
-        if !self.query.borrow().is_empty() {
-            let query = self.query.borrow().clone();
-            let hidden = {
-                let snapshot = self.snapshot.borrow();
-                snapshot
-                    .unfiltered_changes
-                    .saturating_sub(snapshot.totals.changes)
-            };
+        if name == "no-match" {
+            let hidden = self.snapshot.borrow().unfiltered_changes;
             if let Some(page) = self
                 .content
                 .child_by_name("no-match")
                 .and_downcast::<adw::StatusPage>()
             {
-                page.set_title(&crate::ui::strings::doctor_no_match_title(&query));
-                page.set_description(Some(&crate::ui::strings::doctor_no_match_description(
-                    hidden,
-                )));
+                let category = category.map(|category| crate::ui::strings::text(category.label()));
+                let (title, description) = match (query.is_empty(), category.as_deref()) {
+                    (false, Some(category)) => (
+                        crate::ui::strings::doctor_query_and_category_no_match_title(
+                            &query, category,
+                        ),
+                        crate::ui::strings::doctor_query_and_category_no_match_description(
+                            hidden, &query, category,
+                        ),
+                    ),
+                    (false, None) => (
+                        crate::ui::strings::doctor_no_match_title(&query),
+                        crate::ui::strings::doctor_no_match_description(hidden),
+                    ),
+                    (true, Some(category)) => (
+                        crate::ui::strings::doctor_category_no_match_title(category),
+                        crate::ui::strings::doctor_category_no_match_description(hidden, category),
+                    ),
+                    (true, None) => unreachable!("the no-match page requires an active filter"),
+                };
+                page.set_title(&title);
+                page.set_description(Some(&description));
             }
         }
         self.content.set_visible_child_name(name);
