@@ -1,7 +1,9 @@
 use super::*;
-use reprise_core::online_sources::WizardSourceSelection;
+use reprise_core::modules;
+use reprise_core::online_sources::{self, WizardSourceSelection};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, OnceLock};
 
 #[test]
 fn incomplete_fresh_install_shows_the_wizard() {
@@ -161,4 +163,257 @@ fn skipping_with_a_chosen_folder_scans_it_and_keeps_the_gate_shut() {
 
     assert_eq!(scanned.borrow().as_slice(), [PathBuf::from("/music")]);
     assert!(!reprise_core::online_sources::is_enabled(&db).unwrap());
+}
+
+fn direct_preferences_groups(root: &gtk4::Box) -> Vec<adw::PreferencesGroup> {
+    let mut groups = Vec::new();
+    let mut child = root.first_child();
+    while let Some(current) = child {
+        if let Ok(group) = current.clone().downcast::<adw::PreferencesGroup>() {
+            groups.push(group);
+        }
+        child = current.next_sibling();
+    }
+    groups
+}
+
+fn descendant_switch_rows(widget: &gtk4::Widget) -> Vec<adw::SwitchRow> {
+    let mut rows = widget
+        .clone()
+        .downcast::<adw::SwitchRow>()
+        .ok()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        rows.extend(descendant_switch_rows(&current));
+        child = current.next_sibling();
+    }
+    rows
+}
+
+#[derive(Clone, Copy)]
+enum Net4aCase {
+    DefaultWizard,
+    StoredSources,
+}
+
+fn run_net_4a_case(case: Net4aCase) {
+    type GtkCase = (Net4aCase, mpsc::Sender<std::thread::Result<()>>);
+    static GTK_THREAD: OnceLock<mpsc::Sender<GtkCase>> = OnceLock::new();
+    let sender = GTK_THREAD.get_or_init(|| {
+        let (sender, receiver) = mpsc::channel::<GtkCase>();
+        std::thread::spawn(move || {
+            let _main_context = crate::ui::test_main_context::lock_main_context();
+            let gtk_ready = gtk4::init().is_ok();
+            while let Ok((case, reply)) = receiver.recv() {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if !gtk_ready {
+                        return;
+                    }
+                    match case {
+                        Net4aCase::DefaultWizard => assert_default_wizard_tree(),
+                        Net4aCase::StoredSources => assert_stored_source_tree(),
+                    }
+                }));
+                let _ = reply.send(result);
+            }
+        });
+        sender
+    });
+    let (reply, result) = mpsc::channel();
+    sender
+        .send((case, reply))
+        .expect("GTK test thread is alive");
+    match result.recv().expect("GTK test thread returned a result") {
+        Ok(()) => {}
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_4a_the_wizard_asks_folder_import_and_sources_in_one_dialog() {
+    run_net_4a_case(Net4aCase::DefaultWizard);
+}
+
+fn assert_default_wizard_tree() {
+    let widgets = build_wizard_content(
+        None,
+        Some(Path::new("/home/test/Music")),
+        Path::new("/home/test"),
+        Some(false),
+        WizardSourceSelection::from_first_enable_defaults(),
+    );
+    let groups = direct_preferences_groups(&widgets.root);
+    assert_eq!(
+        groups
+            .iter()
+            .map(adw::PreferencesGroup::title)
+            .collect::<Vec<_>>(),
+        [
+            strings::text(strings::ONBOARDING_GROUP_LIBRARY_FOLDER),
+            strings::text(strings::ONBOARDING_GROUP_IMPORT),
+            strings::text(strings::PREFERENCES_ONLINE_SOURCES),
+        ]
+    );
+
+    let source_rows = descendant_switch_rows(widgets.sources.group.upcast_ref());
+    assert_eq!(source_rows.len(), 3);
+    for (row, title, subtitle, active) in [
+        (
+            &source_rows[0],
+            strings::ONLINE_SOURCES_USE_RADIO,
+            strings::ONLINE_SOURCES_RADIO_SUBTITLE,
+            true,
+        ),
+        (
+            &source_rows[1],
+            strings::ONLINE_SOURCES_USE_PODCASTS,
+            strings::ONLINE_SOURCES_PODCASTS_SUBTITLE,
+            false,
+        ),
+        (
+            &source_rows[2],
+            strings::ONLINE_SOURCES_USE_YOUTUBE,
+            strings::ONLINE_SOURCES_YOUTUBE_SUBTITLE,
+            false,
+        ),
+    ] {
+        assert_eq!(row.title(), strings::text(title));
+        assert_eq!(
+            row.subtitle().as_deref(),
+            Some(strings::text(subtitle).as_str())
+        );
+        assert_eq!(row.is_active(), active);
+        assert!(!row.uses_markup());
+    }
+
+    let rhythmbox = widgets.rhythmbox.expect("Rhythmbox group is present");
+    assert!(!rhythmbox.import_data.is_active());
+    let library = widgets.library.expect("Library folder group is present");
+    assert_eq!(
+        library.row.title(),
+        strings::text(strings::NO_LIBRARY_FOLDER)
+    );
+    assert_eq!(
+        library.choose.label().as_deref(),
+        Some(strings::text(strings::CHOOSE_FOLDER).as_str())
+    );
+    assert_eq!(
+        widgets.sources.footer.label(),
+        strings::text(strings::ONBOARDING_ONLINE_SOURCES_FOOTER)
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_4a_an_open_gate_makes_the_wizard_show_the_stored_sources() {
+    run_net_4a_case(Net4aCase::StoredSources);
+}
+
+fn assert_stored_source_tree() {
+    let db = Db::open_in_memory().unwrap();
+    online_sources::set_enabled(&db, true).unwrap();
+    modules::set_enabled(&db, &modules::RADIO_MODULE, false).unwrap();
+    modules::set_enabled(&db, &modules::PODCASTS_MODULE, true).unwrap();
+    let selection = WizardSourceSelection::current_or_first_enable_defaults(&db).unwrap();
+    let sources = crate::ui::first_run_sources::build_source_group(selection);
+    let rows = descendant_switch_rows(sources.group.upcast_ref());
+
+    assert_eq!(rows.len(), 3);
+    assert_eq!(
+        rows[0].title(),
+        strings::text(strings::ONLINE_SOURCES_USE_RADIO)
+    );
+    assert!(!rows[0].is_active());
+    assert_eq!(
+        rows[1].title(),
+        strings::text(strings::ONLINE_SOURCES_USE_PODCASTS)
+    );
+    assert!(rows[1].is_active());
+    assert_eq!(
+        rows[2].title(),
+        strings::text(strings::ONLINE_SOURCES_USE_YOUTUBE)
+    );
+    assert!(!rows[2].is_active());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn library_folder_block_is_absent_when_a_root_is_already_set() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+
+    let widgets = build_wizard_content(
+        Some("/music"),
+        None,
+        Path::new("/home/test"),
+        Some(false),
+        WizardSourceSelection::from_first_enable_defaults(),
+    );
+    assert!(widgets.library.is_none());
+    assert!(direct_preferences_groups(&widgets.root)
+        .iter()
+        .all(|group| group.title() != strings::text(strings::ONBOARDING_GROUP_LIBRARY_FOLDER)));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rhythmbox_block_is_absent_when_no_import_is_found() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+
+    let offer = rhythmbox_offer(FirstRunDecision::ShowWizard, false);
+    assert_eq!(offer, None);
+    let widgets = build_wizard_content(
+        None,
+        None,
+        Path::new("/home/test"),
+        offer,
+        WizardSourceSelection::from_first_enable_defaults(),
+    );
+    assert!(widgets.rhythmbox.is_none());
+    assert!(direct_preferences_groups(&widgets.root)
+        .iter()
+        .all(|group| group.title() != strings::text(strings::ONBOARDING_GROUP_IMPORT)));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn existing_library_keeps_the_online_discovery_banner() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+
+    let db = Rc::new(Db::open_in_memory().unwrap());
+    settings::set_library_root(&db, "/music").unwrap();
+    assert_eq!(initial_decision(&db), FirstRunDecision::ExistingLibrary);
+    assert!(settings::get_onboarding_completed(&db).unwrap());
+    assert!(!settings::get_online_discovery_banner_completed(&db).unwrap());
+    assert!(crate::ui::online_discovery_banner::build(&db, || {}).is_some());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn chosen_folder_row_matches_the_preferences_folder_pattern() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+
+    let widgets = build_library_folder_group(None, None, Path::new("/home/test"))
+        .expect("fresh install gets a folder group");
+    show_chosen_folder(&widgets.row, &widgets.choose, Path::new("/srv/Music"));
+    assert_eq!(widgets.row.title(), strings::text(strings::LIBRARY_FOLDER));
+    assert_eq!(widgets.row.subtitle().as_deref(), Some("/srv/Music"));
+    assert_eq!(
+        widgets.choose.label().as_deref(),
+        Some(strings::text(strings::ONBOARDING_CHANGE_FOLDER).as_str())
+    );
 }

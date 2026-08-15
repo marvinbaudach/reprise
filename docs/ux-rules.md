@@ -2712,7 +2712,20 @@ property is set and yet nothing happens.
   Once dismissed or acted on it never appears again; it is never shown when
   the global gate is already on, and is never a modal or a toast. The
   permanent path is Preferences → Plugins. On the first enable the master
-  turns on and every source remains off except Radio.
+  turns on and every source remains off except Radio. This banner is the path
+  for an *existing* installation; a fresh install is asked once by the
+  first-run wizard of `NET-4a` and never sees the banner. "Never a modal"
+  constrains this banner, not that wizard.
+- **NET-4a** [active] [gtk] — On a fresh install the first-run wizard asks
+  the online-sources question once, in the same dialog as the music folder
+  and the Rhythmbox import: with the gate still shut it opens on the
+  first-enable defaults — Radio preselected, Podcasts and YouTube off — and
+  with the gate already open it opens on the stored module states instead,
+  so a choice made in Preferences is displayed, never overwritten. Both
+  exits — "Skip for Now" and "Set Up Library" — close the discovery banner
+  of `NET-4`, so the question is never asked twice. No source chosen leaves
+  the gate shut and writes no module. An existing library never sees the
+  wizard and keeps the banner.
 - **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
   gate is open and the device is online immediately starts exactly one fresh
   cover pass through the same Preferences transition used by Plugins and the
