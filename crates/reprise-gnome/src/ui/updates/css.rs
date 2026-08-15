@@ -103,6 +103,16 @@ pub(in crate::ui) fn css() -> String {
         color: @reprise_secondary_fg_color;\
         background-color: transparent;\
     }\
+    .updates-tag.updates-tag-neutral-filled {\
+        border: 1px solid alpha(@window_fg_color, 0.20);\
+        color: @reprise_secondary_fg_color;\
+        background-color: alpha(@window_fg_color, 0.08);\
+    }\
+    .updates-tag.updates-tag-quiet {\
+        border: 1px solid alpha(@window_fg_color, 0.12);\
+        color: @reprise_hint_fg_color;\
+        background-color: transparent;\
+    }\
     .new-release-meta {\
         font-size: 13px;\
         color: @reprise_secondary_fg_color;\
@@ -173,6 +183,8 @@ mod tests {
             ".updates-tag",
             ".updates-tag.updates-tag-accent",
             ".updates-tag.updates-tag-neutral",
+            ".updates-tag.updates-tag-neutral-filled",
+            ".updates-tag.updates-tag-quiet",
             ".new-release-meta",
             ".new-release-separator",
             ".new-release-activation",
@@ -220,6 +232,7 @@ mod tests {
                 ".updates-tag.updates-tag-neutral",
                 "@reprise_secondary_fg_color",
             ),
+            (".updates-tag.updates-tag-quiet", "@reprise_hint_fg_color"),
         ] {
             let rules = rules_for(&css, selector);
             assert!(
@@ -232,6 +245,8 @@ mod tests {
                 "{selector} locally mixes its foreground"
             );
         }
+        // The neutral-filled tone is excluded because its table-matching
+        // background contains the foreground substring this guard rejects.
     }
 
     #[test]

@@ -2568,6 +2568,20 @@ the panel).
   `nr_21a_going_offline_writing_path_preserves_a_provider_failure`
   (`ui/releases/releases_failure_ui.rs`).
 
+- **NR-39** [active] [gtk] — In the popover a status tag marks the exception,
+  not the state. A concert row carries a ticket tag only when its availability
+  is `Off sale` or `Unknown`; `On sale` is the expectation for a freshly
+  announced show and carries none. The Concerts table is the comparison
+  surface and keeps naming all three values in its Tickets cell (CONC-13), so
+  no column reads as a missing value. Where both surfaces show a tag they show
+  the same word and the same pill: the popover's ticket tones are declared
+  exactly as the table's `on-sale`, `off-sale` and `unknown` classes are. The
+  Releases chip keeps its own outlined tone and is untouched by this. CONC-12
+  remains the only source of the values, and the tag carries no tooltip of its
+  own, so the row keeps naming its source per NR-38.
+  Test: `nr_39_the_feed_tags_only_the_exception`
+  (`ui/updates/concerts_section.rs`, `#[cfg(test)]`).
+
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
