@@ -32,6 +32,7 @@ const SEARCH_FIELDS_RADIO: &str = N_!("station names");
 const SEARCH_FIELDS_RELEASES: &str = N_!("title and artist");
 const SEARCH_FIELDS_CONCERTS: &str = N_!("artist and venue");
 const SEARCH_FIELDS_MISSING: &str = N_!("file paths");
+const SEARCH_FIELDS_DOCTOR_REVIEW: &str = N_!("track, album and artist");
 const NOTHING_TO_FILTER: &str = N_!("Nothing to filter in {section}");
 const REMOVE_SEARCH_LABEL: &str = N_!("Remove search: {query}");
 const LEAVE_PLACE_LABEL: &str = N_!("Leave {place}");
@@ -83,6 +84,7 @@ fn search_fields(scope: SearchScope) -> &'static str {
         SearchScope::Releases => SEARCH_FIELDS_RELEASES,
         SearchScope::Concerts => SEARCH_FIELDS_CONCERTS,
         SearchScope::Missing => SEARCH_FIELDS_MISSING,
+        SearchScope::DoctorReview => SEARCH_FIELDS_DOCTOR_REVIEW,
         SearchScope::Unsupported => SEARCH_FIELDS_ANY_FIELD,
     }
 }

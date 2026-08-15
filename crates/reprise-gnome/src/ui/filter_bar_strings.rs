@@ -120,6 +120,10 @@ mod tests {
             (SearchScope::Releases, "⌕ “wer” in title and artist"),
             (SearchScope::Concerts, "⌕ “wer” in artist and venue"),
             (SearchScope::Missing, "⌕ “wer” in file paths"),
+            (
+                SearchScope::DoctorReview,
+                "⌕ “wer” in track, album and artist",
+            ),
         ];
 
         for (scope, expected) in cases {
@@ -143,6 +147,10 @@ mod tests {
             (SearchScope::Releases, "Searches title and artist"),
             (SearchScope::Concerts, "Searches artist and venue"),
             (SearchScope::Missing, "Searches file paths"),
+            (
+                SearchScope::DoctorReview,
+                "Searches track, album and artist",
+            ),
             (SearchScope::Unsupported, "Searches any field"),
         ];
 
