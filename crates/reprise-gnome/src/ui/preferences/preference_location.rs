@@ -27,6 +27,7 @@ enum LocationDecision {
         latitude: f64,
         longitude: f64,
         name: String,
+        country: Option<String>,
         country_code: Option<String>,
     },
     Error(String),
@@ -40,6 +41,7 @@ fn geocode_decision(
             latitude: location.lat,
             longitude: location.lon,
             name: location.city,
+            country: location.country,
             country_code: location.country_code,
         },
         Ok(None) | Err(_) => LocationDecision::Error(strings::text(strings::LOCATION_NOT_FOUND)),
@@ -54,6 +56,7 @@ fn portal_decision(
             latitude: location.latitude,
             longitude: location.longitude,
             name: strings::text(strings::LOCATION_CURRENT_LOCATION),
+            country: None,
             // The portal returns coordinates only. O-4 forbids a separate
             // reverse-geocoding request, so this stays honestly countryless.
             country_code: None,
@@ -202,7 +205,9 @@ fn city_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ActionRow 
         .subtitle(
             stored
                 .as_ref()
-                .map_or_else(strings::location_not_set, |location| location.name.clone()),
+                .map_or_else(strings::location_not_set, |location| {
+                    strings::concerts_location_name(&location.name, location.country.as_deref())
+                }),
         )
         .build();
     // a11y-semantics: role=row name=city state=location-summary action=focus/edit
@@ -239,14 +244,18 @@ fn city_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ActionRow 
             let initial = reprise_core::location::app_location(&conn)
                 .ok()
                 .flatten()
-                .map_or_else(String::new, |location| location.name);
+                .map_or_else(String::new, |location| {
+                    strings::concerts_location_name(&location.name, location.country.as_deref())
+                });
             let conn = conn.clone();
             let broadcast = broadcast.clone();
             let city = city.clone();
             present_city_editor(button.upcast_ref(), &initial, move |query| {
+                let language =
+                    crate::i18n::active_gui_language().map(|language| language.replace('_', "-"));
                 let receiver = one_shot_task::spawn("reprise-geocode", move || {
                     geocode_decision(
-                        reprise_core::concerts::geocode(&query, None)
+                        reprise_core::concerts::geocode(&query, language.as_deref())
                             .map_err(|error| error.to_string()),
                     )
                 });
@@ -380,16 +389,17 @@ fn apply_location(
             latitude,
             longitude,
             name,
+            country,
             country_code,
         } => match reprise_core::location::store(
             conn,
             latitude,
             longitude,
-            &name,
+            reprise_core::location::LocationName::with_country(&name, country.as_deref()),
             country_code.as_deref(),
         ) {
             Ok(()) => {
-                city.set_subtitle(&name);
+                city.set_subtitle(&strings::concerts_location_name(&name, country.as_deref()));
                 broadcast.notify();
             }
             Err(error) => tracing::warn!(%error, "could not save app location"),
@@ -519,6 +529,7 @@ impl PreferencesContext {
                 latitude,
                 longitude,
                 name: name.to_owned(),
+                country: None,
                 country_code: country_code.map(str::to_owned),
             },
         );
@@ -572,6 +583,7 @@ mod tests {
                 latitude: 48.137,
                 longitude: 11.575,
                 name: "Munich".into(),
+                country: Some("Germany".into()),
                 country_code: Some("DE".into()),
             }
         );
@@ -589,6 +601,7 @@ mod tests {
                 latitude: 47.376,
                 longitude: 8.541,
                 name: strings::text(strings::LOCATION_CURRENT_LOCATION),
+                country: None,
                 country_code: None,
             }
         );
