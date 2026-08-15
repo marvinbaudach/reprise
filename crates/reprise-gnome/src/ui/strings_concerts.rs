@@ -105,6 +105,21 @@ pub fn concerts_location_radius(city: &str, radius: u32) -> String {
     )
 }
 
+pub fn concerts_location_name(city: &str, country: Option<&str>) -> String {
+    country
+        .map(str::trim)
+        .filter(|country| !country.is_empty())
+        .map_or_else(
+            || city.to_owned(),
+            |country| {
+                formatted(
+                    N_!("{city}, {country}"),
+                    &[("city", city), ("country", country)],
+                )
+            },
+        )
+}
+
 pub fn concerts_radius_off(radius: u32) -> String {
     formatted(N_!("{radius} km · off"), &[("radius", &radius.to_string())])
 }

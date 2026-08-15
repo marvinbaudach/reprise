@@ -17,6 +17,7 @@ use rusqlite::Connection;
 pub const LOCATION_LAT_KEY: &str = "location.lat";
 pub const LOCATION_LON_KEY: &str = "location.lon";
 pub const LOCATION_NAME_KEY: &str = "location.name";
+pub const LOCATION_COUNTRY_KEY: &str = "location.country";
 pub const LOCATION_DEFAULT_RADIUS_KEY: &str = "location.default_radius_km";
 pub const DEFAULT_RADIUS_KM: f64 = 1_000.0;
 pub const RADIUS_PRESETS_KM: [u32; 4] = [100, 250, 500, 1_000];
@@ -26,11 +27,11 @@ pub const RADIUS_PRESETS_KM: [u32; 4] = [100, 250, 500, 1_000];
 /// never from a new reverse-geocoding call. A location set via "Use current
 /// location" (the XDG portal) carries no country and this stays `None`; see
 /// [`AppLocation`].
-pub const LOCATION_COUNTRY_KEY: &str = "location.country_code";
+pub const LOCATION_COUNTRY_CODE_KEY: &str = "location.country_code";
 
 /// The one app-level, already-consented location. `latitude`/`longitude`/
 /// `name` are always present together once a location is stored;
-/// `country_code` is present only when the location came from city search
+/// `country` and `country_code` are present only when the location came from city search
 /// (Nominatim's `addressdetails`) — the portal path ("Use current
 /// location") has no textual address at all, so it is honestly `None`
 /// rather than guessed.
@@ -39,7 +40,38 @@ pub struct AppLocation {
     pub latitude: f64,
     pub longitude: f64,
     pub name: String,
+    pub country: Option<String>,
     pub country_code: Option<String>,
+}
+
+/// The localized display name persisted by [`store`]. Existing coordinate-only
+/// callers can keep passing a city string; geocoded callers attach the country
+/// from the same Nominatim response.
+pub struct LocationName<'a> {
+    name: &'a str,
+    country: Option<&'a str>,
+}
+
+impl<'a> LocationName<'a> {
+    #[must_use]
+    pub const fn with_country(name: &'a str, country: Option<&'a str>) -> Self {
+        Self { name, country }
+    }
+}
+
+impl<'a> From<&'a str> for LocationName<'a> {
+    fn from(name: &'a str) -> Self {
+        Self {
+            name,
+            country: None,
+        }
+    }
+}
+
+impl<'a> From<&'a String> for LocationName<'a> {
+    fn from(name: &'a String) -> Self {
+        Self::from(name.as_str())
+    }
 }
 
 pub fn app_location(db: &Db) -> Result<Option<AppLocation>, rusqlite::Error> {
@@ -62,7 +94,8 @@ pub(crate) fn app_location_in(conn: &Connection) -> Result<Option<AppLocation>, 
     let latitude = numeric_setting(conn, LOCATION_LAT_KEY)?;
     let longitude = numeric_setting(conn, LOCATION_LON_KEY)?;
     let name = non_empty_setting(conn, LOCATION_NAME_KEY)?.unwrap_or_default();
-    let country_code = non_empty_setting(conn, LOCATION_COUNTRY_KEY)?;
+    let country = non_empty_setting(conn, LOCATION_COUNTRY_KEY)?;
+    let country_code = non_empty_setting(conn, LOCATION_COUNTRY_CODE_KEY)?;
     Ok(latitude
         .zip(longitude)
         .filter(|(lat, lon)| (-90.0..=90.0).contains(lat) && (-180.0..=180.0).contains(lon))
@@ -70,6 +103,7 @@ pub(crate) fn app_location_in(conn: &Connection) -> Result<Option<AppLocation>, 
             latitude,
             longitude,
             name,
+            country,
             country_code,
         }))
 }
@@ -78,18 +112,28 @@ pub(crate) fn app_location_in(conn: &Connection) -> Result<Option<AppLocation>, 
 /// the single write path both Concerts (city search / "Use current
 /// location") and any future writer must go through, so there is never a
 /// second copy of these keys.
-pub fn store(
+pub fn store<'a>(
     db: &Db,
     latitude: f64,
     longitude: f64,
-    name: &str,
+    name: impl Into<LocationName<'a>>,
     country_code: Option<&str>,
 ) -> Result<(), rusqlite::Error> {
+    let name = name.into();
     let conn = db.conn();
     crate::library::settings::set_setting_in(conn, LOCATION_LAT_KEY, &latitude.to_string())?;
     crate::library::settings::set_setting_in(conn, LOCATION_LON_KEY, &longitude.to_string())?;
-    crate::library::settings::set_setting_in(conn, LOCATION_NAME_KEY, name)?;
-    crate::library::settings::set_setting_in(conn, LOCATION_COUNTRY_KEY, country_code.unwrap_or(""))
+    crate::library::settings::set_setting_in(conn, LOCATION_NAME_KEY, name.name)?;
+    crate::library::settings::set_setting_in(
+        conn,
+        LOCATION_COUNTRY_KEY,
+        name.country.unwrap_or(""),
+    )?;
+    crate::library::settings::set_setting_in(
+        conn,
+        LOCATION_COUNTRY_CODE_KEY,
+        country_code.unwrap_or(""),
+    )
 }
 
 /// Clears the stored location from Preferences. `RAD-5`'s "Near you" result
@@ -100,7 +144,8 @@ pub fn clear(db: &Db) -> Result<(), rusqlite::Error> {
     crate::library::settings::set_setting_in(conn, LOCATION_LAT_KEY, "")?;
     crate::library::settings::set_setting_in(conn, LOCATION_LON_KEY, "")?;
     crate::library::settings::set_setting_in(conn, LOCATION_NAME_KEY, "")?;
-    crate::library::settings::set_setting_in(conn, LOCATION_COUNTRY_KEY, "")
+    crate::library::settings::set_setting_in(conn, LOCATION_COUNTRY_KEY, "")?;
+    crate::library::settings::set_setting_in(conn, LOCATION_COUNTRY_CODE_KEY, "")
 }
 
 fn non_empty_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
@@ -140,6 +185,7 @@ mod tests {
                 latitude: 52.52,
                 longitude: 13.405,
                 name: "Berlin, Deutschland".into(),
+                country: None,
                 country_code: Some("DE".into()),
             })
         );

@@ -290,6 +290,7 @@ fn query_filters_distance_country_horizon_and_similar_rows() {
         latitude: 48.1372,
         longitude: 11.5756,
         name: "Munich".into(),
+        country: None,
         country_code: Some("DE".into()),
     });
 
@@ -321,6 +322,7 @@ fn conc_2_radius_does_not_filter_or_reduce_the_count_without_a_location() {
         latitude: 48.1372,
         longitude: 11.5756,
         name: "Munich".into(),
+        country: None,
         country_code: Some("DE".into()),
     };
     assert!(query_events(&conn, &filter, Some(&munich), today)

@@ -10,6 +10,7 @@ fn concerts_location_reference_copy_distinguishes_missing_and_stored_values() {
         latitude: 52.52,
         longitude: 13.405,
         name: "Berlin, DE".to_owned(),
+        country: None,
         country_code: Some("DE".to_owned()),
     };
     assert_eq!(
