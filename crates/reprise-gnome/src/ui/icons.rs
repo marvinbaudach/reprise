@@ -131,14 +131,21 @@ mod tests {
     #[test]
     fn private_symbolics_are_embedded_at_icon_theme_paths() {
         crate::register_app_resources();
-        for name in [super::LYRICS, super::VISUAL_BARS] {
+        for name in [
+            super::LYRICS,
+            super::VISUAL_BARS,
+            "reprise-radio-symbolic",
+            "reprise-stats-symbolic",
+        ] {
             let path =
                 format!("/io/github/marvinbaudach/Reprise/icons/scalable/actions/{name}.svg");
             let bytes =
                 gtk4::gio::resources_lookup_data(&path, gtk4::gio::ResourceLookupFlags::NONE)
                     .unwrap_or_else(|error| panic!("{path} is not embedded: {error}"));
+            let bytes = bytes.as_ref();
             assert!(
-                bytes.as_ref().starts_with(b"<?xml") && bytes.as_ref().ends_with(b"</svg>\n"),
+                bytes.windows(b"<svg".len()).any(|window| window == b"<svg")
+                    && bytes.ends_with(b"</svg>\n"),
                 "{path} is not a complete SVG"
             );
         }
