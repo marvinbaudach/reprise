@@ -24,7 +24,9 @@ use super::releases_failure_ui::{
 };
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::{ReleaseObject, ReleasesModel};
-use super::releases_presentation::{releases_row_action, ReleasesRowAction};
+use super::releases_presentation::{
+    release_type_label, releases_row_action, sort_key_for_id, sort_rows_for_key, ReleasesRowAction,
+};
 use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::feed_footer::{FeedFooter, FeedFooterState};
 use crate::ui::source_empty_state::SourceFailureState;
@@ -221,6 +223,7 @@ impl ReleasesView {
             column_view.connect_activate(move |_, position| activate_position(&shared, position));
         }
         wire_sorting(&column_view, &shared);
+        crate::ui::table_columns::single_sort_indicator::mark(&column_view);
         column_view.sort_by_column(Some(&date_column), gtk4::SortType::Descending);
 
         Self {
@@ -326,6 +329,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         });
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
+    apply_current_sort(shared);
     shared.cached_items.set(total);
     apply_empty_state(
         shared,
@@ -648,18 +652,43 @@ fn wire_sorting(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         tracing::warn!("Releases table has no ColumnViewSorter");
         return;
     };
-    let shared = shared.clone();
-    sorter.connect_primary_sort_order_notify(move |sorter| {
-        let direction = if sorter.primary_sort_order() == gtk4::SortType::Ascending {
-            ReleaseSortDirection::Ascending
-        } else {
-            ReleaseSortDirection::Descending
-        };
-        let rows = shared.rows.borrow().clone();
-        shared
-            .model
-            .replace(artist_news::sort_release_rows(rows, direction));
-    });
+    {
+        let shared = shared.clone();
+        sorter.connect_primary_sort_column_notify(move |sorter| apply_sort(&shared, sorter));
+    }
+    {
+        let shared = shared.clone();
+        sorter.connect_primary_sort_order_notify(move |sorter| apply_sort(&shared, sorter));
+    }
+}
+
+fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
+    let Some(key) = sorter
+        .primary_sort_column()
+        .and_then(|column| sort_key_for_id(column.id().as_deref()))
+    else {
+        return;
+    };
+    let direction = if sorter.primary_sort_order() == gtk4::SortType::Ascending {
+        ReleaseSortDirection::Ascending
+    } else {
+        ReleaseSortDirection::Descending
+    };
+    let rows = shared.rows.borrow().clone();
+    shared
+        .model
+        .replace(sort_rows_for_key(rows, key, direction, release_type_label));
+}
+
+fn apply_current_sort(shared: &Shared) {
+    let Some(sorter) = shared
+        .column_view
+        .sorter()
+        .and_downcast::<gtk4::ColumnViewSorter>()
+    else {
+        return;
+    };
+    apply_sort(shared, &sorter);
 }
 
 #[cfg(test)]

@@ -3,9 +3,12 @@
 use std::borrow::Cow;
 
 use chrono::NaiveDate;
-use reprise_core::artist_news::{release_status, ReleaseStatus};
+use reprise_core::artist_news::{
+    self, release_status, ReleaseSortDirection, ReleaseSortKey, ReleaseStatus,
+};
 use reprise_core::artist_news_history::HistoryEntry;
 use reprise_core::format::DatePattern;
+use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
 use crate::ui::strings;
 
@@ -13,6 +16,30 @@ use crate::ui::strings;
 pub(super) enum ReleasesRowAction {
     Restore,
     OpenAnnouncement(String),
+}
+
+pub(super) fn sort_key_for_id(id: Option<&str>) -> Option<ReleaseSortKey> {
+    match id {
+        Some(id) if id == ReleaseColumn::Date.as_str() => Some(ReleaseSortKey::Date),
+        Some(id) if id == ReleaseColumn::Title.as_str() => Some(ReleaseSortKey::Title),
+        Some(id) if id == ReleaseColumn::Artist.as_str() => Some(ReleaseSortKey::Artist),
+        Some(id) if id == ReleaseColumn::Type.as_str() => Some(ReleaseSortKey::Type),
+        _ => None,
+    }
+}
+
+pub(super) fn sort_rows_for_key(
+    rows: Vec<HistoryEntry>,
+    key: ReleaseSortKey,
+    direction: ReleaseSortDirection,
+    type_label: impl Fn(&str) -> String,
+) -> Vec<HistoryEntry> {
+    if key == ReleaseSortKey::Type {
+        return artist_news::sort_release_rows_by_display_text(rows, direction, |entry| {
+            type_label(&entry.release_type)
+        });
+    }
+    artist_news::sort_release_rows(rows, key, direction)
 }
 
 /// Renders a MusicBrainz date string at whatever precision it carries, in the
@@ -157,6 +184,74 @@ mod tests {
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 7, 25).unwrap()
+    }
+
+    #[test]
+    fn sort_key_for_id_maps_the_four_text_columns_and_rejects_cover_status_and_buy() {
+        use reprise_core::artist_news::ReleaseSortKey;
+        use reprise_view::columns::{ColumnKey, ReleaseColumn};
+
+        assert_eq!(
+            sort_key_for_id(Some(ReleaseColumn::Date.as_str())),
+            Some(ReleaseSortKey::Date)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ReleaseColumn::Title.as_str())),
+            Some(ReleaseSortKey::Title)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ReleaseColumn::Artist.as_str())),
+            Some(ReleaseSortKey::Artist)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ReleaseColumn::Type.as_str())),
+            Some(ReleaseSortKey::Type)
+        );
+        for rejected in [
+            Some(ReleaseColumn::Cover.as_str()),
+            Some(ReleaseColumn::Status.as_str()),
+            Some(ReleaseColumn::Buy.as_str()),
+            Some("unknown"),
+            None,
+        ] {
+            assert_eq!(sort_key_for_id(rejected), None, "accepted {rejected:?}");
+        }
+    }
+
+    #[test]
+    fn type_sort_uses_the_text_supplied_by_the_presentation_layer() {
+        let rows = [("single", "single"), ("album", "album"), ("ep", "ep")]
+            .into_iter()
+            .map(|(id, release_type)| {
+                let mut row = entry("2026-01", LibraryPresence::Absent, false);
+                row.release_group_mbid = id.into();
+                row.release_type = release_type.into();
+                row
+            })
+            .collect();
+
+        let sorted = sort_rows_for_key(
+            rows,
+            ReleaseSortKey::Type,
+            reprise_core::artist_news::ReleaseSortDirection::Ascending,
+            |raw| {
+                match raw {
+                    "album" => "Zulu",
+                    "ep" => "Alpha",
+                    "single" => "Mike",
+                    other => other,
+                }
+                .to_owned()
+            },
+        );
+
+        assert_eq!(
+            sorted
+                .into_iter()
+                .map(|row| row.release_group_mbid)
+                .collect::<Vec<_>>(),
+            ["ep", "single", "album"]
+        );
     }
 
     fn entry(date: &str, presence: LibraryPresence, hidden: bool) -> HistoryEntry {
