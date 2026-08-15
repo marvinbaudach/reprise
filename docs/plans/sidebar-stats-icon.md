@@ -2,7 +2,7 @@
 slug: sidebar-stats-icon
 worktree: /home/marvin/Projects/reprise-sidebar-stats-icon
 branch: feature/sidebar-stats-icon
-phase: in-progress
+phase: shipped
 codex_session:
 created: 2026-08-15
 ---
