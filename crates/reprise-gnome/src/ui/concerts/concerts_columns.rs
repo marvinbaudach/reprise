@@ -497,7 +497,7 @@ mod tests {
         assert!(!registry.is_visible(ConcertColumn::City));
         assert!(registry.is_visible(ConcertColumn::Tickets));
         assert!(registry
-            .column(ConcertColumn::Venue)
+            .column(ConcertColumn::Artist)
             .is_some_and(gtk4::ColumnViewColumn::expands));
     }
 

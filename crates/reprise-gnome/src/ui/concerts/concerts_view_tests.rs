@@ -133,6 +133,9 @@ fn only_the_ticket_header_carries_no_sorter() {
     }
 }
 
+#[path = "concerts_sort_indicator_tests.rs"]
+mod sort_indicator_tests;
+
 #[test]
 fn conc_13_a_row_without_a_target_does_not_activate() {
     let row = row_with_links(None, None);

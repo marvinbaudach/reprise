@@ -93,6 +93,7 @@ impl ConcertsView {
             .show_column_separators(false)
             .build();
         column_view.add_css_class("reprise-concerts-table");
+        crate::ui::table_columns::single_sort_indicator::mark(&column_view);
 
         let launch_error: LaunchErrorSlot = Rc::new(RefCell::new(None));
         let launch_error_for_open = launch_error.clone();
