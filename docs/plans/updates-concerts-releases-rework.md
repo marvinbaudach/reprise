@@ -1627,7 +1627,7 @@ Bildbeweise (alle headless auf der Laufkopie):
 | 5 mit `Source`-Spalte | `30-columns-editor`, `31-concerts-venue-source` | Editor und eingeschaltete Spalten; Venue-Text misst RGB≈(231,233,236) gegen City RGB≈(170,172,175) — Venue ist heller |
 | 6 gefiltert | `32-concerts-filtered` | 3 von 412, Endzeile direkt unter der dritten Zeile, Fußzeile bleibt am unteren Rand |
 | 7 Fußzeilenzustände | `40-footer-updating`, `41-footer-loaded`, `42-footer-checked`, `43-footer-offline` | alle vier |
-| 8 Benachrichtigung mit Cover | — | **nicht aufgenommen** |
+| 8 Benachrichtigung mit Cover | `notif/deathrace.png`, `notif/no-place-for-me.png` | **als Bus-Nachweis, nicht als Bild der Blase** — siehe unten |
 
 Aus §5.2:
 
@@ -1651,6 +1651,31 @@ Aus §5.2:
   `os_6_the_first_fetch_announces_nothing` abgedeckt, nicht zusätzlich von
   Hand nachgestellt.
 
+**Zu Bild 8, der Benachrichtigung mit Cover.** Auf dieser Maschine läuft kein
+Benachrichtigungs-Dienst (`dunst`, `mako`, `xfce4-notifyd` fehlen; GNOME Shell
+läuft headless nicht), also gibt es kein gerendertes Bild der Blase. Statt
+dessen wurde die Meldung auf dem privaten Bus abgefangen: ein Stub-Dienst
+besaß im selben `dbus-run-session` wie die App den Namen
+`org.freedesktop.Notifications`. Die App ruft **genau dieses** Interface auf,
+nicht den Portal- und nicht den `org.gtk.Notifications`-Weg.
+
+Mit zwei fällig gemachten Releases kamen **zwei** Meldungen statt einer
+gesammelten — wie OS-6 es verlangt, das erst ab vier zusammenfasst. Jede kam
+in zwei Zügen: zuerst ohne Cover, dann per `replaces_id` erneut mit dem Hint
+`image-path`, sobald der asynchrone Abruf aus dem Cover Art Archive
+durchgelaufen war. Das ist genau OS-6s „und das Cover, wenn es verfügbar ist",
+und es zeigt, dass die Meldung nicht auf das Bild wartet.
+
+Inhalt der Meldungen: Summary `DEATHRACE` mit Body
+`Rising Insane · Album · out today`, und Summary `No Place for Me` mit Body
+`Miss May I · Album · out today` — also Titel und `{artist} · {type} · out
+today` wie in der Regel beschrieben, dazu die Default-Aktion. Die
+herausgeschriebenen Cover sind 250×250 und zeigen die echten Album-Motive,
+kein generisches App-Icon.
+
+**Was damit weiterhin nicht gezeigt ist:** wie die Blase aussieht. Der
+Nachweis deckt Inhalt, Aktion und Bild ab, nicht die Darstellung.
+
 **Zwei Nebenbefunde aus dem Prüfstand**, für die nächste Abnahme festgehalten:
 
 - Ein leerer Concerts-Abschnitt entsteht **nicht** dadurch, dass man das
@@ -1665,7 +1690,9 @@ Aus §5.2:
 
 ### Was offen bleibt
 
-- Screenshot 8 (Benachrichtigung mit Cover) ist weiterhin nicht aufgenommen.
+- Von Bild 8 fehlt nur noch die Darstellung der Blase selbst; Inhalt, Aktion
+  und Cover sind belegt. Dafür bräuchte es einen installierten
+  Benachrichtigungs-Dienst auf der Prüfmaschine.
 - Der fehlende Status-Tag im Popover bei `OnSale` und `Unknown` (Prüfung 2)
   ist eine Entwurfsentscheidung, die noch niemand getroffen hat.
 - R4s Kachel-Parität ist gegenstandslos geworden und sollte beim nächsten
