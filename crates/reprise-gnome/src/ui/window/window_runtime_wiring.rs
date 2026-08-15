@@ -690,12 +690,32 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             }
         }) as Rc<dyn Fn()>
     };
+    let start_scan_of = {
+        let db_path = db_path.to_path_buf();
+        let scan_controls = scan_controls.clone();
+        let toast_overlay = toast_overlay.clone();
+        let track_list = track_list.clone();
+        let sidebar = sidebar.clone();
+        let watcher_state = watcher_state.clone();
+        Rc::new(move |folder| {
+            super::scan_worker::spawn_scan(
+                folder,
+                db_path.clone(),
+                scan_controls.clone(),
+                toast_overlay.clone(),
+                track_list.clone(),
+                sidebar.clone(),
+                watcher_state.clone(),
+            );
+        }) as Rc<dyn Fn(PathBuf)>
+    };
     super::first_run::run(
         window,
         scan_button,
         scan_controls,
         conn,
         first_run_decision,
+        &start_scan_of,
         &present_rhythmbox_import,
     );
     super::startup_report::mark("first_run::run");

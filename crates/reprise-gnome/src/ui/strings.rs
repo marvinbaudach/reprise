@@ -129,7 +129,16 @@ mod online_sources;
 pub use online_sources::*;
 
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
-pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
+pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. If you enable online sources and the Artwork plugin in Preferences, Reprise can retrieve missing album covers from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
+pub const ONBOARDING_GROUP_LIBRARY_FOLDER: &str = N_!("Library folder");
+pub const ONBOARDING_GROUP_IMPORT: &str = N_!("Import");
+pub const ONBOARDING_CHANGE_FOLDER: &str = N_!("Change\u{2026}");
+pub const ONBOARDING_NO_LIBRARY_YET_IN: &str = N_!("Reprise has no library yet · {folder}");
+
+pub fn onboarding_no_library_yet_in(folder: &str) -> String {
+    formatted(ONBOARDING_NO_LIBRARY_YET_IN, &[("folder", folder)])
+}
+
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
     N_!("Rhythmbox was found. Choose what Reprise should import.");
