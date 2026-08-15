@@ -97,6 +97,19 @@ fn first_enable_source_defaults() -> [(&'static ModuleDescriptor, bool); 7] {
     ]
 }
 
+/// The state a first enable would write for one source, so a surface can
+/// *display* the rule instead of restating it. Unknown modules answer `false`:
+/// a source nobody seeded is not one the app turns on by itself.
+///
+/// Compared by `id`: `ModuleDescriptor`s are `const`, so two references to the
+/// same module need not be the same pointer.
+pub fn first_enable_default_for(module: &ModuleDescriptor) -> bool {
+    first_enable_source_defaults()
+        .into_iter()
+        .find(|(candidate, _)| candidate.id == module.id)
+        .is_some_and(|(_, enabled)| enabled)
+}
+
 /// The one authority for "may this request run right now". Module-owned
 /// requests AND the global gate with their module flag; app-wide requests
 /// with no plugin owner use the global gate alone.
@@ -144,6 +157,15 @@ mod tests {
 
     fn migrated_db() -> Db {
         Db::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn first_enable_defaults_are_readable_without_restating_them() {
+        assert!(first_enable_default_for(&modules::RADIO_MODULE));
+        assert!(!first_enable_default_for(&modules::PODCASTS_MODULE));
+        assert!(!first_enable_default_for(&modules::YOUTUBE_MODULE));
+        // A module outside the table answers off, not "unknown".
+        assert!(!first_enable_default_for(&modules::SONG_VISUALS_MODULE));
     }
 
     #[test]
