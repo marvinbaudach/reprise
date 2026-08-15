@@ -133,6 +133,23 @@ nicht, bleibt NR-39 **ebenfalls** richtig — die Lücke ist bewusst und darf ni
    berührt haben, ohne Gewinn. Im Repo gibt es dafür Präzedenz (`nr_11_…`,
    `conc_2_…`): Testnamen wandern hier nicht mit jeder Ersetzung mit.
 
+   > **AUFGEHOBEN am 15.08.2026, vom Nutzer freigegeben.** Der Absatz oben
+   > beruht auf einer falschen Prämisse: `check-display-tests.sh --rule-named`
+   > ist nicht das bindende Skript. Das ist `scripts/check-ux-traceability.sh`,
+   > Zeile 70 von `scripts/check-merge-readiness.sh`. Dessen Regel 2 lautet
+   > „No test references an ID that is missing from the document or marked
+   > `[replaced ...]`", und die Fehlermeldung schreibt die Auflösung selbst vor:
+   > `ERROR: test references replaced rule STYLE-10 — re-point it`. Der genannte
+   > Präzedenzfall existiert unter diesem Gate nicht mehr.
+   >
+   > **Was stattdessen gilt:** die betroffenen Testnamen werden eng begrenzt auf
+   > `style_13_…` bzw. `conc_17_…` umgezeigt, und STYLE-13 wie CONC-17 bekommen
+   > je einen gleichnamigen Test (Richtung 1 desselben Gates: jede
+   > `[active]`-Regel braucht Deckung). Die Zusicherungen der Tests bleiben
+   > unverändert — umgezeigt wird der Name, nicht die Messung. Der Nebengrund
+   > („Bewegung in einer Datei, die alle drei Stränge berührt haben") trägt
+   > hier nicht: R landet zuletzt, nach ihm rebased kein Strang mehr.
+
 2. **NR-30** [active] bleibt inhaltlich richtig, solange die Spalte sichtbar
    ist. Ein Halbsatz kommt dazu: die Spalte ist ausblendbar und verschiebbar;
    „trailing" beschreibt die **Vorgabeposition**, keine Garantie.
