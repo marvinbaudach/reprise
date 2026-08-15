@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::time::Instant;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -19,6 +20,37 @@ pub(super) fn no_match_page(on_clear: Rc<dyn Fn()>) -> adw::StatusPage {
 }
 
 impl super::ReviewState {
+    // The shared search controller calls this once Task 10 installs its sink.
+    #[allow(dead_code)]
+    pub(super) fn set_query(self: &Rc<Self>, query: &str) {
+        let started = Instant::now();
+        let query = query.trim();
+        if self.query.borrow().as_str() == query {
+            return;
+        }
+        *self.query.borrow_mut() = query.to_owned();
+        self.snapshot.borrow_mut().apply_query(query);
+        self.filter.changed(gtk4::FilterChange::Different);
+        self.push_query_scope();
+        self.refresh_filter_summary();
+        self.refresh_master_check();
+        self.refresh_action_summary(self.ready_count.get());
+        let albums = self.snapshot.borrow().albums.clone();
+        self.album_headers.push_selection(&albums);
+        self.set_content_child();
+        let rows = self.snapshot.borrow().totals.changes;
+        tracing::debug!(
+            path = "search",
+            rows,
+            elapsed_us = started.elapsed().as_micros(),
+            "DOCTOR_REVIEW_REFRESH path"
+        );
+    }
+
+    // Task 7 replaces this compile-time seam with the session scope bridge.
+    #[allow(dead_code)]
+    fn push_query_scope(&self) {}
+
     pub(super) fn set_content_child(&self) {
         let name = if self.sorted.n_items() > 0 {
             "rows"

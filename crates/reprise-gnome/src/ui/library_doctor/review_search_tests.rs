@@ -138,13 +138,6 @@ fn page_for(scan: &reprise_core::library_doctor::DoctorScan) -> Rc<LibraryDoctor
     )
 }
 
-fn apply_task_4_query(page: &LibraryDoctorReviewPage, query: &str) {
-    *page.state.query.borrow_mut() = query.into();
-    page.state.snapshot.borrow_mut().apply_query(query);
-    page.state.filter.changed(gtk4::FilterChange::Different);
-    page.state.set_content_child();
-}
-
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn doc_12a_the_conflicts_panel_survives_an_active_query() {
@@ -152,7 +145,7 @@ fn doc_12a_the_conflicts_panel_survives_an_active_query() {
     gtk4::init().unwrap();
     let page = page_for(&conflict_scan());
 
-    apply_task_4_query(&page, "matches no review row");
+    page.state.set_query("matches no review row");
 
     assert_eq!(page.state.sorted.n_items(), 1);
     assert_eq!(
@@ -168,11 +161,27 @@ fn doc_12a_a_query_with_no_matches_shows_its_own_state() {
     gtk4::init().unwrap();
     let page = page_for(&three_album_scan());
 
-    apply_task_4_query(&page, "matches no review row");
+    page.state.set_query("matches no review row");
 
     assert_eq!(page.state.sorted.n_items(), 0);
     assert_eq!(
         page.state.content.visible_child_name().as_deref(),
         Some("no-match")
     );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_clearing_the_query_restores_every_row() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+    let row_count = page.state.sorted.n_items();
+
+    page.state.set_query("second");
+    assert!(page.state.sorted.n_items() < row_count);
+    page.state.set_query("  ");
+
+    assert_eq!(page.state.sorted.n_items(), row_count);
+    assert_eq!(page.state.query.borrow().as_str(), "");
 }
