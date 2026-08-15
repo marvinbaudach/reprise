@@ -307,7 +307,7 @@ mod tests {
     /// STYLE-10: the keyboard route addresses the table the user is looking
     /// at and has no stale target on a non-table surface.
     #[test]
-    fn style_10_the_menu_action_follows_the_active_table() {
+    fn style_13_the_menu_action_follows_the_active_table() {
         let active = ActiveTable::default();
         assert!(active.get().is_none(), "no table, no target");
         active.set(Some(fake_model("Releases")));

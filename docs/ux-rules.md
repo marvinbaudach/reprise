@@ -2476,7 +2476,9 @@ the panel).
   remain unchanged. Consequently, "new" means newly discovered within this
   bounded announcement scope, never merely a newly fetched historical gap.
 - **NR-30** [active] [gtk] — replaces NR-20. The trailing release action is a
-  visible external-link button for every row with a launchable target. A
+  visible external-link button for every row with a launchable target. The
+  column is hideable and movable; `trailing` describes its default position,
+  not a guarantee. A
   genuine tracking-free HTTP(S) Bandcamp `/album/…` relation wins and reads
   `Bandcamp`; otherwise a launchable stored announcement reads `Open`; if that
   value is missing or unsafe, the launchable MusicBrainz release-group fallback
@@ -2499,11 +2501,13 @@ the panel).
   including tombstone purge, never writes memory. "Show again" restores every
   row hidden by the selected memory scope, while re-acquisition forgets only
   the scope that returned.
-- **NR-33** [active] [gtk] — replaces NR-31. The gap view's columns are
-  `Cover · Date · Release · Artist · Type · Status · Link`; the second text
-  column is named `Release` because its rows are albums, EPs and singles, not
-  songs. Sorting, filters, counts, activation semantics, the trailing action
-  column and zero-result recovery remain exactly as NR-31 specified.
+- **NR-33** [active] [gtk] — replaces NR-31. The gap view's default columns are
+  `Cover · Date · Release · Artist · Type · Status · Link`; this is the default,
+  not a fixed order, and every unpinned column is hideable and movable. The
+  `Cover` column remains pinned at the leading edge. The second text column is
+  named `Release` because its rows are albums, EPs and singles, not songs.
+  Sorting, filters, counts, activation semantics, the trailing action column
+  and zero-result recovery remain exactly as NR-31 specified.
 - **NR-34** [active] [gtk] — replaces NR-5b and NR-23. The Updates
   popover shows at most five releases and three concerts without an
   internal scroller, and both feeds use one identical row shape. Each
@@ -2552,6 +2556,15 @@ the panel).
   and says why.
   Test: `nr_38_a_row_opens_the_same_url_its_tooltip_names`
   (`ui/updates/popover_tests.rs`).
+- **NR-39** [active] [gtk] — The Releases table's `Status` and `Link`
+  columns are ordinary columns in the free band: hideable, movable, visible
+  in the column editor, and visible by default. Only the `Cover` column stays
+  fixed. Hiding both removes the visible routes for hiding a release and for
+  opening its purchase link; the header popover restores either column. A
+  layout saved before this change keeps both columns visible, while a saved
+  layout that never mentioned them starts without them.
+  Test: `nr_39_the_column_editor_lists_status_and_link_and_hides_them`
+  (`ui/releases/releases_view_tests.rs`).
 - **NR-21a** [active] [gtk] — replaces NR-21. A failed New Releases fetch
   leaves every cached release untouched and reports the failure through
   CONC-15's footer state. A neutral shared banner above a populated view
@@ -3113,7 +3126,7 @@ property is set and yet nothing happens.
   squeezing its columns (STYLE-6). **Test rule:** measured, not asserted —
   the rule-named test exchanges the rows on screen for markedly wider ones
   and compares the columns' realized widths.
-- **STYLE-10** [active] [gtk] — **Columns belong to the user, in every
+- **STYLE-10** [replaced by STYLE-13] [gtk] — **Columns belong to the user, in every
   table.** A right-click anywhere on a table's header band opens the column
   editor popover: toggle visibility, drag to reorder, reset. Behaviour
   learned in the music library is the same behaviour in Releases, Concerts
@@ -3162,6 +3175,43 @@ property is set and yet nothing happens.
   review's own `All` filter segment). Views do not push widgets into the
   shared header; if a view seems to need it, the action is in the wrong
   place.
+- **STYLE-13** [active] [gtk] — **Columns belong to the user, in every
+  table.** A right-click anywhere on a table's header band opens the column
+  editor popover: toggle visibility, drag to reorder, reset. Behaviour
+  learned in the music library is the same behaviour in Releases, Concerts
+  and Radio — a user does not experience a missing editor there as an absent
+  feature but as the app forgetting what it taught them. The same editor is
+  reachable without a pointer through the primary menu's "Edit column
+  layout…", which addresses the table of the active view and is insensitive
+  where no table is shown. Order, visibility and header-dragged widths are
+  stored per table and survive a restart. A table may declare a fixed leading
+  artwork column which stays visible, keeps its position and never appears in
+  the editor; every other column belongs to the user. Exactly one visible
+  column is the filler (STYLE-9); when the user hides it, the filler role moves
+  to the first visible free column in the table's order. Hiding the sorting
+  column changes the sort to the first visible sortable free column,
+  ascending, or clears sorting when no such column remains, so an active sort
+  and its header indicator never become invisible. A table shows exactly one
+  sort indicator: the indicator for its current primary column. Every other
+  indicator is invisible while its width stays reserved, so headers do not
+  jump. A header without a sort field carries no sorter and therefore does not
+  appear clickable; a sortable header orders its own column. **Test rule:**
+  one rule-named display test per table, plus a measured filler test. Tests:
+  `style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator`
+  (`ui/table_columns/registry.rs`),
+  `nr_39_the_column_editor_lists_status_and_link_and_hides_them` and
+  `two_release_sorts_leave_one_indicator`
+  (`ui/releases/releases_view_tests.rs`),
+  `conc_16_the_source_column_is_available_but_off_by_default` and
+  `only_the_ticket_header_carries_no_sorter`
+  (`ui/concerts/concerts_view_tests.rs`),
+  `two_concert_sorts_leave_one_indicator`
+  (`ui/concerts/concerts_sort_indicator_tests.rs`),
+  `the_cover_status_and_link_headers_carry_no_sorter`
+  (`ui/releases/releases_view_tests.rs`), and
+  `hiding_venue_by_default_moves_the_filler_to_the_artist_column`
+  (`ui/concerts/concerts_column_layout.rs`). Design:
+  `docs/superpowers/specs/2026-08-09-table-columns-and-system-dates-design.md`.
 - **CONTRAST-1** [active] [gtk] — There are three central text levels:
   primary approximately 0.95 for titles and values, secondary approximately
   0.7 for artist, status, metadata, and column headers, hint approximately
@@ -5257,6 +5307,19 @@ available. The player plays only finished files.
   only place the name appears.
   Test: `conc_16_the_source_column_is_available_but_off_by_default`
   (`ui/concerts/concerts_view_tests.rs`).
+
+- **CONC-17** [active] [gtk] — The Concerts table shows `Artist · Date ·
+  City · Distance · Tickets` by default, with `Venue` and `Source` hidden.
+  Date, Artist, City, Venue, Distance, and Source are sortable; `Tickets`
+  carries no sorter because its cell is a button. Migration v75 discards a
+  stored Concerts column layout once while preserving stored column widths.
+  Tests: `the_default_concert_layout_leads_with_the_artist_and_hides_venue_and_source`
+  (`reprise-view/src/columns/concert.rs`),
+  `conc_17_every_sortable_concerts_header_orders_its_own_column` and
+  `only_the_ticket_header_carries_no_sorter`
+  (`ui/concerts/concerts_view_tests.rs`), and
+  `v75_drops_the_stored_concerts_column_layout_and_keeps_the_widths`
+  (`reprise-core/src/db_concerts_migration_tests.rs`).
 
 - **CONC-4c** [active] [gtk] — replaces CONC-4b. Without a credential,
   Concerts neutrally shows "No concert data yet" with no action; the Concerts

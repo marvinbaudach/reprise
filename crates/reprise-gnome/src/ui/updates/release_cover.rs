@@ -283,7 +283,7 @@ mod tests {
     /// to a second release without ever being constructed again.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_10_releases_cover_rebinds_when_the_row_changes() {
+    fn style_13_releases_cover_rebinds_when_the_row_changes() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let cover = LazyReleaseCover::new_unbound(40);
@@ -303,7 +303,7 @@ mod tests {
     /// never happen.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_10_releases_cover_fetches_again_when_rebound_without_unmap() {
+    fn style_13_releases_cover_fetches_again_when_rebound_without_unmap() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let fetches = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));

@@ -735,7 +735,7 @@ mod tests {
     /// free column cannot hide its fixed cover or action columns.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_10_releases_header_right_click_edits_the_table() {
+    fn style_13_releases_header_right_click_edits_the_table() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);

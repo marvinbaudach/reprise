@@ -639,7 +639,7 @@ mod tests {
     /// moves the filler role while Artwork and State remain fixed leaders.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_10_radio_header_right_click_edits_the_table() {
+    fn style_13_radio_header_right_click_edits_the_table() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
