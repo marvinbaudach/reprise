@@ -31,6 +31,18 @@ fn completion_activates_only_explicitly_enabled_options() {
         rhythmbox_import: true,
         sources: WizardSourceSelection::default(),
     }));
+
+    let visible_sources = WizardSourceSelection {
+        radio: false,
+        podcasts: true,
+        youtube: false,
+    };
+    for response in [CompletionResponse::Skip, CompletionResponse::SetUp] {
+        assert_eq!(
+            completion_options(response, true, visible_sources).sources,
+            visible_sources
+        );
+    }
 }
 
 #[test]
@@ -80,18 +92,60 @@ fn detected_rhythmbox_group_lists_the_supported_import_choice() {
 
 #[test]
 fn both_exits_close_onboarding_and_the_discovery_banner() {
-    for options in [
-        CompletionOptions::default(),
-        CompletionOptions {
-            rhythmbox_import: true,
-            sources: WizardSourceSelection::from_first_enable_defaults(),
-        },
-    ] {
+    for response in [CompletionResponse::Skip, CompletionResponse::SetUp] {
         let db = Db::open_in_memory().unwrap();
+        let options = completion_options(response, true, WizardSourceSelection::default());
         persist_completion(&db, options);
         assert!(settings::get_onboarding_completed(&db).unwrap());
         assert!(settings::get_online_discovery_banner_completed(&db).unwrap());
+        assert_eq!(options.sources, WizardSourceSelection::default());
     }
+}
+
+fn open_gate_with_podcasts(db: &Db) {
+    online_sources::set_enabled(db, true).unwrap();
+    modules::set_enabled(db, &modules::PODCASTS_MODULE, true).unwrap();
+}
+
+fn assert_gate_and_wizard_sources_are_off(db: &Db) {
+    assert!(!online_sources::is_enabled(db).unwrap());
+    for module in [
+        &modules::RADIO_MODULE,
+        &modules::PODCASTS_MODULE,
+        &modules::YOUTUBE_MODULE,
+    ] {
+        assert!(!modules::is_enabled(db, module).unwrap(), "{}", module.id);
+    }
+}
+
+#[test]
+fn skipping_with_nothing_chosen_revokes_an_open_gate() {
+    let db = Db::open_in_memory().unwrap();
+    open_gate_with_podcasts(&db);
+
+    let options = completion_options(
+        CompletionResponse::Skip,
+        false,
+        WizardSourceSelection::default(),
+    );
+    persist_completion(&db, options);
+
+    assert_gate_and_wizard_sources_are_off(&db);
+}
+
+#[test]
+fn setting_up_with_nothing_chosen_revokes_an_open_gate() {
+    let db = Db::open_in_memory().unwrap();
+    open_gate_with_podcasts(&db);
+
+    let options = completion_options(
+        CompletionResponse::SetUp,
+        false,
+        WizardSourceSelection::default(),
+    );
+    persist_completion(&db, options);
+
+    assert_gate_and_wizard_sources_are_off(&db);
 }
 
 #[test]
@@ -150,16 +204,19 @@ fn a_chosen_folder_is_scanned_on_both_exits() {
 fn skipping_with_a_chosen_folder_scans_it_and_keeps_the_gate_shut() {
     let db = Db::open_in_memory().unwrap();
     let scanned: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
-    // Same shape the dialog uses; the callback is the unit under test.
     let start_scan_of: Rc<dyn Fn(PathBuf)> = {
         let scanned = scanned.clone();
         Rc::new(move |folder| scanned.borrow_mut().push(folder))
     };
 
     persist_completion(&db, CompletionOptions::default());
-    if folder_outcome(CompletionResponse::Skip, true) == FolderOutcome::ScanChosen {
-        start_scan_of(PathBuf::from("/music"));
-    }
+    let open_picker = || panic!("Skip with a chosen folder must not open the picker");
+    dispatch_folder_outcome(
+        CompletionResponse::Skip,
+        Some(PathBuf::from("/music")),
+        &open_picker,
+        start_scan_of.as_ref(),
+    );
 
     assert_eq!(scanned.borrow().as_slice(), [PathBuf::from("/music")]);
     assert!(!reprise_core::online_sources::is_enabled(&db).unwrap());
@@ -243,7 +300,7 @@ fn assert_default_wizard_tree() {
         Some(Path::new("/home/test/Music")),
         Path::new("/home/test"),
         Some(false),
-        WizardSourceSelection::from_first_enable_defaults(),
+        WizardSourceSelection::default(),
     );
     let groups = direct_preferences_groups(&widgets.root);
     assert_eq!(
@@ -265,7 +322,7 @@ fn assert_default_wizard_tree() {
             &source_rows[0],
             strings::ONLINE_SOURCES_USE_RADIO,
             strings::ONLINE_SOURCES_RADIO_SUBTITLE,
-            true,
+            false,
         ),
         (
             &source_rows[1],
@@ -352,7 +409,7 @@ fn library_folder_block_is_absent_when_a_root_is_already_set() {
         None,
         Path::new("/home/test"),
         Some(false),
-        WizardSourceSelection::from_first_enable_defaults(),
+        WizardSourceSelection::default(),
     );
     assert!(widgets.library.is_none());
     assert!(direct_preferences_groups(&widgets.root)
@@ -375,7 +432,7 @@ fn rhythmbox_block_is_absent_when_no_import_is_found() {
         None,
         Path::new("/home/test"),
         offer,
-        WizardSourceSelection::from_first_enable_defaults(),
+        WizardSourceSelection::default(),
     );
     assert!(widgets.rhythmbox.is_none());
     assert!(direct_preferences_groups(&widgets.root)

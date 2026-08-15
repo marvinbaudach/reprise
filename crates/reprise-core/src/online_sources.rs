@@ -97,26 +97,6 @@ fn first_enable_source_defaults() -> [(&'static ModuleDescriptor, bool); 7] {
     ]
 }
 
-/// The state a first enable would write for one source, so a surface can
-/// *display* the rule instead of restating it. Unknown modules answer `false`:
-/// a source nobody seeded is not one the app turns on by itself.
-///
-/// Compared by `id`: `ModuleDescriptor`s are `const`, so two references to the
-/// same module need not be the same pointer.
-pub fn first_enable_default_for(module: &ModuleDescriptor) -> bool {
-    first_enable_source_defaults()
-        .into_iter()
-        .find(|(candidate, _)| candidate.id == module.id)
-        .is_some_and(|(_, enabled)| enabled)
-}
-
-/// The three sources the first-run wizard offers, in display order.
-pub const WIZARD_SOURCE_MODULES: [&ModuleDescriptor; 3] = [
-    &modules::RADIO_MODULE,
-    &modules::PODCASTS_MODULE,
-    &modules::YOUTUBE_MODULE,
-];
-
 /// What the wizard's three switches say. Not a settings snapshot — the
 /// user's answer, before anything is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -127,16 +107,6 @@ pub struct WizardSourceSelection {
 }
 
 impl WizardSourceSelection {
-    /// The state a fresh install opens in: exactly what a first enable
-    /// would write, read from the table rather than repeated here.
-    pub fn from_first_enable_defaults() -> Self {
-        Self {
-            radio: first_enable_default_for(&modules::RADIO_MODULE),
-            podcasts: first_enable_default_for(&modules::PODCASTS_MODULE),
-            youtube: first_enable_default_for(&modules::YOUTUBE_MODULE),
-        }
-    }
-
     /// What the wizard must show. The gate being on means somebody already
     /// answered this question — Preferences, or an earlier session — and the
     /// wizard has to display that answer instead of overwriting it with the
@@ -144,7 +114,7 @@ impl WizardSourceSelection {
     /// nothing, so the wizard returns after the banner has been used.
     pub fn current_or_first_enable_defaults(db: &Db) -> Result<Self, rusqlite::Error> {
         if !is_enabled(db)? {
-            return Ok(Self::from_first_enable_defaults());
+            return Ok(Self::default());
         }
         Ok(Self {
             radio: modules::is_enabled(db, &modules::RADIO_MODULE)?,
@@ -153,9 +123,9 @@ impl WizardSourceSelection {
         })
     }
 
-    /// `NET-1a`: no source chosen means the gate stays shut. Turning the
-    /// gate on "just in case" would make the app network-capable without
-    /// anyone asking for it.
+    /// `NET-1a`: a selection opens the gate only when a source is chosen.
+    /// Turning the gate on "just in case" would make the app network-capable
+    /// without anyone asking for it.
     pub fn opens_the_gate(self) -> bool {
         self.radio || self.podcasts || self.youtube
     }
@@ -171,16 +141,19 @@ impl WizardSourceSelection {
 }
 
 /// Applies the wizard's answer. The gate goes first so its one-shot seeding
-/// runs before the explicit choices land on top of it; no source chosen
-/// leaves the gate — and every module — untouched.
+/// runs before the explicit choices land on top of it. An all-off answer from
+/// an already-open gate is a revocation; the same answer from a shut gate
+/// writes nothing, preserving the distinction between unset and explicit-off
+/// module state on a fresh database.
 pub fn apply_wizard_selection(
     db: &Db,
     selection: WizardSourceSelection,
 ) -> Result<(), rusqlite::Error> {
-    if !selection.opens_the_gate() {
+    let gate_was_open = is_enabled(db)?;
+    if !gate_was_open && !selection.opens_the_gate() {
         return Ok(());
     }
-    set_enabled(db, true)?;
+    set_enabled(db, selection.opens_the_gate())?;
     for (module, enabled) in selection.module_writes() {
         modules::set_enabled(db, module, enabled)?;
     }
@@ -237,21 +210,10 @@ mod tests {
     }
 
     #[test]
-    fn first_enable_defaults_are_readable_without_restating_them() {
-        assert!(first_enable_default_for(&modules::RADIO_MODULE));
-        assert!(!first_enable_default_for(&modules::PODCASTS_MODULE));
-        assert!(!first_enable_default_for(&modules::YOUTUBE_MODULE));
-        // A module outside the table answers off, not "unknown".
-        assert!(!first_enable_default_for(&modules::SONG_VISUALS_MODULE));
-    }
-
-    #[test]
-    fn a_fresh_install_opens_the_wizard_with_the_first_enable_defaults() {
+    fn a_fresh_install_opens_the_wizard_with_every_source_off() {
         let db = migrated_db();
         let selection = WizardSourceSelection::current_or_first_enable_defaults(&db).unwrap();
-        assert!(selection.radio);
-        assert!(!selection.podcasts);
-        assert!(!selection.youtube);
+        assert_eq!(selection, WizardSourceSelection::default());
     }
 
     #[test]
@@ -291,11 +253,37 @@ mod tests {
         let db = migrated_db();
         apply_wizard_selection(&db, WizardSourceSelection::default()).unwrap();
         assert!(!is_enabled(&db).unwrap());
-        assert!(
-            settings::get_setting_in(db.conn(), &modules::enabled_key(&modules::RADIO_MODULE))
-                .unwrap()
-                .is_none()
-        );
+        for module in [
+            &modules::RADIO_MODULE,
+            &modules::PODCASTS_MODULE,
+            &modules::YOUTUBE_MODULE,
+        ] {
+            assert!(
+                settings::get_setting_in(db.conn(), &modules::enabled_key(module))
+                    .unwrap()
+                    .is_none(),
+                "{}",
+                module.id
+            );
+        }
+    }
+
+    #[test]
+    fn no_source_chosen_revokes_an_open_gate_and_its_wizard_modules() {
+        let db = migrated_db();
+        set_enabled(&db, true).unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, true).unwrap();
+
+        apply_wizard_selection(&db, WizardSourceSelection::default()).unwrap();
+
+        assert!(!is_enabled(&db).unwrap());
+        for module in [
+            &modules::RADIO_MODULE,
+            &modules::PODCASTS_MODULE,
+            &modules::YOUTUBE_MODULE,
+        ] {
+            assert!(!modules::is_enabled(&db, module).unwrap(), "{}", module.id);
+        }
     }
 
     #[test]

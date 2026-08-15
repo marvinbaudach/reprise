@@ -64,6 +64,17 @@ fn requested_actions(options: CompletionOptions) -> bool {
     options.rhythmbox_import
 }
 
+fn completion_options(
+    response: CompletionResponse,
+    rhythmbox_import: bool,
+    sources: WizardSourceSelection,
+) -> CompletionOptions {
+    CompletionOptions {
+        rhythmbox_import: response == CompletionResponse::SetUp && rhythmbox_import,
+        sources,
+    }
+}
+
 /// Everything the wizard persists, on both exits. `NET-4`: the wizard
 /// *replaces* the discovery banner's question for a fresh install, so it
 /// closes the banner too — otherwise the same question arrives twice.
@@ -114,6 +125,25 @@ fn folder_outcome(response: CompletionResponse, folder_chosen: bool) -> FolderOu
         (CompletionResponse::SetUp, false) => FolderOutcome::OpenPicker,
         (CompletionResponse::Skip, false) => FolderOutcome::Nothing,
     }
+}
+
+fn dispatch_folder_outcome(
+    response: CompletionResponse,
+    chosen_folder: Option<PathBuf>,
+    open_picker: &dyn Fn(),
+    start_scan_of: &dyn Fn(PathBuf),
+) -> FolderOutcome {
+    let outcome = folder_outcome(response, chosen_folder.is_some());
+    match outcome {
+        FolderOutcome::OpenPicker => open_picker(),
+        FolderOutcome::ScanChosen => {
+            if let Some(folder) = chosen_folder {
+                start_scan_of(folder);
+            }
+        }
+        FolderOutcome::Nothing => {}
+    }
+    outcome
 }
 
 fn rhythmbox_offer(decision: FirstRunDecision, available: bool) -> Option<bool> {
@@ -304,12 +334,11 @@ pub(super) fn run(
         rhythmbox_import_default = false,
         "first-run Rhythmbox discovery complete"
     );
-    let selection = WizardSourceSelection::current_or_first_enable_defaults(conn).unwrap_or_else(
-        |error| {
-            tracing::warn!(%error, "could not read online source state; showing first-enable defaults");
-            WizardSourceSelection::from_first_enable_defaults()
-        },
-    );
+    let selection =
+        WizardSourceSelection::current_or_first_enable_defaults(conn).unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read online source state; showing every source off");
+            WizardSourceSelection::default()
+        });
     let library_root = settings::get_library_root(conn).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read library root for first-run folder group");
         None
@@ -413,7 +442,6 @@ pub(super) fn run(
             }
             let rhythmbox_import = requested_actions(options);
             let chosen_folder = remembered_folder.borrow().clone();
-            let outcome = folder_outcome(response, chosen_folder.is_some());
             persist_completion(&conn, options);
             if let Some(dialog) = dialog.upgrade() {
                 dialog.close();
@@ -429,21 +457,21 @@ pub(super) fn run(
                     );
                 }
             }
-            if !suppress_picker {
-                match outcome {
-                    FolderOutcome::OpenPicker => {
-                        if let Some(scan_button) = scan_button.upgrade() {
-                            scan_button.emit_clicked();
-                        }
+            let outcome = if suppress_picker {
+                folder_outcome(response, chosen_folder.is_some())
+            } else {
+                let open_picker = || {
+                    if let Some(scan_button) = scan_button.upgrade() {
+                        scan_button.emit_clicked();
                     }
-                    FolderOutcome::ScanChosen => {
-                        if let Some(folder) = chosen_folder {
-                            start_scan_of(folder);
-                        }
-                    }
-                    FolderOutcome::Nothing => {}
-                }
-            }
+                };
+                dispatch_folder_outcome(
+                    response,
+                    chosen_folder,
+                    &open_picker,
+                    start_scan_of.as_ref(),
+                )
+            };
             tracing::info!(
                 ?response,
                 ?outcome,
@@ -456,9 +484,10 @@ pub(super) fn run(
 
     {
         let complete = complete.clone();
+        let sources = sources.clone();
         skip.connect_clicked(move |_| {
             complete(
-                CompletionOptions::default(),
+                completion_options(CompletionResponse::Skip, false, sources.selection()),
                 CompletionResponse::Skip,
                 false,
             );
@@ -470,10 +499,11 @@ pub(super) fn run(
         let sources = sources.clone();
         setup.connect_clicked(move |_| {
             complete(
-                CompletionOptions {
-                    rhythmbox_import: import_data.as_ref().is_some_and(adw::SwitchRow::is_active),
-                    sources: sources.selection(),
-                },
+                completion_options(
+                    CompletionResponse::SetUp,
+                    import_data.as_ref().is_some_and(adw::SwitchRow::is_active),
+                    sources.selection(),
+                ),
                 CompletionResponse::SetUp,
                 false,
             );
@@ -489,12 +519,12 @@ pub(super) fn run(
             return;
         };
         let (options, response) = match smoke.as_str() {
-            "skip" => (CompletionOptions::default(), CompletionResponse::Skip),
+            "skip" => (
+                completion_options(CompletionResponse::Skip, false, sources.selection()),
+                CompletionResponse::Skip,
+            ),
             "setup-options" => (
-                CompletionOptions {
-                    rhythmbox_import: true,
-                    sources: sources.selection(),
-                },
+                completion_options(CompletionResponse::SetUp, true, sources.selection()),
                 CompletionResponse::SetUp,
             ),
             _ => {
