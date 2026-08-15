@@ -2,7 +2,7 @@
 slug: first-run-welcome-screen
 worktree: /home/marvin/Projects/reprise-first-run-welcome-screen
 branch: feature/first-run-welcome-screen
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-15
 ---
