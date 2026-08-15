@@ -2506,8 +2506,8 @@ the panel).
   not a fixed order, and every unpinned column is hideable and movable. The
   `Cover` column remains pinned at the leading edge. The second text column is
   named `Release` because its rows are albums, EPs and singles, not songs.
-  Sorting, filters, counts, activation semantics, the trailing action column
-  and zero-result recovery remain exactly as NR-31 specified.
+  Sorting, filters, counts, activation semantics and zero-result recovery
+  remain exactly as NR-31 specified.
 - **NR-34** [active] [gtk] — replaces NR-5b and NR-23. The Updates
   popover shows at most five releases and three concerts without an
   internal scroller, and both feeds use one identical row shape. Each
