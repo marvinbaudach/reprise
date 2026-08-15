@@ -440,6 +440,7 @@ pub(in crate::ui) fn filler_for<K: ColumnKey>(layout: &Layout<K>, preferred: K) 
 
 #[cfg(test)]
 mod tests {
+    use super::super::single_sort_indicator;
     use super::*;
     use gtk4::prelude::*;
     use reprise_view::columns::{ColumnId, ReleaseColumn};
@@ -619,20 +620,6 @@ mod tests {
             column
         }
 
-        fn count_primary_indicators(widget: &gtk4::Widget) -> usize {
-            let own = usize::from(
-                widget.css_name() == "sort-indicator"
-                    && widget.has_css_class("reprise-primary-sort-indicator"),
-            );
-            let mut total = own;
-            let mut child = widget.first_child();
-            while let Some(current) = child {
-                total += count_primary_indicators(&current);
-                child = current.next_sibling();
-            }
-            total
-        }
-
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
@@ -643,7 +630,7 @@ mod tests {
         let store = gtk4::gio::ListStore::new::<gtk4::glib::Object>();
         let sorted = gtk4::SortListModel::new(Some(store), view.sorter());
         view.set_model(Some(&gtk4::NoSelection::new(Some(sorted))));
-        crate::ui::track_list::track_list_header_style::mark(&view);
+        single_sort_indicator::mark(&view);
         let registry = ColumnRegistry::new(
             &view,
             Rc::new(crate::test_db::open().unwrap()),
@@ -676,7 +663,7 @@ mod tests {
         assert_eq!(sorter.primary_sort_column().as_ref(), Some(&title));
         assert_eq!(sorter.primary_sort_order(), gtk4::SortType::Ascending);
         assert_eq!(
-            count_primary_indicators(view.upcast_ref()),
+            single_sort_indicator::count_primary_indicators(view.upcast_ref()),
             1,
             "the visible fallback sort must retain exactly one header indicator"
         );

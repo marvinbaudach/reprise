@@ -53,7 +53,7 @@ pub(in crate::ui) fn sort_by_column(
     order: gtk4::SortType,
 ) {
     view.sort_by_column(Some(column), order);
-    super::track_list_header_style::sync_primary_sort_indicator(view);
+    crate::ui::table_columns::single_sort_indicator::sync_primary_sort_indicator(view);
 }
 
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
