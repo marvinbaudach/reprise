@@ -24,7 +24,7 @@ use crate::ui::strings;
 /// second did not.
 #[cfg(test)]
 pub(super) fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
-    let totals = ReviewSnapshot::from_rows(rows.to_vec()).totals;
+    let totals = ReviewSnapshot::from_rows(rows.to_vec(), "").totals;
     (totals.changes, totals.albums)
 }
 

@@ -88,11 +88,10 @@ impl ReviewState {
         let ready_count = review_ready_count(&session);
         self.ready_count.set(ready_count);
         let grouped_rows_started = Instant::now();
-        let snapshot = ReviewSnapshot::from_rows(grouped_rows_for(
-            &self.scan,
-            &session,
-            &self.outcomes.borrow(),
-        ));
+        let snapshot = ReviewSnapshot::from_rows(
+            grouped_rows_for(&self.scan, &session, &self.outcomes.borrow()),
+            "",
+        );
         let objects = snapshot
             .rows
             .iter()
@@ -724,3 +723,7 @@ mod review_refresh_tests;
 #[cfg(test)]
 #[path = "review_page_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "review_search_tests.rs"]
+mod review_search_tests;
