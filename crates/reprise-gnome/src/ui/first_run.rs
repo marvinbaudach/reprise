@@ -1,6 +1,7 @@
 //! Native first-run wizard reusing the normal window actions and scan button.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::glib;
@@ -9,8 +10,14 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
+use reprise_core::online_sources::{self, WizardSourceSelection};
 
-use crate::ui::{preference_rhythmbox, scan_flow::ScanControls, strings};
+use crate::ui::{
+    first_run_sources::{self, SourceWidgets},
+    preference_rhythmbox,
+    scan_flow::ScanControls,
+    strings,
+};
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_FIRST_RUN";
 
@@ -24,11 +31,27 @@ pub(super) enum FirstRunDecision {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct CompletionOptions {
     rhythmbox_import: bool,
+    sources: WizardSourceSelection,
 }
 
 struct RhythmboxImportWidgets {
     group: adw::PreferencesGroup,
     import_data: adw::SwitchRow,
+}
+
+struct LibraryFolderWidgets {
+    group: adw::PreferencesGroup,
+    row: adw::ActionRow,
+    choose: gtk4::Button,
+}
+
+struct WizardContentWidgets {
+    root: gtk4::Box,
+    library: Option<LibraryFolderWidgets>,
+    rhythmbox: Option<RhythmboxImportWidgets>,
+    sources: SourceWidgets,
+    skip: gtk4::Button,
+    setup: gtk4::Button,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +64,133 @@ fn requested_actions(options: CompletionOptions) -> bool {
     options.rhythmbox_import
 }
 
-fn should_open_folder(response: CompletionResponse) -> bool {
-    response == CompletionResponse::SetUp
+fn completion_options(
+    response: CompletionResponse,
+    rhythmbox_import: bool,
+    sources: WizardSourceSelection,
+) -> CompletionOptions {
+    CompletionOptions {
+        rhythmbox_import: response == CompletionResponse::SetUp && rhythmbox_import,
+        sources,
+    }
+}
+
+/// Everything the wizard persists, on both exits. `NET-4`: the wizard
+/// *replaces* the discovery banner's question for a fresh install, so it
+/// closes the banner too — otherwise the same question arrives twice.
+fn persist_completion(db: &Db, options: CompletionOptions) {
+    if let Err(error) = settings::set_onboarding_completed(db, true) {
+        tracing::warn!(%error, "could not persist onboarding completion");
+    }
+    if let Err(error) = online_sources::apply_wizard_selection(db, options.sources) {
+        tracing::warn!(%error, "could not persist first-run source selection");
+    }
+    if let Err(error) = settings::set_online_discovery_banner_completed(db, true) {
+        tracing::warn!(%error, "could not close the discovery banner");
+    }
+}
+
+/// `~/Music` reads as a place; `/home/someone/Music` reads as a machine.
+/// Only an exact prefix match is folded — a sibling like `/home/someone2`
+/// must not become `~2`.
+fn tilde_path(path: &Path, home: &Path) -> String {
+    let Ok(relative) = path.strip_prefix(home) else {
+        return path.display().to_string();
+    };
+    if relative.as_os_str().is_empty() {
+        return "~".to_owned();
+    }
+    PathBuf::from("~").join(relative).display().to_string()
+}
+
+/// Which folder path the wizard takes on the way out.
+///
+/// `Skip` keeps a folder the user typed into the dialog: skipping means
+/// skipping what was never asked for — sources and import — not the one
+/// thing the user filled in themselves. A folder that shows in the row and
+/// vanishes on click reads as a bug.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FolderOutcome {
+    /// Nothing chosen, and the user asked to set up: open the picker.
+    OpenPicker,
+    /// A folder is remembered: scan it, on either exit.
+    ScanChosen,
+    /// Skipped without choosing anything.
+    Nothing,
+}
+
+fn folder_outcome(response: CompletionResponse, folder_chosen: bool) -> FolderOutcome {
+    match (response, folder_chosen) {
+        (_, true) => FolderOutcome::ScanChosen,
+        (CompletionResponse::SetUp, false) => FolderOutcome::OpenPicker,
+        (CompletionResponse::Skip, false) => FolderOutcome::Nothing,
+    }
+}
+
+fn dispatch_folder_outcome(
+    response: CompletionResponse,
+    chosen_folder: Option<PathBuf>,
+    open_picker: &dyn Fn(),
+    start_scan_of: &dyn Fn(PathBuf),
+) -> FolderOutcome {
+    let outcome = folder_outcome(response, chosen_folder.is_some());
+    match outcome {
+        FolderOutcome::OpenPicker => open_picker(),
+        FolderOutcome::ScanChosen => {
+            if let Some(folder) = chosen_folder {
+                start_scan_of(folder);
+            }
+        }
+        FolderOutcome::Nothing => {}
+    }
+    outcome
+}
+
+struct CompletionCollaborators<'a> {
+    persist: &'a dyn Fn(CompletionOptions),
+    close_dialog: &'a dyn Fn(),
+    present_rhythmbox_import: &'a dyn Fn(),
+    arm_rhythmbox_import: &'a dyn Fn(),
+    open_picker: &'a dyn Fn(),
+    start_scan_of: &'a dyn Fn(PathBuf),
+    log_smoke_result: &'a dyn Fn(),
+}
+
+fn complete_first_run(
+    options: CompletionOptions,
+    response: CompletionResponse,
+    suppress_picker: bool,
+    chosen_folder: Option<PathBuf>,
+    collaborators: &CompletionCollaborators<'_>,
+) -> FolderOutcome {
+    let rhythmbox_import = requested_actions(options);
+    (collaborators.persist)(options);
+    (collaborators.close_dialog)();
+    if rhythmbox_import {
+        if suppress_picker {
+            (collaborators.present_rhythmbox_import)();
+        } else {
+            (collaborators.arm_rhythmbox_import)();
+        }
+    }
+    let outcome = if suppress_picker {
+        folder_outcome(response, chosen_folder.is_some())
+    } else {
+        dispatch_folder_outcome(
+            response,
+            chosen_folder,
+            collaborators.open_picker,
+            collaborators.start_scan_of,
+        )
+    };
+    tracing::info!(
+        ?response,
+        ?outcome,
+        rhythmbox_import,
+        "first-run setup completed"
+    );
+    (collaborators.log_smoke_result)();
+    outcome
 }
 
 fn rhythmbox_offer(decision: FirstRunDecision, available: bool) -> Option<bool> {
@@ -58,7 +206,9 @@ fn take_completed_library_import(presented: &Cell<bool>, library_root: Option<&s
 }
 
 fn build_rhythmbox_import_group(active: bool) -> RhythmboxImportWidgets {
-    let group = adw::PreferencesGroup::new();
+    let group = adw::PreferencesGroup::builder()
+        .title(strings::text(strings::ONBOARDING_GROUP_IMPORT))
+        .build();
     let import_data = adw::SwitchRow::builder()
         .title(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
         .subtitle(strings::text(
@@ -69,6 +219,88 @@ fn build_rhythmbox_import_group(active: bool) -> RhythmboxImportWidgets {
         .build();
     group.add(&import_data);
     RhythmboxImportWidgets { group, import_data }
+}
+
+fn build_library_folder_group(
+    library_root: Option<&str>,
+    music_dir: Option<&Path>,
+    home: &Path,
+) -> Option<LibraryFolderWidgets> {
+    if library_root.is_some_and(|root| !root.trim().is_empty()) {
+        return None;
+    }
+
+    let group = adw::PreferencesGroup::builder()
+        .title(strings::text(strings::ONBOARDING_GROUP_LIBRARY_FOLDER))
+        .build();
+    let row = adw::ActionRow::builder()
+        .title(strings::text(strings::NO_LIBRARY_FOLDER))
+        .build();
+    if let Some(music_dir) = music_dir {
+        let display = tilde_path(music_dir, home);
+        row.set_subtitle(&strings::onboarding_no_library_yet_in(&display));
+    }
+    let choose = gtk4::Button::with_label(&strings::text(strings::CHOOSE_FOLDER));
+    choose.set_valign(gtk4::Align::Center);
+    row.add_suffix(&choose);
+    group.add(&row);
+
+    Some(LibraryFolderWidgets { group, row, choose })
+}
+
+fn show_chosen_folder(row: &adw::ActionRow, choose: &gtk4::Button, folder: &Path) {
+    row.set_title(&strings::text(strings::LIBRARY_FOLDER));
+    row.set_subtitle(&folder.display().to_string());
+    choose.set_label(&strings::text(strings::ONBOARDING_CHANGE_FOLDER));
+}
+
+fn build_wizard_content(
+    library_root: Option<&str>,
+    music_dir: Option<&Path>,
+    home: &Path,
+    rhythmbox: Option<bool>,
+    selection: WizardSourceSelection,
+) -> WizardContentWidgets {
+    let privacy = gtk4::Label::builder()
+        .label(strings::text(strings::ONBOARDING_PRIVACY))
+        .wrap(true)
+        .xalign(0.0)
+        .build();
+    let library = build_library_folder_group(library_root, music_dir, home);
+    let rhythmbox = rhythmbox.map(build_rhythmbox_import_group);
+    let sources = first_run_sources::build_source_group(selection);
+    let skip = gtk4::Button::with_label(&strings::text(strings::ONBOARDING_SKIP));
+    let setup = gtk4::Button::with_label(&strings::text(strings::ONBOARDING_SET_UP));
+    setup.add_css_class("suggested-action");
+    let buttons = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    buttons.set_halign(gtk4::Align::End);
+    buttons.append(&skip);
+    buttons.append(&setup);
+
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 18);
+    root.set_margin_top(18);
+    root.set_margin_bottom(18);
+    root.set_margin_start(18);
+    root.set_margin_end(18);
+    root.append(&privacy);
+    if let Some(library) = &library {
+        root.append(&library.group);
+    }
+    if let Some(rhythmbox) = &rhythmbox {
+        root.append(&rhythmbox.group);
+    }
+    root.append(&sources.group);
+    root.append(&sources.footer);
+    root.append(&buttons);
+
+    WizardContentWidgets {
+        root,
+        library,
+        rhythmbox,
+        sources,
+        skip,
+        setup,
+    }
 }
 
 fn arm_rhythmbox_import_after_library_setup(
@@ -134,6 +366,7 @@ pub(super) fn run(
     scan_controls: &ScanControls,
     conn: &Rc<Db>,
     decision: FirstRunDecision,
+    start_scan_of: &Rc<dyn Fn(PathBuf)>,
     present_rhythmbox_import: &Rc<dyn Fn()>,
 ) {
     tracing::info!(?decision, "first-run decision");
@@ -142,34 +375,81 @@ pub(super) fn run(
     }
 
     let rhythmbox_found = preference_rhythmbox::rhythmbox_import_available();
-    let rhythmbox = rhythmbox_offer(decision, rhythmbox_found).map(build_rhythmbox_import_group);
+    let rhythmbox_offer = rhythmbox_offer(decision, rhythmbox_found);
     tracing::info!(
         rhythmbox_found,
         rhythmbox_import_default = false,
         "first-run Rhythmbox discovery complete"
     );
-    let privacy = gtk4::Label::builder()
-        .label(strings::text(strings::ONBOARDING_PRIVACY))
-        .wrap(true)
-        .xalign(0.0)
-        .build();
-    let skip = gtk4::Button::with_label(&strings::text(strings::ONBOARDING_SKIP));
-    let setup = gtk4::Button::with_label(&strings::text(strings::ONBOARDING_SET_UP));
-    setup.add_css_class("suggested-action");
-    let buttons = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    buttons.set_halign(gtk4::Align::End);
-    buttons.append(&skip);
-    buttons.append(&setup);
-    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 18);
-    content.set_margin_top(18);
-    content.set_margin_bottom(18);
-    content.set_margin_start(18);
-    content.set_margin_end(18);
-    content.append(&privacy);
-    if let Some(rhythmbox) = &rhythmbox {
-        content.append(&rhythmbox.group);
+    let selection =
+        WizardSourceSelection::current_or_first_enable_defaults(conn).unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read online source state; showing every source off");
+            WizardSourceSelection::default()
+        });
+    let library_root = settings::get_library_root(conn).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read library root for first-run folder group");
+        None
+    });
+    let music_dir = glib::user_special_dir(glib::UserDirectory::Music);
+    let home = glib::home_dir();
+    let WizardContentWidgets {
+        root,
+        library,
+        rhythmbox,
+        sources,
+        skip,
+        setup,
+    } = build_wizard_content(
+        library_root.as_deref(),
+        music_dir.as_deref(),
+        &home,
+        rhythmbox_offer,
+        selection,
+    );
+    let sources = Rc::new(sources);
+    let remembered_folder = Rc::new(RefCell::<Option<PathBuf>>::new(None));
+
+    if let Some(library) = library {
+        let window = window.clone();
+        let row = library.row.clone();
+        let choose = library.choose.clone();
+        let remembered_folder = remembered_folder.clone();
+        library.choose.connect_clicked(move |button| {
+            button.set_sensitive(false);
+            let dialog = gtk4::FileDialog::builder()
+                .title(strings::text(strings::SCAN_DIALOG_TITLE))
+                .modal(true)
+                .build();
+            let window = window.clone();
+            let row = row.clone();
+            let choose = choose.clone();
+            let remembered_folder = remembered_folder.clone();
+            glib::spawn_future_local(async move {
+                let folder = match dialog.select_folder_future(Some(&window)).await {
+                    Ok(folder) => folder,
+                    Err(error) => {
+                        if error.matches(gtk4::DialogError::Dismissed)
+                            || error.matches(gtk4::DialogError::Cancelled)
+                        {
+                            tracing::debug!("first-run folder dialog dismissed");
+                        } else {
+                            tracing::error!(%error, "first-run folder dialog failed");
+                        }
+                        choose.set_sensitive(true);
+                        return;
+                    }
+                };
+                let Some(path) = folder.path() else {
+                    tracing::warn!("selected folder has no local filesystem path; cannot scan");
+                    choose.set_sensitive(true);
+                    return;
+                };
+                *remembered_folder.borrow_mut() = Some(path.clone());
+                show_chosen_folder(&row, &choose, &path);
+                choose.set_sensitive(true);
+            });
+        });
     }
-    content.append(&buttons);
 
     let header = adw::HeaderBar::new();
     header.set_show_end_title_buttons(false);
@@ -180,11 +460,16 @@ pub(super) fn run(
     )));
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&content));
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .child(&root)
+        .propagate_natural_height(true)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .build();
+    toolbar.set_content(Some(&scrolled));
     let dialog = adw::Dialog::builder()
         .child(&toolbar)
         .content_width(560)
-        .content_height(430)
+        .content_height(620)
         .build();
     let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(window);
     focus_guard.bind_closable_dialog(&dialog, &setup);
@@ -195,44 +480,57 @@ pub(super) fn run(
         let scan_controls = scan_controls.clone();
         let dialog = dialog.downgrade();
         let conn = conn.clone();
+        let remembered_folder = remembered_folder.clone();
+        let start_scan_of = start_scan_of.clone();
         let present_rhythmbox_import = present_rhythmbox_import.clone();
         Rc::new(move |options, response, suppress_picker| {
             if window.upgrade().is_none() {
                 return;
             }
-            let rhythmbox_import = requested_actions(options);
-            if let Err(error) = settings::set_onboarding_completed(&conn, true) {
-                tracing::warn!(%error, "could not persist onboarding completion");
-            }
-            if let Some(dialog) = dialog.upgrade() {
-                dialog.close();
-            }
-            if rhythmbox_import {
-                if suppress_picker {
-                    present_rhythmbox_import();
-                } else {
-                    arm_rhythmbox_import_after_library_setup(
-                        &scan_controls,
-                        &conn,
-                        &present_rhythmbox_import,
-                    );
+            let chosen_folder = remembered_folder.borrow().clone();
+            let persist = |options| persist_completion(&conn, options);
+            let close_dialog = || {
+                if let Some(dialog) = dialog.upgrade() {
+                    dialog.close();
                 }
-            }
-            if should_open_folder(response) && !suppress_picker {
+            };
+            let arm_rhythmbox_import = || {
+                arm_rhythmbox_import_after_library_setup(
+                    &scan_controls,
+                    &conn,
+                    &present_rhythmbox_import,
+                );
+            };
+            let open_picker = || {
                 if let Some(scan_button) = scan_button.upgrade() {
                     scan_button.emit_clicked();
                 }
-            }
-            tracing::info!(?response, rhythmbox_import, "first-run setup completed");
-            log_smoke_result(&conn);
+            };
+            let smoke_result = || log_smoke_result(&conn);
+            complete_first_run(
+                options,
+                response,
+                suppress_picker,
+                chosen_folder,
+                &CompletionCollaborators {
+                    persist: &persist,
+                    close_dialog: &close_dialog,
+                    present_rhythmbox_import: present_rhythmbox_import.as_ref(),
+                    arm_rhythmbox_import: &arm_rhythmbox_import,
+                    open_picker: &open_picker,
+                    start_scan_of: start_scan_of.as_ref(),
+                    log_smoke_result: &smoke_result,
+                },
+            );
         })
     };
 
     {
         let complete = complete.clone();
+        let sources = sources.clone();
         skip.connect_clicked(move |_| {
             complete(
-                CompletionOptions::default(),
+                completion_options(CompletionResponse::Skip, false, sources.selection()),
                 CompletionResponse::Skip,
                 false,
             );
@@ -240,13 +538,15 @@ pub(super) fn run(
     }
     {
         let complete = complete.clone();
+        let import_data = rhythmbox.map(|widgets| widgets.import_data);
+        let sources = sources.clone();
         setup.connect_clicked(move |_| {
             complete(
-                CompletionOptions {
-                    rhythmbox_import: rhythmbox
-                        .as_ref()
-                        .is_some_and(|widgets| widgets.import_data.is_active()),
-                },
+                completion_options(
+                    CompletionResponse::SetUp,
+                    import_data.as_ref().is_some_and(adw::SwitchRow::is_active),
+                    sources.selection(),
+                ),
                 CompletionResponse::SetUp,
                 false,
             );
@@ -254,6 +554,7 @@ pub(super) fn run(
     }
 
     let window = window.clone();
+    let sources = sources.clone();
     glib::idle_add_local_once(move || {
         dialog.present(Some(&window));
         tracing::info!(presentations = 1, "first-run wizard presented");
@@ -261,11 +562,12 @@ pub(super) fn run(
             return;
         };
         let (options, response) = match smoke.as_str() {
-            "skip" => (CompletionOptions::default(), CompletionResponse::Skip),
+            "skip" => (
+                completion_options(CompletionResponse::Skip, false, sources.selection()),
+                CompletionResponse::Skip,
+            ),
             "setup-options" => (
-                CompletionOptions {
-                    rhythmbox_import: true,
-                },
+                completion_options(CompletionResponse::SetUp, true, sources.selection()),
                 CompletionResponse::SetUp,
             ),
             _ => {
@@ -290,84 +592,5 @@ fn log_smoke_result(db: &Db) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn incomplete_fresh_install_shows_the_wizard() {
-        assert_eq!(decide(false, None), FirstRunDecision::ShowWizard);
-        assert_eq!(decide(false, Some("  ")), FirstRunDecision::ShowWizard);
-    }
-
-    #[test]
-    fn existing_library_is_a_silent_upgrade() {
-        assert_eq!(
-            decide(false, Some("/music")),
-            FirstRunDecision::ExistingLibrary
-        );
-    }
-
-    #[test]
-    fn completed_onboarding_never_reopens_the_wizard() {
-        assert_eq!(decide(true, None), FirstRunDecision::AlreadyCompleted);
-    }
-
-    #[test]
-    fn completion_activates_only_explicitly_enabled_options() {
-        assert!(!requested_actions(CompletionOptions::default()));
-        assert!(requested_actions(CompletionOptions {
-            rhythmbox_import: true,
-        }));
-    }
-
-    #[test]
-    fn only_set_up_opens_the_folder_picker() {
-        assert!(!should_open_folder(CompletionResponse::Skip));
-        assert!(should_open_folder(CompletionResponse::SetUp));
-    }
-
-    #[test]
-    fn rhythmbox_offer_is_first_run_only_detected_and_defaults_off() {
-        assert_eq!(rhythmbox_offer(FirstRunDecision::ShowWizard, false), None);
-        assert_eq!(
-            rhythmbox_offer(FirstRunDecision::ExistingLibrary, true),
-            None
-        );
-        assert_eq!(
-            rhythmbox_offer(FirstRunDecision::AlreadyCompleted, true),
-            None
-        );
-        assert_eq!(
-            rhythmbox_offer(FirstRunDecision::ShowWizard, true),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn rhythmbox_import_is_taken_once_after_a_completed_library_scan() {
-        let presented = Cell::new(false);
-
-        assert!(!take_completed_library_import(&presented, None));
-        assert!(!take_completed_library_import(&presented, Some("  ")));
-        assert!(take_completed_library_import(&presented, Some("/music")));
-        assert!(!take_completed_library_import(&presented, Some("/music")));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn detected_rhythmbox_group_lists_the_supported_import_choice() {
-        gtk4::init().unwrap();
-        let widgets = build_rhythmbox_import_group(false);
-
-        assert_eq!(
-            widgets.import_data.title(),
-            strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX)
-        );
-        assert_eq!(
-            widgets.import_data.subtitle().as_deref(),
-            Some(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION).as_str())
-        );
-        assert!(!widgets.import_data.is_active());
-        assert!(!widgets.import_data.uses_markup());
-    }
-}
+#[path = "first_run_tests.rs"]
+mod tests;
