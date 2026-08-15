@@ -146,6 +146,53 @@ fn dispatch_folder_outcome(
     outcome
 }
 
+struct CompletionCollaborators<'a> {
+    persist: &'a dyn Fn(CompletionOptions),
+    close_dialog: &'a dyn Fn(),
+    present_rhythmbox_import: &'a dyn Fn(),
+    arm_rhythmbox_import: &'a dyn Fn(),
+    open_picker: &'a dyn Fn(),
+    start_scan_of: &'a dyn Fn(PathBuf),
+    log_smoke_result: &'a dyn Fn(),
+}
+
+fn complete_first_run(
+    options: CompletionOptions,
+    response: CompletionResponse,
+    suppress_picker: bool,
+    chosen_folder: Option<PathBuf>,
+    collaborators: &CompletionCollaborators<'_>,
+) -> FolderOutcome {
+    let rhythmbox_import = requested_actions(options);
+    (collaborators.persist)(options);
+    (collaborators.close_dialog)();
+    if rhythmbox_import {
+        if suppress_picker {
+            (collaborators.present_rhythmbox_import)();
+        } else {
+            (collaborators.arm_rhythmbox_import)();
+        }
+    }
+    let outcome = if suppress_picker {
+        folder_outcome(response, chosen_folder.is_some())
+    } else {
+        dispatch_folder_outcome(
+            response,
+            chosen_folder,
+            collaborators.open_picker,
+            collaborators.start_scan_of,
+        )
+    };
+    tracing::info!(
+        ?response,
+        ?outcome,
+        rhythmbox_import,
+        "first-run setup completed"
+    );
+    (collaborators.log_smoke_result)();
+    outcome
+}
+
 fn rhythmbox_offer(decision: FirstRunDecision, available: bool) -> Option<bool> {
     (decision == FirstRunDecision::ShowWizard && available).then_some(false)
 }
@@ -440,45 +487,41 @@ pub(super) fn run(
             if window.upgrade().is_none() {
                 return;
             }
-            let rhythmbox_import = requested_actions(options);
             let chosen_folder = remembered_folder.borrow().clone();
-            persist_completion(&conn, options);
-            if let Some(dialog) = dialog.upgrade() {
-                dialog.close();
-            }
-            if rhythmbox_import {
-                if suppress_picker {
-                    present_rhythmbox_import();
-                } else {
-                    arm_rhythmbox_import_after_library_setup(
-                        &scan_controls,
-                        &conn,
-                        &present_rhythmbox_import,
-                    );
+            let persist = |options| persist_completion(&conn, options);
+            let close_dialog = || {
+                if let Some(dialog) = dialog.upgrade() {
+                    dialog.close();
                 }
-            }
-            let outcome = if suppress_picker {
-                folder_outcome(response, chosen_folder.is_some())
-            } else {
-                let open_picker = || {
-                    if let Some(scan_button) = scan_button.upgrade() {
-                        scan_button.emit_clicked();
-                    }
-                };
-                dispatch_folder_outcome(
-                    response,
-                    chosen_folder,
-                    &open_picker,
-                    start_scan_of.as_ref(),
-                )
             };
-            tracing::info!(
-                ?response,
-                ?outcome,
-                rhythmbox_import,
-                "first-run setup completed"
+            let arm_rhythmbox_import = || {
+                arm_rhythmbox_import_after_library_setup(
+                    &scan_controls,
+                    &conn,
+                    &present_rhythmbox_import,
+                );
+            };
+            let open_picker = || {
+                if let Some(scan_button) = scan_button.upgrade() {
+                    scan_button.emit_clicked();
+                }
+            };
+            let smoke_result = || log_smoke_result(&conn);
+            complete_first_run(
+                options,
+                response,
+                suppress_picker,
+                chosen_folder,
+                &CompletionCollaborators {
+                    persist: &persist,
+                    close_dialog: &close_dialog,
+                    present_rhythmbox_import: present_rhythmbox_import.as_ref(),
+                    arm_rhythmbox_import: &arm_rhythmbox_import,
+                    open_picker: &open_picker,
+                    start_scan_of: start_scan_of.as_ref(),
+                    log_smoke_result: &smoke_result,
+                },
             );
-            log_smoke_result(&conn);
         })
     };
 

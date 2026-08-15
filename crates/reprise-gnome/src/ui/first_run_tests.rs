@@ -222,6 +222,86 @@ fn skipping_with_a_chosen_folder_scans_it_and_keeps_the_gate_shut() {
     assert!(!reprise_core::online_sources::is_enabled(&db).unwrap());
 }
 
+#[test]
+fn completion_wiring_dispatches_folder_actions_unless_the_picker_is_suppressed() {
+    struct Case {
+        response: CompletionResponse,
+        suppress_picker: bool,
+        chosen_folder: Option<&'static str>,
+        expected_outcome: FolderOutcome,
+        expected_picker_clicks: usize,
+        expected_scans: &'static [&'static str],
+    }
+
+    for case in [
+        Case {
+            response: CompletionResponse::Skip,
+            suppress_picker: false,
+            chosen_folder: Some("/music"),
+            expected_outcome: FolderOutcome::ScanChosen,
+            expected_picker_clicks: 0,
+            expected_scans: &["/music"],
+        },
+        Case {
+            response: CompletionResponse::SetUp,
+            suppress_picker: false,
+            chosen_folder: None,
+            expected_outcome: FolderOutcome::OpenPicker,
+            expected_picker_clicks: 1,
+            expected_scans: &[],
+        },
+        Case {
+            response: CompletionResponse::SetUp,
+            suppress_picker: true,
+            chosen_folder: Some("/smoke-music"),
+            expected_outcome: FolderOutcome::ScanChosen,
+            expected_picker_clicks: 0,
+            expected_scans: &[],
+        },
+    ] {
+        let persisted = RefCell::new(Vec::new());
+        let closes = Cell::new(0);
+        let picker_clicks = Cell::new(0);
+        let scans = RefCell::new(Vec::new());
+        let persist = |options| persisted.borrow_mut().push(options);
+        let close_dialog = || closes.set(closes.get() + 1);
+        let open_picker = || picker_clicks.set(picker_clicks.get() + 1);
+        let start_scan_of = |folder| scans.borrow_mut().push(folder);
+        let no_op = || {};
+
+        let outcome = complete_first_run(
+            CompletionOptions::default(),
+            case.response,
+            case.suppress_picker,
+            case.chosen_folder.map(PathBuf::from),
+            &CompletionCollaborators {
+                persist: &persist,
+                close_dialog: &close_dialog,
+                present_rhythmbox_import: &no_op,
+                arm_rhythmbox_import: &no_op,
+                open_picker: &open_picker,
+                start_scan_of: &start_scan_of,
+                log_smoke_result: &no_op,
+            },
+        );
+
+        assert_eq!(outcome, case.expected_outcome);
+        assert_eq!(
+            persisted.borrow().as_slice(),
+            [CompletionOptions::default()]
+        );
+        assert_eq!(closes.get(), 1);
+        assert_eq!(picker_clicks.get(), case.expected_picker_clicks);
+        assert_eq!(
+            scans.borrow().as_slice(),
+            case.expected_scans
+                .iter()
+                .map(PathBuf::from)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 fn direct_preferences_groups(root: &gtk4::Box) -> Vec<adw::PreferencesGroup> {
     let mut groups = Vec::new();
     let mut child = root.first_child();
