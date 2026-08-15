@@ -1697,3 +1697,39 @@ Nachweis deckt Inhalt, Aktion und Bild ab, nicht die Darstellung.
   ist eine Entwurfsentscheidung, die noch niemand getroffen hat.
 - R4s Kachel-Parität ist gegenstandslos geworden und sollte beim nächsten
   Anfassen des Plans umformuliert statt weitergeschleppt werden.
+
+### Nachtrag (15.08.2026) — R4 ist geschlossen
+
+Dieser Nachtrag ändert oben keinen Satz. Der Anforderungstext R4
+(Post-Merge-Querprüfung 5) bleibt wörtlich stehen: nachträglich umgeschrieben
+wäre er kein Nachweis mehr, sondern eine Behauptung über die Vergangenheit.
+
+R4 verlangte drei Paritäten zwischen Popover-Zeile und Tabellenzeile:
+44×44-Kachel, 2px-Akzentmarke, Tag-Typografie.
+
+1. **Die Kachel-Hälfte war per Konstruktion gegenstandslos.** Strang 1 hat die
+   Concerts-Tabelle bewusst einzeilig gebaut (CONC-14), und in
+   `crates/reprise-gnome/src/ui/concerts/` existiert kein Bild-Widget:
+   `git grep -nE 'Picture|gtk::Image|Avatar|Texture|Pixbuf'` über dieses
+   Verzeichnis liefert null Treffer, und `ConcertColumn` kennt keine
+   Cover-Spalte. Es gibt kein Gegenstück, das eine Kachel zeigen könnte, also
+   auch keine Parität, die ein Screenshot herstellen oder widerlegen könnte.
+   Prüfung 5 hat das gemessen und „überholt, nicht verletzt“ genannt; dieser
+   Nachtrag zieht daraus den Schluss.
+2. **Die Akzentmarken-Hälfte ist erfüllt** — wortgleiche Deklaration in
+   `updates/css.rs` und `concerts/css.rs`, in Prüfung 5 gemessen.
+3. **Die Tag-Hälfte ist erfüllt und wird verschärft.** Prüfung 5 fand als
+   einzige echte Abweichung die Füllung der neutralen Variante. Die Runde
+   `feed-tags-mark-the-exception` (15.08.2026) hebt sie auf: der Popover-Tag
+   trägt für `Off sale` und `Unknown` genau die Deklarationen der
+   Tabellenklassen `.off-sale` und `.unknown`, festgehalten von einem
+   Deklarations- und einem Pixelvergleich beider Pillen.
+
+Damit ist R4 geschlossen. Eine normative Regel in `docs/ux-rules.md` entsteht
+daraus ausdrücklich **nicht**: die Kachel-Hälfte hat keinen Gegenstand, und die
+Tag-Hälfte ist ab jetzt von NR-39 abgedeckt.
+
+Der zweite Punkt aus „Was offen bleibt“ — der fehlende Status-Tag bei `OnSale`
+und `Unknown` — ist mit NR-39 entschieden: `Off sale` und `Unknown` tragen im
+Popover einen Tag, `On sale` nicht. Beide Aufzählungspunkte bleiben oben als
+Protokoll ihres Zeitpunkts unverändert stehen.
