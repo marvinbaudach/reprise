@@ -69,6 +69,7 @@ build_surface_tree() {
   local tree_root=$out
   local brand=$tree_root/data/brand
   local icons=$tree_root/data/icons/hicolor
+  local resource_icons=$tree_root/crates/reprise-gnome/resources/icons/scalable/actions
   local android=$tree_root/android/app/src/main/res
   local icon
   mkdir -p "$brand"
@@ -101,6 +102,11 @@ build_surface_tree() {
     "$icons/symbolic/apps/reprise-radio-symbolic.svg"
   cp "$stats_symbolic" \
     "$icons/symbolic/apps/reprise-stats-symbolic.svg"
+  # Hicolor copies install the app-owned names; GResource copies let an
+  # uninstalled run draw them instead of silently taking a system fallback.
+  mkdir -p "$resource_icons"
+  cp "$radio_symbolic" "$resource_icons/reprise-radio-symbolic.svg"
+  cp "$stats_symbolic" "$resource_icons/reprise-stats-symbolic.svg"
 
   mkdir -p "$android/drawable"
   python3 "$lib/svg_to_vectordrawable.py" "$mark" \

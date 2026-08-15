@@ -91,9 +91,26 @@ mono = ET.parse(brand / "reprise-mark-mono.svg").getroot()
 assert mono.attrib["viewBox"] == "0 0 96 96"
 assert mono.attrib["fill"] == "currentColor"
 assert len(list(mono)) == 4
+stats = ET.parse(brand / "reprise-stats-symbolic.svg").getroot()
+stats_geometry = (
+    {"x": "2", "y": "2", "width": "1", "height": "12"},
+    {"x": "2", "y": "13", "width": "11", "height": "1"},
+    {"x": "4", "y": "9", "width": "2", "height": "4"},
+    {"x": "7", "y": "6", "width": "2", "height": "7"},
+    {"x": "10", "y": "3", "width": "2", "height": "10"},
+)
+assert stats.attrib["viewBox"] == "0 0 16 16"
+assert stats.attrib["width"] == "16"
+assert stats.attrib["height"] == "16"
+assert stats.attrib["fill"] == "#222222"
+stats_shapes = list(stats)
+assert len(stats_shapes) == len(stats_geometry)
+for index, (node, attributes) in enumerate(zip(stats_shapes, stats_geometry, strict=True)):
+    assert node.tag.rsplit("}", 1)[-1] == "rect", index
+    assert node.attrib == attributes, index
 PY
   then
-    ok "source geometry: 96-unit sign, transparent 16-unit stage, 1:3 barlines"
+    ok "source geometry: 96-unit sign, transparent 16-unit stage, 1:3 barlines, 16-unit Stats"
   else
     bad "source geometry differs from the specified 96-unit drawing"
   fi

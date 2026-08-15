@@ -51,16 +51,6 @@ mod tests {
             "library_doctor::doctor_glyph, and sidebar_presentation::NavIcon::LibraryDoctor \
              through nav_icon's theme check, both → system-search-symbolic",
         ),
-        (
-            "reprise-radio-symbolic",
-            "sidebar_presentation::NavIcon::Radio through nav_icon's theme check \
-             → audio-x-generic-symbolic",
-        ),
-        (
-            "reprise-stats-symbolic",
-            "sidebar_presentation::NavIcon::MyStats through nav_icon's theme check \
-             → view-list-symbolic",
-        ),
     ];
 
     fn ui_root() -> PathBuf {
@@ -129,16 +119,37 @@ mod tests {
     }
 
     #[test]
+    fn embedded_private_symbolics_need_no_system_fallback_guard() {
+        let guarded = GUARDED
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<BTreeSet<_>>();
+        for name in ["reprise-radio-symbolic", "reprise-stats-symbolic"] {
+            assert!(
+                !guarded.contains(name),
+                "{name} is embedded and must be checked as directly drawable"
+            );
+        }
+    }
+
+    #[test]
     fn private_symbolics_are_embedded_at_icon_theme_paths() {
         crate::register_app_resources();
-        for name in [super::LYRICS, super::VISUAL_BARS] {
+        for name in [
+            super::LYRICS,
+            super::VISUAL_BARS,
+            "reprise-radio-symbolic",
+            "reprise-stats-symbolic",
+        ] {
             let path =
                 format!("/io/github/marvinbaudach/Reprise/icons/scalable/actions/{name}.svg");
             let bytes =
                 gtk4::gio::resources_lookup_data(&path, gtk4::gio::ResourceLookupFlags::NONE)
                     .unwrap_or_else(|error| panic!("{path} is not embedded: {error}"));
+            let bytes = bytes.as_ref();
             assert!(
-                bytes.as_ref().starts_with(b"<?xml") && bytes.as_ref().ends_with(b"</svg>\n"),
+                bytes.windows(b"<svg".len()).any(|window| window == b"<svg")
+                    && bytes.ends_with(b"</svg>\n"),
                 "{path} is not a complete SVG"
             );
         }

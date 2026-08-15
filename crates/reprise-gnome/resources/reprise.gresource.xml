@@ -3,6 +3,8 @@
   <gresource prefix="/io/github/marvinbaudach/Reprise">
     <file alias="io.github.marvinbaudach.Reprise.metainfo.xml">io.github.marvinbaudach.Reprise.metainfo.xml</file>
     <file>icons/scalable/actions/reprise-lyrics-symbolic.svg</file>
+    <file>icons/scalable/actions/reprise-radio-symbolic.svg</file>
+    <file>icons/scalable/actions/reprise-stats-symbolic.svg</file>
     <file>icons/scalable/actions/reprise-visual-bars-symbolic.svg</file>
   </gresource>
 </gresources>
