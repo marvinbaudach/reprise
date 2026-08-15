@@ -111,6 +111,30 @@ gegen eine Messdatei.
   ein read-only Mount oder ein offener Deskriptor statt `chmod`.
   Beides — #496 wie #497 — gehört den jeweiligen Autoren. #492 steht wieder auf
   Entwurf. Siehe [[scripts-tests-run-in-no-gate]].
+- **Stand 15.08.2026 08:00, `origin/dev@0ea3a4e73e`: der worktree-gc-Blocker ist
+  weg (#502, fremde Reparatur) — und darunter lag der eigentliche Grund.** Seit
+  dem 14.08.2026 21:32 Uhr ist im ganzen Repo **kein einziger CI-Lauf mehr grün
+  geworden**; die letzten sechs starben bei exakt `60m0Xs`. Das ist die
+  `timeout-minutes: 60` des `quality`-Jobs, kein Test.
+  Was es verdeckt hat: die Stufe `== All ignored display tests ==` fährt jeden
+  ignorierten Test einzeln und **puffert die Ausgabe**. Nach
+  `Running tests/gnome_conformance.rs` steht 43 Minuten lang keine Zeile im Log,
+  dann kippen 500+ `== display test: … ==` in einer Sekunde heraus. Der **letzte
+  grüne** Lauf (#494, 20:35–21:32) hat dieselbe Lücke — 44m55s Display-Stufe von
+  56m13s Schritt, also rund eine Minute Luft. Der Gate erreicht die Stufe jetzt
+  vier Minuten später (#497 zieht `scripts/tests/` mit, #502 lässt
+  `worktree-gc.sh` durchlaufen statt nach 2 min umzufallen); genau diese Minute
+  fehlt.
+  Härtester Beleg: **#503 und #504 ändern nur Markdown und starben gleich.**
+  Reparatur: **#509** hebt die Decke auf 90 und schreibt die Messung daneben.
+  `DISPLAY_TEST_JOBS: 1` bleibt — die Serialisierung ist Absicht, im Rudel ist
+  die Suite flaky; ein eigener paralleler Job für die Display-Suite wäre der
+  strukturelle Weg und gehört in einen eigenen PR.
+  **Merkregel:** bei einem scheinbar hängenden Lauf zuerst die Laufzeit gegen
+  `timeout-minutes` halten, nicht das Log lesen. `gh run view --log` liefert bei
+  abgebrochenen Läufen nichts — das Zip über
+  `gh api /repos/…/actions/runs/<id>/logs` schon.
+  Siehe [[quality-gate-killed-by-its-own-timeout]].
 - **`reprise-showcase` ist gelöscht** (22:15, Nutzerentscheid „alles soll nur in
   reprise stattfinden"). Nachgeprüft: GitHub löst den Namen nicht mehr auf, die
   Pages-URL antwortet 404. **Der lokale Klon `~/Projects/reprise-showcase` ist
