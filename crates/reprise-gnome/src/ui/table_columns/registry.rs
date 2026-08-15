@@ -559,8 +559,8 @@ mod tests {
             Some("date"),
             Some("title"),
             Some("artist"),
-            None,
-            None,
+            Some("status"),
+            Some("buy"),
         ])
         .expect("complete release binding");
 
