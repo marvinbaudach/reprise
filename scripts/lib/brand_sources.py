@@ -141,13 +141,11 @@ def hinted_16_mono_svg():
             '</svg>\n')
 
 
-def hinted_16_icon_svg(small, large, plate):
-    """Carrier and sign in one file — at this size composing them would resample."""
+def hinted_16_icon_svg(small, large):
+    """Transparent desktop icon on the hinted 16-unit grid."""
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">\n'
-            '  <!-- Generated from palette.toml. Carrier and sign are drawn\n'
-            '       together because composing them at 16 units would land the\n'
-            '       mark off the pixel grid it exists to sit on. -->\n'
-            f'  <rect x="1" y="1" width="14" height="14" rx="4" fill="{plate}"/>\n'
+            '  <!-- Generated from palette.toml. The desktop icon stays on a\n'
+            '       transparent ground while preserving the hinted grid. -->\n'
             + hinted_16_body(small, large) + '</svg>\n')
 
 
@@ -189,8 +187,7 @@ def render(palette):
             palette["reprise_coral"], palette["reprise_teal"]),
         "reprise-mark-16-mono.svg": hinted_16_mono_svg(),
         "reprise-icon-16.svg": hinted_16_icon_svg(
-            palette["reprise_coral"], palette["reprise_teal"],
-            palette["reprise_plate"]),
+            palette["reprise_coral"], palette["reprise_teal"]),
     }
 
 

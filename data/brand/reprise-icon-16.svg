@@ -1,8 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-  <!-- Generated from palette.toml. Carrier and sign are drawn
-       together because composing them at 16 units would land the
-       mark off the pixel grid it exists to sit on. -->
-  <rect x="1" y="1" width="14" height="14" rx="4" fill="#33363F"/>
+  <!-- Generated from palette.toml. The desktop icon stays on a
+       transparent ground while preserving the hinted grid. -->
   <rect x="3" y="5" width="3" height="3" fill="#FF6F5E"/>
   <rect x="3" y="9" width="3" height="3" fill="#FF6F5E"/>
   <rect x="7" y="3" width="1" height="10" fill="#FF6F5E"/>
