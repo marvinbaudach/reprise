@@ -31,6 +31,111 @@ fn row_with_links(ticket_url: Option<&str>, event_url: Option<&str>) -> ConcertR
     }
 }
 
+fn column_by_id(view: &gtk4::ColumnView, id: &str) -> gtk4::ColumnViewColumn {
+    (0..view.columns().n_items())
+        .find_map(|index| {
+            let column = view
+                .columns()
+                .item(index)
+                .and_downcast::<gtk4::ColumnViewColumn>()?;
+            (column.id().as_deref() == Some(id)).then_some(column)
+        })
+        .unwrap_or_else(|| panic!("missing Concerts column {id}"))
+}
+
+fn model_row_ids(view: &ConcertsView) -> Vec<i64> {
+    let store = view.shared.model.store();
+    (0..store.n_items())
+        .map(|index| {
+            store
+                .item(index)
+                .and_downcast::<super::super::concerts_model::ConcertObject>()
+                .expect("Concerts model rows use ConcertObject")
+                .row()
+                .id
+        })
+        .collect()
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn every_sortable_concerts_header_orders_its_own_column() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let view = build_view(conn, &runtime);
+    view.shared.location_columns.apply(true);
+    let mut first = row_with_links(None, None);
+    first.id = 1;
+    first.artist_name = "Charlie".into();
+    first.city = "Amsterdam".into();
+    first.venue = "Medium".into();
+    first.ticket_source = Some("Zulu".into());
+    first.date_key = "2026-08-18".into();
+    first.distance_km = Some(200.0);
+    let mut second = row_with_links(None, None);
+    second.id = 2;
+    second.artist_name = "Alpha".into();
+    second.city = "Zurich".into();
+    second.venue = "Large".into();
+    second.ticket_source = Some("Beta".into());
+    second.date_key = "2026-08-19".into();
+    second.distance_km = Some(100.0);
+    let mut third = row_with_links(None, None);
+    third.id = 3;
+    third.artist_name = "Bravo".into();
+    third.city = "Berlin".into();
+    third.venue = "Small".into();
+    third.ticket_source = Some("Alpha".into());
+    third.date_key = "2026-08-17".into();
+    third.distance_km = Some(300.0);
+    view.shared
+        .rows
+        .replace(vec![first.clone(), second.clone(), third.clone()]);
+    view.shared.model.replace(vec![first, second, third]);
+
+    for (id, expected) in [
+        ("artist", vec![2, 3, 1]),
+        ("city", vec![1, 3, 2]),
+        ("venue", vec![2, 1, 3]),
+        ("source", vec![3, 2, 1]),
+        ("date", vec![3, 1, 2]),
+        ("distance", vec![2, 1, 3]),
+    ] {
+        let column = column_by_id(&view.shared.column_view, id);
+        view.shared
+            .column_view
+            .sort_by_column(Some(&column), gtk4::SortType::Ascending);
+        assert_eq!(model_row_ids(&view), expected, "wrong order for {id}");
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn only_the_ticket_header_carries_no_sorter() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ConcertsRuntime::setup(&conn);
+    let view = build_view(conn, &runtime);
+
+    assert!(column_by_id(&view.shared.column_view, "tickets")
+        .sorter()
+        .is_none());
+    for id in ["artist", "city", "venue", "source", "date"] {
+        assert!(
+            column_by_id(&view.shared.column_view, id)
+                .sorter()
+                .is_some(),
+            "{id} must expose a clickable sorting header"
+        );
+    }
+}
+
+#[path = "concerts_sort_indicator_tests.rs"]
+mod sort_indicator_tests;
+
 #[test]
 fn conc_13_a_row_without_a_target_does_not_activate() {
     let row = row_with_links(None, None);

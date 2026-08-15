@@ -14,8 +14,8 @@ pub enum ConcertColumn {
 }
 
 const ALL: [ConcertColumn; 7] = [
-    ConcertColumn::Date,
     ConcertColumn::Artist,
+    ConcertColumn::Date,
     ConcertColumn::City,
     ConcertColumn::Venue,
     ConcertColumn::Distance,
@@ -23,11 +23,10 @@ const ALL: [ConcertColumn; 7] = [
     ConcertColumn::Source,
 ];
 
-const DEFAULT_VISIBLE: [ConcertColumn; 6] = [
-    ConcertColumn::Date,
+const DEFAULT_VISIBLE: [ConcertColumn; 5] = [
     ConcertColumn::Artist,
+    ConcertColumn::Date,
     ConcertColumn::City,
-    ConcertColumn::Venue,
     ConcertColumn::Distance,
     ConcertColumn::Tickets,
 ];
@@ -78,13 +77,13 @@ mod tests {
     }
 
     #[test]
-    fn the_default_concert_layout_shows_status_but_hides_source() {
+    fn the_default_concert_layout_leads_with_the_artist_and_hides_venue_and_source() {
         let layout = Layout::<ConcertColumn>::default();
         assert_eq!(
             layout.order,
             vec![
-                ConcertColumn::Date,
                 ConcertColumn::Artist,
+                ConcertColumn::Date,
                 ConcertColumn::City,
                 ConcertColumn::Venue,
                 ConcertColumn::Distance,
@@ -92,7 +91,12 @@ mod tests {
                 ConcertColumn::Source,
             ]
         );
+        assert!(layout.visible.contains(&ConcertColumn::Artist));
+        assert!(layout.visible.contains(&ConcertColumn::Date));
+        assert!(layout.visible.contains(&ConcertColumn::City));
+        assert!(layout.visible.contains(&ConcertColumn::Distance));
         assert!(layout.visible.contains(&ConcertColumn::Tickets));
+        assert!(!layout.visible.contains(&ConcertColumn::Venue));
         assert!(!layout.visible.contains(&ConcertColumn::Source));
     }
 }

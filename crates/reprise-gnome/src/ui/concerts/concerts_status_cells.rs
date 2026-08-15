@@ -5,6 +5,7 @@ use reprise_core::concerts::{ConcertRow, TicketAvailability};
 use reprise_view::columns::{ColumnKey, ConcertColumn};
 
 use super::concerts_model::ConcertObject;
+use super::concerts_presentation::source_name;
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
 
@@ -15,13 +16,6 @@ pub(super) struct RowLinkPresentation {
     pub activatable: bool,
     pub tooltip: String,
     pub accessible_description: String,
-}
-
-pub(super) fn source_name(row: &ConcertRow) -> &str {
-    row.ticket_source
-        .as_deref()
-        .filter(|source| !source.trim().is_empty())
-        .unwrap_or(row.provider.as_str())
 }
 
 pub(super) fn row_link_presentation(row: &ConcertRow) -> RowLinkPresentation {
@@ -177,6 +171,7 @@ pub(super) fn source_column(view: &gtk4::ColumnView) {
         .factory(&factory)
         .resizable(true)
         .build();
+    column.set_sorter(Some(&super::concerts_columns::header_sorter()));
     widths::pin(&column, widths::LABEL);
     view.append_column(&column);
 }

@@ -57,3 +57,21 @@ fn width(key: ConcertColumn) -> i32 {
         ConcertColumn::Source => widths::LABEL,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use reprise_view::columns::Layout;
+
+    use super::*;
+
+    #[test]
+    fn hiding_venue_by_default_moves_the_filler_to_the_artist_column() {
+        assert_eq!(
+            crate::ui::table_columns::registry::filler_for(
+                &Layout::<ConcertColumn>::default(),
+                ConcertColumn::Venue,
+            ),
+            Some(ConcertColumn::Artist)
+        );
+    }
+}

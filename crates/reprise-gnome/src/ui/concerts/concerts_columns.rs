@@ -15,6 +15,12 @@ use crate::ui::table_column_widths as widths;
 
 pub(super) type OnOpenTarget = Rc<dyn Fn(String)>;
 
+/// Placeholder sorter: `apply_sort` establishes the real model order. This
+/// exists only so GTK makes the header clickable and draws its indicator.
+pub(super) fn header_sorter() -> gtk4::CustomSorter {
+    gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal)
+}
+
 /// The first web link the row offers, ticket offer before event page.
 ///
 /// Provider JSON decides these strings, so a target that is not an
@@ -131,6 +137,7 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         .factory(&factory)
         .resizable(true)
         .build();
+    column.set_sorter(Some(&header_sorter()));
     // Artist is the filler: it owns whatever width the pinned columns leave.
     widths::pin_filler(&column, widths::TITLE_MIN);
     view.append_column(&column);
@@ -219,7 +226,7 @@ fn text_column(
     sizing.apply(&column);
     if let Some(id) = id {
         column.set_id(Some(id));
-        column.set_sorter(Some(&gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal)));
+        column.set_sorter(Some(&header_sorter()));
     }
     view.append_column(&column);
     column
@@ -490,7 +497,7 @@ mod tests {
         assert!(!registry.is_visible(ConcertColumn::City));
         assert!(registry.is_visible(ConcertColumn::Tickets));
         assert!(registry
-            .column(ConcertColumn::Venue)
+            .column(ConcertColumn::Artist)
             .is_some_and(gtk4::ColumnViewColumn::expands));
     }
 
