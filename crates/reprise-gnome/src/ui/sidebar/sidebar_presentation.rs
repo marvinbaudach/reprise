@@ -72,8 +72,9 @@ impl NavIcon {
             Self::LibraryDoctor => crate::ui::library_doctor::DOCTOR_GLYPH_FALLBACK,
             Self::Releases => "starred-symbolic",
             Self::Concerts => "x-office-calendar-symbolic",
-            Self::Radio => "audio-x-generic-symbolic",
-            Self::MyStats => "view-list-symbolic",
+            // Radio and My Stats deliberately reach this arm. If an embedded
+            // icon ever disappears, a visible missing-image box is better than
+            // silently presenting it as Music or Queue by mistake.
             _ => self.icon_name(),
         }
     }
@@ -434,10 +435,13 @@ mod tests {
         assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
         assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
         assert_eq!(NavIcon::MyStats.icon_name(), "reprise-stats-symbolic");
-        assert_eq!(NavIcon::MyStats.fallback_icon_name(), "view-list-symbolic");
+        assert_eq!(
+            NavIcon::MyStats.fallback_icon_name(),
+            "reprise-stats-symbolic"
+        );
         assert_eq!(
             resolved_icon_name(NavIcon::MyStats, false),
-            "view-list-symbolic"
+            "reprise-stats-symbolic"
         );
         assert_eq!(NavIcon::Releases.icon_name(), "star-new-symbolic");
         assert_eq!(NavIcon::Concerts.icon_name(), "ticket-symbolic");
@@ -449,11 +453,11 @@ mod tests {
         assert_eq!(NavIcon::Radio.icon_name(), "reprise-radio-symbolic");
         assert_eq!(
             NavIcon::Radio.fallback_icon_name(),
-            "audio-x-generic-symbolic"
+            "reprise-radio-symbolic"
         );
         assert_eq!(
             resolved_icon_name(NavIcon::Radio, false),
-            "audio-x-generic-symbolic"
+            "reprise-radio-symbolic"
         );
         assert_eq!(NavIcon::Releases.fallback_icon_name(), "starred-symbolic");
         assert_eq!(
