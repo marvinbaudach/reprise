@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_view::search_scope::SearchScope;
 
 use super::review_model::ReviewCategory;
 use crate::ui::strings;
@@ -12,6 +13,8 @@ type OnChanged = Rc<dyn Fn(Option<ReviewCategory>)>;
 pub(super) struct ReviewFilterBar {
     pub(super) root: gtk4::Box,
     slot: gtk4::Box,
+    search: gtk4::Box,
+    clear_search: Rc<dyn Fn()>,
     toggle: RefCell<adw::ToggleGroup>,
     categories: RefCell<Vec<ReviewCategory>>,
     callback: RefCell<Option<OnChanged>>,
@@ -21,7 +24,7 @@ pub(super) struct ReviewFilterBar {
 }
 
 impl ReviewFilterBar {
-    pub(super) fn new(categories: &[ReviewCategory]) -> Self {
+    pub(super) fn new(categories: &[ReviewCategory], clear_search: Rc<dyn Fn()>) -> Self {
         let summary = gtk4::Label::builder()
             .xalign(0.0)
             .css_classes(["doctor-review-meta-heading"])
@@ -36,15 +39,19 @@ impl ReviewFilterBar {
         copy.append(&summary);
         copy.append(&hint);
         let slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let search = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         let initial_toggle = build_toggle(&[], "all");
         slot.append(&initial_toggle);
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
         root.add_css_class("doctor-review-meta");
         root.append(&copy);
+        root.append(&search);
         root.append(&slot);
         let bar = Self {
             root,
             slot,
+            search,
+            clear_search,
             toggle: RefCell::new(initial_toggle),
             categories: RefCell::new(Vec::new()),
             callback: RefCell::new(None),
@@ -94,6 +101,34 @@ impl ReviewFilterBar {
             .set_label(&strings::doctor_fixes_ready(changes));
         self.hint
             .set_label(&strings::doctor_review_subtitle(albums));
+    }
+
+    pub(super) fn set_committed_query(&self, query: &str) {
+        while let Some(child) = self.search.first_child() {
+            self.search.remove(&child);
+        }
+        let query = query.trim();
+        if query.is_empty() {
+            return;
+        }
+        let label = crate::ui::filter_bar_strings::scoped_search_chip_label(
+            SearchScope::DoctorReview,
+            query,
+        );
+        let chip = gtk4::Button::with_label(&format!("{label}  ×"));
+        chip.add_css_class("flat");
+        chip.add_css_class(crate::ui::filter_bar_layout::CHIP_CSS_CLASS);
+        chip.set_size_request(-1, 20);
+        chip.update_property(&[gtk4::accessible::Property::Label(
+            &crate::ui::filter_bar_strings::remove_search_label(query),
+        )]);
+        let clear_search = self.clear_search.clone();
+        chip.connect_clicked(move |_| clear_search());
+        self.search.append(&chip);
+    }
+
+    pub(super) fn reset_category(&self) {
+        self.toggle.borrow().set_active_name(Some("all"));
     }
 
     pub(super) fn set_sensitive(&self, sensitive: bool) {

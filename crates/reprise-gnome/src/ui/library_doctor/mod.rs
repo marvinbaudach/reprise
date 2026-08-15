@@ -97,6 +97,8 @@ pub(in crate::ui) const fn doctor_glyph_for(theme_has_first_aid: bool) -> &'stat
 
 pub(in crate::ui) const DOCTOR_DONE_GLYPH: &str = crate::ui::icons::DONE;
 
+type SearchQueryChangedSlot = Rc<RefCell<Option<Rc<dyn Fn(&str)>>>>;
+
 pub(in crate::ui) fn css() -> String {
     [
         ".doctor-conflicts-dashed { border: 1px dashed color-mix(in srgb, currentColor 18%, transparent); border-radius: 12px; padding: 20px 22px; background: transparent; }",
@@ -133,11 +135,13 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     refresh_views: Rc<dyn Fn()>,
     sidebar: Rc<Sidebar>,
     selection_override: RefCell<Option<Vec<i64>>>,
+    on_search_query_changed: SearchQueryChangedSlot,
     _doctor_chrome: Rc<crate::ui::window::library_chrome::DoctorChrome>,
 }
 
 pub(in crate::ui) struct LibraryDoctorLauncher {
     coordinator: Rc<crate::ui::startup_quiet::Deferred<LibraryDoctorCoordinator>>,
+    on_search_query_changed: SearchQueryChangedSlot,
 }
 
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
@@ -197,13 +201,43 @@ impl LibraryDoctorLauncher {
         let context = context.into_owned();
         let progress = DoctorProgressCard::new();
         context.sidebar.append_doctor_card(progress.widget());
+        let on_search_query_changed = Rc::new(RefCell::new(None));
+        let coordinator_search = on_search_query_changed.clone();
         let coordinator = crate::ui::startup_quiet::deferred_after_quiet(move || {
             super::startup_report::mark("LibraryDoctorCoordinator::new begin");
-            let coordinator = LibraryDoctorCoordinator::new(context, &progress);
+            let coordinator = LibraryDoctorCoordinator::new(context, &progress, coordinator_search);
             super::startup_report::mark("LibraryDoctorCoordinator::new end");
             coordinator
         });
-        Rc::new(Self { coordinator })
+        Rc::new(Self {
+            coordinator,
+            on_search_query_changed,
+        })
+    }
+
+    pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        self.on_search_query_changed
+            .replace(Some(Rc::new(callback)));
+    }
+
+    pub(in crate::ui) fn set_search_query(&self, query: &str) {
+        self.with_review(|review| review.set_search_query(query));
+    }
+
+    pub(in crate::ui) fn set_committed_search_query(&self, query: &str) {
+        self.with_review(|review| review.set_committed_search_query(query));
+    }
+
+    pub(in crate::ui) fn clear_all_filters(&self) {
+        self.with_review(|review| review.clear_all_filters());
+    }
+
+    fn with_review(&self, apply: impl FnOnce(&Rc<LibraryDoctorReviewPage>)) {
+        let coordinator = self.coordinator.get();
+        let review = coordinator.review.borrow().clone();
+        if let Some(review) = review.as_ref() {
+            apply(review);
+        }
     }
 
     pub(in crate::ui) fn open(&self) {
@@ -220,7 +254,11 @@ impl LibraryDoctorLauncher {
 }
 
 impl LibraryDoctorCoordinator {
-    fn new(context: OwnedLibraryDoctorContext, progress: &DoctorProgressCard) -> Rc<Self> {
+    fn new(
+        context: OwnedLibraryDoctorContext,
+        progress: &DoctorProgressCard,
+        on_search_query_changed: SearchQueryChangedSlot,
+    ) -> Rc<Self> {
         let OwnedLibraryDoctorContext {
             conn,
             db_path,
@@ -280,6 +318,7 @@ impl LibraryDoctorCoordinator {
                 refresh_views,
                 sidebar: sidebar.clone(),
                 selection_override: RefCell::new(None),
+                on_search_query_changed,
                 _doctor_chrome: doctor_chrome,
             }
         });
@@ -636,6 +675,12 @@ impl LibraryDoctorCoordinator {
                 }),
                 &on_edit,
             );
+            let on_search_query_changed = self.on_search_query_changed.clone();
+            page.set_on_search_query_changed(Rc::new(move |query| {
+                if let Some(callback) = on_search_query_changed.borrow().as_ref() {
+                    callback(query);
+                }
+            }));
             {
                 let weak = Rc::downgrade(self);
                 page.connect_apply(move |plan| {

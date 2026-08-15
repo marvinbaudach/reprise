@@ -36,7 +36,7 @@ shared_view=crates/reprise-view/src
 # saying where a ticket stands (#493) gave the column set a seventh entry —
 # Source, its name arm and its default visibility, against the trailing pin
 # that Tickets no longer needs: one production line net.
-view_floor=2116
+view_floor=2119
 
 echo "== Frontend thinness =="
 

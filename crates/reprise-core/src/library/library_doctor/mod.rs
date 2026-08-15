@@ -34,6 +34,8 @@ mod grouping_tests;
 #[cfg(test)]
 mod remote_tests;
 #[cfg(test)]
+mod review_query_tests;
+#[cfg(test)]
 mod review_tests;
 #[cfg(test)]
 mod tests;

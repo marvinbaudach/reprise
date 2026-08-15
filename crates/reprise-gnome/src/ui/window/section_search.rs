@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use libadwaita::prelude::*;
 use reprise_core::view_source::ViewSource;
 use reprise_view::search_chip::{self, SearchSurface};
 use reprise_view::search_scope::{self, SearchScope};
@@ -36,6 +37,7 @@ use super::search_popover::{SearchPopover, WeakSearchPopover};
 /// `ViewSource` at all.
 const LIBRARY_PAGE: &str = "library";
 const DEVICE_SYNC_PAGE: &str = "device-sync";
+const DOCTOR_PAGE: &str = "library-doctor";
 
 /// The source behind a content-stack page, for the pages that have exactly
 /// one. Pure, so the mapping is testable without a shell.
@@ -66,6 +68,7 @@ struct ShellState {
     content_stack: gtk4::glib::WeakRef<gtk4::Stack>,
     window_title: gtk4::glib::WeakRef<libadwaita::WindowTitle>,
     current_source: Rc<dyn Fn() -> ViewSource>,
+    doctor_review_visible: Option<Rc<dyn Fn() -> bool>>,
 }
 
 /// Every widget handle here is weak, deliberately. `SectionSearch` is
@@ -178,9 +181,34 @@ impl SectionSearch {
             content_stack: content_stack.downgrade(),
             window_title: window_title.downgrade(),
             current_source: Rc::new(current_source),
+            doctor_review_visible: None,
         });
         let weak = Rc::downgrade(self);
         content_stack.connect_visible_child_name_notify(move |_| {
+            if let Some(search) = weak.upgrade() {
+                search.refresh_later();
+            }
+        });
+        self.refresh_later();
+    }
+
+    pub(in crate::ui) fn observe_doctor_review(
+        self: &Rc<Self>,
+        navigation: &libadwaita::NavigationView,
+    ) {
+        let weak_navigation = navigation.downgrade();
+        let visible = Rc::new(move || {
+            weak_navigation
+                .upgrade()
+                .and_then(|navigation| navigation.visible_page())
+                .and_then(|page| page.tag())
+                .is_some_and(|tag| tag == "library-doctor-review")
+        });
+        if let Some(shell) = self.shell.borrow_mut().as_mut() {
+            shell.doctor_review_visible = Some(visible);
+        }
+        let weak = Rc::downgrade(self);
+        navigation.connect_visible_page_notify(move |_| {
             if let Some(search) = weak.upgrade() {
                 search.refresh_later();
             }
@@ -219,6 +247,10 @@ impl SectionSearch {
             .unwrap_or_default();
         let scope = match page.as_str() {
             DEVICE_SYNC_PAGE => SearchScope::Unsupported,
+            DOCTOR_PAGE => match &shell.doctor_review_visible {
+                Some(visible) if visible() => SearchScope::DoctorReview,
+                _ => SearchScope::Unsupported,
+            },
             LIBRARY_PAGE => search_scope::scope_for(&(shell.current_source)()),
             other => page_source(other).map_or(SearchScope::Unsupported, |source| {
                 search_scope::scope_for(&source)
@@ -391,3 +423,108 @@ impl SectionSearch {
 #[cfg(test)]
 #[path = "section_search/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod doctor_review_route_tests {
+    use super::*;
+
+    struct Harness {
+        search: Rc<SectionSearch>,
+        entry: gtk4::SearchEntry,
+        doctor: libadwaita::NavigationView,
+        root: libadwaita::NavigationPage,
+        _content_stack: gtk4::Stack,
+        _title: libadwaita::WindowTitle,
+        _toggle: gtk4::ToggleButton,
+        _popover: SearchPopover,
+    }
+
+    fn harness() -> Harness {
+        let entry = gtk4::SearchEntry::new();
+        let toggle = gtk4::ToggleButton::new();
+        let popover = SearchPopover::new(&toggle, &entry);
+        let search = SectionSearch::new(&entry, &popover, &toggle);
+        let doctor = libadwaita::NavigationView::new();
+        let root = libadwaita::NavigationPage::builder()
+            .title("Library Doctor")
+            .tag("library-doctor")
+            .child(&gtk4::Label::new(Some("Doctor")))
+            .build();
+        doctor.add(&root);
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&doctor, Some("library-doctor"));
+        let title = libadwaita::WindowTitle::new("Library Doctor", "");
+        search.observe(&content_stack, &title, || ViewSource::Library);
+        search.observe_doctor_review(&doctor);
+        settle();
+        Harness {
+            search,
+            entry,
+            doctor,
+            root,
+            _content_stack: content_stack,
+            _title: title,
+            _toggle: toggle,
+            _popover: popover,
+        }
+    }
+
+    fn settle() {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn doc_12a_entering_review_activates_the_doctor_search_scope() {
+        let _guard = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let harness = harness();
+        let review = libadwaita::NavigationPage::builder()
+            .title("Review")
+            .tag("library-doctor-review")
+            .child(&gtk4::Label::new(Some("Review")))
+            .build();
+
+        harness.doctor.push(&review);
+        settle();
+
+        assert!(harness.search.supports_search());
+        assert!(harness.search.is_active(SearchScope::DoctorReview));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn doc_12a_leaving_review_drops_the_scope_and_the_query() {
+        let _guard = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let harness = harness();
+        let review = libadwaita::NavigationPage::builder()
+            .title("Review")
+            .tag("library-doctor-review")
+            .child(&gtk4::Label::new(Some("Review")))
+            .build();
+        harness.doctor.push(&review);
+        settle();
+        harness
+            .search
+            .set_query(SearchScope::DoctorReview, "beatles");
+
+        harness.doctor.pop_to_page(&harness.root);
+        settle();
+
+        assert!(harness.search.is_active(SearchScope::Unsupported));
+        assert!(!harness.search.supports_search());
+        assert!(harness.entry.text().is_empty());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn doc_12a_the_doctor_root_page_supports_no_search() {
+        let _guard = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let harness = harness();
+
+        assert!(harness.search.is_active(SearchScope::Unsupported));
+        assert!(!harness.search.supports_search());
+    }
+}
