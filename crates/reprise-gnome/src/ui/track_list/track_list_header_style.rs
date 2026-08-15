@@ -8,7 +8,6 @@
 use gtk4::prelude::*;
 
 const TRACK_LIST_CLASS: &str = "reprise-track-list";
-const PRIMARY_SORT_INDICATOR_CLASS: &str = "reprise-primary-sort-indicator";
 
 /// Quieter column-title rule plus the table's own hairline separators, all
 /// scoped to [`TRACK_LIST_CLASS`] roots. Both built-in `GtkColumnView`
@@ -19,21 +18,13 @@ const PRIMARY_SORT_INDICATOR_CLASS: &str = "reprise-primary-sort-indicator";
 /// fixed hairlines on the dark surface, not theme-tinted borders, so they
 /// don't route through a palette `@`-color.
 ///
-/// Every column carries a sorter (so its header is clickable — see
-/// `track_list_columns`'s dummy-sorter comment), and GTK renders a
-/// `sort-indicator` arrow in each header for that. GTK updates its own
-/// `ascending`/`descending` classes one frame after a new primary column is
-/// selected, briefly leaving both the old and new arrows visible. The app-owned
-/// [`PRIMARY_SORT_INDICATOR_CLASS`] is synchronized in the same call that
-/// changes sorting, so the inactive arrow disappears immediately while its
-/// width stays reserved and headers do not shift.
+/// Sort-indicator visibility is shared by
+/// [`crate::ui::table_columns::single_sort_indicator`].
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{TRACK_LIST_CLASS} > header label {{ color: @reprise_secondary_fg_color; }}\n\
          .{TRACK_LIST_CLASS} > header {{ \
            border-bottom: 1px solid rgba(255, 255, 255, 0.07); }}\n\
-         .{TRACK_LIST_CLASS} sort-indicator:not(.{PRIMARY_SORT_INDICATOR_CLASS}) {{ \
-           opacity: 0; }}\n\
          .{TRACK_LIST_CLASS} > listview > row > cell {{ \
            border-left: none; border-right: none; \
            border-bottom: 1px solid rgba(255, 255, 255, 0.045); }}"
@@ -43,67 +34,7 @@ pub(in crate::ui) fn css() -> String {
 /// Marks a column view as the track table so the scoped header rule applies.
 pub(in crate::ui) fn mark(view: &gtk4::ColumnView) {
     view.add_css_class(TRACK_LIST_CLASS);
-    view.connect_map(sync_primary_sort_indicator);
-    let view_weak = view.downgrade();
-    view.columns().connect_items_changed(move |_, _, _, _| {
-        if let Some(view) = view_weak.upgrade() {
-            sync_primary_sort_indicator(&view);
-        }
-    });
-    if let Some(sorter) = view.sorter().and_downcast::<gtk4::ColumnViewSorter>() {
-        let view_weak = view.downgrade();
-        sorter.connect_primary_sort_column_notify(move |_| {
-            if let Some(view) = view_weak.upgrade() {
-                sync_primary_sort_indicator(&view);
-            }
-        });
-    }
-}
-
-fn find_sort_indicator(widget: &gtk4::Widget) -> Option<gtk4::Widget> {
-    if widget.css_name() == "sort-indicator" {
-        return Some(widget.clone());
-    }
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        if let Some(indicator) = find_sort_indicator(&current) {
-            return Some(indicator);
-        }
-        child = current.next_sibling();
-    }
-    None
-}
-
-/// Marks exactly the indicator belonging to the `ColumnViewSorter`'s current
-/// primary column. The internal header children and `view.columns()` have the
-/// same order, including hidden columns.
-pub(super) fn sync_primary_sort_indicator(view: &gtk4::ColumnView) {
-    let primary = view
-        .sorter()
-        .and_downcast::<gtk4::ColumnViewSorter>()
-        .and_then(|sorter| sorter.primary_sort_column());
-    let Some(header) = view.first_child() else {
-        return;
-    };
-    let columns = view.columns();
-    let mut title = header.first_child();
-    let mut index = 0;
-    while let Some(current) = title {
-        let next = current.next_sibling();
-        if let Some(indicator) = find_sort_indicator(&current) {
-            let is_primary = columns
-                .item(index)
-                .and_downcast::<gtk4::ColumnViewColumn>()
-                .is_some_and(|column| primary.as_ref() == Some(&column));
-            if is_primary {
-                indicator.add_css_class(PRIMARY_SORT_INDICATOR_CLASS);
-            } else {
-                indicator.remove_css_class(PRIMARY_SORT_INDICATOR_CLASS);
-            }
-        }
-        title = next;
-        index += 1;
-    }
+    crate::ui::table_columns::single_sort_indicator::mark(view);
 }
 
 #[cfg(test)]
@@ -117,9 +48,7 @@ mod tests {
         assert!(css.contains(".reprise-track-list > header label"));
         assert!(css.contains("@reprise_secondary_fg_color"));
         assert!(!css.contains("reprise-track-cell"));
-        assert!(css.contains("sort-indicator:not(.reprise-primary-sort-indicator)"));
-        assert!(css.contains("opacity: 0"));
-        assert!(!css.contains("sort-indicator.unsorted"));
+        assert!(!css.contains("sort-indicator"));
     }
 
     #[test]
