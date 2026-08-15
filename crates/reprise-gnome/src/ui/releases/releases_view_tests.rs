@@ -83,6 +83,51 @@ fn every_sortable_releases_header_orders_its_own_column() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn refreshing_releases_preserves_the_active_sort_column_and_direction() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    for (mbid, title, date) in [
+        ("zulu", "Zulu", "2026-03"),
+        ("alpha", "Alpha", "2026-02"),
+        ("mike", "Mike", "2026-01"),
+    ] {
+        insert_release_at(&conn, mbid, title, date);
+    }
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
+             VALUES ('/music/artist.flac', 'Song', 'Artist', 'Artist', 'Owned', 0)",
+            [],
+        )
+        .unwrap();
+    let view = ReleasesView::new(conn, PathBuf::new());
+    view.refresh();
+
+    let title_column = column_by_id(&view.shared.column_view, ReleaseColumn::Title.as_str());
+    view.shared
+        .column_view
+        .sort_by_column(Some(&title_column), gtk4::SortType::Ascending);
+    assert_eq!(release_titles(&view), ["Alpha", "Mike", "Zulu"]);
+
+    view.refresh();
+
+    let sorter = view
+        .shared
+        .column_view
+        .sorter()
+        .and_downcast::<gtk4::ColumnViewSorter>()
+        .expect("the Releases table owns a ColumnViewSorter");
+    assert_eq!(
+        sorter.primary_sort_column().and_then(|column| column.id()),
+        Some(ReleaseColumn::Title.as_str().into())
+    );
+    assert_eq!(sorter.primary_sort_order(), gtk4::SortType::Ascending);
+    assert_eq!(release_titles(&view), ["Alpha", "Mike", "Zulu"]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn the_cover_status_and_link_headers_carry_no_sorter() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
@@ -309,13 +354,17 @@ fn nr_33_releases_view_exposes_filters_seven_columns_and_footer() {
 }
 
 fn insert_release(conn: &Db, mbid: &str, title: &str) {
+    insert_release_at(conn, mbid, title, "2026-08-05");
+}
+
+fn insert_release_at(conn: &Db, mbid: &str, title: &str, date: &str) {
     crate::test_db::connection(conn)
         .execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at
-             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-05', 1)",
-            rusqlite::params![mbid, title],
+             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', ?3, 1)",
+            rusqlite::params![mbid, title, date],
         )
         .unwrap();
 }

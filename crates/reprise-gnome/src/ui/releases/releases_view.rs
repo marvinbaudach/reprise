@@ -327,6 +327,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         });
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
+    apply_current_sort(shared);
     shared.cached_items.set(total);
     apply_empty_state(
         shared,
@@ -675,6 +676,17 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
     shared
         .model
         .replace(artist_news::sort_release_rows(rows, key, direction));
+}
+
+fn apply_current_sort(shared: &Shared) {
+    let Some(sorter) = shared
+        .column_view
+        .sorter()
+        .and_downcast::<gtk4::ColumnViewSorter>()
+    else {
+        return;
+    };
+    apply_sort(shared, &sorter);
 }
 
 #[cfg(test)]
