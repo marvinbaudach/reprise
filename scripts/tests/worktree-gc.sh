@@ -12,7 +12,20 @@ refute() {
   fi
 }
 
+cleanup_fixture() {
+  if [[ -n ${active_pid:-} ]]; then
+    kill "$active_pid" 2>/dev/null || true
+    wait "$active_pid" 2>/dev/null || true
+  fi
+  if [[ -n ${undeletable_artifact_dir:-} ]]; then
+    chmod u+w "$undeletable_artifact_dir" 2>/dev/null || true
+  fi
+  find "$fixture" -xdev -depth -delete 2>/dev/null || true
+}
+
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/reprise-worktree-gc.XXXXXX")
+trap cleanup_fixture EXIT
+
 can_enforce_delete_failure() {
   local probe_root=$1
   local restricted_dir="$probe_root/restricted"
@@ -53,18 +66,6 @@ stop_active_probe() {
   wait "$active_pid" 2>/dev/null || true
   active_pid=
 }
-
-cleanup_fixture() {
-  if [[ -n ${active_pid:-} ]]; then
-    kill "$active_pid" 2>/dev/null || true
-    wait "$active_pid" 2>/dev/null || true
-  fi
-  if [[ -n ${undeletable_artifact_dir:-} ]]; then
-    chmod u+w "$undeletable_artifact_dir" 2>/dev/null || true
-  fi
-  find "$fixture" -xdev -depth -delete 2>/dev/null || true
-}
-trap cleanup_fixture EXIT
 
 repo="$fixture/reprise"
 state_root="$fixture/state"
