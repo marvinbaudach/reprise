@@ -655,7 +655,7 @@ fn release_sort_by_artist_reverses_with_the_direction() {
 }
 
 #[test]
-fn release_sort_by_type_orders_the_raw_field() {
+fn release_sort_by_type_without_presentation_text_orders_the_raw_field() {
     let rows = vec![
         sort_entry("single", "Release", "Artist", "single", "2026-01"),
         sort_entry("album", "Release", "Artist", "album", "2026-01"),

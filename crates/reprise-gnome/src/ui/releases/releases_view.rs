@@ -24,7 +24,9 @@ use super::releases_failure_ui::{
 };
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::{ReleaseObject, ReleasesModel};
-use super::releases_presentation::{releases_row_action, sort_key_for_id, ReleasesRowAction};
+use super::releases_presentation::{
+    release_type_label, releases_row_action, sort_key_for_id, sort_rows_for_key, ReleasesRowAction,
+};
 use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::feed_footer::{FeedFooter, FeedFooterState};
 use crate::ui::source_empty_state::SourceFailureState;
@@ -675,7 +677,7 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
     let rows = shared.rows.borrow().clone();
     shared
         .model
-        .replace(artist_news::sort_release_rows(rows, key, direction));
+        .replace(sort_rows_for_key(rows, key, direction, release_type_label));
 }
 
 fn apply_current_sort(shared: &Shared) {

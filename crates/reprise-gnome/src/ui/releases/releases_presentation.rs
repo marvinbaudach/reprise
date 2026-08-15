@@ -3,7 +3,9 @@
 use std::borrow::Cow;
 
 use chrono::NaiveDate;
-use reprise_core::artist_news::{release_status, ReleaseSortKey, ReleaseStatus};
+use reprise_core::artist_news::{
+    self, release_status, ReleaseSortDirection, ReleaseSortKey, ReleaseStatus,
+};
 use reprise_core::artist_news_history::HistoryEntry;
 use reprise_core::format::DatePattern;
 use reprise_view::columns::{ColumnKey, ReleaseColumn};
@@ -24,6 +26,20 @@ pub(super) fn sort_key_for_id(id: Option<&str>) -> Option<ReleaseSortKey> {
         Some(id) if id == ReleaseColumn::Type.as_str() => Some(ReleaseSortKey::Type),
         _ => None,
     }
+}
+
+pub(super) fn sort_rows_for_key(
+    rows: Vec<HistoryEntry>,
+    key: ReleaseSortKey,
+    direction: ReleaseSortDirection,
+    type_label: impl Fn(&str) -> String,
+) -> Vec<HistoryEntry> {
+    if key == ReleaseSortKey::Type {
+        return artist_news::sort_release_rows_by_display_text(rows, direction, |entry| {
+            type_label(&entry.release_type)
+        });
+    }
+    artist_news::sort_release_rows(rows, key, direction)
 }
 
 /// Renders a MusicBrainz date string at whatever precision it carries, in the
@@ -200,6 +216,42 @@ mod tests {
         ] {
             assert_eq!(sort_key_for_id(rejected), None, "accepted {rejected:?}");
         }
+    }
+
+    #[test]
+    fn type_sort_uses_the_text_supplied_by_the_presentation_layer() {
+        let rows = [("single", "single"), ("album", "album"), ("ep", "ep")]
+            .into_iter()
+            .map(|(id, release_type)| {
+                let mut row = entry("2026-01", LibraryPresence::Absent, false);
+                row.release_group_mbid = id.into();
+                row.release_type = release_type.into();
+                row
+            })
+            .collect();
+
+        let sorted = sort_rows_for_key(
+            rows,
+            ReleaseSortKey::Type,
+            reprise_core::artist_news::ReleaseSortDirection::Ascending,
+            |raw| {
+                match raw {
+                    "album" => "Zulu",
+                    "ep" => "Alpha",
+                    "single" => "Mike",
+                    other => other,
+                }
+                .to_owned()
+            },
+        );
+
+        assert_eq!(
+            sorted
+                .into_iter()
+                .map(|row| row.release_group_mbid)
+                .collect::<Vec<_>>(),
+            ["ep", "single", "album"]
+        );
     }
 
     fn entry(date: &str, presence: LibraryPresence, hidden: bool) -> HistoryEntry {

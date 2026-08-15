@@ -151,8 +151,8 @@ pub fn sort_rows(
             &right.artist_name,
             direction,
         ),
-        // This sorts the raw type. Localized labels may alphabetize differently,
-        // which keeps the ordering in Core and testable without GTK.
+        // Core callers without presentation text sort the raw type. Frontends
+        // can use `sort_rows_by_display_text` for their rendered label.
         ReleaseSortKey::Type => compare_text_field(
             left,
             right,
@@ -162,6 +162,24 @@ pub fn sort_rows(
         ),
     });
     rows
+}
+
+pub fn sort_rows_by_display_text(
+    rows: Vec<HistoryEntry>,
+    direction: ReleaseSortDirection,
+    display_text: impl Fn(&HistoryEntry) -> String,
+) -> Vec<HistoryEntry> {
+    let mut decorated = rows
+        .into_iter()
+        .map(|row| {
+            let text = display_text(&row);
+            (row, text)
+        })
+        .collect::<Vec<_>>();
+    decorated.sort_by(|(left, left_text), (right, right_text)| {
+        compare_text_field(left, right, left_text, right_text, direction)
+    });
+    decorated.into_iter().map(|(row, _)| row).collect()
 }
 
 fn present(value: &str) -> Option<&str> {

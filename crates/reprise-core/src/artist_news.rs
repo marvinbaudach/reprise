@@ -87,7 +87,8 @@ pub use crate::artist_news_scope::{
 pub use crate::artist_news_view::{
     count_releases_view, filter_rows as filter_release_rows, persisted_releases_filter,
     query_releases_view, query_releases_view_scope, release_status, sort_rows as sort_release_rows,
-    ReleaseSortDirection, ReleaseSortKey, ReleaseStatus, ReleasesViewResult,
+    sort_rows_by_display_text as sort_release_rows_by_display_text, ReleaseSortDirection,
+    ReleaseSortKey, ReleaseStatus, ReleasesViewResult,
 };
 
 /// Staleness policy (when a refresh is due, the per-install jitter, and the
