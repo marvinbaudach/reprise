@@ -12,6 +12,7 @@ mod review_header;
 mod review_model;
 mod review_page;
 mod review_row;
+mod review_snapshot;
 mod running_page;
 mod start_page;
 mod start_page_css;

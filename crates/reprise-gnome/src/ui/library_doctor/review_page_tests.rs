@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use reprise_core::library_doctor::{DoctorField, DoctorValue, ProblemClass};
+use reprise_core::library_doctor::{DoctorField, DoctorValue, LibraryDoctor, ProblemClass};
 
 use super::super::review_row::contract_tests::{
     album_change_scan, conflict_scan, ready_and_stale_scan, scan,

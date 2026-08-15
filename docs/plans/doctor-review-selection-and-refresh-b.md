@@ -2,7 +2,7 @@
 slug: doctor-review-selection-and-refresh-b
 worktree: /home/marvin/Projects/reprise-doctor-review-selection-and-refresh-b
 branch: feature/doctor-review-selection-and-refresh-b
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-14
 ---
@@ -575,3 +575,164 @@ identical except for the click, show the content displaced by one row (~65 px)
 with no scrolling by the user. The same splice that costs the seconds also moves
 the viewport under the pointer. That belongs in B's PR text as a user-visible
 defect, not only as a latency number.
+
+### Implemented result
+
+- **B-1** (`0406a6fe34`): `ReviewState::refresh()` now builds one immutable
+  `ReviewSnapshot` and derives the master check, filter summary and album
+  summaries from it. Category changes still invalidate the GTK filter, while a
+  selection-only update does not.
+- **B-2** (`528802b6b3`): `ReviewSnapshot` owns the visible rows, aggregate
+  totals, album summaries and the row-id-to-store-index map. Its immutable
+  selection transition returns the changed row ids and the next snapshot.
+- **B-3** (`3a92637471`): `ReviewState::apply_selection()` coalesces adjacent
+  changed positions and splices only those ranges, then pushes the cached
+  aggregate state. `REPRISE_DOCTOR_FULL_REFRESH` selects the retained control
+  path once when the page is built. The selection-path trace records `touched`
+  and `elapsed_us`.
+- **B-4** (`0663a72796`): album-header widgets are created once, registered by
+  album key and rebound without reconnecting signals. Programmatic state pushes
+  block the toggle callback and preserve strand A's count, reason and
+  sensitivity contract.
+- **B-5** (`20130b03c6`): the conflicts-panel slot tracks its fingerprint and
+  store position. An unchanged panel is preserved, a changed panel is replaced
+  in place, a missing panel uses `append`, and removal keeps the panel-last
+  invariant.
+
+The generated 16-album x 12-row churn probe measured **386 changed items before
+the incremental path and 24 after it**. The new 24-item budget is the observed
+`items-changed` total from the passing incremental run, not the plan's predicted
+shape. In the final same-process wall-clock probe, the retained full-refresh arm
+measured median **5,339 us** and maximum **5,912 us** over nine toggles; the
+selection arm measured median **435 us** and maximum **564 us**.
+
+The real-library post-fix run, the five-cycle `DOC-9b` log check and the mother
+plan's post-merge cross-checks were deliberately not run here: this strand's
+instructions reserve the real GUI/library session for the user and explicitly
+exclude mother-plan section J from this implementation pass.
+
+Final verification passed `cargo fmt --all`, strict all-target workspace
+Clippy, 2,456 Core tests with three ignored, 1,861 GNOME unit tests with 708
+ignored, ten GNOME conformance tests, all 708 isolated display tests, UX
+traceability, accessibility semantics, architecture, frontend thinness and
+input parity. The focused new display tests and all four protected strand A
+regressions also passed one exact test per process. Cached `cargo audit`
+reported only accepted RUSTSEC-2024-0436; a live refresh could not lock the
+read-only global advisory cache. The first aggregate display attempt became
+invalid when `/tmp` filled before the script could print its summary; the final
+unmodified script passed with its supported four-worker mode and temporary
+root on the worktree's disk.
+
+### Review round and independent re-measurement, 15.08.2026
+
+Three HIGH review findings were raised and each was verified adversarially.
+
+- *"The aggregates lost the category filter."* **Refuted.** The filter is applied
+  in `album_from_seed` (`grouping.rs:111`) before grouping, via
+  `session.category_filter_matches`, so the snapshot is the visible set — R-9's
+  premise holds. `doc_9b_the_snapshot_is_the_visible_row_set` pins it with a
+  `Some(ReviewCategory::Year)` arm and passes.
+- *"The header registry closes a strong `Rc<ReviewState>` cycle."* **Refuted.**
+  `connect_teardown` (`review_header.rs`) removes the entry, and GTK guarantees
+  `teardown` is the last signal emitted for a `ListHeader` on every destruction
+  path.
+- *"`apply_selection` splices before it updates the snapshot."* **Confirmed,
+  low severity.** Instrumented under Xvfb: toggling an interior row causes 0
+  header rebinds, toggling a section's first row causes exactly 1, and that
+  rebind did read the stale snapshot — but `push_selection` overwrote it inside
+  the same synchronous call, so no frame was ever painted wrong. Fixed anyway,
+  for consistency with `refresh()` and to drop the wasted rebind.
+
+Also fixed: the `row_id → position` map now keeps the **first** position and logs
+a collision through `tracing::error!` instead of silently overwriting in release
+builds, where a duplicate id would have written one row's content into another
+row's store slot.
+
+**The first fix cost measurable time and was re-done.** Closing the `mem::take`
+window by cloning the snapshot put a full deep copy on the selection path:
+measured 435 µs → 623 µs at 192 rows, with the `full` arm unchanged as a control.
+The window is now closed without a copy — `affected_albums` is computed after the
+assignment, reading from `self.snapshot`.
+
+Final independent measurement on this branch, this session's own runs:
+
+| Path | Median | Max |
+|---|---|---|
+| `full` (control arm, `REPRISE_DOCTOR_FULL_REFRESH=1`) | 5,264 µs | 5,470 µs |
+| `selection` | **422 µs** | 564 µs |
+
+`scripts/check-display-tests.sh`, run unmodified with `DISPLAY_TEST_JOBS=4`:
+**708 passed, 0 failed, and `matched no executing test binary` = 0.**
+
+**Open follow-up, deliberately not done here.** `review_page.rs` is at 795 of the
+800-line cap in `scripts/check-architecture.sh`. The identified extraction is
+`refresh_conflicts` + `skip_all_conflicts` (~74 lines) into `review_conflicts.rs`,
+which already owns `ReviewConflictsSlot` and `ReviewConflicts`; that lands the
+file near 715 and leaves the index-critical code untouched. The next change to
+this file trips the gate without it.
+
+**Still owed: V-4(c) and V-4(d)** — the real-library re-measurement and the
+`DOC-9b` count per arm. Both need the GUI and are the only proof that the
+2,328 ms growth and the ~65 px scroll-anchor displacement are actually gone.
+
+### V-4(c)/(d) — real library, both arms, 15.08.2026
+
+Release build of this branch, isolated XDG profile on a copy of the 254 MB
+library, scan 3, **330 visible rows**, same album both arms
+(*ALL IS BEAUTIFUL… BECAUSE WE'RE DOOMED* / We Came As Romans, 41 proposals,
+all selectable — picked from the database, not hunted in the UI). The user drove
+the GUI; this session read the logs.
+
+**Deviation, stated:** two runs, not one session. `REPRISE_DOCTOR_FULL_REFRESH`
+is read once where the `ReviewState` literal is built and the review page is
+reused across navigation, so a process cannot switch arms. Same build, same
+album, same order — which is what R-18 protects against.
+
+**Control arm** (`REPRISE_DOCTOR_FULL_REFRESH=1`), twelve album toggles, whole
+path in ms, in order:
+
+```
+13 · 87 · 131 · 198 · 200 · 230 · 266 · 334 · 388 · 468 · 543 · 667
+```
+
+Monotonic. Median 248 ms; `store.splice` 290,689 µs of it (~96 %),
+`grouped_rows_for` 9,449 µs. Against B-0's pre-fix profile (241,277 µs /
+9,150 µs / ~254 ms) those two stages match, so the switch really does select the
+old path. **Caveat:** `refresh_conflicts` fell 424 → 5 µs and the aggregate
+1,987 → 6 µs, because B-1's cache and B-5's fingerprint live *inside* `refresh()`
+and are not switchable. The control arm is "old splice plus B-1", not a pure
+pre-fix build. Those two stages were 1 % of the cost, so the comparison holds —
+but it is not a clean revert and should not be described as one.
+
+**Fix arm**, same interaction, `path="selection"` with `touched=5`, in ms:
+
+```
+30 · 36 · 11 · 18 · 26 · 14 · 12 · 8 · 25 · 8 · 8 · 13
+```
+
+Median **13.6 ms**, and — the point of the strand — **no trend**: the last three
+toggles are among the cheapest. The growth is gone, not merely reduced.
+One structural `path="full"` refresh at startup: 22 ms for 330 rows.
+
+| | Control | Fix |
+|---|---|---|
+| median per album toggle | 248 ms | **13.6 ms** |
+| range over twelve toggles | 13 → 667 ms, rising | 8–36 ms, flat |
+| ratio at the median | — | **~18×** |
+
+**Select-all is unchanged and expected to be:** four operations with
+`touched=237` cost 106–279 ms. The diff legitimately covers every row there, which
+is the honest budget the plan named.
+
+**V-4(d).** Control arm: **356** `DOC-9b` warnings. Fix arm: **66** — and none of
+them follows an album toggle. The twelve toggles occupy log lines 2109–2177; the
+warning burst runs 2186–2292, after the last toggle and before the select-all
+operations, i.e. during scrolling. All carry `start=end=4294967295`
+(`INVALID_LIST_POSITION`), which is the early return the plan deliberately kept.
+**The check V-4(d) was written for passes: a selection toggle produces none.**
+That 66 warnings still arise from another trigger is a separate observation and
+belongs in a follow-up, not in this strand.
+
+**User-observed, same session:** scrolling noticeably faster and no stutter when
+toggling. Recorded because the B-0 report named scroll slowness as a symptom —
+and now it has numbers next to it rather than standing alone.
