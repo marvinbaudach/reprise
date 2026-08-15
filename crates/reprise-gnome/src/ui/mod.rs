@@ -50,6 +50,7 @@ pub(crate) mod file_open;
 mod filter_bar_layout;
 mod filter_bar_strings;
 pub mod first_run;
+mod first_run_sources;
 mod help;
 mod icons;
 pub mod import_errors_view;

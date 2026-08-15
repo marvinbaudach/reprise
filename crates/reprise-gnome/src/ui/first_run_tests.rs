@@ -1,5 +1,7 @@
 use super::*;
 use reprise_core::online_sources::WizardSourceSelection;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn incomplete_fresh_install_shows_the_wizard() {
@@ -27,12 +29,6 @@ fn completion_activates_only_explicitly_enabled_options() {
         rhythmbox_import: true,
         sources: WizardSourceSelection::default(),
     }));
-}
-
-#[test]
-fn only_set_up_opens_the_folder_picker() {
-    assert!(!should_open_folder(CompletionResponse::Skip));
-    assert!(should_open_folder(CompletionResponse::SetUp));
 }
 
 #[test]
@@ -110,4 +106,59 @@ fn a_completed_wizard_leaves_no_banner_to_show() {
     let db = Rc::new(Db::open_in_memory().unwrap());
     persist_completion(&db, CompletionOptions::default());
     assert!(crate::ui::online_discovery_banner::build(&db, || {}).is_none());
+}
+
+#[test]
+fn tilde_path_folds_only_an_exact_home_component_prefix() {
+    let home = Path::new("/home/someone");
+
+    assert_eq!(
+        tilde_path(Path::new("/home/someone/Music"), home),
+        "~/Music"
+    );
+    assert_eq!(
+        tilde_path(Path::new("/home/someone2/Music"), home),
+        "/home/someone2/Music"
+    );
+    assert_eq!(tilde_path(home, home), "~");
+    assert_eq!(tilde_path(Path::new("/srv/music"), home), "/srv/music");
+}
+
+#[test]
+fn a_chosen_folder_is_scanned_on_both_exits() {
+    assert_eq!(
+        folder_outcome(CompletionResponse::SetUp, true),
+        FolderOutcome::ScanChosen
+    );
+    assert_eq!(
+        folder_outcome(CompletionResponse::Skip, true),
+        FolderOutcome::ScanChosen
+    );
+    assert_eq!(
+        folder_outcome(CompletionResponse::SetUp, false),
+        FolderOutcome::OpenPicker
+    );
+    assert_eq!(
+        folder_outcome(CompletionResponse::Skip, false),
+        FolderOutcome::Nothing
+    );
+}
+
+#[test]
+fn skipping_with_a_chosen_folder_scans_it_and_keeps_the_gate_shut() {
+    let db = Db::open_in_memory().unwrap();
+    let scanned: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
+    // Same shape the dialog uses; the callback is the unit under test.
+    let start_scan_of: Rc<dyn Fn(PathBuf)> = {
+        let scanned = scanned.clone();
+        Rc::new(move |folder| scanned.borrow_mut().push(folder))
+    };
+
+    persist_completion(&db, CompletionOptions::default());
+    if folder_outcome(CompletionResponse::Skip, true) == FolderOutcome::ScanChosen {
+        start_scan_of(PathBuf::from("/music"));
+    }
+
+    assert_eq!(scanned.borrow().as_slice(), [PathBuf::from("/music")]);
+    assert!(!reprise_core::online_sources::is_enabled(&db).unwrap());
 }
