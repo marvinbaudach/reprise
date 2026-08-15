@@ -125,6 +125,16 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 - Emergency production fixes start on a `hotfix/*` branch **from `dev`** and reach `main`
   through the same promotion. A `hotfix/*` merged straight into `main` breaks the
   fast-forward property irrecoverably; `docs/agents/branching.md` explains why.
+- **Every merge into `dev` raises the app version by one patch step.** Run
+  `./scripts/bump-version.sh --base origin/dev` in the feature branch immediately before
+  merging and commit the result, so the new version rides along in the pull request rather
+  than landing as a separate commit on `dev`. The script writes `Cargo.toml`, `Cargo.lock`
+  and Android's `versionCode`; `versionName` needs no touch, it reads the workspace version.
+  The pipeline skill's `land.sh` does this automatically — do it by hand only when merging
+  without it. The number is computed from `origin/dev` plus one, never from the branch: a
+  branch cut days ago would otherwise hand out a version an intervening merge already took.
+  The `<release>` entries in `data/io.github.marvinbaudach.Reprise.metainfo.xml` stay
+  reserved for real releases and are not touched per merge.
 
 ## Gates — ALL must pass before every commit
 
