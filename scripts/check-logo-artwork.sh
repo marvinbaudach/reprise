@@ -43,7 +43,6 @@ from xml.etree import ElementTree as ET
 brand = Path("data/brand")
 with (brand / "palette.toml").open("rb") as source:
     palette = tomllib.load(source)
-ns = {"svg": "http://www.w3.org/2000/svg"}
 geometry = (
     ("circle", {"cx": "30", "cy": "39", "r": "5.5"}),
     ("circle", {"cx": "30", "cy": "57", "r": "5.5"}),
@@ -92,18 +91,9 @@ mono = ET.parse(brand / "reprise-mark-mono.svg").getroot()
 assert mono.attrib["viewBox"] == "0 0 96 96"
 assert mono.attrib["fill"] == "currentColor"
 assert len(list(mono)) == 4
-plate = ET.parse(brand / "icon-plate.svg").getroot()
-assert plate.attrib["viewBox"] == "0 0 96 96"
-group = plate.find("svg:g", ns)
-rects = group.findall("svg:rect", ns)
-assert group.attrib["id"] == "rp-plate" and len(rects) == 1
-assert rects[0].attrib == {
-    "x": "4", "y": "4", "width": "88", "height": "88",
-    "rx": "22", "fill": palette["reprise_plate"],
-}
 PY
   then
-    ok "source geometry: 96-unit sign, transparent 16-unit desktop stage, 1:3 barlines, platform plate"
+    ok "source geometry: 96-unit sign, transparent 16-unit stage, 1:3 barlines"
   else
     bad "source geometry differs from the specified 96-unit drawing"
   fi
@@ -388,6 +378,62 @@ check_desktop_transparency() {
   fi
 }
 
+check_every_icon_transparency() {
+  local asset groups density variant
+
+  check_desktop_transparency
+
+  for asset in \
+    data/brand/favicon.svg \
+    data/brand/favicon-32.png \
+    data/brand/apple-touch-icon-180.png \
+    data/brand/play-store-icon-512.png; do
+    if [[ $asset == *.svg ]]; then
+      rsvg-convert -w 512 -h 512 -a "$asset" -o "$tmp/surface-icon.png"
+      groups=$("${measure[@]}" ink-component-sizes "$tmp/surface-icon.png" | wc -w)
+    else
+      groups=$("${measure[@]}" ink-component-sizes "$asset" | wc -w)
+    fi
+    if [[ $groups -eq $MARK_PARTS ]]; then
+      ok "$asset has $groups separate ink components on transparency"
+    else
+      bad "$asset has $groups ink components instead of $MARK_PARTS — a carrier still joins the mark"
+    fi
+  done
+
+  for asset in \
+    android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
+    android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml; do
+    grep -q '@android:color/transparent' "$asset" \
+      && ok "$asset uses a transparent background layer" \
+      || bad "$asset still requests an opaque background layer"
+  done
+  [[ ! -e android/app/src/main/res/drawable/ic_launcher_background.xml ]] \
+    && ok "Android ships no opaque launcher-background drawable" \
+    || bad "Android still ships a launcher-background drawable"
+
+  for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+    for variant in ic_launcher.png ic_launcher_round.png; do
+      asset="android/app/src/main/res/mipmap-$density/$variant"
+      groups=$("${measure[@]}" ink-component-sizes "$asset" | wc -w)
+      if [[ $groups -eq $MARK_PARTS ]]; then
+        ok "$asset has $groups separate ink components on transparency"
+      else
+        bad "$asset has $groups ink components instead of $MARK_PARTS — a carrier still joins the mark"
+      fi
+    done
+    if cmp -s "android/app/src/main/res/mipmap-$density/ic_launcher.png" "android/app/src/main/res/mipmap-$density/ic_launcher_round.png"; then
+      ok "Android $density leaves round masking to the launcher"
+    else
+      bad "Android $density bakes a second round-mask raster into the transparent icon"
+    fi
+  done
+
+  [[ ! -e data/brand/icon-plate.svg ]] \
+    && ok "the obsolete carrier source is absent" \
+    || bad "data/brand/icon-plate.svg still maintains a logo background"
+}
+
 self_test() {
   cat > "$tmp/blob.svg" <<'EOF'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28"/></svg>
@@ -429,7 +475,7 @@ check_all() {
   echo "Palette ownership and delivery"
   check_palette_single_source
   check_delivery
-  check_desktop_transparency
+  check_every_icon_transparency
   echo "Generated-file provenance"
   ./scripts/build-brand-assets.sh --check || fail=1
 }
@@ -437,6 +483,7 @@ check_all() {
 case ${1:-} in
   --all) check_all ;;
   --desktop) check_desktop_transparency ;;
+  --transparent) check_every_icon_transparency ;;
   --self-test) self_test ;;
   --mark)
     check_source_contract
@@ -444,7 +491,7 @@ case ${1:-} in
     report_components "${2:-a}"
     ;;
   *)
-    printf 'usage: %s --all | --desktop | --self-test | --mark [a|b]\n' "$0" >&2
+    printf 'usage: %s --all | --desktop | --transparent | --self-test | --mark [a|b]\n' "$0" >&2
     exit 2
     ;;
 esac

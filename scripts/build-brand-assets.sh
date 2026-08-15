@@ -28,11 +28,9 @@ if [[ $mode != write && $mode != --check ]]; then
   exit 2
 fi
 
-scratch=$(mktemp -d)
 out=$root
 [[ $mode == --check ]] && out=$(mktemp -d)
 cleanup() {
-  rm -rf "$scratch"
   [[ $out == "$root" ]] || rm -rf "$out"
 }
 trap cleanup EXIT
@@ -55,7 +53,6 @@ say "four 96-unit sources plus the 16-unit stage ← palette.toml"
 mark=$generated_brand/reprise-mark.svg
 mark_light=$generated_brand/reprise-mark-light.svg
 mark_mono=$generated_brand/reprise-mark-mono.svg
-plate=$generated_brand/icon-plate.svg
 icon_16=$generated_brand/reprise-icon-16.svg
 mark_16_mono=$generated_brand/reprise-mark-16-mono.svg
 first_aid_symbolic=$generated_brand/io.github.marvinbaudach.Reprise-first-aid-symbolic.svg
@@ -73,7 +70,7 @@ build_surface_tree() {
   local brand=$tree_root/data/brand
   local icons=$tree_root/data/icons/hicolor
   local android=$tree_root/android/app/src/main/res
-  local icon bleed
+  local icon
   mkdir -p "$brand"
 
   icon=$brand/reprise-icon.svg
@@ -118,21 +115,14 @@ build_surface_tree() {
     "$android/drawable/ic_repeat_sign.xml" \
     --fixed-offset 6 --mono --mono-fill '@android:color/white' \
     --tint '?android:attr/colorControlNormal'
-  python3 "$lib/plate_to_vectordrawable.py" "$plate" \
-    "$android/drawable/ic_launcher_background.xml" \
-    --colour-ref '@color/reprise_plate'
   python3 "$lib/android_icon_resources.py" "$palette" "$android"
 
-  bleed=$scratch/bleed.svg
-  python3 "$lib/compose_icon.py" "$plate" "$mark" "$bleed" \
-    --native --plate-inset 0 --plate-radius 0
-  python3 "$lib/legacy_launcher.py" "$bleed" "$android"
+  python3 "$lib/legacy_launcher.py" "$mark" "$android"
 
-  python3 "$lib/compose_icon.py" "$plate" "$mark" \
-    "$brand/favicon.svg" --native --plate-inset 0 --plate-radius 22
+  cp "$mark" "$brand/favicon.svg"
   rsvg-convert -w 32 -h 32 "$brand/favicon.svg" -o "$brand/favicon-32.png"
-  rsvg-convert -w 180 -h 180 "$bleed" -o "$brand/apple-touch-icon-180.png"
-  rsvg-convert -w 512 -h 512 "$bleed" -o "$brand/play-store-icon-512.png"
+  rsvg-convert -w 180 -h 180 "$mark" -o "$brand/apple-touch-icon-180.png"
+  rsvg-convert -w 512 -h 512 "$mark" -o "$brand/play-store-icon-512.png"
 
   for lockup_mode in horizontal vertical; do
     python3 "$lib/compose_lockup.py" "$mark" "$font" \
