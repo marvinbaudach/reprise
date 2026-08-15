@@ -206,11 +206,29 @@ mod tests {
         .unwrap();
         crate::modules::set_enabled(&db, &crate::modules::CONCERTS_MODULE, false).unwrap();
         crate::online_sources::set_enabled(&db, false).unwrap();
-        store(&db, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
-        assert!(app_location(&db).unwrap().is_some());
+        store(
+            &db,
+            52.52,
+            13.405,
+            LocationName::with_country("Berlin, Deutschland", Some("Deutschland")),
+            Some("DE"),
+        )
+        .unwrap();
+        assert_eq!(
+            app_location(&db)
+                .unwrap()
+                .and_then(|location| location.country),
+            Some("Deutschland".to_owned())
+        );
 
         clear(&db).unwrap();
         assert_eq!(app_location(&db).unwrap(), None);
+        assert_eq!(
+            crate::library::settings::get_setting(&db, LOCATION_COUNTRY_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("")
+        );
         assert_eq!(default_radius_km(&db).unwrap(), 500.0);
         assert_eq!(
             crate::library::settings::get_setting(&db, crate::concerts::config::FILTER_RADIUS_KEY)
