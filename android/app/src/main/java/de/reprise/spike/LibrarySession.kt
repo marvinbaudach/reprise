@@ -9,6 +9,7 @@ import uniffi.reprise_android_ffi.AndroidArtworkSize
  * the map stays a rounding error next to the rows it describes.
  */
 private const val REMEMBERED_ARTWORK_PATHS = 512
+private const val COUNT_ONLY_WINDOW_SIZE = 1L
 
 internal interface LibrarySessionPort {
     fun rememberedTreeUri(): String?
@@ -249,19 +250,24 @@ internal class LibrarySession(
             titles = if (selectedTab == null || selectedTab == BrowseTab.TITLES) {
                 port.searchTracks("", firstLibraryWindow())
             } else {
-                LibraryWindow.empty()
+                port.searchTracks("", countOnlyLibraryWindow()).withoutRows()
             },
             artists = if (selectedTab == null || selectedTab == BrowseTab.ARTISTS) {
                 port.listArtists(firstLibraryWindow())
             } else {
-                LibraryWindow.empty()
+                port.listArtists(countOnlyLibraryWindow()).withoutRows()
             },
-            albumCount = port.searchAlbums("", LibraryWindowRange(offset = 0, limit = 1)).total,
+            albumCount = port.searchAlbums("", countOnlyLibraryWindow()).total,
             message = message,
             folderUri = port.rememberedTreeUri(),
             loadedTabs = selectedTab?.let(::setOf) ?: BrowseTab.entries.toSet(),
         )
 }
+
+private fun countOnlyLibraryWindow() =
+    LibraryWindowRange(offset = 0, limit = COUNT_ONLY_WINDOW_SIZE)
+
+private fun <T> LibraryWindow<T>.withoutRows() = copy(rows = emptyList(), hasMore = false)
 
 /** The unwindowed album identity query used only by whole-album actions. */
 internal val LocalAlbumTrackIds =

@@ -144,7 +144,7 @@ internal class TrackArtwork(
 
     /** Immediate composition seed: cached source first, generated cover otherwise. */
     fun seedVisual(request: ArtworkRequest): ArtworkVisual =
-        cache.artwork(request) ?: generatedVisual(request, resolved = false)
+        cache.seedArtwork(request) ?: generatedVisual(request, resolved = false)
 
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
         if (!request.refreshesArtistPortrait()) {
