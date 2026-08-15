@@ -1,9 +1,9 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    count_releases_view, filter_release_rows, persisted_releases_filter, query_releases_view,
-    query_releases_view_scope, release_status, sort_release_rows, LibraryPresence,
-    ReleaseSortDirection, ReleaseStatus, ReleaseTypeSelection, ReleaseWindow, ReleasesFilter,
+    filter_release_rows, persisted_releases_filter, query_releases_view, query_releases_view_scope,
+    release_status, sort_release_rows, LibraryPresence, ReleaseSortDirection, ReleaseSortKey,
+    ReleaseStatus, ReleaseTypeSelection, ReleaseWindow, ReleasesFilter,
 };
 use crate::artist_news_history::HistoryEntry;
 use crate::library::settings::{set_bool, set_setting};
@@ -46,6 +46,30 @@ fn with_counts(mut entry: HistoryEntry, local: i64, official: Option<i64>) -> Hi
 fn with_artist(mut entry: HistoryEntry, artist: &str) -> HistoryEntry {
     entry.artist_name = artist.to_string();
     entry
+}
+
+fn sort_entry(
+    mbid: &str,
+    title: &str,
+    artist: &str,
+    release_type: &str,
+    date: &str,
+) -> HistoryEntry {
+    with_artist(
+        entry(
+            mbid,
+            title,
+            release_type,
+            date,
+            LibraryPresence::Absent,
+            false,
+        ),
+        artist,
+    )
+}
+
+fn row_ids(rows: Vec<HistoryEntry>) -> Vec<String> {
+    rows.into_iter().map(|row| row.release_group_mbid).collect()
 }
 
 #[test]
@@ -569,47 +593,119 @@ fn nr_24_release_filters_exclude_owned_releases_and_unselected_singles() {
 #[test]
 fn release_sort_keeps_invalid_dates_last_and_uses_title_tiebreak() {
     let rows = vec![
-        entry(
-            "b",
-            "Beta",
-            "Album",
-            "2026-05",
-            LibraryPresence::Absent,
-            false,
-        ),
-        entry(
-            "invalid",
-            "Invalid",
-            "Album",
-            "unknown",
-            LibraryPresence::Absent,
-            false,
-        ),
-        entry(
-            "a",
-            "Alpha",
-            "Album",
-            "2026-05",
-            LibraryPresence::Absent,
-            false,
-        ),
-        entry(
-            "new",
-            "Newest",
-            "Album",
-            "2026-06",
-            LibraryPresence::Absent,
-            false,
-        ),
+        sort_entry("b", "Beta", "Artist", "Album", "2026-05"),
+        sort_entry("invalid", "Invalid", "Artist", "Album", "unknown"),
+        sort_entry("a", "Alpha", "Artist", "Album", "2026-05"),
+        sort_entry("new", "Newest", "Artist", "Album", "2026-06"),
     ];
-    let sorted = sort_release_rows(rows, ReleaseSortDirection::Descending);
+    let sorted = sort_release_rows(rows, ReleaseSortKey::Date, ReleaseSortDirection::Descending);
+    assert_eq!(row_ids(sorted), ["new", "a", "b", "invalid"]);
+}
+
+#[test]
+fn release_sort_by_title_is_case_insensitive_and_falls_back_to_the_newest_date() {
+    let rows = vec![
+        sort_entry("beta", "beta", "Artist", "Album", "2026-06"),
+        sort_entry("alpha-old", "Alpha", "Artist", "Album", "2025-01"),
+        sort_entry("alpha-new", "Alpha", "Artist", "Album", "2026-01"),
+    ];
+
     assert_eq!(
-        sorted
-            .into_iter()
-            .map(|row| row.release_group_mbid)
-            .collect::<Vec<_>>(),
-        ["new", "a", "b", "invalid"]
+        row_ids(sort_release_rows(
+            rows.clone(),
+            ReleaseSortKey::Title,
+            ReleaseSortDirection::Ascending,
+        )),
+        ["alpha-new", "alpha-old", "beta"]
     );
+    assert_eq!(
+        row_ids(sort_release_rows(
+            rows,
+            ReleaseSortKey::Title,
+            ReleaseSortDirection::Descending,
+        )),
+        ["beta", "alpha-new", "alpha-old"]
+    );
+}
+
+#[test]
+fn release_sort_by_artist_reverses_with_the_direction() {
+    let rows = vec![
+        sort_entry("middle", "Release", "bravo", "Album", "2026-01"),
+        sort_entry("last", "Release", "Zulu", "Album", "2026-01"),
+        sort_entry("first", "Release", "alpha", "Album", "2026-01"),
+    ];
+
+    assert_eq!(
+        row_ids(sort_release_rows(
+            rows.clone(),
+            ReleaseSortKey::Artist,
+            ReleaseSortDirection::Ascending,
+        )),
+        ["first", "middle", "last"]
+    );
+    assert_eq!(
+        row_ids(sort_release_rows(
+            rows,
+            ReleaseSortKey::Artist,
+            ReleaseSortDirection::Descending,
+        )),
+        ["last", "middle", "first"]
+    );
+}
+
+#[test]
+fn release_sort_by_type_orders_the_raw_field() {
+    let rows = vec![
+        sort_entry("single", "Release", "Artist", "single", "2026-01"),
+        sort_entry("album", "Release", "Artist", "album", "2026-01"),
+        sort_entry("ep", "Release", "Artist", "ep", "2026-01"),
+    ];
+
+    assert_eq!(
+        row_ids(sort_release_rows(
+            rows,
+            ReleaseSortKey::Type,
+            ReleaseSortDirection::Ascending,
+        )),
+        ["album", "ep", "single"]
+    );
+}
+
+#[test]
+fn a_blank_release_field_sorts_last_in_both_directions() {
+    for key in [
+        ReleaseSortKey::Title,
+        ReleaseSortKey::Artist,
+        ReleaseSortKey::Type,
+    ] {
+        let rows = [
+            ("beta", "Beta"),
+            ("empty", ""),
+            ("spaces", "   "),
+            ("alpha", "alpha"),
+        ]
+        .into_iter()
+        .map(|(mbid, value)| {
+            let mut row = sort_entry(mbid, "Title", "Artist", "Album", "2026-01");
+            match key {
+                ReleaseSortKey::Title => row.title = value.into(),
+                ReleaseSortKey::Artist => row.artist_name = value.into(),
+                ReleaseSortKey::Type => row.release_type = value.into(),
+                ReleaseSortKey::Date => unreachable!(),
+            }
+            row
+        })
+        .collect::<Vec<_>>();
+
+        for direction in [
+            ReleaseSortDirection::Ascending,
+            ReleaseSortDirection::Descending,
+        ] {
+            let ids = row_ids(sort_release_rows(rows.clone(), key, direction));
+            assert_eq!(&ids[2..], ["empty", "spaces"], "{key:?} {direction:?}");
+        }
+    }
 }
 
 #[test]
@@ -645,80 +741,6 @@ fn persisted_release_filter_defaults_unknown_values_and_reads_type_combinations(
     );
 }
 
-#[test]
-fn nr_26_badge_follows_the_window_filter() {
-    let db = crate::db::Db::open_in_memory().unwrap();
-    db.conn()
-        .execute(
-            "INSERT INTO tracks (path, title, artist, album, added_at)
-         VALUES ('/music/one.flac', 'Track', 'Artist', 'Local', 0)",
-            [],
-        )
-        .unwrap();
-    db.conn()
-        .execute(
-            "INSERT INTO new_releases (
-           release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, first_seen
-         ) VALUES
-           ('recent', 'Artist', 'artist-id', 'Recent', 'Album', '2026-07-01', 1, 1),
-           ('old', 'Artist', 'artist-id', 'Old', 'Album', '2010-01-01', 1, 1)",
-            [],
-        )
-        .unwrap();
-    let filter = ReleasesFilter {
-        release_types: ReleaseTypeSelection {
-            album: true,
-            ep: false,
-            single: false,
-        },
-        ..ReleasesFilter::default()
-    };
-
-    let rows = query_releases_view(&db, &filter, today()).unwrap();
-    assert_eq!(
-        count_releases_view(&db, &filter, today()).unwrap(),
-        rows.len() as i64
-    );
-    assert_eq!(rows[0].release_group_mbid, "recent");
-
-    let widest = ReleasesFilter::widest(false);
-    assert_eq!(count_releases_view(&db, &widest, today()).unwrap(), 2);
-}
-
-#[test]
-fn nr_24_releases_view_is_limited_to_current_library_artists() {
-    let db = crate::db::Db::open_in_memory().unwrap();
-    db.conn()
-        .execute(
-            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
-         VALUES ('/music/local.flac', 'Track', 'Guest', 'Library Artist', 'Local', 0)",
-            [],
-        )
-        .unwrap();
-    db.conn()
-        .execute(
-            "INSERT INTO new_releases (
-           release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, first_seen
-         ) VALUES
-           ('local', 'Library Artist', 'artist-id', 'Missing Album', 'Album',
-            '2020-01-01', 1, 1),
-           ('foreign', 'Former Artist', 'former-id', 'Foreign Album', 'Album',
-            '2020-01-01', 1, 1)",
-            [],
-        )
-        .unwrap();
-
-    let rows = query_releases_view(&db, &ReleasesFilter::widest(false), today()).unwrap();
-    assert_eq!(
-        rows.into_iter()
-            .map(|row| row.release_group_mbid)
-            .collect::<Vec<_>>(),
-        ["local"]
-    );
-}
-
 /// NR-28: a row that could carry „In library" is a row the filter has already
 /// removed. The status value stays meaningful in the model — a filter change
 /// that let owned rows through would otherwise revive the dead branch in
@@ -741,46 +763,6 @@ fn nr_28_the_gap_view_never_reports_an_in_library_row() {
     assert!(
         rows.is_empty(),
         "an owned release never reaches the gap catalog, so its status never renders"
-    );
-}
-
-/// NR-27: the twenty-per-artist cap belongs to the news path alone. Capping
-/// the catalog would defeat a gap view: an artist with a long discography is
-/// exactly the artist with many gaps.
-#[test]
-fn nr_27_the_per_artist_cap_bounds_news_not_the_catalog() {
-    let db = crate::db::Db::open_in_memory().unwrap();
-    db.conn()
-        .execute(
-            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
-             VALUES ('/music/one.flac', 'Track', 'Artist', 'Artist', 'Local', 0)",
-            [],
-        )
-        .unwrap();
-    for index in 0..25 {
-        db.conn()
-            .execute(
-                "INSERT INTO new_releases (
-                   release_group_mbid, artist_name, artist_mbid, title, release_type,
-                   first_release_date, fetched_at
-                 ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-07-01', 1)",
-                rusqlite::params![format!("release-{index}"), format!("Album {index}")],
-            )
-            .unwrap();
-    }
-
-    let catalog = query_releases_view(&db, &ReleasesFilter::default(), today()).unwrap();
-    // `delta_candidates` on purpose, not `query_releases`: the popover and the
-    // badge read this one, and the two call the capping helper from separate
-    // sites. Asserting through the other function would stay green while the
-    // shipped path lost its cap.
-    let candidates = crate::artist_news::delta_candidates(&db, today()).unwrap();
-
-    assert_eq!(catalog.len(), 25, "the gap catalog keeps every album");
-    assert_eq!(
-        candidates.len(),
-        20,
-        "the popover's candidates stop at twenty"
     );
 }
 

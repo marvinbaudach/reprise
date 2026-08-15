@@ -656,9 +656,11 @@ fn wire_sorting(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
             ReleaseSortDirection::Descending
         };
         let rows = shared.rows.borrow().clone();
-        shared
-            .model
-            .replace(artist_news::sort_release_rows(rows, direction));
+        shared.model.replace(artist_news::sort_release_rows(
+            rows,
+            artist_news::ReleaseSortKey::Date,
+            direction,
+        ));
     });
 }
 

@@ -31,6 +31,14 @@ pub enum ReleaseSortDirection {
     Descending,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReleaseSortKey {
+    Date,
+    Title,
+    Artist,
+    Type,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleasesViewResult {
     pub rows: Vec<HistoryEntry>,
@@ -123,17 +131,75 @@ pub fn filter_rows(
 
 pub fn sort_rows(
     mut rows: Vec<HistoryEntry>,
+    key: ReleaseSortKey,
     direction: ReleaseSortDirection,
 ) -> Vec<HistoryEntry> {
-    rows.sort_by(|left, right| {
-        compare_release_dates(left, right, direction).then_with(|| {
+    rows.sort_by(|left, right| match key {
+        ReleaseSortKey::Date => compare_release_dates(left, right, direction).then_with(|| {
             left.title
                 .to_ascii_lowercase()
                 .cmp(&right.title.to_ascii_lowercase())
                 .then_with(|| left.title.cmp(&right.title))
-        })
+        }),
+        ReleaseSortKey::Title => {
+            compare_text_field(left, right, &left.title, &right.title, direction)
+        }
+        ReleaseSortKey::Artist => compare_text_field(
+            left,
+            right,
+            &left.artist_name,
+            &right.artist_name,
+            direction,
+        ),
+        // This sorts the raw type. Localized labels may alphabetize differently,
+        // which keeps the ordering in Core and testable without GTK.
+        ReleaseSortKey::Type => compare_text_field(
+            left,
+            right,
+            &left.release_type,
+            &right.release_type,
+            direction,
+        ),
     });
     rows
+}
+
+fn present(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn compare_text(left: &str, right: &str, direction: ReleaseSortDirection) -> Ordering {
+    match (present(left), present(right)) {
+        (Some(left), Some(right)) => {
+            let ordering = left
+                .to_lowercase()
+                .cmp(&right.to_lowercase())
+                .then_with(|| left.cmp(right));
+            match direction {
+                ReleaseSortDirection::Ascending => ordering,
+                ReleaseSortDirection::Descending => ordering.reverse(),
+            }
+        }
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
+fn compare_text_field(
+    left: &HistoryEntry,
+    right: &HistoryEntry,
+    left_value: &str,
+    right_value: &str,
+    direction: ReleaseSortDirection,
+) -> Ordering {
+    compare_text(left_value, right_value, direction).then_with(|| {
+        // Always descending, independently of `direction`: the tiebreaker
+        // provides stability, not ordering. Reversing it would make equal-name
+        // rows jump twice when the direction changes.
+        compare_release_dates(left, right, ReleaseSortDirection::Descending)
+    })
 }
 
 fn compare_release_dates(
@@ -185,6 +251,7 @@ fn query_releases_view_scope_in(
         filter_rows(rows.clone(), &ReleasesFilter::widest(filter.hidden), today).len();
     let rows = sort_rows(
         filter_rows(rows, filter, today),
+        ReleaseSortKey::Date,
         ReleaseSortDirection::Descending,
     );
     debug_assert!(rows.len() <= widest_total);

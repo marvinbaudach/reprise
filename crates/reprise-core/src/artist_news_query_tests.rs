@@ -6,8 +6,9 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    delta_candidates, hidden_release_count, mark_releases_seen, set_release_hidden,
-    unseen_release_count,
+    count_releases_view, delta_candidates, hidden_release_count, mark_releases_seen,
+    query_releases_view, set_release_hidden, unseen_release_count, ReleaseTypeSelection,
+    ReleasesFilter,
 };
 use crate::artist_news_query::query_releases_in;
 use crate::library::settings::set_setting;
@@ -602,5 +603,119 @@ fn dg_2_duplicate_files_do_not_fake_complete_release_ownership() {
         ),
         LibraryPresence::Partial,
         "album artist matching and distinct track slots must report two, not three, tracks"
+    );
+}
+
+#[test]
+fn nr_26_badge_follows_the_window_filter() {
+    let db = migrated_conn();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, added_at)
+         VALUES ('/music/one.flac', 'Track', 'Artist', 'Local', 0)",
+            [],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, first_seen
+         ) VALUES
+           ('recent', 'Artist', 'artist-id', 'Recent', 'Album', '2026-07-01', 1, 1),
+           ('old', 'Artist', 'artist-id', 'Old', 'Album', '2010-01-01', 1, 1)",
+            [],
+        )
+        .unwrap();
+    let filter = ReleasesFilter {
+        release_types: ReleaseTypeSelection {
+            album: true,
+            ep: false,
+            single: false,
+        },
+        ..ReleasesFilter::default()
+    };
+
+    let rows = query_releases_view(&db, &filter, date()).unwrap();
+    assert_eq!(
+        count_releases_view(&db, &filter, date()).unwrap(),
+        rows.len() as i64
+    );
+    assert_eq!(rows[0].release_group_mbid, "recent");
+
+    let widest = ReleasesFilter::widest(false);
+    assert_eq!(count_releases_view(&db, &widest, date()).unwrap(), 2);
+}
+
+#[test]
+fn nr_24_releases_view_is_limited_to_current_library_artists() {
+    let db = migrated_conn();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
+         VALUES ('/music/local.flac', 'Track', 'Guest', 'Library Artist', 'Local', 0)",
+            [],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, first_seen
+         ) VALUES
+           ('local', 'Library Artist', 'artist-id', 'Missing Album', 'Album',
+            '2020-01-01', 1, 1),
+           ('foreign', 'Former Artist', 'former-id', 'Foreign Album', 'Album',
+            '2020-01-01', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+    let rows = query_releases_view(&db, &ReleasesFilter::widest(false), date()).unwrap();
+    assert_eq!(
+        rows.into_iter()
+            .map(|row| row.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["local"]
+    );
+}
+
+/// NR-27: the twenty-per-artist cap belongs to the news path alone. Capping
+/// the catalog would defeat a gap view: an artist with a long discography is
+/// exactly the artist with many gaps.
+#[test]
+fn nr_27_the_per_artist_cap_bounds_news_not_the_catalog() {
+    let db = migrated_conn();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
+             VALUES ('/music/one.flac', 'Track', 'Artist', 'Artist', 'Local', 0)",
+            [],
+        )
+        .unwrap();
+    for index in 0..25 {
+        db.conn()
+            .execute(
+                "INSERT INTO new_releases (
+                   release_group_mbid, artist_name, artist_mbid, title, release_type,
+                   first_release_date, fetched_at
+                 ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-07-01', 1)",
+                rusqlite::params![format!("release-{index}"), format!("Album {index}")],
+            )
+            .unwrap();
+    }
+
+    let catalog = query_releases_view(&db, &ReleasesFilter::default(), date()).unwrap();
+    // `delta_candidates` on purpose, not `query_releases`: the popover and the
+    // badge read this one, and the two call the capping helper from separate
+    // sites. Asserting through the other function would stay green while the
+    // shipped path lost its cap.
+    let candidates = delta_candidates(&db, date()).unwrap();
+
+    assert_eq!(catalog.len(), 25, "the gap catalog keeps every album");
+    assert_eq!(
+        candidates.len(),
+        20,
+        "the popover's candidates stop at twenty"
     );
 }
