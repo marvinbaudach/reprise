@@ -27,7 +27,7 @@ impl DoctorNavigation {
     }
 
     pub(super) fn add_root(&self, page: &adw::NavigationPage) {
-        self.doctor_navigation.add(page);
+        self.navigation_view().add(page);
     }
 
     pub(super) fn show_root(&self) {
@@ -71,7 +71,6 @@ impl DoctorNavigation {
         self.content_stack.visible_child_name().as_deref() == Some(ROOT_TAG)
     }
 
-    #[allow(dead_code)]
     pub(super) fn navigation_view(&self) -> &adw::NavigationView {
         &self.doctor_navigation
     }

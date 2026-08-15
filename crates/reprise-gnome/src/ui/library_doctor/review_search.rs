@@ -22,8 +22,6 @@ pub(super) fn no_match_page(on_clear: Rc<dyn Fn()>) -> adw::StatusPage {
 }
 
 impl super::ReviewState {
-    // The shared search controller calls this once Task 10 installs its sink.
-    #[allow(dead_code)]
     pub(super) fn set_query(self: &Rc<Self>, query: &str) {
         let started = Instant::now();
         let query = query.trim();
