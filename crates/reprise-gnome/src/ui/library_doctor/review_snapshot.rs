@@ -32,8 +32,6 @@ pub(super) struct ReviewSnapshot {
     index: HashMap<DoctorReviewRowId, u32>,
     pub(super) totals: ReviewTotals,
     visible: Vec<bool>,
-    // Read by the no-match page once Task 4 wires that child.
-    #[allow(dead_code)]
     pub(super) unfiltered_changes: usize,
 }
 

@@ -187,12 +187,14 @@ impl ReviewState {
 
     fn refresh_action_summary(&self, ready_count: usize) {
         let summary = self.session.borrow().summary();
+        let query = self.query.borrow().clone();
         self.apply
             .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
         self.apply.set_sensitive(summary.tag_change_count > 0);
         self.change_summary.set_label(&review_footer_summary(
             summary,
             self.category.get(),
+            &query,
             ready_count,
         ));
     }
@@ -513,7 +515,15 @@ impl LibraryDoctorReviewPage {
             .single_click_activate(false)
             .build();
         let header = ReviewHeader::new();
-        let filter_bar = ReviewFilterBar::new(&categories);
+        let clear_search = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
+        let filter_bar = ReviewFilterBar::new(&categories, {
+            let clear_search = clear_search.clone();
+            Rc::new(move || {
+                if let Some(clear) = clear_search.borrow().as_ref() {
+                    clear();
+                }
+            })
+        });
         let stale_notice_label = gtk4::Label::builder()
             .xalign(0.0)
             .hexpand(true)
@@ -541,7 +551,6 @@ impl LibraryDoctorReviewPage {
         content.set_vexpand(true);
         content.add_named(&scrolled, Some("rows"));
         content.add_named(&empty, Some("empty"));
-        let clear_search = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
         let no_match = review_search::no_match_page({
             let clear_search = clear_search.clone();
             Rc::new(move || {

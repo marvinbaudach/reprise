@@ -86,7 +86,7 @@ fn doc_9d_the_footer_states_the_scope_of_the_filter() {
     };
 
     assert_eq!(
-        review_footer_summary(summary, Some(ReviewCategory::Year), 433),
+        review_footer_summary(summary, Some(ReviewCategory::Year), "", 433),
         "27 of 390 · filtered by Year"
     );
 }
@@ -101,7 +101,7 @@ fn doc_9b_the_unfiltered_footer_names_selection_and_ready_inventory() {
     };
 
     assert_eq!(
-        review_footer_summary(summary, None, 433),
+        review_footer_summary(summary, None, "", 433),
         "419 of 433 selected · 304 files · undo available after"
     );
 }

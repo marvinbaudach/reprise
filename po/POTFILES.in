@@ -4,6 +4,7 @@ crates/reprise-gnome/src/ui/strings_sidebar.rs
 crates/reprise-gnome/src/ui/strings_artist.rs
 crates/reprise-gnome/src/ui/strings_issues.rs
 crates/reprise-gnome/src/ui/strings_library_doctor.rs
+crates/reprise-gnome/src/ui/strings_library_doctor_search.rs
 crates/reprise-gnome/src/ui/strings_news.rs
 crates/reprise-gnome/src/ui/strings_notifications.rs
 crates/reprise-gnome/src/ui/strings_online_sources.rs

@@ -41,8 +41,26 @@ pub(super) fn review_stale_notice(session: &DoctorReviewSession) -> Option<Strin
 pub(super) fn review_footer_summary(
     summary: reprise_core::library_doctor::DoctorReviewSummary,
     category: Option<ReviewCategory>,
+    query: &str,
     ready_count: usize,
 ) -> String {
+    let query = query.trim();
+    if !query.is_empty() {
+        let scope = category.map_or_else(
+            || strings::doctor_review_query_scope(query),
+            |category| {
+                strings::doctor_review_query_and_category_scope(
+                    &strings::text(category.label()),
+                    query,
+                )
+            },
+        );
+        return strings::doctor_filter_scope(
+            summary.tag_change_count,
+            summary.total_tag_change_count,
+            &scope,
+        );
+    }
     category.map_or_else(
         || strings::doctor_apply_summary(summary.tag_change_count, ready_count, summary.file_count),
         |category| {

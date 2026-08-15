@@ -4,13 +4,14 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::db::Db;
-use reprise_core::library_doctor::{DoctorReviewFilter, DoctorReviewSession};
+use reprise_core::library_doctor::{DoctorReviewFilter, DoctorReviewSession, DoctorReviewSummary};
 
 use super::super::review_model::grouped_rows_for;
 use super::super::review_row::contract_tests::{
     album_change_scan, conflict_scan, three_album_scan,
 };
 use super::super::review_snapshot::ReviewSnapshot;
+use super::super::review_summary::review_footer_summary;
 use super::LibraryDoctorReviewPage;
 
 fn snapshot(query: &str) -> (DoctorReviewSession, ReviewSnapshot) {
@@ -168,6 +169,14 @@ fn doc_12a_a_query_with_no_matches_shows_its_own_state() {
         page.state.content.visible_child_name().as_deref(),
         Some("no-match")
     );
+    let no_match = page
+        .state
+        .content
+        .child_by_name("no-match")
+        .and_downcast::<adw::StatusPage>()
+        .unwrap();
+    assert_eq!(no_match.title(), "No matches for “matches no review row”");
+    assert!(no_match.description().unwrap().contains("3 fixes"));
 }
 
 #[test]
@@ -184,4 +193,67 @@ fn doc_12a_clearing_the_query_restores_every_row() {
 
     assert_eq!(page.state.sorted.n_items(), row_count);
     assert_eq!(page.state.query.borrow().as_str(), "");
+}
+
+#[test]
+fn doc_9d_the_footer_states_the_scope_of_the_search() {
+    let summary = DoctorReviewSummary {
+        track_count: 20,
+        file_count: 20,
+        tag_change_count: 27,
+        total_tag_change_count: 390,
+    };
+
+    assert_eq!(
+        review_footer_summary(summary, None, "beatles", 433),
+        "27 of 390 · filtered by search “beatles”"
+    );
+}
+
+#[test]
+fn doc_9d_the_footer_names_both_search_and_category_when_both_are_active() {
+    let summary = DoctorReviewSummary {
+        track_count: 20,
+        file_count: 20,
+        tag_change_count: 27,
+        total_tag_change_count: 390,
+    };
+
+    assert_eq!(
+        review_footer_summary(
+            summary,
+            Some(super::super::review_model::ReviewCategory::Year),
+            "beatles",
+            433,
+        ),
+        "27 of 390 · filtered by Year and search “beatles”"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_12a_a_committed_query_renders_exactly_one_chip() {
+    let _guard = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let page = page_for(&three_album_scan());
+
+    page.state.filter_bar.set_committed_query("first");
+    page.state.filter_bar.set_committed_query("second");
+
+    let search_slot = page
+        .state
+        .filter_bar
+        .root
+        .first_child()
+        .unwrap()
+        .next_sibling()
+        .unwrap();
+    let chip = search_slot.first_child().unwrap();
+    assert!(chip.next_sibling().is_none());
+    assert!(chip
+        .downcast::<gtk4::Button>()
+        .unwrap()
+        .label()
+        .unwrap()
+        .contains("second"));
 }
