@@ -54,7 +54,7 @@ fn haversine_matches_the_munich_berlin_reference() {
 #[test]
 fn geocode_url_and_parser_are_tolerant_and_pure() {
     assert_eq!(
-        geocode_url("München & Umgebung"),
+        geocode_url("München & Umgebung", None),
         "https://nominatim.openstreetmap.org/search?q=M%C3%BCnchen%20%26%20Umgebung&format=json&limit=1&addressdetails=1"
     );
     let location =
@@ -62,7 +62,7 @@ fn geocode_url_and_parser_are_tolerant_and_pure() {
             .unwrap()
             .unwrap();
     assert_eq!(location.lat, 48.13);
-    assert_eq!(location.display_name, "Munich, Bavaria");
+    assert_eq!(location.city, "Munich");
     assert_eq!(location.country_code, None);
     assert_eq!(parse_geocode("[]").unwrap(), None);
     assert!(parse_geocode("{broken").is_err());

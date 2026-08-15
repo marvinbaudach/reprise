@@ -39,7 +39,7 @@ fn geocode_decision(
         Ok(Some(location)) => LocationDecision::Store {
             latitude: location.lat,
             longitude: location.lon,
-            name: location.display_name,
+            name: location.city,
             country_code: location.country_code,
         },
         Ok(None) | Err(_) => LocationDecision::Error(strings::text(strings::LOCATION_NOT_FOUND)),
@@ -246,7 +246,8 @@ fn city_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ActionRow 
             present_city_editor(button.upcast_ref(), &initial, move |query| {
                 let receiver = one_shot_task::spawn("reprise-geocode", move || {
                     geocode_decision(
-                        reprise_core::concerts::geocode(&query).map_err(|error| error.to_string()),
+                        reprise_core::concerts::geocode(&query, None)
+                            .map_err(|error| error.to_string()),
                     )
                 });
                 receive_location(
@@ -563,13 +564,14 @@ mod tests {
             geocode_decision(Ok(Some(reprise_core::concerts::GeocodedLocation {
                 lat: 48.137,
                 lon: 11.575,
-                display_name: "Munich, Bavaria".into(),
+                city: "Munich".into(),
+                country: Some("Germany".into()),
                 country_code: Some("DE".into()),
             }))),
             LocationDecision::Store {
                 latitude: 48.137,
                 longitude: 11.575,
-                name: "Munich, Bavaria".into(),
+                name: "Munich".into(),
                 country_code: Some("DE".into()),
             }
         );

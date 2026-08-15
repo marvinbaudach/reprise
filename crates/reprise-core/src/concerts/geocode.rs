@@ -6,7 +6,8 @@ use super::{http, ProviderError};
 pub struct GeocodedLocation {
     pub lat: f64,
     pub lon: f64,
-    pub display_name: String,
+    pub city: String,
+    pub country: Option<String>,
     /// `RAD-5`/`O-4`: the ISO 3166-1 alpha-2 country code, uppercased to
     /// match radio-browser's convention, when Nominatim's `addressdetails`
     /// enrichment of this same request returned one. Never derived from a
@@ -15,15 +16,24 @@ pub struct GeocodedLocation {
 }
 
 #[must_use]
-pub fn geocode_url(query: &str) -> String {
-    format!(
+pub fn geocode_url(query: &str, language: Option<&str>) -> String {
+    let mut url = format!(
         "https://nominatim.openstreetmap.org/search?q={}&format=json&limit=1&addressdetails=1",
         crate::musicbrainz::urlencode(query.trim())
-    )
+    );
+    if let Some(language) = language.map(str::trim).filter(|value| !value.is_empty()) {
+        let language = language.replace('_', "-");
+        url.push_str("&accept-language=");
+        url.push_str(&crate::musicbrainz::urlencode(&language));
+    }
+    url
 }
 
-pub fn geocode(query: &str) -> Result<Option<GeocodedLocation>, ProviderError> {
-    let body = http::get(&geocode_url(query))?;
+pub fn geocode(
+    query: &str,
+    language: Option<&str>,
+) -> Result<Option<GeocodedLocation>, ProviderError> {
+    let body = http::get(&geocode_url(query, language))?;
     parse_geocode(&body)
 }
 
@@ -38,27 +48,41 @@ pub fn parse_geocode(body: &str) -> Result<Option<GeocodedLocation>, ProviderErr
     let Some(lon) = parse_number(value.get("lon")) else {
         return Ok(None);
     };
-    let Some(display_name) = value
-        .get("display_name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(display_name) = non_empty_text(value.get("display_name")) else {
         return Ok(None);
     };
-    let country_code = value
-        .get("address")
-        .and_then(|address| address.get("country_code"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    let address = value.get("address");
+    let city = ["city", "town", "village", "municipality"]
+        .into_iter()
+        .find_map(|key| non_empty_text(address.and_then(|address| address.get(key))))
+        .or_else(|| {
+            display_name
+                .split(',')
+                .next()
+                .map(str::trim)
+                .filter(|city| !city.is_empty())
+        });
+    let Some(city) = city else {
+        return Ok(None);
+    };
+    let country =
+        non_empty_text(address.and_then(|address| address.get("country"))).map(str::to_owned);
+    let country_code = non_empty_text(address.and_then(|address| address.get("country_code")))
         .map(str::to_ascii_uppercase);
     Ok(Some(GeocodedLocation {
         lat,
         lon,
-        display_name: display_name.to_owned(),
+        city: city.to_owned(),
+        country,
         country_code,
     }))
+}
+
+fn non_empty_text(value: Option<&Value>) -> Option<&str> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
 }
 
 fn parse_number(value: Option<&Value>) -> Option<f64> {
