@@ -9,6 +9,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
+use reprise_core::online_sources::{self, WizardSourceSelection};
 
 use crate::ui::{preference_rhythmbox, scan_flow::ScanControls, strings};
 
@@ -24,6 +25,7 @@ pub(super) enum FirstRunDecision {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct CompletionOptions {
     rhythmbox_import: bool,
+    sources: WizardSourceSelection,
 }
 
 struct RhythmboxImportWidgets {
@@ -39,6 +41,21 @@ enum CompletionResponse {
 
 fn requested_actions(options: CompletionOptions) -> bool {
     options.rhythmbox_import
+}
+
+/// Everything the wizard persists, on both exits. `NET-4`: the wizard
+/// *replaces* the discovery banner's question for a fresh install, so it
+/// closes the banner too — otherwise the same question arrives twice.
+fn persist_completion(db: &Db, options: CompletionOptions) {
+    if let Err(error) = settings::set_onboarding_completed(db, true) {
+        tracing::warn!(%error, "could not persist onboarding completion");
+    }
+    if let Err(error) = online_sources::apply_wizard_selection(db, options.sources) {
+        tracing::warn!(%error, "could not persist first-run source selection");
+    }
+    if let Err(error) = settings::set_online_discovery_banner_completed(db, true) {
+        tracing::warn!(%error, "could not close the discovery banner");
+    }
 }
 
 fn should_open_folder(response: CompletionResponse) -> bool {
@@ -201,9 +218,7 @@ pub(super) fn run(
                 return;
             }
             let rhythmbox_import = requested_actions(options);
-            if let Err(error) = settings::set_onboarding_completed(&conn, true) {
-                tracing::warn!(%error, "could not persist onboarding completion");
-            }
+            persist_completion(&conn, options);
             if let Some(dialog) = dialog.upgrade() {
                 dialog.close();
             }
@@ -246,6 +261,7 @@ pub(super) fn run(
                     rhythmbox_import: rhythmbox
                         .as_ref()
                         .is_some_and(|widgets| widgets.import_data.is_active()),
+                    sources: WizardSourceSelection::default(),
                 },
                 CompletionResponse::SetUp,
                 false,
@@ -265,6 +281,7 @@ pub(super) fn run(
             "setup-options" => (
                 CompletionOptions {
                     rhythmbox_import: true,
+                    sources: WizardSourceSelection::default(),
                 },
                 CompletionResponse::SetUp,
             ),
@@ -290,84 +307,5 @@ fn log_smoke_result(db: &Db) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn incomplete_fresh_install_shows_the_wizard() {
-        assert_eq!(decide(false, None), FirstRunDecision::ShowWizard);
-        assert_eq!(decide(false, Some("  ")), FirstRunDecision::ShowWizard);
-    }
-
-    #[test]
-    fn existing_library_is_a_silent_upgrade() {
-        assert_eq!(
-            decide(false, Some("/music")),
-            FirstRunDecision::ExistingLibrary
-        );
-    }
-
-    #[test]
-    fn completed_onboarding_never_reopens_the_wizard() {
-        assert_eq!(decide(true, None), FirstRunDecision::AlreadyCompleted);
-    }
-
-    #[test]
-    fn completion_activates_only_explicitly_enabled_options() {
-        assert!(!requested_actions(CompletionOptions::default()));
-        assert!(requested_actions(CompletionOptions {
-            rhythmbox_import: true,
-        }));
-    }
-
-    #[test]
-    fn only_set_up_opens_the_folder_picker() {
-        assert!(!should_open_folder(CompletionResponse::Skip));
-        assert!(should_open_folder(CompletionResponse::SetUp));
-    }
-
-    #[test]
-    fn rhythmbox_offer_is_first_run_only_detected_and_defaults_off() {
-        assert_eq!(rhythmbox_offer(FirstRunDecision::ShowWizard, false), None);
-        assert_eq!(
-            rhythmbox_offer(FirstRunDecision::ExistingLibrary, true),
-            None
-        );
-        assert_eq!(
-            rhythmbox_offer(FirstRunDecision::AlreadyCompleted, true),
-            None
-        );
-        assert_eq!(
-            rhythmbox_offer(FirstRunDecision::ShowWizard, true),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn rhythmbox_import_is_taken_once_after_a_completed_library_scan() {
-        let presented = Cell::new(false);
-
-        assert!(!take_completed_library_import(&presented, None));
-        assert!(!take_completed_library_import(&presented, Some("  ")));
-        assert!(take_completed_library_import(&presented, Some("/music")));
-        assert!(!take_completed_library_import(&presented, Some("/music")));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn detected_rhythmbox_group_lists_the_supported_import_choice() {
-        gtk4::init().unwrap();
-        let widgets = build_rhythmbox_import_group(false);
-
-        assert_eq!(
-            widgets.import_data.title(),
-            strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX)
-        );
-        assert_eq!(
-            widgets.import_data.subtitle().as_deref(),
-            Some(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION).as_str())
-        );
-        assert!(!widgets.import_data.is_active());
-        assert!(!widgets.import_data.uses_markup());
-    }
-}
+#[path = "first_run_tests.rs"]
+mod tests;
