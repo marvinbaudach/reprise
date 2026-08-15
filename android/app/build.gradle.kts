@@ -24,7 +24,7 @@ android {
         applicationId = "org.reprise"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
+        versionCode = 7
         versionName = workspacePackageValue("version")
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
