@@ -62,10 +62,18 @@ pub(super) fn delta_presentations(
                     .filter(|seed| !seed.trim().is_empty())
                     .map(strings::concert_similar_caption),
                 meta: strings::updates_concert_meta(&date, &row.city, &row.venue),
-                tag: (row.availability == TicketAvailability::OffSale).then(|| feed_row::Tag {
-                    text: strings::text(strings::CONCERTS_OFF_SALE),
-                    tone: feed_row::TagTone::Neutral,
-                }),
+                // The feed marks exceptions; the comparison table names every state.
+                tag: match row.availability {
+                    TicketAvailability::OnSale => None,
+                    TicketAvailability::OffSale => Some(feed_row::Tag {
+                        text: strings::text(strings::CONCERTS_OFF_SALE),
+                        tone: feed_row::TagTone::NeutralFilled,
+                    }),
+                    TicketAvailability::Unknown => Some(feed_row::Tag {
+                        text: strings::text(strings::CONCERTS_UNKNOWN),
+                        tone: feed_row::TagTone::Quiet,
+                    }),
+                },
                 tooltip,
                 target,
             }
@@ -308,6 +316,34 @@ mod tests {
         assert_eq!(
             presentation.target.as_deref(),
             Some("https://tickets.example/1")
+        );
+    }
+
+    #[test]
+    fn nr_39_the_feed_tags_only_the_exception() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+        let mut on_sale = row(1, "2026-08-01");
+        on_sale.availability = TicketAvailability::OnSale;
+        let mut off_sale = row(2, "2026-08-01");
+        off_sale.availability = TicketAvailability::OffSale;
+        let unknown = row(3, "2026-08-01");
+
+        let presentations = delta_presentations(&[on_sale, off_sale, unknown], today);
+
+        assert_eq!(presentations[0].tag, None);
+        assert_eq!(
+            presentations[1].tag,
+            Some(feed_row::Tag {
+                text: "Off sale".into(),
+                tone: feed_row::TagTone::NeutralFilled,
+            })
+        );
+        assert_eq!(
+            presentations[2].tag,
+            Some(feed_row::Tag {
+                text: "Unknown".into(),
+                tone: feed_row::TagTone::Quiet,
+            })
         );
     }
 }
