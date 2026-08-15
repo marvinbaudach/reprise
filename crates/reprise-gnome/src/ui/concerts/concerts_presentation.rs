@@ -3,6 +3,7 @@
 use chrono::NaiveDate;
 use reprise_core::concerts::ConcertRow;
 use reprise_core::format::DatePattern;
+use reprise_view::columns::{ColumnKey, ConcertColumn};
 use std::cmp::Ordering;
 
 use crate::ui::strings;
@@ -11,6 +12,23 @@ use crate::ui::strings;
 pub(super) enum ConcertSortKey {
     Date,
     Distance,
+    Artist,
+    City,
+    Venue,
+    Source,
+}
+
+/// Unknown ids, including columns from newer builds, leave sorting unchanged.
+pub(super) fn sort_key_for_id(id: Option<&str>) -> Option<ConcertSortKey> {
+    match id {
+        Some(id) if id == ConcertColumn::Date.as_str() => Some(ConcertSortKey::Date),
+        Some(id) if id == ConcertColumn::Distance.as_str() => Some(ConcertSortKey::Distance),
+        Some(id) if id == ConcertColumn::Artist.as_str() => Some(ConcertSortKey::Artist),
+        Some(id) if id == ConcertColumn::City.as_str() => Some(ConcertSortKey::City),
+        Some(id) if id == ConcertColumn::Venue.as_str() => Some(ConcertSortKey::Venue),
+        Some(id) if id == ConcertColumn::Source.as_str() => Some(ConcertSortKey::Source),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,7 +76,59 @@ pub(super) fn sort_rows(rows: &mut [ConcertRow], key: ConcertSortKey, direction:
         ConcertSortKey::Distance => {
             compare_optional(left.distance_km, right.distance_km, direction)
         }
+        ConcertSortKey::Artist => compare_text(&left.artist_name, &right.artist_name, direction)
+            .then_with(|| date_tiebreak(left, right)),
+        ConcertSortKey::City => compare_text(&left.city, &right.city, direction)
+            .then_with(|| date_tiebreak(left, right)),
+        ConcertSortKey::Venue => compare_text(&left.venue, &right.venue, direction)
+            .then_with(|| date_tiebreak(left, right)),
+        ConcertSortKey::Source => compare_text(source_name(left), source_name(right), direction)
+            .then_with(|| date_tiebreak(left, right)),
     });
+}
+
+pub(super) fn source_name(row: &ConcertRow) -> &str {
+    row.ticket_source
+        .as_deref()
+        .filter(|source| !source.trim().is_empty())
+        .unwrap_or(row.provider.as_str())
+}
+
+/// Empty and whitespace-only values are missing.
+fn present(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn compare_text(left: &str, right: &str, direction: SortDirection) -> Ordering {
+    match (present(left), present(right)) {
+        (Some(left), Some(right)) => {
+            let ordering = left
+                .to_lowercase()
+                .cmp(&right.to_lowercase())
+                .then_with(|| left.cmp(right));
+            match direction {
+                SortDirection::Ascending => ordering,
+                SortDirection::Descending => ordering.reverse(),
+            }
+        }
+        // Missing values stay last independently of direction, matching
+        // `compare_optional` for dates and distances.
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
+/// Immer aufsteigend, unabhängig von `direction`: der Entscheider stellt
+/// Stabilität her, er drückt keine Ordnung aus. Würde er mitdrehen, sprängen
+/// gleichnamige Zeilen beim Richtungswechsel doppelt.
+fn date_tiebreak(left: &ConcertRow, right: &ConcertRow) -> Ordering {
+    compare_optional(
+        NaiveDate::parse_from_str(&left.date_key, "%Y-%m-%d").ok(),
+        NaiveDate::parse_from_str(&right.date_key, "%Y-%m-%d").ok(),
+        SortDirection::Ascending,
+    )
 }
 
 fn compare_optional<T: PartialOrd>(
@@ -127,6 +197,180 @@ mod tests {
         assert_eq!(format_distance_km(Some(417.6)), "418 km");
         assert_eq!(format_distance_km(None), "—");
         assert_eq!(count_line(5, 23), "5 of 23 concerts");
+    }
+
+    #[test]
+    fn sort_key_for_id_maps_every_sortable_column_and_rejects_the_rest() {
+        assert_eq!(
+            sort_key_for_id(Some(ConcertColumn::Date.as_str())),
+            Some(ConcertSortKey::Date)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ConcertColumn::Distance.as_str())),
+            Some(ConcertSortKey::Distance)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ConcertColumn::Artist.as_str())),
+            Some(ConcertSortKey::Artist)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ConcertColumn::City.as_str())),
+            Some(ConcertSortKey::City)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ConcertColumn::Venue.as_str())),
+            Some(ConcertSortKey::Venue)
+        );
+        assert_eq!(
+            sort_key_for_id(Some(ConcertColumn::Source.as_str())),
+            Some(ConcertSortKey::Source)
+        );
+        assert_eq!(sort_key_for_id(Some(ConcertColumn::Tickets.as_str())), None);
+        assert_eq!(sort_key_for_id(Some("future-column")), None);
+        assert_eq!(sort_key_for_id(None), None);
+    }
+
+    #[test]
+    fn artist_sort_is_case_insensitive_and_falls_back_to_the_date() {
+        let mut later_alpha = row("2026-10-19", None);
+        later_alpha.artist_name = "alpha".into();
+        let mut zulu = row("2026-10-16", None);
+        zulu.artist_name = "Zulu".into();
+        let mut earlier_alpha = row("2026-10-17", None);
+        earlier_alpha.artist_name = "alpha".into();
+        let mut rows = vec![later_alpha, zulu, earlier_alpha];
+
+        sort_rows(&mut rows, ConcertSortKey::Artist, SortDirection::Ascending);
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.artist_name.as_str(), row.date_key.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("alpha", "2026-10-17"),
+                ("alpha", "2026-10-19"),
+                ("Zulu", "2026-10-16"),
+            ]
+        );
+    }
+
+    #[test]
+    fn city_and_venue_reverse_with_the_direction_but_keep_the_date_tiebreak_ascending() {
+        for key in [ConcertSortKey::City, ConcertSortKey::Venue] {
+            let mut later_berlin = row("2026-10-19", None);
+            let mut zurich = row("2026-10-18", None);
+            let mut earlier_berlin = row("2026-10-17", None);
+            match key {
+                ConcertSortKey::City => {
+                    later_berlin.city = "Berlin".into();
+                    zurich.city = "Zurich".into();
+                    earlier_berlin.city = "Berlin".into();
+                }
+                ConcertSortKey::Venue => {
+                    later_berlin.venue = "Berlin".into();
+                    zurich.venue = "Zurich".into();
+                    earlier_berlin.venue = "Berlin".into();
+                }
+                _ => unreachable!(),
+            }
+            let mut rows = vec![later_berlin, zurich, earlier_berlin];
+
+            sort_rows(&mut rows, key, SortDirection::Ascending);
+            assert_eq!(
+                rows.iter()
+                    .map(|row| row.date_key.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["2026-10-17", "2026-10-19", "2026-10-18"]
+            );
+
+            sort_rows(&mut rows, key, SortDirection::Descending);
+            assert_eq!(
+                rows.iter()
+                    .map(|row| row.date_key.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["2026-10-18", "2026-10-17", "2026-10-19"]
+            );
+        }
+    }
+
+    #[test]
+    fn source_sorts_by_the_displayed_name_not_the_raw_field() {
+        let mut provider_fallback = row("2026-10-17", None);
+        provider_fallback.ticket_source = None;
+        provider_fallback.provider = "ticketmaster".into();
+        let mut zulu = row("2026-10-18", None);
+        zulu.ticket_source = Some("Zulu".into());
+        zulu.provider = "aaa".into();
+        let mut alpha = row("2026-10-19", None);
+        alpha.ticket_source = Some("Alpha".into());
+        alpha.provider = "zzz".into();
+        let mut rows = vec![provider_fallback, zulu, alpha];
+
+        sort_rows(&mut rows, ConcertSortKey::Source, SortDirection::Ascending);
+
+        assert_eq!(
+            rows.iter().map(source_name).collect::<Vec<_>>(),
+            vec!["Alpha", "ticketmaster", "Zulu"]
+        );
+    }
+
+    #[test]
+    fn a_blank_text_field_sorts_last_in_both_directions() {
+        fn text_for(row: &ConcertRow, key: ConcertSortKey) -> &str {
+            match key {
+                ConcertSortKey::Artist => &row.artist_name,
+                ConcertSortKey::City => &row.city,
+                ConcertSortKey::Venue => &row.venue,
+                ConcertSortKey::Source => source_name(row),
+                _ => unreachable!(),
+            }
+        }
+
+        fn rows_for(key: ConcertSortKey) -> Vec<ConcertRow> {
+            ["", "Zulu", "   ", "Alpha"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let mut row = row(&format!("2026-10-{}", 17 + index), None);
+                    match key {
+                        ConcertSortKey::Artist => row.artist_name = value.into(),
+                        ConcertSortKey::City => row.city = value.into(),
+                        ConcertSortKey::Venue => row.venue = value.into(),
+                        ConcertSortKey::Source => {
+                            row.ticket_source = Some(value.into());
+                            row.provider.clear();
+                        }
+                        _ => unreachable!(),
+                    }
+                    row
+                })
+                .collect()
+        }
+
+        for key in [
+            ConcertSortKey::Artist,
+            ConcertSortKey::City,
+            ConcertSortKey::Venue,
+            ConcertSortKey::Source,
+        ] {
+            for (direction, expected_present) in [
+                (SortDirection::Ascending, ["Alpha", "Zulu"]),
+                (SortDirection::Descending, ["Zulu", "Alpha"]),
+            ] {
+                let mut rows = rows_for(key);
+                sort_rows(&mut rows, key, direction);
+                assert_eq!(
+                    rows[..2]
+                        .iter()
+                        .map(|row| text_for(row, key))
+                        .collect::<Vec<_>>(),
+                    expected_present
+                );
+                assert!(rows[2..]
+                    .iter()
+                    .all(|row| present(text_for(row, key)).is_none()));
+            }
+        }
     }
 
     #[test]
