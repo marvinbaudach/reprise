@@ -113,7 +113,7 @@ def hinted_16_body(small, large):
     ten-pixel barline instead of as specks.
 
     Proportions run heavier than the 96-unit drawing on purpose: ink fills 64%
-    of the carrier's width against 48% there, because thin features disappear
+    of the viewBox width against 48% there, because thin features disappear
     at this size.
     """
     return (f'  <rect x="3" y="5" width="3" height="3" fill="{small}"/>\n'
@@ -149,23 +149,12 @@ def hinted_16_icon_svg(small, large):
             + hinted_16_body(small, large) + '</svg>\n')
 
 
-def plate_svg(fill):
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
-  <!-- Generated from palette.toml. The solid plate is deliberately lighter
-       than the dock so the icon keeps one visible silhouette around the sign. -->
-  <g id="rp-plate">
-    <rect x="4" y="4" width="88" height="88" rx="22" fill="{fill}"/>
-  </g>
-</svg>
-'''
-
-
 def render(palette):
     # The colour split was decided at dock size against the alternative that
     # swapped the two: teal on the thick barline reads farther because the
-    # large field carries the brighter colour (7.13:1 on the plate against
-    # coral's 4.42:1), and coral stays legible as the accent on the dots and
-    # the thin barline. Only the chosen split is generated — a second one kept
+    # large field carries the brighter colour (7.13:1 on the dark brand
+    # neutral against coral's 4.42:1), and coral stays legible as the accent on
+    # the dots and the thin barline. Only the chosen split is generated — a second one kept
     # "for comparison" is a second mark to keep in step, and the comparison is
     # over.
     return {
@@ -182,7 +171,6 @@ def render(palette):
         "io.github.marvinbaudach.Reprise-first-aid-symbolic.svg": first_aid_symbolic_svg(),
         "reprise-radio-symbolic.svg": radio_symbolic_svg(),
         "reprise-stats-symbolic.svg": stats_symbolic_svg(),
-        "icon-plate.svg": plate_svg(palette["reprise_plate"]),
         "reprise-mark-16.svg": hinted_16_svg(
             palette["reprise_coral"], palette["reprise_teal"]),
         "reprise-mark-16-mono.svg": hinted_16_mono_svg(),

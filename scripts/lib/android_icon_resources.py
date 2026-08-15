@@ -27,7 +27,7 @@ def adaptive_icon():
         '<?xml version="1.0" encoding="utf-8"?>\n'
         + generated_note()
         + '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-        + '    <background android:drawable="@drawable/ic_launcher_background"/>\n'
+        + '    <background android:drawable="@android:color/transparent"/>\n'
         + '    <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n'
         + '    <monochrome android:drawable="@drawable/ic_launcher_monochrome"/>\n'
         + "</adaptive-icon>\n"

@@ -9,15 +9,17 @@ dot-to-barline gap binds the four shapes without collapsing them.
 `data/brand/palette.toml` is the only maintained colour source. The mark puts
 `#FF6F5E` on the three small elements — the two dots and the thin barline — and
 `#4FDBD4` on the thick barline. The light-ground form replaces them with
-`#C4362A` and `#00706B`. Android and web surfaces that require a carrier use a
-solid `#33363F` rounded 88-unit square. The GNOME desktop icon carries only the
-four-part mark on transparency, so the shell supplies its surrounding shape.
-Nothing uses a gradient.
+`#C4362A` and `#00706B`. Every delivered application icon carries only the
+four-part mark on transparency: GNOME hicolor stages, Android adaptive and
+legacy launcher resources, favicons, the Apple touch icon and the Play Store
+asset. A platform may supply its own mask or surrounding shape, but Reprise
+does not bake a carrier into the artwork. Nothing uses a gradient.
 
 The split was chosen against the alternative that swapped the two colours,
 compared at dock size. Teal on the thick barline reads farther because the
-largest field carries the brighter colour: 7.13:1 against the carrier where
-coral manages 4.42:1. Coral still holds as the accent on the small elements.
+largest field carries the brighter colour: 7.13:1 against the dark brand
+neutral where coral manages 4.42:1. Coral still holds as the accent on the
+small elements.
 Only the chosen split is generated — keeping the loser "for comparison" would
 mean a second mark to hold in step, and the comparison is over.
 
@@ -47,7 +49,7 @@ floor, and the 1:3 ratio still legible.
 
 The dots are 3x3 rather than 2x2 deliberately. At 2x2 they measure 4 pixels
 against a 3-pixel floor: countable, but one rounding decision away from
-vanishing. Ink runs to 64% of the carrier's width against 48% in the 96-unit
+vanishing. Ink runs to 64% of the viewBox width against 48% in the 96-unit
 drawing, because thin features disappear at this size.
 
 Everything from 22 px up still comes from the 96-unit drawing. The gate asserts
@@ -59,7 +61,7 @@ the shell asks for, and grid-fitting it to 16 would misfit every other size.
 A themed 16 px surface can use `reprise-mark-16-mono.svg`.
 
 Measured WCAG contrasts are 4.42 (`#FF6F5E`) and 7.13 (`#4FDBD4`) on the
-carrier, 7.23 and 11.68 on `#0a0a0e`, 5.37 (`#C4362A`) and 5.95 (`#00706B`)
+dark brand neutral, 7.23 and 11.68 on `#0a0a0e`, 5.37 (`#C4362A`) and 5.95 (`#00706B`)
 on white, and 4.64 and 5.13 on `#eceef5`. All exceed the 3:1 graphical-object
 floor. The fixed Android `translate(6,6)` placement loses 0.000436 of rendered
 ink under the centred 66-dp circle and keeps all four components.
