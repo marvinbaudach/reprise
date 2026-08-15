@@ -2,7 +2,7 @@
 slug: location-chip-names-the-city
 worktree: /home/marvin/Projects/reprise-location-chip-names-the-city
 branch: feature/location-chip-names-the-city
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-15
 ---
