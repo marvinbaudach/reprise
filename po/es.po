@@ -5736,8 +5736,8 @@ msgstr ""
 "independiente"
 
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:17
-msgid "Chromium (CSD)"
-msgstr "Chromium (CSD)"
+msgid "Client-side decorations"
+msgstr "Decoración del lado del cliente"
 
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
