@@ -5473,7 +5473,7 @@ msgid "Use Reprise's flat header, or add a separate native title bar"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:17
-msgid "Chromium (CSD)"
+msgid "Client-side decorations"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18

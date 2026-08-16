@@ -14,5 +14,5 @@ pub(in crate::ui) fn text(message: &str) -> String {
 pub(in crate::ui) const WINDOW_DECORATIONS: &str = N_!("Window Decorations");
 pub(in crate::ui) const WINDOW_DECORATIONS_SUBTITLE: &str =
     N_!("Use Reprise's flat header, or add a separate native title bar");
-pub(in crate::ui) const DECORATION_CLIENT: &str = N_!("Chromium (CSD)");
+pub(in crate::ui) const DECORATION_CLIENT: &str = N_!("Client-side decorations");
 pub(in crate::ui) const DECORATION_SYSTEM: &str = N_!("Separate title bar");
