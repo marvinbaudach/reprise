@@ -89,9 +89,10 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 2. Work each task test-first: **write the failing test → run it, see it fail → implement the
    minimal code → run tests, see them pass → run the full gate battery → commit.**
 3. One commit per task (fixes get their own follow-up commits). **No attribution footer. Do
-   not push unless explicitly requested.** Branch from `dev`, open squashed pull requests to
-   `dev`, and leave the fast-forward promotion of `dev` to `main` to the owner; emergency
-   `hotfix/*` branches also start from `dev` and pass the same full gate. See
+   not push unless explicitly requested, except for the verified pre-distribution
+   `dev`-to-`main` promotion authorized below.** Branch from `dev`, open squashed pull
+   requests to `dev`, and follow the promotion authority below; emergency `hotfix/*`
+   branches also start from `dev` and pass the same full gate. See
    `docs/agents/branching.md`.
 4. Append one line to `.superpowers/sdd/progress.md`:
    `Task N: complete (commit <hash>, base <hash>, <one-line note>)`.
@@ -105,12 +106,17 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 
 ## GitHub contribution flow — mandatory for every agent
 
-- Never commit or push directly to `dev` or `main`. Create a dedicated branch for every
-  change and open a pull request whose base branch is `dev`.
+- Never commit or push directly to `dev` or `main`, except for the fast-forward promotion
+  described below. Create a dedicated branch for every change and open a pull request whose
+  base branch is `dev`.
 - Agents may prepare, update, verify, and merge pull requests into `dev` after the gate is
-  green, but must not promote `dev` to `main` or approve a production release. Which gate
-  that is depends on the repository's plan — see `docs/agents/branching.md`; today it is a
-  local `scripts/check-merge-readiness.sh` run, because GitHub enforces nothing here.
+  green. Until Reprise is publicly distributed, agents may also promote a verified `dev`
+  snapshot to `main` without separate owner approval. Public distribution means availability
+  through AUR, Flathub/GNOME Software, or another public app channel. This standing
+  permission is not approval to publish a release. Once public distribution begins, agents
+  must not initiate a promotion and may perform one only after explicit owner authorization
+  for that exact promotion. Which gate applies depends on the repository's plan — see
+  `docs/agents/branching.md`.
 - **Every pull request is squashed**, and every pull request targets `dev`. The repository
   allows no other merge method, so this is not a choice to make on the merge button. One
   commit per pull request, titled as a conventional commit. A squashed branch is never
@@ -119,9 +125,16 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 - A merged topic is not fully closed until its local worktree was removed or an exact,
   PR-verified pending cleanup was recorded. Dirty, locked, active, or unmerged worktrees are
   never cleanup candidates.
-- Only the repository owner promotes `dev` to `main`, and the promotion is a fast-forward
-  push (`git push origin origin/dev:main`), not a pull request — a squashed promotion would
-  make the two branches diverge permanently. Agents never run it.
+- The promotion is a fast-forward push (`git push origin origin/dev:main`), not a pull
+  request — a squashed promotion would make the two branches diverge permanently. Until
+  Reprise is publicly distributed, agents may perform this promotion autonomously. Public
+  distribution means availability through AUR, Flathub/GNOME Software, or another public app
+  channel. That permission expires immediately when public distribution begins; from then
+  on, only the repository owner decides when promotion happens, though an agent may execute
+  the exact promotion the owner explicitly authorizes. Immediately before pushing in either
+  case, the agent must live-read both remote refs, require `main` to be an ancestor of `dev`,
+  and verify that the exact current `dev` SHA has successful `Quality gate` and `From dev`
+  checks. After pushing, it must read back both remote refs and require exact equality.
 - Emergency production fixes start on a `hotfix/*` branch **from `dev`** and reach `main`
   through the same promotion. A `hotfix/*` merged straight into `main` breaks the
   fast-forward property irrecoverably; `docs/agents/branching.md` explains why.

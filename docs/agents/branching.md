@@ -35,11 +35,18 @@ to it. See "Merge method".
    git push origin origin/dev:main
    ```
 
-   This is the one sanctioned direct push to `main`, and only the repository
-   owner performs it. It is safe precisely because it cannot be anything but a
-   fast-forward: git rejects a non-fast-forward push by default, so a `main`
-   that has drifted away from `dev` announces itself here instead of being
-   papered over.
+   This is the one sanctioned direct push to `main`. Until Reprise is publicly distributed,
+   agents may perform this promotion autonomously without separate owner authorization.
+   Public distribution means availability through AUR, Flathub/GNOME Software, or another
+   public app channel. This standing permission expires immediately when public distribution
+   begins; after that, only the repository owner decides when promotion happens, though an
+   agent may execute the exact promotion the owner explicitly authorizes. Immediately before
+   pushing in either case, the agent live-reads both remote refs, proves `main` is an ancestor
+   of `dev`, and verifies successful `Quality gate` and `From dev` checks on the exact current
+   `dev` SHA. After pushing, the agent reads both refs back and requires exact equality. The
+   push is safe precisely because it cannot be anything but a fast-forward: git rejects a
+   non-fast-forward push by default, so a `main` that has drifted away from `dev` announces
+   itself here instead of being papered over.
 
 Direct pushes to `main` other than the promotion above, every direct push to
 `dev`, all force pushes, and deleting either branch are forbidden. Read that
