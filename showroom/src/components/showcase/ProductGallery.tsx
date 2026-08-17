@@ -13,7 +13,13 @@ export function ProductGallery() {
         </p>
       </div>
 
-      <div className="product-gallery" role="region" aria-label="Reprise product surfaces" tabIndex={0}>
+      <div
+        className="product-gallery"
+        role="region"
+        aria-label="Reprise product surfaces"
+        aria-describedby="product-gallery-hint"
+        tabIndex={0}
+      >
         {GALLERY_CAPTURES.map((capture) => (
           <figure
             className={`product-gallery__item product-gallery__item--${capture.platform.toLowerCase()}`}
@@ -31,7 +37,9 @@ export function ProductGallery() {
         ))}
       </div>
 
-      <p className="frame data product-gallery-stage__hint">Drag or scroll the evidence strip →</p>
+      <p id="product-gallery-hint" className="frame data product-gallery-stage__hint">
+        Use arrow keys, drag, or scroll the evidence strip →
+      </p>
     </div>
   );
 }

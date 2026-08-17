@@ -10,11 +10,14 @@ import './styles/global.css';
 export function App() {
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        Skip to the showroom
+      </a>
       <div className="texture" aria-hidden="true" />
       <ScrollHairline />
       <div className="page">
         <SiteHeader />
-        <main>
+        <main id="main-content" tabIndex={-1}>
           <Hero />
           <ChapterOne />
           <ChapterTwo />
