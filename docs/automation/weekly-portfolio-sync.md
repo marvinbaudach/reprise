@@ -38,8 +38,10 @@ Screenshots must come from a real run after a native GNOME visual pass, keep use
 text, and never be fabricated or reconstructed. Do not screenshot real music, a real library, or
 user data; use the isolated test profile.
 
-Public showroom languages: English and German only. Do not create, restore, or maintain additional
-translations; their review cost is not justified by the target audience.
+The public showroom and developer README are English only. Do not create or restore `README.de.md`,
+translated showroom pages, or translated showroom graphics; their review cost is
+not justified by the target audience. Product translations continue to live in the gettext
+catalogs.
 
 Keep architecture goals narrow. They describe thin native frontends for additional platforms that
 reuse the portable core, plus MCP and CLI adapters over the same tested application layer.
@@ -47,12 +49,12 @@ Use natural prose for these goals. Do not classify product features, experiments
 work as architecture goals; mention such work in its own product or delivery context only when it is
 material and supported by committed evidence.
 
-Maintain `README.md` and `README.de.md` separately as the bilingual developer README: English and
-German only. Keep each a compact developer-facing product story and technical entry point to the
-Reprise repository: make the product worth building, expose meaningful contribution seams, and
-support the pitch with enforced architecture and engineering evidence.
+Maintain `README.md` as the single English developer README. Keep it a compact
+developer-facing product story and technical entry point to the Reprise repository: make the
+product worth building, expose meaningful contribution seams, and support the pitch with enforced
+architecture and engineering evidence.
 Do not mirror the portfolio narrative, CV metrics, exhaustive feature inventory, or speculative
-roadmap there. Keep both files within their tested length budget,
+roadmap there. Keep the file within its tested length budget,
 use one architecture visual, explain the three crate boundaries, provide current build and gate
 commands, and route deeper evidence to `TESTING.md`, `docs/ux-rules.md`, and `docs/showcase.md`.
 Prefer a table only for exact repeated mappings such as crate ownership; use prose or short lists

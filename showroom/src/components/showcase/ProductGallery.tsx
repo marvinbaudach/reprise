@@ -3,6 +3,25 @@ import { ProductShot } from './ProductShot';
 import './showcase.css';
 
 export function ProductGallery() {
+  const desktopCaptures = GALLERY_CAPTURES.filter((capture) => capture.platform === 'GNOME');
+  const phoneCaptures = GALLERY_CAPTURES.filter((capture) => capture.platform === 'Android');
+
+  const renderCapture = (capture: (typeof GALLERY_CAPTURES)[number]) => (
+    <figure
+      className={`product-gallery__item product-gallery__item--${capture.platform.toLowerCase()}`}
+      key={capture.id}
+    >
+      <div className="product-gallery__media">
+        <ProductShot capture={capture} />
+      </div>
+      <figcaption className="product-gallery__caption">
+        <span className="eyebrow">{capture.platform}</span>
+        <strong>{capture.title}</strong>
+        <span className="data">{capture.description}</span>
+      </figcaption>
+    </figure>
+  );
+
   return (
     <div className="product-gallery-stage" data-showcase="product-gallery">
       <div className="frame product-gallery-stage__intro">
@@ -15,31 +34,24 @@ export function ProductGallery() {
 
       <div
         className="product-gallery"
+        data-layout="editorial-grid"
         role="region"
         aria-label="Reprise product surfaces"
-        aria-describedby="product-gallery-hint"
-        tabIndex={0}
       >
-        {GALLERY_CAPTURES.map((capture) => (
-          <figure
-            className={`product-gallery__item product-gallery__item--${capture.platform.toLowerCase()}`}
-            key={capture.id}
-          >
-            <div className="product-gallery__media">
-              <ProductShot capture={capture} />
-            </div>
-            <figcaption className="product-gallery__caption">
-              <span className="eyebrow">{capture.platform}</span>
-              <strong>{capture.title}</strong>
-              <span className="data">{capture.description}</span>
-            </figcaption>
-          </figure>
-        ))}
-      </div>
+        <div className="product-gallery__desktop">{desktopCaptures.map(renderCapture)}</div>
 
-      <p id="product-gallery-hint" className="frame data product-gallery-stage__hint">
-        Use arrow keys, drag, or scroll the evidence strip →
-      </p>
+        <section className="product-gallery__phones" aria-labelledby="product-gallery-phones-title">
+          <header className="product-gallery__phones-intro">
+            <p className="eyebrow">Same core, native mobile</p>
+            <h3 id="product-gallery-phones-title">A phone scene, not a shrunken desktop.</h3>
+            <p className="data">
+              Compose keeps the interaction touch-first while the Rust layer supplies the same
+              library and track analysis.
+            </p>
+          </header>
+          <div className="product-gallery__phone-grid">{phoneCaptures.map(renderCapture)}</div>
+        </section>
+      </div>
     </div>
   );
 }

@@ -26,15 +26,14 @@ test('the prerendered document has a direct keyboard route into its single main 
   }
 });
 
-test('motion, gallery instructions, and social previews survive the production build', async () => {
+test('motion, the in-flow gallery, and social previews survive the production build', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.skip-link:focus-visible/);
-  assert.match(html, /aria-describedby="product-gallery-hint"/);
-  assert.match(html, /id="product-gallery-hint"/);
-  assert.match(html, /Use arrow keys, drag, or scroll/);
+  assert.match(html, /data-layout="editorial-grid"/);
+  assert.doesNotMatch(html, /product-gallery-hint|Use arrow keys, drag, or scroll/);
   assert.equal((html.match(/loading="eager"/g) ?? []).length, 2);
   assert.match(html, /property="og:title"/);
   assert.match(

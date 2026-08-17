@@ -193,12 +193,10 @@ Four strands run in parallel. Do not edit files owned by another strand.
 ## NON-NEGOTIABLE safety rules
 
 - **English everywhere** — code, comments, log/error/UI strings, commit messages, **and every
-  document in this repository**: `docs/ux-rules.md`, the plans under `docs/plans/`, the ADRs,
-  research notes and design specs. This was decided on 2026-07-31 and the existing German
-  documents were translated in the same pass; a new document written in German is a defect, not
-  a style choice. The one deliberate exception is `README.de.md`, which is a German translation
-  *for users* and stays German — as do the gettext catalogs under `po/`, which are how the UI
-  reaches non-English users.
+  document in this repository**: `README.md`, `docs/ux-rules.md`, the plans under `docs/plans/`,
+  the ADRs, research notes and design specs. This was decided on 2026-07-31; a new German
+  document is a defect, not a style choice. The gettext catalogs under `po/` remain the deliberate
+  path for reaching non-English users.
 - **Never touch the user's music files or real database unasked.** Reprise writes inside the
   music collection only in three cases: tags through an explicit Tag Editor action, a new `.lrc`
   beside an existing track after downloading synchronized lyrics, and a new `cover.<ext>` in an
