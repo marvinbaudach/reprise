@@ -1,4 +1,5 @@
 import { PERFORMANCE, PERFORMANCE_PRICE } from '../../data/measurements';
+import { ProductGallery } from '../showcase/ProductGallery';
 import { SpectralAxis } from '../ui/SpectralAxis';
 import './chapters.css';
 
@@ -11,6 +12,8 @@ export function ChapterThree() {
           Two frameworks. One visual signature.
         </h2>
       </div>
+
+      <ProductGallery />
 
       <div className="stage">
         <div className="frame">

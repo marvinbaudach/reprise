@@ -2,8 +2,12 @@
 
 .hero {
   padding-block: clamp(3rem, 2rem + 6vw, 8rem) var(--gap-chapter);
+}
+
+.hero__copy {
   display: grid;
   gap: var(--gap-block);
+  padding-block-end: clamp(3rem, 5vw, 6rem);
 }
 
 .hero__headline {
