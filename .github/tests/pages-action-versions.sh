@@ -30,5 +30,5 @@ require_release actions/setup-node 7
 require_release actions/upload-pages-artifact 5
 require_release actions/deploy-pages 5
 
-rg --quiet "^[[:space:]]+node-version: '26\.7\.0'$" "$workflow" || \
+grep -Eq "^[[:space:]]+node-version: '26\.7\.0'$" "$workflow" || \
     fail "the showroom build must pin the current Node release 26.7.0"
