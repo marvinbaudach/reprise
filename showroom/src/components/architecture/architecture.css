@@ -1,0 +1,232 @@
+.architecture {
+  position: relative;
+  margin: var(--gap-block) 0;
+  padding: clamp(1.25rem, 2vw, 2rem);
+  overflow: hidden;
+  border: 1px solid var(--surface-line);
+  background:
+    radial-gradient(75% 100% at 50% 100%, var(--accent-glow), transparent 70%),
+    color-mix(in oklab, var(--surface-raised) 75%, transparent);
+}
+
+.architecture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+      to right,
+      color-mix(in oklab, var(--surface-line-soft) 48%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--surface-line-soft) 36%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 4.5rem 4.5rem;
+  mask-image: linear-gradient(to bottom, transparent, black 18%, black 78%, transparent);
+}
+
+.architecture__header,
+.architecture__surfaces,
+.architecture__flow,
+.architecture__shared,
+.architecture__caption {
+  position: relative;
+}
+
+.architecture__header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap-block);
+  align-items: end;
+  margin-block-end: clamp(2rem, 4vw, 4rem);
+}
+
+.architecture__title {
+  max-width: 28ch;
+  margin: var(--gap-hair) 0 0;
+  color: var(--text-strong);
+  font-size: clamp(1.55rem, 1.1rem + 1.7vw, 2.6rem);
+  font-variation-settings: 'wdth' 108, 'wght' 690;
+  line-height: 1.02;
+}
+
+.architecture__gate-link {
+  flex: none;
+  color: var(--accent);
+}
+
+.architecture__surfaces {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-tight);
+}
+
+.architecture__surface {
+  display: grid;
+  min-width: 0;
+}
+
+.architecture__surface > a {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.28rem var(--gap-tight);
+  min-height: 8.5rem;
+  padding: var(--gap-line);
+  border: 1px solid var(--surface-line);
+  background: color-mix(in oklab, var(--surface-base) 88%, transparent);
+  color: var(--text-body);
+  text-decoration: none;
+  transition:
+    border-color var(--duration-fast) ease-out,
+    transform var(--duration-fast) ease-out;
+}
+
+.architecture__surface > a:hover,
+.architecture__surface > a:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-0.2rem);
+}
+
+.architecture__surface strong {
+  color: var(--text-strong);
+  font-size: clamp(1.25rem, 1rem + 1vw, 1.85rem);
+  font-variation-settings: 'wdth' 106, 'wght' 680;
+}
+
+.architecture__surface > a > span:nth-last-child(2),
+.architecture__surface > a > span:last-child {
+  grid-column: 2;
+}
+
+.architecture__index {
+  color: var(--accent);
+}
+
+.architecture__adapter {
+  justify-self: center;
+  max-width: calc(100% - 1rem);
+  margin-block-start: -0.5rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--surface-line-soft);
+  background: var(--surface-raised);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.architecture__flow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  height: 4rem;
+  margin-inline: calc(var(--gap-line) * 2);
+}
+
+.architecture__flow::after {
+  content: '';
+  position: absolute;
+  inset-inline: 12.5%;
+  inset-block-end: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--accent), transparent);
+}
+
+.architecture__flow span {
+  position: relative;
+}
+
+.architecture__flow span::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, var(--surface-line), var(--accent));
+}
+
+.architecture__flow span::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(50% - 0.2rem);
+  inset-block-end: -1px;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-inline-end: 1px solid var(--accent);
+  border-block-end: 1px solid var(--accent);
+  transform: rotate(45deg);
+}
+
+.architecture__shared {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 1px;
+  max-width: 52rem;
+  margin-inline: auto;
+  border: 1px solid color-mix(in oklab, var(--accent) 46%, var(--surface-line));
+  background: var(--surface-line);
+  box-shadow: 0 1.5rem 5rem color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.architecture__layer {
+  display: grid;
+  gap: var(--gap-hair);
+  padding: clamp(1rem, 2.5vw, 2rem);
+  color: var(--text-body);
+  text-decoration: none;
+  background: var(--surface-base);
+}
+
+.architecture__layer:hover strong {
+  color: var(--accent);
+}
+
+.architecture__layer strong {
+  color: var(--text-strong);
+  font-size: clamp(1.45rem, 1rem + 1.8vw, 2.6rem);
+  font-variation-settings: 'wdth' 105, 'wght' 720;
+  transition: color var(--duration-fast) ease-out;
+}
+
+.architecture__layer--core {
+  background: color-mix(in oklab, var(--accent) 7%, var(--surface-base));
+}
+
+.architecture__caption {
+  max-width: 66ch;
+  margin: clamp(2rem, 4vw, 4rem) auto 0;
+  padding-inline-start: var(--gap-line);
+  border-inline-start: 2px solid var(--accent);
+  color: var(--text-muted);
+}
+
+@media (max-width: 58rem) {
+  .architecture__surfaces {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .architecture__flow {
+    display: none;
+  }
+
+  .architecture__shared {
+    margin-block-start: var(--gap-block);
+  }
+}
+
+@media (max-width: 38rem) {
+  .architecture__header {
+    display: grid;
+  }
+
+  .architecture__surfaces,
+  .architecture__shared {
+    grid-template-columns: 1fr;
+  }
+
+  .architecture__surface > a {
+    min-height: 0;
+  }
+}

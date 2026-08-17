@@ -1,4 +1,5 @@
 import { HEADLINE_FIGURES } from '../../data/measurements';
+import { CoreArchitecture } from '../architecture/CoreArchitecture';
 import { CodeRatioBar } from '../ui/CodeRatioBar';
 import { FigureGrid } from '../ui/FigureGrid';
 import './chapters.css';
@@ -28,6 +29,8 @@ export function ChapterOne() {
           core. So do a CLI and an MCP server — four frontends over one verified application layer,
           not four codebases that happen to share a name.
         </p>
+
+        <CoreArchitecture />
 
         <CodeRatioBar />
       </div>
