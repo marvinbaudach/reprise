@@ -73,7 +73,8 @@ export const GALLERY_CAPTURES: readonly ProductCapture[] = [
     id: 'gnome-library-doctor',
     title: 'Library Doctor',
     platform: 'GNOME',
-    description: 'Remote evidence stays reviewable: current, proposed, source and confidence together.',
+    description:
+      'Remote evidence stays reviewable: current, proposed, source and confidence together.',
     alt: 'The Reprise Library Doctor review with grouped metadata proposals and apply controls',
     filename: 'gnome-library-doctor.webp',
     width: 2400,
@@ -93,7 +94,8 @@ export const GALLERY_CAPTURES: readonly ProductCapture[] = [
     id: 'gnome-layout-controls',
     title: 'Layout controls',
     platform: 'GNOME',
-    description: 'The desktop adapts without abandoning GNOME: player placement, panels and density.',
+    description:
+      'The desktop adapts without abandoning GNOME: player placement, panels and density.',
     alt: 'Reprise layout preferences shown over the listening statistics page',
     filename: 'gnome-layout-controls.webp',
     width: 2400,
@@ -113,7 +115,8 @@ export const GALLERY_CAPTURES: readonly ProductCapture[] = [
     id: 'android-library',
     title: 'Android library',
     platform: 'Android',
-    description: 'A native compact list, fast search and a persistent mini-player for one-handed use.',
+    description:
+      'A native compact list, fast search and a persistent mini-player for one-handed use.',
     alt: 'The Reprise Android library with album art search favourites and bottom navigation',
     filename: 'android-library.webp',
     width: 1080,
@@ -123,7 +126,8 @@ export const GALLERY_CAPTURES: readonly ProductCapture[] = [
     id: 'android-cover',
     title: 'Artwork mode',
     platform: 'Android',
-    description: 'The scene can recede behind the cover without changing transport or seek physics.',
+    description:
+      'The scene can recede behind the cover without changing transport or seek physics.',
     alt: 'Reprise Android Now Playing with album artwork colour fog and spectral seek',
     filename: 'android-cover.webp',
     width: 1080,

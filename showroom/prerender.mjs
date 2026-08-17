@@ -5,8 +5,8 @@
 // contains. So the client bundle hydrates a document that is already complete.
 
 import { readFile, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const templatePath = join(here, 'dist', 'index.html');

@@ -19,8 +19,8 @@ export function Hero() {
 
         <p className="prose hero__note">
           The core carries no interface. That is not an architectural preference, it is the reason
-          the second platform had a price tag instead of a rewrite — and the reason a third one would
-          have a price tag too.
+          the second platform had a price tag instead of a rewrite — and the reason a third one
+          would have a price tag too.
         </p>
       </div>
 

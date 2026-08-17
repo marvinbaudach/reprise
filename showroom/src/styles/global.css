@@ -1,5 +1,5 @@
-@import './tokens.css';
-@import './typography.css';
+@import "./tokens.css";
+@import "./typography.css";
 
 /*
  * The frame is a measurement protocol: a visible grid, technical labels, the
@@ -24,7 +24,9 @@ body {
   background: var(--surface-base);
   color: var(--text-body);
   font-family: var(--font-display);
-  font-variation-settings: 'wdth' 88, 'wght' 350;
+  font-variation-settings:
+    "wdth" 88,
+    "wght" 350;
   overflow-x: hidden;
 }
 
@@ -48,7 +50,8 @@ a {
   color: var(--accent);
   text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
   text-underline-offset: 0.22em;
-  transition: text-decoration-color var(--duration-fast) ease-out,
+  transition:
+    text-decoration-color var(--duration-fast) ease-out,
     color var(--duration-fast) ease-out;
 }
 
@@ -96,7 +99,7 @@ a:hover {
 }
 
 .texture::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: -10%;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
@@ -105,10 +108,11 @@ a:hover {
 }
 
 .texture::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
-  background-image: repeating-linear-gradient(
+  background-image:
+    repeating-linear-gradient(
       to right,
       color-mix(in oklab, var(--surface-line) 55%, transparent) 0 1px,
       transparent 1px 96px
@@ -142,7 +146,7 @@ a:hover {
 }
 
 .rule::after {
-  content: '';
+  content: "";
   flex: 1;
   height: 1px;
   background: linear-gradient(
@@ -159,7 +163,12 @@ a:hover {
   padding: clamp(2rem, 1.2rem + 4vw, 5rem) var(--frame-pad);
   background:
     radial-gradient(120% 140% at 12% 0%, var(--accent-glow) 0%, transparent 58%),
-    linear-gradient(160deg, var(--surface-stage) 0%, var(--surface-raised) 62%, var(--surface-base) 100%);
+    linear-gradient(
+      160deg,
+      var(--surface-stage) 0%,
+      var(--surface-raised) 62%,
+      var(--surface-base) 100%
+    );
   border-block: 1px solid var(--surface-line);
   overflow: clip;
 }
@@ -171,7 +180,12 @@ a:hover {
       color-mix(in oklab, var(--second) 26%, transparent) 0%,
       transparent 56%
     ),
-    linear-gradient(200deg, var(--surface-stage) 0%, var(--surface-raised) 60%, var(--surface-base) 100%);
+    linear-gradient(
+      200deg,
+      var(--surface-stage) 0%,
+      var(--surface-raised) 60%,
+      var(--surface-base) 100%
+    );
 }
 
 /* --- Motion -------------------------------------------------------------- */
