@@ -64,7 +64,7 @@ require_pattern 'main accepts only dev promotions or emergency hotfix' scripts/c
 require_pattern 'MERGE_READINESS_BASE_REF' scripts/ci-quality.sh
 require_pattern 'check-merge-readiness.sh --no-fetch' scripts/ci-quality.sh
 require_pattern '^main <- dev <- feature/' "$guide"
-require_pattern 'CI / Quality gate' "$guide"
+require_pattern 'Quality gate' "$guide"
 require_pattern 'Every pull request runs' "$guide"
 require_pattern 'sanctioned direct push to `main`' "$guide"
 require_pattern 'Until Reprise is publicly distributed' "$guide"

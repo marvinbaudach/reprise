@@ -157,42 +157,25 @@ project's review checklist, which does not belong in the permanent history.
 
 ## What actually enforces this
 
-The merge method, and nothing else. Turning off "Allow merge commits" and
-"Allow rebase merging" is a repository setting rather than a branch rule, so it
-applies on the Free plan and cannot be clicked past — that is the whole reason
-the promotion moved to a fast-forward push rather than staying a pull request.
+Three repository rulesets are active, verified live on 2026-08-17:
 
-Everything else here is honestly unenforced. Verified 2026-07-28 —
+- `dev-pr-boundary` (`20937610`) requires a pull request, squash merging, an
+  up-to-date `Quality gate`, and rejects deletion and non-fast-forward updates.
+- `dev-owner-only-merge` (`20937968`) restricts updates to the repository owner.
+  The owner's ruleset bypass is why `gh pr merge --admin --squash` is the
+  deliberate merge command; it does not bypass `dev-pr-boundary`.
+- `main-promotion-gates` (`20938111`) rejects deletion and non-fast-forward
+  updates and requires `Quality gate` plus `From dev` on the promoted SHA.
+  Neither check can be bypassed.
 
-```console
-$ gh api repos/marvinbaudach/reprise/branches/dev/protection
-Upgrade to GitHub Pro or make this repository public to enable this
-feature. (HTTP 403)
+The pull-request `Quality gate` is intentionally quick. It proves routing and
+reports the check context the `dev` ruleset requires, but it does not claim the
+product suites ran. After the squash merge creates the authoritative `dev` SHA,
+the `dev` push runs every path-selected suite and emits both promotion checks.
+That is the evidence `main` accepts.
 
-$ gh api repos/marvinbaudach/reprise/rulesets
-Upgrade to GitHub Pro or make this repository public to enable this
-feature. (HTTP 403)
-```
-
-The repository is private on a Free plan, where both classic branch
-protection and rulesets are unavailable. There are no required checks, no
-enforced pull-request boundary, and nothing stopping a direct push to `dev`
-or `main` — which is also what makes the promotion push possible at all. A
-pull request whose checks are red still reports `MERGEABLE`.
-
-Worth knowing before the plan ever changes: enabling branch protection on
-`main` would block the promotion push along with everything else. If that day
-comes, `main` needs an explicit push allowance for the owner, or the promotion
-has to move to a merge queue — protection and fast-forward promotion do not
-coexist by default.
-
-An earlier version of this document described required checks, resolved
-conversations, "administrators do not bypass these rules" and prohibited
-force pushes as facts. They were the intended configuration, never an active
-one. Recording an intention as a guarantee is worse than recording no
-guarantee at all: it invites trusting a gate that will not catch anything.
-
-**So the gate is local, and running it is the maintainer's job:**
+The local gate remains mandatory before commit and before asking GitHub to
+merge:
 
 ```sh
 MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh
@@ -200,9 +183,8 @@ MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh
 
 Run it on the branch, against the branch you are merging into, after merging
 the latest target branch in. It refuses to run on a dirty worktree and on a
-branch that is behind its base, which is exactly the discipline the missing
-server-side rules would have provided. A merge without it is unverified, no
-matter how green the last local `cargo test` looked.
+branch that is behind its base. The fast pull-request check does not replace
+this local evidence.
 
 Two consequences worth stating plainly:
 
@@ -222,28 +204,31 @@ Two consequences worth stating plainly:
   weekly `reprise-worktree-gc.timer` completes it after the process exits.
   `docs/automation/worktree-cleanup.md` describes report and installation
   commands. This does not replace remote branch deletion.
-- **Turning the plan on changes this file, not the workflow.** If the
-  repository ever moves to a plan with rulesets, configure the branches to
-  require `CI / Quality gate` and replace this section with what is then
-  actually true.
+- **Ruleset changes must update this document in the same task.** The IDs and
+  requirements above are operational facts, not a desired future state.
 
-## What CI would enforce
+## What CI enforces
 
-Every pull request runs `.github/workflows/ci.yml`, and so does every push to
-`dev` and `main` — that is what the workflow declares. Its `CI / Quality gate`
-executes `scripts/check-merge-readiness.sh --no-fetch`, covering formatting,
-strict Clippy, warning-free Rust documentation, all non-ignored workspace
-tests, the rule-owned GTK/Xvfb display tests, architecture and UX policy
-checks, and the dependency audit — the same script the local gate runs.
+Every pull request runs `.github/workflows/ci.yml`, but only its routing
+job and always-reporting `Quality gate`; base contracts and product suites are
+skipped for every author. Relevant cross-target compilation is skipped on pull
+requests too, and the Showroom no longer builds before merge.
+
+Every push to `dev` ignores all skip intent. It runs base contracts plus the
+path-selected Android, GNOME, Core/workspace and cross-target suites. The
+resulting squash SHA receives the authoritative `Quality gate`; the separate
+dev-only workflow supplies `From dev`.
+
+An exact fast-forward of that same SHA to `main` by the repository owner reuses
+the dev evidence and reports a short `Quality gate` instead of recompiling the
+same tree. Reuse requires all of: a push event, `refs/heads/main`, the repository
+owner as actor, and exact equality with `origin/dev`. A non-owner or non-equal
+main push fails the reuse predicate and runs the selected suites. The Showroom
+remains main-only and still builds and deploys when its paths changed.
 
 The Action uses an isolated Arch Linux container because Reprise requires GTK
 4.22 and libadwaita 1.9. Tests use temporary XDG directories, a private D-Bus
-session, Xvfb, and the fake audio sink through the existing project gates. CI
-runs up to four independently isolated display tests concurrently; local runs
-stay serial unless `DISPLAY_TEST_JOBS` is set explicitly.
-
-As of 2026-07-28 the workflow does not run at all: GitHub refuses to start
-jobs for this account with *"recent account payments have failed or your
-spending limit needs to be increased"*. Until that is resolved, CI is not a
-second opinion on the local gate — it is absent, and the local run is the
-only verification there is.
+session, Xvfb, and the fake audio sink through the existing project gates. The
+standing gate runs the rule-named ignored GTK tests with four isolated workers.
+The full ignored display inventory remains available manually through
+`scripts/check-display-tests.sh`; it is not part of every merge.

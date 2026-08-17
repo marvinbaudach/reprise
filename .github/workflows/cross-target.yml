@@ -35,36 +35,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  owner-skip:
-    name: Check for repository-owner skip
+  suite-skip:
+    name: Classify external suite reuse
     runs-on: ubuntu-24.04
     outputs:
-      owner_skip: ${{ steps.authorization.outputs.owner_skip }}
+      suite_skip: ${{ steps.authorization.outputs.suite_skip }}
     steps:
       - name: Check out the tested revision
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Authenticate an explicit owner skip
+      - name: Authenticate suite reuse
         id: authorization
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          ACTOR: ${{ github.actor }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
-          commit_message=$(git log -1 --format=%B "$HEAD_SHA")
-          owner_skip=$(
-            .github/scripts/ci-paths.sh --owner-skip \
-              "$EVENT_NAME" "$PR_AUTHOR" "$REPOSITORY_OWNER" "$commit_message"
+          git fetch --no-tags origin \
+            +refs/heads/dev:refs/remotes/origin/dev
+          dev_sha=$(git rev-parse --verify origin/dev)
+          suite_skip=$(
+            .github/scripts/ci-paths.sh --suite-skip \
+              "$EVENT_NAME" "$REF_NAME" "$ACTOR" "$REPOSITORY_OWNER" \
+              "$HEAD_SHA" "$dev_sha"
           )
-          echo "owner_skip=$owner_skip" >> "$GITHUB_OUTPUT"
+          echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
 
   cross-target:
     name: Core and Android FFI cross-target check
-    needs: owner-skip
-    if: needs['owner-skip'].outputs.owner_skip != 'true'
+    needs: suite-skip
+    if: needs['suite-skip'].outputs.suite_skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:

@@ -117,6 +117,11 @@ The project is built **plan-by-plan, task-by-task, test-first**. To continue:
   must not initiate a promotion and may perform one only after explicit owner authorization
   for that exact promotion. Which gate applies depends on the repository's plan — see
   `docs/agents/branching.md`.
+- Pull requests report a deliberately lightweight `Quality gate`; they do not run the
+  expensive product suites. The squash commit on `dev` is the authoritative CI revision:
+  its path-selected suites may never be skipped. An exact owner-pushed fast-forward of that
+  same `dev` SHA to `main` reuses the green `Quality gate` and `From dev` evidence instead of
+  compiling it again. Any other `main` push is ineligible for reuse.
 - **Every pull request is squashed**, and every pull request targets `dev`. The repository
   allows no other merge method, so this is not a choice to make on the merge button. One
   commit per pull request, titled as a conventional commit. A squashed branch is never
@@ -175,6 +180,10 @@ cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'   # MUST b
 **File-size rule:** every *code* file created or substantially edited ends **< 800 lines**. If
 an edit would breach it, extract a cohesive sibling module — do NOT trim doc comments to fit.
 Markdown is exempt: docs are split by subject, never by line count.
+
+The standing merge-readiness gate runs the ignored GTK tests whose names map to UX rules.
+The complete lower-priority display inventory remains available with
+`scripts/check-display-tests.sh`; run it manually for broad sweeps, not on every merge.
 
 ## Definition of Done
 

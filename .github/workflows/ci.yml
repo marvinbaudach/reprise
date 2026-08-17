@@ -23,7 +23,7 @@ jobs:
       android: ${{ steps.routes.outputs.android }}
       gnome: ${{ steps.routes.outputs.gnome }}
       core: ${{ steps.routes.outputs.core }}
-      owner_skip: ${{ steps.routes.outputs.owner_skip }}
+      suite_skip: ${{ steps.routes.outputs.suite_skip }}
     steps:
       - name: Check out the tested revision
         uses: actions/checkout@v7
@@ -34,18 +34,22 @@ jobs:
         id: routes
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          ACTOR: ${{ github.actor }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
-          commit_message=$(git log -1 --format=%B "$HEAD_SHA")
-          owner_skip=$(
-            .github/scripts/ci-paths.sh --owner-skip \
-              "$EVENT_NAME" "$PR_AUTHOR" "$REPOSITORY_OWNER" "$commit_message"
+          git fetch --no-tags origin \
+            +refs/heads/dev:refs/remotes/origin/dev
+          dev_sha=$(git rev-parse --verify origin/dev)
+          suite_skip=$(
+            .github/scripts/ci-paths.sh --suite-skip \
+              "$EVENT_NAME" "$REF_NAME" "$ACTOR" "$REPOSITORY_OWNER" \
+              "$HEAD_SHA" "$dev_sha"
           )
-          echo "owner_skip=$owner_skip" >> "$GITHUB_OUTPUT"
-          if [[ $owner_skip == true ]]; then
+          echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
+          if [[ $suite_skip == true ]]; then
             printf 'android=false\ngnome=false\ncore=false\n' >> "$GITHUB_OUTPUT"
           else
             .github/scripts/ci-paths.sh --diff \
@@ -55,7 +59,7 @@ jobs:
   base-contracts:
     name: Base and contract checks
     needs: changes
-    if: needs.changes.outputs.owner_skip != 'true'
+    if: needs.changes.outputs.suite_skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -79,7 +83,7 @@ jobs:
     name: Android JVM unit suite
     needs: changes
     if: >-
-      needs.changes.outputs.owner_skip != 'true' &&
+      needs.changes.outputs.suite_skip != 'true' &&
       needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -121,7 +125,7 @@ jobs:
     name: GNOME quality suite
     needs: changes
     if: >-
-      needs.changes.outputs.owner_skip != 'true' &&
+      needs.changes.outputs.suite_skip != 'true' &&
       needs.changes.outputs.gnome == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -167,7 +171,7 @@ jobs:
     name: Core and workspace quality suite
     needs: changes
     if: >-
-      needs.changes.outputs.owner_skip != 'true' &&
+      needs.changes.outputs.suite_skip != 'true' &&
       needs.changes.outputs.core == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -222,7 +226,7 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           BASE_RESULT: ${{ needs['base-contracts'].result }}
-          OWNER_SKIP: ${{ needs.changes.outputs.owner_skip }}
+          SUITE_SKIP: ${{ needs.changes.outputs.suite_skip }}
           ANDROID_ROUTE: ${{ needs.changes.outputs.android }}
           ANDROID_RESULT: ${{ needs['android-unit-suite'].result }}
           GNOME_ROUTE: ${{ needs.changes.outputs.gnome }}
@@ -232,7 +236,7 @@ jobs:
         run: >-
           .github/scripts/require-ci-results.sh
           "$CHANGES_RESULT" "$BASE_RESULT"
-          "$OWNER_SKIP"
+          "$SUITE_SKIP"
           "$ANDROID_ROUTE" "$ANDROID_RESULT"
           "$GNOME_ROUTE" "$GNOME_RESULT"
           "$CORE_ROUTE" "$CORE_RESULT"
