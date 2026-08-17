@@ -20,13 +20,14 @@ if [[ ! -f $prompt_file ]]; then
 fi
 rg -q '^CRON_TZ=Europe/Zurich$' "$cron_file"
 rg -q '^30 7 \* \* 1 ' "$cron_file"
-rg -q '/home/marvin/Projects/reprise/scripts/weekly-portfolio-sync\.sh' "$cron_file"
+rg -q '[~]/Projects/reprise/scripts/weekly-portfolio-sync\.sh' "$cron_file"
 
 for prompt_contract in \
   'developer README' \
   'developer-facing product story' \
   'technical entry point' \
-  'English and German only' \
+  'English only' \
+  'Do not create or restore `README.de.md`' \
   'Keep architecture goals narrow' \
   'thin native frontends' \
   'MCP and CLI adapters' \
