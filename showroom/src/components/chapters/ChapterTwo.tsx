@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react';
-import { MERGE_CHAIN, RULEBOOK_FIGURES, VERIFICATION_RUNGS } from '../../data/measurements';
+import { RULEBOOK_FIGURES, VERIFICATION_RUNGS } from '../../data/measurements';
+import { AgentWorkflow } from '../process/AgentWorkflow';
+import { ExplorationLoop } from '../process/ExplorationLoop';
 import { FigureGrid } from '../ui/FigureGrid';
 import './chapters.css';
 
@@ -15,21 +17,7 @@ export function ChapterTwo() {
 
       <div className="stage stage--second">
         <div className="frame">
-          <ol className="chain" aria-label="What a change walks through before it lands">
-            {MERGE_CHAIN.map((step, index) => (
-              <li className="chain__step" key={step}>
-                <span className="data chain__index">{String(index + 1).padStart(2, '0')}</span>
-                <span className="chain__label">{step}</span>
-              </li>
-            ))}
-          </ol>
-
-          <p className="prose chain__note">
-            A human takes the plan apart exactly once, before a line of code exists. After that the
-            chain runs unattended: an agent writes the code, a reviewer checks it per language, and
-            every finding goes to a second agent whose only job is to refute it. Only survivors
-            reach the refactor. <strong>The model that writes the code never reviews it.</strong>
-          </p>
+          <AgentWorkflow />
         </div>
       </div>
 
@@ -62,6 +50,8 @@ export function ChapterTwo() {
           deterministic anomaly classes with fixed thresholds. That is how defects nobody scripted
           are found.
         </p>
+
+        <ExplorationLoop />
 
         <h3 className="rule eyebrow">The rulebook, and how much of it is traceable</h3>
 
