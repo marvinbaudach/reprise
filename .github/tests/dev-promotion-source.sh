@@ -22,6 +22,8 @@ rg --multiline --quiet \
     "$workflow" || fail "the required check must be named From dev"
 rg --quiet '^[[:space:]]+uses: actions/checkout@v7$' "$workflow" || \
     fail "the workflow must check out the dev revision"
+rg --quiet '^[[:space:]]+run: sudo apt-get install --yes ripgrep$' "$workflow" || \
+    fail "the Ubuntu runner must install ripgrep before running the contracts"
 rg --quiet '^[[:space:]]+run: \.github/tests/dev-promotion-source\.sh$' "$workflow" || \
     fail "the workflow must execute this contract test"
 
