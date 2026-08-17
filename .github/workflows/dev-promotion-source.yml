@@ -1,0 +1,27 @@
+name: Promotion source
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  from-dev:
+    name: From dev
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the promoted revision
+        uses: actions/checkout@v7
+
+      - name: Verify the promotion source contract
+        run: .github/tests/dev-promotion-source.sh
+
+      - name: Verify dependency update targets
+        run: .github/tests/dependabot-targets.sh
+
+      - name: Verify Dependabot auto-merge policy
+        run: .github/tests/dependabot-automerge.sh

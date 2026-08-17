@@ -34,3 +34,25 @@ updates:
         patterns:
           - "serde"
           - "serde_json"
+
+  - package-ecosystem: gradle
+    directory: /android
+    target-branch: "dev"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore"
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /showroom
+    target-branch: "dev"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore"
+    labels:
+      - dependencies
