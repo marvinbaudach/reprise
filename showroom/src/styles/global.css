@@ -62,6 +62,25 @@ a:hover {
   border-radius: var(--radius-sharp);
 }
 
+.skip-link {
+  position: fixed;
+  z-index: 20;
+  inset-block-start: var(--gap-tight);
+  inset-inline-start: var(--gap-tight);
+  padding: var(--gap-tight) var(--gap-line);
+  border: 1px solid var(--accent);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  transform: translateY(calc(-100% - 1rem));
+  transition: transform var(--duration-fast) ease-out;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 /* --- Texture ------------------------------------------------------------- */
 
 /*

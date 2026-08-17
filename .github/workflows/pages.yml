@@ -46,19 +46,11 @@ jobs:
         working-directory: showroom
         run: npm run typecheck
 
-      - name: Build and prerender
+      # This builds, prerenders, checks every public page contract, and verifies
+      # that all referenced product media ships in the Pages artifact.
+      - name: Test build and prerender
         working-directory: showroom
-        run: npm run build
-
-      # The page has to be readable without JavaScript, so the prerendered
-      # markup must actually contain the chapters. A build that silently ships an
-      # empty <div id="root"> would still be green everywhere else.
-      - name: Prove the prerender produced content
-        working-directory: showroom
-        run: |
-          grep -q 'Two native apps' dist/index.html
-          grep -q 'Built by agents' dist/index.html
-          grep -q 'counted on' dist/index.html
+        run: npm test
 
       - uses: actions/upload-pages-artifact@v3
         with:
