@@ -52,3 +52,12 @@ test('the Pages workflow runs the same showroom contract suite as local developm
   assert.match(workflow, /run: npm test/);
   assert.doesNotMatch(workflow, /name: Prove the prerender produced content/);
 });
+
+test('the showroom ships one deliberate dark theme without a stored mode switch', async () => {
+  const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
+  const css = await builtCss();
+
+  assert.match(html, /<meta name="color-scheme" content="dark"/);
+  assert.doesNotMatch(html, /Colour theme|reprise-theme|localStorage|data-theme/);
+  assert.doesNotMatch(css, /prefers-color-scheme:\s*light|data-theme/);
+});

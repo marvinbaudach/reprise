@@ -1,5 +1,4 @@
 import { BASELINE, treelink } from '../../data/measurements';
-import { ThemeToggle } from '../theme/ThemeToggle';
 import './chrome.css';
 
 export function SiteHeader() {
@@ -14,7 +13,6 @@ export function SiteHeader() {
         <a className="data" href={treelink()}>
           counted on {BASELINE.commit}
         </a>
-        <ThemeToggle />
       </div>
     </header>
   );
