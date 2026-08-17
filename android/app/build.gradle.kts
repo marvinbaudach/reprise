@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 15
-        versionName = workspacePackageValue("version")
+        versionName = "0.1.15"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
         buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"All Rights Reserved\"")
