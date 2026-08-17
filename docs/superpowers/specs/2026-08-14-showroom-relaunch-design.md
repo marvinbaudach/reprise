@@ -130,10 +130,12 @@ Spektrum und zeigt die Kapitelmarken, dann zieht sie sich zurück. Damit zitiert
 die Navigation Spectral Seek, ohne Aufmerksamkeit vom Aufmacher zu nehmen —
 eine Entdeckung, keine Ansage.
 
-**Galerieform in CH. 03:** randabfallendes Band aus überlappenden Fenstern in
-Licht und Tiefe, Handy vorn, seitlich scrollbar. Darunter jede Oberfläche
-einzeln in einer eigenen Zeile mit Erklärung. Überflieger sehen die Wirkung,
-Leser die UX-Begründung. Ausdrücklich **kein** gleichmäßiges Karten-Raster.
+**CH. 03 gallery revision (2026-08-17):** The horizontal overlapping strip is
+replaced by an editorial evidence wall in the ordinary document flow. GNOME
+captures alternate between full-width anchors and paired frames. Android
+portrait captures form their own compact duet, so their aspect ratio can never
+set the height of a landscape row. The gallery must not create a second scroll
+axis on desktop or mobile; each caption stays beside the image it explains.
 
 ### Bewegtbild
 

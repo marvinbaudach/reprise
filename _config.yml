@@ -21,7 +21,7 @@
 #
 # Kept deliberately, because README.md links to them: AGENTS.md,
 # docs/agents/, docs/assets/, docs/showcase.md, docs/ux-rules.md,
-# flatpak/README.md, LICENSING.md, README.de.md, TESTING.md.
+# flatpak/README.md, LICENSING.md, TESTING.md.
 
 title: Reprise
 description: A native GTK4 music player for GNOME, written in Rust

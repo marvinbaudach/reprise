@@ -1,7 +1,5 @@
 # Reprise
 
-[English](README.md) · [Deutsch](README.de.md)
-
 Reprise is a music player for people who still keep their own music files —
 and for developers who want to see native desktop UX, a portable core, and
 measurable systems work come together in one Rust codebase. A GTK4/libadwaita
