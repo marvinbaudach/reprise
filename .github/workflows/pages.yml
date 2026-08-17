@@ -13,10 +13,12 @@ on:
     paths:
       - 'showroom/**'
       - '.github/workflows/pages.yml'
+      - '.github/tests/pages-action-versions.sh'
   pull_request:
     paths:
       - 'showroom/**'
       - '.github/workflows/pages.yml'
+      - '.github/tests/pages-action-versions.sh'
   workflow_dispatch:
 
 permissions:
@@ -30,11 +32,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4
+      - name: Verify Pages action versions
+        run: .github/tests/pages-action-versions.sh
+
+      - uses: actions/setup-node@v7.0.0
         with:
-          node-version: '22'
+          # Track the newest Node Current release with a complete version pin.
+          node-version: '26.7.0'
           cache: npm
           cache-dependency-path: showroom/package-lock.json
 
@@ -52,7 +58,7 @@ jobs:
         working-directory: showroom
         run: npm test
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: showroom/dist
 
@@ -68,4 +74,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5.0.0
