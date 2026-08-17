@@ -14,15 +14,21 @@ require_release() {
     local minimum_major="$2"
     local tag
     local major
+    local -a tags=()
 
-    tag="$(sed -n "s|^[[:space:]]*-[[:space:]]*uses: ${action}@\(v[^[:space:]]*\)$|\1|p; s|^[[:space:]]*uses: ${action}@\(v[^[:space:]]*\)$|\1|p" "$workflow")"
-    [[ -n "$tag" ]] || fail "missing ${action}"
-    [[ "$tag" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]] || \
-        fail "${action} must use a complete release tag, found ${tag}"
+    mapfile -t tags < <(
+        sed -n "s|^[[:space:]]*-[[:space:]]*uses: ${action}@\(v[^[:space:]]*\)$|\1|p; s|^[[:space:]]*uses: ${action}@\(v[^[:space:]]*\)$|\1|p" "$workflow"
+    )
+    (( ${#tags[@]} > 0 )) || fail "missing ${action}"
 
-    major="${BASH_REMATCH[1]}"
-    (( major >= minimum_major )) || \
-        fail "${action} must use Node 24 generation v${minimum_major} or newer, found ${tag}"
+    for tag in "${tags[@]}"; do
+        [[ "$tag" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]] || \
+            fail "${action} must use a complete release tag, found ${tag}"
+
+        major="${BASH_REMATCH[1]}"
+        (( major >= minimum_major )) || \
+            fail "${action} must use Node 24 generation v${minimum_major} or newer, found ${tag}"
+    done
 }
 
 require_release actions/checkout 7

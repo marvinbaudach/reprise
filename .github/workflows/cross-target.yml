@@ -1,32 +1,30 @@
 # The cross-target check lives in its own workflow so it can carry a `paths`
-# filter: it only regresses when the portable engine, the shipped Android FFI
-# boundary, Android sources, the workspace manifests, or this workflow itself
-# change. A `paths` filter can only scope a whole workflow, not a single job,
-# and ci.yml's shared `on:` block must keep running the quality gate on every
-# push and PR — so splitting the job out narrows this job without narrowing
-# anything else.
+# filter: it only regresses when the portable engine, shared presentation,
+# shipped Android FFI boundary, Android sources, or workspace manifests
+# change. Splitting it out keeps the cross-target toolchains
+# independent from the path-routed host suites in ci.yml.
 name: Cross-target
 
 on:
   pull_request:
     paths:
       - crates/reprise-core/**
+      - crates/reprise-view/**
       - crates/reprise-android-ffi/**
       - android/**
       - Cargo.toml
       - Cargo.lock
-      - .github/workflows/cross-target.yml
   push:
     branches:
       - main
       - dev
     paths:
       - crates/reprise-core/**
+      - crates/reprise-view/**
       - crates/reprise-android-ffi/**
       - android/**
       - Cargo.toml
       - Cargo.lock
-      - .github/workflows/cross-target.yml
   workflow_dispatch:
 
 permissions:
@@ -37,8 +35,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  owner-skip:
+    name: Check for repository-owner skip
+    runs-on: ubuntu-24.04
+    outputs:
+      owner_skip: ${{ steps.authorization.outputs.owner_skip }}
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Authenticate an explicit owner skip
+        id: authorization
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          commit_message=$(git log -1 --format=%B "$HEAD_SHA")
+          owner_skip=$(
+            .github/scripts/ci-paths.sh --owner-skip \
+              "$EVENT_NAME" "$PR_AUTHOR" "$REPOSITORY_OWNER" "$commit_message"
+          )
+          echo "owner_skip=$owner_skip" >> "$GITHUB_OUTPUT"
+
   cross-target:
     name: Core and Android FFI cross-target check
+    needs: owner-skip
+    if: needs['owner-skip'].outputs.owner_skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
