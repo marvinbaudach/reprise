@@ -139,18 +139,6 @@ export const VERIFICATION_RUNGS: readonly VerificationRung[] = [
   },
 ];
 
-/** Chapter two: the chain a change walks before it lands. */
-export const MERGE_CHAIN: readonly string[] = [
-  'Plan',
-  'A human takes it apart',
-  'An agent writes it',
-  'A reviewer per language',
-  'A second agent refutes',
-  'Refactor',
-  '21 gates',
-  'Merge',
-];
-
 /** Chapter two: the rulebook, and how much of it is traceable. */
 export const RULEBOOK_FIGURES: readonly Figure[] = [
   { value: '370', label: 'active UX rules, binding', href: permalink('docs/ux-rules.md') },

@@ -1,0 +1,279 @@
+.agent-workflow,
+.exploration-loop {
+  position: relative;
+  margin: 0;
+  padding: clamp(1.25rem, 2.5vw, 2.5rem);
+  overflow: hidden;
+  border: 1px solid var(--surface-line);
+  background: color-mix(in oklab, var(--surface-base) 82%, transparent);
+}
+
+.agent-workflow::before,
+.exploration-loop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+      to right,
+      color-mix(in oklab, var(--surface-line-soft) 38%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--surface-line-soft) 28%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 4rem 4rem;
+  mask-image: linear-gradient(to bottom, black, transparent 88%);
+}
+
+.process-heading,
+.agent-workflow__path,
+.agent-workflow__independence,
+.agent-workflow__context,
+.exploration-loop__body,
+.exploration-loop figcaption {
+  position: relative;
+}
+
+.process-heading {
+  display: grid;
+  gap: var(--gap-hair);
+  margin-block-end: clamp(1.5rem, 3vw, 3rem);
+}
+
+.process-heading h3 {
+  max-width: 28ch;
+  margin: 0;
+  color: var(--text-strong);
+  font-size: clamp(1.55rem, 1.1rem + 1.7vw, 2.7rem);
+  font-variation-settings: 'wdth' 106, 'wght' 690;
+  line-height: 1.02;
+}
+
+.agent-workflow__path {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--surface-line);
+  border: 1px solid var(--surface-line);
+}
+
+.agent-workflow__step {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--gap-tight);
+  min-width: 0;
+  min-height: 9.5rem;
+  padding: var(--gap-line);
+  background: var(--surface-base);
+}
+
+.agent-workflow__step:not(:last-child)::after {
+  content: '→';
+  position: absolute;
+  z-index: 1;
+  inset-inline-end: -0.75rem;
+  inset-block-start: 1rem;
+  width: 1.5rem;
+  color: var(--accent);
+  background: var(--surface-base);
+  text-align: center;
+}
+
+.agent-workflow__step[data-role='human-checkpoint'] {
+  background: color-mix(in oklab, var(--second) 9%, var(--surface-base));
+}
+
+.agent-workflow__step[data-role='implementer'],
+.agent-workflow__step[data-role='reviewer'],
+.agent-workflow__step[data-role='skeptic'] {
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface-base));
+}
+
+.agent-workflow__step strong {
+  color: var(--text-strong);
+  font-variation-settings: 'wdth' 96, 'wght' 650;
+}
+
+.agent-workflow__step > span:last-child {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  line-height: 1.4;
+}
+
+.agent-workflow__index {
+  color: var(--accent);
+}
+
+.agent-workflow__independence {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap-tight);
+  margin-block: var(--gap-line);
+}
+
+.agent-workflow__independence > * {
+  padding-inline-start: var(--gap-tight);
+  border-inline-start: 2px solid var(--accent);
+  color: var(--text-body);
+}
+
+.agent-workflow__context {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap-line);
+  align-items: center;
+  padding-block-start: var(--gap-line);
+  border-block-start: 1px solid var(--surface-line-soft);
+}
+
+.agent-workflow__context p {
+  margin: 0;
+  color: var(--text-faint);
+}
+
+.agent-workflow__context nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-line);
+}
+
+.agent-workflow__context a,
+.exploration-loop__findings a {
+  color: var(--accent);
+}
+
+.exploration-loop__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 0.75fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+}
+
+.exploration-loop__actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap-tight);
+  margin: 0;
+  counter-reset: exploration;
+}
+
+.exploration-loop__actions li {
+  position: relative;
+  display: grid;
+  gap: var(--gap-tight);
+  min-height: 7rem;
+  padding: var(--gap-line);
+  border: 1px solid var(--surface-line);
+  background: var(--surface-raised);
+}
+
+.exploration-loop__actions li::after {
+  content: '↗';
+  position: absolute;
+  inset-inline-end: var(--gap-tight);
+  inset-block-end: var(--gap-tight);
+  color: var(--accent);
+}
+
+.exploration-loop__actions li:nth-child(3)::after,
+.exploration-loop__actions li:nth-child(6)::after {
+  content: '↙';
+}
+
+.exploration-loop__actions span {
+  color: var(--text-faint);
+}
+
+.exploration-loop__actions strong {
+  max-width: 15ch;
+  color: var(--text-strong);
+  font-variation-settings: 'wdth' 96, 'wght' 620;
+}
+
+.exploration-loop__findings {
+  display: grid;
+  align-content: start;
+  gap: var(--gap-line);
+  padding-inline-start: var(--gap-line);
+  border-inline-start: 1px solid var(--accent);
+}
+
+.exploration-loop__findings ul {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: var(--surface-line-soft);
+}
+
+.exploration-loop__findings li {
+  display: grid;
+  gap: var(--gap-hair);
+  padding: var(--gap-line);
+  background: var(--surface-base);
+}
+
+.exploration-loop__findings strong {
+  color: var(--second);
+}
+
+.exploration-loop__findings span {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.exploration-loop figcaption {
+  max-width: 66ch;
+  margin: var(--gap-block) 0 0;
+  color: var(--text-muted);
+}
+
+@media (max-width: 72rem) {
+  .agent-workflow__path {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .agent-workflow__step:nth-child(4)::after {
+    content: none;
+  }
+}
+
+@media (max-width: 50rem) {
+  .agent-workflow__path,
+  .agent-workflow__independence,
+  .exploration-loop__body,
+  .exploration-loop__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-workflow__step {
+    min-height: 0;
+  }
+
+  .agent-workflow__step::after,
+  .agent-workflow__step:nth-child(4)::after {
+    content: '↓';
+    inset-inline-end: 1rem;
+    inset-block-start: auto;
+    inset-block-end: -0.75rem;
+  }
+
+  .agent-workflow__step:last-child::after {
+    content: none;
+  }
+
+  .agent-workflow__context {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .exploration-loop__findings {
+    padding-block-start: var(--gap-line);
+    padding-inline-start: 0;
+    border-block-start: 1px solid var(--accent);
+    border-inline-start: 0;
+  }
+}
