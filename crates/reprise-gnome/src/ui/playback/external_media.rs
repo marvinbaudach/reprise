@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::{PlaybackError, PlaybackState};
-use reprise_core::podcasts::{EpisodeRow, PodcastKind};
+use reprise_core::podcasts::{stream_proxy, ytdlp::YtDlp, EpisodeRow, PodcastKind};
 use reprise_core::up_next::QueueItem;
 
 use crate::ui::player_controller::PlayerController;
@@ -178,6 +178,7 @@ impl PlayerController {
     }
 
     fn prepare_external_playback(&self) {
+        stream_proxy::revoke_active();
         self.persist_external_position();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -294,9 +295,9 @@ impl PlayerController {
         let config = reprise_core::podcasts::config::load(&self.conn).ok();
         let setting = config.as_ref().and_then(|config| config.ytdlp_path.clone());
         let browser = config.and_then(|config| config.youtube_browser);
+        let refresh = (setting.clone(), video_url.clone());
         let result = crate::ui::one_shot_task::spawn("reprise-youtube-resolve", move || {
-            reprise_core::podcasts::ytdlp::YtDlp::discover_with_browser(setting.as_deref(), browser)
-                .resolve(&video_url)
+            YtDlp::discover_with_browser(setting.as_deref(), browser).resolve(&video_url)
         });
         let receiver = match result {
             Ok(receiver) => receiver,
@@ -318,11 +319,8 @@ impl PlayerController {
                     if !controller.external_generation_matches_podcast(generation) {
                         return;
                     }
-                    let media_category = audio
-                        .categories
-                        .into_iter()
-                        .next()
-                        .filter(|category| !category.is_empty());
+                    let media_category =
+                        audio.categories.first().filter(|v| !v.is_empty()).cloned();
                     // Playback goes ahead either way — a failed write costs the
                     // stored duration and category, not the episode. But it
                     // must not vanish: without this the classification would
@@ -354,10 +352,22 @@ impl PlayerController {
                     if category_changed {
                         controller.notify_external_changed();
                     }
+                    let token =
+                        match stream_proxy::register_resolved_with_refresh(audio, move || {
+                            YtDlp::discover_with_browser(refresh.0.as_deref(), browser)
+                                .resolve(&refresh.1)
+                        }) {
+                            Ok(token) => token,
+                            Err(error) => {
+                                controller.fail_podcast(generation, &error.to_string());
+                                return;
+                            }
+                        };
+                    let stream_url = stream_proxy::activate(token);
                     let _ = controller.start_podcast_source(
                         generation,
                         episode_id,
-                        EpisodeSource::Url(audio.stream_url),
+                        EpisodeSource::Url(stream_url),
                         resume_ms,
                     );
                 }
@@ -394,14 +404,9 @@ impl PlayerController {
                 return Ok(());
             }
             session.phase = PodcastPhase::Playing;
-            // The advance chain deliberately survives this point. `play_uri`
-            // returning `Ok` only means the pipeline accepted the URI — for a
-            // resolved YouTube stream the HTTP answer (commonly a 403 on a
-            // freshly signed googlevideo url) arrives asynchronously on the
-            // bus afterwards. Clearing the chain here would classify that
-            // failure as "direct" and strand the user on a dead row. It is
-            // cleared once playback actually advances, in
-            // `handle_external_position`.
+            // `play_uri` only accepts the local URI; transport failures still
+            // arrive asynchronously. Keep the advance chain until playback
+            // actually moves in `handle_external_position`.
             resume_ms > 0
         };
         if should_seek {
@@ -588,6 +593,7 @@ impl PlayerController {
     /// queue-takeover path is [`Self::leave_external_for_queue`], which leaves
     /// the loaded track alone.
     pub(in crate::ui) fn stop_external(&self) {
+        stream_proxy::revoke_active();
         self.persist_external_position();
         {
             let mut external = self.external.borrow_mut();
@@ -625,6 +631,7 @@ impl PlayerController {
     /// So the state is only cleared — and the change only announced — when
     /// there was in fact an external mode to leave.
     pub(in crate::ui) fn leave_external_for_queue(&self) {
+        stream_proxy::revoke_active();
         self.persist_external_position();
         let left_external_mode = {
             let mut external = self.external.borrow_mut();

@@ -23,6 +23,7 @@ pub mod source_artwork;
 pub mod status;
 pub mod store;
 mod store_metadata;
+pub mod stream_proxy;
 pub mod url_detect;
 pub mod youtube;
 pub mod ytdlp;

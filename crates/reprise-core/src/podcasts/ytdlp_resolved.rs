@@ -16,11 +16,30 @@ pub(super) fn parse(
         .ok_or_else(|| audio_unavailable_error(operation))?;
     Ok(ResolvedAudio {
         stream_url: stream_url.to_owned(),
+        content_len: content_len(&value, stream_url),
         duration_secs: duration_secs(value.get("duration")),
         categories: categories(value.get("categories")),
         track: optional_text(value.get("track")),
         artist: optional_text(value.get("artist")),
     })
+}
+
+fn content_len(value: &Value, stream_url: &str) -> Option<u64> {
+    value
+        .get("filesize")
+        .and_then(Value::as_u64)
+        .filter(|length| *length > 0)
+        .or_else(|| {
+            url::Url::parse(stream_url)
+                .ok()?
+                .query_pairs()
+                .find_map(|(key, value)| {
+                    (key == "clen")
+                        .then(|| value.parse::<u64>().ok())
+                        .flatten()
+                        .filter(|length| *length > 0)
+                })
+        })
 }
 
 pub(in crate::podcasts) fn categories(value: Option<&Value>) -> Vec<String> {
