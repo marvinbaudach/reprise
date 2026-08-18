@@ -1,3 +1,5 @@
+import { ChapterFive } from './components/chapters/ChapterFive';
+import { ChapterFour } from './components/chapters/ChapterFour';
 import { ChapterOne } from './components/chapters/ChapterOne';
 import { ChapterThree } from './components/chapters/ChapterThree';
 import { ChapterTwo } from './components/chapters/ChapterTwo';
@@ -29,6 +31,8 @@ export function App() {
         <ChapterOne />
         <ChapterTwo />
         <ChapterThree reducedMotion={reduced} />
+        <ChapterFour />
+        <ChapterFive />
       </main>
       <SiteFooter />
     </div>

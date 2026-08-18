@@ -176,7 +176,7 @@ export const SPECTRAL_AXIS = {
   source: 'crates/reprise-view/src/spectral_colour.rs',
 } as const;
 
-/** Chapter three, folded away: what the index rebuild cost and bought. */
+/** Chapter five: what the index rebuild cost and bought. */
 export interface Measurement {
   readonly what: string;
   readonly before: string;

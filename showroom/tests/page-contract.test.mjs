@@ -20,7 +20,7 @@ test('the prerendered document has a direct keyboard route into its single main 
   assert.match(html, /<a[^>]+class="skip-link"[^>]+href="#main-content"/);
   assert.match(html, /<main id="main-content" tabindex="-1">/);
   assert.equal((html.match(/<h1\b/g) ?? []).length, 1);
-  for (const chapter of ['ch-01', 'ch-02', 'ch-03']) {
+  for (const chapter of ['ch-01', 'ch-02', 'ch-03', 'ch-04']) {
     assert.match(html, new RegExp(`href="#${chapter}"`));
     assert.match(html, new RegExp(`<section id="${chapter}"`));
   }

@@ -1,4 +1,3 @@
-import { PERFORMANCE, PERFORMANCE_PRICE } from '../../data/measurements';
 import { ProductGallery } from '../showcase/ProductGallery';
 import { SpectralAxis } from '../ui/SpectralAxis';
 import './chapters.css';
@@ -39,41 +38,6 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
           of an empty gutter. The implementation: a portable visuals layer that neither frontend
           owns. The result: physics that were measured afterwards rather than asserted.
         </p>
-
-        <details className="fold">
-          <summary className="fold__summary">
-            <span className="eyebrow">Folded away</span>
-            <span className="fold__title">What the title index cost, and what it bought</span>
-          </summary>
-
-          <div className="fold__body">
-            <table className="ledger">
-              <caption className="data ledger__caption">
-                Measured over 100&apos;000 tracks. Before and after the index rebuild.
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">What</th>
-                  <th scope="col">Before</th>
-                  <th scope="col">After</th>
-                  <th scope="col">Delta</th>
-                </tr>
-              </thead>
-              <tbody>
-                {PERFORMANCE.map((row) => (
-                  <tr key={row.what}>
-                    <th scope="row">{row.what}</th>
-                    <td className="ledger__before">{row.before}</td>
-                    <td className="ledger__after">{row.after}</td>
-                    <td className="ledger__delta">{row.delta}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <p className="prose ledger__price">{PERFORMANCE_PRICE}</p>
-          </div>
-        </details>
       </div>
     </section>
   );
