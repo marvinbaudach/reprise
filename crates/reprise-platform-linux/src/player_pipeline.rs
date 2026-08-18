@@ -15,9 +15,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use reprise_core::playback::{
-    AudioEffects, BassPressureDetector, CavaBarProcessor, CavaConfig, PlaybackError,
-    PlaybackFailure, PlaybackFailureKind, PlaybackSessionId, PlayerEvent, SpectrumFrame,
-    SPECTRUM_BAND_COUNT,
+    redact_local_stream_proxy_urls, AudioEffects, BassPressureDetector, CavaBarProcessor,
+    CavaConfig, PlaybackError, PlaybackFailure, PlaybackFailureKind, PlaybackSessionId,
+    PlayerEvent, SpectrumFrame, SPECTRUM_BAND_COUNT,
 };
 
 use crate::crossfade::Transition;
@@ -464,9 +464,12 @@ pub(crate) fn attach_bus_watch(
             }
             MessageView::Error(e) => {
                 let debug_text = e.debug();
-                tracing::error!(error = %e.error(), debug = ?debug_text, "GStreamer bus error");
+                let error_text = e.error().to_string();
+                let safe_error = redact_local_stream_proxy_urls(&error_text);
+                let safe_debug = debug_text.as_deref().map(redact_local_stream_proxy_urls);
+                tracing::error!(error = %safe_error, debug = ?safe_debug, "GStreamer bus error");
                 (*on_event)(PlayerEvent::Error(playback_failure_from_bus(
-                    e.error().to_string(),
+                    error_text,
                     debug_text.as_deref(),
                     playback_session_id,
                 )));

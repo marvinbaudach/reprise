@@ -1,14 +1,14 @@
 //! Player-event application and stopped-state recovery for PlayerController.
 
-use std::{borrow::Cow, rc::Rc};
+use std::rc::Rc;
 
 use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::{
-    PlaybackFailure, PlaybackFailureKind, PlaybackSessionId, PlaybackState, PlayerEvent,
-    SpectrumFrame,
+    redact_local_stream_proxy_urls, PlaybackFailure, PlaybackFailureKind, PlaybackSessionId,
+    PlaybackState, PlayerEvent, SpectrumFrame,
 };
 use reprise_core::podcasts::PodcastKind;
 
@@ -77,55 +77,6 @@ fn external_error_dispatch(
         ExternalErrorDispatch::StopAndToast
     } else {
         ExternalErrorDispatch::HandleFailure
-    }
-}
-
-fn redact_local_stream_proxy_urls(message: &str) -> Cow<'_, str> {
-    const ORIGIN_PREFIX: &str = "http://127.0.0.1:";
-
-    let mut output = None::<String>;
-    let mut copied_through = 0;
-    let mut search_from = 0;
-    while let Some(relative_start) = message[search_from..].find(ORIGIN_PREFIX) {
-        let origin_start = search_from + relative_start;
-        let port_start = origin_start + ORIGIN_PREFIX.len();
-        let port_len = message[port_start..]
-            .bytes()
-            .take_while(u8::is_ascii_digit)
-            .count();
-        let path_start = port_start + port_len;
-        if port_len == 0 || message.as_bytes().get(path_start) != Some(&b'/') {
-            search_from = port_start;
-            continue;
-        }
-        let token_start = path_start + 1;
-        let token_len = message[token_start..]
-            .bytes()
-            .take_while(|byte| {
-                !byte.is_ascii_whitespace()
-                    && !matches!(
-                        *byte,
-                        b'"' | b'\'' | b'<' | b'>' | b')' | b']' | b'}' | b',' | b';' | b'.'
-                    )
-            })
-            .count();
-        if token_len == 0 {
-            search_from = token_start;
-            continue;
-        }
-        let token_end = token_start + token_len;
-        let redacted = output.get_or_insert_with(|| String::with_capacity(message.len()));
-        redacted.push_str(&message[copied_through..path_start]);
-        redacted.push_str("/<redacted>");
-        copied_through = token_end;
-        search_from = token_end;
-    }
-    match output {
-        Some(mut output) => {
-            output.push_str(&message[copied_through..]);
-            Cow::Owned(output)
-        }
-        None => Cow::Borrowed(message),
     }
 }
 
@@ -481,20 +432,6 @@ mod spectrum_coalescing_tests {
         ));
         assert!(matches!(events[2], PlayerEvent::Spectrum(_)));
         assert!(matches!(events[3], PlayerEvent::TrackFinished));
-    }
-
-    #[test]
-    fn external_error_log_redacts_local_stream_proxy_tokens() {
-        let message = "Forbidden, URL: http://127.0.0.1:42817/0123456789abcdef?source=playbin";
-
-        assert_eq!(
-            redact_local_stream_proxy_urls(message),
-            "Forbidden, URL: http://127.0.0.1:42817/<redacted>"
-        );
-        assert_eq!(
-            redact_local_stream_proxy_urls("Forbidden, URL: https://googlevideo.test/audio"),
-            "Forbidden, URL: https://googlevideo.test/audio"
-        );
     }
 
     fn displayed_messages(failures: &[PlaybackFailure]) -> Vec<&str> {
