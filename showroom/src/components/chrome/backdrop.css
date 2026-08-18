@@ -17,12 +17,13 @@
 
 .backdrop-oil {
   position: fixed;
-  inset: 0;
+  inset: -12%;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
   mix-blend-mode: screen;
-  opacity: 0.55;
+  opacity: var(--oil, 0.55);
+  transition: transform 1600ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
 }
 
@@ -42,7 +43,7 @@
     oklch(80% 0.12 190 / 0.06) 46%,
     transparent 68%
   );
-  animation: backdrop-drift-a 68s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  animation: backdrop-drift-a 42s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
 }
 
 .backdrop-oil__blob--coral {
@@ -56,7 +57,7 @@
     oklch(72% 0.16 28 / 0.05) 44%,
     transparent 66%
   );
-  animation: backdrop-drift-b 94s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  animation: backdrop-drift-b 57s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
 }
 
 .backdrop-oil__blob--violet {
@@ -70,7 +71,7 @@
     oklch(62% 0.15 302 / 0.05) 48%,
     transparent 70%
   );
-  animation: backdrop-drift-c 116s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  animation: backdrop-drift-c 71s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
 }
 
 /* One very slow rotation, so the three static blobs get a direction. */
@@ -92,7 +93,7 @@
     oklch(74% 0.14 30 / 0.08) 296deg,
     transparent 356deg
   );
-  animation: backdrop-spin 220s linear infinite;
+  animation: backdrop-spin 150s linear infinite;
 }
 
 .backdrop-grain {
