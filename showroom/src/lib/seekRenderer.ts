@@ -5,14 +5,11 @@ import {
   centroidAt,
   liftLightness,
   type Rgb,
-  sectionBoundaries,
   shapeCentroid,
   smoothCentroidOverSeconds,
   spectralColour,
 } from './spectralColour';
 import { shapeDisplayPeaks } from './waveform';
-
-export type SeekMode = 'fill' | 'marks';
 
 export interface SeekSample {
   readonly elapsedMs: number;
@@ -32,7 +29,6 @@ interface PreparedTrack {
 interface SeekRendererOptions {
   readonly canvas: HTMLCanvasElement;
   readonly track: MeasuredSeekTrack;
-  readonly mode: SeekMode;
   readonly hero: boolean;
   readonly onSample: (sample: SeekSample) => void;
 }
@@ -40,7 +36,6 @@ interface SeekRendererOptions {
 export interface SeekCanvasRenderer {
   draw(timestamp: number, still: boolean): void;
   setHover(position: number | null): void;
-  setMode(mode: SeekMode): void;
 }
 
 interface RegisteredRenderer {
@@ -53,7 +48,6 @@ const BAR_STEP_PX = 4;
 const BAR_WIDTH_PX = 2;
 const MIN_BAR_COUNT = 40;
 const MAX_DEVICE_SCALE = 2;
-const SINGLE_COLOUR = '#4fdbd4';
 const renderers = new Set<RegisteredRenderer>();
 
 function colourCss([red, green, blue]: Rgb): string {
@@ -67,7 +61,6 @@ function clampUnit(value: number): number {
 export function createSeekRenderer({
   canvas,
   track,
-  mode,
   hero,
   onSample,
 }: SeekRendererOptions): SeekCanvasRenderer {
@@ -77,10 +70,8 @@ export function createSeekRenderer({
     durationS,
     CENTROID_WINDOW_S,
   );
-  const marks = sectionBoundaries(smoothedCentroids, durationS);
   let prepared: PreparedTrack | null = null;
   let hover: number | null = null;
-  let selectedMode = mode;
   let startedAt: number | null = null;
 
   const prepare = (bars: number): PreparedTrack => {
@@ -119,7 +110,6 @@ export function createSeekRenderer({
     const maximumHeight = height * 0.9;
     const playBar = Math.floor(position * bars);
     const pulse = still ? 0.5 : 0.5 + 0.5 * Math.sin(timestamp * 0.002_3);
-    const renderMode = hero ? 'fill' : selectedMode;
 
     context.setTransform(scale, 0, 0, scale, 0, 0);
     context.clearRect(0, 0, width, height);
@@ -133,12 +123,7 @@ export function createSeekRenderer({
       }
       const barHeight = Math.max(3, (shaped.levels[index] ?? 0) * maximumHeight);
       context.fillStyle = light.played
-        ? colourCss(
-            liftLightness(
-              spectralColour(renderMode === 'fill' ? (shaped.centroids[index] ?? 0.5) : 1),
-              light.lift,
-            ),
-          )
+        ? colourCss(liftLightness(spectralColour(shaped.centroids[index] ?? 0.5), light.lift))
         : `oklch(${light.lightness.toFixed(1)}% 0.012 269)`;
       const y = middle - barHeight / 2;
       context.beginPath();
@@ -146,23 +131,10 @@ export function createSeekRenderer({
       context.fill();
     }
 
-    if (renderMode === 'marks') {
-      context.fillStyle = 'oklch(88% 0.006 269 / 0.45)';
-      for (const mark of marks) {
-        context.fillRect(
-          Math.round(left + mark * renderedWidth) + 0.5,
-          middle - maximumHeight / 2,
-          1,
-          maximumHeight,
-        );
-      }
-    }
-
     const playheadX = left + position * renderedWidth;
-    const playheadColour =
-      renderMode === 'fill'
-        ? colourCss(liftLightness(spectralColour(centroidAt(smoothedCentroids, position)), 6))
-        : SINGLE_COLOUR;
+    const playheadColour = colourCss(
+      liftLightness(spectralColour(centroidAt(smoothedCentroids, position)), 6),
+    );
     context.save();
     context.shadowColor = playheadColour;
     context.shadowBlur = 12 + 14 * pulse;
@@ -195,9 +167,6 @@ export function createSeekRenderer({
     draw,
     setHover(position) {
       hover = position === null ? null : clampUnit(position);
-    },
-    setMode(nextMode) {
-      selectedMode = nextMode;
     },
   };
 }

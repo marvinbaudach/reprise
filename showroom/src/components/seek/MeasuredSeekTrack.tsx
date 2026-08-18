@@ -4,7 +4,6 @@ import {
   registerSeekRenderer,
   requestSeekFrame,
   type SeekCanvasRenderer,
-  type SeekMode,
   type SeekSample,
 } from '../../lib/seekRenderer';
 import { formatSeekTime, loadSeekTrack, type MeasuredSeekTrack } from '../../lib/seekTrack';
@@ -23,7 +22,6 @@ type TrackState = ReadyTrack | PendingTrack;
 
 interface SeekCanvasProps {
   readonly hero?: boolean;
-  readonly mode: SeekMode;
   readonly onSample: (sample: SeekSample) => void;
   readonly reducedMotion: boolean;
   readonly state: TrackState;
@@ -48,11 +46,9 @@ function useMeasuredSeekTrack(): TrackState {
   return state;
 }
 
-function SeekCanvas({ hero = false, mode, onSample, reducedMotion, state }: SeekCanvasProps) {
+function SeekCanvas({ hero = false, onSample, reducedMotion, state }: SeekCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<SeekCanvasRenderer | null>(null);
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,7 +57,6 @@ function SeekCanvas({ hero = false, mode, onSample, reducedMotion, state }: Seek
     const renderer = createSeekRenderer({
       canvas,
       track: state.track,
-      mode: modeRef.current,
       hero,
       onSample,
     });
@@ -100,11 +95,6 @@ function SeekCanvas({ hero = false, mode, onSample, reducedMotion, state }: Seek
     };
   }, [hero, onSample, reducedMotion, state]);
 
-  useEffect(() => {
-    rendererRef.current?.setMode(mode);
-    requestSeekFrame();
-  }, [mode]);
-
   if (state.status === 'failed') {
     return <p className="seek-track__unavailable">Measured track unavailable.</p>;
   }
@@ -114,12 +104,7 @@ function SeekCanvas({ hero = false, mode, onSample, reducedMotion, state }: Seek
       className={`seek-track__canvas-frame${hero ? ' seek-track__canvas-frame--hero' : ''}`}
       aria-hidden="true"
     >
-      <canvas
-        ref={canvasRef}
-        className="seek-track__canvas"
-        data-seek-canvas=""
-        data-seek-mode={hero ? 'fill' : mode}
-      />
+      <canvas ref={canvasRef} className="seek-track__canvas" data-seek-canvas="" />
     </span>
   );
 }
@@ -140,7 +125,7 @@ export function HeroSeekTrack({ reducedMotion }: { readonly reducedMotion: boole
   }, []);
 
   return (
-    <div className="hero-seek" data-reveal="" data-showcase="hero-seek-track" data-seek-mode="fill">
+    <div className="hero-seek" data-reveal="" data-showcase="hero-seek-track">
       <div className="hero-seek__bar">
         <img
           className="hero-seek__mark"
@@ -152,13 +137,7 @@ export function HeroSeekTrack({ reducedMotion }: { readonly reducedMotion: boole
         <span ref={elapsedRef} className="seek-track__time">
           0:00
         </span>
-        <SeekCanvas
-          hero
-          mode="fill"
-          onSample={updateSample}
-          reducedMotion={reducedMotion}
-          state={state}
-        />
+        <SeekCanvas hero onSample={updateSample} reducedMotion={reducedMotion} state={state} />
         <span ref={remainingRef} className="seek-track__time">
           {remainingText(state)}
         </span>
@@ -173,7 +152,6 @@ export function HeroSeekTrack({ reducedMotion }: { readonly reducedMotion: boole
 
 export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: boolean }) {
   const state = useMeasuredSeekTrack();
-  const [mode, setMode] = useState<SeekMode>('fill');
   const elapsedRef = useRef<HTMLSpanElement>(null);
   const remainingRef = useRef<HTMLSpanElement>(null);
   const colourRef = useRef<HTMLSpanElement>(null);
@@ -199,34 +177,10 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
           <p>The spectral seek bar, live</p>
           <h3>Height is the level. Colour is the frequency.</h3>
         </div>
-        <fieldset className="seek-modes">
-          <legend>Seek bar rendering</legend>
-          <button
-            type="button"
-            data-mode="fill"
-            aria-pressed={mode === 'fill'}
-            onClick={() => setMode('fill')}
-          >
-            Spectral fill
-          </button>
-          <button
-            type="button"
-            data-mode="marks"
-            aria-pressed={mode === 'marks'}
-            onClick={() => setMode('marks')}
-          >
-            One colour + marks
-          </button>
-        </fieldset>
       </div>
 
       <div className="seek-card__canvas">
-        <SeekCanvas
-          mode={mode}
-          onSample={updateSample}
-          reducedMotion={reducedMotion}
-          state={state}
-        />
+        <SeekCanvas onSample={updateSample} reducedMotion={reducedMotion} state={state} />
       </div>
 
       <div className="seek-readout" aria-live="off">
@@ -281,14 +235,6 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
             <span>#FF6F5E · low</span>
             <span>high · #4FDBD4</span>
           </div>
-        </article>
-        <article data-reveal="" data-seek-legend="marks">
-          <h4>Marks — the sections</h4>
-          <p>
-            The centroid is averaged over eight seconds first. In one-colour mode, a step of 26 of
-            255 across four seconds becomes a hairline, never closer than 20 s to the next one. A
-            track with no transitions correctly gets none.
-          </p>
         </article>
       </div>
     </figure>

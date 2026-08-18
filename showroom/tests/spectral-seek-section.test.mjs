@@ -14,7 +14,7 @@ async function builtCss() {
   return readFile(join(assets, stylesheet), 'utf8');
 }
 
-test('CH.03 exposes both honest rendering modes, a readout, and three legends', async () => {
+test('CH.03 exposes the rendering, a readout and two legends', async () => {
   const [html, css] = await Promise.all([
     readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8'),
     builtCss(),
@@ -24,19 +24,16 @@ test('CH.03 exposes both honest rendering modes, a readout, and three legends', 
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(12\.5% 0\.024 302\)"/);
   assert.match(chapter, /data-showcase="spectral-seek-track"/);
-  assert.match(chapter, /data-mode="fill" aria-pressed="true"[^>]*>Spectral fill/);
-  assert.match(chapter, /data-mode="marks" aria-pressed="false"[^>]*>One colour \+ marks/);
+  // The section shows one rendering, the one the apps ship. The second mode and
+  // the control that chose it were a comparison the page does not need to make.
+  assert.doesNotMatch(chapter, /seek-modes|One colour \+ marks|data-mode=/);
   assert.match(chapter, /centroid 0\.00/);
   assert.match(chapter, /level 0\.00/);
-  assert.equal((chapter.match(/data-seek-legend=/g) ?? []).length, 3);
-  for (const heading of ['Height — the body', 'Colour — the frequency', 'Marks — the sections']) {
+  assert.equal((chapter.match(/data-seek-legend=/g) ?? []).length, 2);
+  for (const heading of ['Height — the body', 'Colour — the frequency']) {
     assert.match(chapter, new RegExp(heading));
   }
   assert.doesNotMatch(chapter, /role="slider"|aria-valuemin|aria-valuemax|scrub|five-second/);
-  assert.match(chapter, /<fieldset class="seek-modes"><legend[^>]*>Seek bar rendering<\/legend>/);
-  assert.doesNotMatch(chapter, /<fieldset[^>]+aria-label/);
-  assert.match(css, /\.seek-modes button\[aria-pressed=true\]/);
-  assert.match(css, /\.seek-modes legend\{[^}]*clip-path:inset\(50%\)/);
   assert.match(css, /\.seek-track__canvas-frame\{[^}]*height:148px/);
   assert.match(css, /prefers-reduced-motion:reduce/);
 });
@@ -52,9 +49,7 @@ test('the measured canvases draw only through the shared visible-frame owner', a
   assert.match(choreography, /addEventListener\(SEEK_FRAME_EVENT, schedule\)/);
   assert.doesNotMatch(renderer, /requestAnimationFrame/);
   assert.match(renderer, /if \(!renderer\.isVisible\(\)\) continue/);
-  assert.match(renderer, /const renderMode = hero \? 'fill' : selectedMode/);
-  assert.match(renderer, /SINGLE_COLOUR = '#4fdbd4'/);
-  assert.match(renderer, /if \(renderMode === 'marks'\)/);
+  assert.doesNotMatch(renderer, /selectedMode|SINGLE_COLOUR|'marks'|setMode/);
   assert.match(renderer, /const position = still \? 0/);
   assert.match(loader, /fetch\(SEEK_TRACK_PATH\)/);
   assert.match(loader, /buffer\.byteLength !== SEEK_TRACK_BYTE_COUNT/);

@@ -67,64 +67,81 @@ jeder Re-Run des Effekts machte die Seite damit dauerhaft leer. `prepareReveals`
 überspringt jetzt, was schon gezeigt wurde. **Das war ein echter Fehler, aber
 offenbar nicht der, den der Auftraggeber sieht.**
 
-## Der offene Punkt: beim Auftraggeber verschwindet der Hero-Text
+## Gelöst: der Hintergrund malte über den Text
 
-**Symptom** (vier Screenshots, Brave, Fenster ~2000 px breit): Kopfzeile und
-beide Produktkacheln samt Bildunterschriften sind da, der Visualizer-Teller
-läuft — aber **der gesamte `.hero__copy`-Block fehlt** (Eyebrow, `h1`, Lead,
-Note, Scroll-Cue), ebenso die Wellenform der Hero-Seek-Spur (nur der türkise
-Abspielstrich steht da) und alles unterhalb des Heros. Beim Hochscrollen bleibt
-die Seite leer. Tritt „nach dem Seitenstart" auf und überlebt Reloads.
+**Ursache:** `.backdrop-ground` war `position: fixed; z-index: 0` mit deckender
+Hintergrundfarbe — und liegt im selben Stapelkontext wie der Seiteninhalt
+(`.page` ist `position: relative; z-index: 1`). Nach CSS-Malordnung wird ein
+positioniertes Element mit `z-index: 0` **nach** dem gesamten nicht
+positionierten Fließinhalt gezeichnet. Die Ebene deckte damit jede Überschrift
+und jeden Absatz zu; stehen blieb genau das, was selbst positioniert ist:
+Kopfleiste, Navigation, die Produktkacheln. Kein Compositor-Fehler, keine
+Erweiterung, kein Brave — korrektes CSS mit falscher Ebenenwahl.
 
-### Was ausgeschlossen ist
+Warum es wie „verschwindet nach dem Start" aussah: im Dev-Betrieb wird
+`backdrop.css` erst mit seiner Komponente nachgeladen, der Text ist also kurz zu
+sehen und wird dann zugedeckt.
 
-- **Nicht der Reveal-Fehler oben.** Nachgestellt bei 2000×1090, 1440×900,
-  1000×545 und 390×844, mit Rad-Scrollen und mit `scrollTo`, runter und wieder
-  hoch, mit Lightbox auf/zu davor, und nach einem Hot-Reload: jedes Mal
-  `gestrandet: 0`, `h1` mit `opacity: 1`, nichts Unsichtbares im Blickfeld.
-- **Nicht der falsche Code.** Der Server des Auftraggebers lief aus diesem
-  Worktree — Beleg: in seiner Vollansicht steckte das Canvas im
-  `.lightbox__frame`, und beides gibt es nur in `6b0511681f`.
-- **Nicht meine Portal-Änderung.** `inert`/`aria-hidden`/`overflow` werden beim
-  Schließen nachweislich abgeräumt, der Fokus kehrt zurück.
-- **Nicht der Produktionsbau.** Auf dem gebauten `preview` ist die Seite über
-  alle Kapitel sauber.
+**Fix:** alle drei festen Hintergrundebenen auf `z-index: -1`
+(`showroom/src/components/chrome/backdrop.css`). Wächter:
+`tests/backdrop-design.test.mjs` — jede `position: fixed`-Regel dort muß einen
+negativen `z-index` tragen; Mutationsprobe bestanden.
 
-### Die beiden heißesten Spuren
+**Wie es gefunden wurde:** eine eigene Brave-Instanz mit
+`--remote-debugging-port` und Wegwerf-Profil, darin der Fehler reproduziert
+(also nicht profil- oder erweiterungsgebunden), dann eine Bisektion, die die
+drei Hintergrundebenen nacheinander abschaltet und nach jedem Schritt einen
+Ausschnitt des Hero-Kopfs abgreift. Schritt 3 — Grundfarbe aus — brachte den
+Text zurück.
 
-1. **Brave.** Der einzige unaufgelöste Unterschied. Der Prüfstand fährt Chrome.
-   Brave headless war aus der Sandbox nicht ans Netz zu bekommen (`--screenshot`
-   lief zweimal in den Timeout; mit `dangerouslyDisableSandbox` startet er, hängt
-   aber). Nächster Versuch: `--headless=old`, oder Brave mit
-   `--remote-debugging-port` von Hand starten und von außen ansteuern.
-2. **Die Hero-Geometrie paßt nicht zum CSS.** `.hero__grid` hat
-   `max-width: 78rem` und ist zentriert; bei 2000 px CSS-Breite müßte das Gitter
-   bei x≈376 beginnen und bei x≈1624 enden. Auf dem Screenshot reichen die
-   Kacheln bis x≈1860. Entweder ist das Fenster deutlich breiter als der
-   Screenshot suggeriert (HiDPI/Zoom), oder eine Regel greift dort anders.
-   `.hero__copy` trägt `container-type: inline-size`, und `.hero__headline`
-   bemißt sich in `cqi` — wenn der Container dort anders aufgelöst wird als hier,
-   lohnt ein genauer Blick. **Zuerst `devicePixelRatio` und `innerWidth` des
-   Auftraggebers erfragen.**
+### Drei Fehler, die auf dem Weg dorthin mitgefunden wurden
 
-### Was als nächstes zu tun ist
+| Befund | Reparatur |
+|---|---|
+| Der Dev-Server hydriert gegen ein leeres `#root` — React verwarf bei **jedem** Start den Baum und baute ihn neu | `entry-client.tsx`: `hydrateRoot` nur mit Prerender-Markup, sonst `createRoot` |
+| Der Reveal-Durchlauf kannte nur **einen** Nachzügler-Anlauf nach 400 ms; jede spätere Layout-Änderung ließ Inhalt unsichtbar | `usePageChoreography.ts`: `ResizeObserver` auf der Seite plus `document.fonts.ready` |
+| Eine fehlschlagende Nebenwirkung im Sweep kippte die ganze Warteschlange — alles dahinter blieb für immer versteckt, auch beim Scrollen | `reveal.ts`: erst alle Eintretenden zeigen, dann jede Nebenwirkung einzeln abgesichert |
+| Die Zahlen der Seite standen im Dev-Betrieb auf `0`: der doppelte Effektlauf las die schon genullte Zahl als Ziel | `counters.ts`: `prepareCounter` liest die Zahl genau einmal aus dem Markup |
 
-Der Auftraggeber wurde zweimal um die Konsolenzeile gebeten, hat sie noch nicht
-geliefert. Ohne Zahlen aus *seiner* Seite ist weiteres Raten sinnlos.
+Wächter dazu: `tests/reveal-sweep.test.mjs` (3), `tests/counters.test.mjs` (2),
+beide mit Mutationsprobe. Gates auf der Spitze: `npm test` 42/42, `npm run lint`
+0, `npm run typecheck` 0.
 
-```js
-(()=>{const a=[...document.querySelectorAll('[data-reveal]')];return{gesamt:a.length,sichtbar:a.filter(e=>+getComputedStyle(e).opacity>.5).length,gestrandet:a.filter(e=>e.dataset.shown&&+getComputedStyle(e).opacity<.5).length,ohneShown:a.filter(e=>!e.dataset.shown&&+getComputedStyle(e).opacity<.5).length,h1:getComputedStyle(document.querySelector('h1')).opacity,vp:[innerWidth,innerHeight],dpr:devicePixelRatio,overflow:document.documentElement.style.overflow,inert:document.getElementById('showroom-root').hasAttribute('inert')}})()
-```
+## Refaktorierung: der Frame-Pfad
 
-Lesart: `gestrandet > 0` → doch der Reveal-Weg, nur greift der Fix nicht.
-`ohneShown` hoch bei `h1: "0"` → der Sweep läuft dort gar nicht (Brave bedient
-den Scroll-/rAF-Takt anders). `inert: true` ohne offene Lightbox → doch das
-Portal. `h1: "1"` bei unsichtbarem Text → gar kein Reveal-Problem, sondern
-Schrift, Farbe oder Layout; dann `getBoundingClientRect()` und `color` der
-`h1` nachsehen.
+Gemessen mit einer eigenen Brave-Instanz über CDP: ein gescripteter Lesedurchlauf
+(180 Frames, Scrollen plus Zeigerbewegung) und ein Ladepfad, jeweils Median aus
+drei Läufen. **Frame-Zeiten sind im Dev-Bau rauschdominiert** (max 21 bis 267 ms
+bei identischem Code) — belastbar sind nur die Renderer-Zähler, und die sind auf
+die Einheit reproduzierbar.
 
-Zweite Bitte, die noch offen ist: **dieselbe URL einmal in Chromium oder
-Firefox** öffnen. Ist es dort sauber, ist es Brave.
+| | Layouts | Style-Neuberechnungen | Style-Zeit |
+|---|---|---|---|
+| Ladepfad vorher | 172 | 396 | 74,1 ms |
+| Ladepfad nachher | **86** | **213** | 66,6 ms |
+| Lesedurchlauf vorher | 206 | 573 | 12,6 ms |
+| Lesedurchlauf nachher | 206 | **392** | 9,7 ms |
+
+Vier Eingriffe:
+
+- **`reveal.ts` — Lesen vor Schreiben.** `prepareReveals` und `sweepReveals`
+  maßen ein Element, schrieben Stile, maßen das nächste. Jeder Wechsel erzwingt
+  ein neues Layout; beim Laden trifft das alle 93 Elemente auf einmal. Jetzt
+  erst alle Kästen lesen, dann alle Stile schreiben.
+- **`reveal.ts` — `will-change` nur für das, was sich bewegt.** Vorher bekam die
+  ganze Warteschlange eine Ebenen-Zusage, auch Elemente, die schon an Ort und
+  Stelle stehen und nie animieren.
+- **`usePageChoreography.ts` — Navigationsziele einmal auflösen.** Statt pro
+  Link pro Frame ein `getElementById` über das Dokument.
+- **`usePageChoreography.ts` — Zeigerbewegung in den Frame.** `pointermove`
+  feuert öfter als der Bildschirm zeichnet; der Zeiger merkt sich jetzt nur die
+  Position, geschrieben wird einmal pro Frame. Dazu `scrollHeight` je Frame nur
+  noch einmal, ungültig gemacht vom `ResizeObserver`.
+
+**Favicon:** `public/brand/favicon.svg` lag längst da, war aber nie verlinkt —
+daher der `favicon.ico`-404 in jeder Konsole. `index.html` verlinkt sie jetzt
+als `icon` und `apple-touch-icon`; Vite setzt beim Bauen die Basis `/reprise/`
+davor (im `dist/index.html` nachgeprüft).
 
 ## Was bewußt liegen bleibt
 

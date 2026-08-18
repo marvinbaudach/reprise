@@ -112,52 +112,6 @@
     "wght" 560;
 }
 
-.seek-modes {
-  display: flex;
-  gap: 6px;
-  padding: 4px;
-  border: 1px solid oklch(30% 0.018 269);
-  border-radius: 999px;
-  background: oklch(14% 0.016 269 / 0.8);
-}
-
-.seek-modes legend {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.seek-modes button {
-  border: 0;
-  border-radius: 999px;
-  padding: 8px 16px;
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  background: transparent;
-  color: oklch(70% 0.009 269);
-  transition:
-    background-color 300ms ease,
-    color 300ms ease;
-}
-
-.seek-modes button[aria-pressed="true"] {
-  background: oklch(28% 0.03 195);
-  color: oklch(96% 0.006 195);
-}
-
-.seek-modes button:focus-visible {
-  outline: 2px solid var(--brand-teal);
-  outline-offset: 2px;
-}
-
 .seek-card__canvas {
   position: relative;
   padding-block: 10px;
@@ -273,10 +227,4 @@
   font-family: var(--font-mono);
   font-size: 0.68rem;
   color: oklch(68% 0.011 269);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .seek-modes button {
-    transition: none;
-  }
 }

@@ -88,9 +88,18 @@
     );
 }
 
+/*
+ * The sheen never reaches full strength. At `opacity: 1` the specular highlight
+ * washed out the screenshot underneath — and the screenshot is the point of the
+ * tile. One knob so the strength stays adjustable without touching the gradients.
+ */
+.shot-tile__sheen {
+  --sheen-peak: 0.62;
+}
+
 .shot-tile:hover .shot-tile__sheen,
 .shot-tile:focus-visible .shot-tile__sheen {
-  opacity: 1;
+  opacity: var(--sheen-peak);
 }
 
 .shot-tile__caption {
