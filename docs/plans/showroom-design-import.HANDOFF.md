@@ -1,11 +1,11 @@
-# Handover — Showroom: der Design-Import steht, der Review liegt zur Auswahl
+# Handover — Showroom: die Reparaturrunde ist drin, der Stapel wartet aufs Landen
 
-Stand: 18.08.2026, 17:38. Geschrieben für eine frische Sitzung nach `/clear`.
-**Es läuft nichts mehr.** Kein Codex, kein Dev-Server, keine offenen Agenten.
+Stand: 18.08.2026, 18:20. Geschrieben für eine frische Sitzung nach `/clear`.
+**Es läuft nichts mehr.** Kein Codex, kein Preview-Server, keine offenen Agenten.
 
 ## Wo die Arbeit steht
 
-Drei Zweige, aufeinander gestapelt, **18 Commits über `origin/dev`**:
+Drei Zweige, aufeinander gestapelt, **19 Commits über `origin/dev`**:
 
 ```
 origin/dev
@@ -15,7 +15,7 @@ origin/dev
 ```
 
 Worktree der Spitze: `/home/marvin/Projects/reprise-showroom-design-import`,
-HEAD `720e26746c`.
+HEAD `d41c235fa5`.
 
 Der Auftraggeber hat entschieden: **alles in einem Rutsch landen**, in genau
 dieser Reihenfolge. Nichts ist gepusht.
@@ -26,67 +26,72 @@ dieser Reihenfolge. Nichts ist gepusht.
 | Seek-Spur | fertig, nachgemessen (siehe Belege) |
 | Design-Import | **alle neun Stufen gebaut**, Plan auf `phase: reviewed` |
 
-## Der einzige offene Punkt: die Auswahl aus dem Review
+## Was seit dem Review passiert ist
 
-Vier Reviewer (typescript, react, rust, security) sind gegen den ganzen Stapel
-gelaufen, Basis `bf546d6cc8`. **Kein kritischer Befund. Security: Freigabe.**
-Der Auftraggeber hat noch **nicht** gesagt, welche Befunde repariert werden —
-das ist die erste Frage der nächsten Sitzung.
+Der Auftraggeber hat **die sechs empfohlenen Befunde** ausgewählt; sie sind
+repariert — nicht von Codex (dessen Wochenkontingent stand bei 2 %), sondern in
+der Hauptschleife. Commit `d41c235fa5` auf `feature/showroom-design-import`.
 
-### Wichtig (4)
+| Befund | Reparatur |
+|---|---|
+| `seekTrack.ts` merkt sich den Fehlschlag | `pendingTrack` wird im `catch` zurückgesetzt |
+| Seite hinter dem Dialog nicht `inert` | Lightbox rendert per Portal auf `<body>`, `#showroom-root` bekommt `inert` + `aria-hidden` |
+| Zoom-Rücksetzung einen Rahmen zu spät | Zoomzustand hängt am Bildindex, der Effekt ist weg |
+| `let _ = cr.paint()` | `cr.paint().unwrap()` |
+| Schließ-Hintergrund in der Tab-Reihenfolge | `tabIndex={-1}`, und die Fokusfalle zählt `tabindex="-1"`-Knöpfe nicht mehr mit |
+| `fieldset` mit `aria-label` | sichtbar verborgene `<legend>` |
 
-1. **`showroom/src/lib/seekTrack.ts:28`** — `loadSeekTrack()` merkt sich das
-   Versprechen auch im Fehlerfall. Ein einziger geplatzter `fetch` liefert
-   jedem späteren Aufrufer dieselbe Absage; beide Seek-Flächen zeigen bis zum
-   Neuladen „Measured track unavailable". Fix: `pendingTrack` im `catch`
-   zurücksetzen, bevor der Fehler weitergereicht wird.
-2. **`showroom/src/components/showcase/Lightbox.tsx:101`** — die Seite hinter
-   dem Dialog bekommt kein `inert`/`aria-hidden`. Die Tastaturfalle greift,
-   der Lesecursor eines Screenreaders läuft trotzdem in Kopf- und Fußzeile,
-   während `aria-modal="true"` das Gegenteil behauptet.
-3. **`Lightbox.tsx:30`** — die Zoom-Rücksetzung hängt an einem Effekt auf
-   `activeIndex` und kommt damit ein Bild zu spät: hineinzoomen, Pfeiltaste,
-   und das nächste Bild blitzt auf 2,1× am alten Ursprung auf. Fix: den Zoom
-   an den Index binden (`zoom.index === activeIndex`) statt an einen bloßen
-   Wahrheitswert.
-4. **`crates/reprise-gnome/src/ui/now_playing/song_visualizer_tests.rs:116`** —
-   `let _ = cr.paint();` verschluckt den Cairo-Fehler; danach wird auf eine
-   undefinierte Fläche gezeichnet und geschrieben, als wäre nichts. Drei Zeilen
-   davor und danach schlägt jeder Fehler laut fehl. Nur Diagnosepfad
-   (`REPRISE_VIS_WRITE_RGB=1`), nicht das ausgelieferte Asset.
+**Ein siebter Befund kam bei der Sichtprüfung dazu und ist mit repariert:** das
+Lightbox-Bild wurde beschnitten statt eingepaßt. Die `width`/`height`-Attribute
+wirken als gesetzte Größen, die `max-width`/`max-height` nur beschneiden, und
+der Zoom-Knopf, den der Port um das Bild gelegt hat (die Vorlage hatte das
+`<img>` als direktes Flex-Kind), hatte keine aufgelöste Höhe. Fix:
+`width:auto;height:auto` am Bild, `height:100%` am Knopf.
 
-### Klein (7)
+### Was liegen bleibt
 
-Unabbrechbare rAF-Schleife in `counters.ts` · ungetrackter `setTimeout` in
-`reveal.ts` · Ref-Zuweisung im Render-Körper von `MeasuredSeekTrack.tsx:54` ·
-kein `AbortController` auf dem geteilten Seek-`fetch` · `fieldset` mit
-`aria-label` statt `<legend>` (`MeasuredSeekTrack.tsx:202`) · der unsichtbare
-Schließ-Hintergrund der Lightbox liegt in der Tab-Reihenfolge
-(`Lightbox.tsx:131`, Fix: `tabIndex={-1}`) · `u32::try_from`-Panik bei
-absurden Spieldauern (`waveform.rs:456`).
+Die fünf kleinen Befunde aus dem Review, bewußt nicht angefaßt: unabbrechbare
+rAF-Schleife in `counters.ts`, ungetrackter `setTimeout` in `reveal.ts`,
+Ref-Zuweisung im Render-Körper von `MeasuredSeekTrack.tsx`, kein
+`AbortController` auf dem geteilten Seek-`fetch`, `u32::try_from`-Panik in
+`waveform.rs`.
 
-**Empfehlung der letzten Sitzung:** die vier wichtigen plus die beiden billigen
-Barrierefreiheits-Kleinigkeiten (Tab-Reihenfolge, `<legend>`), Rest liegen
-lassen — auf einer Einzelseite ohne Router folgenlos.
+### Neuer Befund, nicht repariert: die Sprossen brechen auf dem Handy
 
-### Zwei Hinweise ohne Befundcharakter
+Bei 390 px Viewport ist `.rungs__rung` **560 px breit** in einem 347 px breiten
+`.rungs`-Container; alles darüber wird an `body { overflow-x: hidden }`
+abgeschnitten. Die dritte Spalte („CAN PROVE …") ist auf dem Telefon
+unlesbar. Das ist **Bestand des Design-Imports**, nicht der Reparaturrunde, und
+braucht eine Gestaltungsentscheidung (umbrechen? scrollen? stapeln?).
 
-- Die Seite hat **keine CSP**. Bestand schon vorher; GitHub Pages kann keine
-  Header setzen, es ginge nur per `<meta http-equiv>`.
-- Die Plandokumente tragen `/home/marvin/…`-Pfade in ein öffentliches Repo.
-  Bestehende Praxis, aber beim Merge nach `main` dauerhaft sichtbar.
+## Nächster Schritt
 
-## Nächste Schritte
+**Landen**, Reihenfolge Visualizer → Seek-Spur → Design-Import, mit Rebase auf
+das frisch gewordene `dev` dazwischen. `land.sh` liegt unter
+`~/.claude/skills/pipeline/scripts/`. Nichts ist gepusht.
 
-1. **Auswahl einholen**, welche Befunde repariert werden.
-2. **Reparaturrunde an Codex** (`/refactor` oder ein eigener Auftrag im Stil der
-   vier unten). Danach selbst nachfahren: `npm test`, `npm run typecheck`,
-   `npm run lint` im Ordner `showroom/`.
-3. **Landen**, Reihenfolge Visualizer → Seek-Spur → Design-Import, mit Rebase
-   auf das frisch gewordene `dev` dazwischen. `land.sh` liegt unter
-   `~/.claude/skills/pipeline/scripts/`.
+## Belege der Reparaturrunde (18.08., nachmittags)
 
-## Belege dieser Sitzung — alle selbst gefahren, nicht Codex geglaubt
+- **Gates auf der Spitze nach dem Fix:** `npm test` **34/34** (32 vorher, zwei
+  neue Wächter), `npm run typecheck` Exit 0, `npm run lint` Exit 0,
+  `cargo check -p reprise-gnome --tests` Exit 0.
+- **Mutationsprobe:** die `pendingTrack = undefined;`-Zeile entfernt →
+  `tests/seek-track.test.mjs` rot (1 von 2), Zeile zurück → grün. Der Wächter
+  ist ein echter Verhaltenstest: er treibt `loadSeekTrack()` erst durch einen
+  503er und dann durch einen Erfolg.
+- **Sichtprüfung Desktop (1440×900):** Portal hängt an `<body>`,
+  `#showroom-root` trägt `inert` + `aria-hidden`, Fokus liegt auf „Close",
+  Schließ-Hintergrund `tabIndex -1`. Bild 1251×760 im 1381×760-Feld,
+  Seitenverhältnis 1,647 gegen natürliche 1,648 — der Rahmen sitzt am Bild.
+- **Zoom-Befund gemessen:** zoomen → `scale(2.1)`, Pfeil rechts → das nächste
+  Bild kommt im selben Render mit `transform: none` und Ursprung `center`.
+- **Escape:** Lightbox weg, `inert` und `aria-hidden` weg, `overflow`
+  zurückgesetzt, Fokus zurück auf der auslösenden Kachel.
+- **Sichtprüfung Handy (390×844):** Bild 362×221, Verhältnis 1,643, paßt in
+  362×720. Modus-Pille 356 px breit in 390 px, `<legend>` mißt 1×1 px und ist
+  per `clip-path: inset(50%)` verborgen; das `aria-label` am `fieldset` ist weg.
+
+## Belege der Vorsitzung — alle selbst gefahren, nicht Codex geglaubt
 
 - **Seek-Spur:** `seek-track.bin` = 2004 B; Kopf-`u32` = 369 786 ms, und das
   ist auf die Millisekunde die Länge der Quelldatei (`ffprobe`: 369,786 s).
@@ -101,7 +106,26 @@ lassen — auf einer Einzelseite ohne Router folgenlos.
   CH.02, Mosaik, CH.03, CH.04, CH.05, Fußzeile — alles vorhanden und dem
   Entwurf entsprechend.
 
-## Fallen, die diese Sitzung gekostet haben
+## Fallen der Reparaturrunde
+
+- **`cargo check` wird vom Lastregler-Hook still abgefangen.** Kein Fehler, kein
+  Text, Exit 0, leeres Log — es läuft schlicht nicht. Über `heavy-run medium --`
+  fahren, und weil `heavy-run` die stderr des Kindes frißt, das Kind selbst
+  umleiten lassen: `heavy-run medium -- sh -c 'cargo … > log 2>&1'`.
+- **Der sichtbare Chrome kann nicht unter 578 px breit werden**, `set_viewport`
+  meldet trotzdem Erfolg. Ausweg: eine Wegwerf-Seite in `dist/` mit einem
+  `<iframe>` der Zielbreite (gleicher Origin, also greift `contentDocument`);
+  ein `transform: scale()` darauf ändert den inneren Viewport nicht, so paßt
+  auch ein 1440er Rahmen ins Fenster. `dist/` ist ignoriert.
+- **Die Schnappschüsse hinken den DOM-Änderungen hinterher.** Nach einer
+  Layout-Verschiebung zeigt das Bild noch das alte Kapitel, während die
+  Messung schon das neue meldet. Was belegt werden soll, statt dessen per
+  `position: fixed` in den sichtbaren Bereich holen.
+- **`cp` fragt zurück und hängt das Skript auf** (Alias `cp -i`). Für
+  Wiederherstellungen `command cp -f`.
+- **`pkill -f "vite preview"`** trifft die eigene Kommandozeile mit.
+
+## Fallen, die die Vorsitzung gekostet haben
 
 - **Der Design-Export löst die MCP-Sperre.** Die Vorlage liegt jetzt getrackt
   unter `docs/design/reprise-showroom.design.html` (1666 Zeilen) mit
@@ -134,6 +158,7 @@ lassen — auf einer Einzelseite ohne Router folgenlos.
 
 - **Wake-Lock freigegeben.** Für den nächsten unbeaufsichtigten Lauf wieder
   einen nehmen: `wake-lock acquire showroom-design-import "…"`.
-- Die vier Codex-Aufträge dieser Sitzung (Stufen 1–3, 0/4–6, 7–9, Nachleuchten)
-  lagen im Sitzungs-Scratchpad und sind mit ihr weg. Sie sind abgearbeitet; für
-  die Reparaturrunde wird ein neuer geschrieben.
+- Die vier Codex-Aufträge der Vorsitzung (Stufen 1–3, 0/4–6, 7–9, Nachleuchten)
+  lagen im Sitzungs-Scratchpad und sind mit ihr weg; sie sind abgearbeitet.
+- Die Reparaturrunde ging **nicht** an Codex: dessen Wochenkontingent stand bei
+  2 %. Sie wurde in der Hauptschleife programmiert.
