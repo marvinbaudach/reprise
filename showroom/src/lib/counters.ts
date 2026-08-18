@@ -35,6 +35,11 @@ function format(value: number, counter: Counter): string {
 
 /** Parses the figure and zeroes it, unless it is already on screen. */
 export function prepareCounter(element: HTMLElement): void {
+  // The effect behind this runs more than once — strict mode does it on every
+  // mount, a hot reload does it again. The second pass would read the zero the
+  // first one wrote and take it for the target, and the figure would count from
+  // nothing to nothing. The markup is the source of the number exactly once.
+  if (counters.has(element)) return;
   const raw = element.textContent?.trim() ?? '';
   const match = raw.match(NUMBER);
   if (!match || match.index === undefined) return;

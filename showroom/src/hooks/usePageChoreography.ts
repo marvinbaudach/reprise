@@ -136,12 +136,22 @@ export function usePageChoreography(still: boolean): void {
     requestAnimationFrame(schedule);
     const late = window.setTimeout(schedule, 400);
 
+    // A timer is a guess. Anything that changes the height of the page after it
+    // has run — a late webfont, a decoded image, a browser extension restyling
+    // the document — would otherwise leave the elements it moved into view
+    // hidden until the reader scrolls, and a reader who sees an empty page has
+    // no reason to scroll. The observer turns that guess into a fact.
+    const growth = new ResizeObserver(() => schedule());
+    growth.observe(root);
+    document.fonts?.ready.then(schedule).catch(() => undefined);
+
     return () => {
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener(SEEK_FRAME_EVENT, schedule);
       window.clearTimeout(late);
+      growth.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [still]);

@@ -85,24 +85,49 @@ export function sweepReveals(
   onReveal: (element: HTMLElement) => void,
 ): RevealState {
   if (!state.pending.length) return state;
-  const limit = window.innerHeight * TRIGGER_FRACTION;
+  const viewportHeight = window.innerHeight;
+  const limit = viewportHeight * TRIGGER_FRACTION;
+
+  // Read the whole queue before touching anything. Revealing an element writes
+  // styles, and measuring the next one right after forces the layout to be
+  // recomputed — once per element, every frame, for as long as the queue is
+  // long. One read pass costs one layout no matter how many elements it covers.
+  const boxes = state.pending.map((element) => element.getBoundingClientRect());
+
   const rest: HTMLElement[] = [];
+  const entering: { element: HTMLElement; delay: number }[] = [];
   let batch = 0;
 
-  for (const element of state.pending) {
-    const box = element.getBoundingClientRect();
-    if (box.top >= limit) {
-      rest.push(element);
+  for (const [index, element] of state.pending.entries()) {
+    const box = boxes[index];
+    if (!box || box.top >= limit) {
+      if (element) rest.push(element);
       continue;
     }
-    const delay =
-      box.bottom > -window.innerHeight
+    const staged = box.bottom > -viewportHeight;
+    entering.push({
+      element,
+      delay: staged
         ? Math.min(siblingIndex(element), SIBLING_STEP_CAP) * SIBLING_STEP_MS +
           Math.min(batch, BATCH_STEP_CAP) * BATCH_STEP_MS
-        : 0;
-    if (box.bottom > -window.innerHeight) batch += 1;
-    reveal(element, delay);
-    onReveal(element);
+        : 0,
+    });
+    if (staged) batch += 1;
+  }
+
+  for (const { element, delay } of entering) reveal(element, delay);
+
+  // Every element is visible before the first side effect runs, and each side
+  // effect is on its own. A counter or a ratio bar that throws would otherwise
+  // abandon the rest of the queue: those elements stay at `opacity: 0`, the
+  // queue is never handed back, and the next sweep breaks at the same element
+  // again — the page loses everything below the fault, for good.
+  for (const { element } of entering) {
+    try {
+      onReveal(element);
+    } catch (error) {
+      console.error('reveal: a side effect of an entering element failed', error);
+    }
   }
 
   return { pending: rest };

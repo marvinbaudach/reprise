@@ -4,12 +4,18 @@
  * Every blob animates `transform` only, on its own long, prime-ish period, so the
  * three never line up into a visible loop. The whole layer is `mix-blend-mode:
  * screen` over the ground colour: the light adds, it does not paint over.
+ *
+ * All three sit at `z-index: -1`, and that is load-bearing rather than tidy. A
+ * positioned layer at `z-index: 0` paints after every non-positioned in-flow
+ * descendant of the same stacking context — so an opaque ground would cover
+ * every heading and paragraph on the page while leaving the positioned parts
+ * (header, nav, the product tiles) standing. Behind the page means behind it.
  */
 
 .backdrop-ground {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
   background-color: var(--surface-base);
   transition: background-color 1500ms var(--ease-in-out-soft);
@@ -18,7 +24,7 @@
 .backdrop-oil {
   position: fixed;
   inset: -12%;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
   overflow: hidden;
   mix-blend-mode: screen;
@@ -99,7 +105,7 @@
 .backdrop-grain {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
   mix-blend-mode: overlay;
   opacity: var(--grain-opacity);
