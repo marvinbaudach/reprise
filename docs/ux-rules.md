@@ -3060,6 +3060,10 @@ property is set and yet nothing happens.
   is gone too, the top. The rule needs a pre-search anchor to have been taken,
   which happens only on the transition from an empty to a non-empty query:
   clearing facets alone, with no query ever typed, stays with FIL-9.
+  (Revised 2026-08-19: whichever of those places the viewport takes, it is
+  reached in one move — the restoration is never visible as an intermediate
+  position first. The eye lands on the destination, it does not follow the
+  list there.)
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
