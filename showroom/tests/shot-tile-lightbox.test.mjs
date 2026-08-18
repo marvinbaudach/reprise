@@ -113,5 +113,5 @@ test('the full view carries the live plate for the capture that has one', async 
   assert.match(source, /aspectRatio: `\$\{capture\.width\} \/ \$\{capture\.height\}`/);
   // Exactly one capture claims the plate today: the Android Now Playing scene.
   assert.equal((data.match(/visualizer: true/g) ?? []).length, 1);
-  assert.match(data, /id: 'android-visualizer'[\s\S]{0,320}?visualizer: true/);
+  assert.match(data, /id: 'android-visualizer'[\s\S]{0,420}?visualizer: true/);
 });

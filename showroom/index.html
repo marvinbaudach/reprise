@@ -25,11 +25,22 @@
          browser asks for /favicon.ico on every load and gets a 404. -->
     <link rel="icon" type="image/svg+xml" href="/brand/favicon.svg" />
     <link rel="apple-touch-icon" href="/brand/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- The faces are served from this origin (see src/styles/fonts.css). The
+         preload starts them with the document instead of after the stylesheet
+         that declares them, which is what kept the hero shifting. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Martian+Mono:wght@300..600&display=swap"
-      rel="stylesheet"
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/brand/fonts/archivo-latin.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/brand/fonts/martian-mono-latin.woff2"
+      crossorigin
     />
   </head>
   <body>

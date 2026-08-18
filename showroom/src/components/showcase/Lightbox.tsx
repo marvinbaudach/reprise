@@ -1,6 +1,11 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { captureUrl, type ProductCapture } from '../../data/showcase';
+import {
+  captureSrcSet,
+  captureUrl,
+  LIGHTBOX_SIZES,
+  type ProductCapture,
+} from '../../data/showcase';
 import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
 import './lightbox.css';
 
@@ -168,6 +173,8 @@ export function Lightbox({
             <img
               className="lightbox__image"
               src={captureUrl(capture)}
+              srcSet={captureSrcSet(capture)}
+              sizes={LIGHTBOX_SIZES}
               alt={capture.alt}
               width={capture.width}
               height={capture.height}

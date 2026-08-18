@@ -42,7 +42,11 @@ export function ShotTile({
 }: ShotTileProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const [loading, setLoading] = useState(true);
+  // A tile fades its picture in when the file arrives — a reveal that belongs to
+  // the tiles a reader scrolls onto. The two above the fold are loaded eagerly
+  // and are the first thing painted: fading them in only delays the largest
+  // paint by the length of the fade, so they start settled.
+  const [loading, setLoading] = useState(!eager);
 
   useEffect(() => {
     if (imageRef.current?.complete) setLoading(false);
