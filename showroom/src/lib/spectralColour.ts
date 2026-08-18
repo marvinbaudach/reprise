@@ -85,6 +85,13 @@ export function spectralColour(position: number): Rgb {
   return oklabToSrgb([lightness, chroma * Math.cos(hue), chroma * Math.sin(hue)]);
 }
 
+/** Add OKLCH lightness percentage points while preserving hue and chroma. */
+export function liftLightness(colour: Rgb, amount: number): Rgb {
+  const [lightness, a, b] = srgbToOklab(colour);
+  const lift = Number.isFinite(amount) ? Math.max(0, amount) / 100 : 0;
+  return oklabToSrgb([clamp(lightness + lift, 0, 0.99), a, b]);
+}
+
 function halfWindowFrames(frames: number, durationS: number, windowS: number): number {
   if (frames < 2 || !Number.isFinite(durationS) || durationS <= 0) return 0;
   if (!Number.isFinite(windowS) || windowS <= 0) return 0;

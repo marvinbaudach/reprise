@@ -1,7 +1,9 @@
+import { seekBarLight } from './seekLight';
 import type { MeasuredSeekTrack } from './seekTrack';
 import {
   CENTROID_WINDOW_S,
   centroidAt,
+  liftLightness,
   type Rgb,
   sectionBoundaries,
   shapeCentroid,
@@ -123,18 +125,21 @@ export function createSeekRenderer({
     context.clearRect(0, 0, width, height);
     for (let index = 0; index < bars; index += 1) {
       const x = left + index * BAR_STEP_PX;
-      const played = index <= playBar;
+      const light = seekBarLight(index, playBar, pulse);
       if (shaped.silent[index]) {
-        context.fillStyle = played ? 'oklch(70% 0.02 269)' : 'oklch(34% 0.014 269)';
+        context.fillStyle = light.played ? 'oklch(70% 0.02 269)' : 'oklch(34% 0.014 269)';
         context.fillRect(x, middle - 1, BAR_WIDTH_PX, 2);
         continue;
       }
       const barHeight = Math.max(3, (shaped.levels[index] ?? 0) * maximumHeight);
-      context.fillStyle = played
-        ? renderMode === 'fill'
-          ? colourCss(spectralColour(shaped.centroids[index] ?? 0.5))
-          : SINGLE_COLOUR
-        : 'oklch(34% 0.012 269)';
+      context.fillStyle = light.played
+        ? colourCss(
+            liftLightness(
+              spectralColour(renderMode === 'fill' ? (shaped.centroids[index] ?? 0.5) : 1),
+              light.lift,
+            ),
+          )
+        : `oklch(${light.lightness.toFixed(1)}% 0.012 269)`;
       const y = middle - barHeight / 2;
       context.beginPath();
       context.roundRect(x, y, BAR_WIDTH_PX, barHeight, 1);
@@ -156,7 +161,7 @@ export function createSeekRenderer({
     const playheadX = left + position * renderedWidth;
     const playheadColour =
       renderMode === 'fill'
-        ? colourCss(spectralColour(centroidAt(smoothedCentroids, position)))
+        ? colourCss(liftLightness(spectralColour(centroidAt(smoothedCentroids, position)), 6))
         : SINGLE_COLOUR;
     context.save();
     context.shadowColor = playheadColour;

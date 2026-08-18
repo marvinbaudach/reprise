@@ -3,6 +3,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { seekBarLight } from '../src/lib/seekLight.ts';
+
 const showroomRoot = new URL('..', import.meta.url).pathname;
 
 async function builtCss() {
@@ -53,4 +55,20 @@ test('the measured canvases draw only through the shared visible-frame owner', a
   assert.match(renderer, /const position = still \? 0/);
   assert.match(loader, /fetch\(SEEK_TRACK_PATH\)/);
   assert.match(loader, /buffer\.byteLength !== SEEK_TRACK_BYTE_COUNT/);
+});
+
+test('seek bars retain a brighter wake behind and ahead of the playhead', () => {
+  const playBar = 40;
+  const staticPulse = 0.5;
+  const behindNear = seekBarLight(playBar, playBar, staticPulse);
+  const behindFar = seekBarLight(playBar - 14, playBar, staticPulse);
+  const aheadNear = seekBarLight(playBar + 1, playBar, staticPulse);
+  const aheadFar = seekBarLight(playBar + 7, playBar, staticPulse);
+
+  assert.equal(behindNear.played, true);
+  assert.equal(behindFar.played, true);
+  assert.ok(behindNear.lift > behindFar.lift);
+  assert.equal(aheadNear.played, false);
+  assert.equal(aheadFar.played, false);
+  assert.ok(aheadNear.lightness > aheadFar.lightness);
 });
