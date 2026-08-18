@@ -201,7 +201,6 @@ pub fn build(
     super::table_columns::install(&track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
-        let sidebar_for_played = sidebar.clone();
         let track_list_weak = Rc::downgrade(&track_list);
         let refresh = Rc::new(move || {
             if let Some(sidebar) = sidebar.upgrade() {
@@ -219,14 +218,6 @@ pub fn build(
         let on_external_changed =
             super::window_queue_model::refresh_on_model_change(&queue_model, refresh);
         player.add_on_external_changed(move |_| on_external_changed());
-        // Marking an episode played is the one playback event that moves a
-        // database-backed sidebar count (Podcasts/YouTube unplayed), so it
-        // still needs the full refresh the queue path no longer does.
-        player.add_on_episode_played(move || {
-            if let Some(sidebar) = sidebar_for_played.upgrade() {
-                sidebar.refresh("episode played");
-            }
-        });
         let track_list_weak = Rc::downgrade(&track_list);
         player.set_view_refill_provider(move || match track_list_weak.upgrade() {
             Some(track_list) => track_list.transport_refill_view(),
@@ -332,6 +323,9 @@ pub fn build(
         &location_broadcast,
     );
     super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
+    if let Some(player) = &player {
+        source_views.wire_episode_played(player, &sidebar);
+    }
     // The toast layer is attached after the player-bar shell exists so
     // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();

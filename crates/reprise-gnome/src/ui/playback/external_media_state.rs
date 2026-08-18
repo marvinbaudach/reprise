@@ -336,11 +336,10 @@ impl ExternalPlaybackSnapshot {
 type StreamTagsCallback = Rc<dyn Fn(StreamTags)>;
 type ExternalChangedCallback = Rc<dyn Fn(Option<ExternalPlaybackSnapshot>)>;
 type PlayNextCallback = Rc<dyn Fn(EpisodeRow)>;
-/// Fires when an episode is marked played, i.e. when a database-backed count
-/// the sidebar shows has actually changed. Playback alone never moves those
-/// counts, which is why the queue-changed path only patches its own badge —
-/// but *finishing* an episode does, and it needs its own signal.
-type EpisodePlayedCallback = Rc<dyn Fn()>;
+/// Fires when an episode is marked played, i.e. when the sidebar's
+/// database-backed count and the source views' in-memory rows have changed.
+/// Playback alone never moves those values, but *finishing* an episode does.
+type EpisodePlayedCallback = Rc<dyn Fn(i64)>;
 
 #[derive(Default)]
 pub(in crate::ui) struct ExternalPlaybackState {

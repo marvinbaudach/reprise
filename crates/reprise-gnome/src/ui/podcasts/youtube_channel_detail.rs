@@ -378,6 +378,26 @@ impl YoutubeChannelDetail {
         }
     }
 
+    pub(super) fn update_played_state(&self, episode_id: i64, played_at: i64) {
+        let row = {
+            let mut groups = self.groups.borrow_mut();
+            let Some(row) = groups
+                .iter_mut()
+                .flat_map(|group| group.group.episodes.iter_mut())
+                .find(|row| row.id == episode_id)
+            else {
+                return;
+            };
+            row.played_at = Some(played_at);
+            row.position_ms = 0;
+            row.clone()
+        };
+        let widgets = self.download_widgets.borrow().get(&episode_id).cloned();
+        if let Some(widgets) = widgets {
+            podcasts_groups::update_episode_status(&widgets, &row);
+        }
+    }
+
     pub(super) fn set_loaded_limit(&self, subscription_id: i64, limit: usize) {
         self.state
             .borrow_mut()
@@ -709,6 +729,7 @@ impl YoutubeChannelDetail {
         action.set_action_target_value(Some(&episode.id.to_variant()));
         let download_widgets = DownloadRowWidgets {
             root: row.clone(),
+            detail,
             status,
             action,
             marker,
