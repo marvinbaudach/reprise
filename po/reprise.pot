@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-13 15:30+0200\n"
+"POT-Creation-Date: 2026-08-18 18:23+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -446,6 +446,7 @@ msgid "Nothing matches these filters"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:328
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 msgid "Clear filters"
 msgstr ""
 
@@ -681,7 +682,6 @@ msgid "Play next"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:484
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:50
 msgid "Clear"
 msgstr ""
 
@@ -2975,11 +2975,14 @@ msgstr ""
 msgid "Downloaded"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 #: crates/reprise-gnome/src/ui/strings_radio.rs:26
 #: crates/reprise-gnome/src/ui/strings_filter.rs:13
 #: crates/reprise-view/src/strings/browse.rs:7
 msgid "Clear all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:50
+msgid "Clear selection"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:52

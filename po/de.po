@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-13 15:30+0200\n"
+"POT-Creation-Date: 2026-08-18 18:23+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -463,6 +463,7 @@ msgid "Nothing matches these filters"
 msgstr "Nichts entspricht diesen Filtern"
 
 #: crates/reprise-gnome/src/ui/strings.rs:328
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 msgid "Clear filters"
 msgstr "Filter zurücksetzen"
 
@@ -698,7 +699,6 @@ msgid "Play next"
 msgstr "Als Nächstes wiedergeben"
 
 #: crates/reprise-gnome/src/ui/strings.rs:484
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:50
 msgid "Clear"
 msgstr "Leeren"
 
@@ -3093,12 +3093,15 @@ msgstr "Ungespielt"
 msgid "Downloaded"
 msgstr "Heruntergeladen"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 #: crates/reprise-gnome/src/ui/strings_radio.rs:26
 #: crates/reprise-gnome/src/ui/strings_filter.rs:13
 #: crates/reprise-view/src/strings/browse.rs:7
 msgid "Clear all"
 msgstr "Alle löschen"
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:50
+msgid "Clear selection"
+msgstr "Auswahl löschen"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:52
 #, rust-format
