@@ -67,19 +67,18 @@ fn next_playback_session_id() -> PlaybackSessionId {
 }
 
 fn http_status_from_debug(debug: Option<&str>) -> Option<u16> {
-    debug?
-        .as_bytes()
-        .windows(5)
-        .find_map(|window| match window {
-            [b'(', a, b, c, b')']
-                if a.is_ascii_digit() && b.is_ascii_digit() && c.is_ascii_digit() =>
-            {
-                let status =
-                    u16::from(a - b'0') * 100 + u16::from(b - b'0') * 10 + u16::from(c - b'0');
-                (100..=599).contains(&status).then_some(status)
-            }
-            _ => None,
-        })
+    let debug = debug?.trim_start();
+    let reason = debug.split_once(": ").map_or(debug, |(_, reason)| reason);
+    let reason = reason
+        .split_once(',')
+        .map_or(reason, |(reason, _)| reason)
+        .trim_end();
+    let (_, digits) = reason.strip_suffix(')')?.rsplit_once(" (")?;
+    if digits.len() != 3 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let status = digits.parse().ok()?;
+    (100..=599).contains(&status).then_some(status)
 }
 
 pub(crate) fn playback_failure_from_bus(

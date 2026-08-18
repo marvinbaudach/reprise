@@ -84,12 +84,25 @@ fn stream_tags_merge_partial_updates_and_suppress_duplicates() {
 fn gstreamer_debug_http_status_becomes_a_typed_playback_failure() {
     let failure = playback_failure_from_bus(
         "Forbidden",
-        Some("Forbidden (403), URL: https://googlevideo.example/audio"),
+        Some(
+            "../ext/soup/gstsouphttpsrc.c(123): Forbidden (403), URL: https://googlevideo.example/audio",
+        ),
         PlaybackSessionId::from(7),
     );
 
     assert_eq!(failure.kind(), PlaybackFailureKind::HttpStatus(403));
     assert_eq!(failure.session_id(), PlaybackSessionId::from(7));
+}
+
+#[test]
+fn gstreamer_source_location_number_without_a_reason_status_stays_untyped() {
+    let failure = playback_failure_from_bus(
+        "Internal data stream error",
+        Some("../libs/gst/base/gstbasesrc.c(123): Internal data stream error"),
+        PlaybackSessionId::from(7),
+    );
+
+    assert_eq!(failure.kind(), PlaybackFailureKind::Other);
 }
 
 #[test]
