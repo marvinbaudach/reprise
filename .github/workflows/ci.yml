@@ -132,14 +132,16 @@ jobs:
           restore-keys: |
             android-cargo-${{ runner.os }}-
 
-      - name: Run Android source quality
-        run: scripts/check-project-quality.sh --android
-
       - name: Test the shared Android Rust crates
         run: cargo test --locked -p reprise-view -p reprise-android-ffi
 
+      # lintDebug resolves the generated UniFFI Kotlin types, so the
+      # self-contained JVM suite must generate those bindings first.
       - name: Run the Android JVM unit suite
         run: scripts/check-android-suite.sh
+
+      - name: Run Android source quality
+        run: scripts/check-project-quality.sh --android
 
   gnome-suite:
     name: GNOME quality suite
