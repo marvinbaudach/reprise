@@ -757,7 +757,7 @@ fn playback_event_bridge_delivers_ordered_core_events_with_production_generation
     assert_eq!(events[4].generation, StreamGeneration::from(8));
     assert!(matches!(
         &events[4].event,
-        PlayerEvent::Error(message) if message == "decoder failed"
+        PlayerEvent::Error(message) if message.message() == "decoder failed"
     ));
 }
 

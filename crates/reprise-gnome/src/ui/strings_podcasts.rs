@@ -199,6 +199,9 @@ pub const YOUTUBE_BROWSER_OPEN_FAILED: &str =
     N_!("Could not open the selected browser — open youtube.com there manually");
 pub const YOUTUBE_BROWSER_RECOVERY: &str =
     N_!("YouTube needs a signed-in browser — choose one in Plugins");
+pub const YOUTUBE_STREAM_FORBIDDEN: &str = N_!(
+    "YouTube refused this audio stream — retry playback or choose a signed-in browser in Plugins"
+);
 pub const PODCAST_YTDLP: &str = N_!("yt-dlp");
 pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
 pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");

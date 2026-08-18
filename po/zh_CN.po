@@ -3347,6 +3347,10 @@ msgid "YouTube needs a signed-in browser — choose one in Plugins"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:202
+msgid "YouTube refused this audio stream — retry playback or choose a signed-in browser in Plugins"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:202
 msgid "yt-dlp"
 msgstr ""
 

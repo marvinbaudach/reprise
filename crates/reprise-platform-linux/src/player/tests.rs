@@ -2,9 +2,10 @@ use super::*;
 use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
 use crate::player_pipeline::{
     buffered_percent_to_ms, download_buffering_flags, is_remote_playback_uri, merge_stream_tags,
-    BufferingThrottle, AUDIO_SINK_ENV_VAR,
+    playback_failure_from_bus, BufferingThrottle, AUDIO_SINK_ENV_VAR,
 };
 use reprise_core::library::settings::TrackTransition;
+use reprise_core::playback::{PlaybackFailureKind, PlaybackSessionId};
 
 mod cava_tests;
 mod handoff_duration_tests;
@@ -77,6 +78,42 @@ fn stream_tags_merge_partial_updates_and_suppress_duplicates() {
         merge_stream_tags(&complete, Some("Current song".into()), None),
         None
     );
+}
+
+#[test]
+fn gstreamer_debug_http_status_becomes_a_typed_playback_failure() {
+    let failure = playback_failure_from_bus(
+        "Forbidden",
+        Some(
+            "../ext/soup/gstsouphttpsrc.c(123): Forbidden (403), URL: https://googlevideo.example/audio",
+        ),
+        PlaybackSessionId::from(7),
+    );
+
+    assert_eq!(failure.kind(), PlaybackFailureKind::HttpStatus(403));
+    assert_eq!(failure.session_id(), PlaybackSessionId::from(7));
+}
+
+#[test]
+fn gstreamer_source_location_number_without_a_reason_status_stays_untyped() {
+    let failure = playback_failure_from_bus(
+        "Internal data stream error",
+        Some("../libs/gst/base/gstbasesrc.c(123): Internal data stream error"),
+        PlaybackSessionId::from(7),
+    );
+
+    assert_eq!(failure.kind(), PlaybackFailureKind::Other);
+}
+
+#[test]
+fn forbidden_words_without_a_status_code_stay_untyped() {
+    let failure = playback_failure_from_bus(
+        "Internal data stream error",
+        Some("The word Forbidden appears in unrelated diagnostic prose"),
+        PlaybackSessionId::from(7),
+    );
+
+    assert_eq!(failure.kind(), PlaybackFailureKind::Other);
 }
 
 #[test]
