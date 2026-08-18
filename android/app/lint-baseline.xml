@@ -1,0 +1,949 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 9.3.1" type="baseline" client="gradle" dependencies="false" name="AGP (9.3.1)" variant="all" version="9.3.1">
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 33 (current min is 26): `java.lang.ref.Cleaner#create`"
+        errorLine1="    val cleaner = java.lang.ref.Cleaner.create()"
+        errorLine2="                                        ~~~~~~">
+        <location
+            file="src/main/java/uniffi/reprise_android_ffi/reprise_android_ffi.kt"
+            line="1846"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 33 (current min is 26): `java.lang.ref.Cleaner#register`"
+        errorLine1="        JavaLangRefCleanable(cleaner.register(value, cleanUpTask))"
+        errorLine2="                                     ~~~~~~~~">
+        <location
+            file="src/main/java/uniffi/reprise_android_ffi/reprise_android_ffi.kt"
+            line="1849"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 33 (current min is 26): `java.lang.ref.Cleaner.Cleanable#clean`"
+        errorLine1="    override fun clean() = cleanable.clean()"
+        errorLine2="                                     ~~~~~">
+        <location
+            file="src/main/java/uniffi/reprise_android_ffi/reprise_android_ffi.kt"
+            line="1855"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1=") : ForwardingPlayer(player) {"
+        errorLine2="    ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="10"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1=") : ForwardingPlayer(player) {"
+        errorLine2="    ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="10"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun play() {"
+        errorLine2="                 ~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="19"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        if (!wrappedPlayer.playWhenReady) {"
+        errorLine2="             ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="20"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun pause() {"
+        errorLine2="                 ~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="25"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        if (wrappedPlayer.playWhenReady) {"
+        errorLine2="            ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="26"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun setPlayWhenReady(playWhenReady: Boolean) {"
+        errorLine2="                 ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="31"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        if (playWhenReady != wrappedPlayer.playWhenReady) {"
+        errorLine2="                             ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="32"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun seekToNext() {"
+        errorLine2="                 ~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="37"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun seekToNextMediaItem() {"
+        errorLine2="                 ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="41"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun seekToPrevious() {"
+        errorLine2="                 ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="45"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun seekToPreviousMediaItem() {"
+        errorLine2="                 ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoreControlledPlayer.kt"
+            line="49"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {"
+        errorLine2="                 ~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="69"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    override fun handleBuffer(buffer: ByteBuffer) {"
+        errorLine2="                 ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="77"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    private val processor: AudioProcessor,"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="136"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1=") : DefaultRenderersFactory(context) {"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="137"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1=") : DefaultRenderersFactory(context) {"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="137"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    public override fun buildAudioSink("
+        errorLine2="                        ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="138"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    ): AudioSink {"
+        errorLine2="       ~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="142"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        return DefaultAudioSink.Builder(context)"
+        errorLine2="                                ~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="146"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            .setAudioProcessors(arrayOf(processor))"
+        errorLine2="             ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="149"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            .setEnableFloatOutput(false)"
+        errorLine2="             ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="150"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParameters)"
+        errorLine2="             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="151"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            .build()"
+        errorLine2="             ~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="152"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    TrackSelectionParameters.AudioOffloadPreferences ="
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="161"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    TrackSelectionParameters.AudioOffloadPreferences.Builder()"
+        errorLine2="                                                     ~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="162"
+            column="54"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        .setAudioOffloadMode("
+        errorLine2="         ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="163"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED,"
+        errorLine2="                                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="164"
+            column="62"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        .build()"
+        errorLine2="         ~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LivePcmAudio.kt"
+            line="166"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        override fun onAudioSessionIdChanged(audioSessionId: Int) {"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/Media3PlaybackPort.kt"
+            line="93"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            deviceEqualizer.onAudioSessionChanged(player.audioSessionId)"
+        errorLine2="                                                         ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/Media3PlaybackPort.kt"
+            line="102"
+            column="58"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        val player = ExoPlayer.Builder("
+        errorLine2="                               ~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/ReprisePlaybackService.kt"
+            line="75"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink)),"
+        errorLine2="                                          ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/ReprisePlaybackService.kt"
+            line="77"
+            column="43"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())"
+        errorLine2="                 ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/ReprisePlaybackService.kt"
+            line="100"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="ComposableNaming"
+        message="Composable functions that return Unit should start with an uppercase letter"
+        errorLine1="    private fun testNowPlayingSheet("
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/NowPlayingGesturesTest.kt"
+            line="194"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ComposableNaming"
+        message="Composable functions with a return type should start with a lowercase letter"
+        errorLine1="internal fun DriveScene("
+        errorLine2="             ~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/SceneDriver.kt"
+            line="202"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier,"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/LibraryFrame.kt"
+            line="336"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier,"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/TrackCover.kt"
+            line="249"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/ArtistDetailSurfaceTest.kt"
+            line="237"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                    surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/ArtistDetailSurfaceTest.kt"
+            line="272"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/ArtistPortraitSurfaceTest.kt"
+            line="327"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/ArtistPortraitSurfaceTest.kt"
+            line="365"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                    surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/LibraryRatingVisibilityTest.kt"
+            line="70"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        MobileSurfaceViewModel(),"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/NowPlayingQueueTest.kt"
+            line="41"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/TrackContextMenuTest.kt"
+            line="46"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/TrackContextMenuTest.kt"
+            line="104"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        MobileSurfaceViewModel(),"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/TrackContextMenuTest.kt"
+            line="142"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        MobileSurfaceViewModel(),"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/TrackContextMenuTest.kt"
+            line="169"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/TrackContextMenuTest.kt"
+            line="293"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="ViewModelConstructorInComposable"
+        message="Constructing a view model in a composable"
+        errorLine1="                        surfaceState = MobileSurfaceViewModel(),"
+        errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/test/java/de/reprise/spike/TrackContextMenuTest.kt"
+            line="310"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="ChromeOsAbiSupport"
+        message="Missing x86_64 ABI support for ChromeOS"
+        errorLine1="            abiFilters += &quot;arm64-v8a&quot;"
+        errorLine2="                          ~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="38"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="ExportedService"
+        message="Exported service does not require permission"
+        errorLine1="        &lt;service"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="61"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 26. Merge all the resources in this folder into `mipmap-anydpi`.">
+        <location
+            file="src/main/res/mipmap-anydpi-v26"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableLongStateOf` instead of `mutableStateOf`"
+        errorLine1="    private val playbackSettingsRevision = mutableStateOf(0L)"
+        errorLine2="                                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/MainActivity.kt"
+            line="163"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableLongStateOf` instead of `mutableStateOf`"
+        errorLine1="    var dockOfferVersion by mutableStateOf(0L)"
+        errorLine2="                            ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/MobileSurfaceViewModel.kt"
+            line="121"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableLongStateOf` instead of `mutableStateOf`"
+        errorLine1="    var generation by remember { mutableStateOf(0L) }"
+        errorLine2="                                 ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/NowPlayingQueue.kt"
+            line="30"
+            column="34"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.reprise_plate` appears to be unused"
+        errorLine1="    &lt;color name=&quot;reprise_plate&quot;>#33363F&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="6"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.drawable.ic_repeat_sign` appears to be unused"
+        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
+        errorLine2="^">
+        <location
+            file="src/main/res/drawable/ic_repeat_sign.xml"
+            line="3"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_round.png"/>
+    </issue>
+
+    <issue
+        id="IconLauncherShape"
+        message="Launcher icon used as round icon did not have a circular shape">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png">
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher_round.png"/>
+        <location
+            file="src/main/res/mipmap-hdpi/ic_launcher.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png">
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher_round.png"/>
+        <location
+            file="src/main/res/mipmap-mdpi/ic_launcher.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png">
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher_round.png"/>
+        <location
+            file="src/main/res/mipmap-xhdpi/ic_launcher.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png">
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher_round.png"/>
+        <location
+            file="src/main/res/mipmap-xxhdpi/ic_launcher.png"/>
+    </issue>
+
+    <issue
+        id="IconDuplicates"
+        message="The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png">
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"/>
+        <location
+            file="src/main/res/mipmap-xxxhdpi/ic_launcher.png"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.get` instead?"
+        errorLine1="            val argb = bitmap.getPixel(x, y)"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AmbientArtwork.kt"
+            line="68"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        check(preferences.edit().putString(TREE_URI_PREFERENCE, treeUri).commit()) {"
+        errorLine2="              ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidLibrarySessionPort.kt"
+            line="30"
+            column="15"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            Uri.parse(treeUri),"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidLibrarySessionPort.kt"
+            line="37"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val uri = Uri.parse(treeUri)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidLibrarySessionPort.kt"
+            line="43"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val uri = Uri.parse(treeUri)"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidLibrarySessionPort.kt"
+            line="56"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        rememberedTreeUri()?.let { treeUri -> publishListenReport(Uri.parse(treeUri)) }"
+        errorLine2="                                                                  ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidLibrarySessionPort.kt"
+            line="132"
+            column="67"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val documentUri = asDocumentUri(Uri.parse(uri))"
+        errorLine2="                                        ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidSafSource.kt"
+            line="23"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val parentUri = Uri.parse(uri)"
+        errorLine2="                        ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidSafSource.kt"
+            line="42"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        resolver.openFileDescriptor(Uri.parse(uri), &quot;r&quot;)?.detachFd()"
+        errorLine2="                                    ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/AndroidSafSource.kt"
+            line="70"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="    val output = Bitmap.createBitmap(FOG_BITMAP_SIZE, FOG_BITMAP_SIZE, Bitmap.Config.ARGB_8888)"
+        errorLine2="                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoverFogBitmap.kt"
+            line="133"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `Bitmap.get` instead?"
+        errorLine1="            val colour = validSource?.getPixel(sourceX, sourceY) ?: fallbackArgb"
+        errorLine2="                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/CoverFogBitmap.kt"
+            line="149"
+            column="39"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="    val source = Bitmap.createBitmap("
+        errorLine2="                 ^">
+        <location
+            file="src/main/java/de/reprise/spike/CoverShadowBitmap.kt"
+            line="45"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX function `createBitmap` instead?"
+        errorLine1="    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)"
+        errorLine2="                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/FallbackCover.kt"
+            line="21"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        ?.let { runCatching { DocumentsContract.getTreeDocumentId(Uri.parse(it)) }.getOrNull() }"
+        errorLine2="                                                                  ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/FolderLabel.kt"
+            line="26"
+            column="67"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="            if (DocumentsContract.deleteDocument(contentResolver, Uri.parse(uri))) {"
+        errorLine2="                                                                  ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/MainActivity.kt"
+            line="134"
+            column="67"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="                preferences.edit().putBoolean(NOTIFICATION_PERMISSION_ASKED, true).apply()"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/MainActivity.kt"
+            line="595"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        start(MediaItem.fromUri(Uri.parse(uri)))"
+        errorLine2="                                ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/Media3PlaybackPort.kt"
+            line="115"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val files = AndroidListenReportFiles(contentResolver, Uri.parse(treeUri))"
+        errorLine2="                                                              ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/de/reprise/spike/ReprisePlaybackService.kt"
+            line="312"
+            column="63"/>
+    </issue>
+
+</issues>

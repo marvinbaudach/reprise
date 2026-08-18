@@ -32,9 +32,11 @@ emit_routes() {
             crates/*)
                 core=true
                 ;;
-            .github/* | .superpowers/* | docs/* | scripts/* | showroom/* | \
+            .github/* | .superpowers/* | docs/* | quality/* | scripts/* | showroom/* | \
                 AGENTS.md | CODE_OF_CONDUCT.md | CONTEXT.md | LICENSING.md | \
                 README* | RELEASING.md | reprise.doap | .editorconfig | .gitignore)
+                ;;
+            .markdownlint-cli2.jsonc | .yamllint.yaml | ruff.toml)
                 ;;
             *)
                 # An unclassified product path is expensive, but skipping a

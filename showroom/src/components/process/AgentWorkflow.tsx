@@ -34,9 +34,7 @@ export function AgentWorkflow() {
             data-role={'role' in step ? step.role : undefined}
             key={step.label}
           >
-            <span className="data agent-workflow__index">
-              {String(index + 1).padStart(2, '0')}
-            </span>
+            <span className="data agent-workflow__index">{String(index + 1).padStart(2, '0')}</span>
             <strong>{step.label}</strong>
             <span>{step.detail}</span>
           </li>

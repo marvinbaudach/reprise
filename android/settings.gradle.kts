@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "reprise-spike"
 include(":app")
+include(":lint-contract")

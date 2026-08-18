@@ -31,9 +31,9 @@ export function ChapterThree() {
         </p>
 
         <p className="prose">
-          The seek bar is the case in point. The decision: show the structure of the track instead of
-          an empty gutter. The implementation: a portable visuals layer that neither frontend owns.
-          The result: physics that were measured afterwards rather than asserted.
+          The seek bar is the case in point. The decision: show the structure of the track instead
+          of an empty gutter. The implementation: a portable visuals layer that neither frontend
+          owns. The result: physics that were measured afterwards rather than asserted.
         </p>
 
         <details className="fold">

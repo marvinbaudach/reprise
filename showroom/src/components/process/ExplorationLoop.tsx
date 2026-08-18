@@ -25,7 +25,9 @@ export function ExplorationLoop() {
     >
       <header className="process-heading">
         <p className="eyebrow">The unscripted rung</p>
-        <h3 id="exploration-loop-title">The bot chooses the next move. The gate keeps the proof.</h3>
+        <h3 id="exploration-loop-title">
+          The bot chooses the next move. The gate keeps the proof.
+        </h3>
       </header>
 
       <div className="exploration-loop__body">

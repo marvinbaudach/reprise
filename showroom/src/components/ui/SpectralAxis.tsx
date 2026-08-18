@@ -1,4 +1,4 @@
-import { SPECTRAL_AXIS, permalink } from '../../data/measurements';
+import { permalink, SPECTRAL_AXIS } from '../../data/measurements';
 import './ui.css';
 
 /**
@@ -12,7 +12,11 @@ import './ui.css';
 export function SpectralAxis() {
   return (
     <figure className="axis">
-      <div className="axis__ramp" role="img" aria-label="The seek bar ramp, coral through violet to teal" />
+      <div
+        className="axis__ramp"
+        role="img"
+        aria-label="The seek bar ramp, coral through violet to teal"
+      />
       <div className="axis__legend">
         <span className="data axis__end">
           <span className="axis__dot axis__dot--coral" aria-hidden="true" />

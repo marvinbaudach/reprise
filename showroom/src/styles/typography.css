@@ -11,8 +11,8 @@
  */
 
 :root {
-  --font-display: 'Archivo', 'Archivo Expanded', system-ui, sans-serif;
-  --font-mono: 'Martian Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --font-display: "Archivo", "Archivo Expanded", system-ui, sans-serif;
+  --font-mono: "Martian Mono", ui-monospace, "SFMono-Regular", monospace;
 
   --text-eyebrow: 0.6875rem;
   --text-data: 0.75rem;
@@ -24,7 +24,9 @@
 
 .display {
   font-family: var(--font-display);
-  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-variation-settings:
+    "wdth" 118,
+    "wght" 800;
   letter-spacing: -0.025em;
   line-height: 0.92;
   text-wrap: balance;
@@ -38,7 +40,9 @@
 
 .figure-value {
   font-family: var(--font-display);
-  font-variation-settings: 'wdth' 112, 'wght' 700;
+  font-variation-settings:
+    "wdth" 112,
+    "wght" 700;
   font-size: var(--text-figure);
   line-height: 0.9;
   letter-spacing: -0.03em;
@@ -48,7 +52,9 @@
 
 .lead {
   font-family: var(--font-display);
-  font-variation-settings: 'wdth' 92, 'wght' 400;
+  font-variation-settings:
+    "wdth" 92,
+    "wght" 400;
   font-size: var(--text-lead);
   line-height: 1.32;
   color: var(--text-body);
@@ -58,7 +64,9 @@
 
 .prose {
   font-family: var(--font-display);
-  font-variation-settings: 'wdth' 88, 'wght' 350;
+  font-variation-settings:
+    "wdth" 88,
+    "wght" 350;
   font-size: var(--text-body-size);
   line-height: 1.62;
   color: var(--text-body);
@@ -67,7 +75,9 @@
 }
 
 .prose strong {
-  font-variation-settings: 'wdth' 88, 'wght' 600;
+  font-variation-settings:
+    "wdth" 88,
+    "wght" 600;
   color: var(--text-strong);
 }
 

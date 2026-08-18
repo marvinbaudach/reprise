@@ -32,10 +32,9 @@ export function ProductGallery() {
         </p>
       </div>
 
-      <div
+      <section
         className="product-gallery"
         data-layout="editorial-grid"
-        role="region"
         aria-label="Reprise product surfaces"
       >
         <div className="product-gallery__desktop">{desktopCaptures.map(renderCapture)}</div>
@@ -51,7 +50,7 @@ export function ProductGallery() {
           </header>
           <div className="product-gallery__phone-grid">{phoneCaptures.map(renderCapture)}</div>
         </section>
-      </div>
+      </section>
     </div>
   );
 }

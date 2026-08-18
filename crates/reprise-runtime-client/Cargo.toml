@@ -16,8 +16,6 @@ license.workspace = true
 # the contract, so they live in the protocol crate.
 reprise-runtime-protocol = { path = "../reprise-runtime-protocol" }
 zbus = "5"
-zvariant = "5"
-serde = { version = "1", features = ["derive"] }
 async-channel = "2.5.0"
 tracing = "0.1"
 

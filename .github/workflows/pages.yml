@@ -41,6 +41,10 @@ jobs:
         working-directory: showroom
         run: npm ci
 
+      - name: Lint
+        working-directory: showroom
+        run: npm run lint
+
       - name: Typecheck
         working-directory: showroom
         run: npm run typecheck

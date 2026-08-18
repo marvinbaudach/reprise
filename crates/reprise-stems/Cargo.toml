@@ -74,11 +74,6 @@ default-features = false
 version = "4"
 optional = true
 
-# ONNX tensor plumbing, matched to `ort`'s ndarray feature. MIT OR Apache-2.0.
-[dependencies.ndarray]
-version = "0.17"
-optional = true
-
 # Blocking, pure-Rust HTTPS (rustls) for the first-use model download. Same
 # crate/major the engine already uses. Only the real fetcher pulls it in; the
 # download function is otherwise tested through an injected fetcher.
@@ -113,7 +108,6 @@ ort = [
     "dep:symphonia",
     "dep:flacenc",
     "dep:rubato",
-    "dep:ndarray",
     "provision-http",
 ]
 

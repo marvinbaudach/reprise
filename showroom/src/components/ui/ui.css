@@ -117,7 +117,9 @@
 
 .ratio__lines {
   font-family: var(--font-display);
-  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-variation-settings:
+    "wdth" 100,
+    "wght" 650;
   font-variant-numeric: tabular-nums;
   color: var(--text-strong);
   text-align: right;

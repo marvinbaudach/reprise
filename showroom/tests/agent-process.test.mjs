@@ -7,9 +7,7 @@ const showroomRoot = new URL('..', import.meta.url).pathname;
 
 test('chapter two separates authorship, review, refutation, and the human checkpoint', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
-  const workflow = html.match(
-    /<figure[^>]+data-showcase="agent-workflow"[\s\S]+?<\/figure>/,
-  )?.[0];
+  const workflow = html.match(/<figure[^>]+data-showcase="agent-workflow"[\s\S]+?<\/figure>/)?.[0];
 
   assert.ok(workflow);
   assert.equal((workflow.match(/data-role="human-checkpoint"/g) ?? []).length, 1);
@@ -23,9 +21,7 @@ test('chapter two separates authorship, review, refutation, and the human checkp
 
 test('the exploration loop exposes its autonomous actions and real findings', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
-  const loop = html.match(
-    /<figure[^>]+data-showcase="exploration-loop"[\s\S]+?<\/figure>/,
-  )?.[0];
+  const loop = html.match(/<figure[^>]+data-showcase="exploration-loop"[\s\S]+?<\/figure>/)?.[0];
 
   assert.ok(loop);
   for (const action of [
