@@ -5,12 +5,6 @@ use url::Url;
 
 use super::provider::{ProviderEvent, ProviderKind};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ListingWinner {
-    Existing,
-    Incoming,
-}
-
 pub fn normalize_component(value: &str) -> String {
     value
         .trim()
@@ -39,13 +33,12 @@ pub fn merge(artist_key: &str, events: Vec<ProviderEvent>) -> Vec<ProviderEvent>
         let key = dedupe_key(artist_key, &event.date_key, &event.city);
         if let Some(&position) = positions.get(&key) {
             let existing: &ProviderEvent = &merged[position];
-            if listing_winner(
+            if ProviderKind::listing_winner_is_incoming(
                 existing.provider,
                 existing.ticket_url.as_deref(),
                 event.provider,
                 event.ticket_url.as_deref(),
-            ) == ListingWinner::Incoming
-            {
+            ) {
                 merged[position] = event;
             }
             continue;
@@ -56,28 +49,22 @@ pub fn merge(artist_key: &str, events: Vec<ProviderEvent>) -> Vec<ProviderEvent>
     merged
 }
 
-pub(crate) fn listing_winner(
-    existing_provider: ProviderKind,
-    existing_ticket_url: Option<&str>,
-    incoming_provider: ProviderKind,
-    incoming_ticket_url: Option<&str>,
-) -> ListingWinner {
-    if existing_provider == incoming_provider {
-        let existing_is_owned = provider_owns_ticket_url(existing_provider, existing_ticket_url);
-        let incoming_is_owned = provider_owns_ticket_url(incoming_provider, incoming_ticket_url);
-        return if incoming_is_owned && !existing_is_owned {
-            ListingWinner::Incoming
-        } else {
-            ListingWinner::Existing
-        };
-    }
+impl ProviderKind {
+    pub(crate) fn listing_winner_is_incoming(
+        existing_provider: Self,
+        existing_ticket_url: Option<&str>,
+        incoming_provider: Self,
+        incoming_ticket_url: Option<&str>,
+    ) -> bool {
+        if existing_provider == incoming_provider {
+            let existing_is_owned =
+                provider_owns_ticket_url(existing_provider, existing_ticket_url);
+            let incoming_is_owned =
+                provider_owns_ticket_url(incoming_provider, incoming_ticket_url);
+            return incoming_is_owned && !existing_is_owned;
+        }
 
-    if existing_provider == ProviderKind::Ticketmaster
-        && incoming_provider == ProviderKind::Bandsintown
-    {
-        ListingWinner::Incoming
-    } else {
-        ListingWinner::Existing
+        existing_provider == Self::Ticketmaster && incoming_provider == Self::Bandsintown
     }
 }
 

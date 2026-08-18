@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use rusqlite::{params, types::Type, Connection};
 
-use crate::concerts::{dedupe_key, listing_winner, ListingWinner, ProviderKind};
+use crate::concerts::{dedupe_key, ProviderKind};
 
 const SCHEMA_V31: &str = r#"
 CREATE TABLE IF NOT EXISTS concert_artists (
@@ -134,13 +134,12 @@ pub(crate) fn migrate_v76(conn: &Connection) -> Result<(), rusqlite::Error> {
     for listing in listings {
         if let Some(&position) = positions.get(&listing.dedupe_key) {
             let existing = &winners[position];
-            if listing_winner(
+            if ProviderKind::listing_winner_is_incoming(
                 existing.provider,
                 existing.ticket_url.as_deref(),
                 listing.provider,
                 listing.ticket_url.as_deref(),
-            ) == ListingWinner::Incoming
-            {
+            ) {
                 loser_ids.push(existing.id);
                 winners[position] = listing;
             } else {
