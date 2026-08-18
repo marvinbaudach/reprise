@@ -76,7 +76,18 @@ fn provider_owns_ticket_url(provider: ProviderKind, ticket_url: Option<&str>) ->
     ticket_url
         .and_then(|value| Url::parse(value).ok())
         .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        .is_some_and(|host| host.split('.').any(|label| label == expected_label))
+        .is_some_and(|host| registrable_domain_label(&host) == Some(expected_label))
+}
+
+fn registrable_domain_label(host: &str) -> Option<&str> {
+    let mut labels = host.rsplit('.');
+    let top_level = labels.next()?;
+    let candidate = labels.next()?;
+    if top_level.len() == 2 && matches!(candidate, "co" | "com" | "net" | "org") {
+        labels.next()
+    } else {
+        Some(candidate)
+    }
 }
 
 pub fn ticket_source_label(value: &str) -> Option<String> {

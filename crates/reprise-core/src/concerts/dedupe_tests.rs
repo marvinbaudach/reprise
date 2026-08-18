@@ -142,6 +142,23 @@ fn measured_duplicate_pairs_keep_the_provider_owned_ticket_listing() {
 }
 
 #[test]
+fn lookalike_ticketmaster_host_loses_to_the_provider_owned_listing() {
+    let mut lookalike = event(ProviderKind::Ticketmaster, "Lookalike Hall");
+    lookalike.ticket_url = Some("https://ticketmaster.evil.com/event/other".into());
+    let mut provider_owned = event(ProviderKind::Ticketmaster, "Provider Hall");
+    provider_owned.ticket_url = Some("https://tickets.ticketmaster.co.uk/event/real".into());
+
+    let rows = merge("Lorna Shore", vec![lookalike, provider_owned]);
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].venue, "Provider Hall");
+    assert_eq!(
+        rows[0].ticket_url.as_deref(),
+        Some("https://tickets.ticketmaster.co.uk/event/real")
+    );
+}
+
+#[test]
 fn ticket_source_uses_known_domains_and_a_readable_fallback() {
     assert_eq!(
         ticket_source_label("https://tickets.eventim.de/show"),
