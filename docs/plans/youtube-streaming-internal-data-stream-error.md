@@ -2,7 +2,7 @@
 slug: youtube-streaming-internal-data-stream-error
 worktree: /home/marvin/Projects/reprise-youtube-streaming-internal-data-stream-error
 branch: feature/youtube-streaming-internal-data-stream-error
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
