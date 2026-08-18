@@ -191,6 +191,13 @@ pub(in crate::ui) fn reanchor_on_track(
 /// Computes the scroll offset that vertically centers `track_id` after a
 /// filter change. Returns `None` when no playing track exists, the track is
 /// outside the new view, or the whole list fits in the viewport.
+///
+/// Test-only since the centering occasions were folded into
+/// `track_reveal::reveal_position`, which resolves its own geometry from the
+/// live widget. What is left here is the display tests' oracle: they hold a
+/// row height and a page size already and want the target those imply,
+/// independently of the widget that produced them.
+#[cfg(test)]
 pub(in crate::ui) fn centered_track_scroll_target(
     track_id: Option<i64>,
     current_ids: &[i64],

@@ -128,7 +128,7 @@ fn nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one() {
 
     // The running track sits centred, the way playback leaves it.
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, 100, 8);
+    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, 100, 8, crate::ui::track_list::track_reveal::RevealMotion::Glide, None);
     let playing_centre = centered_value_for(&track_list, playing_id).unwrap();
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
         (adjustment.value() - playing_centre).abs() < 1.0

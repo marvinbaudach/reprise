@@ -252,11 +252,20 @@ fn restore_reload_anchor(
         if playing_track_id.is_some_and(|track_id| current_ids.contains(&track_id)) {
             if matches!(viewport, ReloadViewport::CenterPlayingElsePreSearch) {
                 shared.pre_search.take();
-                if let Some(hold) = hold {
-                    hold.release_now();
-                }
             }
-            super::centered_scroll_restore::schedule(shared, playing_track_id, current_ids);
+            // The guard is not created here: it belongs to the moment the
+            // centered value is known, which is inside the reveal. A guard
+            // armed earlier has nothing to defend but the offset the cleared
+            // list happens to sit at, and it fights the view over that —
+            // measured as a restore that moved through 482.0 twice before it
+            // settled. The caller's guard, when it has one, is handed down so
+            // the reveal retargets it instead of adding a second.
+            super::centered_scroll_restore::schedule(
+                shared,
+                playing_track_id,
+                current_ids,
+                hold.cloned(),
+            );
             return;
         }
     }
@@ -349,7 +358,9 @@ pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
     };
     shared.selection.unselect_all();
     shared.selection.select_item(position as u32, false);
-    super::centered_scroll_restore::schedule(shared, Some(track_id), current_ids);
+    // START-3 needs no guard: nothing swapped the model out from under
+    // this view, so no allocation pass is holding an offset to write back.
+    super::centered_scroll_restore::schedule(shared, Some(track_id), current_ids, None);
 }
 
 /// Sets `shared.filter` and reloads — the one place that mutates the filter

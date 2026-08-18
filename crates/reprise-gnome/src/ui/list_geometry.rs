@@ -495,10 +495,6 @@ impl ListGeometry {
         Some(self.row_height(db, cache))
     }
 
-    pub(in crate::ui) fn live_row_height(&self, n_rows: usize) -> Option<RowHeight> {
-        let adjustment = self.view.vadjustment()?;
-        self.settled_row_height(adjustment.upper(), n_rows)
-    }
 
     pub(in crate::ui) fn content_height(
         &self,

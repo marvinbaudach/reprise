@@ -408,7 +408,7 @@ fn record_viewport_steps(adjustment: &gtk4::Adjustment) -> gtk4::glib::SignalHan
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_16_clearing_after_a_play_hops_through_an_intermediate_position() {
+fn search_16_clearing_after_a_play_reaches_the_track_in_one_step() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let stage = clear_search_stage();
@@ -433,30 +433,28 @@ fn search_16_clearing_after_a_play_hops_through_an_intermediate_position() {
     )
     .expect("the cleared list must have a centered target");
 
-    // The control arm, asserting the defect on purpose. Two moves: the edge
-    // snap brings the row minimally into view, and the centering refinement
-    // that follows moves it the rest of the way. The second move is the hop
-    // the user reported, and the first one is ours — measured 2026-08-19 as
-    // `centered.scroll_to 3026.0` then `centered.changed.apply 2923.5`.
-    //
-    // This is what makes the rebuild that follows measurable rather than
-    // hopeful: with the snap behind the centering attempts instead of in
-    // front of them, this becomes one move and the test says so.
+    // The control arm, now the other way round. As committed one revision
+    // earlier this asserted two steps and passed: `centered.scroll_to 3026.0`
+    // — the edge snap — followed by `centered.changed.apply 2923.5`. With the
+    // snap moved behind the centering attempts there is one step left.
     assert_eq!(
         steps.len(),
-        2,
-        "the control arm must see the two-step restore it was built for; if \
-         it does not, the diagnosis behind the rebuild is wrong: {steps:?}"
+        1,
+        "clearing the search must reach the loaded track in one move, not \
+         through an intermediate position: {steps:?}"
     );
-    assert_eq!(
-        steps[0].writer, "centered.scroll_to",
-        "the intermediate position must be our own edge snap — an unclaimed \
-         value would mean GTK's allocation pass writes it, which no rebuild \
-         of this path can fix: {steps:?}"
-    );
+    let step = &steps[0];
     assert!(
-        (steps[1].value - expected).abs() <= row_height,
-        "the restore must still end on the centered target {expected}: {steps:?}"
+        (step.value - expected).abs() <= row_height,
+        "the single move must land on the centered target {expected}: {steps:?}"
+    );
+    // Names the writer, not just the count: gliding to the target would also
+    // arrive in one recorded step whenever the distance is too long to
+    // animate, and gliding is exactly what this occasion must not do.
+    assert_eq!(
+        step.writer, "centered.reveal.instant",
+        "a restore after a model swap must be written in one step, not \
+         animated: {steps:?}"
     );
 
     stage.window.close();
@@ -533,9 +531,10 @@ fn start_3_centering_the_loaded_track_reaches_it_in_one_step() {
         (steps[0].value - expected).abs() <= row_height,
         "the single move must land on the centered target {expected}: {steps:?}"
     );
-    assert!(
-        steps[0].writer.starts_with("centered."),
-        "the centering path must own the move: {steps:?}"
+    assert_eq!(
+        steps[0].writer, "centered.reveal.instant",
+        "the start places the viewport in one written step, not a glide: \
+         {steps:?}"
     );
 
     window.close();

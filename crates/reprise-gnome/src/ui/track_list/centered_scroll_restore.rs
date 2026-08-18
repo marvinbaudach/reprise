@@ -1,105 +1,54 @@
-//! Deferred centering for playing-track reveals.
+//! Centering the playing track after a model reload.
+//!
+//! Two things happen on this occasion, and only the first belongs here:
+//! resolving *which* row, and then moving the viewport onto it. The move is
+//! `track_reveal::reveal_position` — the same function the jump path uses, at
+//! the motion this occasion needs.
+//!
+//! It used to be a second implementation of that move, and the copy differed
+//! in exactly one respect: what it did when the rebuilt list had no settled
+//! geometry yet. It registered two refinements and then snapped the row to the
+//! nearest viewport edge, so a restore that could not centre on its first try
+//! moved the list twice — once to the edge, once to the centre. That second
+//! move is the hop SEARCH-16 now rules out. The floor the snap provided is
+//! kept, behind the attempts instead of in front of them.
+//!
+//! ## Why this occasion does not claim `track_reveal_pending`
+//!
+//! The jump path sets that marker before it yields, so a reload landing in the
+//! same main-loop turn can see the viewport is already spoken for and anchor
+//! on the reveal's destination rather than on the frame it is passing through
+//! (`track_list_reload::capture_reload_anchor`). The marker exists for reloads
+//! to read. This *is* the reload, so claiming it would only make the next
+//! capture anchor on a centering this same reload started — a reload waiting
+//! on itself.
 
-use std::cell::Cell;
 use std::rc::Rc;
 
-use gtk4::prelude::{AdjustmentExt, ScrollableExt};
-
+use super::track_reveal::RevealMotion;
 use super::Shared;
-use crate::ui::list_geometry::{ContentHeight, ListGeometry, RowHeightSource};
+use crate::ui::adjustment_hold::AdjustmentHold;
 
-pub(super) fn schedule(shared: &Rc<Shared>, track_id: Option<i64>, current_ids: Vec<i64>) {
+/// Same budget as the jump path (`current_track_selection`): enough idle
+/// rounds for a rebuilt list to allocate, and few enough that a list which
+/// never settles reaches its visibility floor promptly.
+const RESTORE_ATTEMPTS: u8 = 8;
+
+pub(super) fn schedule(
+    shared: &Rc<Shared>,
+    track_id: Option<i64>,
+    current_ids: Vec<i64>,
+    hold: Option<AdjustmentHold>,
+) {
     let anchor = track_id.map(|track_id| (track_id, 0.0));
     let Some(position) = super::reload_restore::prepaint_position(anchor, &current_ids) else {
         return;
     };
-    if apply(shared, track_id, &current_ids, "centered.initial.apply") {
-        return;
-    }
-    let Some(adjustment) = shared.column_view.vadjustment() else {
-        return;
-    };
-    let generation = shared.model.generation();
-    let applied = Rc::new(Cell::new(false));
-
-    let weak_shared = Rc::downgrade(shared);
-    let changed_ids = current_ids.clone();
-    let changed_applied = applied.clone();
-    crate::ui::list_geometry_changed::after_changed_once(&adjustment, move || {
-        if changed_applied.get() {
-            return;
-        }
-        let Some(shared) = weak_shared.upgrade() else {
-            return;
-        };
-        if shared.model.generation() == generation
-            && apply(&shared, track_id, &changed_ids, "centered.changed.apply")
-        {
-            changed_applied.set(true);
-        }
-    });
-
-    // A stable adjustment range emits no `changed`. Its row allocation still
-    // settles in the pending redraw, so refine once after that frame as well.
-    let weak_shared = Rc::downgrade(shared);
-    gtk4::glib::idle_add_local_once(move || {
-        if applied.get() {
-            return;
-        }
-        let Some(shared) = weak_shared.upgrade() else {
-            return;
-        };
-        if shared.model.generation() == generation
-            && apply(&shared, track_id, &current_ids, "centered.idle.apply")
-        {
-            applied.set(true);
-        }
-    });
-
-    let scroll = gtk4::ScrollInfo::new();
-    scroll.set_enable_vertical(true);
-    crate::ui::scroll_probe::probe_scroll_to("centered.scroll_to", &adjustment, position);
-    shared
-        .column_view
-        .scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
-}
-
-fn apply(shared: &Shared, track_id: Option<i64>, current_ids: &[i64], writer: &str) -> bool {
-    let Some(adjustment) = shared.column_view.vadjustment() else {
-        return false;
-    };
-    let page = adjustment.page_size();
-    let n_sections = shared.queue_sections.borrow().len();
-    let (content, row_source, header_source) = ListGeometry::for_view(&shared.column_view)
-        .content_height(
-            &shared.conn,
-            &shared.list_geometry_cache,
-            current_ids.len(),
-            n_sections,
-        );
-    let measured = row_source == RowHeightSource::Measured
-        && header_source.is_none_or(|source| source == RowHeightSource::Measured);
-    if let ContentHeight::Known(pixels) = content {
-        if measured && pixels <= page {
-            return true;
-        }
-    }
-    let Some(height) = ListGeometry::for_view(&shared.column_view)
-        .live_row_height(current_ids.len())
-        .map(crate::ui::list_geometry::RowHeight::pixels)
-    else {
-        return false;
-    };
-    let Some(value) =
-        super::reload_restore::centered_track_scroll_target(track_id, current_ids, height, page)
-    else {
-        return false;
-    };
-    crate::ui::scroll_probe::probe(writer, &adjustment, value);
-    debug_assert!(
-        !crate::ui::list_geometry_changed::in_changed_emission(),
-        "centered scroll written from inside a changed emission"
+    super::track_reveal::reveal_position(
+        shared,
+        position,
+        RESTORE_ATTEMPTS,
+        RevealMotion::Instant,
+        hold,
     );
-    adjustment.set_value(value);
-    true
 }

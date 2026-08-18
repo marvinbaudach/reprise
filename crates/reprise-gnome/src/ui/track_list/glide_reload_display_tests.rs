@@ -64,7 +64,7 @@ fn nav_10b_a_scan_reload_mid_glide_does_not_strand_the_follow() {
 
     // Somewhere in the middle, so the reload has a viewport worth preserving.
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, 100, 8);
+    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, 100, 8, crate::ui::track_list::track_reveal::RevealMotion::Glide, None);
     let (_, start) = crate::ui::scroll_center::centered_scroll_target(
         &track_list.shared.column_view,
         track_list.shared.model.n_items(),
@@ -82,7 +82,7 @@ fn nav_10b_a_scan_reload_mid_glide_does_not_strand_the_follow() {
         115,
     )
     .unwrap();
-    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, 115, 8);
+    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, 115, 8, crate::ui::track_list::track_reveal::RevealMotion::Glide, None);
     assert_eq!(
         track_list.shared.scroll_glide.destination(),
         Some(target),

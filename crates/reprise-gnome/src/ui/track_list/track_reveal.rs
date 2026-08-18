@@ -21,6 +21,7 @@
 //!   perfectly ordinary answer and silently scrolls somewhere else.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 
@@ -28,6 +29,8 @@ use super::current_track_selection::{
     visible_position_for_track_in_source, CurrentTrackChange, USER_SCROLL_GRACE,
 };
 use super::Shared;
+use crate::ui::adjustment_hold::AdjustmentHold;
+use crate::ui::list_geometry::{ContentHeight, ListGeometry, RowHeightSource};
 use reprise_core::view_source::ViewSource;
 
 pub(super) fn defer(
@@ -98,7 +101,7 @@ fn reveal(
         return;
     };
 
-    if reveal_position(shared, position, attempts) {
+    if reveal_position(shared, position, attempts, RevealMotion::Glide, None) {
         record_reveal(shared, track_id, Some(position), change, "centered");
         tracing::info!(track_id, position, ?change, "current track centered");
         return;
@@ -145,15 +148,52 @@ fn record_reveal(
         });
 }
 
-/// Brings row `position` to the vertical centre, gliding rather than jumping so
-/// a reveal reads as movement and a user scroll can take the viewport back
-/// mid-flight. Retries on its own while the list has no usable geometry yet.
+/// How long the guard defends a centered value against the view's own
+/// handover. Same window `track_list_reload` gives the anchor restore: a model
+/// swap plus its allocation pass, not a moving target.
+const CENTERING_HANDOVER: Duration = Duration::from_millis(250);
+
+/// How the viewport travels to the row.
+///
+/// The two occasions that centre a row want opposite things, and the
+/// difference is not taste. A track change happens under a list that stays
+/// put, so movement is what tells the user the table followed the music, and
+/// a scroll of their own can take the viewport back mid-flight. Every occasion
+/// that follows a *model swap* happens under a list that was just replaced;
+/// there, visible travel is not a reveal but the hop SEARCH-16 forbids, so the
+/// destination is written in one step.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum RevealMotion {
+    Glide,
+    Instant,
+}
+
+/// Brings row `position` to the vertical centre. Retries on its own while the
+/// list has no usable geometry yet, and falls back to plain visibility once
+/// the attempts are spent.
 ///
 /// Split out from [`reveal`] because the two answer different questions:
 /// *which* row (resolved fresh against the live view, see the module comment)
-/// and *how the viewport gets there*. Returns whether it reached a target;
-/// `false` means the geometry was not ready and a retry was queued.
-pub(super) fn reveal_position(shared: &Rc<Shared>, position: u32, attempts: u8) -> bool {
+/// and *how the viewport gets there*. Returns whether the viewport is settled
+/// — centred, or already showing everything there is to show; `false` means a
+/// retry was queued or the attempts ran out.
+///
+/// Both centring occasions end here, and that is the point. They used to be
+/// two implementations of the same arithmetic that differed only in what they
+/// did when the geometry was not ready yet: this one retried, the reload path
+/// snapped the row to the viewport edge *first* and refined afterwards. That
+/// snap is why clearing a search moved the list twice.
+///
+/// `hold` is the reload's guard on the adjustment, for occasions that have one
+/// (see `track_list_reload`). Centring retargets it rather than writing behind
+/// its back, so the value written here is the one the guard then defends.
+pub(super) fn reveal_position(
+    shared: &Rc<Shared>,
+    position: u32,
+    attempts: u8,
+    motion: RevealMotion,
+    hold: Option<AdjustmentHold>,
+) -> bool {
     let n_rows = shared
         .column_view
         .model()
@@ -161,19 +201,108 @@ pub(super) fn reveal_position(shared: &Rc<Shared>, position: u32, attempts: u8) 
     if let Some((adjustment, value)) =
         crate::ui::scroll_center::centered_scroll_target(&shared.column_view, n_rows, position)
     {
-        shared.scroll_glide.glide_to(&adjustment, value);
+        match motion {
+            RevealMotion::Glide => shared.scroll_glide.glide_to(&adjustment, value),
+            RevealMotion::Instant => {
+                debug_assert!(
+                    !crate::ui::list_geometry_changed::in_changed_emission(),
+                    "centered scroll written from inside a changed emission"
+                );
+                // A view whose model was just replaced writes its own offset
+                // during the allocation pass that follows — measured at 6460.0
+                // and at 0.0 over an otherwise clean centered write. Two
+                // things keep that write from becoming a second visible
+                // position, and both are needed: naming the row steers it to
+                // the row instead of to whatever offset the view remembered,
+                // and a guard carrying the centered value corrects the
+                // remaining difference before the frame. The guard is armed
+                // *first*, so the write `scroll_to` may trigger is already
+                // covered when it lands.
+                let guard = hold.unwrap_or_else(|| AdjustmentHold::new(&adjustment));
+                crate::ui::scroll_probe::probe("centered.reveal.hold_target", &adjustment, value);
+                guard.set_target(value);
+                ensure_visible(shared, position);
+                shared
+                    .scroll_glide
+                    .jump_to(&adjustment, value, "centered.reveal.instant");
+                guard.release_after(CENTERING_HANDOVER);
+            }
+        }
+        return true;
+    }
+    if nothing_to_center(shared, n_rows as usize) {
         return true;
     }
     if attempts == 0 {
+        ensure_visible(shared, position);
         return false;
     }
+    let generation = shared.model.generation();
     let shared = Rc::downgrade(shared);
     gtk4::glib::idle_add_local_once(move || {
-        if let Some(shared) = shared.upgrade() {
-            reveal_position(&shared, position, attempts - 1);
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        // A model swap invalidates the row index this attempt carries, and the
+        // centering arithmetic cannot tell a stale index from a live one — it
+        // clamps into range and answers plausibly. The jump path re-resolves
+        // per round in `reveal`; here the honest answer is to stop, because
+        // whoever replaced the model owns the viewport now.
+        if shared.model.generation() != generation {
+            return;
         }
+        reveal_position(&shared, position, attempts - 1, motion, hold);
     });
     false
+}
+
+/// The list already fits its viewport, so there is nothing to centre.
+///
+/// Load-bearing rather than an optimisation: `centered_scroll_target` answers
+/// `None` both for "not allocated yet" and for "it all fits on screen", and
+/// only the geometry tells them apart. Without this the caller reads a short
+/// list as unsettled, burns every attempt on it, and then snaps a row that was
+/// never out of view — measured by
+/// `search_16_a_result_set_that_fits_still_centers_after_clear_all`.
+fn nothing_to_center(shared: &Shared, n_rows: usize) -> bool {
+    let Some(adjustment) = shared.column_view.vadjustment() else {
+        return false;
+    };
+    let n_sections = shared.queue_sections.borrow().len();
+    let (content, row_source, header_source) = ListGeometry::for_view(&shared.column_view)
+        .content_height(
+            &shared.conn,
+            &shared.list_geometry_cache,
+            n_rows,
+            n_sections,
+        );
+    // An assumed row height can claim a list fits when it does not. Only a
+    // measured one may end the attempts.
+    let measured = row_source == RowHeightSource::Measured
+        && header_source.is_none_or(|source| source == RowHeightSource::Measured);
+    matches!(content, ContentHeight::Known(pixels) if measured && pixels <= adjustment.page_size())
+}
+
+/// Last resort: the geometry never settled, so centring is impossible — but
+/// the promise that the row ends up on screen still stands.
+///
+/// This is the same `scroll_to` the reload path used to fire *before* it tried
+/// to centre, which is what made the viewport move twice. Behind the attempts
+/// it can only run when centring genuinely failed, so it is a floor rather
+/// than a first move. The jump path had no floor at all and simply gave up.
+fn ensure_visible(shared: &Shared, position: u32) {
+    if let Some(adjustment) = shared.column_view.vadjustment() {
+        crate::ui::scroll_probe::probe_scroll_to(
+            "centered.reveal.scroll_to",
+            &adjustment,
+            position,
+        );
+    }
+    let scroll = gtk4::ScrollInfo::new();
+    scroll.set_enable_vertical(true);
+    shared
+        .column_view
+        .scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
 }
 
 #[cfg(test)]

@@ -64,6 +64,23 @@ impl ScrollGlide {
             .map(adw::TimedAnimation::value_to)
     }
 
+    /// Puts the viewport at `target` in a single step, ending any glide in
+    /// flight first.
+    ///
+    /// The counterpart to `glide_to` for the occasions that follow a model
+    /// swap. There, the list under the viewport is a different list, so
+    /// animating the way there does not read as a reveal — it reads as the
+    /// viewport hopping through a position that was never anyone's intent.
+    /// Cancelling first matters as much as the write: a surviving animation
+    /// would keep writing frames over the value just placed, and would then
+    /// see its own target as a foreign write.
+    pub(in crate::ui) fn jump_to(&self, adjustment: &gtk4::Adjustment, target: f64, writer: &str) {
+        cancel_animation(&self.inner);
+        crate::ui::scroll_probe::probe(writer, adjustment, target);
+        adjustment.set_value(target);
+        self.inner.last_written.set(adjustment.value());
+    }
+
     pub(in crate::ui) fn glide_to(&self, adjustment: &gtk4::Adjustment, target: f64) {
         let current = adjustment.value();
         let distance = target - current;
