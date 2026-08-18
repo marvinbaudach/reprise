@@ -5,6 +5,12 @@ use url::Url;
 
 use super::provider::{ProviderEvent, ProviderKind};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ListingWinner {
+    Existing,
+    Incoming,
+}
+
 pub fn normalize_component(value: &str) -> String {
     value
         .trim()
@@ -33,8 +39,12 @@ pub fn merge(artist_key: &str, events: Vec<ProviderEvent>) -> Vec<ProviderEvent>
         let key = dedupe_key(artist_key, &event.date_key, &event.city);
         if let Some(&position) = positions.get(&key) {
             let existing: &ProviderEvent = &merged[position];
-            if existing.provider == ProviderKind::Ticketmaster
-                && event.provider == ProviderKind::Bandsintown
+            if listing_winner(
+                existing.provider,
+                existing.ticket_url.as_deref(),
+                event.provider,
+                event.ticket_url.as_deref(),
+            ) == ListingWinner::Incoming
             {
                 merged[position] = event;
             }
@@ -44,6 +54,42 @@ pub fn merge(artist_key: &str, events: Vec<ProviderEvent>) -> Vec<ProviderEvent>
         merged.push(event);
     }
     merged
+}
+
+pub(crate) fn listing_winner(
+    existing_provider: ProviderKind,
+    existing_ticket_url: Option<&str>,
+    incoming_provider: ProviderKind,
+    incoming_ticket_url: Option<&str>,
+) -> ListingWinner {
+    if existing_provider == incoming_provider {
+        let existing_is_owned = provider_owns_ticket_url(existing_provider, existing_ticket_url);
+        let incoming_is_owned = provider_owns_ticket_url(incoming_provider, incoming_ticket_url);
+        return if incoming_is_owned && !existing_is_owned {
+            ListingWinner::Incoming
+        } else {
+            ListingWinner::Existing
+        };
+    }
+
+    if existing_provider == ProviderKind::Ticketmaster
+        && incoming_provider == ProviderKind::Bandsintown
+    {
+        ListingWinner::Incoming
+    } else {
+        ListingWinner::Existing
+    }
+}
+
+fn provider_owns_ticket_url(provider: ProviderKind, ticket_url: Option<&str>) -> bool {
+    let expected_label = match provider {
+        ProviderKind::Bandsintown => "bandsintown",
+        ProviderKind::Ticketmaster => "ticketmaster",
+    };
+    ticket_url
+        .and_then(|value| Url::parse(value).ok())
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host.split('.').any(|label| label == expected_label))
 }
 
 pub fn ticket_source_label(value: &str) -> Option<String> {
