@@ -71,7 +71,7 @@ default-features = false
 # MIT OR Apache-2.0, as are the `audioadapter*` crates rubato 4 passes its
 # buffers through and re-exports — no separate licence clearing needed.
 [dependencies.rubato]
-version = "4"
+version = "5"
 optional = true
 
 # Blocking, pure-Rust HTTPS (rustls) for the first-use model download. Same
