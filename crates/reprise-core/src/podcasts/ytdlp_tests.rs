@@ -353,7 +353,7 @@ fn resolve_returns_ephemeral_audio_url_and_duration() {
         directory.path(),
         r#"
 test "$*" = "--no-warnings -f bestaudio -j https://www.youtube.com/watch?v=v1"
-printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4,"categories":["Music"],"track":"The Song","artist":"The Artist"}'
+printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","filesize":2500001,"duration":93.4,"categories":["Music"],"track":"The Song","artist":"The Artist"}'
 "#,
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
@@ -363,10 +363,29 @@ printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4,"cate
         .unwrap();
 
     assert_eq!(resolved.stream_url, "https://googlevideo.test/ephemeral");
+    assert_eq!(resolved.content_len, Some(2_500_001));
     assert_eq!(resolved.duration_secs, Some(93));
     assert_eq!(resolved.categories, ["Music"]);
     assert_eq!(resolved.track.as_deref(), Some("The Song"));
     assert_eq!(resolved.artist.as_deref(), Some("The Artist"));
+}
+
+#[test]
+fn resolve_uses_googlevideo_clen_when_filesize_is_absent() {
+    let directory = tempfile::tempdir().unwrap();
+    let binary = fake_binary(
+        directory.path(),
+        r#"
+printf '%s\n' '{"url":"https://googlevideo.test/ephemeral?foo=bar&clen=2500001"}'
+"#,
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let resolved = runner
+        .resolve("https://www.youtube.com/watch?v=v1")
+        .unwrap();
+
+    assert_eq!(resolved.content_len, Some(2_500_001));
 }
 
 #[test]

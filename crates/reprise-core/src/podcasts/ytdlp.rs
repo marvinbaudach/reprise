@@ -90,6 +90,7 @@ pub struct YtDlpPlaylist {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolvedAudio {
     pub stream_url: String,
+    pub content_len: Option<u64>,
     pub duration_secs: Option<i64>,
     pub categories: Vec<String>,
     pub track: Option<String>,
