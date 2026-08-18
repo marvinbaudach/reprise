@@ -1,9 +1,0 @@
-origin_dev=07f02b8fcc82faf017a73782cd9466a080d4ff95
-candidate_head=33d0da342ee2e0eca2470d65ce3f1946b2d5e9a7
-source_database=/home/marvin/.local/share/reprise/reprise.db
-before_database_copy_method=sqlite_immutable_backup_read_only_no_wal
-after_database_copy_method=sqlite_immutable_backup_read_only_no_wal
-display_backend=x11-xvfb-openbox
-created_utc=2026-08-14T05:00:26Z
-placeholder_reference_1=/home/marvin/.cache/reprise/artist-portraits/5dfbb779cfb03bdf.jpg
-placeholder_reference_2=/home/marvin/.cache/reprise/artist-portraits/5e811de090722326.jpg

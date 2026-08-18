@@ -1,7 +1,0 @@
-before_prada=bd8dae144dc585a7eb090e2071fe386bbe0df6ebcc47ee0d96d5ec5c23274530  /home/marvin/Projects/reprise-deezer-placeholder-portraits/acceptance/deezer-placeholder-portraits/runs/20260814T045813Z/profiles/before/cache/reprise/artist-portraits/b46a347f5c29ba93.jpg
-before_oceano=4f0014a0809e9341d6be3a776f835c20cd192cd275a385d9503a66f20703991b  /home/marvin/Projects/reprise-deezer-placeholder-portraits/acceptance/deezer-placeholder-portraits/runs/20260814T045813Z/profiles/before/cache/reprise/artist-portraits/76671226644c8c3b.jpg
-after_prada=34aefe177da4dce7df95cbd4c022236b028d346841c931faf4e41b031b9d7541  /home/marvin/Projects/reprise-deezer-placeholder-portraits/acceptance/deezer-placeholder-portraits/runs/20260814T045813Z/profiles/after/cache/reprise/artist-portraits/b46a347f5c29ba93.jpg
-after_oceano=ca747e27c7eb8ad00755c82241cbdfd96dcccf3907665dfa701f9bf416970d43  /home/marvin/Projects/reprise-deezer-placeholder-portraits/acceptance/deezer-placeholder-portraits/runs/20260814T045813Z/profiles/after/cache/reprise/artist-portraits/76671226644c8c3b.jpg
-before_prada_matches_known_placeholder=true
-after_prada_differs_from_known_placeholders=true
-after_oceano_differs_from_known_placeholders=true
