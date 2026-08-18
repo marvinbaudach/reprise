@@ -2,7 +2,7 @@
 slug: concerts-duplicate-events
 worktree: /home/marvin/Projects/reprise-concerts-duplicate-events
 branch: feature/concerts-duplicate-events
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
