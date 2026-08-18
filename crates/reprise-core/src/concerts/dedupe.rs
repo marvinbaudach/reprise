@@ -68,7 +68,10 @@ impl ProviderKind {
     }
 }
 
-fn provider_owns_ticket_url(provider: ProviderKind, ticket_url: Option<&str>) -> bool {
+pub(super) fn provider_owns_ticket_url(
+    provider: ProviderKind,
+    ticket_url: Option<&str>,
+) -> bool {
     let expected_label = match provider {
         ProviderKind::Bandsintown => "bandsintown",
         ProviderKind::Ticketmaster => "ticketmaster",
