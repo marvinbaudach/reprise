@@ -141,6 +141,131 @@ fn v75_drops_the_stored_concerts_column_layout_and_keeps_the_widths() {
 }
 
 #[test]
+fn v76_collapses_the_measured_pairs_with_the_runtime_winner_rule() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "user_version", 30).unwrap();
+    crate::db_concerts::migrate_v31(&conn).unwrap();
+    conn.pragma_update(None, "user_version", 72).unwrap();
+    crate::db_concerts::migrate_v73(&conn).unwrap();
+    conn.pragma_update(None, "user_version", 75).unwrap();
+    let cases = [
+        (
+            "Catch Your Breath",
+            "2026-11-15",
+            "New Haven",
+            ("Toads Place - CT", "https://etix.com/event/other"),
+            (
+                "Toad's Place",
+                "https://ticketmaster.com/event/Z7r9jZ1A70U-U",
+            ),
+            "https://ticketmaster.com/event/Z7r9jZ1A70U-U",
+        ),
+        (
+            "Chelsea Grin",
+            "2026-11-28",
+            "Chicago",
+            ("Riviera Theatre- IL", "https://axs.com/events/other"),
+            (
+                "Riviera Theatre",
+                "https://ticketmaster.com/event/Z7r9jZ1A7P88F",
+            ),
+            "https://ticketmaster.com/event/Z7r9jZ1A7P88F",
+        ),
+        (
+            "Electric Callboy",
+            "2027-02-14",
+            "Amsterdam",
+            ("Ziggo Dome", "https://ticketmaster.nl/event/vip-upgrades"),
+            (
+                "Ziggo Dome Club",
+                "https://ticketmaster.nl/event/premium-packages",
+            ),
+            "https://ticketmaster.nl/event/vip-upgrades",
+        ),
+        (
+            "Ocean Sleeper",
+            "2026-09-19",
+            "Grand Rapids",
+            ("The Intersection", "https://etix.com/event/other"),
+            (
+                "Intersection",
+                "https://ticketmaster.com/event/Z7r9jZ1AAZ3xp",
+            ),
+            "https://ticketmaster.com/event/Z7r9jZ1AAZ3xp",
+        ),
+        (
+            "Wage War",
+            "2027-01-15",
+            "Cardiff",
+            (
+                "Y Plas, Cardiff Students Union",
+                "https://universe.com/events/other?ref=ticketmaster",
+            ),
+            (
+                "Cardiff University Students Union",
+                "https://ticketmaster.co.uk/event/other",
+            ),
+            "https://ticketmaster.co.uk/event/other",
+        ),
+    ];
+
+    for (artist, date, city, first, second, _) in cases {
+        for (venue, ticket_url) in [first, second] {
+            conn.execute(
+                "INSERT INTO concert_events (
+                    artist_key, artist_name, starts_at, date_key, venue, city,
+                    ticket_url, provider, fetched_at, dedupe_key
+                 ) VALUES (?1, ?1, ?2, ?3, ?4, ?5, ?6, 'ticketmaster', 42, ?7)",
+                params![
+                    artist,
+                    format!("{date}T19:00:00"),
+                    date,
+                    venue,
+                    city,
+                    ticket_url,
+                    format!("{date}|{city}|{venue}")
+                ],
+            )
+            .unwrap();
+        }
+    }
+
+    crate::db_concerts::migrate_v76(&conn).unwrap();
+    crate::db_concerts::migrate_v76(&conn).unwrap();
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM concert_events", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 5);
+    for (artist, date, city, _, _, expected_url) in cases {
+        let (ticket_url, key): (String, String) = conn
+            .query_row(
+                "SELECT ticket_url, dedupe_key FROM concert_events WHERE artist_name = ?1",
+                [artist],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(ticket_url, expected_url, "{artist}");
+        assert_eq!(key, crate::concerts::dedupe_key(artist, date, city));
+    }
+
+    let duplicate = insert_event(
+        &conn,
+        99,
+        &crate::concerts::dedupe_key("Catch Your Breath", "2026-11-15", "New Haven"),
+    )
+    .unwrap_err();
+    assert_eq!(
+        duplicate.sqlite_error_code(),
+        Some(ErrorCode::ConstraintViolation)
+    );
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 76);
+}
+
+#[test]
 fn the_concerts_layout_setting_key_matches_the_frozen_migration_literal() {
     assert_eq!(
         crate::library::settings::CONCERTS_COLUMN_LAYOUT_KEY,
@@ -198,6 +323,6 @@ fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
 }
 
 #[test]
-fn supported_schema_version_is_v75() {
-    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 75);
+fn supported_schema_version_is_v76() {
+    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 76);
 }

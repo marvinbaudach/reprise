@@ -29,6 +29,7 @@ pub use backoff::backoff_delay;
 pub use bandsintown::BandsintownProvider;
 pub use credential::{verify_credential, CredentialVerification};
 pub use dedupe::{dedupe_key, merge, normalize_component, ticket_source_label};
+pub(crate) use dedupe::{listing_winner, ListingWinner};
 pub use geo::haversine_km;
 pub use geocode::{geocode, geocode_url, parse_geocode, GeocodedLocation};
 pub use pipeline::{
