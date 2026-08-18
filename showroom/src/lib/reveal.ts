@@ -42,23 +42,37 @@ export function prepareReveals(root: HTMLElement, still: boolean): RevealState {
     (element) => !element.dataset.shown,
   );
 
-  for (const element of pending) {
-    element.style.willChange = 'opacity, transform';
+  if (still) {
+    for (const element of pending) {
+      element.style.transition = TRANSITION;
+      reveal(element, 0);
+    }
+    return { pending: [] };
+  }
+
+  // Measure the whole set before writing a single style. Interleaving the two
+  // makes the browser re-run layout for every element in turn, and this pass
+  // runs over the entire page at once — the most expensive moment there is.
+  const limit = window.innerHeight * TRIGGER_FRACTION;
+  const entrances = pending.map((element) => ({
+    hero: isHero(element),
+    belowFold: element.getBoundingClientRect().top >= limit,
+  }));
+
+  for (const [index, element] of pending.entries()) {
+    const entrance = entrances[index];
     element.style.transition = TRANSITION;
-    if (still) continue;
-    const hero = isHero(element);
-    const belowFold = element.getBoundingClientRect().top >= window.innerHeight * TRIGGER_FRACTION;
-    if (!hero && !belowFold) continue;
-    const travel = Math.round(hero ? TRAVEL_PX * HERO_TRAVEL_FACTOR : TRAVEL_PX);
+    if (!entrance || (!entrance.hero && !entrance.belowFold)) continue;
+    // Only the elements that are about to travel get promoted. Promising a
+    // composited layer for the whole page costs memory for every element that
+    // is already where it belongs and will never animate.
+    element.style.willChange = 'opacity, transform';
+    const travel = Math.round(entrance.hero ? TRAVEL_PX * HERO_TRAVEL_FACTOR : TRAVEL_PX);
     element.style.opacity = '0';
     element.style.transform = `translate3d(0, ${travel}px, 0) scale(0.99)`;
     if (element.dataset.reveal === 'img') element.style.filter = 'blur(7px)';
   }
 
-  if (still) {
-    for (const element of pending) reveal(element, 0);
-    return { pending: [] };
-  }
   return { pending };
 }
 

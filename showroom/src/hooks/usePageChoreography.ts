@@ -31,7 +31,16 @@ export function usePageChoreography(still: boolean): void {
     const progress = document.getElementById('scroll-progress');
     const header = document.getElementById('site-header');
     const sections = Array.from(root.querySelectorAll<HTMLElement>('[data-ground]'));
-    const navLinks = Array.from(root.querySelectorAll<HTMLAnchorElement>('[data-navlink]'));
+    // Resolved once: looking the target up by id on every link on every frame
+    // is a document query per link per frame for a set that never changes.
+    const navLinks = Array.from(root.querySelectorAll<HTMLAnchorElement>('[data-navlink]'))
+      .map((link) => ({
+        link,
+        target: document.getElementById(link.getAttribute('href')?.slice(1) ?? ''),
+      }))
+      .filter((entry): entry is { link: HTMLAnchorElement; target: HTMLElement } =>
+        Boolean(entry.target),
+      );
 
     for (const element of root.querySelectorAll<HTMLElement>('[data-counter]')) {
       prepareCounter(element);
@@ -49,6 +58,7 @@ export function usePageChoreography(still: boolean): void {
     let pointerY = 0;
     let scrollBias = 0;
     let frame: number | null = null;
+    let pageHeight: number | null = null;
 
     const runRatio = () => {
       if (ratioRun) return;
@@ -72,7 +82,11 @@ export function usePageChoreography(still: boolean): void {
     const tick = (timestamp = performance.now()) => {
       frame = null;
       const doc = document.documentElement;
-      const max = Math.max(1, doc.scrollHeight - window.innerHeight);
+      const viewportHeight = window.innerHeight;
+      // `scrollHeight` forces a layout, and the page only changes height when
+      // something in it does — which the observer below already reports.
+      if (pageHeight === null) pageHeight = doc.scrollHeight;
+      const max = Math.max(1, pageHeight - viewportHeight);
       const top = window.scrollY || doc.scrollTop || 0;
       const progressed = Math.min(1, Math.max(0, top / max));
 
@@ -85,7 +99,7 @@ export function usePageChoreography(still: boolean): void {
       // The ground is the section that owns the middle of the viewport, so the
       // colour changes when a chapter takes over rather than when it first peeks in.
       if (ground) {
-        const middle = window.innerHeight / 2;
+        const middle = viewportHeight / 2;
         const owner = sections.find((section) => {
           const box = section.getBoundingClientRect();
           return box.top <= middle && box.bottom > middle;
@@ -103,16 +117,11 @@ export function usePageChoreography(still: boolean): void {
       if (header) header.dataset.lifted = top > HEADER_SCROLL_PX ? 'true' : 'false';
 
       let active: HTMLAnchorElement | null = null;
-      for (const link of navLinks) {
-        const target = document.getElementById(link.getAttribute('href')?.slice(1) ?? '');
-        if (
-          target &&
-          target.getBoundingClientRect().top <= window.innerHeight * NAV_ACTIVE_FRACTION
-        ) {
-          active = link;
-        }
+      const navLine = viewportHeight * NAV_ACTIVE_FRACTION;
+      for (const { link, target } of navLinks) {
+        if (target.getBoundingClientRect().top <= navLine) active = link;
       }
-      for (const link of navLinks) link.dataset.current = link === active ? 'true' : 'false';
+      for (const { link } of navLinks) link.dataset.current = link === active ? 'true' : 'false';
       if (drawSeekTracks(timestamp, still)) schedule();
     };
 
@@ -120,14 +129,23 @@ export function usePageChoreography(still: boolean): void {
       if (frame === null) frame = requestAnimationFrame(tick);
     };
 
+    const onResize = () => {
+      pageHeight = null;
+      schedule();
+    };
+
+    // The pointer fires far more often than the screen refreshes. Writing the
+    // transform straight from the event means several style writes for a single
+    // painted frame; recording the position and letting the frame do the work
+    // costs one write per frame and never more.
     const onPointerMove = (event: PointerEvent) => {
       pointerX = (event.clientX / window.innerWidth) * 2 - 1;
       pointerY = (event.clientY / window.innerHeight) * 2 - 1;
-      moveOil();
+      schedule();
     };
 
     window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule, { passive: true });
+    window.addEventListener('resize', onResize, { passive: true });
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener(SEEK_FRAME_EVENT, schedule);
     tick();
@@ -141,13 +159,16 @@ export function usePageChoreography(still: boolean): void {
     // the document — would otherwise leave the elements it moved into view
     // hidden until the reader scrolls, and a reader who sees an empty page has
     // no reason to scroll. The observer turns that guess into a fact.
-    const growth = new ResizeObserver(() => schedule());
+    const growth = new ResizeObserver(() => {
+      pageHeight = null;
+      schedule();
+    });
     growth.observe(root);
     document.fonts?.ready.then(schedule).catch(() => undefined);
 
     return () => {
       window.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', schedule);
+      window.removeEventListener('resize', onResize);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener(SEEK_FRAME_EVENT, schedule);
       window.clearTimeout(late);
