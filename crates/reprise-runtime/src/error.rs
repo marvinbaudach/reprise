@@ -15,8 +15,11 @@
 use reprise_runtime_protocol::ProtocolVersion;
 
 /// A permission a client must hold to mutate a resource, named exactly as in
-/// the capability matrix (§9.8) and in `reprise-mcp`'s settings keys, so the
-/// two never drift into different vocabularies.
+/// the capability matrix (§9.8). Where `reprise-mcp` gates the same resource it
+/// uses the same name, so the two never drift into different vocabularies —
+/// but the sets are not identical: `ai:create` guards the runtime's job
+/// commands and has no MCP counterpart, the MCP surface for queueing renders
+/// having been withdrawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Capability {
     /// Transport, queue and targeted play.

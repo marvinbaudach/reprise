@@ -23,16 +23,14 @@ pub enum StartupError {
 }
 
 /// The write-class capability snapshot taken at startup — the restart-gated
-/// half of the D18 / Beschluss 7 gate (a fresh grant only takes effect after a
-/// restart; a revocation is caught live on every call).
+/// half of the D18 gate (a fresh grant only takes effect after a restart; a
+/// revocation is caught live on every call).
 #[derive(Debug, Clone, Copy)]
 pub struct StartupCaps {
     /// Whether `playlist:create` was granted at startup.
     pub playlist_create: bool,
     /// Whether `playlist:manage` was granted at startup.
     pub playlist_manage: bool,
-    /// Whether `ai:create` was granted at startup.
-    pub ai_create: bool,
     /// Whether `sources:manage` was granted at startup.
     pub sources_manage: bool,
     /// Whether `tags:write` was granted at startup.
@@ -42,8 +40,8 @@ pub struct StartupCaps {
 }
 
 /// Opens and migrates the database, then snapshots the write-class capabilities
-/// (`playlist:create`, `playlist:manage`, `ai:create`, `sources:manage`, and
-/// `tags:write`) as they stood at startup.
+/// (`playlist:create`, `playlist:manage`, `sources:manage`, and `tags:write`)
+/// as they stood at startup.
 pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
     let db = match Db::open_migrated(Some(db_path)) {
         Ok(db) => db,
@@ -57,7 +55,6 @@ pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
     Ok(StartupCaps {
         playlist_create: capability::playlist_create_granted(&db).map_err(StartupError::Query)?,
         playlist_manage: capability::playlist_manage_granted(&db).map_err(StartupError::Query)?,
-        ai_create: capability::ai_create_granted(&db).map_err(StartupError::Query)?,
         sources_manage: capability::sources_manage_granted(&db).map_err(StartupError::Query)?,
         tags_write: capability::tags_write_granted(&db).map_err(StartupError::Query)?,
         #[cfg(feature = "mpris")]

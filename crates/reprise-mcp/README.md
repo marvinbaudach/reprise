@@ -3,9 +3,9 @@
 `reprise-mcp` is a local, stdio-only [Model Context Protocol](https://modelcontextprotocol.io)
 server that exposes your Reprise music library and cached remote sources to an
 AI agent (Claude, or any MCP client). An agent can search your library, manage
-podcast/YouTube subscriptions and radio favorites, build playlists, create
-instrumental versions, and **drive playback** — so you can run your whole music
-setup by asking an agent, without touching the GUI.
+podcast/YouTube subscriptions and radio favorites, build playlists, and
+**drive playback** — so you can run your whole music setup by asking an agent,
+without touching the GUI.
 
 It is a **controller, not a player**: it produces no audio itself. Playback and
 the actual audio pipeline live in the Reprise desktop app; the MCP reaches the
@@ -14,8 +14,7 @@ interface). For playback to work, **the Reprise app must be running** (it can be
 in the background) — otherwise playback tools return a clear "no running Reprise
 app" error.
 
-Everything else (search, source management, playlists, concerts, releases,
-instrumentals)
+Everything else (search, source management, playlists, concerts, releases)
 reads/writes the library database directly and works whether or not the app is
 running.
 
@@ -85,7 +84,7 @@ claude mcp add reprise --scope user -- ~/.local/bin/reprise-mcp --db ~/.local/sh
 
 Restart / reload the Claude Code session — MCP servers are loaded at session
 start. Then ask, e.g. *"how many tracks do I have?"*, *"play my Focus
-playlist"*, *"make an instrumental of this track"*.
+playlist"*, *"add this podcast"*.
 
 ### Claude Desktop
 
@@ -109,8 +108,6 @@ client that launches it must run on the **same machine** as Reprise.
 | `music_get_playlist` | `playlist_id`, optional `limit`/`offset` | Read ordered playlist contents | `library:read` |
 | `music_create_playlist` | `name`, `track_ids` | Create a manual playlist | `playlist:create` |
 | `music_update_playlist` | `action` = `rename`\|`add_tracks`, plus playlist/name/track ids | Safely rename a playlist or append tracks | `playlist:manage` |
-| `music_create_instrumental` | `track_ids` | Queue vocal-removal (htdemucs) render jobs | `ai:create` |
-| `music_get_job_status` | job/batch id | Progress of a render job | `library:read` |
 | `music_search_sources` | `provider` = `rss`\|`youtube`\|`radio`, `query` | Search Apple Podcasts, yt-dlp, or radio-browser for a new source to subscribe to | `sources:manage` |
 | `music_manage_podcasts` | `action` = `add`\|`edit`\|`remove`\|`refresh`, plus action fields | Read RSS/YouTube with yt-dlp and manage cached subscriptions | `sources:manage` |
 | `music_manage_radio` | `action` = `add`\|`edit`\|`remove`, plus action fields | Manage radio favorites; URL-only add reads ICY metadata | `sources:manage` |
@@ -206,7 +203,6 @@ Defaults follow "read is safe, writes are opt-in":
 | `agent.capability.playback:control` | **on** | transport, live state/settings, targeted play, and queue |
 | `agent.capability.playlist:create` | off | `music_create_playlist` |
 | `agent.capability.playlist:manage` | off | playlist rename + append tracks |
-| `agent.capability.ai:create` | off | `music_create_instrumental` |
 | `agent.capability.sources:manage` | off | podcast/YouTube and radio add/edit/remove/refresh |
 | `agent.capability.device:sync` | off | configure, start, or cancel Android synchronization |
 
@@ -234,10 +230,9 @@ effect on the next call.
   contexts do not create oversized MCP responses.
 - Podcast and radio resources are cache-only reads bounded to 200 items. Only
   explicit `music_manage_*` calls perform network access or mutate source data.
-- **`music_create_instrumental` only enqueues** a job; the actual htdemucs render
-  is done by a worker — the running app's background worker, or
-  `reprise-cli jobs work` — and needs the stem model provisioned. Track progress
-  with `music_get_job_status`.
+- **Instrumental renders are not an agent surface.** Queueing and tracking
+  vocal-removal jobs lives in the app and in `reprise-cli`; the MCP server
+  neither starts nor reports them.
 - The server is stdio-only: stdout carries MCP protocol frames, all logs go to
   stderr (set `REPRISE_LOG=debug` for verbose logs).
 - Responses never leak filesystem paths, cache/db locations, or credentials.
