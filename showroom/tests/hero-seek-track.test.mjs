@@ -20,7 +20,11 @@ test('the Hero seek strip presents the measured duration', async () => {
   assert.match(hero, /src="\/reprise\/brand\/reprise-mark\.svg"[^>]+width="26" height="26"/);
   assert.match(hero, />0:00</);
   assert.match(hero, /data-seek-canvas=""/);
+  // The strip is a control, but only once the measured track has arrived: the
+  // prerendered document must not hand out a tab stop that cannot move.
   assert.doesNotMatch(hero, /role="slider"|aria-valuemin|aria-valuemax|tabindex="0"/);
+  assert.match(component, /role: 'slider'/);
+  assert.match(component, /aria-valuetext/);
   assert.doesNotMatch(hero, /−3:34/);
 
   const buffer = binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
@@ -28,4 +32,17 @@ test('the Hero seek strip presents the measured duration', async () => {
   assert.equal(measured.durationMs, 369_786);
   assert.equal(formatSeekTime(measured.durationMs), '6:10');
   assert.match(component, /state\.status === 'failed'[\s\S]+Measured track unavailable/);
+
+  // Click to jump, drag to scrub, keys to step. Pointer capture is what keeps a
+  // drag alive when the pointer leaves the bar, which is where a scrub ends up
+  // as soon as it is quick.
+  assert.match(component, /setPointerCapture\(event\.pointerId\)/);
+  assert.match(component, /releasePointerCapture\(event\.pointerId\)/);
+  assert.match(component, /renderer\.scrubTo\(renderer\.positionAt\(event\.clientX\)\)/);
+  assert.match(component, /renderer\.releaseScrub\(\)/);
+  for (const key of ['ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown']) {
+    assert.match(component, new RegExp(`${key}: -?SEEK_(STEP|PAGE)_MS`));
+  }
+  assert.match(component, /event\.key === 'Home'/);
+  assert.match(component, /event\.key === 'End'/);
 });

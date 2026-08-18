@@ -33,15 +33,21 @@ test('CH.03 exposes the rendering, a readout and two legends', async () => {
   for (const heading of ['Height — the body', 'Colour — the frequency']) {
     assert.match(chapter, new RegExp(heading));
   }
-  assert.doesNotMatch(chapter, /role="slider"|aria-valuemin|aria-valuemax|scrub|five-second/);
+  // The bar below the fold is operable too, and it takes its slider role only
+  // once the track is loaded — so the prerendered chapter carries none.
+  assert.doesNotMatch(chapter, /role="slider"|aria-valuemin|aria-valuemax/);
   assert.match(css, /\.seek-track__canvas-frame\{[^}]*height:148px/);
+  assert.match(css, /\.seek-track__canvas-frame\{[^}]*touch-action:pan-y/);
+  assert.match(css, /\.seek-track__canvas-frame:focus-visible\{outline:/);
+  assert.match(css, /\.seek-track__canvas-frame\[data-dragging=["']?true["']?\]\{cursor:grabbing/);
   assert.match(css, /prefers-reduced-motion:reduce/);
 });
 
 test('the measured canvases draw only through the shared visible-frame owner', async () => {
-  const [choreography, renderer, loader] = await Promise.all([
+  const [choreography, renderer, clock, loader] = await Promise.all([
     readFile(join(showroomRoot, 'src/hooks/usePageChoreography.ts'), 'utf8'),
     readFile(join(showroomRoot, 'src/lib/seekRenderer.ts'), 'utf8'),
+    readFile(join(showroomRoot, 'src/lib/seekClock.ts'), 'utf8'),
     readFile(join(showroomRoot, 'src/lib/seekTrack.ts'), 'utf8'),
   ]);
 
@@ -50,7 +56,11 @@ test('the measured canvases draw only through the shared visible-frame owner', a
   assert.doesNotMatch(renderer, /requestAnimationFrame/);
   assert.match(renderer, /if \(!renderer\.isVisible\(\)\) continue/);
   assert.doesNotMatch(renderer, /selectedMode|SINGLE_COLOUR|'marks'|setMode/);
-  assert.match(renderer, /const position = still \? 0/);
+  // The clock only owns the playhead while nothing is holding it, and the
+  // renderer asks it rather than keeping a second copy of the rule.
+  assert.match(renderer, /const position = clock\.advance\(timestamp, still\)/);
+  assert.match(clock, /position = scrub \?\? \(still \? held : clock\)/);
+  assert.match(clock, /startedAt = now - scrub \* durationMs/);
   assert.match(loader, /fetch\(SEEK_TRACK_PATH\)/);
   assert.match(loader, /buffer\.byteLength !== SEEK_TRACK_BYTE_COUNT/);
 });

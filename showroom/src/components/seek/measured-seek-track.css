@@ -42,10 +42,27 @@
   color: oklch(68% 0.011 269);
 }
 
+/*
+ * The frame is the control. It carries the focus, the pointer capture and the
+ * slider role; the canvas inside only draws. `pan-y` keeps a vertical swipe
+ * scrolling the page while a horizontal one scrubs.
+ */
 .seek-track__canvas-frame {
   display: block;
   width: 100%;
   height: 148px;
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: pan-y;
+  outline-offset: 4px;
+}
+
+.seek-track__canvas-frame:focus-visible {
+  outline: 2px solid oklch(82% 0.13 190);
+}
+
+.seek-track__canvas-frame[data-dragging="true"] {
+  cursor: grabbing;
 }
 
 .seek-track__canvas {
@@ -53,7 +70,6 @@
   width: 100%;
   height: 100%;
   cursor: crosshair;
-  touch-action: pan-y;
 }
 
 .seek-track__canvas-frame--hero {
@@ -63,7 +79,7 @@
 }
 
 .seek-track__canvas-frame--hero .seek-track__canvas {
-  cursor: default;
+  cursor: inherit;
 }
 
 .seek-track__unavailable {

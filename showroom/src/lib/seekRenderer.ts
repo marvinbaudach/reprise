@@ -1,3 +1,4 @@
+import { createSeekClock, positionInStrip, type SeekStrip } from './seekClock';
 import { seekBarLight } from './seekLight';
 import type { MeasuredSeekTrack } from './seekTrack';
 import {
@@ -36,6 +37,14 @@ interface SeekRendererOptions {
 export interface SeekCanvasRenderer {
   draw(timestamp: number, still: boolean): void;
   setHover(position: number | null): void;
+  /** The track position under a client x, in the renderer's own geometry. */
+  positionAt(clientX: number): number;
+  /** Holds the playhead at a position while a pointer or key is moving it. */
+  scrubTo(position: number): void;
+  /** Drops the hold and lets the clock run on from wherever the playhead is. */
+  releaseScrub(): void;
+  /** Where the playhead stands right now, 0 to 1. */
+  position(): number;
 }
 
 interface RegisteredRenderer {
@@ -54,10 +63,6 @@ function colourCss([red, green, blue]: Rgb): string {
   return `rgb(${(red * 255).toFixed(2)} ${(green * 255).toFixed(2)} ${(blue * 255).toFixed(2)})`;
 }
 
-function clampUnit(value: number): number {
-  return Math.min(1, Math.max(0, value));
-}
-
 export function createSeekRenderer({
   canvas,
   track,
@@ -72,7 +77,8 @@ export function createSeekRenderer({
   );
   let prepared: PreparedTrack | null = null;
   let hover: number | null = null;
-  let startedAt: number | null = null;
+  const clock = createSeekClock(track.durationMs);
+  let strip: SeekStrip = { left: 0, width: 0 };
 
   const prepare = (bars: number): PreparedTrack => {
     if (prepared?.bars === bars) return prepared;
@@ -100,12 +106,12 @@ export function createSeekRenderer({
       prepared = null;
     }
 
-    startedAt ??= timestamp;
-    const position = still ? 0 : ((timestamp - startedAt) % track.durationMs) / track.durationMs;
+    const position = clock.advance(timestamp, still);
     const bars = Math.max(MIN_BAR_COUNT, Math.floor(width / BAR_STEP_PX));
     const shaped = prepare(bars);
     const renderedWidth = bars * BAR_STEP_PX;
     const left = (width - renderedWidth) / 2;
+    strip = { left, width: renderedWidth };
     const middle = height / 2;
     const maximumHeight = height * 0.9;
     const playBar = Math.floor(position * bars);
@@ -165,8 +171,20 @@ export function createSeekRenderer({
 
   return {
     draw,
-    setHover(position) {
-      hover = position === null ? null : clampUnit(position);
+    setHover(at) {
+      hover = at === null ? null : Math.min(1, Math.max(0, at));
+    },
+    positionAt(clientX) {
+      return positionInStrip(clientX, canvas.getBoundingClientRect().left, strip);
+    },
+    scrubTo(at) {
+      clock.scrubTo(at);
+    },
+    releaseScrub() {
+      clock.releaseScrub(performance.now());
+    },
+    position() {
+      return clock.position();
     },
   };
 }
