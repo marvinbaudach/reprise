@@ -145,10 +145,28 @@ fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
 }
 
 #[test]
-fn play_10_external_snapshot_wiring_syncs_the_player_bar_artwork() {
-    let source = include_str!("../playback/player_controller_wiring.rs");
+fn play_10_external_snapshot_wiring_syncs_both_player_artwork_targets() {
+    let wiring = include_str!("../playback/player_controller_wiring.rs");
+    let artwork = include_str!("../playback/external_media_artwork.rs");
 
-    assert!(source.contains("sync_external_bar_artwork(snapshot.as_ref())"));
+    assert!(wiring.contains("sync_external_artwork(snapshot.as_ref())"));
+    assert!(artwork.contains("let bar_size = self.bar.cover_image().pixel_size().max(1)"));
+    assert!(artwork.contains("let compact_cover = self.compact_player.cover_image()"));
+    assert!(artwork.contains("let compact_size = compact_cover.pixel_size().max(1)"));
+    assert!(artwork.contains("(bar_size, bar_size)"));
+    assert!(artwork.contains("(compact_size, compact_size)"));
+    assert!(artwork.contains("&self.bar_cover_generation"));
+    assert!(artwork.contains("&self.compact_cover_generation"));
+    assert!(artwork.contains("let startup_timing = if snapshot.restored"));
+    assert_eq!(artwork.matches("network_allowed(").count(), 1);
+    assert_eq!(artwork.matches("images_allowed,").count(), 2);
+    assert_eq!(artwork.matches("startup_timing,").count(), 2);
+    assert_eq!(artwork.matches("load_into_image(").count(), 2);
+    assert!(artwork.contains("let previous_compact_paintable = compact_cover.paintable()"));
+    assert!(artwork.contains("if compact_cover.paintable().is_none()"));
+    assert!(artwork.contains("if let Some(previous_compact_paintable)"));
+    assert!(artwork.contains("compact_cover.set_paintable(Some(&previous_compact_paintable))"));
+    assert!(!artwork.contains("set_placeholder"));
 }
 
 #[test]
