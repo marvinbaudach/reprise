@@ -97,3 +97,25 @@ Unabhängig baubar und unabhängig landbar. Läuft
 `youtube-streaming-internal-data-stream-error` zuerst, ist die
 Nachweis-Verfälschung aus Punkt 1 durch den Proxy zu führen statt direkt — das
 ist der einzige Berührungspunkt, und er betrifft die Abnahme, nicht den Code.
+
+## Nachgelesen gegen `dev` = `834193e7d8` (18.08.2026)
+
+Nötig, weil #555 (YouTube-Range-Proxy) genau eine der beiden Zieldateien
+angefasst hat. Der Plan bleibt gültig, mit drei Präzisierungen:
+
+1. **`player_event_handling.rs:232` trägt jetzt eine Redaktion.** Der
+   `PlayerEvent::Error`-Zweig loggt über
+   `redact_local_stream_proxy_urls(&message)` (Test
+   `external_error_log_redacts_local_stream_proxy_tokens`, Zeile 379). Die
+   „erste Ursache gewinnt"-Sperre kommt **vor** die Anzeige, nicht vor das
+   Logging — die Redaktion und ihr Test bleiben unberührt.
+2. **Der Statuscode ist außerhalb von `player_pipeline.rs` gar nicht mehr da.**
+   `player_pipeline.rs:421-422` loggt `debug = ?e.debug()`, gibt aber nur
+   `e.error().to_string()` in das Event. Der Text `Forbidden (403), URL: …`
+   steht ausschließlich im Debugfeld. Aufgabe 2 muss den Code also **an der
+   Bus-Stelle** herausziehen und typisiert weiterreichen; eine Typisierung
+   erst in der GNOME-Schicht ist unmöglich, nicht nur unschön.
+3. **Die Wiedergabearten sind seit Stufe 2/Aufgabe 5 aufgefächert** (`Podcast`,
+   `QueuedEpisode`, `Radio` → `handle_external_error`; `Preview`; `Queue`). Die
+   Sitzungssperre muss für alle drei externen Arten greifen, nicht nur für
+   `Podcast`.
