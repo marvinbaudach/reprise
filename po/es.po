@@ -464,7 +464,7 @@ msgstr "Nada coincide con estos filtros"
 #: crates/reprise-gnome/src/ui/strings.rs:328
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 msgid "Clear filters"
-msgstr "Limpiar filtros"
+msgstr "Borrar filtros"
 
 #: crates/reprise-gnome/src/ui/strings.rs:334
 msgid "Nothing here"
