@@ -61,9 +61,11 @@ test('Lightbox traps focus and restores its trigger around keyboard navigation a
   assert.match(css, /animation:rp-fade \.26s ease both/);
   assert.match(css, /animation:rp-lb-in \.42s cubic-bezier\(\.16,1,\.3,1\) both/);
   assert.match(css, /backdrop-filter:blur\(14px\)/);
-  // The zoom wrapper must stay a resolved box, or the picture is cropped.
+  // The zoom wrapper must stay a resolved box and the frame must keep the
+  // picture's ratio, or the picture is cropped and the plate sits off it.
   assert.match(css, /\.lightbox__zoom\{[^}]*height:100%/);
-  assert.match(css, /\.lightbox__image\{[^}]*width:auto[^}]*height:auto/);
+  assert.match(css, /\.lightbox__frame\{[^}]*height:100%[^}]*width:auto/);
+  assert.match(css, /\.lightbox__image\{[^}]*width:100%[^}]*height:100%/);
 });
 
 test('the Lightbox inerts the page behind it and forgets its zoom with the picture', async () => {
@@ -91,4 +93,25 @@ test('the Lightbox inerts the page behind it and forgets its zoom with the pictu
   // Neither the closing backdrop nor any other tabindex="-1" node is a tab stop.
   assert.match(source, /className="lightbox__backdrop"[\s\S]*?tabIndex=\{-1\}/);
   assert.match(source, /button:not\(\[disabled\]\):not\(\[tabindex="-1"\]\)/);
+});
+
+test('the full view carries the live plate for the capture that has one', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'Lightbox.tsx'),
+    'utf8',
+  );
+  const data = await readFile(join(showroomRoot, 'src', 'data', 'showcase.ts'), 'utf8');
+
+  assert.match(source, /import \{ VisualizerPlate \}/);
+  assert.match(source, /capture\.visualizer && <VisualizerPlate \/>/);
+  // The frame, not the image, carries the zoom — otherwise the plate stays put
+  // while the picture under it grows.
+  assert.match(
+    source,
+    /className="lightbox__frame"[\s\S]*?transform: activeZoom \? 'scale\(2\.1\)'/,
+  );
+  assert.match(source, /aspectRatio: `\$\{capture\.width\} \/ \$\{capture\.height\}`/);
+  // Exactly one capture claims the plate today: the Android Now Playing scene.
+  assert.equal((data.match(/visualizer: true/g) ?? []).length, 1);
+  assert.match(data, /id: 'android-visualizer'[\s\S]{0,320}?visualizer: true/);
 });

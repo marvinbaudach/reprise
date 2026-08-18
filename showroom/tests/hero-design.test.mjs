@@ -41,3 +41,14 @@ test('the design hero opens with two screenshot buttons', async () => {
   );
   assert.match(css, /@keyframes rp-cue/);
 });
+
+test('the reveal pass never hides what it has already shown', async () => {
+  const source = await readFile(join(showroomRoot, 'src', 'lib', 'reveal.ts'), 'utf8');
+
+  // `reveal` refuses to run twice on the same element, so a second
+  // `prepareReveals` — a hot reload, a changed motion preference, any re-run of
+  // the effect — must not put those elements back to opacity 0.
+  assert.match(source, /querySelectorAll<HTMLElement>\('\[data-reveal\]'\)\)\.filter\(/);
+  assert.match(source, /!element\.dataset\.shown/);
+  assert.match(source, /if \(element\.dataset\.shown\) return;/);
+});

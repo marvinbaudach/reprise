@@ -1,6 +1,7 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { captureUrl, type ProductCapture } from '../../data/showcase';
+import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
 import './lightbox.css';
 
 interface LightboxProps {
@@ -154,20 +155,28 @@ export function Lightbox({
           aria-label={activeZoom ? 'Reset screenshot zoom' : 'Zoom screenshot'}
           onClick={handleZoom}
         >
-          <img
-            className="lightbox__image"
-            src={captureUrl(capture)}
-            alt={capture.alt}
-            width={capture.width}
-            height={capture.height}
-            data-lb-img=""
-            data-zoomed={activeZoom ? 'true' : 'false'}
+          {/* The frame carries the aspect ratio, so the plate can sit on the
+              picture in its own percentages and zoom along with it. */}
+          <span
+            className="lightbox__frame"
             style={{
+              aspectRatio: `${capture.width} / ${capture.height}`,
               transform: activeZoom ? 'scale(2.1)' : 'none',
               transformOrigin: activeZoom?.origin ?? 'center',
             }}
-            draggable={false}
-          />
+          >
+            <img
+              className="lightbox__image"
+              src={captureUrl(capture)}
+              alt={capture.alt}
+              width={capture.width}
+              height={capture.height}
+              data-lb-img=""
+              data-zoomed={activeZoom ? 'true' : 'false'}
+              draggable={false}
+            />
+            {capture.visualizer && <VisualizerPlate />}
+          </span>
         </button>
       </div>
       <p id={descriptionId} className="lightbox__description">

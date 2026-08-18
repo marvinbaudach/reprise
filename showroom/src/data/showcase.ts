@@ -7,6 +7,8 @@ export interface ProductCapture {
   readonly filename: string;
   readonly width: number;
   readonly height: number;
+  /** Carries the live visualizer plate wherever the capture is shown. */
+  readonly visualizer?: boolean;
 }
 
 function capture(
@@ -35,6 +37,7 @@ export const HERO_CAPTURES: readonly [ProductCapture, ProductCapture] = [
     filename: 'android-visualizer.webp',
     width: 1080,
     height: 2404,
+    visualizer: true,
   }),
 ] as const;
 

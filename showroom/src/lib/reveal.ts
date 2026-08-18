@@ -35,7 +35,12 @@ function isHero(element: HTMLElement): boolean {
 
 /** Hides everything that has not been scrolled past yet and returns the queue. */
 export function prepareReveals(root: HTMLElement, still: boolean): RevealState {
-  const pending = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal]'));
+  // Anything already shown stays shown. A second pass — a hot reload, a changed
+  // motion preference, any re-run of the effect — would otherwise hide it again
+  // while `reveal` refuses to touch it a second time, and the page stays blank.
+  const pending = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal]')).filter(
+    (element) => !element.dataset.shown,
+  );
 
   for (const element of pending) {
     element.style.willChange = 'opacity, transform';
