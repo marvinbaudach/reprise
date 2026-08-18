@@ -25,9 +25,10 @@ const started = new WeakSet<HTMLElement>();
 function format(value: number, counter: Counter): string {
   let text = counter.decimals ? value.toFixed(counter.decimals) : String(Math.round(value));
   if (counter.grouped) {
-    const parts = text.split('.');
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, counter.separator);
-    text = parts.join('.');
+    const decimalIndex = text.indexOf('.');
+    const integer = decimalIndex === -1 ? text : text.slice(0, decimalIndex);
+    const fraction = decimalIndex === -1 ? '' : text.slice(decimalIndex);
+    text = integer.replace(/\B(?=(\d{3})+(?!\d))/g, counter.separator) + fraction;
   }
   return text;
 }
@@ -38,6 +39,7 @@ export function prepareCounter(element: HTMLElement): void {
   const match = raw.match(NUMBER);
   if (!match || match.index === undefined) return;
   const number = match[1];
+  if (number === undefined) return;
   const separator = number.match(/['’]/)?.[0] ?? '’';
   const plain = number.replace(/['’]/g, '');
   const counter: Counter = {
