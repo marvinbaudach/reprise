@@ -58,7 +58,6 @@ fn main() -> ExitCode {
     };
 
     let db_path = config.database_path();
-    let staging_path = config.staging_path();
     let caps = match startup::prepare(&db_path) {
         Ok(caps) => caps,
         Err(startup::StartupError::SchemaTooNew { found, supported }) => {
@@ -89,16 +88,14 @@ fn main() -> ExitCode {
         }
     };
 
-    runtime.block_on(serve(db_path, staging_path, caps))
+    runtime.block_on(serve(db_path, caps))
 }
 
-async fn serve(db_path: PathBuf, staging_path: PathBuf, caps: startup::StartupCaps) -> ExitCode {
+async fn serve(db_path: PathBuf, caps: startup::StartupCaps) -> ExitCode {
     let handler = server::RepriseServer::new(
         db_path,
-        staging_path,
         caps.playlist_create,
         caps.playlist_manage,
-        caps.ai_create,
         caps.sources_manage,
         caps.tags_write,
         #[cfg(feature = "mpris")]

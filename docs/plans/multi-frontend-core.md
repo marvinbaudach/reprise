@@ -1222,13 +1222,18 @@ Every resource is read or mutated; every mutation hangs off exactly one
 capability. The "today" column records the state so that stage 3.5 closes
 measurably instead of by feel.
 
+Instrumental jobs left this table on 18.08.2026: `music_create_instrumental`,
+`music_get_job_status` and the `ai:create` settings key were removed from
+`reprise-mcp` on the owner's decision. Queueing and tending renders remains a
+feature of the app and of `reprise-cli`; what went is the agent's reach into
+it. The narrative sections above are left as the record of what was planned.
+
 | Resource | Read | Mutation | Capability | today |
 | --- | --- | --- | --- | --- |
 | Library (tracks, artists, albums) | yes | — | `library:read` | present |
 | Playlists | yes | create | `playlist:create` | present |
 | Playlists | yes | rename, delete, change content | `playlist:manage` | present |
-| Instrumental jobs | yes | create | `ai:create` | present |
-| Instrumental jobs | yes | save, discard, cancel | `ai:create` | open (3.5) |
+| Instrumental jobs | — | — | — | withdrawn |
 | Podcasts, radio | yes | subscribe, remove, download | `sources:manage` | present |
 | Concerts, releases | yes | refresh, filter, hide | `sources:manage` | open (3.5) |
 | Device sync | yes | configure, start, cancel | `device:sync` | present |

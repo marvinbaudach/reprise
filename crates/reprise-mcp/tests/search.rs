@@ -51,17 +51,16 @@ fn tool_discovery_lists_the_expected_tools() {
         .collect();
     names.sort_unstable();
 
-    // `music_create_instrumental` is listed even though `ai:create` is off by
-    // default: write tools stay listed-but-refused (Beschluss 7). No playlist
-    // delete surface exists in the MCP (Beschluss 2). Playback and live device
-    // synchronization tools only exist under the `mpris` feature.
+    // Write tools stay listed-but-refused when their capability is off. No
+    // playlist delete surface exists in the MCP (Beschluss 2). Playback and
+    // live device synchronization tools only exist under the `mpris` feature.
+    // Nothing here queues an AI render: that surface and its `ai:create`
+    // capability were withdrawn.
     let mut expected = vec![
         "music_apply_tags",
-        "music_create_instrumental",
         "music_create_playlist",
         "music_get_channel_detail",
         "music_get_playlist",
-        "music_get_job_status",
         "music_manage_episodes",
         "music_manage_online_sources",
         "music_manage_podcasts",
