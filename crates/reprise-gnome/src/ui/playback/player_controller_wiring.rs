@@ -74,7 +74,7 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         if let Err(error) = controller.sync_audio_reactive() {
             tracing::warn!(%error, "could not re-gate the spectrum feed for this session");
         }
-        controller.sync_external_bar_artwork(snapshot.as_ref());
+        controller.sync_external_artwork(snapshot.as_ref());
         controller.bar.set_external_snapshot(snapshot.as_ref());
         controller
             .compact_player
