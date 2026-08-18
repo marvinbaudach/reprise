@@ -122,6 +122,15 @@ rg --quiet 'uses: astral-sh/setup-uv@v7\.6\.0' "$workflow" || \
     fail "the base source-quality job must install uv through the pinned action"
 rg --quiet 'version: "0\.12\.3"' "$workflow" || \
     fail "the base source-quality job must use the verified uv pin"
+core_workflow=$(sed -n '/^  core-suite:/,/^  quality:/p' "$workflow")
+rg --quiet 'uses: actions/setup-node@v7' <<<"$core_workflow" || \
+    fail "the Core suite must install the pinned Node generation before the complete gate"
+rg --quiet 'node-version: "26\.7\.0"' <<<"$core_workflow" || \
+    fail "the Core suite must use the project Node Current pin"
+rg --quiet 'uses: astral-sh/setup-uv@v7\.6\.0' <<<"$core_workflow" || \
+    fail "the Core suite must install uv through the pinned action"
+rg --quiet 'version: "0\.12\.3"' <<<"$core_workflow" || \
+    fail "the Core suite must use the verified uv pin"
 rg --quiet 'check-project-quality\.sh --android' "$workflow" || \
     fail "the Android job must run Android source quality"
 rg --multiline --quiet \
