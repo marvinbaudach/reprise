@@ -1,0 +1,8 @@
+{
+  "name": "reprise-android-quality",
+  "private": true,
+  "scripts": {
+    "lint": "./gradlew --max-workers=2 :app:lintDebug :lint-contract:lintDebug",
+    "test:lint": "node --test tests/lint-contract.test.mjs"
+  }
+}
