@@ -2,7 +2,7 @@
 slug: activation-latency
 worktree: ~/Projects/reprise-activation
 branch: perf/activation-latency
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-08
 ---

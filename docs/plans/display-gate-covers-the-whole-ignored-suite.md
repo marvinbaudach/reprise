@@ -2,7 +2,7 @@
 slug: display-gate-covers-the-whole-ignored-suite
 worktree: /home/marvin/Projects/reprise-display-gate-covers-the-whole-ignored-suite
 branch: feature/display-gate-covers-the-whole-ignored-suite
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---
