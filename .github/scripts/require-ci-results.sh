@@ -2,13 +2,13 @@
 set -euo pipefail
 
 if (( $# != 9 )); then
-    echo "usage: $0 CHANGES_RESULT BASE_RESULT OWNER_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT" >&2
+    echo "usage: $0 CHANGES_RESULT BASE_RESULT SUITE_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT" >&2
     exit 64
 fi
 
 changes_result=$1
 base_result=$2
-owner_skip=$3
+suite_skip=$3
 android_route=$4
 android_result=$5
 gnome_route=$6
@@ -20,25 +20,25 @@ core_result=$9
     echo "changed-path routing did not succeed: $changes_result" >&2
     exit 1
 }
-case "$owner_skip" in
+case "$suite_skip" in
     true)
         [[ $base_result == skipped ]] || {
-            echo "owner skip requested but base contracts were $base_result" >&2
+            echo "suite reuse requested but base contracts were $base_result" >&2
             exit 1
         }
         for route in "$android_route" "$gnome_route" "$core_route"; do
             [[ $route == false ]] || {
-                echo "owner skip requested but a route was still selected: $route" >&2
+                echo "suite reuse requested but a route was still selected: $route" >&2
                 exit 1
             }
         done
         for result in "$android_result" "$gnome_result" "$core_result"; do
             [[ $result == skipped ]] || {
-                echo "owner skip requested but a routed suite was $result" >&2
+                echo "suite reuse requested but a routed suite was $result" >&2
                 exit 1
             }
         done
-        echo "CI suites explicitly skipped by the repository owner"
+        echo "External suites skipped for a PR or exact owner promotion"
         exit 0
         ;;
     false)
@@ -48,7 +48,7 @@ case "$owner_skip" in
         }
         ;;
     *)
-        echo "owner skip produced an invalid value: $owner_skip" >&2
+        echo "suite reuse produced an invalid value: $suite_skip" >&2
         exit 1
         ;;
 esac

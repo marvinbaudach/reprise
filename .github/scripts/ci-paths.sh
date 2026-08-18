@@ -72,25 +72,29 @@ case "${1:-}" in
         )
         emit_routes "${changed_paths[@]}"
         ;;
-    --owner-skip)
-        if (( $# != 5 )); then
-            echo "usage: $0 --owner-skip EVENT PR_AUTHOR REPOSITORY_OWNER COMMIT_MESSAGE" >&2
+    --suite-skip)
+        if (( $# != 7 )); then
+            echo "usage: $0 --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA" >&2
             exit 64
         fi
         event=$2
-        pr_author=$3
-        repository_owner=$4
-        commit_message=$5
-        if [[ $event == pull_request && -n $repository_owner \
-            && $pr_author == "$repository_owner" \
-            && $commit_message == *'[owner skip ci]'* ]]; then
+        ref=$3
+        actor=$4
+        repository_owner=$5
+        head_sha=$6
+        dev_sha=$7
+        if [[ $event == pull_request ]]; then
+            echo true
+        elif [[ $event == push && $ref == refs/heads/main \
+            && -n $repository_owner && $actor == "$repository_owner" \
+            && -n $dev_sha && $head_sha == "$dev_sha" ]]; then
             echo true
         else
             echo false
         fi
         ;;
     *)
-        echo "usage: $0 --paths [PATH ...] | --diff EVENT BASE_SHA HEAD_SHA | --owner-skip EVENT PR_AUTHOR REPOSITORY_OWNER COMMIT_MESSAGE" >&2
+        echo "usage: $0 --paths [PATH ...] | --diff EVENT BASE_SHA HEAD_SHA | --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA" >&2
         exit 64
         ;;
 esac

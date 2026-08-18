@@ -105,8 +105,8 @@ env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
   REPRISE_AUDIO_SINK=fakesink \
   cargo test --locked -p reprise-platform-linux -- --test-threads=1
 
-echo "== All ignored display tests =="
-scripts/check-display-tests.sh
+echo "== Rule-owned display tests =="
+scripts/check-display-tests.sh --rule-named
 
 # The runtime service's own tests need a session bus. A private one, so they
 # never touch the developer's running Reprise.

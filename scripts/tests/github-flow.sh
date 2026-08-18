@@ -64,11 +64,15 @@ require_pattern 'main accepts only dev promotions or emergency hotfix' scripts/c
 require_pattern 'MERGE_READINESS_BASE_REF' scripts/ci-quality.sh
 require_pattern 'check-merge-readiness.sh --no-fetch' scripts/ci-quality.sh
 require_pattern '^main <- dev <- feature/' "$guide"
-require_pattern 'CI / Quality gate' "$guide"
+require_pattern 'Quality gate' "$guide"
 require_pattern 'Every pull request runs' "$guide"
 require_pattern 'sanctioned direct push to `main`' "$guide"
+require_pattern 'Until Reprise is publicly distributed' "$guide"
+require_pattern 'agents may perform this promotion autonomously' "$guide"
 require_pattern 'hotfix/\\*' "$guide"
 require_pattern 'hotfix/' AGENTS.md
+require_pattern 'Until Reprise is publicly distributed' AGENTS.md
+require_pattern 'agents may perform this promotion autonomously' AGENTS.md
 require_pattern 'package-ecosystem: github-actions' .github/dependabot.yml
 if [[ $(rg -c '^    target-branch: dev$' .github/dependabot.yml) -ne 2 ]]; then
   echo ".github/dependabot.yml must target dev for every update stream" >&2
