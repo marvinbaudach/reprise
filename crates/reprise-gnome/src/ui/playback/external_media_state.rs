@@ -7,6 +7,7 @@
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use reprise_core::playback::PlaybackSessionId;
 use reprise_core::podcasts::{character_from_category, EpisodeRow, MediaCharacter, PodcastKind};
 use reprise_core::up_next::QueueItem;
 
@@ -347,6 +348,7 @@ pub(in crate::ui) struct ExternalPlaybackState {
     pub(super) session: Option<ExternalSession>,
     pub(super) stream_tags: StreamTags,
     pub(super) generation: u64,
+    pub(super) displayed_error_session: Option<PlaybackSessionId>,
     pub(super) play_next: Option<EpisodeRow>,
     pub(super) stream_tags_callbacks: Vec<StreamTagsCallback>,
     pub(super) changed_callbacks: Vec<ExternalChangedCallback>,

@@ -297,7 +297,7 @@ impl From<AndroidPlayerEvent> for PlayerEvent {
             },
             AndroidPlayerEvent::TrackFinished => Self::TrackFinished,
             AndroidPlayerEvent::AdvancedToNext => Self::AdvancedToNext,
-            AndroidPlayerEvent::Error { message } => Self::Error(message),
+            AndroidPlayerEvent::Error { message } => Self::Error(message.into()),
         }
     }
 }

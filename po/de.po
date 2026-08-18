@@ -3516,6 +3516,12 @@ msgstr ""
 "aus"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:202
+msgid "YouTube refused this audio stream — retry playback or choose a signed-in browser in Plugins"
+msgstr ""
+"YouTube hat diesen Audiostream abgelehnt — versuchen Sie die Wiedergabe "
+"erneut oder wählen Sie unter Plugins einen angemeldeten Browser aus"
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:202
 msgid "yt-dlp"
 msgstr "yt-dlp"
 

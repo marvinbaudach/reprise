@@ -91,6 +91,91 @@ impl SpectrumFrame {
     }
 }
 
+/// Identifies one backend playback session for grouping related asynchronous
+/// failures. Linux assigns a new value at every GStreamer `StreamStart`;
+/// backends that cannot identify sessions use [`Self::UNSCOPED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PlaybackSessionId(u64);
+
+impl PlaybackSessionId {
+    pub const UNSCOPED: Self = Self(0);
+}
+
+impl From<u64> for PlaybackSessionId {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+/// Machine-readable cause attached to a backend playback failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackFailureKind {
+    Other,
+    HttpStatus(u16),
+}
+
+/// One backend playback failure with its display text, typed cause, and
+/// session identity. Consumers project behavior from `kind`, never by parsing
+/// `message`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaybackFailure {
+    message: String,
+    kind: PlaybackFailureKind,
+    session_id: PlaybackSessionId,
+}
+
+impl PlaybackFailure {
+    pub fn new(
+        message: impl Into<String>,
+        kind: PlaybackFailureKind,
+        session_id: PlaybackSessionId,
+    ) -> Self {
+        Self {
+            message: message.into(),
+            kind,
+            session_id,
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn kind(&self) -> PlaybackFailureKind {
+        self.kind
+    }
+
+    pub fn session_id(&self) -> PlaybackSessionId {
+        self.session_id
+    }
+
+    pub fn into_message(self) -> String {
+        self.message
+    }
+}
+
+impl From<String> for PlaybackFailure {
+    fn from(message: String) -> Self {
+        Self::new(
+            message,
+            PlaybackFailureKind::Other,
+            PlaybackSessionId::UNSCOPED,
+        )
+    }
+}
+
+impl From<&str> for PlaybackFailure {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+
+impl std::fmt::Display for PlaybackFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
 /// Events the player reports asynchronously, from the GStreamer bus watch and
 /// the position ticker. The UI layer subscribes to these via the callback
 /// passed to `Player::new`.
@@ -131,7 +216,7 @@ pub enum PlayerEvent {
     },
     /// A local-only, normalized audio spectrum for optional visual rendering.
     Spectrum(SpectrumFrame),
-    Error(String),
+    Error(PlaybackFailure),
 }
 
 /// Identifies which stream — i.e. which call to [`PlaybackBackend::play`] /
