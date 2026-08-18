@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "lint:python": "node run-python-lint.mjs",
-    "test:python": "node --test tests/python-lint-contract.test.mjs"
+    "lint:yaml": "node run-yaml-lint.mjs",
+    "test:python": "node --test tests/python-lint-contract.test.mjs",
+    "test:yaml": "node --test tests/yaml-lint-contract.test.mjs"
   },
   "engines": {
     "node": ">=22"
