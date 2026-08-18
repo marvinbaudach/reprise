@@ -28,10 +28,10 @@ export const HERO_CAPTURES: readonly [ProductCapture, ProductCapture] = [
   }),
   capture({
     id: 'android-visualizer',
-    title: 'Android Now Playing',
+    title: 'Now Playing',
     platform: 'Android',
-    description: 'A measured band track animates the segmented visualizer in a Material scene.',
-    alt: 'Reprise on Android with an animated audio-reactive visualizer in Now Playing',
+    description: "The scene is the engine's own, ported from bars.rs.",
+    alt: 'Reprise on Android showing the audio-reactive Now Playing scene',
     filename: 'android-visualizer.webp',
     width: 1080,
     height: 2404,

@@ -7,31 +7,67 @@ const [desktop, phone] = HERO_CAPTURES;
 
 export function HeroProduct() {
   return (
-    <figure className="hero-product" data-showcase="hero-product">
-      <div className="hero-product__light" aria-hidden="true" />
-
-      <div className="hero-product__desktop">
-        <div className="capture-chrome data" aria-hidden="true">
-          <span>GNOME · GTK4</span>
-          <span>native desktop</span>
-        </div>
+    <div className="hero-product" data-reveal="" data-showcase="hero-product">
+      <button
+        className="hero-shot hero-product__desktop"
+        type="button"
+        data-shot=""
+        aria-label={`Open screenshot: ${desktop.title}`}
+      >
         <ProductShot capture={desktop} eager />
-      </div>
+        <span className="hero-shot__sweep" data-sweep="" aria-hidden="true">
+          <span />
+        </span>
+        <span
+          className="hero-shot__sheen hero-shot__sheen--desktop"
+          data-sheen=""
+          aria-hidden="true"
+        />
+        <span className="hero-shot__caption hero-shot__caption--desktop">
+          <span className="hero-shot__platform" data-p="">
+            {desktop.platform}
+          </span>
+          <span className="hero-shot__title" data-t="">
+            {desktop.title}
+          </span>
+          <span className="hero-shot__description-wrap" data-dwrap="">
+            <span className="hero-shot__description" data-d="">
+              {desktop.description}
+            </span>
+          </span>
+        </span>
+      </button>
 
-      <div className="hero-product__phone">
+      <button
+        className="hero-shot hero-product__phone"
+        type="button"
+        data-shot=""
+        aria-label={`Open screenshot: ${phone.title}`}
+      >
         <ProductShot capture={phone} eager />
         <VisualizerPlate />
-      </div>
-
-      <figcaption className="hero-product__caption frame">
-        {HERO_CAPTURES.map((capture) => (
-          <span className="hero-product__fact" key={capture.id}>
-            <span className="eyebrow">{capture.platform}</span>
-            <strong>{capture.title}</strong>
-            <span className="data">{capture.description}</span>
+        <span className="hero-shot__sweep" data-sweep="" aria-hidden="true">
+          <span />
+        </span>
+        <span
+          className="hero-shot__sheen hero-shot__sheen--phone"
+          data-sheen=""
+          aria-hidden="true"
+        />
+        <span className="hero-shot__caption hero-shot__caption--phone">
+          <span className="hero-shot__platform" data-p="">
+            {phone.platform}
           </span>
-        ))}
-      </figcaption>
-    </figure>
+          <span className="hero-shot__title" data-t="">
+            {phone.title}
+          </span>
+          <span className="hero-shot__description-wrap" data-dwrap="">
+            <span className="hero-shot__description" data-d="">
+              {phone.description}
+            </span>
+          </span>
+        </span>
+      </button>
+    </div>
   );
 }

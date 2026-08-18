@@ -9,120 +9,168 @@
 
 .hero-product {
   position: relative;
-  min-height: clamp(29rem, 57vw, 58rem);
+  padding-bottom: 8%;
+}
+
+.hero-shot {
+  --mx: 50%;
+  --my: 50%;
+
+  display: block;
   margin: 0;
-  padding: clamp(2rem, 5vw, 5.5rem) var(--frame-pad) clamp(8rem, 13vw, 13rem);
-  overflow: clip;
-  background:
-    radial-gradient(
-      65% 90% at 72% 30%,
-      color-mix(in oklab, var(--second) 18%, transparent),
-      transparent
-    ),
-    radial-gradient(80% 100% at 20% 18%, var(--accent-glow), transparent 68%),
-    linear-gradient(155deg, var(--surface-stage), var(--surface-base) 78%);
-  border-block: 1px solid var(--surface-line);
-  isolation: isolate;
-}
-
-.hero-product::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image: repeating-linear-gradient(
-    to right,
-    color-mix(in oklab, var(--surface-line) 38%, transparent) 0 1px,
-    transparent 1px 7.5rem
-  );
-  mask-image: linear-gradient(to bottom, black, transparent 78%);
-}
-
-.hero-product__light {
-  position: absolute;
-  inset: 7% 7% 20%;
-  border-radius: 50%;
-  background: color-mix(in oklab, var(--accent) 13%, transparent);
-  filter: blur(90px);
-  z-index: -1;
+  padding: 0;
+  overflow: hidden;
+  background: oklch(17.5% 0.016 269);
+  cursor: zoom-in;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  transform-style: preserve-3d;
+  transition:
+    transform 620ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 620ms ease,
+    border-color 400ms ease;
 }
 
 .hero-product__desktop {
   position: relative;
-  width: min(79vw, 74rem);
-  margin-inline: max(0px, calc((100vw - var(--frame-max)) / 2));
-  overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--surface-line));
-  border-radius: var(--radius-plate);
-  background: var(--surface-base);
-  box-shadow: 0 2.5rem 7rem color-mix(in oklab, black 72%, transparent);
-  transform: perspective(95rem) rotateX(1.5deg) rotateY(3deg) rotateZ(-0.35deg);
-}
-
-.capture-chrome {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.5rem 0.75rem;
-  color: var(--text-faint);
-  border-block-end: 1px solid var(--surface-line-soft);
-  background: var(--surface-raised);
+  width: 100%;
+  border: 1px solid oklch(32% 0.018 269);
+  border-radius: 12px;
+  box-shadow: 0 40px 90px -50px oklch(4% 0.02 269 / 0.95);
 }
 
 .hero-product__phone {
   position: absolute;
-  z-index: 2;
-  width: clamp(10.5rem, 18vw, 17rem);
-  inset-inline-end: clamp(1.25rem, 8vw, 9rem);
-  inset-block-start: clamp(4.25rem, 10vw, 9rem);
-  overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--accent) 52%, var(--surface-line));
-  border-radius: clamp(1rem, 2vw, 1.8rem);
-  background: #000;
-  box-shadow:
-    0 2rem 5rem color-mix(in oklab, black 80%, transparent),
-    0 0 3rem color-mix(in oklab, var(--accent) 20%, transparent);
-  transform: rotate(1.2deg);
+  right: -5%;
+  bottom: -6%;
+  width: 24%;
+  min-width: 108px;
+  border: 1px solid oklch(34% 0.018 269);
+  border-radius: 14px;
+  box-shadow: 0 30px 70px -34px oklch(3% 0.02 269 / 0.95);
 }
 
 .hero-product__visualizer {
   position: absolute;
-  left: 19.259%;
-  top: 24.834%;
-  width: 61.389%;
-  height: 27.121%;
+  left: 19.63%;
+  top: 24.46%;
+  width: 60.74%;
+  height: 27.87%;
   display: block;
   pointer-events: none;
 }
 
-.hero-product__caption {
+.hero-shot__sweep,
+.hero-shot__sheen {
   position: absolute;
-  inset-inline: 0;
-  inset-block-end: clamp(1.5rem, 3vw, 3rem);
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hero-shot__sweep {
+  overflow: hidden;
+}
+
+.hero-shot__sweep > span {
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent);
+}
+
+.hero-shot__sheen {
+  transition: opacity 420ms ease;
+  background: linear-gradient(
+    122deg,
+    oklch(85% 0.13 190 / 0.1),
+    transparent 34%,
+    transparent 64%,
+    oklch(78% 0.16 30 / 0.1)
+  );
+}
+
+.hero-shot__sheen--desktop {
+  background:
+    radial-gradient(340px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%),
+    linear-gradient(
+      122deg,
+      oklch(85% 0.13 190 / 0.1),
+      transparent 34%,
+      transparent 64%,
+      oklch(78% 0.16 30 / 0.1)
+    );
+}
+
+.hero-shot__sheen--phone {
+  background:
+    radial-gradient(220px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%),
+    linear-gradient(
+      122deg,
+      oklch(85% 0.13 190 / 0.12),
+      transparent 40%,
+      transparent 60%,
+      oklch(78% 0.16 30 / 0.12)
+    );
+}
+
+.hero-shot__caption {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    to top,
+    oklch(9% 0.012 269 / 0.94),
+    oklch(9% 0.012 269 / 0.5) 58%,
+    transparent
+  );
+}
+
+.hero-shot__caption--desktop {
+  gap: 2px;
+  padding: 16px 18px;
+}
+
+.hero-shot__caption--phone {
+  padding: 10px 12px;
+  background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), transparent);
+}
+
+.hero-shot__platform {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #4fdbd4;
+}
+
+.hero-shot__caption--phone .hero-shot__platform {
+  letter-spacing: 0.16em;
+  color: #ff6f5e;
+}
+
+.hero-shot__title {
+  color: oklch(96% 0.004 269);
+  font-size: 0.98rem;
+}
+
+.hero-shot__caption--phone .hero-shot__title {
+  font-size: 0.78rem;
+}
+
+.hero-shot__description-wrap {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--gap-block);
+  grid-template-rows: 0fr;
+  overflow: hidden;
 }
 
-.hero-product__fact {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.35rem var(--gap-line);
-  align-items: baseline;
-  padding-block-start: var(--gap-line);
-  border-block-start: 1px solid var(--surface-line);
-}
-
-.hero-product__fact strong {
-  color: var(--text-strong);
-  font-variation-settings:
-    "wdth" 104,
-    "wght" 650;
-}
-
-.hero-product__fact .data {
-  grid-column: 2;
-  color: var(--text-muted);
-  line-height: 1.55;
+.hero-shot__description {
+  min-height: 0;
+  opacity: 0;
+  font-size: 0.8rem;
+  color: oklch(74% 0.009 269);
 }
 
 /* --- Evidence wall ------------------------------------------------------- */
@@ -273,32 +321,6 @@
 }
 
 @media (max-width: 48rem) {
-  .hero-product {
-    min-height: 36rem;
-    padding-inline: var(--frame-pad);
-    padding-block-end: 11rem;
-  }
-
-  .hero-product__desktop {
-    width: 92vw;
-    margin-inline: -0.75rem 0;
-  }
-
-  .hero-product__phone {
-    width: min(39vw, 11.5rem);
-    inset-inline-end: 1.15rem;
-    inset-block-start: 6.5rem;
-  }
-
-  .hero-product__caption {
-    grid-template-columns: 1fr;
-    gap: var(--gap-tight);
-  }
-
-  .hero-product__fact .data {
-    display: none;
-  }
-
   .product-gallery-stage__intro {
     grid-template-columns: 1fr;
   }

@@ -1,29 +1,96 @@
 /* --- Hero ---------------------------------------------------------------- */
 
 .hero {
-  padding-block: clamp(3rem, 2rem + 6vw, 8rem) var(--gap-chapter);
+  padding: clamp(6rem, 4.5rem + 6vw, 10rem) 0 clamp(3rem, 2rem + 4vw, 6rem);
+}
+
+.hero__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: clamp(2rem, 1.4rem + 3vw, 4.5rem);
+  align-items: center;
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);
 }
 
 .hero__copy {
-  display: grid;
-  gap: var(--gap-block);
-  padding-block-end: clamp(3rem, 5vw, 6rem);
+  max-width: 42rem;
+  container-type: inline-size;
+}
+
+.hero__eyebrow {
+  margin: 0 0 22px;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #4fdbd4;
 }
 
 .hero__headline {
-  font-size: clamp(2.75rem, 1.2rem + 7.5vw, 8rem);
-  color: var(--text-strong);
-  margin: 0;
+  margin: 0 0 26px;
+  font-size: clamp(2.1rem, 11.4cqi, 4rem);
+  line-height: 0.96;
+  letter-spacing: -0.03em;
+  color: oklch(97% 0.004 269);
+  font-variation-settings:
+    "wdth" 108,
+    "wght" 620;
+  text-wrap: balance;
+}
+
+.hero__headline span {
+  display: block;
 }
 
 .hero__lead {
-  max-width: 42ch;
-  border-left: 2px solid var(--accent);
-  padding-left: var(--gap-line);
+  margin: 0 0 20px;
+  max-width: 46ch;
+  font-size: clamp(1.05rem, 1rem + 0.4vw, 1.35rem);
+  line-height: 1.5;
+  color: oklch(90% 0.006 269);
+  text-wrap: pretty;
 }
 
 .hero__note {
-  color: var(--text-muted);
+  margin: 0;
+  max-width: 58ch;
+  color: oklch(72% 0.009 269);
+  text-wrap: pretty;
+}
+
+.hero__scroll-cue {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 40px;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.hero__scroll-line {
+  width: 1px;
+  height: 46px;
+  transform-origin: top;
+  background: linear-gradient(180deg, #4fdbd4, transparent);
+  animation: rp-cue 2.6s ease-in-out infinite;
+}
+
+@keyframes rp-cue {
+  0%,
+  100% {
+    transform: scaleY(0.2);
+    opacity: 0.3;
+  }
+
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 /* --- Chapters ------------------------------------------------------------ */

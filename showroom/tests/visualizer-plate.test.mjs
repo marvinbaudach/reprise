@@ -14,7 +14,9 @@ test('the hero phone carries a complete recorded visualizer track', async () => 
   assert.ok(track.size > 0);
   assert.equal(track.size % bytesPerFrame, 0);
 
-  const phone = html.match(/<div[^>]+class="hero-product__phone"[\s\S]+?<\/div>/)?.[0];
+  const phone = html.match(
+    /<button[^>]+class="[^"]*hero-product__phone[^"]*"[\s\S]+?<\/button>/,
+  )?.[0];
   assert.ok(phone);
   assert.match(phone, /<canvas[^>]+data-showcase="visualizer-plate"/);
 });
