@@ -61,4 +61,34 @@ test('Lightbox traps focus and restores its trigger around keyboard navigation a
   assert.match(css, /animation:rp-fade \.26s ease both/);
   assert.match(css, /animation:rp-lb-in \.42s cubic-bezier\(\.16,1,\.3,1\) both/);
   assert.match(css, /backdrop-filter:blur\(14px\)/);
+  // The zoom wrapper must stay a resolved box, or the picture is cropped.
+  assert.match(css, /\.lightbox__zoom\{[^}]*height:100%/);
+  assert.match(css, /\.lightbox__image\{[^}]*width:auto[^}]*height:auto/);
+});
+
+test('the Lightbox inerts the page behind it and forgets its zoom with the picture', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'Lightbox.tsx'),
+    'utf8',
+  );
+
+  // The dialog sits in a portal on <body>, so the whole page can go inert.
+  assert.match(source, /createPortal\(/);
+  assert.match(source, /document\.body,/);
+  assert.match(source, /getElementById\('showroom-root'\)/);
+  assert.match(source, /setAttribute\('inert', ''\)/);
+  assert.match(source, /setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(source, /removeAttribute\('inert'\)/);
+  assert.match(source, /removeAttribute\('aria-hidden'\)/);
+  // Focus may only return once the page is reachable again.
+  const cleanup = source.match(/removeAttribute\('aria-hidden'\)[\s\S]*?returnFocus\.focus\(\)/);
+  assert.ok(cleanup, 'returnFocus must be restored after the inert attributes are dropped');
+
+  // The zoom belongs to one picture, not to a bare boolean.
+  assert.match(source, /zoom\.index === activeIndex/);
+  assert.doesNotMatch(source, /zoomed: (true|false)/);
+
+  // Neither the closing backdrop nor any other tabindex="-1" node is a tab stop.
+  assert.match(source, /className="lightbox__backdrop"[\s\S]*?tabIndex=\{-1\}/);
+  assert.match(source, /button:not\(\[disabled\]\):not\(\[tabindex="-1"\]\)/);
 });

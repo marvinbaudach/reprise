@@ -424,7 +424,7 @@ fn write_visualizer_rgb_frame(
     {
         let cr = gtk4::cairo::Context::new(&surface).unwrap();
         cr.set_source_rgb(0.078, 0.094, 0.102);
-        let _ = cr.paint();
+        cr.paint().unwrap();
         render::draw_scene(&cr, &scene);
     }
 

@@ -1,4 +1,5 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { captureUrl, type ProductCapture } from '../../data/showcase';
 import './lightbox.css';
 
@@ -9,6 +10,11 @@ interface LightboxProps {
   readonly onClose: () => void;
   readonly onNext: () => void;
   readonly onPrevious: () => void;
+}
+
+interface ZoomState {
+  readonly index: number;
+  readonly origin: string;
 }
 
 export function Lightbox({
@@ -22,18 +28,21 @@ export function Lightbox({
   const capture = captures[activeIndex];
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const [zoom, setZoom] = useState<{ readonly origin: string; readonly zoomed: boolean }>({
-    origin: 'center',
-    zoomed: false,
-  });
+  // Tied to the picture it was measured on, so the next arrow key cannot flash
+  // the following screenshot at 2.1x around the previous one's origin.
+  const [zoom, setZoom] = useState<ZoomState | null>(null);
+  const activeZoom = zoom && zoom.index === activeIndex ? zoom : null;
 
   useEffect(() => {
-    if (activeIndex >= 0) setZoom({ origin: 'center', zoomed: false });
-  }, [activeIndex]);
-
-  useEffect(() => {
+    // The dialog lives in a portal on <body>, so the page behind it can be made
+    // inert wholesale: the keyboard trap below only stops Tab, while a screen
+    // reader's browse cursor would still walk the header and the footer that
+    // aria-modal declares hidden.
+    const page = document.getElementById('showroom-root');
     const previousOverflow = document.documentElement.style.overflow;
     document.documentElement.style.overflow = 'hidden';
+    page?.setAttribute('inert', '');
+    page?.setAttribute('aria-hidden', 'true');
     closeRef.current?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -56,7 +65,7 @@ export function Lightbox({
 
       const focusable = Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+          'button:not([disabled]):not([tabindex="-1"]), [href], [tabindex]:not([tabindex="-1"])',
         ) ?? [],
       );
       const first = focusable.at(0);
@@ -77,6 +86,9 @@ export function Lightbox({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.documentElement.style.overflow = previousOverflow;
+      page?.removeAttribute('inert');
+      page?.removeAttribute('aria-hidden');
+      // Only reachable again once the page is no longer inert.
       if (returnFocus) returnFocus.focus();
     };
   }, [onClose, onNext, onPrevious, returnFocus]);
@@ -84,21 +96,21 @@ export function Lightbox({
   if (!capture) return null;
 
   const handleZoom = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (zoom.zoomed) {
-      setZoom({ origin: 'center', zoomed: false });
+    if (activeZoom) {
+      setZoom(null);
       return;
     }
     const bounds = event.currentTarget.getBoundingClientRect();
     const x = ((event.clientX - bounds.left) / bounds.width) * 100;
     const y = ((event.clientY - bounds.top) / bounds.height) * 100;
-    setZoom({ origin: `${x.toFixed(1)}% ${y.toFixed(1)}%`, zoomed: true });
+    setZoom({ index: activeIndex, origin: `${x.toFixed(1)}% ${y.toFixed(1)}%` });
   };
 
   const counter = `${String(activeIndex + 1).padStart(2, '0')} / ${String(captures.length).padStart(2, '0')}`;
   const titleId = `lightbox-title-${capture.id}`;
   const descriptionId = `lightbox-description-${capture.id}`;
 
-  return (
+  return createPortal(
     <div
       ref={dialogRef}
       className="lightbox"
@@ -132,12 +144,14 @@ export function Lightbox({
           className="lightbox__backdrop"
           type="button"
           aria-label="Close lightbox"
+          // A mouse shortcut, not a tab stop: the header already carries Close.
+          tabIndex={-1}
           onClick={onClose}
         />
         <button
           className="lightbox__zoom"
           type="button"
-          aria-label={zoom.zoomed ? 'Reset screenshot zoom' : 'Zoom screenshot'}
+          aria-label={activeZoom ? 'Reset screenshot zoom' : 'Zoom screenshot'}
           onClick={handleZoom}
         >
           <img
@@ -147,10 +161,10 @@ export function Lightbox({
             width={capture.width}
             height={capture.height}
             data-lb-img=""
-            data-zoomed={zoom.zoomed ? 'true' : 'false'}
+            data-zoomed={activeZoom ? 'true' : 'false'}
             style={{
-              transform: zoom.zoomed ? 'scale(2.1)' : 'none',
-              transformOrigin: zoom.origin,
+              transform: activeZoom ? 'scale(2.1)' : 'none',
+              transformOrigin: activeZoom?.origin ?? 'center',
             }}
             draggable={false}
           />
@@ -159,6 +173,7 @@ export function Lightbox({
       <p id={descriptionId} className="lightbox__description">
         {capture.description}
       </p>
-    </div>
+    </div>,
+    document.body,
   );
 }

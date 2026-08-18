@@ -33,7 +33,10 @@ test('CH.03 exposes both honest rendering modes, a readout, and three legends', 
     assert.match(chapter, new RegExp(heading));
   }
   assert.doesNotMatch(chapter, /role="slider"|aria-valuemin|aria-valuemax|scrub|five-second/);
+  assert.match(chapter, /<fieldset class="seek-modes"><legend[^>]*>Seek bar rendering<\/legend>/);
+  assert.doesNotMatch(chapter, /<fieldset[^>]+aria-label/);
   assert.match(css, /\.seek-modes button\[aria-pressed=true\]/);
+  assert.match(css, /\.seek-modes legend\{[^}]*clip-path:inset\(50%\)/);
   assert.match(css, /\.seek-track__canvas-frame\{[^}]*height:148px/);
   assert.match(css, /prefers-reduced-motion:reduce/);
 });

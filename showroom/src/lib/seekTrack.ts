@@ -29,10 +29,17 @@ let pendingTrack: Promise<MeasuredSeekTrack> | undefined;
 
 /** Fetch both seek surfaces' one shared measured track. */
 export function loadSeekTrack(): Promise<MeasuredSeekTrack> {
-  pendingTrack ??= fetch(SEEK_TRACK_PATH).then(async (response) => {
-    if (!response.ok) throw new Error(`Measured seek track returned ${response.status}`);
-    return parseSeekTrack(await response.arrayBuffer());
-  });
+  pendingTrack ??= fetch(SEEK_TRACK_PATH)
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`Measured seek track returned ${response.status}`);
+      return parseSeekTrack(await response.arrayBuffer());
+    })
+    .catch((error: unknown) => {
+      // A failed attempt must not become every later caller's answer: both seek
+      // surfaces would show "Measured track unavailable" until a full reload.
+      pendingTrack = undefined;
+      throw error;
+    });
   return pendingTrack;
 }
 

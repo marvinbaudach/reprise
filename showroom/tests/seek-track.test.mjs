@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { loadSeekTrack } from '../src/lib/seekTrack.ts';
+
 const showroomRoot = new URL('..', import.meta.url).pathname;
 const trackPath = join(showroomRoot, 'public', 'media', 'showroom', 'seek-track.bin');
 const bucketCount = 1_000;
@@ -27,4 +29,25 @@ test('the spectral seek bar carries a complete measured track', async () => {
   const [minimumCentroid, maximumCentroid] = range(centroids);
   assert.notEqual(minimumPeak, maximumPeak, 'waveform peaks must not be constant');
   assert.notEqual(minimumCentroid, maximumCentroid, 'centroid curve must not be constant');
+});
+
+test("a failed load does not become every later caller's answer", async () => {
+  const track = await readFile(trackPath);
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: false, status: 503 });
+    await assert.rejects(loadSeekTrack(), /503/);
+
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () =>
+        track.buffer.slice(track.byteOffset, track.byteOffset + track.byteLength),
+    });
+    const loaded = await loadSeekTrack();
+    assert.equal(loaded.durationMs, track.readUInt32LE(0));
+    assert.equal(loaded.peaks.length, bucketCount);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

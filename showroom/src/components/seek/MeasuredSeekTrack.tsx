@@ -199,7 +199,8 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
           <p>The spectral seek bar, live</p>
           <h3>Height is the level. Colour is the frequency.</h3>
         </div>
-        <fieldset className="seek-modes" aria-label="Seek bar rendering">
+        <fieldset className="seek-modes">
+          <legend>Seek bar rendering</legend>
           <button
             type="button"
             data-mode="fill"
