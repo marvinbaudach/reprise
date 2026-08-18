@@ -254,6 +254,40 @@ fn fallback_uses_ticketmaster_only_after_bandsintown_unmatched() {
 }
 
 #[test]
+fn festival_event_keeps_each_artist_at_the_same_place_and_time() {
+    let conn = conn();
+    seed_play(&conn, "Artist A", 1_000);
+    seed_play(&conn, "Artist B", 1_000);
+    let provider = FakeProvider::new(
+        ProviderKind::Ticketmaster,
+        Resolution::Resolved {
+            provider_id: "festival-id".into(),
+            mbid_verified: false,
+        },
+        vec![event("Festival Hall")],
+    );
+
+    refresh(
+        &conn,
+        &[Box::new(provider)],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_000,
+        false,
+    )
+    .unwrap();
+
+    let artists = conn
+        .conn()
+        .prepare("SELECT artist_name FROM concert_events ORDER BY artist_name")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(artists, ["Artist A", "Artist B"]);
+}
+
+#[test]
 fn similar_candidates_share_the_pipeline_and_persist_the_seed_caption() {
     let conn = conn();
     seed_play(&conn, "Library Seed", 1_000);
@@ -307,6 +341,31 @@ fn similar_candidates_share_the_pipeline_and_persist_the_seed_caption() {
             Some("Library Seed".into()),
             Some("discovered-mbid".into())
         )
+    );
+    let stored_events = conn
+        .conn()
+        .prepare(
+            "SELECT artist_name, is_similar, similar_to
+               FROM concert_events
+              ORDER BY is_similar, artist_name",
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        stored_events,
+        [
+            ("Library Seed".into(), 0, None),
+            ("Discovered Artist".into(), 1, Some("Library Seed".into())),
+        ]
     );
 
     seed_play(&conn, "Discovered Artist", 1_001);

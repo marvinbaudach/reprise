@@ -440,16 +440,8 @@ fn reconcile_artist(
                ?14, ?15, ?16, ?17, ?18, ?19
              )
              ON CONFLICT(dedupe_key) DO UPDATE SET
-               artist_key = CASE
-                 WHEN concert_events.is_similar = 1 AND excluded.is_similar = 0
-                   THEN excluded.artist_key
-                 ELSE concert_events.artist_key
-               END,
-               artist_name = CASE
-                 WHEN concert_events.is_similar = 1 AND excluded.is_similar = 0
-                   THEN excluded.artist_name
-                 ELSE concert_events.artist_name
-               END,
+               artist_key = excluded.artist_key,
+               artist_name = excluded.artist_name,
                starts_at = excluded.starts_at,
                date_key = excluded.date_key,
                venue = excluded.venue,
