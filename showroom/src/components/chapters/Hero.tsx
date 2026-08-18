@@ -1,3 +1,4 @@
+import { HeroSeekTrack } from '../seek/MeasuredSeekTrack';
 import { HeroProduct } from '../showcase/HeroProduct';
 import './chapters.css';
 
@@ -43,6 +44,7 @@ export function Hero({ reducedMotion }: HeroProps) {
 
         <HeroProduct reducedMotion={reducedMotion} />
       </div>
+      <HeroSeekTrack reducedMotion={reducedMotion} />
     </section>
   );
 }

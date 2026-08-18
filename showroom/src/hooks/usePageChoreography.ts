@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { prepareCounter, runCounter, runCountersIn } from '../lib/counters';
 import { prepareReveals, type RevealState, sweepReveals } from '../lib/reveal';
+import { drawSeekTracks, SEEK_FRAME_EVENT } from '../lib/seekRenderer';
 
 /**
  * Everything the page does while it is scrolled, in one pass.
@@ -68,7 +69,7 @@ export function usePageChoreography(still: boolean): void {
       oil.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(1.02)`;
     };
 
-    const tick = () => {
+    const tick = (timestamp = performance.now()) => {
       frame = null;
       const doc = document.documentElement;
       const max = Math.max(1, doc.scrollHeight - window.innerHeight);
@@ -112,6 +113,7 @@ export function usePageChoreography(still: boolean): void {
         }
       }
       for (const link of navLinks) link.dataset.current = link === active ? 'true' : 'false';
+      if (drawSeekTracks(timestamp, still)) schedule();
     };
 
     const schedule = () => {
@@ -127,6 +129,7 @@ export function usePageChoreography(still: boolean): void {
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule, { passive: true });
     window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener(SEEK_FRAME_EVENT, schedule);
     tick();
     // Fonts and images land after the first frame and move everything below them;
     // two more passes catch the elements that were mid-air at that moment.
@@ -137,6 +140,7 @@ export function usePageChoreography(still: boolean): void {
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
       window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener(SEEK_FRAME_EVENT, schedule);
       window.clearTimeout(late);
       if (frame !== null) cancelAnimationFrame(frame);
     };

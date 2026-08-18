@@ -12,7 +12,7 @@ async function builtCss() {
   return readFile(join(assets, stylesheet), 'utf8');
 }
 
-test('the design hero ends with two screenshot buttons and deliberately omits seek', async () => {
+test('the design hero opens with two screenshot buttons', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
   const hero = html.match(/<section[^>]+data-showcase="design-hero"[\s\S]+?<\/section>/)?.[0];
@@ -25,8 +25,6 @@ test('the design hero ends with two screenshot buttons and deliberately omits se
     hero,
     /class="[^"]*hero-product__phone[^"]*"[\s\S]+?data-showcase="visualizer-plate"/,
   );
-  assert.doesNotMatch(hero, /rp-hero-canvas|rp-hero-elapsed|rp-hero-remaining|seek bar/i);
-
   assert.match(
     css,
     /\.hero\{[^}]*padding:clamp\(6rem,4\.5rem \+ 6vw,10rem\) 0 clamp\(3rem,2rem \+ 4vw,6rem\)/,
