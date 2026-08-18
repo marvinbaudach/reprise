@@ -20,6 +20,47 @@ mapfile -t tests < <(
     | sed -n 's/: test$//p'
 )
 
+# `--ignored` is how a display test announces that it needs an X server, but it
+# is also how a measurement tool hides from the ordinary suite. Such a tool
+# takes its input from the operator through environment variables and panics
+# without it, so running it here reports a red that says nothing about the
+# product. Tools are dropped by their own declared reason —
+# `#[ignore = "measurement: ..."]` — never by a hand-kept list of names, which
+# would rot the moment someone adds the next one. Every drop is named below: a
+# suite that quietly shrinks is worse than a suite that is red.
+mapfile -t measurement_sources < <(
+  grep -rl '#\[ignore = "measurement' crates/reprise-gnome/src || true
+)
+mapfile -t measurement_tools < <(
+  if (( ${#measurement_sources[@]} > 0 )); then
+    awk '/#\[ignore = "measurement/ { want = 1; next }
+         want && match($0, /fn [a-z0-9_]+/) {
+           print substr($0, RSTART + 3, RLENGTH - 3)
+           want = 0
+         }' "${measurement_sources[@]}"
+  fi
+)
+
+skipped=()
+if (( ${#measurement_tools[@]} > 0 )); then
+  kept=()
+  for test in "${tests[@]}"; do
+    is_tool=
+    for tool in "${measurement_tools[@]}"; do
+      if [[ ${test##*::} == "$tool" ]]; then
+        is_tool=1
+        break
+      fi
+    done
+    if [[ -n $is_tool ]]; then
+      skipped+=("$test")
+    else
+      kept+=("$test")
+    fi
+  done
+  tests=("${kept[@]}")
+fi
+
 if [[ $mode == css ]]; then
   css_tests=()
   for test in "${tests[@]}"; do
@@ -247,6 +288,11 @@ echo
 echo "== display test summary =="
 echo "passed: $passed"
 echo "failed: ${#failed_tests[@]} of ${#tests[@]}"
+
+if (( ${#skipped[@]} > 0 )); then
+  echo "skipped: ${#skipped[@]} measurement tool(s), not display tests"
+  printf '  %s\n' "${skipped[@]}"
+fi
 
 if (( ${#failed_tests[@]} > 0 )); then
   printf '  %s\n' "${failed_tests[@]}"
