@@ -198,3 +198,65 @@ er dem Auftraggeber nur einen Reload und einen Screenshot abverlangt.
   reicht, um sie in wenigen Minuten neu zu schreiben.
 - **Kein Wake-Lock genommen.** Für unbeaufsichtigte Läufe:
   `wake-lock acquire showroom-design-import "…"`.
+
+---
+
+## Nachtrag, 18.08.2026 spät — gelandet
+
+Die offene Frage aus dem Kopf dieser Übergabe ist beantwortet: die Arbeit der
+Vorsitzung liegt in drei Commits (`fix` / `perf` / `feat`). Zwei Dateien tragen
+Fix und Refaktorierung in einem Umbau; sie wurden per Hunk getrennt, jede
+Zwischenstufe übersetzt und besteht die Suite.
+
+Danach kamen drei Dinge dazu.
+
+**Bildqualitätsstufen — entschieden und gebaut.** Jede Aufnahme hat jetzt eine
+Leiter (GNOME 800/1200/1600/2400, Android 360/540/810/1080); die
+`sizes`-Angaben sind über fünf Sichtfensterbreiten gemessen, nicht geschätzt.
+
+**Web Vitals.** Gemessen gegen den Produktionsbau, Median aus drei Läufen:
+
+| | Desktop 1376/DPR2 | Mobil 390/DPR3 |
+|---|---|---|
+| Largest Paint | 1248 → **184 ms** | 1024 → **136 ms** |
+| First Paint | 380 → **184 ms** | 244 → **136 ms** |
+| Layout Shift | 0,024 → **0** | 0,0545\* → **0** |
+| Bildübertragung | 876 → **610 KB** | 875 → **480 KB** |
+| dekodiert | 136,1 → **79,1 MB** | 136,1 → **47,3 MB** |
+
+\* zeitweise: 0,0545 in zwei von drei Läufen.
+
+Drei Ursachen, alle behoben: die volle Bildgröße überall, die beiden
+Google-Font-Ursprünge vor jedem Textpaint (die Quelle der ganzen Layoutbewegung
+— die Schriften liegen jetzt hier und werden vorgeladen), und die Einblendung
+der beiden Kacheln über dem Falz, die sich direkt auf den größten Paint
+addierte.
+
+**INP wurde gemessen, aber nicht angefasst.** Bei 4-facher CPU-Drosselung und
+über die ganze Seite hinweg (Lightbox öffnen, blättern, schließen, Kacheln
+überfahren, Seekbar ziehen, Navigationssprung): schlechtestes Ereignis 96–160 ms,
+davon 0–5 ms Verarbeitung — der Rest ist Darstellungszeit. Kein einziger Long
+Task. Der Verdacht fiel auf `backdrop-filter: blur(14px)` der Lightbox; ein
+Kontrollarm mit abgeschaltetem Blur (je vier Läufe) ergab 124 gegen 144 ms
+Median bei überlappenden Spannen. **Das trägt keine Gestaltungsänderung** — der
+Blur bleibt.
+
+**Beide Seekbars sind bedienbar.** Klick springt, Ziehen führt, die Tastatur
+schrittet. Das Positionsmodell liegt jetzt in `seekClock.ts` und ist ohne
+Canvas prüfbar. Am laufenden Bild über CDP gefahren, beide Leisten gleich.
+
+### Weiterhin offen
+
+- **Vier kleine Review-Befunde** aus HANDOFF-2 — bis auf einen. Die
+  Ref-Zuweisung im Render-Körper von `MeasuredSeekTrack.tsx` ist mit dem Umbau
+  der Komponente verschwunden. Es bleiben: unabbrechbare rAF-Schleife in
+  `counters.ts`, ungetrackter `setTimeout` in `reveal.ts`, kein
+  `AbortController` auf dem geteilten Seek-`fetch`, `u32::try_from`-Panik in
+  `waveform.rs`.
+- **Die Sprossen brechen auf dem Handy** (390 px): `.rungs__rung` ist 560 px
+  breit in einem 347 px breiten Container. Braucht eine
+  Gestaltungsentscheidung.
+- **`isHero()` sucht `#hero`, der Hero heißt `#rp-top`** — toter Zweig, ihn zu
+  reparieren ändert sichtbar das Verhalten.
+- **Der Sheen-Wert `--sheen-peak: 0.62`** ist vom Auftraggeber noch nicht
+  beurteilt.

@@ -2,7 +2,7 @@
 slug: showroom-seek-track-measured
 worktree: /home/marvin/Projects/reprise-showroom-seek-track
 branch: feature/showroom-seek-track
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---

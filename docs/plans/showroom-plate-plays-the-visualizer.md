@@ -2,7 +2,7 @@
 slug: showroom-plate-plays-the-visualizer
 worktree: /home/marvin/Projects/reprise-showroom-plate-plays-the-visualizer
 branch: feature/showroom-plate-plays-the-visualizer
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
