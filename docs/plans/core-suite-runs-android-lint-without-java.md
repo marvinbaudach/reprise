@@ -2,7 +2,7 @@
 slug: core-suite-runs-android-lint-without-java
 worktree: /home/marvin/Projects/reprise-core-suite-runs-android-lint-without-java
 branch: feature/core-suite-runs-android-lint-without-java
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
