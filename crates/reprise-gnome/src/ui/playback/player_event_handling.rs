@@ -46,12 +46,13 @@ fn external_error_presentation(
     podcast_kind: Option<PodcastKind>,
 ) -> ExternalErrorPresentation {
     let unavailable_episode = matches!(failure.kind(), PlaybackFailureKind::HttpStatus(404 | 410));
+    let safe_message = redact_local_stream_proxy_urls(failure.message());
     let message = if failure.kind() == PlaybackFailureKind::HttpStatus(403)
         && podcast_kind == Some(PodcastKind::Youtube)
     {
         strings::text(strings::YOUTUBE_STREAM_FORBIDDEN)
     } else {
-        failure.message().to_owned()
+        safe_message.into_owned()
     };
     ExternalErrorPresentation {
         message,
@@ -610,6 +611,23 @@ mod spectrum_coalescing_tests {
         assert_eq!(
             external_error_dispatch(PlaybackMode::QueuedEpisode, &missing_episode),
             ExternalErrorDispatch::HandleFailure
+        );
+    }
+
+    #[test]
+    fn external_error_presentation_redacts_local_stream_proxy_tokens() {
+        let presentation = external_error_presentation(
+            &PlaybackFailure::new(
+                "Forbidden, URL: http://127.0.0.1:42817/0123456789abcdef?source=playbin",
+                PlaybackFailureKind::Other,
+                PlaybackSessionId::from(11),
+            ),
+            Some(PodcastKind::Youtube),
+        );
+
+        assert_eq!(
+            presentation.message,
+            "Forbidden, URL: http://127.0.0.1:42817/<redacted>"
         );
     }
 
