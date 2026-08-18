@@ -49,7 +49,17 @@ echo "== Branch diff =="
 git diff --check "$base_ref"...HEAD
 
 scripts/check-shell.sh
-scripts/check-project-quality.sh
+# The core-suite container has neither Java nor an Android UniFFI bindgen step.
+# base-contracts covers --project --showroom; android-unit-suite covers --android.
+case "${MERGE_READINESS_SKIP_ANDROID_QUALITY:-}" in
+  1 | true)
+    echo "Skipping the Android area here; it runs in the android-unit-suite job."
+    scripts/check-project-quality.sh --project --showroom
+    ;;
+  *)
+    scripts/check-project-quality.sh
+    ;;
+esac
 scripts/tests/worktree-gc.sh
 scripts/tests/worktree-gc-schedule.sh
 
