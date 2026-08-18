@@ -2,7 +2,7 @@
 slug: showroom-design-import
 worktree: /home/marvin/Projects/reprise-showroom-design-import
 branch: feature/showroom-design-import
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-18
 ---

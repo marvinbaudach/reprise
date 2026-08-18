@@ -1,77 +1,139 @@
-# Handover — Showroom: Visualizer gelandet? nein. Design-Import begonnen.
+# Handover — Showroom: der Design-Import steht, der Review liegt zur Auswahl
 
-Stand: 18.08.2026, nachmittags. Geschrieben für eine frische Session nach
-`/clear`. Drei Zweige sind offen, einer davon hat einen Codex-Lauf in der Luft.
+Stand: 18.08.2026, 17:38. Geschrieben für eine frische Sitzung nach `/clear`.
+**Es läuft nichts mehr.** Kein Codex, kein Dev-Server, keine offenen Agenten.
 
-## Die drei Zweige
+## Wo die Arbeit steht
 
-Alle drei hängen aufeinander: `dev` → Visualizer → (Seek-Spur | Design-Import).
-Sie müssen **in dieser Reihenfolge** landen, mit Rebase dazwischen.
+Drei Zweige, aufeinander gestapelt, **18 Commits über `origin/dev`**:
 
-| Zweig | Worktree | Stand |
-|---|---|---|
-| `feature/showroom-plate-plays-the-visualizer` | `../reprise-showroom-plate-plays-the-visualizer` | **fertig, abgenommen, nicht gereviewt, nicht gelandet.** `213d980a29`. 16/16 Tests grün. `phase: coded`, Sichtprüfung als Nachtrag im Plan. |
-| `feature/showroom-seek-track` | `../reprise-showroom-seek-track` | **Codex läuft** (seit ~15:0x, PID 417128). Plan: `docs/plans/showroom-seek-track-measured.md`. |
-| `feature/showroom-design-import` | `../reprise-showroom-design-import` | **Stufe 1 gebaut**, `d856bb5e26`. Plan: `docs/plans/showroom-design-import.md`. |
+```
+origin/dev
+  └─ feature/showroom-plate-plays-the-visualizer   (Visualizer-Platte)
+       └─ feature/showroom-seek-track              (gemessene Seek-Spur)
+            └─ feature/showroom-design-import      (die Design-Fassung)  ← Spitze
+```
 
-Beide Nebenzweige sind von der **Visualizer-Spitze** geschnitten, nicht von
-`origin/dev` — sonst fehlte ihnen die Platte bzw. der Kontext.
+Worktree der Spitze: `/home/marvin/Projects/reprise-showroom-design-import`,
+HEAD `720e26746c`.
 
-## Was in der Luft ist
+Der Auftraggeber hat entschieden: **alles in einem Rutsch landen**, in genau
+dieser Reihenfolge. Nichts ist gepusht.
 
-- **Codex auf `feature/showroom-seek-track`.** Log:
-  `/tmp/claude-1000/-home-marvin-Projects-reprise/b01bf2d6-*/scratchpad/codex-seek-track.log`,
-  Bericht landet in `<worktree>/.pipeline-codex.md`. Ein Monitor (`bwcyz5ep6`)
-  meldet das Ende. Prüfen: `kill -0 417128`.
-  Auftrag: ein `#[ignore]`-Extraktor über `GstreamerWaveformBackend::extract_render_data`,
-  `scripts/render-showroom-seek-track.sh`, das Asset
-  `showroom/public/media/showroom/seek-track.bin` (**2004 B**: `u32` LE
-  Spieldauer in ms, 1000 Pegel, 1000 Centroid) und ein Test dazu.
-  Quelle: `/home/marvin/Music/Lorna Shore/…And I Return to Nothingness (2021)/01 To the Hellfire.flac`.
-- **Wake-Lock `showroom-visualizer` hält.** Erst freigeben, wenn kein Lauf mehr
-  offen ist.
+| Zweig | Stand |
+|---|---|
+| Visualizer | fertig, abgenommen, im Stapel enthalten |
+| Seek-Spur | fertig, nachgemessen (siehe Belege) |
+| Design-Import | **alle neun Stufen gebaut**, Plan auf `phase: reviewed` |
 
-## Nächste Schritte, in der Reihenfolge
+## Der einzige offene Punkt: die Auswahl aus dem Review
 
-1. **Codex-Ergebnis abnehmen** (Seek-Spur): Bericht lesen, Zahlen prüfen —
-   Dateigröße 2004 B, Spieldauer plausibel, beide Spuren nicht konstant.
-2. **Design-Import weiterbauen**: §4 des Plans, sechs Stufen, Hero zuerst.
-3. **Landen**, in dieser Reihenfolge: Visualizer → Seek-Spur → Design-Import,
-   jeweils `/check` davor und Rebase auf das frisch gewordene `dev` dazwischen.
+Vier Reviewer (typescript, react, rust, security) sind gegen den ganzen Stapel
+gelaufen, Basis `bf546d6cc8`. **Kein kritischer Befund. Security: Freigabe.**
+Der Auftraggeber hat noch **nicht** gesagt, welche Befunde repariert werden —
+das ist die erste Frage der nächsten Sitzung.
+
+### Wichtig (4)
+
+1. **`showroom/src/lib/seekTrack.ts:28`** — `loadSeekTrack()` merkt sich das
+   Versprechen auch im Fehlerfall. Ein einziger geplatzter `fetch` liefert
+   jedem späteren Aufrufer dieselbe Absage; beide Seek-Flächen zeigen bis zum
+   Neuladen „Measured track unavailable". Fix: `pendingTrack` im `catch`
+   zurücksetzen, bevor der Fehler weitergereicht wird.
+2. **`showroom/src/components/showcase/Lightbox.tsx:101`** — die Seite hinter
+   dem Dialog bekommt kein `inert`/`aria-hidden`. Die Tastaturfalle greift,
+   der Lesecursor eines Screenreaders läuft trotzdem in Kopf- und Fußzeile,
+   während `aria-modal="true"` das Gegenteil behauptet.
+3. **`Lightbox.tsx:30`** — die Zoom-Rücksetzung hängt an einem Effekt auf
+   `activeIndex` und kommt damit ein Bild zu spät: hineinzoomen, Pfeiltaste,
+   und das nächste Bild blitzt auf 2,1× am alten Ursprung auf. Fix: den Zoom
+   an den Index binden (`zoom.index === activeIndex`) statt an einen bloßen
+   Wahrheitswert.
+4. **`crates/reprise-gnome/src/ui/now_playing/song_visualizer_tests.rs:116`** —
+   `let _ = cr.paint();` verschluckt den Cairo-Fehler; danach wird auf eine
+   undefinierte Fläche gezeichnet und geschrieben, als wäre nichts. Drei Zeilen
+   davor und danach schlägt jeder Fehler laut fehl. Nur Diagnosepfad
+   (`REPRISE_VIS_WRITE_RGB=1`), nicht das ausgelieferte Asset.
+
+### Klein (7)
+
+Unabbrechbare rAF-Schleife in `counters.ts` · ungetrackter `setTimeout` in
+`reveal.ts` · Ref-Zuweisung im Render-Körper von `MeasuredSeekTrack.tsx:54` ·
+kein `AbortController` auf dem geteilten Seek-`fetch` · `fieldset` mit
+`aria-label` statt `<legend>` (`MeasuredSeekTrack.tsx:202`) · der unsichtbare
+Schließ-Hintergrund der Lightbox liegt in der Tab-Reihenfolge
+(`Lightbox.tsx:131`, Fix: `tabIndex={-1}`) · `u32::try_from`-Panik bei
+absurden Spieldauern (`waveform.rs:456`).
+
+**Empfehlung der letzten Sitzung:** die vier wichtigen plus die beiden billigen
+Barrierefreiheits-Kleinigkeiten (Tab-Reihenfolge, `<legend>`), Rest liegen
+lassen — auf einer Einzelseite ohne Router folgenlos.
+
+### Zwei Hinweise ohne Befundcharakter
+
+- Die Seite hat **keine CSP**. Bestand schon vorher; GitHub Pages kann keine
+  Header setzen, es ginge nur per `<meta http-equiv>`.
+- Die Plandokumente tragen `/home/marvin/…`-Pfade in ein öffentliches Repo.
+  Bestehende Praxis, aber beim Merge nach `main` dauerhaft sichtbar.
+
+## Nächste Schritte
+
+1. **Auswahl einholen**, welche Befunde repariert werden.
+2. **Reparaturrunde an Codex** (`/refactor` oder ein eigener Auftrag im Stil der
+   vier unten). Danach selbst nachfahren: `npm test`, `npm run typecheck`,
+   `npm run lint` im Ordner `showroom/`.
+3. **Landen**, Reihenfolge Visualizer → Seek-Spur → Design-Import, mit Rebase
+   auf das frisch gewordene `dev` dazwischen. `land.sh` liegt unter
+   `~/.claude/skills/pipeline/scripts/`.
+
+## Belege dieser Sitzung — alle selbst gefahren, nicht Codex geglaubt
+
+- **Seek-Spur:** `seek-track.bin` = 2004 B; Kopf-`u32` = 369 786 ms, und das
+  ist auf die Millisekunde die Länge der Quelldatei (`ffprobe`: 369,786 s).
+  Pegel 1–255 über 163 verschiedene Werte, Centroid 0–255 über 228; längster
+  konstanter Lauf 4 bzw. 17.
+- **Paritätswächter:** `SILENCE_RMS` in `crates/reprise-view/src/waveform.rs`
+  verstellt → Test rot (`SILENCE_RMS drifted from Rust`) → zurückgestellt →
+  grün. Alle acht Konstanten sind abgedeckt.
+- **Gates auf der Spitze:** `npm test` 32/32, `npm run typecheck` Exit 0,
+  `npm run lint` Exit 0.
+- **Sichtprüfung** im Browser über alle Kapitel: Hero, Tempo-Band, CH.01,
+  CH.02, Mosaik, CH.03, CH.04, CH.05, Fußzeile — alles vorhanden und dem
+  Entwurf entsprechend.
 
 ## Fallen, die diese Sitzung gekostet haben
 
-- **Codex kommt an das Design nicht heran.** Die Design-Dateien liegen nur
-  hinter dem `claude-design`-MCP; der Sandkasten reicht bis zum Worktree. Was
-  Design-Wissen braucht, baut die Hauptschleife; was keins braucht (die
-  Meßspur), geht an Codex. Der Download-Weg über die Oberfläche wurde
-  angeboten und dann zugunsten des MCP verworfen.
-- **Die Design-Datei ändert sich unter der Lesung.** 1569 → 1592 Zeilen
-  mitten in der Arbeit. Zeilenbereiche vor dem Zitieren neu holen, Etag
-  vergleichen.
-- **Der Lastregler blockt schon den Kommandotext.** `heavy-run-gate.sh` schlägt
-  an, sobald `codex-run.sh` im Befehl steht — auch bei `head`/`sed` darauf.
+- **Der Design-Export löst die MCP-Sperre.** Die Vorlage liegt jetzt getrackt
+  unter `docs/design/reprise-showroom.design.html` (1666 Zeilen) mit
+  `docs/design/README.md` als Leseführer. Sie kam aus dem Browser-Export als
+  JSON-String im `<script type="__bundler/template">`. Damit baut **Codex** den
+  Design-Import, nicht mehr die Hauptschleife.
+- **`npm run typecheck` läuft in `pages.yml`.** Rot heißt: der Showroom-Deploy
+  bricht. Stufe 1 hatte ihn rot hinterlassen, Codex hat es als „vorher schon
+  da" abgehakt. Der Typecheck gehört in jede Belegliste.
+- **Der Browser-Prüfstand liefert nach dem Scrollen nur schwarze Bilder.**
+  `window.scrollTo` wirkt im DOM, aber der Schnappschuß bleibt leer. Ausweg:
+  nicht scrollen, sondern das Layout verschieben
+  (`document.getElementById('main-content').style.marginTop = '-6100px'`) und
+  bei Scrollposition 0 aufnehmen. Dazu `[data-reveal]{opacity:1!important}`
+  einspritzen und `loading="lazy"` auf den Bildern aufheben, sonst sieht man
+  leere Rahmen.
+- **Zähler mitten im Hochzählen sehen aus wie falsche Zahlen.** Der Screenshot
+  zeigte 345'872, die Quelle führt 347'842. Vor dem Melden einer
+  „widersprüchlichen Zahl" immer in `src/data/measurements.ts` nachsehen.
+- **Der Lastregler war 6/6 belegt** (fremde `cargo test --workspace`-Läufe).
+  Ein Codex-Start hängt dann still in der Warteschlange — das ist kein
+  Fehlstart, nur Warten. `heavy-run status` zeigt es.
+- **`.pipeline-codex.md` ist getrackt** und konfligiert bei jedem Rebase.
+  Vor dem Rebase `git checkout -- .pipeline-codex.md`.
+- Der Lastregler blockt schon den **Kommandotext**: sobald `codex-run.sh` im
+  Befehl steht, greift `heavy-run-gate.sh` — auch bei `head`/`sed` darauf.
   Lesen mit dem Read-Werkzeug, Starten mit `heavy-run medium -- …`.
-- **Die pipeline-Skripte liegen nicht im Repo**, sondern unter
-  `~/.claude/skills/pipeline/scripts/` (`status.sh`, `worktree.sh`,
-  `codex-run.sh`, `land.sh`). `worktree.sh` schneidet immer von `origin/dev` —
-  für die beiden Nebenzweige wurde deshalb von Hand
-  `git worktree add -b … <basis>` benutzt.
-- **`npm ci` je Worktree.** Ohne das bricht `npm run build` mit Code 127 ab.
-- **Biome bricht die Testsuite, nicht nur den Lint.** `lint-contract.test.mjs`
-  fährt `biome ci`; vor jedem Commit `npx biome check --write .` im
-  `showroom/`-Ordner laufen lassen. Es formatiert CSS auf doppelte
-  Anführungszeichen um.
-- **Die Seite hängt unter `/reprise/`.** Dev-Server:
-  `cd showroom && npm run dev` → `http://localhost:5173/reprise/`. Auf `/`
-  ist sie leer, das ist kein Fehler.
 
-## Belege dieser Sitzung
+## Betrieb
 
-- Visualizer: `npm test` im Visualizer-Worktree, **16/16 grün**, selbst
-  gefahren (nicht nur Codex' Wort). Bandspur 16 835 B = 259 Bilder à 65 B.
-  Codex' Extraktor traf `bands.u8`/`kick.u8` bytegenau.
-- Design-Import Stufe 1: `npm run build` grün, `npm test` 16/16, `npm run lint`
-  grün, Commit `d856bb5e26`.
-- Die Meßbelege des Visualizers liegen weiter in
-  `~/.cache/reprise-visualizer-measure/` (7,8 MB, überlebt die Sitzung).
+- **Wake-Lock freigegeben.** Für den nächsten unbeaufsichtigten Lauf wieder
+  einen nehmen: `wake-lock acquire showroom-design-import "…"`.
+- Die vier Codex-Aufträge dieser Sitzung (Stufen 1–3, 0/4–6, 7–9, Nachleuchten)
+  lagen im Sitzungs-Scratchpad und sind mit ihr weg. Sie sind abgearbeitet; für
+  die Reparaturrunde wird ein neuer geschrieben.
