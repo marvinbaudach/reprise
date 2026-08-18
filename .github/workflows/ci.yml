@@ -71,6 +71,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node Current
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26.7.0"
+          cache: npm
+          cache-dependency-path: |
+            quality/package-lock.json
+            showroom/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7.6.0
+        with:
+          version: "0.12.3"
+
+      - name: Verify project source quality
+        run: scripts/check-project-quality.sh --project --showroom
+
       - name: Verify repository and workflow contracts
         run: |
           scripts/check-shell.sh
@@ -114,6 +131,9 @@ jobs:
           key: android-cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             android-cargo-${{ runner.os }}-
+
+      - name: Run Android source quality
+        run: scripts/check-project-quality.sh --android
 
       - name: Test the shared Android Rust crates
         run: cargo test --locked -p reprise-view -p reprise-android-ffi

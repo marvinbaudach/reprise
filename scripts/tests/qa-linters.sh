@@ -51,6 +51,7 @@ require_executable scripts/check-input-parity.sh
 require_executable scripts/check-motion-tokens.sh
 require_executable scripts/check-android-theme.sh
 require_executable scripts/check-merge-readiness.sh
+require_executable scripts/check-project-quality.sh
 require_executable scripts/install-git-hooks.sh
 require_executable scripts/performance-baseline.sh
 require_executable scripts/performance-compare.sh
@@ -69,6 +70,7 @@ require_executable scripts/tests/input-parity.sh
 require_executable scripts/tests/android-theme.sh
 require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
+require_executable scripts/tests/project-quality.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
 require_executable scripts/tests/worktree-gc.sh
@@ -87,6 +89,7 @@ require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings'
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
 require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
+require_pattern '^scripts/check-project-quality\.sh$' scripts/check-merge-readiness.sh
 require_pattern 'worktree-gc.sh' scripts/check-merge-readiness.sh
 require_pattern 'worktree-gc-schedule.sh' scripts/check-merge-readiness.sh
 require_pattern 'shellcheck' .github/workflows/ci.yml
@@ -154,6 +157,7 @@ scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
 scripts/tests/android-theme.sh
 scripts/tests/github-flow.sh
+scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
 scripts/tests/worktree-gc.sh
 scripts/tests/worktree-gc-schedule.sh
