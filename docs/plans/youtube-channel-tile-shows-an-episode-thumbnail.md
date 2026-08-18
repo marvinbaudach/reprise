@@ -2,7 +2,7 @@
 slug: youtube-channel-tile-shows-an-episode-thumbnail
 worktree: /home/marvin/Projects/reprise-youtube-channel-tile-shows-an-episode-thumbnail
 branch: feature/youtube-channel-tile-shows-an-episode-thumbnail
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
