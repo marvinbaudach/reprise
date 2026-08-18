@@ -1,7 +1,8 @@
 const SEEK_BUCKET_COUNT = 1_000;
 const DURATION_BYTE_COUNT = 4;
 export const SEEK_TRACK_BYTE_COUNT = DURATION_BYTE_COUNT + SEEK_BUCKET_COUNT * 2;
-export const SEEK_TRACK_PATH = `${import.meta.env.BASE_URL}media/showroom/seek-track.bin`;
+const BASE_URL = import.meta.env?.BASE_URL ?? '/reprise/';
+export const SEEK_TRACK_PATH = `${BASE_URL}media/showroom/seek-track.bin`;
 
 export interface MeasuredSeekTrack {
   readonly durationMs: number;
