@@ -24,6 +24,12 @@ struct ExternalErrorPresentation {
     unavailable_episode: bool,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ExternalErrorDispatch {
+    StopAndToast,
+    HandleFailure,
+}
+
 fn external_error_is_first_for_session(
     displayed_session: &mut Option<PlaybackSessionId>,
     session_id: PlaybackSessionId,
@@ -58,6 +64,19 @@ fn is_external_mode(mode: PlaybackMode) -> bool {
         mode,
         PlaybackMode::Podcast | PlaybackMode::QueuedEpisode | PlaybackMode::Radio
     )
+}
+
+fn external_error_dispatch(
+    mode: PlaybackMode,
+    presentation: &ExternalErrorPresentation,
+) -> ExternalErrorDispatch {
+    if matches!(mode, PlaybackMode::Podcast | PlaybackMode::QueuedEpisode)
+        && !presentation.unavailable_episode
+    {
+        ExternalErrorDispatch::StopAndToast
+    } else {
+        ExternalErrorDispatch::HandleFailure
+    }
 }
 
 fn redact_local_stream_proxy_urls(message: &str) -> Cow<'_, str> {
@@ -318,11 +337,14 @@ impl PlayerController {
                         }
                     };
                     let presentation = external_error_presentation(&failure, podcast_kind);
-                    if mode == PlaybackMode::Podcast && !presentation.unavailable_episode {
-                        self.stop_external();
-                        self.show_toast(&presentation.message);
-                    } else {
-                        self.handle_external_error(presentation.message);
+                    match external_error_dispatch(mode, &presentation) {
+                        ExternalErrorDispatch::StopAndToast => {
+                            self.stop_external();
+                            self.show_toast(&presentation.message);
+                        }
+                        ExternalErrorDispatch::HandleFailure => {
+                            self.handle_external_error(presentation.message);
+                        }
                     }
                     return;
                 }
@@ -568,6 +590,27 @@ mod spectrum_coalescing_tests {
         assert!(not_found.unavailable_episode);
         assert_eq!(not_found.message, "Not Found");
         assert!(gone.unavailable_episode);
+    }
+
+    #[test]
+    fn queued_episode_transport_failure_uses_typed_unavailability_dispatch() {
+        let transport_failure = ExternalErrorPresentation {
+            message: "Forbidden".into(),
+            unavailable_episode: false,
+        };
+        let missing_episode = ExternalErrorPresentation {
+            message: "Not Found".into(),
+            unavailable_episode: true,
+        };
+
+        assert_eq!(
+            external_error_dispatch(PlaybackMode::QueuedEpisode, &transport_failure),
+            ExternalErrorDispatch::StopAndToast
+        );
+        assert_eq!(
+            external_error_dispatch(PlaybackMode::QueuedEpisode, &missing_episode),
+            ExternalErrorDispatch::HandleFailure
+        );
     }
 
     #[test]
