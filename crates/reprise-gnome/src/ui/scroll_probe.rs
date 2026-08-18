@@ -7,6 +7,11 @@
 pub(in crate::ui) fn probe(writer: &str, adjustment: &gtk4::Adjustment, value: f64) {
     use gtk4::prelude::AdjustmentExt;
 
+    #[cfg(test)]
+    trail::record(trail::Entry::Write {
+        writer: writer.to_owned(),
+        value,
+    });
     if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
         return;
     }
@@ -21,6 +26,11 @@ pub(in crate::ui) fn probe(writer: &str, adjustment: &gtk4::Adjustment, value: f
 pub(in crate::ui) fn probe_scroll_to(writer: &str, adjustment: &gtk4::Adjustment, position: u32) {
     use gtk4::prelude::AdjustmentExt;
 
+    #[cfg(test)]
+    trail::record(trail::Entry::ScrollTo {
+        writer: writer.to_owned(),
+        position,
+    });
     if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
         return;
     }
@@ -125,4 +135,58 @@ pub(in crate::ui) fn probe_rows(where_: &str, column_view: &gtk4::ColumnView) {
             heights.into_iter().take(6).collect::<Vec<_>>()
         }
     );
+}
+
+/// In-process counterpart to the `eprintln!` probes above.
+///
+/// The stderr lines answer "which writer produced this value" for a human
+/// reading a display run. A test cannot read them: they leave the process
+/// before the assertion runs, and a scoped capture races tracing's callsite
+/// cache. So every probe also appends to a thread-local trail while a
+/// recording is active, and the test asserts on that instead.
+///
+/// The point is the *order*: a viewport that reaches its target in one step
+/// records one write, one that hops records two. Interleaving the writers'
+/// own entries with the values the adjustment actually took (`note_observed`,
+/// fed by a `value_changed` handler the test installs) is what separates our
+/// writes from GTK's — a value nobody claims came from the allocation pass.
+#[cfg(test)]
+pub(in crate::ui) mod trail {
+    use std::cell::RefCell;
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub(in crate::ui) enum Entry {
+        /// A writer asked the adjustment for `value`.
+        Write { writer: String, value: f64 },
+        /// A writer asked the view to bring `position` into view.
+        ScrollTo { writer: String, position: u32 },
+        /// The adjustment actually took `value`, whoever caused it.
+        Observed { value: f64 },
+    }
+
+    thread_local! {
+        static TRAIL: RefCell<Option<Vec<Entry>>> = const { RefCell::new(None) };
+    }
+
+    /// Starts a fresh recording, discarding anything a previous one left.
+    pub(in crate::ui) fn start() {
+        TRAIL.with(|trail| *trail.borrow_mut() = Some(Vec::new()));
+    }
+
+    /// Ends the recording and returns what it saw.
+    pub(in crate::ui) fn take() -> Vec<Entry> {
+        TRAIL.with(|trail| trail.borrow_mut().take().unwrap_or_default())
+    }
+
+    pub(in crate::ui) fn record(entry: Entry) {
+        TRAIL.with(|trail| {
+            if let Some(entries) = trail.borrow_mut().as_mut() {
+                entries.push(entry);
+            }
+        });
+    }
+
+    pub(in crate::ui) fn note_observed(value: f64) {
+        record(Entry::Observed { value });
+    }
 }
