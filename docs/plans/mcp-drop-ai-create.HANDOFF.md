@@ -2,7 +2,7 @@
 slug: mcp-drop-ai-create
 worktree: /home/marvin/Projects/reprise-mcp-drop-ai-create
 branch: chore/mcp-drop-ai-create
-phase: coded
+phase: shipped
 created: 2026-08-18
 ---
 
@@ -15,21 +15,22 @@ den behobenen Anzeigefehler, den Frame-Pfad, die Web Vitals und die bedienbaren
 Seekbars. Pläne stehen auf `phase: shipped`; die Details stehen in
 `showroom-design-import.HANDOFF-3.md` (Abschnitt „Nachtrag").
 
-**Offen:** der `dev`-CI-Lauf zu diesem Merge lief beim Abbruch der Sitzung noch
-(`gh run view 32177283493`). Cross-target und Promotion source sind grün. Lokal
+**Erledigt:** der `dev`-CI-Lauf zu diesem Merge (`32177283493`) wurde von der
+GitHub-Nebenläufigkeit abgeräumt, als der MCP-Merge nachrückte — das ist kein Rot.
+Gemessen wird der Stapel vom Lauf über `783b49b3e0` (siehe unten). Cross-target und Promotion source sind grün. Lokal
 geprüft: `cargo fmt --check` und `cargo clippy -p reprise-platform-linux
 -p reprise-gnome --all-targets -- -D warnings` beide sauber — **Achtung**, PRs
 überspringen die schweren Suiten per Regel (`ci-paths.sh --suite-skip` gibt bei
 `pull_request` immer `true`), das grüne Gate am PR sagt über Rust nichts.
 
-Worktree `/home/marvin/Projects/reprise-showroom-design-import` steht noch und
-ist sauber — kann weg (`git worktree remove`, Branch `feature/showroom-design-import`).
+Worktree `/home/marvin/Projects/reprise-showroom-design-import` ist entfernt,
+Branch `feature/showroom-design-import` ebenfalls.
 
 Aus dem Showroom weiterhin offen: vier kleine Review-Befunde, die Sprossen bei
 390 px, `isHero()` sucht `#hero` statt `#rp-top`, und der Sheen-Wert
 `--sheen-peak: 0.62` ist vom Auftraggeber unbeurteilt.
 
-## 2. MCP — `ai:create` gestrichen, **noch nicht gepusht**
+## 2. MCP — `ai:create` gestrichen, **gelandet**
 
 Ein Commit `c98cadbd6a` auf `chore/mcp-drop-ai-create`, Basis `origin/dev` nach
 dem Showroom-Merge. 21 Dateien, −1478 Zeilen.
@@ -46,10 +47,11 @@ Instrumental in Core/CLI, und der erzählende Teil der Planungsdokumente.
 Grün: `cargo fmt`, `cargo clippy -p reprise-mcp --all-targets -- -D warnings`,
 `cargo test -p reprise-mcp` (108 Tests, 16 Binaries, `TEST_EXIT=0`).
 
-**Nächster Schritt:** pushen, PR gegen `dev`, Quality gate abwarten, REST-Merge
-(`gh api -X PUT repos/marvinbaudach/reprise/pulls/<PR>/merge -f merge_method=squash`).
-Version: `scripts/bump-version.sh --base origin/dev` vor dem Push laufen lassen —
-der Zweig fasst `crates/*` an, hebt also die Desktop-Version.
+**Gelandet:** PR #562 ist am 18.08.2026 um 19:53 UTC per REST-Squash auf `dev`
+(`783b49b3e0`); die Desktop-Version wurde vor dem Push gehoben
+(`chore: raise the desktop version for the withdrawn MCP surface`).
+Der Zweig `chore/mcp-drop-ai-create` und der Worktree
+`/home/marvin/Projects/reprise-mcp-drop-ai-create` sind damit erledigt.
 
 ## Fallen dieser Sitzung
 
@@ -64,3 +66,10 @@ der Zweig fasst `crates/*` an, hebt also die Desktop-Version.
   Klicks ins Leere und es sieht wie ein toter Regler aus.
 - **`naturalWidth` ist bei `srcset` dichte-normiert** — Speicherzahlen daraus
   sind falsch; die echte Dateibreite kommt aus dem gewählten Dateinamen.
+
+## Was offen bleibt
+
+Aus dem Showroom-Strang, unverändert offen: die vier kleinen Review-Befunde, die
+Sprossen bei 390 px, `isHero()` sucht `#hero` statt `#rp-top`, und der Sheen-Wert
+`--sheen-peak: 0.62` wartet auf ein Urteil des Auftraggebers. Alles Weitere aus
+beiden Strängen ist auf `dev`.
