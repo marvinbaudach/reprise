@@ -2,7 +2,7 @@
 slug: device-sync-bars-join-the-page
 worktree: /home/marvin/Projects/reprise-device-sync-bars-join-the-page
 branch: feature/device-sync-bars-join-the-page
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-12
 ---

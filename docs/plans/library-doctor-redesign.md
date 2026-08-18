@@ -2,7 +2,7 @@
 slug: library-doctor-redesign
 worktree: ~/Projects/reprise-library-doctor-redesign
 branch: feature/library-doctor-redesign
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-05
 ---
