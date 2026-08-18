@@ -2,7 +2,7 @@
 slug: podcast-resume-pill-survives-finishing-the-episode
 worktree: /home/marvin/Projects/reprise-podcast-resume-pill-survives-finishing-the-episode
 branch: feature/podcast-resume-pill-survives-finishing-the-episode
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
