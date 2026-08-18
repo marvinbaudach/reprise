@@ -13,7 +13,7 @@ pub(super) fn schedule(shared: &Rc<Shared>, track_id: Option<i64>, current_ids: 
     let Some(position) = super::reload_restore::prepaint_position(anchor, &current_ids) else {
         return;
     };
-    if apply(shared, track_id, &current_ids) {
+    if apply(shared, track_id, &current_ids, "centered.initial.apply") {
         return;
     }
     let Some(adjustment) = shared.column_view.vadjustment() else {
@@ -32,7 +32,9 @@ pub(super) fn schedule(shared: &Rc<Shared>, track_id: Option<i64>, current_ids: 
         let Some(shared) = weak_shared.upgrade() else {
             return;
         };
-        if shared.model.generation() == generation && apply(&shared, track_id, &changed_ids) {
+        if shared.model.generation() == generation
+            && apply(&shared, track_id, &changed_ids, "centered.changed.apply")
+        {
             changed_applied.set(true);
         }
     });
@@ -47,19 +49,22 @@ pub(super) fn schedule(shared: &Rc<Shared>, track_id: Option<i64>, current_ids: 
         let Some(shared) = weak_shared.upgrade() else {
             return;
         };
-        if shared.model.generation() == generation && apply(&shared, track_id, &current_ids) {
+        if shared.model.generation() == generation
+            && apply(&shared, track_id, &current_ids, "centered.idle.apply")
+        {
             applied.set(true);
         }
     });
 
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
+    crate::ui::scroll_probe::probe_scroll_to("centered.scroll_to", &adjustment, position);
     shared
         .column_view
         .scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
 }
 
-fn apply(shared: &Shared, track_id: Option<i64>, current_ids: &[i64]) -> bool {
+fn apply(shared: &Shared, track_id: Option<i64>, current_ids: &[i64], writer: &str) -> bool {
     let Some(adjustment) = shared.column_view.vadjustment() else {
         return false;
     };
@@ -90,7 +95,7 @@ fn apply(shared: &Shared, track_id: Option<i64>, current_ids: &[i64]) -> bool {
     else {
         return false;
     };
-    crate::ui::scroll_probe::probe("centered_refinement", &adjustment, value);
+    crate::ui::scroll_probe::probe(writer, &adjustment, value);
     debug_assert!(
         !crate::ui::list_geometry_changed::in_changed_emission(),
         "centered scroll written from inside a changed emission"
