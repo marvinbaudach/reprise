@@ -8,7 +8,6 @@ use std::time::Duration;
 use chrono::NaiveDate;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::dedupe::provider_owns_ticket_url;
 use super::candidates::{self, ArtistCandidate, MAX_ARTISTS_PER_RUN};
 use super::resolution::{self, LedgerArtist, ResolvedIdentity, StoredOutcome};
 use super::similar::{self, HttpSimilarFetch, SimilarFetch, SIMILAR_SEEDS};
@@ -545,8 +544,8 @@ fn stored_provider_owned_listing_wins(
         _ => None,
     };
     Ok(stored_provider.is_some_and(|provider| {
-        provider_owns_ticket_url(provider, stored_ticket_url.as_deref())
-            && !provider_owns_ticket_url(incoming_provider, incoming_ticket_url)
+        provider.owns_ticket_url(stored_ticket_url.as_deref())
+            && !incoming_provider.owns_ticket_url(incoming_ticket_url)
     }))
 }
 

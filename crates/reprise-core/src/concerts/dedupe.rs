@@ -50,6 +50,10 @@ pub fn merge(artist_key: &str, events: Vec<ProviderEvent>) -> Vec<ProviderEvent>
 }
 
 impl ProviderKind {
+    pub(crate) fn owns_ticket_url(self, ticket_url: Option<&str>) -> bool {
+        provider_owns_ticket_url(self, ticket_url)
+    }
+
     pub(crate) fn listing_winner_is_incoming(
         existing_provider: Self,
         existing_ticket_url: Option<&str>,
@@ -57,10 +61,8 @@ impl ProviderKind {
         incoming_ticket_url: Option<&str>,
     ) -> bool {
         if existing_provider == incoming_provider {
-            let existing_is_owned =
-                provider_owns_ticket_url(existing_provider, existing_ticket_url);
-            let incoming_is_owned =
-                provider_owns_ticket_url(incoming_provider, incoming_ticket_url);
+            let existing_is_owned = existing_provider.owns_ticket_url(existing_ticket_url);
+            let incoming_is_owned = incoming_provider.owns_ticket_url(incoming_ticket_url);
             return incoming_is_owned && !existing_is_owned;
         }
 
@@ -68,10 +70,7 @@ impl ProviderKind {
     }
 }
 
-pub(super) fn provider_owns_ticket_url(
-    provider: ProviderKind,
-    ticket_url: Option<&str>,
-) -> bool {
+fn provider_owns_ticket_url(provider: ProviderKind, ticket_url: Option<&str>) -> bool {
     let expected_label = match provider {
         ProviderKind::Bandsintown => "bandsintown",
         ProviderKind::Ticketmaster => "ticketmaster",

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use rusqlite::{params, types::Type, Connection};
+use rusqlite::{params, Connection};
 
 use crate::concerts::{dedupe_key, ProviderKind};
 
@@ -96,7 +96,7 @@ pub(crate) fn migrate_v75(conn: &Connection) -> Result<(), rusqlite::Error> {
 struct StoredListing {
     id: i64,
     dedupe_key: String,
-    provider: ProviderKind,
+    provider: Option<ProviderKind>,
     ticket_url: Option<String>,
 }
 
@@ -122,7 +122,7 @@ pub(crate) fn migrate_v76(conn: &Connection) -> Result<(), rusqlite::Error> {
                     row.get_ref(2)?.as_str()?,
                     row.get_ref(3)?.as_str()?,
                 ),
-                provider: parse_provider(4, &provider)?,
+                provider: parse_provider(&provider),
                 ticket_url: row.get(5)?,
             })
         })?;
@@ -134,12 +134,7 @@ pub(crate) fn migrate_v76(conn: &Connection) -> Result<(), rusqlite::Error> {
     for listing in listings {
         if let Some(&position) = positions.get(&listing.dedupe_key) {
             let existing = &winners[position];
-            if ProviderKind::listing_winner_is_incoming(
-                existing.provider,
-                existing.ticket_url.as_deref(),
-                listing.provider,
-                listing.ticket_url.as_deref(),
-            ) {
+            if stored_listing_winner_is_incoming(existing, &listing) {
                 loser_ids.push(existing.id);
                 winners[position] = listing;
             } else {
@@ -170,15 +165,33 @@ pub(crate) fn migrate_v76(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
-fn parse_provider(column: usize, value: &str) -> Result<ProviderKind, rusqlite::Error> {
+fn parse_provider(value: &str) -> Option<ProviderKind> {
     match value {
-        "bandsintown" => Ok(ProviderKind::Bandsintown),
-        "ticketmaster" => Ok(ProviderKind::Ticketmaster),
-        _ => Err(rusqlite::Error::FromSqlConversionFailure(
-            column,
-            Type::Text,
-            format!("unknown concert provider: {value}").into(),
-        )),
+        "bandsintown" => Some(ProviderKind::Bandsintown),
+        "ticketmaster" => Some(ProviderKind::Ticketmaster),
+        _ => None,
+    }
+}
+
+fn stored_listing_winner_is_incoming(existing: &StoredListing, incoming: &StoredListing) -> bool {
+    match (existing.provider, incoming.provider) {
+        (Some(existing_provider), Some(incoming_provider)) => {
+            ProviderKind::listing_winner_is_incoming(
+                existing_provider,
+                existing.ticket_url.as_deref(),
+                incoming_provider,
+                incoming.ticket_url.as_deref(),
+            )
+        }
+        _ => {
+            let existing_is_owned = existing
+                .provider
+                .is_some_and(|provider| provider.owns_ticket_url(existing.ticket_url.as_deref()));
+            let incoming_is_owned = incoming
+                .provider
+                .is_some_and(|provider| provider.owns_ticket_url(incoming.ticket_url.as_deref()));
+            incoming_is_owned && !existing_is_owned
+        }
     }
 }
 

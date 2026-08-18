@@ -266,6 +266,50 @@ fn v76_collapses_the_measured_pairs_with_the_runtime_winner_rule() {
 }
 
 #[test]
+fn v76_keeps_an_unknown_provider_when_it_is_the_only_listing() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "user_version", 30).unwrap();
+    crate::db_concerts::migrate_v31(&conn).unwrap();
+    conn.pragma_update(None, "user_version", 72).unwrap();
+    crate::db_concerts::migrate_v73(&conn).unwrap();
+    conn.pragma_update(None, "user_version", 75).unwrap();
+    conn.execute(
+        "INSERT INTO concert_events (
+            artist_key, artist_name, starts_at, date_key, venue, city,
+            ticket_url, provider, fetched_at, dedupe_key
+         ) VALUES ('artist', 'Artist', '2026-10-17T19:00:00', '2026-10-17',
+                   'Unknown Hall', 'Munich', 'https://tickets.example/event/1',
+                   'stray-provider', 42, 'legacy-key')",
+        [],
+    )
+    .unwrap();
+
+    crate::db_concerts::migrate_v76(&conn).unwrap();
+
+    let stored: (i64, String, String, String) = conn
+        .query_row(
+            "SELECT COUNT(*), provider, venue, dedupe_key FROM concert_events",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        stored,
+        (
+            1,
+            "stray-provider".into(),
+            "Unknown Hall".into(),
+            crate::concerts::dedupe_key("artist", "2026-10-17", "Munich"),
+        )
+    );
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        76
+    );
+}
+
+#[test]
 fn the_concerts_layout_setting_key_matches_the_frozen_migration_literal() {
     assert_eq!(
         crate::library::settings::CONCERTS_COLUMN_LAYOUT_KEY,
