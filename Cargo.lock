@@ -2935,10 +2935,8 @@ version = "0.1.15"
 dependencies = [
  "async-channel",
  "reprise-runtime-protocol",
- "serde",
  "tracing",
  "zbus",
- "zvariant",
 ]
 
 [[package]]
@@ -2956,7 +2954,6 @@ version = "0.1.15"
 dependencies = [
  "dirs",
  "flacenc",
- "ndarray",
  "ort",
  "reprise-core",
  "rubato",

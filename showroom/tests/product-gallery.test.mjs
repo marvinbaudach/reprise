@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, readFile, readdir, stat } from 'node:fs/promises';
+import { access, readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
@@ -57,9 +57,7 @@ test('the product gallery names every shipped surface and remains useful without
 test('the evidence wall stays in the page flow instead of creating a nested horizontal scroller', async () => {
   const html = await prerenderedPage();
   const css = await builtCss();
-  const gallery = html.match(
-    /<div[^>]+data-showcase="product-gallery"[\s\S]+?<\/div><\/div>/,
-  )?.[0];
+  const gallery = html.match(/<div[^>]+data-showcase="product-gallery"[\s\S]+?<\/div><\/div>/)?.[0];
 
   assert.ok(gallery);
   assert.match(gallery, /data-layout="editorial-grid"/);
@@ -75,9 +73,9 @@ test('the evidence wall stays in the page flow instead of creating a nested hori
 
 test('every gallery asset is copied into the deployable build and stays below one megabyte', async () => {
   const html = await prerenderedPage();
-  const sources = [...html.matchAll(/<img\b[^>]*class="[^"]*product-shot[^"]*"[^>]*src="([^"]+)"/g)].map(
-    (match) => match[1],
-  );
+  const sources = [
+    ...html.matchAll(/<img\b[^>]*class="[^"]*product-shot[^"]*"[^>]*src="([^"]+)"/g),
+  ].map((match) => match[1]);
 
   assert.equal(new Set(sources).size, 11);
   for (const source of sources) {

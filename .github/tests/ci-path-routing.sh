@@ -44,6 +44,10 @@ expect_routes false false true crates/reprise-runtime/src/lib.rs
 expect_routes false false false docs/agents/branching.md
 expect_routes false false false .github/workflows/ci.yml
 expect_routes false false false showroom/src/App.tsx
+expect_routes false false false quality/run-python-lint.mjs
+expect_routes false false false ruff.toml
+expect_routes false false false .yamllint.yaml
+expect_routes false false false .markdownlint-cli2.jsonc
 expect_routes true false true unexpected-product-root/new-source.rs
 
 [[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
@@ -108,6 +112,18 @@ rg --quiet 'require-ci-results\.sh' "$workflow" || \
     fail "the Quality gate does not use the tested result aggregator"
 rg --fixed-strings --quiet 'GITHUB_ACTIONS=false "$contract"' "$workflow" || \
     fail "the PR base job must run event-sensitive workflow tests in static contract mode"
+rg --quiet 'check-project-quality\.sh --project --showroom' "$workflow" || \
+    fail "the base job must run project and Showroom source quality"
+rg --quiet 'uses: actions/setup-node@v7' "$workflow" || \
+    fail "the base source-quality job must install the pinned Node generation"
+rg --quiet 'node-version: "26\.7\.0"' "$workflow" || \
+    fail "the base source-quality job must use the project Node Current pin"
+rg --quiet 'uses: astral-sh/setup-uv@v7\.6\.0' "$workflow" || \
+    fail "the base source-quality job must install uv through the pinned action"
+rg --quiet 'version: "0\.12\.3"' "$workflow" || \
+    fail "the base source-quality job must use the verified uv pin"
+rg --quiet 'check-project-quality\.sh --android' "$workflow" || \
+    fail "the Android job must run Android source quality"
 rg --quiet 'check-gnome-ci\.sh' "$workflow" || \
     fail "GNOME-only changes must use the targeted GNOME gate"
 rg --quiet 'cargo test --locked -p reprise-view -p reprise-android-ffi' "$workflow" || \
@@ -135,6 +151,9 @@ fi
 if rg --quiet -- "- '\.github/workflows/pages\.yml'" "$showroom"; then
     fail "CI-only edits must not start the Showroom build"
 fi
+rg --multiline --quiet \
+    'working-directory: showroom\n        run: npm run lint' "$showroom" || \
+    fail "the Showroom build must lint before publishing"
 rg --quiet 'check-display-tests\.sh --rule-named' scripts/check-merge-readiness.sh || \
     fail "the merge gate must keep rule-owned display coverage, not every low-risk display test"
 

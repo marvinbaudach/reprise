@@ -9,6 +9,7 @@
     "build": "npm run build:client && npm run build:server && npm run prerender",
     "build:client": "vite build --outDir dist",
     "build:server": "vite build --ssr src/entry-server.tsx --outDir dist-ssr",
+    "lint": "biome ci --error-on-warnings .",
     "prerender": "node prerender.mjs",
     "preview": "vite preview",
     "test": "npm run build && node --test tests/*.test.mjs",
@@ -19,6 +20,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.8",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

@@ -10,11 +10,12 @@
 }
 
 .architecture::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: linear-gradient(
+  background-image:
+    linear-gradient(
       to right,
       color-mix(in oklab, var(--surface-line-soft) 48%, transparent) 1px,
       transparent 1px
@@ -49,7 +50,9 @@
   margin: var(--gap-hair) 0 0;
   color: var(--text-strong);
   font-size: clamp(1.55rem, 1.1rem + 1.7vw, 2.6rem);
-  font-variation-settings: 'wdth' 108, 'wght' 690;
+  font-variation-settings:
+    "wdth" 108,
+    "wght" 690;
   line-height: 1.02;
 }
 
@@ -93,7 +96,9 @@
 .architecture__surface strong {
   color: var(--text-strong);
   font-size: clamp(1.25rem, 1rem + 1vw, 1.85rem);
-  font-variation-settings: 'wdth' 106, 'wght' 680;
+  font-variation-settings:
+    "wdth" 106,
+    "wght" 680;
 }
 
 .architecture__surface > a > span:nth-last-child(2),
@@ -126,7 +131,7 @@
 }
 
 .architecture__flow::after {
-  content: '';
+  content: "";
   position: absolute;
   inset-inline: 12.5%;
   inset-block-end: 0;
@@ -139,7 +144,7 @@
 }
 
 .architecture__flow span::before {
-  content: '';
+  content: "";
   position: absolute;
   inset-inline-start: 50%;
   inset-block: 0;
@@ -148,7 +153,7 @@
 }
 
 .architecture__flow span::after {
-  content: '';
+  content: "";
   position: absolute;
   inset-inline-start: calc(50% - 0.2rem);
   inset-block-end: -1px;
@@ -186,7 +191,9 @@
 .architecture__layer strong {
   color: var(--text-strong);
   font-size: clamp(1.45rem, 1rem + 1.8vw, 2.6rem);
-  font-variation-settings: 'wdth' 105, 'wght' 720;
+  font-variation-settings:
+    "wdth" 105,
+    "wght" 720;
   transition: color var(--duration-fast) ease-out;
 }
 

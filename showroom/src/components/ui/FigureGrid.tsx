@@ -21,7 +21,9 @@ export function FigureGrid({ figures }: { figures: readonly Figure[] }) {
           </dt>
           <dd className="figure-grid__label">
             <span className="eyebrow">{figure.label}</span>
-            {figure.detail ? <span className="data figure-grid__detail">{figure.detail}</span> : null}
+            {figure.detail ? (
+              <span className="data figure-grid__detail">{figure.detail}</span>
+            ) : null}
           </dd>
         </div>
       ))}

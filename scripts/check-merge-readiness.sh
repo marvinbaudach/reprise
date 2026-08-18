@@ -49,6 +49,7 @@ echo "== Branch diff =="
 git diff --check "$base_ref"...HEAD
 
 scripts/check-shell.sh
+scripts/check-project-quality.sh
 scripts/tests/worktree-gc.sh
 scripts/tests/worktree-gc-schedule.sh
 

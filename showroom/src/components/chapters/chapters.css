@@ -76,12 +76,16 @@
    wins by import order is a rule that breaks the day the imports move. */
 .rungs__rung .rungs__count {
   font-size: clamp(1.375rem, 1rem + 1.1vw, 1.875rem);
-  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-variation-settings:
+    "wdth" 100,
+    "wght" 700;
   line-height: 1.05;
 }
 
 .rungs__name {
-  font-variation-settings: 'wdth' 92, 'wght' 550;
+  font-variation-settings:
+    "wdth" 92,
+    "wght" 550;
   color: var(--text-strong);
 }
 
@@ -127,7 +131,7 @@
 }
 
 .fold__summary::after {
-  content: '';
+  content: "";
   position: absolute;
   inset-inline-end: var(--gap-line);
   width: 0.6rem;
@@ -147,7 +151,9 @@
 }
 
 .fold__title {
-  font-variation-settings: 'wdth' 96, 'wght' 600;
+  font-variation-settings:
+    "wdth" 96,
+    "wght" 600;
   color: var(--text-strong);
 }
 

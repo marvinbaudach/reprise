@@ -10,11 +10,12 @@
 
 .agent-workflow::before,
 .exploration-loop::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: linear-gradient(
+  background-image:
+    linear-gradient(
       to right,
       color-mix(in oklab, var(--surface-line-soft) 38%, transparent) 1px,
       transparent 1px
@@ -48,7 +49,9 @@
   margin: 0;
   color: var(--text-strong);
   font-size: clamp(1.55rem, 1.1rem + 1.7vw, 2.7rem);
-  font-variation-settings: 'wdth' 106, 'wght' 690;
+  font-variation-settings:
+    "wdth" 106,
+    "wght" 690;
   line-height: 1.02;
 }
 
@@ -73,7 +76,7 @@
 }
 
 .agent-workflow__step:not(:last-child)::after {
-  content: '→';
+  content: "→";
   position: absolute;
   z-index: 1;
   inset-inline-end: -0.75rem;
@@ -84,19 +87,21 @@
   text-align: center;
 }
 
-.agent-workflow__step[data-role='human-checkpoint'] {
+.agent-workflow__step[data-role="human-checkpoint"] {
   background: color-mix(in oklab, var(--second) 9%, var(--surface-base));
 }
 
-.agent-workflow__step[data-role='implementer'],
-.agent-workflow__step[data-role='reviewer'],
-.agent-workflow__step[data-role='skeptic'] {
+.agent-workflow__step[data-role="implementer"],
+.agent-workflow__step[data-role="reviewer"],
+.agent-workflow__step[data-role="skeptic"] {
   background: color-mix(in oklab, var(--accent) 6%, var(--surface-base));
 }
 
 .agent-workflow__step strong {
   color: var(--text-strong);
-  font-variation-settings: 'wdth' 96, 'wght' 650;
+  font-variation-settings:
+    "wdth" 96,
+    "wght" 650;
 }
 
 .agent-workflow__step > span:last-child {
@@ -172,7 +177,7 @@
 }
 
 .exploration-loop__actions li::after {
-  content: '↗';
+  content: "↗";
   position: absolute;
   inset-inline-end: var(--gap-tight);
   inset-block-end: var(--gap-tight);
@@ -181,7 +186,7 @@
 
 .exploration-loop__actions li:nth-child(3)::after,
 .exploration-loop__actions li:nth-child(6)::after {
-  content: '↙';
+  content: "↙";
 }
 
 .exploration-loop__actions span {
@@ -191,7 +196,9 @@
 .exploration-loop__actions strong {
   max-width: 15ch;
   color: var(--text-strong);
-  font-variation-settings: 'wdth' 96, 'wght' 620;
+  font-variation-settings:
+    "wdth" 96,
+    "wght" 620;
 }
 
 .exploration-loop__findings {
@@ -255,7 +262,7 @@
 
   .agent-workflow__step::after,
   .agent-workflow__step:nth-child(4)::after {
-    content: '↓';
+    content: "↓";
     inset-inline-end: 1rem;
     inset-block-start: auto;
     inset-block-end: -0.75rem;

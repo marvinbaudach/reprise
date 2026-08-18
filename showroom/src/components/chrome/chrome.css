@@ -79,7 +79,8 @@
   padding: 0.4rem var(--frame-pad) 0;
   opacity: 0;
   transform: translateY(-4px);
-  transition: opacity var(--duration-normal) var(--ease-out-expo),
+  transition:
+    opacity var(--duration-normal) var(--ease-out-expo),
     transform var(--duration-normal) var(--ease-out-expo);
 }
 
@@ -120,7 +121,9 @@
 
 .site-header__wordmark {
   font-family: var(--font-display);
-  font-variation-settings: 'wdth' 124, 'wght' 800;
+  font-variation-settings:
+    "wdth" 124,
+    "wght" 800;
   font-size: 1.375rem;
   letter-spacing: -0.02em;
   color: var(--text-strong);

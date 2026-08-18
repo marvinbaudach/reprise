@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
 
 // Pages serves the site from https://marvinbaudach.github.io/reprise/, so every
 // asset URL needs that prefix. Getting this wrong produces a page that loads
