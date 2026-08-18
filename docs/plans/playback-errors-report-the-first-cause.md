@@ -1,8 +1,8 @@
 ---
 slug: playback-errors-report-the-first-cause
-worktree:
-branch:
-phase: planned
+worktree: /home/marvin/Projects/reprise-playback-errors-report-the-first-cause
+branch: feature/playback-errors-report-the-first-cause
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---

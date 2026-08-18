@@ -451,7 +451,7 @@ impl SessionInner {
                 }
                 PlayerEvent::Error(message) => {
                     state.snapshot.state = AndroidPlaybackState::Stopped;
-                    state.snapshot.error = Some(message);
+                    state.snapshot.error = Some(message.into_message());
                     state.current_loaded = false;
                     (FollowUp::Stop, None, None)
                 }

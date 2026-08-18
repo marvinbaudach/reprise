@@ -15,8 +15,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use reprise_core::playback::{
-    AudioEffects, BassPressureDetector, CavaBarProcessor, CavaConfig, PlaybackError, PlayerEvent,
-    SpectrumFrame, SPECTRUM_BAND_COUNT,
+    redact_local_stream_proxy_urls, AudioEffects, BassPressureDetector, CavaBarProcessor,
+    CavaConfig, PlaybackError, PlaybackFailure, PlaybackFailureKind, PlaybackSessionId,
+    PlayerEvent, SpectrumFrame, SPECTRUM_BAND_COUNT,
 };
 
 use crate::crossfade::Transition;
@@ -58,6 +59,37 @@ pub(crate) fn merge_stream_tags(
 const BUFFERING_EVENT_INTERVAL: Duration = Duration::from_millis(250);
 const GST_PLAY_FLAG_DOWNLOAD: u32 = 0x80;
 type BufferingUpdate = (u8, Option<i64>);
+
+static NEXT_PLAYBACK_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_playback_session_id() -> PlaybackSessionId {
+    PlaybackSessionId::from(NEXT_PLAYBACK_SESSION_ID.fetch_add(1, Ordering::Relaxed))
+}
+
+fn http_status_from_debug(debug: Option<&str>) -> Option<u16> {
+    let debug = debug?.trim_start();
+    let reason = debug.split_once(": ").map_or(debug, |(_, reason)| reason);
+    let reason = reason
+        .split_once(',')
+        .map_or(reason, |(reason, _)| reason)
+        .trim_end();
+    let (_, digits) = reason.strip_suffix(')')?.rsplit_once(" (")?;
+    if digits.len() != 3 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let status = digits.parse().ok()?;
+    (100..=599).contains(&status).then_some(status)
+}
+
+pub(crate) fn playback_failure_from_bus(
+    message: impl Into<String>,
+    debug: Option<&str>,
+    session_id: PlaybackSessionId,
+) -> PlaybackFailure {
+    let kind = http_status_from_debug(debug)
+        .map_or(PlaybackFailureKind::Other, PlaybackFailureKind::HttpStatus);
+    PlaybackFailure::new(message, kind, session_id)
+}
 
 #[derive(Default)]
 pub(crate) struct BufferingThrottle {
@@ -354,6 +386,7 @@ pub(crate) fn attach_bus_watch(
     let watched_playbin = playbin.clone();
     let mut stream_tags = (None::<String>, None::<String>);
     let mut buffering_throttle = BufferingThrottle::default();
+    let mut playback_session_id = next_playback_session_id();
     bus.add_watch(move |_, msg| {
         use gst::MessageView;
         match msg.view() {
@@ -367,6 +400,17 @@ pub(crate) fn attach_bus_watch(
                     tracing::debug!("playback reached end-of-stream");
                     (*on_event)(PlayerEvent::TrackFinished);
                 }
+            }
+            MessageView::StateChanged(state)
+                if state.src() == Some(watched_playbin.upcast_ref())
+                    && state.old() == gst::State::Null
+                    && state.current() != gst::State::Null =>
+            {
+                // A failed URI can error before GStreamer ever posts
+                // StreamStart. The playbin's own first transition out of Null
+                // is the boundary every hard start does post, so it resets the
+                // first-cause gate even for that failure path.
+                playback_session_id = next_playback_session_id();
             }
             MessageView::StreamStart(_) => {
                 cava_stream_generation.fetch_add(1, Ordering::AcqRel);
@@ -418,8 +462,16 @@ pub(crate) fn attach_bus_watch(
                 }
             }
             MessageView::Error(e) => {
-                tracing::error!(error = %e.error(), debug = ?e.debug(), "GStreamer bus error");
-                (*on_event)(PlayerEvent::Error(e.error().to_string()));
+                let debug_text = e.debug();
+                let error_text = e.error().to_string();
+                let safe_error = redact_local_stream_proxy_urls(&error_text);
+                let safe_debug = debug_text.as_deref().map(redact_local_stream_proxy_urls);
+                tracing::error!(error = %safe_error, debug = ?safe_debug, "GStreamer bus error");
+                (*on_event)(PlayerEvent::Error(playback_failure_from_bus(
+                    error_text,
+                    debug_text.as_deref(),
+                    playback_session_id,
+                )));
             }
             _ => {}
         }

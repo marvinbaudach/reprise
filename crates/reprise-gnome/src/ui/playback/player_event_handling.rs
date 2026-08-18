@@ -1,61 +1,82 @@
 //! Player-event application and stopped-state recovery for PlayerController.
 
-use std::{borrow::Cow, rc::Rc};
+use std::rc::Rc;
 
 use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::strings;
 use reprise_core::media_integration::MprisPlaybackStatus;
-use reprise_core::playback::{PlaybackState, PlayerEvent, SpectrumFrame};
+use reprise_core::playback::{
+    redact_local_stream_proxy_urls, PlaybackFailure, PlaybackFailureKind, PlaybackSessionId,
+    PlaybackState, PlayerEvent, SpectrumFrame,
+};
+use reprise_core::podcasts::PodcastKind;
+
+use super::external_media_state::ExternalSession;
+use super::preview::PlaybackMode;
 
 /// Prevent one busy drain iteration from starving the rest of GTK's main loop.
 const MAX_PLAYER_EVENT_BURST: usize = 64;
 
-fn redact_local_stream_proxy_urls(message: &str) -> Cow<'_, str> {
-    const ORIGIN_PREFIX: &str = "http://127.0.0.1:";
+#[derive(Debug, PartialEq, Eq)]
+struct ExternalErrorPresentation {
+    message: String,
+    unavailable_episode: bool,
+}
 
-    let mut output = None::<String>;
-    let mut copied_through = 0;
-    let mut search_from = 0;
-    while let Some(relative_start) = message[search_from..].find(ORIGIN_PREFIX) {
-        let origin_start = search_from + relative_start;
-        let port_start = origin_start + ORIGIN_PREFIX.len();
-        let port_len = message[port_start..]
-            .bytes()
-            .take_while(u8::is_ascii_digit)
-            .count();
-        let path_start = port_start + port_len;
-        if port_len == 0 || message.as_bytes().get(path_start) != Some(&b'/') {
-            search_from = port_start;
-            continue;
-        }
-        let token_start = path_start + 1;
-        let token_len = message[token_start..]
-            .bytes()
-            .take_while(|byte| {
-                !byte.is_ascii_whitespace()
-                    && !matches!(
-                        *byte,
-                        b'"' | b'\'' | b'<' | b'>' | b')' | b']' | b'}' | b',' | b';' | b'.'
-                    )
-            })
-            .count();
-        if token_len == 0 {
-            search_from = token_start;
-            continue;
-        }
-        let token_end = token_start + token_len;
-        let redacted = output.get_or_insert_with(|| String::with_capacity(message.len()));
-        redacted.push_str(&message[copied_through..path_start]);
-        redacted.push_str("/<redacted>");
-        copied_through = token_end;
-        search_from = token_end;
+#[derive(Debug, PartialEq, Eq)]
+enum ExternalErrorDispatch {
+    StopAndToast,
+    HandleFailure,
+}
+
+fn external_error_is_first_for_session(
+    displayed_session: &mut Option<PlaybackSessionId>,
+    session_id: PlaybackSessionId,
+) -> bool {
+    if *displayed_session == Some(session_id) {
+        return false;
     }
-    match output {
-        Some(mut output) => {
-            output.push_str(&message[copied_through..]);
-            Cow::Owned(output)
-        }
-        None => Cow::Borrowed(message),
+    *displayed_session = Some(session_id);
+    true
+}
+
+fn external_error_presentation(
+    failure: &PlaybackFailure,
+    podcast_kind: Option<PodcastKind>,
+) -> ExternalErrorPresentation {
+    let unavailable_episode = matches!(failure.kind(), PlaybackFailureKind::HttpStatus(404 | 410));
+    let safe_message = redact_local_stream_proxy_urls(failure.message());
+    let message = if failure.kind() == PlaybackFailureKind::HttpStatus(403)
+        && podcast_kind == Some(PodcastKind::Youtube)
+    {
+        strings::text(strings::YOUTUBE_STREAM_FORBIDDEN)
+    } else {
+        safe_message.into_owned()
+    };
+    ExternalErrorPresentation {
+        message,
+        unavailable_episode,
+    }
+}
+
+fn is_external_mode(mode: PlaybackMode) -> bool {
+    matches!(
+        mode,
+        PlaybackMode::Podcast | PlaybackMode::QueuedEpisode | PlaybackMode::Radio
+    )
+}
+
+fn external_error_dispatch(
+    mode: PlaybackMode,
+    presentation: &ExternalErrorPresentation,
+) -> ExternalErrorDispatch {
+    if matches!(mode, PlaybackMode::Podcast | PlaybackMode::QueuedEpisode)
+        && !presentation.unavailable_episode
+    {
+        ExternalErrorDispatch::StopAndToast
+    } else {
+        ExternalErrorDispatch::HandleFailure
     }
 }
 
@@ -229,7 +250,7 @@ impl PlayerController {
                 tracing::debug!(?title, ?organization, "received stream metadata");
                 self.on_stream_tags(title, organization);
             }
-            PlayerEvent::Error(message) => {
+            PlayerEvent::Error(failure) => {
                 // Stage 2 Task 5: this can fire asynchronously for the
                 // *currently loaded* queue track (e.g. GStreamer resolving a
                 // "file not found"/decode error after `play_track_id`
@@ -238,23 +259,58 @@ impl PlayerController {
                 // toast + auto-skip) when there is a current track to
                 // attribute it to; otherwise fall back to the pre-Task-5
                 // behavior (log + reset) rather than guessing.
-                match self.playback_mode() {
-                    super::preview::PlaybackMode::Podcast
-                    | super::preview::PlaybackMode::QueuedEpisode
-                    | super::preview::PlaybackMode::Radio => {
-                        {
-                            let safe_message = redact_local_stream_proxy_urls(&message);
-                            tracing::error!(message = %safe_message, "player error during external playback");
-                        }
-                        self.handle_external_error(message);
+                let mode = self.playback_mode();
+                let repeated_external_error = self
+                    .external
+                    .borrow()
+                    .displayed_error_session
+                    .is_some_and(|session_id| session_id == failure.session_id());
+                if is_external_mode(mode) || repeated_external_error {
+                    let safe_message = redact_local_stream_proxy_urls(failure.message());
+                    tracing::error!(message = %safe_message, "player error during external playback");
+                    if repeated_external_error {
                         return;
                     }
-                    super::preview::PlaybackMode::Preview => {
+                    let should_display = {
+                        let mut external = self.external.borrow_mut();
+                        external_error_is_first_for_session(
+                            &mut external.displayed_error_session,
+                            failure.session_id(),
+                        )
+                    };
+                    if !should_display {
+                        return;
+                    }
+                    let podcast_kind = {
+                        let external = self.external.borrow();
+                        match external.session.as_ref() {
+                            Some(ExternalSession::Podcast(session)) => Some(session.kind),
+                            Some(ExternalSession::Radio(_)) | None => None,
+                        }
+                    };
+                    let presentation = external_error_presentation(&failure, podcast_kind);
+                    match external_error_dispatch(mode, &presentation) {
+                        ExternalErrorDispatch::StopAndToast => {
+                            self.stop_external();
+                            self.show_toast(&presentation.message);
+                        }
+                        ExternalErrorDispatch::HandleFailure => {
+                            self.handle_external_error(presentation.message);
+                        }
+                    }
+                    return;
+                }
+                let message = failure.into_message();
+                match mode {
+                    PlaybackMode::Preview => {
                         tracing::error!(%message, "player error during preview playback");
                         self.reset_to_stopped();
                         return;
                     }
-                    super::preview::PlaybackMode::Queue => {}
+                    PlaybackMode::Queue => {}
+                    PlaybackMode::Podcast | PlaybackMode::QueuedEpisode | PlaybackMode::Radio => {
+                        unreachable!("external errors returned above")
+                    }
                 }
                 match self.current_track.get() {
                     Some((id, _)) => {
@@ -336,7 +392,10 @@ impl PlayerController {
 #[cfg(test)]
 mod spectrum_coalescing_tests {
     use super::*;
-    use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
+    use reprise_core::playback::{
+        PlaybackFailure, PlaybackFailureKind, PlaybackSessionId, SpectrumFrame, SPECTRUM_BAND_COUNT,
+    };
+    use reprise_core::podcasts::PodcastKind;
 
     fn spectrum(value: f32) -> PlayerEvent {
         PlayerEvent::Spectrum(SpectrumFrame::from_cava_bars([value; SPECTRUM_BAND_COUNT]))
@@ -375,17 +434,155 @@ mod spectrum_coalescing_tests {
         assert!(matches!(events[3], PlayerEvent::TrackFinished));
     }
 
+    fn displayed_messages(failures: &[PlaybackFailure]) -> Vec<&str> {
+        let mut displayed_session = None;
+        failures
+            .iter()
+            .filter(|failure| {
+                external_error_is_first_for_session(&mut displayed_session, failure.session_id())
+            })
+            .map(PlaybackFailure::message)
+            .collect()
+    }
+
     #[test]
-    fn external_error_log_redacts_local_stream_proxy_tokens() {
-        let message = "Forbidden, URL: http://127.0.0.1:42817/0123456789abcdef?source=playbin";
+    fn external_bus_error_chain_displays_only_its_first_cause() {
+        let session = PlaybackSessionId::from(11);
+        let failures = [
+            PlaybackFailure::new("Forbidden", PlaybackFailureKind::HttpStatus(403), session),
+            PlaybackFailure::new(
+                "Internal data stream error",
+                PlaybackFailureKind::Other,
+                session,
+            ),
+            PlaybackFailure::new(
+                "Stream doesn't contain enough data",
+                PlaybackFailureKind::Other,
+                session,
+            ),
+        ];
+
+        assert_eq!(displayed_messages(&failures), ["Forbidden"]);
+    }
+
+    #[test]
+    fn external_bus_error_chain_keeps_arrival_order_not_status_priority() {
+        let session = PlaybackSessionId::from(11);
+        let failures = [
+            PlaybackFailure::new(
+                "Internal data stream error",
+                PlaybackFailureKind::Other,
+                session,
+            ),
+            PlaybackFailure::new("Forbidden", PlaybackFailureKind::HttpStatus(403), session),
+        ];
 
         assert_eq!(
-            redact_local_stream_proxy_urls(message),
-            "Forbidden, URL: http://127.0.0.1:42817/<redacted>"
+            displayed_messages(&failures),
+            ["Internal data stream error"]
+        );
+    }
+
+    #[test]
+    fn a_new_external_playback_session_can_display_its_first_error() {
+        let failures = [
+            PlaybackFailure::new(
+                "first session",
+                PlaybackFailureKind::Other,
+                PlaybackSessionId::from(11),
+            ),
+            PlaybackFailure::new(
+                "second session",
+                PlaybackFailureKind::Other,
+                PlaybackSessionId::from(12),
+            ),
+        ];
+
+        assert_eq!(
+            displayed_messages(&failures),
+            ["first session", "second session"]
+        );
+    }
+
+    #[test]
+    fn typed_http_status_controls_episode_unavailability_and_youtube_copy() {
+        let session = PlaybackSessionId::from(11);
+        let forbidden = external_error_presentation(
+            &PlaybackFailure::new("Forbidden", PlaybackFailureKind::HttpStatus(403), session),
+            Some(PodcastKind::Youtube),
+        );
+        let not_found = external_error_presentation(
+            &PlaybackFailure::new("Not Found", PlaybackFailureKind::HttpStatus(404), session),
+            Some(PodcastKind::Youtube),
+        );
+        let gone = external_error_presentation(
+            &PlaybackFailure::new("Gone", PlaybackFailureKind::HttpStatus(410), session),
+            Some(PodcastKind::Youtube),
+        );
+
+        assert!(!forbidden.unavailable_episode);
+        assert_eq!(
+            forbidden.message,
+            "YouTube refused this audio stream — retry playback or choose a signed-in browser in Plugins"
+        );
+        assert!(not_found.unavailable_episode);
+        assert_eq!(not_found.message, "Not Found");
+        assert!(gone.unavailable_episode);
+    }
+
+    #[test]
+    fn queued_episode_transport_failure_uses_typed_unavailability_dispatch() {
+        let transport_failure = ExternalErrorPresentation {
+            message: "Forbidden".into(),
+            unavailable_episode: false,
+        };
+        let missing_episode = ExternalErrorPresentation {
+            message: "Not Found".into(),
+            unavailable_episode: true,
+        };
+
+        assert_eq!(
+            external_error_dispatch(PlaybackMode::QueuedEpisode, &transport_failure),
+            ExternalErrorDispatch::StopAndToast
         );
         assert_eq!(
-            redact_local_stream_proxy_urls("Forbidden, URL: https://googlevideo.test/audio"),
-            "Forbidden, URL: https://googlevideo.test/audio"
+            external_error_dispatch(PlaybackMode::QueuedEpisode, &missing_episode),
+            ExternalErrorDispatch::HandleFailure
         );
+    }
+
+    #[test]
+    fn external_error_presentation_redacts_local_stream_proxy_tokens() {
+        let presentation = external_error_presentation(
+            &PlaybackFailure::new(
+                "Forbidden, URL: http://127.0.0.1:42817/0123456789abcdef?source=playbin",
+                PlaybackFailureKind::Other,
+                PlaybackSessionId::from(11),
+            ),
+            Some(PodcastKind::Youtube),
+        );
+
+        assert_eq!(
+            presentation.message,
+            "Forbidden, URL: http://127.0.0.1:42817/<redacted>"
+        );
+    }
+
+    #[test]
+    fn forbidden_message_text_does_not_impersonate_a_typed_403() {
+        let presentation = external_error_presentation(
+            &PlaybackFailure::new(
+                "Forbidden (403) appears only in display text",
+                PlaybackFailureKind::Other,
+                PlaybackSessionId::from(11),
+            ),
+            Some(PodcastKind::Youtube),
+        );
+
+        assert_eq!(
+            presentation.message,
+            "Forbidden (403) appears only in display text"
+        );
+        assert!(!presentation.unavailable_episode);
     }
 }
