@@ -124,6 +124,10 @@ rg --quiet 'version: "0\.12\.3"' "$workflow" || \
     fail "the base source-quality job must use the verified uv pin"
 rg --quiet 'check-project-quality\.sh --android' "$workflow" || \
     fail "the Android job must run Android source quality"
+rg --multiline --quiet \
+    'name: Run the Android JVM unit suite\n        run: scripts/check-android-suite\.sh\n\n      - name: Run Android source quality\n        run: scripts/check-project-quality\.sh --android' \
+    "$workflow" || \
+    fail "Android CI must generate UniFFI bindings before source lint"
 rg --quiet 'check-gnome-ci\.sh' "$workflow" || \
     fail "GNOME-only changes must use the targeted GNOME gate"
 rg --quiet 'cargo test --locked -p reprise-view -p reprise-android-ffi' "$workflow" || \
