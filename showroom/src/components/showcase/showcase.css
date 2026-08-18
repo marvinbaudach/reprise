@@ -84,6 +84,16 @@
   transform: rotate(1.2deg);
 }
 
+.hero-product__visualizer {
+  position: absolute;
+  left: 19.259%;
+  top: 24.834%;
+  width: 61.389%;
+  height: 27.121%;
+  display: block;
+  pointer-events: none;
+}
+
 .hero-product__caption {
   position: absolute;
   inset-inline: 0;

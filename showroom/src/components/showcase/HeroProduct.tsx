@@ -1,4 +1,5 @@
 import { HERO_CAPTURES } from '../../data/showcase';
+import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
 import { ProductShot } from './ProductShot';
 import './showcase.css';
 
@@ -19,6 +20,7 @@ export function HeroProduct() {
 
       <div className="hero-product__phone">
         <ProductShot capture={phone} eager />
+        <VisualizerPlate />
       </div>
 
       <figcaption className="hero-product__caption frame">

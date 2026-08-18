@@ -317,6 +317,130 @@ fn render_bass_pressure_moments_ppm() {
     }
 }
 
+/// Streams every input that the Bars renderer sees from decoded PCM.
+///
+/// `REPRISE_VIS_OUT` receives `bands.csv` and `pressure.csv`. Set
+/// `REPRISE_VIS_WRITE_RGB=1` to also write the rendered Cairo frames as packed
+/// RGB bytes to `frames.rgb`; the asset packer deliberately skips that large
+/// diagnostic output.
+#[test]
+#[ignore = "measurement: needs REPRISE_VIS_PCM (raw mono f32 44.1 kHz)"]
+fn dump_song_visualizer_stream() {
+    use reprise_core::playback::{
+        BassPressureDetector, CavaBarProcessor, CavaConfig, SpectrumFrame, SPECTRUM_BAND_COUNT,
+    };
+    use std::io::Write as _;
+
+    const SAMPLE_RATE: u32 = 44_100;
+    const CHUNK_SAMPLES: usize = 1_024;
+    const DEFAULT_RENDER_WIDTH: f32 = 663.0;
+    const DEFAULT_RENDER_HEIGHT: f32 = 652.0;
+
+    let pcm_path = std::env::var("REPRISE_VIS_PCM").expect("REPRISE_VIS_PCM");
+    let output_dir = std::env::var("REPRISE_VIS_OUT").expect("REPRISE_VIS_OUT");
+    let render_width = visualizer_measurement_dimension("REPRISE_VIS_W", DEFAULT_RENDER_WIDTH);
+    let render_height = visualizer_measurement_dimension("REPRISE_VIS_H", DEFAULT_RENDER_HEIGHT);
+    let write_rgb = std::env::var("REPRISE_VIS_WRITE_RGB").as_deref() == Ok("1");
+
+    std::fs::create_dir_all(&output_dir).expect("writable REPRISE_VIS_OUT");
+    let bytes = std::fs::read(&pcm_path).expect("readable raw PCM");
+    let samples: Vec<f32> = bytes
+        .chunks_exact(size_of::<f32>())
+        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+        .collect();
+
+    let mut cava = CavaBarProcessor::new(CavaConfig::new(SAMPLE_RATE, SPECTRUM_BAND_COUNT))
+        .expect("CAVA processor");
+    let mut detector = BassPressureDetector::new(SAMPLE_RATE);
+    let mut engine = VisualEngine::new();
+    engine.set_playing(true);
+    engine.set_has_track(true);
+    engine.set_accent((0.22, 0.78, 0.74));
+
+    let mut bands_output =
+        std::io::BufWriter::new(std::fs::File::create(format!("{output_dir}/bands.csv")).unwrap());
+    let mut pressure_output = std::io::BufWriter::new(
+        std::fs::File::create(format!("{output_dir}/pressure.csv")).unwrap(),
+    );
+    let mut rgb_output = write_rgb.then(|| {
+        std::io::BufWriter::new(std::fs::File::create(format!("{output_dir}/frames.rgb")).unwrap())
+    });
+    let mut frame_count = 0_usize;
+
+    for chunk in samples.chunks(CHUNK_SAMPLES) {
+        let bands: [f32; SPECTRUM_BAND_COUNT] = cava
+            .process(chunk)
+            .try_into()
+            .expect("the configured bar count");
+        let pressure = detector.observe(chunk);
+        engine.ingest(&SpectrumFrame::from_cava_bars(bands).with_bass_pressure(pressure));
+        engine.tick();
+
+        let band_line: Vec<String> = bands.iter().map(|value| format!("{value:.5}")).collect();
+        writeln!(bands_output, "{}", band_line.join(",")).unwrap();
+        writeln!(
+            pressure_output,
+            "{:.5},{:.5},{:.5}",
+            pressure.kick, pressure.impact, pressure.aura
+        )
+        .unwrap();
+
+        if let Some(output) = &mut rgb_output {
+            write_visualizer_rgb_frame(output, &engine, render_width, render_height);
+        }
+        frame_count += 1;
+    }
+
+    bands_output.flush().unwrap();
+    pressure_output.flush().unwrap();
+    if let Some(output) = &mut rgb_output {
+        output.flush().unwrap();
+    }
+    println!(
+        "frames={frame_count} size={}x{} fps={:.3}",
+        render_width as usize,
+        render_height as usize,
+        SAMPLE_RATE as f32 / CHUNK_SAMPLES as f32
+    );
+}
+
+fn visualizer_measurement_dimension(name: &str, fallback: f32) -> f32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(fallback)
+}
+
+fn write_visualizer_rgb_frame(
+    output: &mut impl std::io::Write,
+    engine: &VisualEngine,
+    width: f32,
+    height: f32,
+) {
+    let scene = engine.scene(width, height);
+    let mut surface =
+        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, width as i32, height as i32)
+            .unwrap();
+    {
+        let cr = gtk4::cairo::Context::new(&surface).unwrap();
+        cr.set_source_rgb(0.078, 0.094, 0.102);
+        let _ = cr.paint();
+        render::draw_scene(&cr, &scene);
+    }
+
+    let stride = surface.stride() as usize;
+    let data = surface.data().unwrap();
+    let mut row = Vec::with_capacity(width as usize * 3);
+    for y in 0..height as usize {
+        row.clear();
+        for x in 0..width as usize {
+            let offset = y * stride + x * 4;
+            row.extend_from_slice(&[data[offset + 2], data[offset + 1], data[offset]]);
+        }
+        output.write_all(&row).unwrap();
+    }
+}
+
 fn write_ppm(surface: &mut gtk4::cairo::ImageSurface, width: usize, height: usize, path: &str) {
     let stride = surface.stride() as usize;
     let data = surface.data().unwrap();

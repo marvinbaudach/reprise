@@ -22,7 +22,10 @@ test('the prerendered page opens with real GNOME and Android product media', asy
 
   assert.match(html, /data-showcase="hero-product"/);
   assert.match(html, /Reprise running on GNOME with the music library and Now Playing visible/);
-  assert.match(html, /Reprise on Android showing the audio-reactive Now Playing scene/);
+  assert.match(
+    html,
+    /Reprise on Android with an animated audio-reactive visualizer in Now Playing/,
+  );
 });
 
 test('the product gallery names every shipped surface and remains useful without JavaScript', async () => {
