@@ -1,0 +1,167 @@
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(0.75rem, 0.5rem + 1.5vw, 2rem);
+  background: oklch(7% 0.012 269 / 0.94);
+  backdrop-filter: blur(14px);
+  animation: rp-fade 260ms ease both;
+}
+
+.lightbox__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex: 0 0 auto;
+  padding-bottom: 14px;
+}
+
+.lightbox__heading {
+  min-width: 0;
+}
+
+.lightbox__heading p {
+  margin: 0 0 2px;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #4fdbd4;
+}
+
+.lightbox__heading h2 {
+  margin: 0;
+  color: oklch(97% 0.004 269);
+  font-size: 1.05rem;
+  font-weight: inherit;
+}
+
+.lightbox__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lightbox__counter {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  color: oklch(68% 0.011 269);
+}
+
+.lightbox__controls button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid oklch(32% 0.018 269);
+  border-radius: 999px;
+  background: oklch(18% 0.016 269 / 0.8);
+  color: oklch(90% 0.006 269);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.lightbox__viewport {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.lightbox__zoom {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The design had the image as a direct flex child; the keyboard zoom button
+     wraps it now. Without a resolved height here the frame's percentages have
+     nothing to resolve against and the picture is cropped, not fitted. */
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+/* The frame keeps the picture's ratio, so the live plate can be placed on it in
+   the same percentages the hero tile uses — and both zoom as one. */
+.lightbox__frame {
+  position: relative;
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
+  transform-origin: center;
+  transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rp-lb-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lightbox__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border: 1px solid oklch(30% 0.018 269);
+  border-radius: 10px;
+}
+
+.lightbox__zoom:has(.lightbox__image[data-zoomed="true"]) {
+  cursor: zoom-out;
+}
+
+.lightbox__description {
+  flex: 0 0 auto;
+  margin: 14px auto 0;
+  max-width: 74ch;
+  text-align: center;
+  font-size: 0.88rem;
+  color: oklch(72% 0.009 269);
+  text-wrap: pretty;
+}
+
+@keyframes rp-lb-in {
+  from {
+    opacity: 0;
+    transform: scale(0.965);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rp-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lightbox,
+  .lightbox__frame {
+    animation: none;
+    transition: none;
+  }
+}

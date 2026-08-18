@@ -5,7 +5,6 @@ export interface ArchitectureSurface {
   readonly name: string;
   readonly stack: string;
   readonly role: string;
-  readonly adapter: string;
   readonly href: string;
 }
 
@@ -15,7 +14,6 @@ export const ARCHITECTURE_SURFACES: readonly ArchitectureSurface[] = [
     name: 'GNOME',
     stack: 'GTK4 · libadwaita',
     role: 'native desktop',
-    adapter: 'reprise-platform-linux',
     href: treelink('crates/reprise-gnome'),
   },
   {
@@ -23,7 +21,6 @@ export const ARCHITECTURE_SURFACES: readonly ArchitectureSurface[] = [
     name: 'Android',
     stack: 'Kotlin · Compose',
     role: 'native mobile',
-    adapter: 'reprise-android-ffi',
     href: treelink('android'),
   },
   {
@@ -31,7 +28,6 @@ export const ARCHITECTURE_SURFACES: readonly ArchitectureSurface[] = [
     name: 'CLI',
     stack: 'Rust · terminal',
     role: 'headless surface',
-    adapter: 'core facade',
     href: treelink('crates/reprise-cli'),
   },
   {
@@ -39,7 +35,6 @@ export const ARCHITECTURE_SURFACES: readonly ArchitectureSurface[] = [
     name: 'MCP',
     stack: 'Rust · JSON-RPC',
     role: 'agent surface',
-    adapter: 'capability gate',
     href: treelink('crates/reprise-mcp'),
   },
 ] as const;

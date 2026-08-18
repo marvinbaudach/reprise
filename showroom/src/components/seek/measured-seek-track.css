@@ -1,0 +1,246 @@
+.hero-seek {
+  max-width: 78rem;
+  margin: clamp(2.5rem, 2rem + 2vw, 4.5rem) auto 0;
+  padding-inline: clamp(1.25rem, 0.6rem + 3vw, 4rem);
+}
+
+.hero-seek__bar {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 0.6rem + 0.6vw, 20px);
+  padding: 12px 16px;
+  border: 1px solid oklch(28% 0.018 269);
+  border-radius: 12px;
+  background: oklch(16% 0.016 269 / 0.72);
+  box-shadow: 0 24px 60px -44px oklch(4% 0.02 269 / 0.9);
+}
+
+.hero-seek__mark {
+  display: block;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+.seek-track__time {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: oklch(70% 0.011 269);
+}
+
+.hero-seek__caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+/*
+ * The frame is the control. It carries the focus, the pointer capture and the
+ * slider role; the canvas inside only draws. `pan-y` keeps a vertical swipe
+ * scrolling the page while a horizontal one scrubs.
+ */
+.seek-track__canvas-frame {
+  display: block;
+  width: 100%;
+  height: 148px;
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: pan-y;
+  outline-offset: 4px;
+}
+
+.seek-track__canvas-frame:focus-visible {
+  outline: 2px solid oklch(82% 0.13 190);
+}
+
+.seek-track__canvas-frame[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.seek-track__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.seek-track__canvas-frame--hero {
+  min-width: 0;
+  height: 46px;
+  flex: 1 1 0;
+}
+
+.seek-track__canvas-frame--hero .seek-track__canvas {
+  cursor: inherit;
+}
+
+.seek-track__unavailable {
+  display: grid;
+  min-height: 46px;
+  place-items: center;
+  flex: 1 1 0;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: oklch(62% 0.011 269);
+}
+
+.seek-card {
+  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 0;
+  padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem);
+  border: 1px solid oklch(30% 0.02 300);
+  border-radius: 14px;
+  background: linear-gradient(160deg, oklch(19% 0.03 300 / 0.7), oklch(16% 0.016 269 / 0.8));
+}
+
+.seek-card__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.seek-card__heading p {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #4fdbd4;
+}
+
+.seek-card__heading h3 {
+  margin: 0;
+  font-size: clamp(1.2rem, 1.05rem + 0.8vw, 1.7rem);
+  color: oklch(97% 0.004 269);
+  font-variation-settings:
+    "wdth" 104,
+    "wght" 560;
+}
+
+.seek-card__canvas {
+  position: relative;
+  padding-block: 10px;
+}
+
+.seek-card__canvas .seek-track__unavailable {
+  min-height: 148px;
+}
+
+.seek-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: oklch(70% 0.011 269);
+}
+
+.seek-readout__measurements,
+.seek-readout__measurements > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.seek-readout__measurements {
+  gap: 14px;
+  color: oklch(80% 0.008 269);
+}
+
+.seek-readout__measurements > span {
+  gap: 8px;
+}
+
+.seek-readout__swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: #ff6f5e;
+  box-shadow: 0 0 14px oklch(70% 0.14 30 / 0.5);
+}
+
+.seek-card__note {
+  margin: 22px 0 0;
+  max-width: 72ch;
+  font-size: 0.9rem;
+  color: oklch(66% 0.011 269);
+  text-wrap: pretty;
+}
+
+.seek-legends {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.seek-legends article {
+  padding: 18px 20px;
+  border: 1px solid oklch(28% 0.018 269);
+  border-top: 2px solid oklch(78% 0.008 269);
+  border-radius: 8px;
+  background: oklch(18% 0.016 269 / 0.7);
+}
+
+.seek-legends article:nth-child(2) {
+  border-top-color: #4fdbd4;
+}
+
+.seek-legends article:nth-child(3) {
+  border-top-color: #ff6f5e;
+}
+
+.seek-legends h4 {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: oklch(90% 0.006 269);
+}
+
+.seek-legends article:nth-child(2) h4 {
+  color: #4fdbd4;
+}
+
+.seek-legends article:nth-child(3) h4 {
+  color: #ff6f5e;
+}
+
+.seek-legends p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: oklch(74% 0.009 269);
+  text-wrap: pretty;
+}
+
+.seek-legends__axis {
+  height: 10px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg in oklch longer hue, #ff6f5e, #4fdbd4);
+}
+
+.seek-legends__ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: oklch(68% 0.011 269);
+}

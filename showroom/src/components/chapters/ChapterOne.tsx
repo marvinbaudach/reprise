@@ -6,25 +6,23 @@ import './chapters.css';
 
 export function ChapterOne() {
   return (
-    <section id="ch-01" className="chapter" aria-labelledby="ch-01-heading">
+    <section
+      id="ch-01"
+      className="chapter chapter--design"
+      data-ground="oklch(14.5% 0.016 258)"
+      aria-labelledby="ch-01-heading"
+    >
       <div className="frame">
-        <p className="rule eyebrow">CH.01</p>
-        {/* The design names this chapter "Two native apps. One core." — but the
-            hero says almost exactly that four hundred pixels higher up. The
-            chapter keeps its job and takes the half the hero does not carry. */}
-        <h2 id="ch-01-heading" className="display chapter-title">
+        <p className="chapter__eyebrow" data-reveal>
+          CH.01
+        </p>
+        <h2 id="ch-01-heading" className="chapter__title" data-reveal>
           One core, four frontends.
         </h2>
-      </div>
 
-      <div className="stage">
-        <div className="frame">
-          <FigureGrid figures={HEADLINE_FIGURES} />
-        </div>
-      </div>
+        <FigureGrid figures={HEADLINE_FIGURES} variant="headline" />
 
-      <div className="frame chapter__body">
-        <p className="prose">
+        <p className="chapter__intro" data-reveal>
           A GNOME desktop app in GTK4 and an Android app in Kotlin with Media3 sit on the same Rust
           core. So do a CLI and an MCP server — four frontends over one verified application layer,
           not four codebases that happen to share a name.

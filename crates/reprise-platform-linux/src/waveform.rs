@@ -247,7 +247,9 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::AtomicBool;
 
-    use reprise_core::waveform::{RenderDataBackend, WaveformBackend, WaveformError};
+    use reprise_core::waveform::{
+        RenderDataBackend, WaveformBackend, WaveformError, STORED_PEAK_COUNT,
+    };
 
     use super::*;
 
@@ -435,6 +437,55 @@ mod tests {
             Some(14)
         );
         assert!((216..=222).contains(&final_frame[14]));
+    }
+
+    #[test]
+    #[ignore = "measurement: needs REPRISE_SEEK_SOURCE and REPRISE_SEEK_OUT"]
+    fn dump_showroom_seek_track_measurement() {
+        let source = std::env::var_os("REPRISE_SEEK_SOURCE")
+            .map(PathBuf::from)
+            .expect("set REPRISE_SEEK_SOURCE to an audio file");
+        let output_dir = std::env::var_os("REPRISE_SEEK_OUT")
+            .map(PathBuf::from)
+            .expect("set REPRISE_SEEK_OUT to a writable directory");
+
+        let render_data = GstreamerWaveformBackend
+            .extract_render_data(&source, STORED_PEAK_COUNT)
+            .expect("real track rendering data");
+        let centroids = render_data.spectrogram.centroid_curve(STORED_PEAK_COUNT);
+        let duration_ms = metadata_duration(&source)
+            .expect("track duration metadata")
+            .nseconds()
+            / 1_000_000;
+        let duration_ms = u32::try_from(duration_ms).expect("track duration fits u32 milliseconds");
+
+        assert_eq!(render_data.waveform_peaks.len(), STORED_PEAK_COUNT);
+        assert_eq!(centroids.len(), STORED_PEAK_COUNT);
+        fs::create_dir_all(&output_dir).expect("writable REPRISE_SEEK_OUT");
+        fs::write(output_dir.join("duration-ms.txt"), duration_ms.to_string())
+            .expect("write duration");
+        fs::write(
+            output_dir.join("waveform-peaks.bin"),
+            &render_data.waveform_peaks,
+        )
+        .expect("write waveform peaks");
+        fs::write(output_dir.join("centroid-curve.bin"), &centroids).expect("write centroid curve");
+
+        let peak_range = render_data
+            .waveform_peaks
+            .iter()
+            .fold((u8::MAX, u8::MIN), |(min, max), value| {
+                (min.min(*value), max.max(*value))
+            });
+        let centroid_range = centroids
+            .iter()
+            .fold((u8::MAX, u8::MIN), |(min, max), value| {
+                (min.min(*value), max.max(*value))
+            });
+        println!(
+            "measured {} ms; peaks {}..={}; centroids {}..={}",
+            duration_ms, peak_range.0, peak_range.1, centroid_range.0, centroid_range.1
+        );
     }
 
     #[test]

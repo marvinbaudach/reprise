@@ -20,7 +20,7 @@ test('the prerendered document has a direct keyboard route into its single main 
   assert.match(html, /<a[^>]+class="skip-link"[^>]+href="#main-content"/);
   assert.match(html, /<main id="main-content" tabindex="-1">/);
   assert.equal((html.match(/<h1\b/g) ?? []).length, 1);
-  for (const chapter of ['ch-01', 'ch-02', 'ch-03']) {
+  for (const chapter of ['ch-01', 'ch-02', 'ch-03', 'ch-04']) {
     assert.match(html, new RegExp(`href="#${chapter}"`));
     assert.match(html, new RegExp(`<section id="${chapter}"`));
   }
@@ -32,7 +32,7 @@ test('motion, the in-flow gallery, and social previews survive the production bu
 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.skip-link:focus-visible/);
-  assert.match(html, /data-layout="editorial-grid"/);
+  assert.match(html, /data-layout="design-mosaic"/);
   assert.doesNotMatch(html, /product-gallery-hint|Use arrow keys, drag, or scroll/);
   assert.equal((html.match(/loading="eager"/g) ?? []).length, 2);
   assert.match(html, /property="og:title"/);
