@@ -1,0 +1,11 @@
+{
+  "name": "reprise-project-quality",
+  "private": true,
+  "scripts": {
+    "lint:python": "node run-python-lint.mjs",
+    "test:python": "node --test tests/python-lint-contract.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
