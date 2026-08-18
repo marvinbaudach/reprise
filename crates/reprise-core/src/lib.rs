@@ -60,6 +60,7 @@ mod db_new_releases_history;
 mod db_new_releases_notify;
 mod db_online_sources;
 mod db_play_journal;
+mod db_podcast_channel_image;
 mod db_podcasts_radio;
 #[cfg(test)]
 mod db_recent_test_support;

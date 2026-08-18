@@ -14,6 +14,9 @@ const LONG_FORM_FEED_PREFIX: &str = "https://www.youtube.com/feeds/videos.xml?pl
 pub struct YoutubeListing {
     pub title: Option<String>,
     pub channel: Option<String>,
+    /// The channel's own avatar, never an episode thumbnail — see
+    /// `ytdlp_search::channel_avatar_url` for why the two need different rules.
+    pub image_url: Option<String>,
     pub episodes: Vec<YoutubeEpisode>,
 }
 
@@ -34,6 +37,7 @@ pub fn project_playlist(playlist: YtDlpPlaylist) -> YoutubeListing {
     YoutubeListing {
         title: playlist.title,
         channel: playlist.channel,
+        image_url: playlist.image_url,
         episodes: playlist.entries.into_iter().map(project_video).collect(),
     }
 }
