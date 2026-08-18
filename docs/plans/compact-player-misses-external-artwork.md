@@ -2,7 +2,7 @@
 slug: compact-player-misses-external-artwork
 worktree: /home/marvin/Projects/reprise-compact-player-misses-external-artwork
 branch: feature/compact-player-misses-external-artwork
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
