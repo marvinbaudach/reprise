@@ -5562,9 +5562,16 @@ listening statistics.
   image stays on its glyph. Both stages use the same row generation, so a
   recycled row cannot accept either image from its predecessor. The same chain
   applies to YouTube channel detail and playback artwork, but not to MPRIS,
-  which continues to project one URL. When a YouTube channel itself has no
-  image, its library group header shows the newest episode's image; RSS group
-  headers never borrow an episode image. Every caller (podcast library view,
+  which continues to project one URL. A channel's own image comes from
+  its yt-dlp channel dump, and that dump needs its own selection rule: the
+  largest square `thumbnails` entry, else `avatar_uncropped`, never a banner
+  crop (the video-level rule would hand out a 6:1 strip). No group header ever
+  borrows an episode image — neither YouTube nor RSS: a channel without an
+  avatar stays on its glyph, so the library group header and the channel detail
+  header always agree, and a missing avatar stays visible instead of being
+  masked by the newest episode's cover. A YouTube subscription is therefore
+  created without an image at all; the search hit's video thumbnail stays a
+  preview, and the first refresh fills in the avatar. Every caller (podcast library view,
   YouTube channel detail, all three add dialogs) computes the gate and selects
   the cache scope itself at its own connection rather than relying on an
   upstream checkpoint or URL heuristic — the lesson from `T6-G1-gap`: a

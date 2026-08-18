@@ -272,7 +272,11 @@ fn group_header_with_rebind(
     header.set_hexpand(true);
 
     let artwork_host = skeleton.media.clone();
-    let image_url = group_image_url(group).map(str::to_owned);
+    // Deliberately no episode fallback: a YouTube group used to borrow its
+    // newest episode's thumbnail here, which both hid the missing channel
+    // avatar and made the tile disagree with the channel detail header (which
+    // reads `group.image_url` directly). One source for both, or the icon.
+    let image_url = group.image_url.clone();
     let fallback_icon = match group.kind {
         PodcastKind::Rss => "audio-input-microphone-symbolic",
         PodcastKind::Youtube => "video-x-generic-symbolic",
@@ -333,16 +337,6 @@ fn group_header_with_rebind(
     skeleton.trailing.append(&menu);
     podcasts_context_surface::wire_source_header(&header, group);
     header.upcast()
-}
-
-fn group_image_url(group: &SourceGroup) -> Option<&str> {
-    group.image_url.as_deref().or_else(|| match group.kind {
-        PodcastKind::Rss => None,
-        PodcastKind::Youtube => group
-            .episodes
-            .first()
-            .and_then(|episode| episode.image_url.as_deref()),
-    })
 }
 
 fn episode_row(

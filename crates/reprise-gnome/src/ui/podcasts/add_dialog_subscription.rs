@@ -59,7 +59,16 @@ pub(super) fn subscribe(
             feed_url: candidate.url.clone(),
             title: candidate.title.clone(),
             author: candidate.author.clone(),
-            image_url: candidate.image_url.clone(),
+            // A YouTube candidate's picture is a *video* thumbnail: search hits
+            // are videos (`ytdlp_search::parse_search_channels`) and the URL
+            // preview reads the channel dump. Persisting it would stamp an
+            // episode cover onto the channel until the first refresh, which is
+            // exactly the state measured in the live database on 2026-08-18.
+            // It stays a preview; the refresh brings the real avatar.
+            image_url: match candidate.kind {
+                PodcastKind::Rss => candidate.image_url.clone(),
+                PodcastKind::Youtube => None,
+            },
             auto_download,
         },
         chrono::Utc::now().timestamp(),

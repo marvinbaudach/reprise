@@ -119,9 +119,159 @@ pub(super) fn entry_image_url(entry: &Value) -> Option<String> {
     })
 }
 
+/// The channel's own avatar out of a `--flat-playlist` channel dump.
+///
+/// [`entry_image_url`] must not be reused here. A channel dump carries no flat
+/// `thumbnail` field at all, and its `thumbnails[0]` is the *banner* — measured
+/// 2026-08-18 against `youtube.com/@kurzgesagt/videos`: six banner crops from
+/// 1060×175 to 2560×424, then `banner_uncropped`, a square 900×900 avatar and
+/// `avatar_uncropped`. A 6:1 strip in a square 40 px tile looks worse than the
+/// episode cover this replaces, so the banner is never a candidate.
+///
+/// The square entry wins over `avatar_uncropped` on purpose: the uncropped
+/// variants carry no `width`/`height` at all and resolve to `=s0`, the
+/// ungoverned original, while the square one is the ready-made `=s900`.
+/// `remote_image` places no ceiling on what it downloads, so that difference is
+/// paid on every cache miss.
+pub(super) fn channel_avatar_url(value: &Value) -> Option<String> {
+    let thumbnails = value.get("thumbnails").and_then(Value::as_array)?;
+    let square = thumbnails
+        .iter()
+        .filter_map(|thumbnail| {
+            let width = positive_dimension(thumbnail, "width")?;
+            let height = positive_dimension(thumbnail, "height")?;
+            if width != height {
+                return None;
+            }
+            Some((width, non_empty_json_string(thumbnail, "url")?))
+        })
+        .max_by_key(|(width, _)| *width)
+        .map(|(_, url)| url);
+    square.or_else(|| {
+        thumbnails
+            .iter()
+            .find(|thumbnail| {
+                non_empty_json_string(thumbnail, "id").as_deref() == Some("avatar_uncropped")
+            })
+            .and_then(|thumbnail| non_empty_json_string(thumbnail, "url"))
+    })
+}
+
+fn positive_dimension(thumbnail: &Value, key: &str) -> Option<u64> {
+    let value = thumbnail.get(key)?;
+    let dimension = value.as_u64().or_else(|| {
+        value.as_f64().filter(|value| *value >= 0.0).map(|value| {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            {
+                value as u64
+            }
+        })
+    })?;
+    (dimension > 0).then_some(dimension)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The channel dump measured 2026-08-18 against `@kurzgesagt/videos`,
+    /// trimmed to the fields the selection reads. Note there is no flat
+    /// `thumbnail` key on channel level, and `thumbnails[0]` is a banner.
+    fn kurzgesagt_channel_dump() -> Value {
+        serde_json::from_str(
+            r#"{"title":"Kurzgesagt","thumbnails":[
+              {"url":"https://yt3.googleusercontent.com/banner=w1060-fcrop64","height":175,"width":1060,"id":"0"},
+              {"url":"https://yt3.googleusercontent.com/banner=w1138-fcrop64","height":188,"width":1138,"id":"1"},
+              {"url":"https://yt3.googleusercontent.com/banner=w2560-fcrop64","height":424,"width":2560,"id":"5"},
+              {"url":"https://yt3.googleusercontent.com/banner=s0","id":"banner_uncropped","preference":-5},
+              {"url":"https://yt3.googleusercontent.com/ytc/AIdro=s900-c-k-c0x00ffffff-no-rj","height":900,"width":900,"id":"7"},
+              {"url":"https://yt3.googleusercontent.com/ytc/AIdro=s0","id":"avatar_uncropped","preference":-5}
+            ]}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_channel_dump_yields_the_square_avatar_not_the_banner() {
+        assert_eq!(
+            channel_avatar_url(&kurzgesagt_channel_dump()).as_deref(),
+            Some("https://yt3.googleusercontent.com/ytc/AIdro=s900-c-k-c0x00ffffff-no-rj")
+        );
+    }
+
+    #[test]
+    fn the_video_level_rule_would_have_picked_the_banner() {
+        // Guards the reason `channel_avatar_url` exists at all: reusing
+        // `entry_image_url` on channel level hands out the 6:1 banner strip.
+        assert_eq!(
+            entry_image_url(&kurzgesagt_channel_dump()).as_deref(),
+            Some("https://yt3.googleusercontent.com/banner=w1060-fcrop64")
+        );
+    }
+
+    #[test]
+    fn a_channel_with_only_banners_has_no_avatar() {
+        let value: Value = serde_json::from_str(
+            r#"{"thumbnails":[
+              {"url":"https://yt3.googleusercontent.com/banner=w1060","height":175,"width":1060,"id":"0"},
+              {"url":"https://yt3.googleusercontent.com/banner=s0","id":"banner_uncropped"}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(channel_avatar_url(&value), None);
+    }
+
+    #[test]
+    fn avatar_uncropped_carries_the_channel_when_no_square_entry_does() {
+        let value: Value = serde_json::from_str(
+            r#"{"thumbnails":[
+              {"url":"https://yt3.googleusercontent.com/banner=w1060","height":175,"width":1060,"id":"0"},
+              {"url":"https://yt3.googleusercontent.com/ytc/only=s0","id":"avatar_uncropped"}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            channel_avatar_url(&value).as_deref(),
+            Some("https://yt3.googleusercontent.com/ytc/only=s0")
+        );
+    }
+
+    #[test]
+    fn the_largest_square_entry_wins() {
+        let value: Value = serde_json::from_str(
+            r#"{"thumbnails":[
+              {"url":"https://yt3.googleusercontent.com/ytc/small=s88","height":88,"width":88,"id":"0"},
+              {"url":"https://yt3.googleusercontent.com/ytc/large=s900","height":900,"width":900,"id":"7"}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            channel_avatar_url(&value).as_deref(),
+            Some("https://yt3.googleusercontent.com/ytc/large=s900")
+        );
+    }
+
+    #[test]
+    fn a_zero_sized_entry_is_not_square() {
+        let value: Value = serde_json::from_str(
+            r#"{"thumbnails":[{"url":"https://yt3.googleusercontent.com/ytc/zero","height":0,"width":0,"id":"0"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(channel_avatar_url(&value), None);
+    }
+
+    #[test]
+    fn a_dump_without_usable_thumbnails_has_no_avatar() {
+        for body in [
+            r#"{"title":"No thumbnails"}"#,
+            r#"{"thumbnails":[]}"#,
+            r#"{"thumbnails":"not an array"}"#,
+            r#"{"thumbnails":[{"height":900,"width":900,"id":"7"}]}"#,
+        ] {
+            let value: Value = serde_json::from_str(body).unwrap();
+            assert_eq!(channel_avatar_url(&value), None, "body: {body}");
+        }
+    }
 
     #[test]
     fn src_9_hidden_or_malformed_follower_counts_never_become_zero() {

@@ -367,6 +367,6 @@ fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
 }
 
 #[test]
-fn supported_schema_version_is_v76() {
-    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 76);
+fn supported_schema_version_is_v77() {
+    assert_eq!(crate::db::SUPPORTED_SCHEMA_VERSION, 77);
 }
