@@ -118,6 +118,7 @@ require_pattern 'server-num' scripts/check-display-tests.sh
 require_pattern_order 'if env' 'dbus-run-session -- xvfb-run' scripts/check-display-tests.sh
 require_pattern 'DISPLAY_TEST_JOBS: 1' .github/workflows/ci.yml
 require_pattern 'Frontend lint' scripts/check-architecture.sh
+require_pattern 'cargo machete --with-metadata' scripts/check-frontend-thinness.sh
 require_pattern 'composition root must stay below 600' scripts/check-architecture.sh
 require_pattern 'UI orchestrators must stay below 600' scripts/check-architecture.sh
 require_pattern 'must declare feature modules instead of flattening feature directories' scripts/check-architecture.sh

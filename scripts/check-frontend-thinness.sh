@@ -269,7 +269,9 @@ echo "== Unused dependencies =="
 # passing quietly, because a skipped check that looks green is worse than a
 # check that is honestly absent.
 if command -v cargo-machete >/dev/null 2>&1; then
-  if ! cargo machete; then
+  # Metadata resolves package names such as `md-5` -> `md5` and
+  # `gettext-rs` -> `gettextrs`, avoiding false unused-dependency reports.
+  if ! cargo machete --with-metadata; then
     echo "cargo machete found unused dependencies" >&2
     failed=1
   fi
