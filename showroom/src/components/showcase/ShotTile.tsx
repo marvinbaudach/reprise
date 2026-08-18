@@ -23,6 +23,7 @@ interface ShotTileProps {
   readonly capture: ProductCapture;
   readonly className?: string;
   readonly eager?: boolean;
+  readonly reveal?: string;
   readonly reducedMotion: boolean;
   readonly variant: 'desktop' | 'phone';
   readonly children?: ReactNode;
@@ -33,6 +34,7 @@ export function ShotTile({
   capture,
   className = '',
   eager = false,
+  reveal,
   reducedMotion,
   variant,
   children,
@@ -73,6 +75,7 @@ export function ShotTile({
       className={`shot-tile shot-tile--${variant} ${className}`.trim()}
       type="button"
       data-shot=""
+      data-reveal={reveal}
       data-loading={loading ? 'true' : 'false'}
       aria-label={`Open screenshot: ${capture.title}`}
       onClick={(event) => onOpen(event.currentTarget)}

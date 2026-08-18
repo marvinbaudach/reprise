@@ -20,7 +20,7 @@ test('ShotTile owns the design tilt sheen loading sweep and expandable caption',
     'utf8',
   );
 
-  assert.equal((html.match(/<button[^>]+class="[^"]*shot-tile[^"]*"/g) ?? []).length, 2);
+  assert.equal((html.match(/<button[^>]+class="[^"]*shot-tile[^"]*"/g) ?? []).length, 11);
   for (const attribute of ['data-shot', 'data-sheen', 'data-sweep', 'data-dwrap']) {
     assert.match(html, new RegExp(`${attribute}=""`));
   }

@@ -135,6 +135,23 @@ export const GALLERY_CAPTURES: readonly ProductCapture[] = [
   }),
 ] as const;
 
+function galleryCapture(id: string): ProductCapture {
+  const capture = GALLERY_CAPTURES.find((candidate) => candidate.id === id);
+  if (!capture) throw new Error(`Unknown gallery capture: ${id}`);
+  return capture;
+}
+
+/** The five authored mosaic rows, in their lightbox navigation order. */
+export const GALLERY_MOSAIC_ROWS: readonly (readonly ProductCapture[])[] = [
+  [galleryCapture('gnome-podcasts'), galleryCapture('android-library')],
+  [galleryCapture('gnome-youtube'), galleryCapture('gnome-radio')],
+  [galleryCapture('gnome-library-doctor'), galleryCapture('android-cover')],
+  [galleryCapture('gnome-device-sync'), galleryCapture('gnome-layout-controls')],
+  [galleryCapture('gnome-listening-stats')],
+] as const;
+
+export const GALLERY_MOSAIC_CAPTURES: readonly ProductCapture[] = GALLERY_MOSAIC_ROWS.flat();
+
 export function captureUrl(capture: ProductCapture): string {
   return `${import.meta.env.BASE_URL}media/showroom/${capture.filename}`;
 }

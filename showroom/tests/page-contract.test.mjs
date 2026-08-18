@@ -32,7 +32,7 @@ test('motion, the in-flow gallery, and social previews survive the production bu
 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.skip-link:focus-visible/);
-  assert.match(html, /data-layout="editorial-grid"/);
+  assert.match(html, /data-layout="design-mosaic"/);
   assert.doesNotMatch(html, /product-gallery-hint|Use arrow keys, drag, or scroll/);
   assert.equal((html.match(/loading="eager"/g) ?? []).length, 2);
   assert.match(html, /property="og:title"/);

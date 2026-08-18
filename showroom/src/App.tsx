@@ -28,7 +28,7 @@ export function App() {
         <TempoBand />
         <ChapterOne />
         <ChapterTwo />
-        <ChapterThree />
+        <ChapterThree reducedMotion={reduced} />
       </main>
       <SiteFooter />
     </div>

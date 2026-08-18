@@ -3,7 +3,11 @@ import { ProductGallery } from '../showcase/ProductGallery';
 import { SpectralAxis } from '../ui/SpectralAxis';
 import './chapters.css';
 
-export function ChapterThree() {
+interface ChapterThreeProps {
+  readonly reducedMotion: boolean;
+}
+
+export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
   return (
     <section id="ch-03" className="chapter" aria-labelledby="ch-03-heading">
       <div className="frame">
@@ -13,7 +17,7 @@ export function ChapterThree() {
         </h2>
       </div>
 
-      <ProductGallery />
+      <ProductGallery reducedMotion={reducedMotion} />
 
       <div className="stage">
         <div className="frame">

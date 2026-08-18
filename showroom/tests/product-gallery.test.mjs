@@ -54,21 +54,53 @@ test('the product gallery names every shipped surface and remains useful without
   }
 });
 
-test('the evidence wall stays in the page flow instead of creating a nested horizontal scroller', async () => {
+test('the gallery uses the five design mosaic rows and their exact flex ratios', async () => {
   const html = await prerenderedPage();
   const css = await builtCss();
-  const gallery = html.match(/<div[^>]+data-showcase="product-gallery"[\s\S]+?<\/div><\/div>/)?.[0];
+  const gallery = html.match(
+    /<section[^>]+data-showcase="product-gallery"[\s\S]+?<\/section>/,
+  )?.[0];
 
   assert.ok(gallery);
-  assert.match(gallery, /data-layout="editorial-grid"/);
-  assert.match(gallery, /class="product-gallery__desktop"/);
-  assert.match(gallery, /class="product-gallery__phones"/);
+  assert.match(gallery, /data-layout="design-mosaic"/);
+  assert.equal((gallery.match(/class="mosaic-row"/g) ?? []).length, 5);
+  assert.equal((gallery.match(/<button[^>]+class="[^"]*shot-tile/g) ?? []).length, 9);
+  let previousSurfaceIndex = -1;
+  for (const surface of [
+    'Podcasts',
+    'Android library',
+    'YouTube',
+    'Radio discovery',
+    'Library Doctor',
+    'Artwork mode',
+    'Device sync',
+    'Layout controls',
+    'Listening statistics',
+  ]) {
+    const surfaceIndex = gallery.indexOf(`>${surface}<`);
+    assert.ok(surfaceIndex > previousSurfaceIndex, `${surface} is out of design order`);
+    previousSurfaceIndex = surfaceIndex;
+  }
+  assert.doesNotMatch(gallery, / style=/);
   assert.doesNotMatch(gallery, /tabindex=|aria-describedby=/);
-  assert.doesNotMatch(html, /Use arrow keys, drag, or scroll/);
-  assert.match(css, /\.product-gallery__desktop\{[^}]*display:grid/);
-  assert.match(css, /\.product-gallery__phones\{[^}]*display:grid/);
+  assert.match(css, /\.mosaic\{[^}]*gap:clamp\(1\.2rem,\.9rem \+ 1\.4vw,2\.4rem\)/);
+  assert.match(
+    css,
+    /\.mosaic-frame\{[^}]*max-width:78rem[^}]*padding-inline:clamp\(1\.25rem,4vw,4rem\)/,
+  );
+  assert.match(css, /\.mosaic-row\{[^}]*display:flex[^}]*flex-wrap:wrap/);
+  assert.match(css, /\.mosaic-tile--gnome-podcasts\{[^}]*flex:1\.62 1 340px/);
+  assert.match(css, /\.mosaic-tile--android-library\{[^}]*flex:\.58 1 190px/);
+  assert.match(css, /\.mosaic-tile--gnome-library-doctor\{[^}]*flex:1\.7 1 360px/);
+  assert.match(css, /\.mosaic-tile--android-cover\{[^}]*flex:\.55 1 180px/);
+  assert.match(
+    css,
+    /\.mosaic-tile--gnome-youtube,\.mosaic-tile--gnome-radio,\.mosaic-tile--gnome-device-sync\{[^}]*flex:1 1 320px/,
+  );
+  assert.match(css, /\.mosaic-tile--gnome-layout-controls\{[^}]*flex:1\.05 1 320px/);
+  assert.match(css, /\.mosaic-tile--gnome-listening-stats\{[^}]*width:100%/);
   assert.doesNotMatch(css, /scroll-snap-type/);
-  assert.doesNotMatch(css, /\.product-gallery\{[^}]*overflow-x:auto/);
+  assert.doesNotMatch(css, /\.mosaic\{[^}]*overflow-x:auto/);
 });
 
 test('every gallery asset is copied into the deployable build and stays below one megabyte', async () => {
