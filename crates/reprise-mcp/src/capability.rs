@@ -1,4 +1,4 @@
-//! Capability gating for MCP tools (Beschluss 7, spec D16/D18).
+//! Capability gating for MCP tools (spec D16/D18).
 //!
 //! Capabilities live as `agent.capability.*` settings keys, read through the
 //! core [`settings`] facade. Per spec D18 the read surface is granted by
@@ -18,8 +18,6 @@ pub const CAP_PLAYLIST_CREATE: &str = "agent.capability.playlist:create";
 /// Settings key granting non-destructive manual-playlist updates (rename and
 /// append tracks; never remove/delete).
 pub const CAP_PLAYLIST_MANAGE: &str = "agent.capability.playlist:manage";
-/// Settings key granting instrumental (AI) creation (Beschluss 7).
-pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
 /// Settings key granting podcast, YouTube, and radio source mutations.
 pub const CAP_SOURCES_MANAGE: &str = "agent.capability.sources:manage";
 /// Settings key granting Library Doctor tag-file mutations.
@@ -39,9 +37,6 @@ const LIBRARY_READ_DEFAULT: bool = true;
 // Beschluss 7 / D18: writes are fail-closed (off) by default.
 const PLAYLIST_CREATE_DEFAULT: bool = false;
 const PLAYLIST_MANAGE_DEFAULT: bool = false;
-// Beschluss 7: `ai:create` is fail-closed (off) by default, exactly like
-// `playlist:create`.
-const AI_CREATE_DEFAULT: bool = false;
 const SOURCES_MANAGE_DEFAULT: bool = false;
 const TAGS_WRITE_DEFAULT: bool = false;
 #[cfg(feature = "mpris")]
@@ -66,11 +61,6 @@ pub fn playlist_manage_granted(db: &Db) -> Result<bool, rusqlite::Error> {
     settings::get_bool(db, CAP_PLAYLIST_MANAGE, PLAYLIST_MANAGE_DEFAULT)
 }
 
-/// Whether `ai:create` is currently granted (the live setting value).
-pub fn ai_create_granted(db: &Db) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(db, CAP_AI_CREATE, AI_CREATE_DEFAULT)
-}
-
 /// Whether `sources:manage` is currently granted (the live setting value).
 pub fn sources_manage_granted(db: &Db) -> Result<bool, rusqlite::Error> {
     settings::get_bool(db, CAP_SOURCES_MANAGE, SOURCES_MANAGE_DEFAULT)
@@ -92,8 +82,8 @@ pub fn device_sync_granted(db: &Db) -> Result<bool, rusqlite::Error> {
     settings::get_bool(db, CAP_DEVICE_SYNC, DEVICE_SYNC_DEFAULT)
 }
 
-/// Combines a startup snapshot with the live setting value (spec D18 / Beschluss
-/// 7): a write-class call is permitted only when the capability was granted at
+/// Combines a startup snapshot with the live setting value (spec D18): a
+/// write-class call is permitted only when the capability was granted at
 /// startup **and** is still granted right now.
 ///
 /// - revoking mid-session flips the live value to `false`, so the next call is
@@ -118,12 +108,6 @@ pub fn playlist_manage_effective(
     granted_at_startup: bool,
 ) -> Result<bool, rusqlite::Error> {
     Ok(effective(granted_at_startup, playlist_manage_granted(db)?))
-}
-
-/// Whether an `ai:create` write is permitted right now, given the startup
-/// snapshot.
-pub fn ai_create_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
-    Ok(effective(granted_at_startup, ai_create_granted(db)?))
 }
 
 /// Whether a podcast/YouTube/radio mutation is permitted right now, given the

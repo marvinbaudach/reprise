@@ -94,7 +94,7 @@ pub fn tool_error(message: String) -> CallToolResult {
 /// `music_playback_control` (denies inline) and `music_play` (denies via
 /// [`into_tool_outcome`]). Deliberately does *not* tell the caller to restart
 /// the MCP server: unlike the write-class caps (`playlist:create`,
-/// `ai:create`), which are captured in an immutable startup snapshot,
+/// `tags:write`), which are captured in an immutable startup snapshot,
 /// `playback:control` is read live on every call — a re-grant takes effect on
 /// the very next tool call. Not `#[cfg(feature = "mpris")]`: it is reached
 /// through [`into_tool_outcome`], which compiles regardless of that feature.
