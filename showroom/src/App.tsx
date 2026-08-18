@@ -24,7 +24,7 @@ export function App() {
       <ScrollProgress />
       <SiteHeader />
       <main id="main-content" tabIndex={-1}>
-        <Hero />
+        <Hero reducedMotion={reduced} />
         <TempoBand />
         <ChapterOne />
         <ChapterTwo />

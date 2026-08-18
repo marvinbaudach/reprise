@@ -1,0 +1,190 @@
+.shot-tile {
+  --mx: 50%;
+  --my: 50%;
+
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid oklch(32% 0.018 269);
+  border-radius: 12px;
+  background: oklch(17.5% 0.016 269);
+  box-shadow: 0 40px 90px -50px oklch(4% 0.02 269 / 0.95);
+  cursor: zoom-in;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  transform-style: preserve-3d;
+  transition:
+    transform 620ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 620ms ease,
+    border-color 400ms ease;
+}
+
+.shot-tile--phone {
+  min-width: 108px;
+  border-color: oklch(34% 0.018 269);
+  border-radius: 14px;
+  box-shadow: 0 30px 70px -34px oklch(3% 0.02 269 / 0.95);
+}
+
+.shot-tile > .product-shot {
+  transition: opacity 700ms ease;
+}
+
+.shot-tile[data-loading="true"] > .product-shot {
+  opacity: 0;
+}
+
+.shot-tile__sweep,
+.shot-tile__sheen {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.shot-tile__sweep {
+  overflow: hidden;
+  transition: opacity 400ms ease;
+}
+
+.shot-tile[data-loading="true"] .shot-tile__sweep {
+  opacity: 1;
+}
+
+.shot-tile__sweep > span {
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent);
+  animation: rp-sweep 1.5s linear infinite;
+}
+
+.shot-tile__sheen {
+  transition: opacity 420ms ease;
+  background:
+    radial-gradient(340px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%),
+    linear-gradient(
+      122deg,
+      oklch(85% 0.13 190 / 0.1),
+      transparent 34%,
+      transparent 64%,
+      oklch(78% 0.16 30 / 0.1)
+    );
+}
+
+.shot-tile--phone .shot-tile__sheen {
+  background:
+    radial-gradient(220px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%),
+    linear-gradient(
+      122deg,
+      oklch(85% 0.13 190 / 0.12),
+      transparent 40%,
+      transparent 60%,
+      oklch(78% 0.16 30 / 0.12)
+    );
+}
+
+.shot-tile:hover .shot-tile__sheen,
+.shot-tile:focus-visible .shot-tile__sheen {
+  opacity: 1;
+}
+
+.shot-tile__caption {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 18px;
+  background: linear-gradient(
+    to top,
+    oklch(9% 0.012 269 / 0.94),
+    oklch(9% 0.012 269 / 0.5) 58%,
+    transparent
+  );
+}
+
+.shot-tile--phone .shot-tile__caption {
+  gap: 0;
+  padding: 10px 12px;
+  background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), transparent);
+}
+
+.shot-tile__platform {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #4fdbd4;
+}
+
+.shot-tile--phone .shot-tile__platform {
+  letter-spacing: 0.16em;
+  color: #ff6f5e;
+}
+
+.shot-tile__title {
+  color: oklch(96% 0.004 269);
+  font-size: 0.98rem;
+}
+
+.shot-tile--phone .shot-tile__title {
+  font-size: 0.78rem;
+}
+
+.shot-tile__description-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shot-tile__description {
+  min-height: 0;
+  opacity: 0;
+  font-size: 0.8rem;
+  color: oklch(74% 0.009 269);
+  transition: opacity 320ms ease;
+}
+
+.shot-tile:hover .shot-tile__description-wrap,
+.shot-tile:focus-visible .shot-tile__description-wrap {
+  grid-template-rows: 1fr;
+}
+
+.shot-tile:hover .shot-tile__description,
+.shot-tile:focus-visible .shot-tile__description {
+  opacity: 1;
+}
+
+@keyframes rp-sweep {
+  0% {
+    transform: translateX(-130%);
+  }
+
+  100% {
+    transform: translateX(240%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-tile {
+    transform: none !important;
+    transition: none;
+  }
+
+  .shot-tile__sheen,
+  .shot-tile__sweep {
+    display: none;
+  }
+
+  .shot-tile__description-wrap,
+  .shot-tile__description,
+  .shot-tile > .product-shot {
+    transition: none;
+  }
+}

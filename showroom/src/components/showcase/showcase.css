@@ -12,32 +12,8 @@
   padding-bottom: 8%;
 }
 
-.hero-shot {
-  --mx: 50%;
-  --my: 50%;
-
-  display: block;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: oklch(17.5% 0.016 269);
-  cursor: zoom-in;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-  transform-style: preserve-3d;
-  transition:
-    transform 620ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 620ms ease,
-    border-color 400ms ease;
-}
-
 .hero-product__desktop {
   position: relative;
-  width: 100%;
-  border: 1px solid oklch(32% 0.018 269);
-  border-radius: 12px;
-  box-shadow: 0 40px 90px -50px oklch(4% 0.02 269 / 0.95);
 }
 
 .hero-product__phone {
@@ -45,10 +21,6 @@
   right: -5%;
   bottom: -6%;
   width: 24%;
-  min-width: 108px;
-  border: 1px solid oklch(34% 0.018 269);
-  border-radius: 14px;
-  box-shadow: 0 30px 70px -34px oklch(3% 0.02 269 / 0.95);
 }
 
 .hero-product__visualizer {
@@ -59,118 +31,6 @@
   height: 27.87%;
   display: block;
   pointer-events: none;
-}
-
-.hero-shot__sweep,
-.hero-shot__sheen {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.hero-shot__sweep {
-  overflow: hidden;
-}
-
-.hero-shot__sweep > span {
-  position: absolute;
-  inset: 0;
-  width: 42%;
-  background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent);
-}
-
-.hero-shot__sheen {
-  transition: opacity 420ms ease;
-  background: linear-gradient(
-    122deg,
-    oklch(85% 0.13 190 / 0.1),
-    transparent 34%,
-    transparent 64%,
-    oklch(78% 0.16 30 / 0.1)
-  );
-}
-
-.hero-shot__sheen--desktop {
-  background:
-    radial-gradient(340px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%),
-    linear-gradient(
-      122deg,
-      oklch(85% 0.13 190 / 0.1),
-      transparent 34%,
-      transparent 64%,
-      oklch(78% 0.16 30 / 0.1)
-    );
-}
-
-.hero-shot__sheen--phone {
-  background:
-    radial-gradient(220px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%),
-    linear-gradient(
-      122deg,
-      oklch(85% 0.13 190 / 0.12),
-      transparent 40%,
-      transparent 60%,
-      oklch(78% 0.16 30 / 0.12)
-    );
-}
-
-.hero-shot__caption {
-  position: absolute;
-  inset: auto 0 0;
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(
-    to top,
-    oklch(9% 0.012 269 / 0.94),
-    oklch(9% 0.012 269 / 0.5) 58%,
-    transparent
-  );
-}
-
-.hero-shot__caption--desktop {
-  gap: 2px;
-  padding: 16px 18px;
-}
-
-.hero-shot__caption--phone {
-  padding: 10px 12px;
-  background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), transparent);
-}
-
-.hero-shot__platform {
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #4fdbd4;
-}
-
-.hero-shot__caption--phone .hero-shot__platform {
-  letter-spacing: 0.16em;
-  color: #ff6f5e;
-}
-
-.hero-shot__title {
-  color: oklch(96% 0.004 269);
-  font-size: 0.98rem;
-}
-
-.hero-shot__caption--phone .hero-shot__title {
-  font-size: 0.78rem;
-}
-
-.hero-shot__description-wrap {
-  display: grid;
-  grid-template-rows: 0fr;
-  overflow: hidden;
-}
-
-.hero-shot__description {
-  min-height: 0;
-  opacity: 0;
-  font-size: 0.8rem;
-  color: oklch(74% 0.009 269);
 }
 
 /* --- Evidence wall ------------------------------------------------------- */

@@ -1,7 +1,11 @@
 import { HeroProduct } from '../showcase/HeroProduct';
 import './chapters.css';
 
-export function Hero() {
+interface HeroProps {
+  readonly reducedMotion: boolean;
+}
+
+export function Hero({ reducedMotion }: HeroProps) {
   return (
     <section
       id="rp-top"
@@ -37,7 +41,7 @@ export function Hero() {
           </div>
         </div>
 
-        <HeroProduct />
+        <HeroProduct reducedMotion={reducedMotion} />
       </div>
     </section>
   );
