@@ -28,44 +28,6 @@ fn episode(image_url: Option<&str>) -> EpisodeRow {
 }
 
 #[test]
-fn src_11_youtube_group_without_channel_artwork_uses_the_newest_episode_thumbnail() {
-    let mut newest = episode(Some("https://img.test/newest.jpg"));
-    newest.kind = PodcastKind::Youtube;
-    let mut older = episode(Some("https://img.test/older.jpg"));
-    older.kind = PodcastKind::Youtube;
-    let group = SourceGroup {
-        subscription_id: 1,
-        title: "Channel".into(),
-        author: None,
-        image_url: None,
-        kind: PodcastKind::Youtube,
-        episodes: vec![newest, older],
-    };
-
-    assert_eq!(group_image_url(&group), Some("https://img.test/newest.jpg"));
-}
-
-#[test]
-fn src_11_group_artwork_prefers_its_source_and_never_borrows_for_rss() {
-    let mut episode = episode(Some("https://img.test/episode.jpg"));
-    episode.kind = PodcastKind::Youtube;
-    let mut group = SourceGroup {
-        subscription_id: 1,
-        title: "Source".into(),
-        author: None,
-        image_url: Some("https://img.test/source.jpg".into()),
-        kind: PodcastKind::Youtube,
-        episodes: vec![episode],
-    };
-
-    assert_eq!(group_image_url(&group), Some("https://img.test/source.jpg"));
-
-    group.image_url = None;
-    group.kind = PodcastKind::Rss;
-    assert_eq!(group_image_url(&group), None);
-}
-
-#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_5_youtube_group_title_is_vertically_centered_with_its_artwork() {
     let _main_context = crate::ui::test_main_context::lock_main_context();

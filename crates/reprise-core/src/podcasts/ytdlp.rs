@@ -744,7 +744,7 @@ fn parse_playlist(operation: &'static str, body: &str) -> Result<YtDlpPlaylist, 
             .chain(raw_entries.iter())
             .find_map(super::ytdlp_search::channel_name),
         source_url,
-        image_url: super::ytdlp_search::entry_image_url(&value),
+        image_url: super::ytdlp_search::listing_image_url(&value),
         entries,
     })
 }
