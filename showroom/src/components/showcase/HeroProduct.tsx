@@ -1,35 +1,69 @@
+import { useCallback, useState } from 'react';
 import { HERO_CAPTURES } from '../../data/showcase';
-import { ProductShot } from './ProductShot';
+import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
+import { Lightbox } from './Lightbox';
+import { ShotTile } from './ShotTile';
 import './showcase.css';
 
 const [desktop, phone] = HERO_CAPTURES;
 
-export function HeroProduct() {
+interface HeroProductProps {
+  readonly reducedMotion: boolean;
+}
+
+export function HeroProduct({ reducedMotion }: HeroProductProps) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [returnFocus, setReturnFocus] = useState<HTMLButtonElement | null>(null);
+  const close = useCallback(() => setActiveIndex(null), []);
+  const next = useCallback(
+    () =>
+      setActiveIndex((current) => (current === null ? null : (current + 1) % HERO_CAPTURES.length)),
+    [],
+  );
+  const previous = useCallback(
+    () =>
+      setActiveIndex((current) =>
+        current === null ? null : (current - 1 + HERO_CAPTURES.length) % HERO_CAPTURES.length,
+      ),
+    [],
+  );
+  const open = (index: number, trigger: HTMLButtonElement) => {
+    setReturnFocus(trigger);
+    setActiveIndex(index);
+  };
+
   return (
-    <figure className="hero-product" data-showcase="hero-product">
-      <div className="hero-product__light" aria-hidden="true" />
+    <div className="hero-product" data-reveal="" data-showcase="hero-product">
+      <ShotTile
+        className="hero-product__desktop"
+        capture={desktop}
+        eager
+        reducedMotion={reducedMotion}
+        variant="desktop"
+        onOpen={(trigger) => open(0, trigger)}
+      />
 
-      <div className="hero-product__desktop">
-        <div className="capture-chrome data" aria-hidden="true">
-          <span>GNOME · GTK4</span>
-          <span>native desktop</span>
-        </div>
-        <ProductShot capture={desktop} eager />
-      </div>
+      <ShotTile
+        className="hero-product__phone"
+        capture={phone}
+        eager
+        reducedMotion={reducedMotion}
+        variant="phone"
+        onOpen={(trigger) => open(1, trigger)}
+      >
+        <VisualizerPlate />
+      </ShotTile>
 
-      <div className="hero-product__phone">
-        <ProductShot capture={phone} eager />
-      </div>
-
-      <figcaption className="hero-product__caption frame">
-        {HERO_CAPTURES.map((capture) => (
-          <span className="hero-product__fact" key={capture.id}>
-            <span className="eyebrow">{capture.platform}</span>
-            <strong>{capture.title}</strong>
-            <span className="data">{capture.description}</span>
-          </span>
-        ))}
-      </figcaption>
-    </figure>
+      {activeIndex !== null && (
+        <Lightbox
+          activeIndex={activeIndex}
+          captures={HERO_CAPTURES}
+          returnFocus={returnFocus}
+          onClose={close}
+          onNext={next}
+          onPrevious={previous}
+        />
+      )}
+    </div>
   );
 }

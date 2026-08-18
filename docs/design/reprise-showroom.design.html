@@ -1,0 +1,1667 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<script src="9f3257c1-024f-40b3-82c0-2fa80f718b8d"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <title>Reprise — two native apps on one Rust core</title>
+  <link rel="icon" href="faa2dd42-590d-450b-ad8e-2378d0f07181">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin">
+  <style>/* vietnamese */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 300 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("c17203ac-edfb-4ab5-880e-db30e1a0f688") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 300 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("9ae149af-15ca-4e25-ba61-445a6a0e3f0b") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 300 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("eb0a5096-4a34-48d8-8733-10d924cae818") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Martian Mono';
+  font-style: normal;
+  font-weight: 300 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("a9604f90-3501-473b-8494-e76c5d320e19") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Martian Mono';
+  font-style: normal;
+  font-weight: 300 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("5ee5bff7-a02c-4c1e-a5fb-f207d3fd4b1b") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Martian Mono';
+  font-style: normal;
+  font-weight: 300 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("13f4916d-fc0b-4dcf-aed1-83e266e5bd6e") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Martian Mono';
+  font-style: normal;
+  font-weight: 300 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("65f20e23-6fe0-4e24-a238-a5bd8e793a39") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+  <style>
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: oklch(13% 0.014 269); color: oklch(80% 0.008 269); font-family: 'Archivo', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #4fdbd4; text-decoration: none; }
+    a:hover { color: #ff6f5e; }
+    ::selection { background: color-mix(in oklab, #4fdbd4 30%, transparent); color: oklch(97% 0.004 269); }
+    :focus-visible { outline: 2px solid #4fdbd4; outline-offset: 3px; }
+    @keyframes rpDriftA { 0% { transform: translate3d(-7%, -5%, 0) scale(1); } 100% { transform: translate3d(9%, 7%, 0) scale(1.22); } }
+    @keyframes rpDriftB { 0% { transform: translate3d(9%, 8%, 0) scale(1.14); } 100% { transform: translate3d(-9%, -7%, 0) scale(1); } }
+    @keyframes rpDriftC { 0% { transform: translate3d(0, 9%, 0) scale(1.02) rotate(0deg); } 100% { transform: translate3d(7%, -9%, 0) scale(1.24) rotate(24deg); } }
+    @keyframes rpSpin { to { transform: rotate(360deg); } }
+    @keyframes rpSweep { 0% { transform: translateX(-130%); } 100% { transform: translateX(240%); } }
+    @keyframes rpLbIn { from { opacity: 0; transform: scale(0.965); } to { opacity: 1; transform: none; } }
+    @keyframes rpFade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes rpCue { 0%, 100% { transform: scaleY(0.2); opacity: 0.3; } 50% { transform: scaleY(1); opacity: 1; } }
+    @keyframes rpFlow { from { background-position: 0 -56px; } to { background-position: 0 56px; } }
+  </style>
+</helmet>
+
+<div id="rp-root" style="position: relative; min-height: 100vh; overflow-x: clip; background: oklch(13% 0.014 269); color: oklch(80% 0.008 269); font-family: 'Archivo', system-ui, sans-serif; font-size: 16px; line-height: 1.62;">
+
+  <div id="rp-ground" aria-hidden="true" style="position: fixed; inset: 0; z-index: 0; pointer-events: none; background-color: oklch(13% 0.014 269); transition: background-color 1500ms cubic-bezier(0.65, 0, 0.35, 1);"></div>
+
+  <div id="rp-oil" aria-hidden="true" style="position: fixed; inset: -12%; z-index: 0; pointer-events: none; overflow: hidden; mix-blend-mode: screen; opacity: var(--oil, 0.55); transition: transform 1600ms cubic-bezier(0.16, 1, 0.3, 1); will-change: transform;">
+    <span style="position: absolute; left: -18vw; top: -22vh; width: 86vw; height: 86vw; border-radius: 50%; background: radial-gradient(circle, oklch(80% 0.12 190 / 0.20), oklch(80% 0.12 190 / 0.06) 46%, transparent 68%); animation: rpDriftA 42s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;"></span>
+    <span style="position: absolute; right: -22vw; top: 18vh; width: 78vw; height: 78vw; border-radius: 50%; background: radial-gradient(circle, oklch(72% 0.16 28 / 0.16), oklch(72% 0.16 28 / 0.05) 44%, transparent 66%); animation: rpDriftB 57s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;"></span>
+    <span style="position: absolute; left: 12vw; bottom: -30vh; width: 92vw; height: 92vw; border-radius: 50%; background: radial-gradient(circle, oklch(62% 0.15 302 / 0.18), oklch(62% 0.15 302 / 0.05) 48%, transparent 70%); animation: rpDriftC 71s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;"></span>
+    <span style="position: absolute; left: 50%; top: 50%; width: 150vmax; height: 150vmax; margin: -75vmax 0 0 -75vmax; opacity: 0.5; background: conic-gradient(from 0deg, transparent 0deg, oklch(78% 0.10 190 / 0.10) 42deg, transparent 96deg, oklch(70% 0.13 320 / 0.09) 168deg, transparent 232deg, oklch(74% 0.14 30 / 0.08) 296deg, transparent 356deg); animation: rpSpin 150s linear infinite;"></span>
+  </div>
+
+  <div aria-hidden="true" style="position: fixed; inset: 0; z-index: 0; pointer-events: none; mix-blend-mode: overlay; opacity: 0.055; background-image: url(&quot;data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nMTYwJz48ZmlsdGVyIGlkPSduJz48ZmVUdXJidWxlbmNlIHR5cGU9J2ZyYWN0YWxOb2lzZScgYmFzZUZyZXF1ZW5jeT0nMC44JyBudW1PY3RhdmVzPSczJyBzdGl0Y2hUaWxlcz0nc3RpdGNoJy8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9JzE2MCcgaGVpZ2h0PScxNjAnIGZpbHRlcj0ndXJsKCNuKScvPjwvc3ZnPg==&quot;);"></div>
+
+  <div id="rp-progress" aria-hidden="true" style="position: fixed; left: 0; top: 0; height: 2px; width: 0%; z-index: 50; background: linear-gradient(90deg, #ff6f5e, oklch(62% 0.15 302), #4fdbd4); box-shadow: 0 0 18px oklch(80% 0.12 190 / 0.5);"></div>
+
+  <a href="#rp-main" style="position: absolute; left: -9999px; top: 0; z-index: 70; padding: 12px 18px; background: oklch(21% 0.018 269); border-radius: 8px;">Skip to the showroom</a>
+
+  <header id="rp-header" style="position: fixed; left: 0; right: 0; top: 0; z-index: 40; display: flex; align-items: center; justify-content: space-between; gap: 24px; height: 66px; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem); border-bottom: 1px solid transparent; transition: background-color 400ms ease, border-color 400ms ease, backdrop-filter 400ms ease;">
+    <a href="#rp-top" style="display: flex; align-items: center; gap: 12px; color: oklch(96% 0.004 269);">
+      <img src="8dc5a95b-79b4-41ae-8ccf-b2778174e0f7" alt="" width="24" height="24" style="display: block; width: 24px; height: 24px;">
+      <span style="font-size: 1.2rem; letter-spacing: -0.012em; color: oklch(97% 0.004 269); line-height: 1; font-variation-settings: 'wdth' 104, 'wght' 560;">Reprise</span>
+      <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4; border: 1px solid oklch(30% 0.018 269); border-radius: 999px; padding: 3px 8px;">Alpha</span>
+    </a>
+    <nav aria-label="Chapters" style="display: flex; align-items: center; gap: clamp(0.75rem, 0.4rem + 1vw, 1.75rem); font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase;">
+      <a data-navlink="" href="#ch-01" style="color: oklch(70% 0.011 269); transition: color 300ms ease;">01 Core</a>
+      <a data-navlink="" href="#ch-02" style="color: oklch(70% 0.011 269); transition: color 300ms ease;">02 Gates</a>
+      <a data-navlink="" href="#ch-03" style="color: oklch(70% 0.011 269); transition: color 300ms ease;">03 Signature</a>
+      <a data-navlink="" href="#ch-04" style="color: oklch(70% 0.011 269); transition: color 300ms ease;">04 Headless</a>
+      <a href="https://github.com/marvinbaudach/reprise" style="color: oklch(80% 0.008 269);">Source ↗</a>
+    </nav>
+  </header>
+
+  <main id="rp-main" style="position: relative; z-index: 1;">
+
+    <section id="rp-top" data-ground="oklch(13% 0.014 269)" style="padding: clamp(6rem, 4.5rem + 6vw, 10rem) 0 clamp(3rem, 2rem + 4vw, 6rem);">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: clamp(2rem, 1.4rem + 3vw, 4.5rem); align-items: center;">
+        <div style="max-width: 42rem; container-type: inline-size;">
+          <p data-reveal="" style="margin: 0 0 22px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: #4fdbd4;">A music player for GNOME and Android</p>
+          <h1 data-reveal="" style="margin: 0 0 26px; font-size: clamp(2.1rem, 11.4cqi, 4rem); line-height: 0.96; letter-spacing: -0.03em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 108, 'wght' 620; text-wrap: balance;"><span style="display: block;">Two native apps.</span><span style="display: block;">One Rust core.</span></h1>
+          <p data-reveal="" style="margin: 0 0 20px; max-width: 46ch; font-size: clamp(1.05rem, 1rem + 0.4vw, 1.35rem); line-height: 1.5; color: oklch(90% 0.006 269); text-wrap: pretty;">Built with AI agents. What gets merged is decided by the gates, not by the agent.</p>
+          <p data-reveal="" style="margin: 0; max-width: 58ch; color: oklch(72% 0.009 269); text-wrap: pretty;">The core carries no interface. That is not an architectural preference, it is the reason the second platform had a price tag instead of a rewrite — and the reason a third one would have a price tag too.</p>
+          <div data-reveal="" style="display: flex; align-items: center; gap: 14px; margin-top: 40px;">
+            <span style="width: 1px; height: 46px; transform-origin: top; background: linear-gradient(180deg, #4fdbd4, transparent); animation: rpCue 2.6s ease-in-out infinite;"></span>
+            <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: oklch(68% 0.011 269);">Scroll</span>
+          </div>
+        </div>
+
+        <div data-reveal="" style="position: relative; padding-bottom: 8%;">
+          <button type="button" data-shot="" style="display: block; width: 100%; margin: 0; padding: 0; border: 1px solid oklch(32% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; position: relative; transform-style: preserve-3d; box-shadow: 0 40px 90px -50px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;">
+            <img src="79f0c057-2f7a-4564-a1f3-7c51ac95b3bf" alt="Reprise running on GNOME with the music library and Now Playing visible" width="2400" height="1456" loading="eager" decoding="async" style="display: block; width: 100%; height: auto;">
+            <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+            <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(340px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+            <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+              <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+              <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.98rem;">Music library</span>
+              <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">A dense native table, spectral seek, lyrics and Now Playing in one window.</span></span>
+            </span>
+          </button>
+
+          <button type="button" data-shot="" style="position: absolute; right: -5%; bottom: -6%; width: 24%; min-width: 108px; margin: 0; padding: 0; border: 1px solid oklch(34% 0.018 269); border-radius: 14px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; transform-style: preserve-3d; box-shadow: 0 30px 70px -34px oklch(3% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;">
+            <img src="0e7fb6f1-67a1-4024-9cf8-8ec2982ae214" alt="Reprise on Android showing the audio-reactive Now Playing scene" width="1080" height="2404" loading="eager" decoding="async" style="display: block; width: 100%; height: auto;">
+            <canvas id="rp-viz" aria-hidden="true" style="position: absolute; left: 19.63%; top: 24.46%; width: 60.74%; height: 27.87%;"></canvas>
+            <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+            <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(220px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.12), transparent 40%, transparent 60%, oklch(78% 0.16 30 / 0.12));"></span>
+            <span style="position: absolute; inset: auto 0 0 0; padding: 10px 12px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), transparent);">
+              <span data-p="" style="display: block; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: #ff6f5e;">Android</span>
+              <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.78rem;">Now Playing</span>
+              <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">The scene is the engine's own, ported from bars.rs.</span></span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div data-reveal="" style="max-width: 78rem; margin: clamp(2.5rem, 2rem + 2vw, 4.5rem) auto 0; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
+        <div style="display: flex; align-items: center; gap: clamp(10px, 0.6rem + 0.6vw, 20px); padding: 12px 16px; border: 1px solid oklch(28% 0.018 269); border-radius: 12px; background: oklch(16% 0.016 269 / 0.72); box-shadow: 0 24px 60px -44px oklch(4% 0.02 269 / 0.9);">
+          <img src="8dc5a95b-79b4-41ae-8ccf-b2778174e0f7" alt="" width="26" height="26" style="display: block; width: 26px; height: 26px; flex: 0 0 auto; opacity: 0.9;">
+          <span id="rp-hero-elapsed" style="flex: 0 0 auto; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(70% 0.011 269);">0:00</span>
+          <canvas id="rp-hero-canvas" aria-hidden="true" style="flex: 1 1 0; min-width: 0; height: 46px; display: block;"></canvas>
+          <span id="rp-hero-remaining" style="flex: 0 0 auto; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(70% 0.011 269);">−3:34</span>
+        </div>
+        <p style="display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 0 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(68% 0.011 269);"><span>The seek bar, shaped by reprise-view</span><a href="#ch-03">What the colours mean ↓</a></p>
+      </div>
+
+    </section>
+
+    <section data-ground="oklch(14% 0.03 195)" style="padding: clamp(3.5rem, 2.5rem + 4vw, 6rem) 0; border-top: 1px solid oklch(26% 0.03 195); border-bottom: 1px solid oklch(26% 0.03 195);">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: clamp(1.6rem, 1.2rem + 2vw, 3.5rem); align-items: end;">
+        <div>
+          <p data-reveal="" style="margin: 0 0 12px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: #4fdbd4;">Idea to alpha</p>
+          <p data-reveal="" style="margin: 0 0 10px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
+            <span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: clamp(3.4rem, 2.2rem + 6vw, 7rem); line-height: 0.86; letter-spacing: -0.05em; color: oklch(98% 0.004 269);">4</span>
+            <span style="font-size: clamp(1.2rem, 1rem + 1vw, 2rem); color: oklch(90% 0.006 269); font-variation-settings: 'wdth' 104, 'wght' 500;">weeks</span>
+          </p>
+          <p data-reveal="" style="margin: 0; max-width: 40ch; color: oklch(84% 0.008 269); text-wrap: pretty;">From the first idea to a running alpha on all four frontends — desktop, phone, terminal and agent surface.</p>
+        </div>
+        <div data-reveal="" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 18px 24px;">
+          <p style="margin: 0; display: flex; flex-direction: column; gap: 4px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">347'842</span><span style="font-size: 0.86rem; color: oklch(74% 0.009 269);">lines of Rust and Kotlin</span></p>
+          <p style="margin: 0; display: flex; flex-direction: column; gap: 4px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">45.8 %</span><span style="font-size: 0.86rem; color: oklch(74% 0.009 269);">of the code is tests</span></p>
+          <p style="margin: 0; display: flex; flex-direction: column; gap: 4px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: #4fdbd4;">21</span><span style="font-size: 0.86rem; color: oklch(74% 0.009 269);">gates on every merge</span></p>
+          <p style="margin: 0; display: flex; flex-direction: column; gap: 4px;"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">0</span><span style="font-size: 0.86rem; color: oklch(74% 0.009 269);">merges on an agent's word</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="ch-01" data-ground="oklch(14.5% 0.016 258)" style="padding: clamp(4.5rem, 3rem + 7vw, 9rem) 0;">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
+        <p data-reveal="" style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: oklch(68% 0.011 269);">CH.01</p>
+        <h2 data-reveal="" style="margin: 0 0 clamp(2.5rem, 1.8rem + 2vw, 4rem); font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem); line-height: 1.02; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 580;">One core, four frontends.</h2>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; background: oklch(28% 0.018 269); border: 1px solid oklch(28% 0.018 269); border-radius: 12px; overflow: hidden;">
+          <div data-reveal="" style="padding: clamp(1.4rem, 1rem + 1vw, 2.2rem) 1.4rem; background: oklch(16% 0.016 269 / 0.86);">
+            <p style="margin: 0 0 8px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: clamp(1.7rem, 1.3rem + 1.5vw, 2.6rem); letter-spacing: -0.03em; color: oklch(97% 0.004 269);">347'842</span></p>
+            <p style="margin: 0 0 6px; color: oklch(84% 0.008 269);">lines of Rust and Kotlin</p>
+            <p style="margin: 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">327'165 Rust · 20'677 Kotlin</p>
+          </div>
+          <div data-reveal="" style="padding: clamp(1.4rem, 1rem + 1vw, 2.2rem) 1.4rem; background: oklch(16% 0.016 269 / 0.86);">
+            <p style="margin: 0 0 8px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: clamp(1.7rem, 1.3rem + 1.5vw, 2.6rem); letter-spacing: -0.03em; color: oklch(97% 0.004 269);">45.8 %</span></p>
+            <p style="margin: 0 0 6px; color: oklch(84% 0.008 269);">of them are tests</p>
+            <p style="margin: 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">149'504 Rust · 9'884 Kotlin</p>
+          </div>
+          <div data-reveal="" style="padding: clamp(1.4rem, 1rem + 1vw, 2.2rem) 1.4rem; background: oklch(16% 0.016 269 / 0.86);">
+            <p style="margin: 0 0 8px;"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: clamp(1.7rem, 1.3rem + 1.5vw, 2.6rem); letter-spacing: -0.03em; color: oklch(97% 0.004 269);">1 → 4</span></p>
+            <p style="margin: 0 0 6px; color: oklch(84% 0.008 269);">one core, four frontends</p>
+            <p style="margin: 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">GNOME · Android · CLI · MCP</p>
+          </div>
+          <div data-reveal="" style="padding: clamp(1.4rem, 1rem + 1vw, 2.2rem) 1.4rem; background: oklch(16% 0.016 269 / 0.86);">
+            <p style="margin: 0 0 8px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: clamp(1.7rem, 1.3rem + 1.5vw, 2.6rem); letter-spacing: -0.03em; color: #4fdbd4;">21</span></p>
+            <p style="margin: 0 0 6px; color: oklch(84% 0.008 269);">gates before every merge</p>
+            <p style="margin: 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">all of them, every time</p>
+          </div>
+        </div>
+
+        <p data-reveal="" style="margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 0; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;">A GNOME desktop app in GTK4 and an Android app in Kotlin with Media3 sit on the same Rust core. So do a CLI and an MCP server — four frontends over one verified application layer, not four codebases that happen to share a name.</p>
+
+        <figure data-reveal="" style="margin: clamp(2rem, 1.5rem + 2vw, 3.5rem) 0 0; padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem); border: 1px solid oklch(28% 0.018 269); border-radius: 12px; background: oklch(17% 0.016 269 / 0.72);">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 28px;">
+            <div>
+              <p style="margin: 0 0 6px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: oklch(68% 0.011 269);">Core and edges</p>
+              <h3 style="margin: 0; font-size: clamp(1.2rem, 1.05rem + 0.7vw, 1.6rem); color: oklch(96% 0.004 269); font-variation-settings: 'wdth' 104, 'wght' 560;">Four surfaces. Dependency only points inward.</h3>
+            </div>
+            <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/scripts/check-architecture.sh" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem;">machine-enforced ↗</a>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <a data-reveal="" href="https://github.com/marvinbaudach/reprise/tree/604677322e/crates/reprise-gnome" style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border: 1px solid oklch(30% 0.018 269); border-top: 2px solid #4fdbd4; border-radius: 8px; background: oklch(20% 0.018 269 / 0.7); color: oklch(80% 0.008 269); transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), background-color 300ms ease;">
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">01</span>
+              <strong style="color: oklch(96% 0.004 269); font-weight: 500;">GNOME</strong>
+              <span style="font-size: 0.86rem;">GTK4 · libadwaita</span>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: oklch(68% 0.011 269);">native desktop</span>
+            </a>
+            <a data-reveal="" href="https://github.com/marvinbaudach/reprise/tree/604677322e/android" style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border: 1px solid oklch(30% 0.018 269); border-top: 2px solid #ff6f5e; border-radius: 8px; background: oklch(20% 0.018 269 / 0.7); color: oklch(80% 0.008 269); transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), background-color 300ms ease;">
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">02</span>
+              <strong style="color: oklch(96% 0.004 269); font-weight: 500;">Android</strong>
+              <span style="font-size: 0.86rem;">Kotlin · Compose</span>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: oklch(68% 0.011 269);">native mobile</span>
+            </a>
+            <a data-reveal="" href="https://github.com/marvinbaudach/reprise/tree/604677322e/crates/reprise-cli" style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border: 1px solid oklch(30% 0.018 269); border-top: 2px solid oklch(60% 0.02 269); border-radius: 8px; background: oklch(20% 0.018 269 / 0.7); color: oklch(80% 0.008 269); transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), background-color 300ms ease;">
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">03</span>
+              <strong style="color: oklch(96% 0.004 269); font-weight: 500;">CLI</strong>
+              <span style="font-size: 0.86rem;">Rust · terminal</span>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: oklch(68% 0.011 269);">headless surface</span>
+            </a>
+            <a data-reveal="" href="https://github.com/marvinbaudach/reprise/tree/604677322e/crates/reprise-mcp" style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border: 1px solid oklch(30% 0.018 269); border-top: 2px solid oklch(62% 0.15 302); border-radius: 8px; background: oklch(20% 0.018 269 / 0.7); color: oklch(80% 0.008 269); transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), background-color 300ms ease;">
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">04</span>
+              <strong style="color: oklch(96% 0.004 269); font-weight: 500;">MCP</strong>
+              <span style="font-size: 0.86rem;">Rust · JSON-RPC</span>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: oklch(68% 0.011 269);">agent surface</span>
+            </a>
+          </div>
+
+          <div aria-hidden="true" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; height: 44px;">
+            <span style="justify-self: center; width: 1px; height: 100%; background: linear-gradient(180deg, transparent, #4fdbd4, transparent) 0 0 / 100% 56px repeat-y; animation: rpFlow 2.8s linear infinite;"></span>
+            <span style="justify-self: center; width: 1px; height: 100%; background: linear-gradient(180deg, transparent, #ff6f5e, transparent) 0 0 / 100% 56px repeat-y; animation: rpFlow 3.4s linear infinite;"></span>
+            <span style="justify-self: center; width: 1px; height: 100%; background: linear-gradient(180deg, transparent, oklch(62% 0.02 269), transparent) 0 0 / 100% 56px repeat-y; animation: rpFlow 3.9s linear infinite;"></span>
+            <span style="justify-self: center; width: 1px; height: 100%; background: linear-gradient(180deg, transparent, oklch(62% 0.15 302), transparent) 0 0 / 100% 56px repeat-y; animation: rpFlow 3.1s linear infinite;"></span>
+          </div>
+
+          <div style="display: grid; gap: 10px;">
+            <a data-reveal="" href="https://github.com/marvinbaudach/reprise/tree/604677322e/crates/reprise-view" style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 16px 18px; border: 1px solid oklch(32% 0.018 269); border-radius: 8px; background: oklch(22% 0.02 269 / 0.75); color: oklch(80% 0.008 269);">
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: oklch(68% 0.011 269);">portable presentation semantics</span>
+              <strong style="color: oklch(97% 0.004 269); font-weight: 500;">reprise-view</strong>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(70% 0.011 269);">geometry · colour · scene · surface models</span>
+            </a>
+            <a data-reveal="" href="https://github.com/marvinbaudach/reprise/blob/604677322e/crates/reprise-core/Cargo.toml" style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 20px 18px; border: 1px solid #4fdbd4; border-radius: 8px; background: linear-gradient(120deg, oklch(26% 0.05 195 / 0.55), oklch(22% 0.02 269 / 0.75)); color: oklch(80% 0.008 269);">
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: #4fdbd4;">application and domain layer</span>
+              <strong style="color: oklch(97% 0.004 269); font-weight: 500;">reprise-core</strong>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">19 dependencies · 0 UI frameworks</span>
+            </a>
+          </div>
+
+          <figcaption data-reveal="" style="margin-top: 24px; max-width: 68ch; color: oklch(72% 0.009 269); font-size: 0.94rem; text-wrap: pretty;">The dependency arrows only point inward. GNOME and Android keep their native toolkit and interaction model; CLI and MCP reuse the same application layer without pretending to be screens. The build rejects GTK, libadwaita, GStreamer and D-Bus in the core.</figcaption>
+        </figure>
+
+        <figure data-reveal="" style="margin: clamp(2rem, 1.5rem + 2vw, 3.5rem) 0 0;">
+          <p style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: oklch(68% 0.011 269);">Where the lines sit</p>
+          <div id="rp-ratio" style="display: flex; height: 40px; border-radius: 6px; overflow: hidden; border: 1px solid oklch(30% 0.018 269);">
+            <span data-w="49.6" title="Rust, product" style="width: 49.6%; background: #4fdbd4; transition: width 1400ms cubic-bezier(0.16, 1, 0.3, 1);"></span>
+            <span data-w="41.7" title="Rust, tests" style="width: 41.7%; background: oklch(46% 0.07 195); transition: width 1400ms cubic-bezier(0.16, 1, 0.3, 1) 90ms;"></span>
+            <span data-w="2.9" title="Rust, Android bridge" style="width: 2.9%; background: oklch(54% 0.13 32); transition: width 1400ms cubic-bezier(0.16, 1, 0.3, 1) 180ms;"></span>
+            <span data-w="5.8" title="Kotlin" style="width: 5.8%; background: #ff6f5e; transition: width 1400ms cubic-bezier(0.16, 1, 0.3, 1) 270ms;"></span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-top: 18px; font-size: 0.86rem;">
+            <p style="margin: 0; display: flex; flex-direction: column; gap: 2px;"><span style="color: oklch(96% 0.004 269);"><span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #4fdbd4; margin-right: 8px;"></span>Rust, product · 177'661</span><span style="color: oklch(68% 0.011 269); font-size: 0.8rem;">the core and everything built on it</span></p>
+            <p style="margin: 0; display: flex; flex-direction: column; gap: 2px;"><span style="color: oklch(96% 0.004 269);"><span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: oklch(46% 0.07 195); margin-right: 8px;"></span>Rust, tests · 149'504</span><span style="color: oklch(68% 0.011 269); font-size: 0.8rem;">inline #[cfg(test)] modules and integration suites</span></p>
+            <p style="margin: 0; display: flex; flex-direction: column; gap: 2px;"><span style="color: oklch(96% 0.004 269);"><span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: oklch(54% 0.13 32); margin-right: 8px;"></span>Rust, Android bridge · 10'245</span><span style="color: oklch(68% 0.011 269); font-size: 0.8rem;">crates/reprise-android-ffi</span></p>
+            <p style="margin: 0; display: flex; flex-direction: column; gap: 2px;"><span style="color: oklch(96% 0.004 269);"><span style="display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #ff6f5e; margin-right: 8px;"></span>Kotlin · 20'677</span><span style="color: oklch(68% 0.011 269); font-size: 0.8rem;">the whole Android frontend, product and tests</span></p>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <section id="ch-02" data-ground="oklch(13.5% 0.02 205)" style="padding: clamp(4.5rem, 3rem + 7vw, 9rem) 0;">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
+        <p data-reveal="" style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: oklch(68% 0.011 269);">CH.02</p>
+        <h2 data-reveal="" style="margin: 0 0 clamp(2.5rem, 1.8rem + 2vw, 4rem); font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem); line-height: 1.02; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 580;">Built by agents. Merged by gates.</h2>
+
+        <figure data-reveal="" style="margin: 0; padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem); border: 1px solid oklch(28% 0.018 269); border-radius: 12px; background: oklch(17% 0.016 269 / 0.72);">
+          <p style="margin: 0 0 6px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">Authorship is not authority</p>
+          <h3 style="margin: 0 0 28px; font-size: clamp(1.2rem, 1.05rem + 0.7vw, 1.6rem); color: oklch(96% 0.004 269); font-variation-settings: 'wdth' 104, 'wght' 560;">One checkpoint. Independent agents. Mechanical proof.</h3>
+
+          <ol style="list-style: none; margin: 0 0 26px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px;">
+            <li data-reveal="" style="display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid oklch(28% 0.018 269); border-radius: 8px; background: oklch(20% 0.018 269 / 0.6);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">01</span><strong style="color: oklch(96% 0.004 269); font-weight: 500;">Plan</strong><span style="font-size: 0.82rem; color: oklch(70% 0.009 269);">The claim and its acceptance proof</span></li>
+            <li data-reveal="" style="display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid #ff6f5e; border-radius: 8px; background: linear-gradient(140deg, oklch(28% 0.07 30 / 0.4), oklch(20% 0.018 269 / 0.6));"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #ff6f5e;">02</span><strong style="color: oklch(97% 0.004 269); font-weight: 500;">Human checkpoint</strong><span style="font-size: 0.82rem; color: oklch(74% 0.009 269);">The plan is challenged before code exists</span></li>
+            <li data-reveal="" style="display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid oklch(28% 0.018 269); border-radius: 8px; background: oklch(20% 0.018 269 / 0.6);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">03</span><strong style="color: oklch(96% 0.004 269); font-weight: 500;">Implement</strong><span style="font-size: 0.82rem; color: oklch(70% 0.009 269);">One agent writes code and tests</span></li>
+            <li data-reveal="" style="display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid oklch(28% 0.018 269); border-radius: 8px; background: oklch(20% 0.018 269 / 0.6);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">04</span><strong style="color: oklch(96% 0.004 269); font-weight: 500;">Review</strong><span style="font-size: 0.82rem; color: oklch(70% 0.009 269);">A fresh agent reviews each language</span></li>
+            <li data-reveal="" style="display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid oklch(28% 0.018 269); border-radius: 8px; background: oklch(20% 0.018 269 / 0.6);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">05</span><strong style="color: oklch(96% 0.004 269); font-weight: 500;">Refute</strong><span style="font-size: 0.82rem; color: oklch(70% 0.009 269);">A skeptic tries to disprove every finding</span></li>
+            <li data-reveal="" style="display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid oklch(28% 0.018 269); border-radius: 8px; background: oklch(20% 0.018 269 / 0.6);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">06</span><strong style="color: oklch(96% 0.004 269); font-weight: 500;">Refactor</strong><span style="font-size: 0.82rem; color: oklch(70% 0.009 269);">Only surviving findings change the patch</span></li>
+            <li data-reveal="" style="display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid #4fdbd4; border-radius: 8px; background: linear-gradient(140deg, oklch(28% 0.06 195 / 0.45), oklch(20% 0.018 269 / 0.6));"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">07</span><strong style="color: oklch(97% 0.004 269); font-weight: 500;">Gate</strong><span style="font-size: 0.82rem; color: oklch(74% 0.009 269);">21 checks decide whether it can land</span></li>
+          </ol>
+
+          <div style="display: flex; flex-wrap: wrap; gap: 8px 26px; padding: 16px 18px; border-top: 1px solid oklch(28% 0.018 269); border-bottom: 1px solid oklch(28% 0.018 269);">
+            <strong style="color: oklch(96% 0.004 269); font-weight: 500;">The writer never reviews.</strong>
+            <strong style="color: oklch(96% 0.004 269); font-weight: 500;">The reviewer never writes.</strong>
+            <span style="color: oklch(68% 0.011 269);">The skeptic cannot apply findings.</span>
+          </div>
+
+          <footer style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 18px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem;">
+            <p style="margin: 0; color: oklch(68% 0.011 269);">Plan files · rulebook · handovers · decision records</p>
+            <nav aria-label="Workflow context sources" style="display: flex; gap: 18px;">
+              <a href="https://github.com/marvinbaudach/reprise/tree/604677322e/docs/plans">plans ↗</a>
+              <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/docs/ux-rules.md">rulebook ↗</a>
+              <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/.superpowers/sdd/progress.md">ledger ↗</a>
+            </nav>
+          </footer>
+        </figure>
+
+        <div data-reveal="" style="margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 22px;">
+          <p style="margin: 0 0 10px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: oklch(68% 0.011 269);">Evidence, weakest first</p>
+          <h3 style="margin: 0 0 12px; max-width: 46ch; font-size: clamp(1.35rem, 1.1rem + 1.1vw, 2.1rem); line-height: 1.12; letter-spacing: -0.02em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 104, 'wght' 560;">Five levels of proof. The top two are agents nobody scripted.</h3>
+          <p style="margin: 0; max-width: 62ch; color: oklch(76% 0.009 269); text-wrap: pretty;">Each level proves something the one below it cannot. The counts fall as the evidence gets harder to fake.</p>
+        </div>
+
+        <ol style="list-style: none; margin: 0; padding: 0; display: grid; gap: 8px;">
+          <li data-reveal="" style="display: grid; grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr; gap: 10px 22px; align-items: baseline; padding: 18px 20px; border: 1px solid oklch(28% 0.018 269); border-left: 2px solid oklch(40% 0.018 269); border-radius: 8px; background: oklch(17% 0.016 269 / 0.7);">
+            <span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">5'596</span>
+            <strong style="color: oklch(94% 0.004 269); font-weight: 500;">Test functions, standard run</strong>
+            <span style="font-size: 0.86rem; color: oklch(76% 0.009 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4fdbd4; margin-right: 8px;">can prove</span>the logic holds for the cases someone thought of</span>
+            <span style="font-size: 0.86rem; color: oklch(70% 0.011 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e; margin-right: 8px;">cannot</span>that the window ever appeared</span>
+          </li>
+          <li data-reveal="" style="display: grid; grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr; gap: 10px 22px; align-items: baseline; padding: 18px 20px; border: 1px solid oklch(28% 0.018 269); border-left: 2px solid oklch(46% 0.018 269); border-radius: 8px; background: oklch(17% 0.016 269 / 0.7);">
+            <span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">676</span>
+            <strong style="color: oklch(94% 0.004 269); font-weight: 500;">Display tests, own gate</strong>
+            <span style="font-size: 0.86rem; color: oklch(76% 0.009 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4fdbd4; margin-right: 8px;">can prove</span>real widgets, real allocation, real GTK</span>
+            <span style="font-size: 0.86rem; color: oklch(70% 0.011 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e; margin-right: 8px;">cannot</span>that a human could reach the button</span>
+          </li>
+          <li data-reveal="" style="display: grid; grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr; gap: 10px 22px; align-items: baseline; padding: 18px 20px; border: 1px solid oklch(28% 0.018 269); border-left: 2px solid oklch(52% 0.018 269); border-radius: 8px; background: oklch(17% 0.016 269 / 0.7);">
+            <span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">9</span>
+            <strong style="color: oklch(94% 0.004 269); font-weight: 500;">Pointer flows on real windows</strong>
+            <span style="font-size: 0.86rem; color: oklch(76% 0.009 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4fdbd4; margin-right: 8px;">can prove</span>the click lands where the pixel is</span>
+            <span style="font-size: 0.86rem; color: oklch(70% 0.011 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e; margin-right: 8px;">cannot</span>that the flow makes sense</span>
+          </li>
+          <li data-reveal="" style="display: grid; grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr; gap: 10px 22px; align-items: baseline; padding: 18px 20px; border: 1px solid oklch(30% 0.03 195); border-left: 2px solid #4fdbd4; border-radius: 8px; background: linear-gradient(120deg, oklch(22% 0.04 195 / 0.5), oklch(17% 0.016 269 / 0.7));">
+            <span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">11</span>
+            <strong style="color: oklch(94% 0.004 269); font-weight: 500;">Semantic workflows over AT-SPI</strong>
+            <span style="font-size: 0.86rem; color: oklch(76% 0.009 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4fdbd4; margin-right: 8px;">can prove</span>the app can be operated without seeing it</span>
+            <span style="font-size: 0.86rem; color: oklch(70% 0.011 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e; margin-right: 8px;">cannot</span>what nobody scripted</span>
+          </li>
+          <li data-reveal="" style="display: grid; grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr; gap: 10px 22px; align-items: baseline; padding: 18px 20px; border: 1px solid oklch(30% 0.03 195); border-left: 2px solid #4fdbd4; border-radius: 8px; background: linear-gradient(120deg, oklch(24% 0.05 195 / 0.55), oklch(17% 0.016 269 / 0.7));">
+            <span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.5rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">6</span>
+            <strong style="color: oklch(94% 0.004 269); font-weight: 500;">Agentic exploration missions</strong>
+            <span style="font-size: 0.86rem; color: oklch(76% 0.009 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4fdbd4; margin-right: 8px;">can prove</span>what no one thought to look for</span>
+            <span style="font-size: 0.86rem; color: oklch(70% 0.011 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e; margin-right: 8px;">cannot</span>nothing — it is the last rung</span>
+          </li>
+        </ol>
+
+        <p data-reveal="" style="margin: clamp(2rem, 1.5rem + 1.5vw, 3rem) 0 0; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;">The top two rungs are not scripts with expected values: an agent reads the accessibility tree, decides where to click on its own, and reports what is not in order — judged against deterministic anomaly classes with fixed thresholds. That is how defects nobody scripted are found.</p>
+
+        <figure data-reveal="" style="margin: clamp(2rem, 1.5rem + 2vw, 3.5rem) 0 0; padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem); border: 1px solid oklch(28% 0.018 269); border-radius: 12px; background: oklch(17% 0.016 269 / 0.72);">
+          <p style="margin: 0 0 6px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #ff6f5e;">The unscripted rung</p>
+          <h3 style="margin: 0 0 26px; font-size: clamp(1.2rem, 1.05rem + 0.7vw, 1.6rem); color: oklch(96% 0.004 269); font-variation-settings: 'wdth' 104, 'wght' 560;">The bot chooses the next move. The gate keeps the proof.</h3>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: clamp(1.2rem, 1rem + 1vw, 2.4rem);">
+            <ol style="list-style: none; margin: 0; padding: 0; display: grid; gap: 2px;">
+              <li data-reveal="" style="display: flex; gap: 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid oklch(24% 0.016 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">01</span><strong style="color: oklch(92% 0.006 269); font-weight: 400;">Read the AT-SPI tree</strong></li>
+              <li data-reveal="" style="display: flex; gap: 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid oklch(24% 0.016 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">02</span><strong style="color: oklch(92% 0.006 269); font-weight: 400;">Choose and perform an action</strong></li>
+              <li data-reveal="" style="display: flex; gap: 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid oklch(24% 0.016 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">03</span><strong style="color: oklch(92% 0.006 269); font-weight: 400;">Measure the main thread</strong></li>
+              <li data-reveal="" style="display: flex; gap: 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid oklch(24% 0.016 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">04</span><strong style="color: oklch(92% 0.006 269); font-weight: 400;">Report an anomaly</strong></li>
+              <li data-reveal="" style="display: flex; gap: 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid oklch(24% 0.016 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">05</span><strong style="color: oklch(92% 0.006 269); font-weight: 400;">Triage into a rule ID</strong></li>
+              <li data-reveal="" style="display: flex; gap: 14px; align-items: baseline; padding: 10px 0;"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">06</span><strong style="color: oklch(92% 0.006 269); font-weight: 400;">Named test enters the gate</strong></li>
+            </ol>
+
+            <aside style="padding: 18px 20px; border: 1px solid oklch(28% 0.018 269); border-radius: 8px; background: oklch(20% 0.018 269 / 0.6);">
+              <p style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: #ff6f5e;">Found in real runs</p>
+              <ul style="list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 12px;">
+                <li data-reveal=""><strong style="display: block; color: oklch(96% 0.004 269); font-weight: 500;">0 × 0 row</strong><span style="font-size: 0.84rem; color: oklch(68% 0.011 269);">visible semantics, impossible geometry</span></li>
+                <li data-reveal=""><strong style="display: block; color: oklch(96% 0.004 269); font-weight: 500;">Escape swallowed</strong><span style="font-size: 0.84rem; color: oklch(68% 0.011 269);">the expected exit never reaches the window</span></li>
+                <li data-reveal=""><strong style="display: block; color: oklch(96% 0.004 269); font-weight: 500;">scroll hitch</strong><span style="font-size: 0.84rem; color: oklch(68% 0.011 269);">a main-thread stall crosses the fixed threshold</span></li>
+              </ul>
+              <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/scripts/cua-explore/run.sh" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem;">inspect the fail-closed harness ↗</a>
+            </aside>
+          </div>
+
+          <figcaption data-reveal="" style="margin-top: 22px; max-width: 68ch; color: oklch(74% 0.009 269); font-size: 0.94rem; text-wrap: pretty;">The mission supplies a surface and anomaly thresholds, never a click script. An agent reads the live accessibility tree, acts, measures, and leaves a rule-named regression behind.</figcaption>
+        </figure>
+
+        <h3 data-reveal="" style="margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 18px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: oklch(68% 0.011 269); font-weight: 400;">The rulebook, and how much of it is traceable</h3>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: oklch(28% 0.018 269); border: 1px solid oklch(28% 0.018 269); border-radius: 12px; overflow: hidden;">
+          <div data-reveal="" style="padding: 20px 18px; background: oklch(16% 0.016 269 / 0.86);"><p style="margin: 0 0 6px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.7rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">571</span></p><p style="margin: 0; font-size: 0.88rem; color: oklch(78% 0.009 269);"><a href="https://github.com/marvinbaudach/reprise/blob/604677322e/docs/ux-rules.md">active UX rules, binding</a></p></div>
+          <div data-reveal="" style="padding: 20px 18px; background: oklch(16% 0.016 269 / 0.86);"><p style="margin: 0 0 6px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.7rem; letter-spacing: -0.03em; color: #4fdbd4;">100 %</span></p><p style="margin: 0; font-size: 0.88rem; color: oklch(78% 0.009 269);">of enforceable rules have a test of the same name</p></div>
+          <div data-reveal="" style="padding: 20px 18px; background: oklch(16% 0.016 269 / 0.86);"><p style="margin: 0 0 6px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.7rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">897</span></p><p style="margin: 0; font-size: 0.88rem; color: oklch(78% 0.009 269);">files holding those tests</p></div>
+          <div data-reveal="" style="padding: 20px 18px; background: oklch(16% 0.016 269 / 0.86);"><p style="margin: 0 0 6px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.7rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">250</span></p><p style="margin: 0; font-size: 0.88rem; color: oklch(78% 0.009 269);"><a href="https://github.com/marvinbaudach/reprise/tree/604677322e/docs">files under docs/</a></p></div>
+          <div data-reveal="" style="padding: 20px 18px; background: oklch(16% 0.016 269 / 0.86);"><p style="margin: 0 0 6px;"><span data-counter="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 1.7rem; letter-spacing: -0.03em; color: oklch(97% 0.004 269);">24</span></p><p style="margin: 0; font-size: 0.88rem; color: oklch(78% 0.009 269);"><a href="https://github.com/marvinbaudach/reprise/tree/604677322e/crates/reprise-mcp">MCP tools over the same layer</a></p></div>
+        </div>
+
+        <p data-reveal="" style="margin: clamp(2rem, 1.5rem + 1.5vw, 3rem) 0 0; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;">A rule ID leads to a test, the test to a commit, the commit to the decision. The traceability is itself a merge gate: a rule without a test fails the build — and so does a test that points at a rule that no longer exists.</p>
+      </div>
+    </section>
+
+    <section id="ch-03" data-ground="oklch(12.5% 0.024 302)" style="padding: clamp(4.5rem, 3rem + 7vw, 9rem) 0;">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
+        <p data-reveal="" style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: oklch(68% 0.011 269);">CH.03</p>
+        <h2 data-reveal="" style="margin: 0 0 26px; font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem); line-height: 1.02; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 580;">Two frameworks. One visual signature.</h2>
+        <p data-reveal="" style="margin: 0 0 14px; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;"><strong style="color: oklch(96% 0.004 269); font-weight: 500;">The two apps look different on purpose.</strong> GNOME conventions on the desktop, Material on the phone. Making them match would not show craft, it would show missing platform UX. What is shared is the signature — and that is the harder half: two rendering stacks, GSK against Skia, two layout systems, two languages, the same visualisation and the same physics. Not a shared component. A shared specification.</p>
+        <p data-reveal="" style="margin: 0; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;">The seek bar is the case in point. The decision: show the structure of the track instead of an empty gutter. The implementation: a portable visuals layer that neither frontend owns. The result: physics that were measured afterwards rather than asserted.</p>
+
+        <figure data-reveal="" style="margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 0; padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem); border: 1px solid oklch(30% 0.02 300); border-radius: 14px; background: linear-gradient(160deg, oklch(19% 0.03 300 / 0.7), oklch(16% 0.016 269 / 0.8));">
+          <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 22px;">
+            <div>
+              <p style="margin: 0 0 6px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">The spectral seek bar, live</p>
+              <h3 style="margin: 0; font-size: clamp(1.2rem, 1.05rem + 0.8vw, 1.7rem); color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 104, 'wght' 560;">Height is the level. Colour is the frequency.</h3>
+            </div>
+            <div id="rp-modes" role="group" aria-label="Seek bar rendering" style="display: flex; gap: 6px; padding: 4px; border: 1px solid oklch(30% 0.018 269); border-radius: 999px; background: oklch(14% 0.016 269 / 0.8);">
+              <button type="button" data-mode="fill" style="border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; background: transparent; color: oklch(70% 0.009 269); transition: background-color 300ms ease, color 300ms ease;">Spectral fill</button>
+              <button type="button" data-mode="marks" style="border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; background: transparent; color: oklch(70% 0.009 269); transition: background-color 300ms ease, color 300ms ease;">One colour + marks</button>
+            </div>
+          </div>
+
+          <div id="rp-seek" role="slider" tabindex="0" aria-label="Spectral seek bar, demonstration track" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="position: relative; padding: 10px 0; cursor: pointer; touch-action: none;">
+            <canvas id="rp-canvas" style="display: block; width: 100%; height: 148px;"></canvas>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 6px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(70% 0.011 269);">
+            <span id="rp-elapsed">0:00</span>
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <span style="display: flex; align-items: center; gap: 8px;"><span id="rp-swatch" style="width: 14px; height: 14px; border-radius: 3px; background: #ff6f5e; box-shadow: 0 0 14px oklch(70% 0.14 30 / 0.5);"></span><span id="rp-colour" style="color: oklch(80% 0.008 269);">centroid 0.00</span></span>
+              <span id="rp-level" style="color: oklch(80% 0.008 269);">level 0.00</span>
+            </div>
+            <span id="rp-remaining">−3:34</span>
+          </div>
+
+          <p data-reveal="" style="margin: 22px 0 0; max-width: 72ch; font-size: 0.9rem; color: oklch(66% 0.011 269); text-wrap: pretty;">Hover or drag to scrub, arrow keys move in five-second steps. The phone in the hero runs the same treatment for its Now Playing scene: 64 CAVA columns, 16 segments, peaks and reflections from <a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-core/src/visuals/modes/bars.rs">bars.rs</a>, with only the band values standing in for live PCM. The bars below are shaped by the same functions the apps use — <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/crates/reprise-view/src/waveform.rs">waveform.rs</a> for the heights, <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/crates/reprise-view/src/spectral_colour.rs">spectral_colour.rs</a> for the ramp — ported here so the page shows the specification rather than a picture of it.</p>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 26px;">
+            <div data-reveal="" style="padding: 18px 20px; border: 1px solid oklch(28% 0.018 269); border-top: 2px solid oklch(78% 0.008 269); border-radius: 8px; background: oklch(18% 0.016 269 / 0.7);">
+              <p style="margin: 0 0 10px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(90% 0.006 269);">Height — the body</p>
+              <p style="margin: 0; font-size: 0.9rem; color: oklch(74% 0.009 269); text-wrap: pretty;">Every bar is the RMS of its slice of the track, mapped through the track's own p10–p95 window and a γ1.6 curve, then smoothed 25/50/25 against flicker. That is why a compressed master still shows verse against chorus instead of one loud wall. Anything below −50 dB of the track's own maximum is not scaled at all: true silence renders as a fixed 2 px dot.</p>
+            </div>
+            <div data-reveal="" style="padding: 18px 20px; border: 1px solid oklch(28% 0.018 269); border-top: 2px solid #4fdbd4; border-radius: 8px; background: oklch(18% 0.016 269 / 0.7);">
+              <p style="margin: 0 0 10px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: #4fdbd4;">Colour — the frequency</p>
+              <p style="margin: 0 0 12px; font-size: 0.9rem; color: oklch(74% 0.009 269); text-wrap: pretty;">The tint is the spectral centroid: where the energy of that moment sits in the frequency range. Coral is a low centroid — bass, weight, a breakdown. Teal is a high one — cymbals, air, a sparse intro. The ramp between them walks OKLCH the long way round, hue falling through magenta, violet and blue, which is the path the function takes rather than a gradient between two brand colours.</p>
+              <div aria-hidden="true" style="height: 10px; border-radius: 999px; background: linear-gradient(90deg in oklch longer hue, #ff6f5e, #4fdbd4);"></div>
+              <div style="display: flex; justify-content: space-between; margin-top: 8px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);"><span>#FF6F5E · low</span><span>high · #4FDBD4</span></div>
+            </div>
+            <div data-reveal="" style="padding: 18px 20px; border: 1px solid oklch(28% 0.018 269); border-top: 2px solid #ff6f5e; border-radius: 8px; background: oklch(18% 0.016 269 / 0.7);">
+              <p style="margin: 0 0 10px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: #ff6f5e;">Marks — the sections</p>
+              <p style="margin: 0; font-size: 0.9rem; color: oklch(74% 0.009 269); text-wrap: pretty;">The raw centroid swings a third of the axis from beat to beat, so it is averaged over eight seconds first — long enough that an intro, a verse and a breakdown each become one readable field. Switch the bar to one colour and those fields turn into hairlines: a step of 26 of 255 across four seconds, never closer than 20 s apart. An ambient track with no transitions gets none, which is the right answer rather than a broken one.</p>
+            </div>
+          </div>
+        </figure>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 14px; margin: clamp(3.5rem, 2.5rem + 3vw, 6rem) 0 clamp(1.5rem, 1.2rem + 1vw, 2.5rem);">
+          <h3 data-reveal="" style="margin: 0; font-size: clamp(1.4rem, 1.15rem + 1.2vw, 2.2rem); color: oklch(97% 0.004 269); letter-spacing: -0.02em; font-variation-settings: 'wdth' 104, 'wght' 560;">Two platforms. Every view, tab and dialogue.</h3>
+          <p data-reveal="" style="margin: 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(68% 0.011 269);">Click any plate to enlarge</p>
+        </div>
+
+        <div id="rp-gallery" style="display: grid; gap: clamp(1.2rem, 0.9rem + 1.4vw, 2.4rem);">
+
+          <div style="display: flex; flex-wrap: wrap; gap: clamp(1.2rem, 0.9rem + 1.4vw, 2.4rem); align-items: flex-start;">
+            <button type="button" data-shot="" style="position: relative; flex: 1.62 1 340px; min-width: 260px; margin: 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="cb3b83b7-6ae0-4e38-ad10-e701b3139371" alt="The Reprise Podcasts view with grouped shows and episode download actions" width="2400" height="1456" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(340px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.98rem;">Podcasts</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">Shows, episodes, progress and downloads without leaving the library shell.</span></span>
+              </span>
+            </button>
+            <button type="button" data-shot="" style="position: relative; flex: 0.58 1 190px; min-width: 170px; margin: clamp(1.5rem, 1rem + 3vw, 4.5rem) 0 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 14px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="6b3f609f-ca77-446c-8513-5e08ff88d56c" alt="The Reprise Android library with album art search favourites and bottom navigation" width="1080" height="2404" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(240px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.12), transparent 40%, transparent 60%, oklch(78% 0.16 30 / 0.12));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: #ff6f5e;">Android</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.9rem;">Android library</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.78rem; color: oklch(74% 0.009 269);">A native compact list, fast search and a persistent mini-player for one-handed use.</span></span>
+              </span>
+            </button>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; gap: clamp(1.2rem, 0.9rem + 1.4vw, 2.4rem); align-items: flex-start;">
+            <button type="button" data-shot="" style="position: relative; flex: 1 1 320px; min-width: 260px; margin: 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="db1cd57e-621a-447f-a58b-e4df16e39d68" alt="The Reprise YouTube view with channels and playable videos grouped in the library" width="2400" height="1456" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(300px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.98rem;">YouTube</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">Subscribed channels become queueable audio sources with honest source identity.</span></span>
+              </span>
+            </button>
+            <button type="button" data-shot="" style="position: relative; flex: 1 1 320px; min-width: 260px; margin: clamp(1.2rem, 0.8rem + 2.4vw, 3.5rem) 0 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="a17578d3-25c9-401f-8609-b4ac6014b00e" alt="The Reprise radio station discovery dialogue over the native Radio view" width="2400" height="1456" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(300px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.98rem;">Radio discovery</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">Search, country-aware discovery and live streams share one native dialogue.</span></span>
+              </span>
+            </button>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; gap: clamp(1.2rem, 0.9rem + 1.4vw, 2.4rem); align-items: flex-start;">
+            <button type="button" data-shot="" style="position: relative; flex: 1.7 1 360px; min-width: 260px; margin: 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="49e922b2-9619-49ee-9223-022f94f77a63" alt="The Reprise Library Doctor review with grouped metadata proposals and apply controls" width="2400" height="1456" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(340px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.98rem;">Library Doctor</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">Remote evidence stays reviewable: current, proposed, source and confidence together.</span></span>
+              </span>
+            </button>
+            <button type="button" data-shot="" style="position: relative; flex: 0.55 1 180px; min-width: 165px; margin: clamp(2rem, 1.2rem + 4vw, 6rem) 0 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 14px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="aa3e5be6-cf80-432e-af7f-8b7d54e759d3" alt="Reprise Android Now Playing with album artwork colour fog and spectral seek" width="1080" height="2404" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(240px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.12), transparent 40%, transparent 60%, oklch(78% 0.16 30 / 0.12));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: #ff6f5e;">Android</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.9rem;">Artwork mode</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.78rem; color: oklch(74% 0.009 269);">The scene can recede behind the cover without changing transport or seek physics.</span></span>
+              </span>
+            </button>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; gap: clamp(1.2rem, 0.9rem + 1.4vw, 2.4rem); align-items: flex-start;">
+            <button type="button" data-shot="" style="position: relative; flex: 1 1 320px; min-width: 260px; margin: 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="709860f9-7d68-47e2-8194-e1783081e4df" alt="The Reprise device page showing a connected Android phone and playlist sync controls" width="2400" height="1456" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(300px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.98rem;">Device sync</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">Capacity, playlists, transfer profile and deviations live in one explicit run.</span></span>
+              </span>
+            </button>
+            <button type="button" data-shot="" style="position: relative; flex: 1.05 1 320px; min-width: 260px; margin: clamp(1.5rem, 1rem + 3vw, 4.5rem) 0 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+              <img src="ebd67e6f-338f-41ca-9a44-1445445c9f4f" alt="Reprise layout preferences shown over the listening statistics page" width="2400" height="1456" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+              <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+              <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(300px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+              <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+                <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+                <span data-t="" style="color: oklch(96% 0.004 269); font-size: 0.98rem;">Layout controls</span>
+                <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">The desktop adapts without abandoning GNOME: player placement, panels and density.</span></span>
+              </span>
+            </button>
+          </div>
+
+          <button type="button" data-shot="" style="position: relative; width: 100%; margin: 0; padding: 0; border: 1px solid oklch(30% 0.018 269); border-radius: 12px; overflow: hidden; background: oklch(17.5% 0.016 269); cursor: zoom-in; text-align: left; color: inherit; font: inherit; display: block; transform-style: preserve-3d; box-shadow: 0 30px 70px -44px oklch(4% 0.02 269 / 0.95); transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 620ms ease, border-color 400ms ease; --mx: 50%; --my: 50%;" data-reveal="img">
+            <img src="37183eb8-e0f2-4f12-a574-1a1b8140392a" alt="The Reprise My Stats page with artist portraits rankings and listening totals" width="2400" height="1456" loading="lazy" decoding="async" style="display: block; width: 100%; height: auto;">
+            <span data-sweep="" aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; opacity: 0; pointer-events: none;"><span style="position: absolute; inset: 0; width: 42%; background: linear-gradient(90deg, transparent, oklch(62% 0.03 269 / 0.4), transparent); animation: rpSweep 1.5s linear infinite;"></span></span>
+            <span data-sheen="" aria-hidden="true" style="position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 420ms ease; background: radial-gradient(420px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.14), transparent 62%), linear-gradient(122deg, oklch(85% 0.13 190 / 0.10), transparent 34%, transparent 64%, oklch(78% 0.16 30 / 0.10));"></span>
+            <span style="position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column; gap: 2px; padding: 18px 20px; background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), oklch(9% 0.012 269 / 0.5) 58%, transparent);">
+              <span data-p="" style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">GNOME</span>
+              <span data-t="" style="color: oklch(96% 0.004 269); font-size: 1.02rem;">Listening statistics</span>
+              <span data-dwrap="" style="display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);"><span data-d="" style="min-height: 0; opacity: 0; transition: opacity 320ms ease; font-size: 0.8rem; color: oklch(74% 0.009 269);">Portrait-led rankings turn local listening history into a private yearly report.</span></span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="ch-04" data-ground="oklch(13% 0.016 269)" style="padding: clamp(4.5rem, 3rem + 7vw, 9rem) 0;">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
+        <p data-reveal="" style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: oklch(68% 0.011 269);">CH.04</p>
+        <h2 data-reveal="" style="margin: 0 0 20px; max-width: 34ch; font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem); line-height: 1.02; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 580;">Two frontends with no screen at all.</h2>
+        <p data-reveal="" style="margin: 0 0 clamp(2rem, 1.6rem + 1.5vw, 3.5rem); max-width: 66ch; color: oklch(80% 0.008 269); text-wrap: pretty;">A core with no interface is only a claim until something without a screen uses it. The CLI and the MCP server run as separate processes against the same database as the desktop app, and a change-log notifier shows their edits live in a running GTK window without a restart. That is the boundary being load-bearing rather than documented.</p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: clamp(1.2rem, 1rem + 1vw, 2rem);">
+          <figure data-reveal="" style="margin: 0; border: 1px solid oklch(28% 0.018 269); border-radius: 12px; background: oklch(15% 0.014 269 / 0.9); overflow: hidden;">
+            <figcaption style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid oklch(26% 0.016 269); background: oklch(18% 0.016 269 / 0.8);">
+              <span style="display: flex; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: oklch(40% 0.02 269);"></span><span style="width: 8px; height: 8px; border-radius: 50%; background: oklch(40% 0.02 269);"></span><span style="width: 8px; height: 8px; border-radius: 50%; background: oklch(40% 0.02 269);"></span></span>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(70% 0.011 269);">reprise-cli · frontend 03</span>
+            </figcaption>
+            <div style="padding: 18px 16px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; line-height: 2.1; color: oklch(76% 0.009 269); overflow-x: auto; overflow-y: hidden;">
+              <p style="margin: 0; white-space: nowrap;"><span style="color: #4fdbd4;">$</span> reprise-cli library summary</p>
+              <p style="margin: 0; white-space: nowrap;"><span style="color: #4fdbd4;">$</span> reprise-cli search "portishead"</p>
+              <p style="margin: 0;"><span style="color: #4fdbd4;">$</span> reprise-cli playlist create "Focus"</p>
+              <p style="margin: 0; white-space: nowrap;"><span style="color: #4fdbd4;">$</span> reprise-cli scan ~/Music</p>
+              <p style="margin: 0; white-space: nowrap;"><span style="color: #4fdbd4;">$</span> reprise-cli instrumental create 481</p>
+              <p style="margin: 0; white-space: nowrap;"><span style="color: #4fdbd4;">$</span> reprise-cli jobs status --batch b-2f9c</p>
+              <p style="margin: 0; white-space: nowrap;"><span style="color: #4fdbd4;">$</span> reprise-cli events tail --since 0</p>
+              <p style="margin: 0; white-space: nowrap;"><span style="color: #4fdbd4;">$</span> reprise-cli concerts list --all --json</p>
+            </div>
+            <p style="margin: 0; padding: 0 16px 18px; font-size: 0.86rem; color: oklch(68% 0.011 269); text-wrap: pretty;">Every command takes <code style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.9em; color: oklch(88% 0.006 269);">--json</code> for machine consumption and <code style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.9em; color: oklch(88% 0.006 269);">--db</code> for a scratch library, so automation never has to touch the real one. Deleting a playlist refuses to run without <code style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.9em; color: oklch(88% 0.006 269);">--yes</code>.</p>
+          </figure>
+
+          <figure data-reveal="" style="margin: 0; padding: 0; border: 1px solid oklch(28% 0.018 269); border-radius: 12px; background: oklch(17% 0.016 269 / 0.72); overflow: hidden;">
+            <figcaption style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; padding: 14px 18px; border-bottom: 1px solid oklch(26% 0.016 269);">
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(70% 0.011 269);">reprise-mcp · frontend 04</span>
+              <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: #4fdbd4;">read is safe, writes are opt-in</span>
+            </figcaption>
+            <ul style="list-style: none; margin: 0; padding: 8px 0; display: grid;">
+              <li style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 10px 18px; border-bottom: 1px solid oklch(22% 0.014 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(90% 0.006 269);">library:read</span><span style="font-size: 0.8rem; color: oklch(66% 0.011 269);">search tracks, artists, albums, playlists</span><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4fdbd4;">on</span></li>
+              <li style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 10px 18px; border-bottom: 1px solid oklch(22% 0.014 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(90% 0.006 269);">playback:control</span><span style="font-size: 0.8rem; color: oklch(66% 0.011 269);">transport, volume, seek, queue</span><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4fdbd4;">on</span></li>
+              <li style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 10px 18px; border-bottom: 1px solid oklch(22% 0.014 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(90% 0.006 269);">playlist:create</span><span style="font-size: 0.8rem; color: oklch(66% 0.011 269);">create a manual playlist</span><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e;">off</span></li>
+              <li style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 10px 18px; border-bottom: 1px solid oklch(22% 0.014 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(90% 0.006 269);">playlist:manage</span><span style="font-size: 0.8rem; color: oklch(66% 0.011 269);">rename, append tracks</span><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e;">off</span></li>
+              <li style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 10px 18px; border-bottom: 1px solid oklch(22% 0.014 269);"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(90% 0.006 269);">sources:manage</span><span style="font-size: 0.8rem; color: oklch(66% 0.011 269);">podcasts, YouTube, radio</span><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e;">off</span></li>
+              <li style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 10px 18px;"><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(90% 0.006 269);">device:sync</span><span style="font-size: 0.8rem; color: oklch(66% 0.011 269);">configure and run phone sync</span><span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: #ff6f5e;">off</span></li>
+            </ul>
+            <p style="margin: 0; padding: 4px 18px 18px; font-size: 0.86rem; color: oklch(68% 0.011 269); text-wrap: pretty;">Tools over stdio, each behind one of six capability flags read live from the library. A revocation takes effect on the next call. Responses never carry filesystem paths, cache locations or credentials — and the source resources omit stored URLs, because those can hold access tokens.</p>
+            <p style="margin: 0; padding: 0 18px 18px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem;"><a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-mcp/README.md">the tool contract ↗</a></p>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section data-ground="oklch(12.5% 0.018 24)" style="padding: clamp(4rem, 3rem + 5vw, 7rem) 0;">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
+        <div data-reveal="" style="margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.5rem);">
+          <p style="margin: 0 0 10px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #ff6f5e;">CH.05</p>
+          <h2 style="margin: 0 0 14px; max-width: 40ch; font-size: clamp(1.7rem, 1.3rem + 1.9vw, 2.9rem); line-height: 1.04; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 570;">Measured afterwards. Price attached.</h2>
+          <p style="margin: 0; max-width: 64ch; color: oklch(80% 0.008 269); text-wrap: pretty;">The title index was rebuilt for one reason: the track list was too slow over a large library. What it bought was measured after the fact rather than asserted before it — and what it cost sits in the same table, not in the small print.</p>
+        </div>
+
+        <div data-reveal="" style="border: 1px solid oklch(28% 0.018 269); border-radius: 12px; background: oklch(17% 0.016 269 / 0.72); overflow: hidden;">
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 22px 24px 6px;">
+            <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: oklch(68% 0.011 269);">The ledger</span>
+            <span style="color: oklch(96% 0.004 269); font-size: 1.05rem;">What the title index cost, and what it bought</span>
+          </div>
+          <div style="padding: 0 24px 24px;">
+            <sc-raw-table style="width: 100%; border-collapse: collapse; font-size: 0.92rem;">
+              <sc-raw-caption style="text-align: left; padding-bottom: 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; color: oklch(68% 0.011 269);">Measured over 100'000 tracks. Before and after the index rebuild.</sc-raw-caption>
+              <sc-raw-thead>
+                <sc-raw-tr>
+                  <sc-raw-th scope="col" style="text-align: left; padding: 10px 12px 10px 0; border-bottom: 1px solid oklch(30% 0.018 269); font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(68% 0.011 269); font-weight: 400;">What</sc-raw-th>
+                  <sc-raw-th scope="col" style="text-align: right; padding: 10px 12px; border-bottom: 1px solid oklch(30% 0.018 269); font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(68% 0.011 269); font-weight: 400;">Before</sc-raw-th>
+                  <sc-raw-th scope="col" style="text-align: right; padding: 10px 12px; border-bottom: 1px solid oklch(30% 0.018 269); font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(68% 0.011 269); font-weight: 400;">After</sc-raw-th>
+                  <sc-raw-th scope="col" style="text-align: right; padding: 10px 0 10px 12px; border-bottom: 1px solid oklch(30% 0.018 269); font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(68% 0.011 269); font-weight: 400;">Delta</sc-raw-th>
+                </sc-raw-tr>
+              </sc-raw-thead>
+              <sc-raw-tbody>
+                <sc-raw-tr>
+                  <sc-raw-th scope="row" style="text-align: left; padding: 14px 12px 14px 0; border-bottom: 1px solid oklch(24% 0.016 269); color: oklch(90% 0.006 269); font-weight: 400;">Title window over 100'000 tracks</sc-raw-th>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(70% 0.011 269);">53'605 µs</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(94% 0.004 269);">1'333 µs</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 0 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: #4fdbd4;">−97.51 %</sc-raw-td>
+                </sc-raw-tr>
+                <sc-raw-tr>
+                  <sc-raw-th scope="row" style="text-align: left; padding: 14px 12px 14px 0; border-bottom: 1px solid oklch(24% 0.016 269); color: oklch(90% 0.006 269); font-weight: 400;">Playback ID projection</sc-raw-th>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(70% 0.011 269);">8'125 µs</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(94% 0.004 269);">298 µs</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 0 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: #4fdbd4;">−96.33 %</sc-raw-td>
+                </sc-raw-tr>
+                <sc-raw-tr>
+                  <sc-raw-th scope="row" style="text-align: left; padding: 14px 12px 14px 0; border-bottom: 1px solid oklch(24% 0.016 269); color: oklch(90% 0.006 269); font-weight: 400;">Main-thread CPU while idle</sc-raw-th>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(70% 0.011 269);">110 ms/s</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(94% 0.004 269);">64 ms/s</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 0 14px 12px; border-bottom: 1px solid oklch(24% 0.016 269); font-family: 'Martian Mono', ui-monospace, monospace; color: #4fdbd4;">−41.8 %</sc-raw-td>
+                </sc-raw-tr>
+                <sc-raw-tr>
+                  <sc-raw-th scope="row" style="text-align: left; padding: 14px 12px 14px 0; color: oklch(90% 0.006 269); font-weight: 400;">Tag reads on a warm start</sc-raw-th>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(70% 0.011 269);">419</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 12px; font-family: 'Martian Mono', ui-monospace, monospace; color: oklch(94% 0.004 269);">0</sc-raw-td>
+                  <sc-raw-td style="text-align: right; padding: 14px 0 14px 12px; font-family: 'Martian Mono', ui-monospace, monospace; color: #4fdbd4;">−100 %</sc-raw-td>
+                </sc-raw-tr>
+              </sc-raw-tbody>
+            </sc-raw-table>
+            <p style="margin: 20px 0 0; max-width: 68ch; color: oklch(74% 0.009 269); font-size: 0.94rem; text-wrap: pretty;">The price sits next to it, not in the small print: the title index costs 2'379'776 extra database bytes, up 9.85 %. The track list stays pinned by test to eight cached SQL windows and 1'600 retained rows — unchanged between 10'000 and 100'000 tracks.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer data-ground="oklch(10.5% 0.012 269)" style="padding: clamp(3.5rem, 2.5rem + 4vw, 6rem) 0 clamp(3rem, 2rem + 3vw, 5rem); border-top: 1px solid oklch(24% 0.016 269);">
+      <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
+        <p data-reveal="" style="margin: 0 0 16px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: oklch(68% 0.011 269);">Where the figures come from</p>
+        <p data-reveal="" style="margin: 0 0 26px; max-width: 68ch; color: oklch(74% 0.009 269); text-wrap: pretty;">The test and rule counts are the ones the repository states on <a href="https://github.com/marvinbaudach/reprise"><code style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.86em;">main</code></a>. The code volumes were counted on <a href="https://github.com/marvinbaudach/reprise/tree/604677322e"><code style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.86em;">dev@604677322e</code></a> with cloc 2.08, product and test code separated by an AST pass over every Rust file, and verified a second time by hand on 2026-08-14. <strong style="color: oklch(94% 0.004 269); font-weight: 500;">This build does not measure them yet</strong> — the figures are typed into one module and the measurement runs in CI next. Until it does, that sentence stays here instead of a claim that would be nicer and untrue.</p>
+        <div data-reveal="" style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px 26px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem;">
+          <img src="8dc5a95b-79b4-41ae-8ccf-b2778174e0f7" alt="" width="24" height="24" style="display: block; width: 24px; height: 24px; opacity: 0.9;">
+          <a href="https://github.com/marvinbaudach/reprise">Source</a>
+          <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/docs/ux-rules.md">Rulebook</a>
+          <a href="https://github.com/marvinbaudach/reprise/blob/604677322e/TESTING.md">How it is tested</a>
+        </div>
+
+        <div data-reveal="" style="margin-top: clamp(2.5rem, 2rem + 2vw, 4rem); padding-top: clamp(2rem, 1.6rem + 1.5vw, 3rem); border-top: 1px solid oklch(24% 0.016 269); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: clamp(1.6rem, 1.2rem + 2vw, 3.5rem); align-items: start;">
+          <div>
+            <p style="margin: 0 0 12px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: #4fdbd4;">Availability</p>
+            <h2 style="margin: 0 0 14px; max-width: 26ch; font-size: clamp(1.7rem, 1.3rem + 1.9vw, 2.9rem); line-height: 1.04; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 570;">Open to work.</h2>
+            <p style="margin: 0; max-width: 46ch; color: oklch(80% 0.008 269); text-wrap: pretty;">This project is the skill demonstration: architecture, the gates that hold agent output to it, and four shipped surfaces in four weeks. The same method applies to a codebase that is not mine.</p>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 12px; align-items: flex-start;">
+            <a href="https://github.com/marvinbaudach" style="display: inline-flex; align-items: center; gap: 12px; padding: 14px 22px; border: 1px solid #4fdbd4; border-radius: 8px; background: linear-gradient(120deg, oklch(26% 0.05 195 / 0.5), oklch(20% 0.018 269 / 0.7)); color: oklch(97% 0.004 269); font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.06em;" style-hover="background: linear-gradient(120deg, oklch(32% 0.06 195 / 0.6), oklch(24% 0.018 269 / 0.8));">github.com/marvinbaudach ↗</a>
+            <p style="margin: 4px 0 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: oklch(68% 0.011 269);">GPL-3.0-or-later · active alpha</p>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <sc-if value="{{ hasShot }}" hint-placeholder-val="{{ false }}">
+    <div data-lb="" style="position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; padding: clamp(0.75rem, 0.5rem + 1.5vw, 2rem); background: oklch(7% 0.012 269 / 0.94); backdrop-filter: blur(14px); animation: rpFade 260ms ease both;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 18px; flex: 0 0 auto; padding-bottom: 14px;">
+        <div style="min-width: 0;">
+          <p style="margin: 0 0 2px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: #4fdbd4;">{{ shotPlatform }}</p>
+          <p style="margin: 0; color: oklch(97% 0.004 269); font-size: 1.05rem;">{{ shotTitle }}</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; color: oklch(68% 0.011 269);">{{ shotCounter }}</span>
+          <button type="button" data-act="prev" aria-label="Previous screenshot" style="width: 38px; height: 38px; border: 1px solid oklch(32% 0.018 269); border-radius: 999px; background: oklch(18% 0.016 269 / 0.8); color: oklch(90% 0.006 269); cursor: pointer; font-size: 1rem; line-height: 1;">←</button>
+          <button type="button" data-act="next" aria-label="Next screenshot" style="width: 38px; height: 38px; border: 1px solid oklch(32% 0.018 269); border-radius: 999px; background: oklch(18% 0.016 269 / 0.8); color: oklch(90% 0.006 269); cursor: pointer; font-size: 1rem; line-height: 1;">→</button>
+          <button type="button" data-act="close" aria-label="Close" style="width: 38px; height: 38px; border: 1px solid oklch(32% 0.018 269); border-radius: 999px; background: oklch(18% 0.016 269 / 0.8); color: oklch(90% 0.006 269); cursor: pointer; font-size: 1rem; line-height: 1;">✕</button>
+        </div>
+      </div>
+      <div data-act="backdrop" style="flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden;">
+        <img data-lb-img="" alt="{{ shotAlt }}" style="max-width: 100%; max-height: 100%; object-fit: contain; border: 1px solid oklch(30% 0.018 269); border-radius: 10px; cursor: zoom-in; transform-origin: center; transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1); animation: rpLbIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;">
+      </div>
+      <p style="flex: 0 0 auto; margin: 14px auto 0; max-width: 74ch; text-align: center; font-size: 0.88rem; color: oklch(72% 0.009 269); text-wrap: pretty;">{{ shotDesc }}</p>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;motion&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;full&quot;,&quot;calm&quot;,&quot;off&quot;],&quot;default&quot;:&quot;full&quot;,&quot;tsType&quot;:&quot;'full' | 'calm' | 'off'&quot;,&quot;section&quot;:&quot;Motion&quot;},&quot;tilt&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:0,&quot;max&quot;:14,&quot;step&quot;:1,&quot;default&quot;:8,&quot;unit&quot;:&quot;deg&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Motion&quot;},&quot;oil&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:0,&quot;max&quot;:1,&quot;step&quot;:0.05,&quot;default&quot;:1,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Motion&quot;}}">
+class Component extends DCLogic {
+  state = { shot: null, mode: 'fill' };
+
+  // ————— lifecycle —————
+  componentDidMount() {
+    this.root = document.getElementById('rp-root');
+    if (!this.root) return;
+    this.reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.applyProps();
+    this.setupReveal();
+    this.setupGround();
+    this.setupSpectral();
+    this.setupViz();
+    this.syncMode();
+    this.onScroll = () => this.onScrollTick();
+    this.onKey = (e) => this.handleKey(e);
+    this.onClick = (e) => this.handleClick(e);
+    this.onMove = (e) => this.handleMove(e);
+    this.onOut = (e) => this.handleOut(e);
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+    window.addEventListener('resize', this.onScroll, { passive: true });
+    // Some embeddings scroll an ancestor rather than the window: catch both.
+    document.addEventListener('scroll', this.onScroll, { passive: true, capture: true });
+    this.ticker = setInterval(() => { if (!document.hidden) this.onScrollTick(); }, 500);
+    window.addEventListener('keydown', this.onKey);
+    this.root.addEventListener('click', this.onClick);
+    window.addEventListener('pointermove', this.onMove, { passive: true });
+    this.root.addEventListener('pointerleave', this.onOut, true);
+    this.onScrollTick();
+    requestAnimationFrame(() => this.onScrollTick());
+    setTimeout(() => this.onScrollTick(), 400);
+  }
+
+  componentDidUpdate() {
+    this.applyProps();
+    this.syncMode();
+    const lock = !!this.state.shot;
+    document.documentElement.style.overflow = lock ? 'hidden' : '';
+    // The lightbox source is assigned here rather than bound through the
+    // template: an attribute hole would fire a request for the raw token
+    // while the template streams.
+    const img = document.querySelector('[data-lb-img]');
+    if (img && this.state.shot && img.getAttribute('src') !== this.state.shot.src) img.src = this.state.shot.src;
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('scroll', this.onScroll);
+    window.removeEventListener('resize', this.onScroll);
+    document.removeEventListener('scroll', this.onScroll, { capture: true });
+    if (this.ticker) clearInterval(this.ticker);
+    window.removeEventListener('keydown', this.onKey);
+    if (this.root) {
+      this.root.removeEventListener('click', this.onClick);
+      window.removeEventListener('pointermove', this.onMove);
+      this.root.removeEventListener('pointerleave', this.onOut, true);
+    }
+    [this.revealObs, this.groundObs, this.seekObs].forEach((o) => o && o.disconnect());
+    if (this.raf) cancelAnimationFrame(this.raf);
+    document.documentElement.style.overflow = '';
+  }
+
+  applyProps() {
+    if (!this.root) return;
+    const oil = this.props.oil ?? 0.55;
+    this.root.style.setProperty('--oil', String(oil));
+    const layer = document.getElementById('rp-oil');
+    if (layer) {
+      const paused = this.motion() === 'off' || this.reduced;
+      layer.querySelectorAll('span').forEach((s) => { s.style.animationPlayState = paused ? 'paused' : 'running'; });
+      this.moveOil();
+    }
+  }
+
+  motion() { return this.props.motion ?? 'full'; }
+
+  // ————— reveal, counters, lazy images —————
+  // Reveals run off the scroll position rather than an IntersectionObserver:
+  // one rAF-throttled sweep over the shrinking set of hidden elements, which
+  // behaves the same in every browser and cannot leave content invisible.
+  setupReveal() {
+    const off = this.motion() === 'off' || this.reduced;
+    const dist = this.motion() === 'calm' ? 10 : 24;
+    this.pending = Array.from(this.root.querySelectorAll('[data-reveal]'));
+
+    this.pending.forEach((el) => {
+      el.style.willChange = 'opacity, transform';
+      el.style.transition = 'opacity 780ms cubic-bezier(0.16,1,0.3,1), transform 900ms cubic-bezier(0.16,1,0.3,1), filter 900ms ease';
+      if (off) return;
+      const hero = !!(el.closest && el.closest('#rp-top'));
+      if (hero || el.getBoundingClientRect().top >= window.innerHeight * 0.88) {
+        el.style.opacity = '0';
+        el.style.transform = 'translate3d(0,' + (hero ? Math.round(dist * 0.7) : dist) + 'px,0) scale(0.99)';
+        if (el.dataset.reveal === 'img') el.style.filter = 'blur(7px)';
+      }
+    });
+
+    this.root.querySelectorAll('[data-counter]').forEach((el) => this.prepCounter(el));
+    this.root.querySelectorAll('#rp-ratio > span').forEach((el) => {
+      if (el.getBoundingClientRect().top >= window.innerHeight * 0.88) el.style.width = '0%';
+    });
+    this.setupImages();
+
+    if (off) { this.pending.forEach((el) => this.reveal(el, 0)); this.pending = []; return; }
+    requestAnimationFrame(() => this.sweep());
+  }
+
+  sweep() {
+    if (!this.pending || !this.pending.length) return;
+    const limit = window.innerHeight * 0.88;
+    const rest = [];
+    let hit = 0;
+    this.pending.forEach((el) => {
+      const box = el.getBoundingClientRect();
+      if (box.top < limit && box.bottom > -window.innerHeight) {
+        const sibs = el.parentElement
+          ? Array.from(el.parentElement.children).filter((n) => n.hasAttribute && n.hasAttribute('data-reveal'))
+          : [el];
+        const idx = Math.max(0, sibs.indexOf(el));
+        this.reveal(el, Math.min(idx, 7) * 70 + Math.min(hit, 4) * 20);
+        hit += 1;
+      } else if (box.top >= limit) {
+        rest.push(el);
+      } else {
+        this.reveal(el, 0);
+      }
+    });
+    this.pending = rest;
+  }
+
+  reveal(el, delay) {
+    if (el.dataset.shown) return;
+    el.dataset.shown = '1';
+    el.style.transitionDelay = delay + 'ms';
+    el.style.opacity = '1';
+    el.style.transform = 'none';
+    el.style.filter = 'none';
+    setTimeout(() => { el.style.willChange = 'auto'; el.style.transitionDelay = '0ms'; }, 1100 + delay);
+    el.querySelectorAll('[data-counter]').forEach((c) => this.runCounter(c, delay + 80));
+    if (el.hasAttribute && el.hasAttribute('data-counter')) this.runCounter(el, delay + 80);
+    if (el.id === 'rp-ratio' || el.querySelector('#rp-ratio')) this.runRatio();
+  }
+
+  prepCounter(el) {
+    const raw = el.textContent.trim();
+    const m = raw.match(/(\d[\d'’]*(?:\.\d+)?)/);
+    if (!m) return;
+    const num = m[1];
+    const sep = (num.match(/['’]/) || [''])[0];
+    const plain = num.replace(/['’]/g, '');
+    const dec = (plain.split('.')[1] || '').length;
+    el.__c = {
+      target: parseFloat(plain),
+      dec,
+      grouped: !!sep,
+      sep,
+      pre: raw.slice(0, m.index),
+      post: raw.slice(m.index + num.length),
+    };
+    if (el.getBoundingClientRect().top >= window.innerHeight * 0.86) el.textContent = el.__c.pre + this.fmt(0, el.__c) + el.__c.post;
+  }
+
+  fmt(v, c) {
+    let s = c.dec ? v.toFixed(c.dec) : String(Math.round(v));
+    if (c.grouped) {
+      const parts = s.split('.');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, c.sep || '\u2019');
+      s = parts.join('.');
+    }
+    return s;
+  }
+
+  runCounter(el, delay) {
+    const c = el.__c;
+    if (!c || el.__ran) return;
+    el.__ran = true;
+    if (this.motion() === 'off' || this.reduced) { el.textContent = c.pre + this.fmt(c.target, c) + c.post; return; }
+    const dur = 1250;
+    const start = performance.now() + delay;
+    const tick = (now) => {
+      const t = Math.max(0, Math.min(1, (now - start) / dur));
+      const e = 1 - Math.pow(1 - t, 4);
+      el.textContent = c.pre + this.fmt(c.target * e, c) + c.post;
+      if (t < 1) requestAnimationFrame(tick);
+      else el.textContent = c.pre + this.fmt(c.target, c) + c.post;
+    };
+    requestAnimationFrame(tick);
+  }
+
+  runRatio() {
+    if (this.__ratio) return;
+    this.__ratio = true;
+    this.root.querySelectorAll('#rp-ratio > span').forEach((el) => { el.style.width = (el.dataset.w || 0) + '%'; });
+  }
+
+  setupImages() {
+    this.root.querySelectorAll('[data-shot] img').forEach((img) => {
+      const sweep = img.parentElement.querySelector('[data-sweep]');
+      if (img.complete && img.naturalWidth) return;
+      if (sweep) sweep.style.opacity = '1';
+      img.style.opacity = '0';
+      img.style.transition = 'opacity 700ms ease';
+      const done = () => {
+        img.style.opacity = '1';
+        if (sweep) { sweep.style.transition = 'opacity 400ms ease'; sweep.style.opacity = '0'; }
+      };
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+    });
+  }
+
+  // ————— ground colour + progress + nav —————
+  setupGround() {
+    this.ground = document.getElementById('rp-ground');
+    this.sections = Array.from(this.root.querySelectorAll('[data-ground]'));
+  }
+
+  updateGround() {
+    if (!this.ground || !this.sections) return;
+    const mid = window.innerHeight / 2;
+    let pick = null;
+    this.sections.forEach((s) => {
+      const box = s.getBoundingClientRect();
+      if (box.top <= mid && box.bottom > mid) pick = s;
+    });
+    if (pick && pick !== this.groundSection) {
+      this.groundSection = pick;
+      this.ground.style.backgroundColor = pick.dataset.ground;
+    }
+  }
+
+  onScrollTick() {
+    const doc = document.documentElement;
+    const max = Math.max(1, doc.scrollHeight - window.innerHeight);
+    const top = window.scrollY || doc.scrollTop || 0;
+    const p = Math.min(1, Math.max(0, top / max));
+    this.sweep();
+    this.updateGround();
+    this.oilScroll = p * 2 - 1;
+    this.moveOil();
+    if (this.views) {
+      let any = false;
+      this.views.forEach((v) => {
+        const box = v.canvas.getBoundingClientRect();
+        v.visible = box.bottom > -80 && box.top < window.innerHeight + 80;
+        if (v.visible) any = true;
+      });
+      this.visible = any;
+      if (this.viz) {
+        const b = this.viz.canvas.getBoundingClientRect();
+        this.viz.visible = b.bottom > -80 && b.top < window.innerHeight + 80;
+        if (this.viz.visible) any = true;
+      }
+      if (any && !this.raf) { this.last = performance.now(); this.loop(); }
+    }
+    const bar = document.getElementById('rp-progress');
+    if (bar) bar.style.width = (p * 100).toFixed(2) + '%';
+    const header = document.getElementById('rp-header');
+    if (header) {
+      const on = top > 60;
+      header.style.backgroundColor = on ? 'oklch(11% 0.014 269 / 0.72)' : 'transparent';
+      header.style.borderBottomColor = on ? 'oklch(26% 0.016 269)' : 'transparent';
+      header.style.backdropFilter = on ? 'blur(14px)' : 'none';
+    }
+    const links = Array.from(this.root.querySelectorAll('[data-navlink]'));
+    let active = null;
+    links.forEach((a) => {
+      const target = document.getElementById(a.getAttribute('href').slice(1));
+      if (target && target.getBoundingClientRect().top <= window.innerHeight * 0.4) active = a;
+    });
+    links.forEach((a) => { a.style.color = a === active ? '#4fdbd4' : 'oklch(70% 0.011 269)'; });
+  }
+
+  // ————— delegated interaction —————
+  handleClick(e) {
+    const mode = e.target.closest('[data-mode]');
+    if (mode) { this.setState({ mode: mode.dataset.mode }); return; }
+    const act = e.target.closest('[data-act]');
+    if (act) {
+      const a = act.dataset.act;
+      if (a === 'close' || a === 'backdrop') { if (a === 'backdrop' && e.target.closest('[data-lb-img]')) { this.zoom(e); return; } this.setState({ shot: null }); }
+      else if (a === 'prev') this.showShot(this.state.shot.i - 1);
+      else if (a === 'next') this.showShot(this.state.shot.i + 1);
+      return;
+    }
+    if (e.target.closest('[data-lb-img]')) { this.zoom(e); return; }
+    const seek = e.target.closest('#rp-seek');
+    if (seek) { this.seekTo(e, seek); return; }
+    const tile = e.target.closest('[data-shot]');
+    if (tile) { const i = this.indexFor(tile); if (i >= 0) this.showShot(i); }
+  }
+
+  // The oil layer drifts on its own; pointer and scroll add a slow parallax on
+  // top of it, so the light appears to sit behind the page rather than on it.
+  moveOil() {
+    const layer = document.getElementById('rp-oil');
+    if (!layer) return;
+    if (this.motion() === 'off' || this.reduced) { layer.style.transform = 'none'; return; }
+    const amp = this.motion() === 'calm' ? 0.4 : 1;
+    const px = this.oilX || 0;
+    const py = this.oilY || 0;
+    const scroll = this.oilScroll || 0;
+    const x = px * 26 * amp;
+    const y = (py * 20 + scroll * 44) * amp;
+    layer.style.transform = 'translate3d(' + x.toFixed(1) + 'px, ' + y.toFixed(1) + 'px, 0) scale(' + (1 + 0.02 * amp).toFixed(3) + ')';
+  }
+
+  handleMove(e) {
+    this.oilX = (e.clientX / window.innerWidth) * 2 - 1;
+    this.oilY = (e.clientY / window.innerHeight) * 2 - 1;
+    this.moveOil();
+    // pointermove is taken on window, so the target can be a non-Element.
+    const at = e.target && e.target.closest ? e.target : null;
+    const seek = at && at.closest('#rp-seek');
+    if (seek) { const r = seek.getBoundingClientRect(); this.hover = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); }
+    const tile = at && at.closest('[data-shot]');
+    if (!tile) { if (this.__tilted) this.untilt(this.__tilted); return; }
+    if (this.__tilted && this.__tilted !== tile) this.untilt(this.__tilted);
+    this.__tilted = tile;
+    const deg = this.props.tilt ?? 8;
+    const r = tile.getBoundingClientRect();
+    const nx = (e.clientX - r.left) / r.width;
+    const ny = (e.clientY - r.top) / r.height;
+    tile.style.setProperty('--mx', (nx * 100).toFixed(1) + '%');
+    tile.style.setProperty('--my', (ny * 100).toFixed(1) + '%');
+    const sheen = tile.querySelector('[data-sheen]');
+    if (sheen) sheen.style.opacity = '1';
+    const desc = tile.querySelector('[data-d]');
+    const dwrap = tile.querySelector('[data-dwrap]');
+    if (dwrap) dwrap.style.gridTemplateRows = '1fr';
+    if (desc) desc.style.opacity = '1';
+    tile.style.borderColor = 'oklch(46% 0.03 195)';
+    if (this.motion() === 'off' || this.reduced || deg === 0) return;
+    tile.style.transition = 'transform 110ms linear, box-shadow 300ms ease, border-color 300ms ease';
+    tile.style.transform =
+      'perspective(1200px) rotateX(' + ((0.5 - ny) * deg).toFixed(2) + 'deg) rotateY(' + ((nx - 0.5) * deg).toFixed(2) + 'deg) scale(1.014)';
+    tile.style.boxShadow = '0 40px 90px -46px oklch(3% 0.02 269 / 0.98), 0 0 40px -18px oklch(80% 0.12 190 / 0.35)';
+  }
+
+  handleOut(e) {
+    const tile = e.target.closest && e.target.closest('[data-shot]');
+    if (tile) this.untilt(tile);
+    if (e.target.closest && e.target.closest('#rp-seek')) this.hover = null;
+  }
+
+  untilt(tile) {
+    tile.style.transition = 'transform 640ms cubic-bezier(0.16,1,0.3,1), box-shadow 640ms ease, border-color 400ms ease';
+    tile.style.transform = 'none';
+    tile.style.boxShadow = '';
+    tile.style.borderColor = '';
+    const sheen = tile.querySelector('[data-sheen]');
+    if (sheen) sheen.style.opacity = '0';
+    const desc = tile.querySelector('[data-d]');
+    if (desc) desc.style.opacity = '0';
+    const dwrap = tile.querySelector('[data-dwrap]');
+    if (dwrap) dwrap.style.gridTemplateRows = '0fr';
+    if (this.__tilted === tile) this.__tilted = null;
+  }
+
+  handleKey(e) {
+    if (this.state.shot) {
+      if (e.key === 'Escape') { e.preventDefault(); this.setState({ shot: null }); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); this.showShot(this.state.shot.i + 1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); this.showShot(this.state.shot.i - 1); }
+      return;
+    }
+    const seek = document.getElementById('rp-seek');
+    if (!seek || document.activeElement !== seek || !this.track) return;
+    const step = 5 / this.track.dur;
+    if (e.key === 'ArrowRight') { e.preventDefault(); this.pos = Math.min(1, this.pos + step); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); this.pos = Math.max(0, this.pos - step); }
+    else if (e.key === 'Home') { e.preventDefault(); this.pos = 0; }
+    else if (e.key === 'End') { e.preventDefault(); this.pos = 0.999; }
+  }
+
+  // ————— lightbox —————
+  tiles() { return Array.from(this.root.querySelectorAll('[data-shot]')); }
+
+  indexFor(tile) { return this.tiles().indexOf(tile); }
+
+  showShot(i) {
+    const tiles = this.tiles();
+    if (!tiles.length) return;
+    const n = tiles.length;
+    const idx = ((i % n) + n) % n;
+    const tile = tiles[idx];
+    const img = tile.querySelector('img');
+    const text = (sel) => { const el = tile.querySelector(sel); return el ? el.textContent : ''; };
+    this.setState({
+      shot: {
+        i: idx,
+        src: img ? img.currentSrc || img.src : '',
+        alt: img ? img.alt : '',
+        title: text('[data-t]'),
+        desc: text('[data-d]'),
+        platform: text('[data-p]'),
+        counter: String(idx + 1).padStart(2, '0') + ' / ' + String(n).padStart(2, '0'),
+      },
+    });
+  }
+
+  zoom(e) {
+    const img = e.target.closest('[data-lb-img]');
+    if (!img) return;
+    if (img.dataset.zoomed) {
+      img.dataset.zoomed = '';
+      img.style.transform = 'none';
+      img.style.cursor = 'zoom-in';
+    } else {
+      const r = img.getBoundingClientRect();
+      img.dataset.zoomed = '1';
+      img.style.transformOrigin = (((e.clientX - r.left) / r.width) * 100).toFixed(1) + '% ' + (((e.clientY - r.top) / r.height) * 100).toFixed(1) + '%';
+      img.style.transform = 'scale(2.1)';
+      img.style.cursor = 'zoom-out';
+    }
+  }
+
+  // ————— spectral seek bar —————
+  setupSpectral() {
+    const main = document.getElementById('rp-canvas');
+    if (!main) return;
+    this.canvas = main;
+    this.ctx = main.getContext('2d');
+    this.track = this.buildTrack();
+    this.pos = 0;
+    this.hover = null;
+    this.shaped = null;
+    this.marks = this.sectionBoundaries(this.smoothCentroid(this.track.cen, this.track.dur, 8), this.track.dur);
+    const view = (canvas, hero) => (canvas ? { canvas, ctx: canvas.getContext('2d'), hero, shaped: null, visible: false } : null);
+    this.views = [view(main, false), view(document.getElementById('rp-hero-canvas'), true)].filter(Boolean);
+    this.visible = false;
+    this.drawSeek();
+  }
+
+  // ————— the Android visualiser, ported from the shared engine —————
+  // Geometry, colour, segments, peaks and reflections are the constants in
+  // crates/reprise-core/src/visuals/modes/bars.rs and engine.rs. The band
+  // values are the one part a web page cannot have: the app reads live PCM
+  // through CAVA, so the spectrum here stands in for it.
+  setupViz() {
+    const canvas = document.getElementById('rp-viz');
+    if (!canvas) return;
+    const N = 64; // SPECTRUM_BAND_COUNT
+    this.viz = {
+      canvas,
+      ctx: canvas.getContext('2d'),
+      visible: false,
+      t: 0,
+      bars: new Float32Array(N),
+      peaks: new Float32Array(N),
+    };
+    this.drawViz(0);
+  }
+
+  // hsla_to_rgb from crates/reprise-core/src/visuals/color.rs
+  hslaRgb(hue, sat, light) {
+    const h = ((hue % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * light - 1)) * sat;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = light - c / 2;
+    const seg = Math.floor(h / 60);
+    const rgb = seg === 0 ? [c, x, 0] : seg === 1 ? [x, c, 0] : seg === 2 ? [0, c, x]
+      : seg === 3 ? [0, x, c] : seg === 4 ? [x, 0, c] : [c, 0, x];
+    return rgb.map((v) => Math.round((v + m) * 255));
+  }
+
+  neon(bar, alpha) {
+    const across = bar / 63;
+    const [r, g, b] = this.hslaRgb(188 + (315 - 188) * across, 0.88, 0.6);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + Math.max(0, Math.min(1, alpha)).toFixed(3) + ')';
+  }
+
+  drawViz(dt) {
+    const v = this.viz;
+    const ctx = v.ctx;
+    const w = v.canvas.clientWidth;
+    const h = v.canvas.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (v.canvas.width !== Math.round(w * dpr) || v.canvas.height !== Math.round(h * dpr)) {
+      v.canvas.width = Math.round(w * dpr);
+      v.canvas.height = Math.round(h * dpr);
+    }
+    const still = this.motion() === 'off' || this.reduced;
+    v.t += still ? 0 : dt;
+
+    const N = 64;              // BAR_COUNT = SPECTRUM_BAND_COUNT
+    const SEGMENTS = 16;       // SEGMENT_COUNT
+    const MARGIN = 0.045;      // HORIZONTAL_MARGIN
+    const BAR_GAP = 0.0025;
+    const BASELINE = 0.82;
+    const MAX_HEIGHT = 0.68;
+    const SEGMENT_GAP = 2.5;
+    const CAP_H = 2.5;         // PEAK_CAP_HEIGHT
+    const PEAK_MIN = 0.04;
+    const REFLECTIONS = 6;     // REFLECTION_SEGMENTS
+
+    // Stand-in for the CAVA band frame the phone feeds in from live PCM.
+    for (let i = 0; i < N; i += 1) {
+      const p = i / (N - 1);
+      const tilt = 1 - 0.42 * p;
+      const wob = 0.5 + 0.5 * Math.sin(v.t * (1.9 + i * 0.17) + i * 1.4);
+      const swell = 0.5 + 0.5 * Math.sin(v.t * 0.62 + p * 3.1);
+      const target = Math.max(0, Math.min(1, tilt * (0.2 + 0.85 * wob * (0.4 + 0.6 * swell))));
+      v.bars[i] += (target - v.bars[i]) * (target > v.bars[i] ? 0.5 : 0.09);
+      // engine.rs: peaks hold, then fall by PEAK_DECAY per simulation tick.
+      const ticks = dt * 60;   // SIMULATION_TICKS_PER_SECOND
+      v.peaks[i] = Math.max(v.bars[i], still ? v.peaks[i] : v.peaks[i] - 0.018 * ticks);
+    }
+    // spectrogram_frame.rs: impact is the mean of the first seven bands; the
+    // analysis path leaves aura at zero, so the breakdown auras stay dark.
+    let impact = 0;
+    for (let i = 0; i < 7; i += 1) impact += v.bars[i];
+    impact /= 7;
+
+    // The scene's absolute constants are tuned for the phone panel, so render
+    // at that reference height and scale the whole scene onto the plate.
+    const REF_H = 300;
+    const scale = h / REF_H;
+    const W = w / scale;
+    const H = REF_H;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(0, 0, w, h, w * 0.05); else ctx.rect(0, 0, w, h);
+    ctx.clip();
+    // Page chrome, not the engine: the dark album plate the scene sits on.
+    const base = ctx.createLinearGradient(0, 0, 0, h);
+    base.addColorStop(0, 'oklch(7% 0.008 260)');
+    base.addColorStop(1, 'oklch(9% 0.014 290)');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, w, h);
+    ctx.scale(scale, scale);
+
+    const glow = (cx, cy, r, fill) => {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(0.01, r));
+      g.addColorStop(0, fill);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    };
+
+    const margin = W * MARGIN;
+    const gap = W * BAR_GAP;
+    const barW = (W - margin * 2 - gap * (N - 1)) / N;
+    const baseline = H * BASELINE;
+    const maxHeight = H * MAX_HEIGHT;
+    const segH = (maxHeight - SEGMENT_GAP * (SEGMENTS - 1)) / SEGMENTS;
+    const smoothstep = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
+
+    if (impact > 0) {
+      const r = Math.max(W, H) * 0.44;
+      glow(W * 0.28, H * 0.68, r, this.neon(0, 0.35 * impact));
+      glow(W * 0.72, H * 0.68, r, this.neon(N - 1, 0.35 * impact));
+    }
+
+    for (let bar = 0; bar < N; bar += 1) {
+      const x = margin + bar * (barW + gap);
+      const value = v.bars[bar];
+      const active = Math.min(SEGMENTS, Math.ceil(value * SEGMENTS));
+      const fraction = value * SEGMENTS;
+
+      if (value > 0.1) {
+        const top = baseline - value * maxHeight;
+        glow(x + barW / 2, top + segH, barW * (1.25 + value * 0.55), this.neon(bar, 0.08 + value * 0.13));
+      }
+
+      for (let segment = 0; segment < active; segment += 1) {
+        const transition = smoothstep(Math.max(0, Math.min(1, fraction - segment)));
+        const y = baseline - (segment + 1) * (segH + SEGMENT_GAP);
+        ctx.fillStyle = this.neon(bar, 0.96 * transition);
+        ctx.fillRect(x, y, barW, segH);
+        if (segment < REFLECTIONS) {
+          const rh = segH * 0.42;
+          ctx.fillStyle = this.neon(bar, (0.13 - segment * 0.02) * transition);
+          ctx.fillRect(x, baseline + SEGMENT_GAP + segment * (rh + 2), barW, rh);
+        }
+      }
+
+      const peak = v.peaks[bar];
+      if (peak > PEAK_MIN) {
+        ctx.fillStyle = 'rgba(240,245,255,' + (0.38 + peak * 0.48).toFixed(3) + ')';
+        ctx.fillRect(x + barW * 0.08, baseline - peak * maxHeight - CAP_H, barW * 0.84, CAP_H);
+      }
+    }
+    ctx.restore();
+  }
+
+  seekTo(e, seek) {
+    const r = seek.getBoundingClientRect();
+    this.pos = Math.min(0.999, Math.max(0, (e.clientX - r.left) / r.width));
+    seek.focus({ preventScroll: true });
+  }
+
+  loop() {
+    this.raf = requestAnimationFrame(() => {
+      const now = performance.now();
+      const dt = Math.min(0.06, (now - (this.last || now)) / 1000);
+      this.last = now;
+      if (this.motion() !== 'off' && !this.reduced) {
+        this.pos += dt / this.track.dur;
+        if (this.pos > 1) this.pos = 0;
+      }
+      this.views.forEach((v) => { if (v.visible) this.drawInto(v); });
+      this.updateReadout();
+      if (this.viz && this.viz.visible) this.drawViz(dt);
+      this.raf = null;
+      if (this.visible || (this.viz && this.viz.visible)) this.loop();
+    });
+  }
+
+  // Multi-octave value noise: the coarse octaves carry the song's swells, the
+  // fine ones the bar-to-bar jump a real RMS curve has.
+  fractal(n, rnd, octaves, wavelength, decay) {
+    const out = new Float64Array(n);
+    let amp = 1;
+    let total = 0;
+    for (let o = 0; o < octaves; o += 1) {
+      const points = Math.max(2, Math.round((n / wavelength) * Math.pow(2, o)));
+      const ctrl = new Float64Array(points + 2);
+      for (let i = 0; i < ctrl.length; i += 1) ctrl[i] = rnd();
+      for (let i = 0; i < n; i += 1) {
+        const t = (i / n) * points;
+        const i0 = Math.floor(t);
+        const f = t - i0;
+        const s = f * f * (3 - 2 * f);
+        out[i] += amp * (ctrl[i0] * (1 - s) + ctrl[i0 + 1] * s);
+      }
+      total += amp;
+      amp *= decay;
+    }
+    for (let i = 0; i < n; i += 1) out[i] /= total;
+    return out;
+  }
+
+  buildTrack() {
+    const N = 2600;
+    const dur = 214;
+    let s = 20260814;
+    const rnd = () => { s = (s * 1664525 + 1013904223) | 0; return ((s >>> 8) & 0xffffff) / 0xffffff; };
+    const body = this.fractal(N, rnd, 7, 6, 0.62);
+    const swell = this.fractal(N, rnd, 3, 2.4, 0.5);
+    const tone = this.fractal(N, rnd, 4, 3, 0.52);
+    const lvl = new Uint8Array(N);
+    const cen = new Uint8Array(N);
+    for (let i = 0; i < N; i += 1) {
+      const p = i / N;
+      // A dotted intro and tail, and one quiet passage two thirds in.
+      let gate = Math.min(1, Math.max(0, (p - 0.055) / 0.02)) * Math.min(1, Math.max(0, (0.985 - p) / 0.015));
+      const lull = Math.abs(p - 0.64);
+      if (lull < 0.022) gate *= Math.max(0.0, lull / 0.022);
+      const loud = 0.28 + 0.72 * Math.pow(swell[i], 0.9);
+      const v = gate * loud * Math.pow(body[i], 1.25) * 1.35;
+      lvl[i] = Math.min(255, Math.round(Math.sqrt(Math.max(0, Math.min(1, v))) * 255));
+      cen[i] = Math.min(255, Math.round((0.12 + 0.76 * tone[i]) * 255));
+    }
+    return { lvl, cen, dur };
+  }
+
+  // Ports of crates/reprise-view/src/waveform.rs
+  aggregateRms(raw, count) {
+    const out = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) {
+      const start = Math.floor((i * raw.length) / count);
+      const end = Math.min(raw.length, Math.max(start + 1, Math.floor(((i + 1) * raw.length) / count)));
+      let power = 0;
+      for (let k = start; k < end; k += 1) { const r = Math.pow(raw[k] / 255, 2); power += r * r; }
+      out[i] = Math.sqrt(power / (end - start));
+    }
+    return out;
+  }
+
+  shapeDisplayPeaks(raw, count) {
+    const SILENCE = 0.00316228;
+    const GAMMA = 1.6;
+    const rms = this.aggregateRms(raw, count);
+    const audible = Array.from(rms).filter((v) => v >= SILENCE).sort((a, b) => a - b);
+    if (!audible.length) return { levels: new Float32Array(count), silent: rms.map(() => true) };
+    const pick = (p) => audible[Math.min(audible.length - 1, Math.round((audible.length - 1) * p))];
+    const low = pick(0.1);
+    const high = pick(0.95);
+    const span = high - low;
+    const shaped = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) {
+      if (rms[i] < SILENCE) { shaped[i] = 0; continue; }
+      const norm = span <= 1e-7 ? (rms[i] > high ? 1 : 0.5) : Math.min(1, Math.max(0, (rms[i] - low) / span));
+      shaped[i] = Math.pow(norm, GAMMA);
+    }
+    const levels = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) {
+      const prev = shaped[Math.max(0, i - 1)];
+      const next = shaped[Math.min(count - 1, i + 1)];
+      levels[i] = 0.25 * prev + 0.5 * shaped[i] + 0.25 * next;
+    }
+    return { levels, silent: Array.from(rms, (v) => v < SILENCE) };
+  }
+
+  // Ports of crates/reprise-view/src/spectral_colour.rs
+  halfWindow(frames, dur, windowS) {
+    if (frames < 2 || !(dur > 0) || !(windowS > 0)) return 0;
+    const half = Math.round((windowS / 2) * (frames / dur));
+    return half < 1 ? 0 : Math.min(half, frames);
+  }
+
+  smoothCentroid(raw, dur, windowS) {
+    const half = this.halfWindow(raw.length, dur, windowS);
+    if (!half) return Array.from(raw);
+    const prefix = new Float64Array(raw.length + 1);
+    for (let i = 0; i < raw.length; i += 1) prefix[i + 1] = prefix[i] + raw[i];
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) {
+      const start = Math.max(0, i - half);
+      const end = Math.min(raw.length, i + half + 1);
+      const count = end - start;
+      out[i] = Math.min(255, Math.round((prefix[end] - prefix[start]) / count));
+    }
+    return out;
+  }
+
+  shapeCentroid(raw, count) {
+    const out = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) {
+      const start = Math.floor((i * raw.length) / count);
+      const end = Math.min(raw.length, Math.max(start + 1, Math.floor(((i + 1) * raw.length) / count)));
+      let sum = 0;
+      for (let k = start; k < end; k += 1) sum += raw[k];
+      out[i] = sum / (end - start) / 255;
+    }
+    return out;
+  }
+
+  sectionBoundaries(smoothed, dur) {
+    const span = this.halfWindow(smoothed.length, dur, 4);
+    if (!span || smoothed.length <= span * 2) return [];
+    const frames = smoothed.length;
+    const spacing = Math.max(1, Math.round((20 / dur) * frames));
+    const candidates = [];
+    for (let i = span; i < frames - span; i += 1) {
+      const step = Math.abs(smoothed[i + span] - smoothed[i - span]);
+      if (step >= 26) candidates.push([step, i]);
+    }
+    candidates.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+    const taken = [];
+    candidates.forEach(([, i]) => { if (!taken.some((t) => Math.abs(t - i) < spacing)) taken.push(i); });
+    return taken.sort((a, b) => a - b).map((i) => (i + 0.5) / frames);
+  }
+
+  spectralColour(t, lift) {
+    const x = Math.min(1, Math.max(0, t || 0));
+    const l = (0.7236 + (0.8232 - 0.7236) * x) * 100 + (lift || 0);
+    const c = 0.1706 + (0.1046 - 0.1706) * x;
+    const h = 30.3 + (-170.5 - 30.3) * x;
+    return 'oklch(' + Math.min(99, l).toFixed(2) + '% ' + c.toFixed(4) + ' ' + h.toFixed(1) + ')';
+  }
+
+  drawSeek() {
+    if (!this.views) return;
+    this.views.forEach((v) => { if (v.visible || !v.shaped) this.drawInto(v); });
+    this.updateReadout();
+  }
+
+  drawInto(view) {
+    const canvas = view.canvas;
+    const ctx = view.ctx;
+    if (!canvas || !ctx) return;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      view.shaped = null;
+    }
+    const step = 4;
+    const bars = Math.max(40, Math.floor(w / step));
+    if (!view.shaped || view.shaped.bars !== bars) {
+      const peaks = this.shapeDisplayPeaks(this.track.lvl, bars);
+      view.shaped = {
+        bars,
+        levels: peaks.levels,
+        silent: peaks.silent,
+        cents: this.shapeCentroid(this.smoothCentroid(this.track.cen, this.track.dur, 8), bars),
+      };
+    }
+    if (!view.hero) this.shaped = view.shaped;
+    const s = view.shaped;
+    const mode = view.hero ? 'fill' : this.state.mode;
+    const still = this.motion() === 'off' || this.reduced;
+    // The bar shape is the measured one; only light moves. A wake of extra
+    // lightness trails the playhead and a shorter one runs ahead of it.
+    const pulse = still ? 0.5 : 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 2.3);
+    const wake = 14;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const left = (w - bars * step) / 2;
+    const mid = h / 2;
+    const maxH = h * 0.9;
+    const playBar = Math.floor(this.pos * bars);
+
+    for (let i = 0; i < bars; i += 1) {
+      const x = left + i * step;
+      const played = i <= playBar;
+      const dist = playBar - i;
+      const near = played
+        ? Math.max(0, 1 - dist / wake)
+        : Math.max(0, 1 + dist / (wake * 0.5));
+      if (s.silent[i]) {
+        ctx.fillStyle = played ? 'oklch(70% 0.02 269)' : 'oklch(34% 0.014 269)';
+        ctx.fillRect(x, mid - 1, 2, 2);
+        continue;
+      }
+      const bh = Math.max(3, s.levels[i] * maxH);
+      if (played) {
+        const lift = near * (3 + 6 * pulse);
+        ctx.fillStyle = mode === 'fill' ? this.spectralColour(s.cents[i], lift) : this.spectralColour(1, lift);
+      } else {
+        ctx.fillStyle = 'oklch(' + (33 + near * 9 * (0.6 + 0.4 * pulse)).toFixed(1) + '% 0.012 269)';
+      }
+      const y = mid - bh / 2;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, 2, bh, 1); ctx.fill(); }
+      else ctx.fillRect(x, y, 2, bh);
+    }
+
+    if (mode === 'marks') {
+      ctx.fillStyle = 'oklch(88% 0.006 269 / 0.45)';
+      this.marks.forEach((m) => { ctx.fillRect(Math.round(left + m * bars * step) + 0.5, mid - maxH / 2, 1, maxH); });
+    }
+
+    const px = left + this.pos * bars * step;
+    const colour = mode === 'fill' ? this.spectralColour(this.centroidAt(this.pos), 6) : '#4fdbd4';
+    ctx.save();
+    ctx.shadowColor = colour;
+    ctx.shadowBlur = 12 + 14 * pulse;
+    ctx.fillStyle = colour;
+    ctx.fillRect(px - 1, mid - maxH / 2 - 5, 2, maxH + 10);
+    ctx.beginPath();
+    ctx.arc(px, mid, 3 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    if (this.hover != null && !view.hero) {
+      const hx = left + this.hover * bars * step;
+      ctx.fillStyle = 'oklch(96% 0.004 269 / 0.35)';
+      ctx.fillRect(hx, mid - maxH / 2 - 4, 1, maxH + 8);
+    }
+  }
+
+  centroidAt(p) {
+    const s = this.shaped;
+    if (!s) return 0.5;
+    return s.cents[Math.min(s.bars - 1, Math.max(0, Math.floor(p * s.bars)))];
+  }
+
+  levelAt(p) {
+    const s = this.shaped;
+    if (!s) return 0;
+    return s.levels[Math.min(s.bars - 1, Math.max(0, Math.floor(p * s.bars)))];
+  }
+
+  updateReadout() {
+    const at = this.hover != null ? this.hover : this.pos;
+    const dur = this.track.dur;
+    const time = (v) => {
+      const total = Math.round(v);
+      return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+    };
+    const set = (id, text) => { const el = document.getElementById(id); if (el && el.textContent !== text) el.textContent = text; };
+    set('rp-elapsed', time(at * dur));
+    set('rp-remaining', '−' + time(Math.max(0, dur - at * dur)));
+    set('rp-hero-elapsed', time(this.pos * dur));
+    set('rp-hero-remaining', '−' + time(Math.max(0, dur - this.pos * dur)));
+    const cent = this.centroidAt(at);
+    set('rp-colour', 'centroid ' + cent.toFixed(2));
+    set('rp-level', 'level ' + this.levelAt(at).toFixed(2));
+    const sw = document.getElementById('rp-swatch');
+    if (sw) {
+      const colour = this.state.mode === 'fill' ? this.spectralColour(cent) : '#4fdbd4';
+      sw.style.background = colour;
+      sw.style.boxShadow = '0 0 14px ' + colour;
+    }
+    const seek = document.getElementById('rp-seek');
+    if (seek) {
+      seek.setAttribute('aria-valuenow', String(Math.round(this.pos * 100)));
+      seek.setAttribute('aria-valuetext', time(this.pos * dur) + ' of ' + time(dur));
+    }
+  }
+
+  syncMode() {
+    const group = document.getElementById('rp-modes');
+    if (!group) return;
+    group.querySelectorAll('[data-mode]').forEach((b) => {
+      const on = b.dataset.mode === this.state.mode;
+      b.style.background = on ? 'oklch(26% 0.05 195)' : 'transparent';
+      b.style.color = on ? 'oklch(97% 0.004 269)' : 'oklch(78% 0.009 269)';
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  renderVals() {
+    const shot = this.state.shot;
+    return {
+      hasShot: !!shot,
+      shotSrc: shot ? shot.src : '',
+      shotAlt: shot ? shot.alt : '',
+      shotTitle: shot ? shot.title : '',
+      shotDesc: shot ? shot.desc : '',
+      shotPlatform: shot ? shot.platform : '',
+      shotCounter: shot ? shot.counter : '',
+    };
+  }
+}
+</script>
+
+
+</body></html>

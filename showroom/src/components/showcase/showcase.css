@@ -9,313 +9,188 @@
 
 .hero-product {
   position: relative;
-  min-height: clamp(29rem, 57vw, 58rem);
-  margin: 0;
-  padding: clamp(2rem, 5vw, 5.5rem) var(--frame-pad) clamp(8rem, 13vw, 13rem);
-  overflow: clip;
-  background:
-    radial-gradient(
-      65% 90% at 72% 30%,
-      color-mix(in oklab, var(--second) 18%, transparent),
-      transparent
-    ),
-    radial-gradient(80% 100% at 20% 18%, var(--accent-glow), transparent 68%),
-    linear-gradient(155deg, var(--surface-stage), var(--surface-base) 78%);
-  border-block: 1px solid var(--surface-line);
-  isolation: isolate;
-}
-
-.hero-product::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image: repeating-linear-gradient(
-    to right,
-    color-mix(in oklab, var(--surface-line) 38%, transparent) 0 1px,
-    transparent 1px 7.5rem
-  );
-  mask-image: linear-gradient(to bottom, black, transparent 78%);
-}
-
-.hero-product__light {
-  position: absolute;
-  inset: 7% 7% 20%;
-  border-radius: 50%;
-  background: color-mix(in oklab, var(--accent) 13%, transparent);
-  filter: blur(90px);
-  z-index: -1;
+  padding-bottom: 8%;
 }
 
 .hero-product__desktop {
   position: relative;
-  width: min(79vw, 74rem);
-  margin-inline: max(0px, calc((100vw - var(--frame-max)) / 2));
-  overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--surface-line));
-  border-radius: var(--radius-plate);
-  background: var(--surface-base);
-  box-shadow: 0 2.5rem 7rem color-mix(in oklab, black 72%, transparent);
-  transform: perspective(95rem) rotateX(1.5deg) rotateY(3deg) rotateZ(-0.35deg);
-}
-
-.capture-chrome {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.5rem 0.75rem;
-  color: var(--text-faint);
-  border-block-end: 1px solid var(--surface-line-soft);
-  background: var(--surface-raised);
 }
 
 .hero-product__phone {
   position: absolute;
-  z-index: 2;
-  width: clamp(10.5rem, 18vw, 17rem);
-  inset-inline-end: clamp(1.25rem, 8vw, 9rem);
-  inset-block-start: clamp(4.25rem, 10vw, 9rem);
-  overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--accent) 52%, var(--surface-line));
-  border-radius: clamp(1rem, 2vw, 1.8rem);
-  background: #000;
-  box-shadow:
-    0 2rem 5rem color-mix(in oklab, black 80%, transparent),
-    0 0 3rem color-mix(in oklab, var(--accent) 20%, transparent);
-  transform: rotate(1.2deg);
+  right: -5%;
+  bottom: -6%;
+  width: 24%;
 }
 
-.hero-product__caption {
+.hero-product__visualizer {
   position: absolute;
-  inset-inline: 0;
-  inset-block-end: clamp(1.5rem, 3vw, 3rem);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--gap-block);
+  left: 19.63%;
+  top: 24.46%;
+  width: 60.74%;
+  height: 27.87%;
+  display: block;
+  pointer-events: none;
 }
 
-.hero-product__fact {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.35rem var(--gap-line);
+/* --- Design mosaic ------------------------------------------------------- */
+
+.mosaic-heading {
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  padding-block-start: var(--gap-line);
-  border-block-start: 1px solid var(--surface-line);
+  justify-content: space-between;
+  gap: 14px;
+  margin: clamp(3.5rem, 2.5rem + 3vw, 6rem) 0 clamp(1.5rem, 1.2rem + 1vw, 2.5rem);
 }
 
-.hero-product__fact strong {
-  color: var(--text-strong);
+.mosaic-frame {
+  width: 100%;
+  max-width: 78rem;
+  padding-inline: clamp(1.25rem, 4vw, 4rem);
+}
+
+.mosaic-heading h3 {
+  font-size: clamp(1.4rem, 1.15rem + 1.2vw, 2.2rem);
+  letter-spacing: -0.02em;
+  color: oklch(97% 0.004 269);
   font-variation-settings:
     "wdth" 104,
-    "wght" 650;
+    "wght" 560;
 }
 
-.hero-product__fact .data {
-  grid-column: 2;
-  color: var(--text-muted);
-  line-height: 1.55;
+.mosaic-heading p {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
 }
 
-/* --- Evidence wall ------------------------------------------------------- */
+.mosaic {
+  display: grid;
+  gap: clamp(1.2rem, 0.9rem + 1.4vw, 2.4rem);
+}
 
-.product-gallery-stage {
-  position: relative;
-  margin-block: var(--gap-block);
-  padding-block: clamp(3rem, 6vw, 7rem);
-  overflow: hidden;
-  border-block: 1px solid var(--surface-line);
+.mosaic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: clamp(1.2rem, 0.9rem + 1.4vw, 2.4rem);
+}
+
+.mosaic .shot-tile {
+  min-width: 260px;
+  border-color: oklch(30% 0.018 269);
+  box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95);
+}
+
+.mosaic .shot-tile--phone {
+  border-radius: 14px;
+}
+
+.mosaic .shot-tile--phone .shot-tile__caption {
+  gap: 2px;
+  padding: 14px 16px;
+  background: linear-gradient(
+    to top,
+    oklch(9% 0.012 269 / 0.94),
+    oklch(9% 0.012 269 / 0.5) 58%,
+    transparent
+  );
+}
+
+.mosaic .shot-tile--phone .shot-tile__title {
+  font-size: 0.9rem;
+}
+
+.mosaic .shot-tile--phone .shot-tile__description {
+  font-size: 0.78rem;
+}
+
+.mosaic .shot-tile--phone .shot-tile__sheen {
   background:
-    radial-gradient(
-      60% 85% at 82% 18%,
-      color-mix(in oklab, var(--second) 16%, transparent),
-      transparent
-    ),
-    radial-gradient(70% 90% at 12% 58%, var(--accent-glow), transparent), var(--surface-stage);
+    radial-gradient(240px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%),
+    linear-gradient(
+      122deg,
+      oklch(85% 0.13 190 / 0.12),
+      transparent 40%,
+      transparent 60%,
+      oklch(78% 0.16 30 / 0.12)
+    );
 }
 
-.product-gallery-stage__intro {
-  display: grid;
-  grid-template-columns: minmax(10rem, 0.55fr) minmax(18rem, 1fr);
-  gap: var(--gap-block);
-  align-items: end;
-  margin-block-end: clamp(2rem, 4vw, 4rem);
+.mosaic-tile--gnome-podcasts {
+  flex: 1.62 1 340px;
 }
 
-.product-gallery-stage__intro .lead {
-  max-width: 42ch;
+.mosaic .mosaic-tile--android-library {
+  flex: 0.58 1 190px;
+  min-width: 170px;
+  margin-top: clamp(1.5rem, 1rem + 3vw, 4.5rem);
 }
 
-.product-gallery {
-  display: grid;
-  width: min(100% - var(--frame-pad) * 2, var(--frame-max));
-  margin-inline: auto;
-  gap: clamp(3rem, 7vw, 7rem);
+.mosaic-tile--gnome-youtube,
+.mosaic-tile--gnome-radio,
+.mosaic-tile--gnome-device-sync {
+  flex: 1 1 320px;
 }
 
-.product-gallery__desktop {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(1.25rem, 3vw, 3rem);
+.mosaic-tile--gnome-radio {
+  margin-top: clamp(1.2rem, 0.8rem + 2.4vw, 3.5rem);
 }
 
-.product-gallery__desktop .product-gallery__item:nth-child(3n + 1) {
-  grid-column: 1 / -1;
+.mosaic-tile--gnome-library-doctor {
+  flex: 1.7 1 360px;
 }
 
-.product-gallery__item {
-  position: relative;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--accent) 18%, var(--surface-line));
-  border-radius: var(--radius-plate);
-  background: color-mix(in oklab, var(--surface-raised) 92%, transparent);
-  box-shadow: 0 1.75rem 4.5rem color-mix(in oklab, black 55%, transparent);
-  transition:
-    border-color var(--duration-fast) ease-out,
-    transform var(--duration-normal) var(--ease-out-expo);
+.mosaic .mosaic-tile--android-cover {
+  flex: 0.55 1 180px;
+  min-width: 165px;
+  margin-top: clamp(2rem, 1.2rem + 4vw, 6rem);
 }
 
-.product-gallery__item:hover {
-  border-color: color-mix(in oklab, var(--accent) 52%, var(--surface-line));
-  transform: translateY(-0.35rem);
+.mosaic-tile--gnome-layout-controls {
+  flex: 1.05 1 320px;
+  margin-top: clamp(1.5rem, 1rem + 3vw, 4.5rem);
 }
 
-.product-gallery__media {
-  overflow: hidden;
-  background: var(--surface-base);
+.mosaic .mosaic-tile--gnome-listening-stats {
+  width: 100%;
+  box-shadow: 0 30px 70px -44px oklch(4% 0.02 269 / 0.95);
 }
 
-.product-gallery__caption {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.2rem var(--gap-tight);
-  align-items: baseline;
-  padding: clamp(0.9rem, 2vw, 1.5rem);
-  border-block-start: 1px solid var(--surface-line-soft);
+.mosaic .mosaic-tile--gnome-listening-stats .shot-tile__caption {
+  padding: 18px 20px;
 }
 
-.product-gallery__caption strong {
-  color: var(--text-strong);
-  font-variation-settings:
-    "wdth" 102,
-    "wght" 650;
+.mosaic .mosaic-tile--gnome-listening-stats .shot-tile__title {
+  font-size: 1.02rem;
 }
 
-.product-gallery__caption .data {
-  grid-column: 2;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.product-gallery__phones {
-  display: grid;
-  grid-template-columns: minmax(14rem, 0.7fr) minmax(24rem, 1.3fr);
-  gap: clamp(2rem, 5vw, 5rem);
-  align-items: center;
-  padding: clamp(1.5rem, 4vw, 4rem);
-  border: 1px solid var(--surface-line);
+.mosaic .mosaic-tile--gnome-youtube .shot-tile__sheen,
+.mosaic .mosaic-tile--gnome-radio .shot-tile__sheen,
+.mosaic .mosaic-tile--gnome-device-sync .shot-tile__sheen,
+.mosaic .mosaic-tile--gnome-layout-controls .shot-tile__sheen {
   background:
-    radial-gradient(90% 120% at 88% 18%, var(--accent-glow), transparent 62%),
-    color-mix(in oklab, var(--surface-base) 84%, transparent);
+    radial-gradient(300px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%),
+    linear-gradient(
+      122deg,
+      oklch(85% 0.13 190 / 0.1),
+      transparent 34%,
+      transparent 64%,
+      oklch(78% 0.16 30 / 0.1)
+    );
 }
 
-.product-gallery__phones-intro {
-  display: grid;
-  gap: var(--gap-line);
-  align-content: center;
-}
-
-.product-gallery__phones-intro h3 {
-  max-width: 16ch;
-  color: var(--text-strong);
-  font-size: clamp(1.7rem, 3.2vw, 3.4rem);
-  font-variation-settings:
-    "wdth" 112,
-    "wght" 720;
-  line-height: 0.98;
-  text-wrap: balance;
-}
-
-.product-gallery__phones-intro .data {
-  max-width: 38ch;
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-.product-gallery__phone-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 20rem));
-  gap: clamp(1rem, 2.5vw, 2rem);
-  justify-content: center;
-  align-items: start;
-}
-
-.product-gallery__item--android {
-  border-radius: clamp(1.1rem, 2vw, 1.65rem);
-}
-
-.product-gallery__item--android .product-gallery__caption {
-  grid-template-columns: 1fr;
-}
-
-.product-gallery__item--android .product-gallery__caption .data {
-  grid-column: 1;
-}
-
-@media (max-width: 48rem) {
-  .hero-product {
-    min-height: 36rem;
-    padding-inline: var(--frame-pad);
-    padding-block-end: 11rem;
-  }
-
-  .hero-product__desktop {
-    width: 92vw;
-    margin-inline: -0.75rem 0;
-  }
-
-  .hero-product__phone {
-    width: min(39vw, 11.5rem);
-    inset-inline-end: 1.15rem;
-    inset-block-start: 6.5rem;
-  }
-
-  .hero-product__caption {
-    grid-template-columns: 1fr;
-    gap: var(--gap-tight);
-  }
-
-  .hero-product__fact .data {
-    display: none;
-  }
-
-  .product-gallery-stage__intro {
-    grid-template-columns: 1fr;
-  }
-
-  .product-gallery__desktop {
-    grid-template-columns: 1fr;
-  }
-
-  .product-gallery__desktop .product-gallery__item:nth-child(3n + 1) {
-    grid-column: auto;
-  }
-
-  .product-gallery__item:hover {
-    transform: none;
-  }
-
-  .product-gallery__phones {
-    grid-template-columns: 1fr;
-  }
-
-  .product-gallery__phones-intro h3 {
-    max-width: 19ch;
-  }
-}
-
-@media (max-width: 30rem) {
-  .product-gallery__phone-grid {
-    grid-template-columns: minmax(0, 18rem);
-  }
+.mosaic .mosaic-tile--gnome-listening-stats .shot-tile__sheen {
+  background:
+    radial-gradient(420px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.14), transparent 62%),
+    linear-gradient(
+      122deg,
+      oklch(85% 0.13 190 / 0.1),
+      transparent 34%,
+      transparent 64%,
+      oklch(78% 0.16 30 / 0.1)
+    );
 }

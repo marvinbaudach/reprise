@@ -1,239 +1,190 @@
 .architecture {
-  position: relative;
-  margin: var(--gap-block) 0;
-  padding: clamp(1.25rem, 2vw, 2rem);
-  overflow: hidden;
-  border: 1px solid var(--surface-line);
-  background:
-    radial-gradient(75% 100% at 50% 100%, var(--accent-glow), transparent 70%),
-    color-mix(in oklab, var(--surface-raised) 75%, transparent);
-}
-
-.architecture::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(
-      to right,
-      color-mix(in oklab, var(--surface-line-soft) 48%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      to bottom,
-      color-mix(in oklab, var(--surface-line-soft) 36%, transparent) 1px,
-      transparent 1px
-    );
-  background-size: 4.5rem 4.5rem;
-  mask-image: linear-gradient(to bottom, transparent, black 18%, black 78%, transparent);
-}
-
-.architecture__header,
-.architecture__surfaces,
-.architecture__flow,
-.architecture__shared,
-.architecture__caption {
-  position: relative;
+  margin: clamp(2rem, 1.5rem + 2vw, 3.5rem) 0 0;
+  padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem);
+  border: 1px solid oklch(28% 0.018 269);
+  border-radius: 12px;
+  background: oklch(17% 0.016 269 / 0.72);
 }
 
 .architecture__header {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  gap: var(--gap-block);
-  align-items: end;
-  margin-block-end: clamp(2rem, 4vw, 4rem);
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.architecture__header .eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  color: oklch(68% 0.011 269);
 }
 
 .architecture__title {
-  max-width: 28ch;
-  margin: var(--gap-hair) 0 0;
-  color: var(--text-strong);
-  font-size: clamp(1.55rem, 1.1rem + 1.7vw, 2.6rem);
+  margin: 0;
+  font-size: clamp(1.2rem, 1.05rem + 0.7vw, 1.6rem);
+  color: oklch(96% 0.004 269);
   font-variation-settings:
-    "wdth" 108,
-    "wght" 690;
-  line-height: 1.02;
+    "wdth" 104,
+    "wght" 560;
 }
 
 .architecture__gate-link {
-  flex: none;
-  color: var(--accent);
+  font-size: 0.68rem;
 }
 
 .architecture__surfaces {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--gap-tight);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
 }
 
-.architecture__surface {
-  display: grid;
-  min-width: 0;
-}
-
-.architecture__surface > a {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.28rem var(--gap-tight);
-  min-height: 8.5rem;
-  padding: var(--gap-line);
-  border: 1px solid var(--surface-line);
-  background: color-mix(in oklab, var(--surface-base) 88%, transparent);
-  color: var(--text-body);
+.architecture__surface-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid oklch(30% 0.018 269);
+  border-top: 2px solid oklch(60% 0.02 269);
+  border-radius: 8px;
+  background: oklch(20% 0.018 269 / 0.7);
+  color: oklch(80% 0.008 269);
   text-decoration: none;
   transition:
-    border-color var(--duration-fast) ease-out,
-    transform var(--duration-fast) ease-out;
+    transform 400ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 300ms ease;
 }
 
-.architecture__surface > a:hover,
-.architecture__surface > a:focus-visible {
-  border-color: var(--accent);
-  transform: translateY(-0.2rem);
+.architecture__surface-link--gnome {
+  border-top-color: #4fdbd4;
 }
 
-.architecture__surface strong {
-  color: var(--text-strong);
-  font-size: clamp(1.25rem, 1rem + 1vw, 1.85rem);
-  font-variation-settings:
-    "wdth" 106,
-    "wght" 680;
+.architecture__surface-link--android {
+  border-top-color: #ff6f5e;
 }
 
-.architecture__surface > a > span:nth-last-child(2),
-.architecture__surface > a > span:last-child {
-  grid-column: 2;
+.architecture__surface-link--mcp {
+  border-top-color: oklch(62% 0.15 302);
+}
+
+.architecture__surface-link strong {
+  color: oklch(96% 0.004 269);
+  font-weight: 500;
 }
 
 .architecture__index {
-  color: var(--accent);
+  font-size: 0.68rem;
+  color: oklch(68% 0.011 269);
 }
 
-.architecture__adapter {
-  justify-self: center;
-  max-width: calc(100% - 1rem);
-  margin-block-start: -0.5rem;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--surface-line-soft);
-  background: var(--surface-raised);
-  color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.architecture__surface-link > .data:last-child {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
 }
 
 .architecture__flow {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  height: 4rem;
-  margin-inline: calc(var(--gap-line) * 2);
-}
-
-.architecture__flow::after {
-  content: "";
-  position: absolute;
-  inset-inline: 12.5%;
-  inset-block-end: 0;
-  height: 1px;
-  background: linear-gradient(to right, transparent, var(--accent), transparent);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  height: 44px;
 }
 
 .architecture__flow span {
-  position: relative;
-}
-
-.architecture__flow span::before {
-  content: "";
-  position: absolute;
-  inset-inline-start: 50%;
-  inset-block: 0;
+  justify-self: center;
   width: 1px;
-  background: linear-gradient(to bottom, var(--surface-line), var(--accent));
+  height: 100%;
+  background: linear-gradient(180deg, transparent, #4fdbd4, transparent) 0 0 / 100% 56px repeat-y;
+  animation: architecture-flow 2.8s linear infinite;
 }
 
-.architecture__flow span::after {
-  content: "";
-  position: absolute;
-  inset-inline-start: calc(50% - 0.2rem);
-  inset-block-end: -1px;
-  width: 0.42rem;
-  height: 0.42rem;
-  border-inline-end: 1px solid var(--accent);
-  border-block-end: 1px solid var(--accent);
-  transform: rotate(45deg);
+.architecture__flow span:nth-child(2) {
+  background-image: linear-gradient(180deg, transparent, #ff6f5e, transparent);
+  animation-duration: 3.4s;
+}
+
+.architecture__flow span:nth-child(3) {
+  background-image: linear-gradient(180deg, transparent, oklch(62% 0.02 269), transparent);
+  animation-duration: 3.9s;
+}
+
+.architecture__flow span:nth-child(4) {
+  background-image: linear-gradient(180deg, transparent, oklch(62% 0.15 302), transparent);
+  animation-duration: 3.1s;
+}
+
+@keyframes architecture-flow {
+  from {
+    background-position: 0 -56px;
+  }
+
+  to {
+    background-position: 0 56px;
+  }
 }
 
 .architecture__shared {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: 1px;
-  max-width: 52rem;
-  margin-inline: auto;
-  border: 1px solid color-mix(in oklab, var(--accent) 46%, var(--surface-line));
-  background: var(--surface-line);
-  box-shadow: 0 1.5rem 5rem color-mix(in oklab, var(--accent) 10%, transparent);
+  gap: 10px;
 }
 
 .architecture__layer {
-  display: grid;
-  gap: var(--gap-hair);
-  padding: clamp(1rem, 2.5vw, 2rem);
-  color: var(--text-body);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  padding: 16px 18px;
+  border: 1px solid oklch(32% 0.018 269);
+  border-radius: 8px;
+  background: oklch(22% 0.02 269 / 0.75);
+  color: oklch(80% 0.008 269);
   text-decoration: none;
-  background: var(--surface-base);
 }
 
-.architecture__layer:hover strong {
-  color: var(--accent);
+.architecture__layer .eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  color: oklch(68% 0.011 269);
 }
 
 .architecture__layer strong {
-  color: var(--text-strong);
-  font-size: clamp(1.45rem, 1rem + 1.8vw, 2.6rem);
-  font-variation-settings:
-    "wdth" 105,
-    "wght" 720;
-  transition: color var(--duration-fast) ease-out;
+  color: oklch(97% 0.004 269);
+  font-weight: 500;
+}
+
+.architecture__layer .data {
+  font-size: 0.68rem;
+  color: oklch(70% 0.011 269);
 }
 
 .architecture__layer--core {
-  background: color-mix(in oklab, var(--accent) 7%, var(--surface-base));
+  padding: 20px 18px;
+  border-color: #4fdbd4;
+  background: linear-gradient(120deg, oklch(26% 0.05 195 / 0.55), oklch(22% 0.02 269 / 0.75));
+}
+
+.architecture__layer--core .eyebrow {
+  color: #4fdbd4;
+}
+
+.architecture__layer--core .data {
+  color: oklch(68% 0.011 269);
 }
 
 .architecture__caption {
-  max-width: 66ch;
-  margin: clamp(2rem, 4vw, 4rem) auto 0;
-  padding-inline-start: var(--gap-line);
-  border-inline-start: 2px solid var(--accent);
-  color: var(--text-muted);
+  margin-top: 24px;
+  max-width: 68ch;
+  color: oklch(72% 0.009 269);
+  font-size: 0.94rem;
+  text-wrap: pretty;
 }
 
-@media (max-width: 58rem) {
-  .architecture__surfaces {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .architecture__flow {
-    display: none;
-  }
-
-  .architecture__shared {
-    margin-block-start: var(--gap-block);
-  }
-}
-
-@media (max-width: 38rem) {
-  .architecture__header {
-    display: grid;
-  }
-
-  .architecture__surfaces,
-  .architecture__shared {
-    grid-template-columns: 1fr;
-  }
-
-  .architecture__surface > a {
-    min-height: 0;
+@media (prefers-reduced-motion: reduce) {
+  .architecture__flow span {
+    animation: none;
+    background-position: 0 0;
   }
 }

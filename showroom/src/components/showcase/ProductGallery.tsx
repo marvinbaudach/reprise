@@ -1,56 +1,84 @@
-import { GALLERY_CAPTURES } from '../../data/showcase';
-import { ProductShot } from './ProductShot';
+import { useCallback, useState } from 'react';
+import { GALLERY_MOSAIC_CAPTURES, GALLERY_MOSAIC_ROWS } from '../../data/showcase';
+import { Lightbox } from './Lightbox';
+import { ShotTile } from './ShotTile';
 import './showcase.css';
 
-export function ProductGallery() {
-  const desktopCaptures = GALLERY_CAPTURES.filter((capture) => capture.platform === 'GNOME');
-  const phoneCaptures = GALLERY_CAPTURES.filter((capture) => capture.platform === 'Android');
+interface ProductGalleryProps {
+  readonly reducedMotion: boolean;
+}
 
-  const renderCapture = (capture: (typeof GALLERY_CAPTURES)[number]) => (
-    <figure
-      className={`product-gallery__item product-gallery__item--${capture.platform.toLowerCase()}`}
-      key={capture.id}
-    >
-      <div className="product-gallery__media">
-        <ProductShot capture={capture} />
-      </div>
-      <figcaption className="product-gallery__caption">
-        <span className="eyebrow">{capture.platform}</span>
-        <strong>{capture.title}</strong>
-        <span className="data">{capture.description}</span>
-      </figcaption>
-    </figure>
+export function ProductGallery({ reducedMotion }: ProductGalleryProps) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [returnFocus, setReturnFocus] = useState<HTMLButtonElement | null>(null);
+  const close = useCallback(() => setActiveIndex(null), []);
+  const next = useCallback(
+    () =>
+      setActiveIndex((current) =>
+        current === null ? null : (current + 1) % GALLERY_MOSAIC_CAPTURES.length,
+      ),
+    [],
   );
+  const previous = useCallback(
+    () =>
+      setActiveIndex((current) =>
+        current === null
+          ? null
+          : (current - 1 + GALLERY_MOSAIC_CAPTURES.length) % GALLERY_MOSAIC_CAPTURES.length,
+      ),
+    [],
+  );
+  const open = (id: string, trigger: HTMLButtonElement) => {
+    const index = GALLERY_MOSAIC_CAPTURES.findIndex((capture) => capture.id === id);
+    if (index < 0) return;
+    setReturnFocus(trigger);
+    setActiveIndex(index);
+  };
 
   return (
-    <div className="product-gallery-stage" data-showcase="product-gallery">
-      <div className="frame product-gallery-stage__intro">
-        <p className="eyebrow">The surface is part of the proof</p>
-        <p className="lead">
-          Native where it matters. Shared where it pays. Every frame below is the current app, not a
-          mockup.
-        </p>
+    <>
+      <div className="frame mosaic-frame">
+        <header className="mosaic-heading">
+          <h3 id="mosaic-heading" data-reveal>
+            Two platforms. Every view, tab and dialogue.
+          </h3>
+          <p data-reveal>Click any plate to enlarge</p>
+        </header>
+
+        <section
+          className="mosaic"
+          data-showcase="product-gallery"
+          data-layout="design-mosaic"
+          aria-labelledby="mosaic-heading"
+        >
+          {GALLERY_MOSAIC_ROWS.map((row) => (
+            <div className="mosaic-row" key={row.map((capture) => capture.id).join('-')}>
+              {row.map((capture) => (
+                <ShotTile
+                  className={`mosaic-tile mosaic-tile--${capture.id}`}
+                  capture={capture}
+                  reveal="img"
+                  reducedMotion={reducedMotion}
+                  variant={capture.platform === 'Android' ? 'phone' : 'desktop'}
+                  onOpen={(trigger) => open(capture.id, trigger)}
+                  key={capture.id}
+                />
+              ))}
+            </div>
+          ))}
+        </section>
       </div>
 
-      <section
-        className="product-gallery"
-        data-layout="editorial-grid"
-        aria-label="Reprise product surfaces"
-      >
-        <div className="product-gallery__desktop">{desktopCaptures.map(renderCapture)}</div>
-
-        <section className="product-gallery__phones" aria-labelledby="product-gallery-phones-title">
-          <header className="product-gallery__phones-intro">
-            <p className="eyebrow">Same core, native mobile</p>
-            <h3 id="product-gallery-phones-title">A phone scene, not a shrunken desktop.</h3>
-            <p className="data">
-              Compose keeps the interaction touch-first while the Rust layer supplies the same
-              library and track analysis.
-            </p>
-          </header>
-          <div className="product-gallery__phone-grid">{phoneCaptures.map(renderCapture)}</div>
-        </section>
-      </section>
-    </div>
+      {activeIndex !== null && (
+        <Lightbox
+          activeIndex={activeIndex}
+          captures={GALLERY_MOSAIC_CAPTURES}
+          returnFocus={returnFocus}
+          onClose={close}
+          onNext={next}
+          onPrevious={previous}
+        />
+      )}
+    </>
   );
 }

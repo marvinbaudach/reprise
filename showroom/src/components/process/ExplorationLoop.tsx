@@ -21,6 +21,7 @@ export function ExplorationLoop() {
     <figure
       className="exploration-loop"
       data-showcase="exploration-loop"
+      data-reveal
       aria-labelledby="exploration-loop-title"
     >
       <header className="process-heading">
@@ -33,7 +34,7 @@ export function ExplorationLoop() {
       <div className="exploration-loop__body">
         <ol className="exploration-loop__actions" aria-label="Autonomous exploration loop">
           {ACTIONS.map((action, index) => (
-            <li key={action}>
+            <li data-reveal key={action}>
               <span className="data">{String(index + 1).padStart(2, '0')}</span>
               <strong>{action}</strong>
             </li>
@@ -44,7 +45,7 @@ export function ExplorationLoop() {
           <p className="eyebrow">Found in real runs</p>
           <ul>
             {FINDINGS.map((finding) => (
-              <li key={finding.label}>
+              <li data-reveal key={finding.label}>
                 <strong>{finding.label}</strong>
                 <span>{finding.detail}</span>
               </li>
@@ -56,7 +57,7 @@ export function ExplorationLoop() {
         </aside>
       </div>
 
-      <figcaption className="prose">
+      <figcaption data-reveal>
         The mission supplies a surface and anomaly thresholds, never a click script. An agent reads
         the live accessibility tree, acts, measures, and leaves a rule-named regression behind.
       </figcaption>

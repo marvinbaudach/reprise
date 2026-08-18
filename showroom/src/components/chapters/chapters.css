@@ -1,29 +1,96 @@
 /* --- Hero ---------------------------------------------------------------- */
 
 .hero {
-  padding-block: clamp(3rem, 2rem + 6vw, 8rem) var(--gap-chapter);
+  padding: clamp(6rem, 4.5rem + 6vw, 10rem) 0 clamp(3rem, 2rem + 4vw, 6rem);
+}
+
+.hero__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: clamp(2rem, 1.4rem + 3vw, 4.5rem);
+  align-items: center;
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);
 }
 
 .hero__copy {
-  display: grid;
-  gap: var(--gap-block);
-  padding-block-end: clamp(3rem, 5vw, 6rem);
+  max-width: 42rem;
+  container-type: inline-size;
+}
+
+.hero__eyebrow {
+  margin: 0 0 22px;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #4fdbd4;
 }
 
 .hero__headline {
-  font-size: clamp(2.75rem, 1.2rem + 7.5vw, 8rem);
-  color: var(--text-strong);
-  margin: 0;
+  margin: 0 0 26px;
+  font-size: clamp(2.1rem, 11.4cqi, 4rem);
+  line-height: 0.96;
+  letter-spacing: -0.03em;
+  color: oklch(97% 0.004 269);
+  font-variation-settings:
+    "wdth" 108,
+    "wght" 620;
+  text-wrap: balance;
+}
+
+.hero__headline span {
+  display: block;
 }
 
 .hero__lead {
-  max-width: 42ch;
-  border-left: 2px solid var(--accent);
-  padding-left: var(--gap-line);
+  margin: 0 0 20px;
+  max-width: 46ch;
+  font-size: clamp(1.05rem, 1rem + 0.4vw, 1.35rem);
+  line-height: 1.5;
+  color: oklch(90% 0.006 269);
+  text-wrap: pretty;
 }
 
 .hero__note {
-  color: var(--text-muted);
+  margin: 0;
+  max-width: 58ch;
+  color: oklch(72% 0.009 269);
+  text-wrap: pretty;
+}
+
+.hero__scroll-cue {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 40px;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.hero__scroll-line {
+  width: 1px;
+  height: 46px;
+  transform-origin: top;
+  background: linear-gradient(180deg, #4fdbd4, transparent);
+  animation: rp-cue 2.6s ease-in-out infinite;
+}
+
+@keyframes rp-cue {
+  0%,
+  100% {
+    transform: scaleY(0.2);
+    opacity: 0.3;
+  }
+
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 /* --- Chapters ------------------------------------------------------------ */
@@ -33,71 +100,148 @@
   scroll-margin-block-start: 3rem;
 }
 
-.chapter__body {
-  display: grid;
-  gap: var(--gap-block);
+.chapter--design {
+  padding: clamp(4.5rem, 3rem + 7vw, 9rem) 0;
 }
 
-.chapter__body > .rule {
-  margin-top: var(--gap-block);
+.chapter--design > .frame {
+  width: 100%;
+  max-width: var(--frame-max);
+  padding-inline: var(--frame-pad);
+}
+
+.chapter__eyebrow {
+  margin: 0 0 14px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.chapter__title {
+  margin: 0 0 clamp(2.5rem, 1.8rem + 2vw, 4rem);
+  font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: oklch(97% 0.004 269);
+  font-variation-settings:
+    "wdth" 106,
+    "wght" 580;
+}
+
+.chapter__intro {
+  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 0;
+  max-width: 68ch;
+  color: oklch(80% 0.008 269);
+  text-wrap: pretty;
+}
+
+.chapter__intro--after-rungs,
+.chapter__intro--closing {
+  margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+}
+
+.chapter__subhead {
+  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 18px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.evidence-heading {
+  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 22px;
+}
+
+.evidence-heading > p:first-child {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.evidence-heading h3 {
+  margin: 0 0 12px;
+  max-width: 46ch;
+  font-size: clamp(1.35rem, 1.1rem + 1.1vw, 2.1rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: oklch(97% 0.004 269);
+  font-variation-settings:
+    "wdth" 104,
+    "wght" 560;
+}
+
+.evidence-heading > p:last-child {
+  max-width: 62ch;
+  color: oklch(76% 0.009 269);
+  text-wrap: pretty;
 }
 
 /* --- The verification staircase ------------------------------------------ */
 
 .rungs {
   display: grid;
-  gap: 1px;
-  background: var(--surface-line-soft);
-  border: 1px solid var(--surface-line);
+  gap: 8px;
 }
 
 .rungs__rung {
   display: grid;
-  /* The count column has to hold "5'280" set in the display face at its largest.
-     Too narrow and the figure does not wrap — it overlaps the name beside it. */
-  grid-template-columns: minmax(7.5rem, 9rem) minmax(11rem, 1fr) 1fr 1fr;
-  gap: var(--gap-line);
+  grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr;
+  gap: 10px 22px;
   align-items: baseline;
-  padding: var(--gap-line) var(--gap-line) var(--gap-line)
-    calc(var(--gap-line) + var(--rung-index, 0) * 0.75rem);
-  background: var(--surface-base);
-  border-left: 3px solid transparent;
+  padding: 18px 20px;
+  border: 1px solid oklch(28% 0.018 269);
+  border-left: 2px solid oklch(40% 0.018 269);
+  border-radius: 8px;
+  background: oklch(17% 0.016 269 / 0.7);
 }
 
-/* The two agent-driven rungs are the point of the chapter, so they carry the
-   accent — the rest of the staircase stays quiet. */
+.rungs__rung:nth-child(2) {
+  border-left-color: oklch(46% 0.018 269);
+}
+
+.rungs__rung:nth-child(3) {
+  border-left-color: oklch(52% 0.018 269);
+}
+
 .rungs__rung--agent {
-  border-left-color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 5%, var(--surface-base));
+  border-color: oklch(30% 0.03 195);
+  border-left: 2px solid #4fdbd4;
+  background: linear-gradient(120deg, oklch(22% 0.04 195 / 0.5), oklch(17% 0.016 269 / 0.7));
 }
 
-/* Two classes deep on purpose: the shared `.figure-value` sets the display size
-   and its stylesheet may land after this one in the bundle. A rule that only
-   wins by import order is a rule that breaks the day the imports move. */
-.rungs__rung .rungs__count {
-  font-size: clamp(1.375rem, 1rem + 1.1vw, 1.875rem);
-  font-variation-settings:
-    "wdth" 100,
-    "wght" 700;
-  line-height: 1.05;
+.rungs__rung:nth-child(5) {
+  background: linear-gradient(120deg, oklch(24% 0.05 195 / 0.55), oklch(17% 0.016 269 / 0.7));
+}
+
+.rungs__count {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  letter-spacing: -0.03em;
+  color: oklch(97% 0.004 269);
 }
 
 .rungs__name {
-  font-variation-settings:
-    "wdth" 92,
-    "wght" 550;
-  color: var(--text-strong);
+  color: oklch(94% 0.004 269);
+  font-weight: 500;
 }
 
 .rungs__proves,
 .rungs__cannot {
-  color: var(--text-muted);
-  line-height: 1.5;
+  font-size: 0.86rem;
+  color: oklch(76% 0.009 269);
 }
 
 .rungs__marker {
-  display: block;
-  font-size: var(--text-eyebrow);
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -107,144 +251,85 @@
 }
 
 .rungs__marker--cannot {
-  color: var(--second);
+  color: #ff6f5e;
 }
 
-/* --- Folded detail ------------------------------------------------------- */
+/* --- Tempo band ---------------------------------------------------------- */
 
-.fold {
-  border: 1px solid var(--surface-line);
-  background: color-mix(in oklab, var(--surface-raised) 55%, transparent);
+/*
+ * The caesura between the hero and CH.01. Its ground is the only teal-tinted
+ * one on the page, and the two hairlines keep it from reading as a chapter.
+ */
+.tempo {
+  padding-block: clamp(3.5rem, 2.5rem + 4vw, 6rem);
+  border-block: 1px solid oklch(26% 0.03 195);
 }
 
-.fold__summary {
+.tempo__frame {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: clamp(1.6rem, 1.2rem + 2vw, 3.5rem);
+  align-items: end;
+}
+
+.tempo__label {
+  margin-bottom: 12px;
+  color: var(--brand-teal);
+}
+
+.tempo__figure {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: clamp(3.4rem, 2.2rem + 6vw, 7rem);
+  line-height: 0.86;
+  letter-spacing: -0.05em;
+  color: oklch(98% 0.004 269);
+}
+
+.tempo__unit {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 1rem + 1vw, 2rem);
+  letter-spacing: normal;
+  color: oklch(90% 0.006 269);
+  font-variation-settings:
+    "wdth" 104,
+    "wght" 500;
+}
+
+.tempo__note {
+  max-width: 40ch;
+  color: oklch(84% 0.008 269);
+  text-wrap: pretty;
+}
+
+.tempo__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 18px 24px;
+}
+
+.tempo__stats p {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-hair);
-  padding: var(--gap-line);
-  cursor: pointer;
-  list-style: none;
+  gap: 4px;
 }
 
-.fold__summary::-webkit-details-marker {
-  display: none;
-}
-
-.fold__summary::after {
-  content: "";
-  position: absolute;
-  inset-inline-end: var(--gap-line);
-  width: 0.6rem;
-  height: 0.6rem;
-  border-right: 2px solid var(--text-faint);
-  border-bottom: 2px solid var(--text-faint);
-  transform: rotate(45deg);
-  transition: transform var(--duration-normal) var(--ease-out-expo);
-}
-
-.fold {
-  position: relative;
-}
-
-.fold[open] .fold__summary::after {
-  transform: rotate(-135deg);
-}
-
-.fold__title {
-  font-variation-settings:
-    "wdth" 96,
-    "wght" 600;
-  color: var(--text-strong);
-}
-
-.fold__body {
-  padding: 0 var(--gap-line) var(--gap-block);
-  display: grid;
-  gap: var(--gap-line);
-}
-
-/* --- The ledger ---------------------------------------------------------- */
-
-.ledger {
-  width: 100%;
-  border-collapse: collapse;
+.tempo__stats p > span:first-child {
   font-family: var(--font-mono);
-  font-size: var(--text-data);
+  font-size: 1.5rem;
+  letter-spacing: -0.03em;
+  color: oklch(97% 0.004 269);
 }
 
-.ledger__caption {
-  text-align: left;
-  color: var(--text-faint);
-  padding-block-end: var(--gap-tight);
+.tempo__stats p > span:last-child {
+  font-size: 0.86rem;
+  color: oklch(74% 0.009 269);
 }
 
-.ledger th,
-.ledger td {
-  text-align: right;
-  padding: 0.5rem 0.75rem;
-  border-block-end: 1px solid var(--surface-line-soft);
-  white-space: nowrap;
-}
-
-.ledger thead th {
-  color: var(--text-faint);
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: var(--text-eyebrow);
-}
-
-.ledger tbody th {
-  text-align: left;
-  font-weight: 400;
-  color: var(--text-body);
-  white-space: normal;
-}
-
-.ledger__before {
-  color: var(--text-faint);
-  text-decoration: line-through;
-}
-
-.ledger__after {
-  color: var(--text-strong);
-}
-
-.ledger__delta {
-  color: var(--accent);
-}
-
-.ledger__price {
-  color: var(--text-muted);
-}
-
-/* --- Footer -------------------------------------------------------------- */
-
-.site-footer {
-  border-block-start: 1px solid var(--surface-line);
-  padding-block: var(--gap-block) var(--gap-chapter);
-}
-
-.site-footer__honesty {
-  margin-block: var(--gap-line);
-  color: var(--text-muted);
-}
-
-.site-footer__links a {
-  color: var(--text-body);
-}
-
-.site-footer__links a:hover {
-  color: var(--accent);
-}
-
-@media (max-width: 60rem) {
-  .rungs__rung {
-    grid-template-columns: minmax(4.5rem, 5.5rem) 1fr;
-  }
-
-  .rungs__proves,
-  .rungs__cannot {
-    grid-column: 2;
-  }
+.tempo__accent {
+  color: var(--brand-teal);
 }

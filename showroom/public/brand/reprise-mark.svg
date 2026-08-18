@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <!-- Generated from palette.toml. Teal carries the thick barline so the
+       largest field holds the brighter colour; coral accents the dots
+       and the thin barline. -->
+  <circle cx="30" cy="39" r="5.5" fill="#FF6F5E"/>
+  <circle cx="30" cy="57" r="5.5" fill="#FF6F5E"/>
+  <rect x="41" y="20" width="5" height="56" rx="1" fill="#FF6F5E"/>
+  <rect x="52" y="20" width="15" height="56" rx="1.5" fill="#4FDBD4"/>
+</svg>

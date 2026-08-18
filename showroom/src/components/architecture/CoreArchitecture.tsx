@@ -6,6 +6,7 @@ export function CoreArchitecture() {
     <figure
       className="architecture"
       data-showcase="core-architecture"
+      data-reveal
       aria-labelledby="architecture-title"
       aria-describedby="architecture-caption"
     >
@@ -23,14 +24,17 @@ export function CoreArchitecture() {
 
       <ol className="architecture__surfaces" aria-label="Reprise frontends">
         {ARCHITECTURE_SURFACES.map((surface, index) => (
-          <li className="architecture__surface" key={surface.id}>
-            <a href={surface.href} data-surface={surface.id}>
+          <li className="architecture__surface" data-reveal key={surface.id}>
+            <a
+              className={`architecture__surface-link architecture__surface-link--${surface.id}`}
+              href={surface.href}
+              data-surface={surface.id}
+            >
               <span className="data architecture__index">0{index + 1}</span>
               <strong>{surface.name}</strong>
               <span>{surface.stack}</span>
               <span className="data">{surface.role}</span>
             </a>
-            <span className="data architecture__adapter">{surface.adapter}</span>
           </li>
         ))}
       </ol>
@@ -43,19 +47,27 @@ export function CoreArchitecture() {
       </div>
 
       <div className="architecture__shared">
-        <a className="architecture__layer architecture__layer--view" href={ARCHITECTURE_LINKS.view}>
+        <a
+          className="architecture__layer architecture__layer--view"
+          data-reveal
+          href={ARCHITECTURE_LINKS.view}
+        >
           <span className="eyebrow">portable presentation semantics</span>
           <strong>reprise-view</strong>
           <span className="data">geometry · colour · scene · surface models</span>
         </a>
-        <a className="architecture__layer architecture__layer--core" href={ARCHITECTURE_LINKS.core}>
+        <a
+          className="architecture__layer architecture__layer--core"
+          data-reveal
+          href={ARCHITECTURE_LINKS.core}
+        >
           <span className="eyebrow">application and domain layer</span>
           <strong>reprise-core</strong>
           <span className="data">19 dependencies · 0 UI frameworks</span>
         </a>
       </div>
 
-      <figcaption id="architecture-caption" className="prose architecture__caption">
+      <figcaption id="architecture-caption" className="architecture__caption" data-reveal>
         The dependency arrows only point inward. GNOME and Android keep their native toolkit and
         interaction model; CLI and MCP reuse the same application layer without pretending to be
         screens. The build rejects GTK, libadwaita, GStreamer and D-Bus in the core.

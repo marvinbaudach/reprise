@@ -1,0 +1,158 @@
+/*
+ * The light behind the page.
+ *
+ * Every blob animates `transform` only, on its own long, prime-ish period, so the
+ * three never line up into a visible loop. The whole layer is `mix-blend-mode:
+ * screen` over the ground colour: the light adds, it does not paint over.
+ *
+ * All three sit at `z-index: -1`, and that is load-bearing rather than tidy. A
+ * positioned layer at `z-index: 0` paints after every non-positioned in-flow
+ * descendant of the same stacking context — so an opaque ground would cover
+ * every heading and paragraph on the page while leaving the positioned parts
+ * (header, nav, the product tiles) standing. Behind the page means behind it.
+ */
+
+.backdrop-ground {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--surface-base);
+  transition: background-color 1500ms var(--ease-in-out-soft);
+}
+
+.backdrop-oil {
+  position: fixed;
+  inset: -12%;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  mix-blend-mode: screen;
+  opacity: var(--oil, 0.55);
+  transition: transform 1600ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.backdrop-oil__blob {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.backdrop-oil__blob--teal {
+  left: -18vw;
+  top: -22vh;
+  width: 86vw;
+  height: 86vw;
+  background: radial-gradient(
+    circle,
+    oklch(80% 0.12 190 / 0.2),
+    oklch(80% 0.12 190 / 0.06) 46%,
+    transparent 68%
+  );
+  animation: backdrop-drift-a 42s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+
+.backdrop-oil__blob--coral {
+  right: -22vw;
+  top: 18vh;
+  width: 78vw;
+  height: 78vw;
+  background: radial-gradient(
+    circle,
+    oklch(72% 0.16 28 / 0.16),
+    oklch(72% 0.16 28 / 0.05) 44%,
+    transparent 66%
+  );
+  animation: backdrop-drift-b 57s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+
+.backdrop-oil__blob--violet {
+  left: 12vw;
+  bottom: -30vh;
+  width: 92vw;
+  height: 92vw;
+  background: radial-gradient(
+    circle,
+    oklch(62% 0.15 302 / 0.18),
+    oklch(62% 0.15 302 / 0.05) 48%,
+    transparent 70%
+  );
+  animation: backdrop-drift-c 71s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+
+/* One very slow rotation, so the three static blobs get a direction. */
+.backdrop-oil__sweep {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150vmax;
+  height: 150vmax;
+  margin: -75vmax 0 0 -75vmax;
+  opacity: 0.5;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    oklch(78% 0.1 190 / 0.1) 42deg,
+    transparent 96deg,
+    oklch(70% 0.13 320 / 0.09) 168deg,
+    transparent 232deg,
+    oklch(74% 0.14 30 / 0.08) 296deg,
+    transparent 356deg
+  );
+  animation: backdrop-spin 150s linear infinite;
+}
+
+.backdrop-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+}
+
+@keyframes backdrop-drift-a {
+  0% {
+    transform: translate3d(-7%, -5%, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(9%, 7%, 0) scale(1.22);
+  }
+}
+
+@keyframes backdrop-drift-b {
+  0% {
+    transform: translate3d(9%, 8%, 0) scale(1.14);
+  }
+  100% {
+    transform: translate3d(-9%, -7%, 0) scale(1);
+  }
+}
+
+@keyframes backdrop-drift-c {
+  0% {
+    transform: translate3d(0, 9%, 0) scale(1.02) rotate(0deg);
+  }
+  100% {
+    transform: translate3d(7%, -9%, 0) scale(1.24) rotate(24deg);
+  }
+}
+
+@keyframes backdrop-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The light is atmosphere, not information: it stops completely on request. */
+@media (prefers-reduced-motion: reduce) {
+  .backdrop-oil__blob,
+  .backdrop-oil__sweep {
+    animation: none;
+  }
+
+  .backdrop-oil {
+    transform: none !important;
+  }
+}

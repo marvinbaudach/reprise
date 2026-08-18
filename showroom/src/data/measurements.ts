@@ -29,6 +29,7 @@ export interface Figure {
   readonly label: string;
   readonly detail?: string;
   readonly href?: string;
+  readonly counter?: boolean;
 }
 
 /** The four numbers that carry chapter one. */
@@ -37,12 +38,13 @@ export const HEADLINE_FIGURES: readonly Figure[] = [
     value: "347'842",
     label: 'lines of Rust and Kotlin',
     detail: "327'165 Rust · 20'677 Kotlin",
-    href: treelink(),
+    counter: true,
   },
   {
     value: '45.8 %',
     label: 'of them are tests',
     detail: "149'504 Rust · 9'884 Kotlin",
+    counter: true,
   },
   {
     value: '1 → 4',
@@ -53,7 +55,7 @@ export const HEADLINE_FIGURES: readonly Figure[] = [
     value: '21',
     label: 'gates before every merge',
     detail: 'all of them, every time',
-    href: permalink('scripts/check-merge-readiness.sh'),
+    counter: true,
   },
 ];
 
@@ -63,6 +65,7 @@ export interface CodeSegment {
   readonly label: string;
   readonly lines: number;
   readonly note: string;
+  readonly share: string;
 }
 
 export const CODE_SEGMENTS: readonly CodeSegment[] = [
@@ -71,24 +74,28 @@ export const CODE_SEGMENTS: readonly CodeSegment[] = [
     label: 'Rust, product',
     lines: 177_661,
     note: 'the core and everything built on it',
+    share: '49.6',
   },
   {
     key: 'rust-test',
     label: 'Rust, tests',
     lines: 149_504,
     note: 'inline `#[cfg(test)]` modules and integration suites',
+    share: '41.7',
   },
   {
     key: 'android-bridge',
     label: 'Rust, Android bridge',
     lines: 10_245,
     note: 'crates/reprise-android-ffi',
+    share: '2.9',
   },
   {
     key: 'kotlin',
     label: 'Kotlin',
     lines: 20_677,
     note: 'the whole Android frontend, product and tests',
+    share: '5.8',
   },
 ];
 
@@ -103,8 +110,8 @@ export interface VerificationRung {
 
 export const VERIFICATION_RUNGS: readonly VerificationRung[] = [
   {
-    count: "5'280",
-    name: 'Core tests, standard run',
+    count: "5'596",
+    name: 'Test functions, standard run',
     proves: 'the logic holds for the cases someone thought of',
     cannotProve: 'that the window ever appeared',
     agentDriven: false,
@@ -141,11 +148,25 @@ export const VERIFICATION_RUNGS: readonly VerificationRung[] = [
 
 /** Chapter two: the rulebook, and how much of it is traceable. */
 export const RULEBOOK_FIGURES: readonly Figure[] = [
-  { value: '370', label: 'active UX rules, binding', href: permalink('docs/ux-rules.md') },
-  { value: '98.9 %', label: 'of them have a test of the same name' },
-  { value: "6'066", label: 'lines of rulebook' },
-  { value: '250', label: 'files under docs/', href: treelink('docs') },
-  { value: '24', label: 'MCP tools over the same layer', href: treelink('crates/reprise-mcp') },
+  {
+    value: '571',
+    label: 'active UX rules, binding',
+    href: permalink('docs/ux-rules.md'),
+    counter: true,
+  },
+  {
+    value: '100 %',
+    label: 'of enforceable rules have a test of the same name',
+    counter: true,
+  },
+  { value: '897', label: 'files holding those tests', counter: true },
+  { value: '250', label: 'files under docs/', href: treelink('docs'), counter: true },
+  {
+    value: '24',
+    label: 'MCP tools over the same layer',
+    href: treelink('crates/reprise-mcp'),
+    counter: true,
+  },
 ];
 
 /** Chapter three: the two ends of the spectral axis, verbatim from the source. */
@@ -155,7 +176,7 @@ export const SPECTRAL_AXIS = {
   source: 'crates/reprise-view/src/spectral_colour.rs',
 } as const;
 
-/** Chapter three, folded away: what the index rebuild cost and bought. */
+/** Chapter five: what the index rebuild cost and bought. */
 export interface Measurement {
   readonly what: string;
   readonly before: string;
