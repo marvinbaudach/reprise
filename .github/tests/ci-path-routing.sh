@@ -46,15 +46,21 @@ expect_routes false false false .github/workflows/ci.yml
 expect_routes false false false showroom/src/App.tsx
 expect_routes true false true unexpected-product-root/new-source.rs
 
-[[ $("$classifier" --owner-skip pull_request marvinbaudach marvinbaudach \
-    'ci: tune routing [owner skip ci]') == true ]] || \
-    fail "the repository owner must be able to request an explicit PR-only skip"
-[[ $("$classifier" --owner-skip push marvinbaudach marvinbaudach \
-    'ci: tune routing [owner skip ci]') == false ]] || \
-    fail "an owner marker must not skip protected-branch push CI"
-[[ $("$classifier" --owner-skip pull_request contributor marvinbaudach \
-    'ci: tune routing [owner skip ci]') == false ]] || \
-    fail "a non-owner marker must not skip CI"
+[[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
+    contributor marvinbaudach head dev) == true ]] || \
+    fail "every pull request must skip the expensive external suites"
+[[ $("$classifier" --suite-skip push refs/heads/dev \
+    marvinbaudach marvinbaudach same same) == false ]] || \
+    fail "a dev push must always run its selected suites"
+[[ $("$classifier" --suite-skip push refs/heads/main \
+    marvinbaudach marvinbaudach same same) == true ]] || \
+    fail "an exact owner promotion may reuse the dev evidence on main"
+[[ $("$classifier" --suite-skip push refs/heads/main \
+    contributor marvinbaudach same same) == false ]] || \
+    fail "a non-owner main push must never reuse dev evidence"
+[[ $("$classifier" --suite-skip push refs/heads/main \
+    marvinbaudach marvinbaudach head dev) == false ]] || \
+    fail "a main revision different from dev must run every selected suite"
 
 "$aggregator" success success false true success false skipped false skipped
 "$aggregator" success success false false skipped true success false skipped
@@ -88,8 +94,14 @@ rg --quiet "needs\.changes\.outputs\.gnome == 'true'" "$workflow" || \
     fail "the GNOME suite is not routed by the GNOME classifier output"
 rg --quiet "needs\.changes\.outputs\.core == 'true'" "$workflow" || \
     fail "the Core suite is not routed by the Core classifier output"
-rg --quiet "needs\.changes\.outputs\.owner_skip != 'true'" "$workflow" || \
-    fail "routed jobs do not honour the authenticated owner skip"
+rg --quiet "needs\.changes\.outputs\.suite_skip != 'true'" "$workflow" || \
+    fail "routed jobs do not honour the authenticated suite reuse"
+rg --quiet 'ci-paths\.sh --suite-skip' "$workflow" || \
+    fail "the workflow does not use the tested suite-reuse classifier"
+rg --quiet 'ACTOR:' "$workflow" || fail "the workflow does not authenticate the push actor"
+rg --quiet 'REF_NAME:' "$workflow" || fail "the workflow does not bind reuse to main"
+rg --quiet 'dev_sha=\$\(git rev-parse --verify origin/dev\)' "$workflow" || \
+    fail "the workflow does not require exact dev identity"
 rg --quiet 'ci-paths\.sh --diff' "$workflow" || \
     fail "the workflow does not use the tested path classifier"
 rg --quiet 'require-ci-results\.sh' "$workflow" || \
@@ -110,12 +122,20 @@ rg --quiet '^      - crates/reprise-view/\*\*$' "$cross_target" || \
 if rg --quiet '^      - \.github/workflows/cross-target\.yml$' "$cross_target"; then
     fail "CI-only edits must not start the expensive cross-target workflow"
 fi
-rg --quiet "needs\['owner-skip'\]\.outputs\.owner_skip != 'true'" "$cross_target" || \
-    fail "the repository-owner skip must also suppress cross-target compilation"
-rg --quiet "needs\['owner-skip'\]\.outputs\.owner_skip != 'true'" "$showroom" || \
-    fail "the repository-owner skip must also suppress the Showroom PR suite"
+rg --quiet "needs\['suite-skip'\]\.outputs\.suite_skip != 'true'" "$cross_target" || \
+    fail "PR reuse and exact owner promotions must suppress duplicate cross-target compilation"
+rg --quiet 'dev_sha=\$\(git rev-parse --verify origin/dev\)' "$cross_target" || \
+    fail "cross-target reuse does not require exact dev identity"
+if rg --quiet '^  pull_request:' "$showroom"; then
+    fail "Showroom must build only after a merge reaches main"
+fi
+if rg --quiet 'owner-skip|suite-skip|ci-paths\.sh' "$showroom"; then
+    fail "the main-only Showroom publication must never contain a CI skip path"
+fi
 if rg --quiet -- "- '\.github/workflows/pages\.yml'" "$showroom"; then
     fail "CI-only edits must not start the Showroom build"
 fi
+rg --quiet 'check-display-tests\.sh --rule-named' scripts/check-merge-readiness.sh || \
+    fail "the merge gate must keep rule-owned display coverage, not every low-risk display test"
 
 echo "CI path-routing contracts passed"

@@ -95,8 +95,8 @@ require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
-require_pattern '^scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
-reject_pattern 'check-display-tests.sh --(rule-named|motion|css)' scripts/check-merge-readiness.sh
+require_pattern '^scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
+reject_pattern '^scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
 reject_pattern '--motion' scripts/check-display-tests.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh
 require_pattern 'display_test_passed' scripts/check-display-tests.sh

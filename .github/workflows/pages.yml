@@ -12,9 +12,6 @@ on:
     branches: [main]
     paths:
       - 'showroom/**'
-  pull_request:
-    paths:
-      - 'showroom/**'
   workflow_dispatch:
 
 permissions:
@@ -25,35 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  owner-skip:
-    name: Check for repository-owner skip
-    runs-on: ubuntu-latest
-    outputs:
-      owner_skip: ${{ steps.authorization.outputs.owner_skip }}
-    steps:
-      - name: Check out the tested revision
-        uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Authenticate an explicit owner skip
-        id: authorization
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          REPOSITORY_OWNER: ${{ github.repository_owner }}
-        run: |
-          commit_message=$(git log -1 --format=%B "$HEAD_SHA")
-          owner_skip=$(
-            .github/scripts/ci-paths.sh --owner-skip \
-              "$EVENT_NAME" "$PR_AUTHOR" "$REPOSITORY_OWNER" "$commit_message"
-          )
-          echo "owner_skip=$owner_skip" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: owner-skip
-    if: needs['owner-skip'].outputs.owner_skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
