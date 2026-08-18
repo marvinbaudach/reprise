@@ -63,6 +63,9 @@ esac
 scripts/tests/worktree-gc.sh
 scripts/tests/worktree-gc-schedule.sh
 
+echo "== Gettext catalogues =="
+scripts/tests/gettext-catalogs.sh
+
 scripts/check-architecture.sh
 
 echo "== Android Opus/MP3 sync runtime =="
