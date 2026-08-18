@@ -23,21 +23,38 @@ fn event(provider: ProviderKind, venue: &str) -> ProviderEvent {
 fn normalized_dedupe_key_folds_case_diacritics_and_whitespace() {
     assert_eq!(normalize_component("  MÜNCHEN   Süd  "), "munchen sud");
     assert_eq!(
-        dedupe_key("2026-10-17", " München ", "  ZÉNITH  Hall "),
-        "2026-10-17|munchen|zenith hall"
+        dedupe_key("  BJÖRK  ", "2026-10-17", " München "),
+        "bjork|2026-10-17|munchen"
     );
 }
 
 #[test]
-fn merge_keeps_the_stable_slot_and_prefers_bandsintown() {
-    let rows = merge(vec![
-        event(ProviderKind::Ticketmaster, "Zénith"),
-        event(ProviderKind::Bandsintown, "ZENITH"),
-        event(ProviderKind::Ticketmaster, "Backstage"),
-    ]);
-    assert_eq!(rows.len(), 2);
+fn merge_collapses_venues_and_prefers_bandsintown() {
+    let rows = merge(
+        "Lorna Shore",
+        vec![
+            event(ProviderKind::Ticketmaster, "Zénith"),
+            event(ProviderKind::Bandsintown, "ZENITH"),
+            event(ProviderKind::Ticketmaster, "Backstage"),
+        ],
+    );
+    assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].provider, ProviderKind::Bandsintown);
-    assert_eq!(rows[1].venue, "Backstage");
+    assert_eq!(rows[0].venue, "ZENITH");
+}
+
+#[test]
+fn merge_collapses_two_venues_for_the_same_artist_date_and_city() {
+    let rows = merge(
+        "Lorna Shore",
+        vec![
+            event(ProviderKind::Ticketmaster, "Matinee Hall"),
+            event(ProviderKind::Ticketmaster, "Evening Hall"),
+        ],
+    );
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].venue, "Matinee Hall");
 }
 
 #[test]

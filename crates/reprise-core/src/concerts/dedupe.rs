@@ -17,20 +17,20 @@ pub fn normalize_component(value: &str) -> String {
         .join(" ")
 }
 
-pub fn dedupe_key(date_key: &str, city: &str, venue: &str) -> String {
+pub fn dedupe_key(artist_key: &str, date_key: &str, city: &str) -> String {
     format!(
         "{}|{}|{}",
-        date_key.trim(),
-        normalize_component(city),
-        normalize_component(venue)
+        normalize_component(artist_key),
+        normalize_component(date_key),
+        normalize_component(city)
     )
 }
 
-pub fn merge(events: Vec<ProviderEvent>) -> Vec<ProviderEvent> {
+pub fn merge(artist_key: &str, events: Vec<ProviderEvent>) -> Vec<ProviderEvent> {
     let mut merged = Vec::with_capacity(events.len());
     let mut positions = HashMap::new();
     for event in events {
-        let key = dedupe_key(&event.date_key, &event.city, &event.venue);
+        let key = dedupe_key(artist_key, &event.date_key, &event.city);
         if let Some(&position) = positions.get(&key) {
             let existing: &ProviderEvent = &merged[position];
             if existing.provider == ProviderKind::Ticketmaster

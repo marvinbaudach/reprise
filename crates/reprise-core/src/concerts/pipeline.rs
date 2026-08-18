@@ -272,6 +272,7 @@ fn refresh_with_similar_fetch_cancellable(
         };
         let today_key = today.format("%Y-%m-%d").to_string();
         let events = merge(
+            artist.key,
             events
                 .into_iter()
                 .filter(|event| event.date_key.as_str() >= today_key.as_str())
@@ -426,7 +427,7 @@ fn reconcile_artist(
     let mut fresh_keys = HashSet::with_capacity(events.len());
     let mut upserted = 0;
     for event in events {
-        let key = dedupe_key(&event.date_key, &event.city, &event.venue);
+        let key = dedupe_key(artist.key, &event.date_key, &event.city);
         fresh_keys.insert(key.clone());
         upserted += transaction.execute(
             "INSERT INTO concert_events (
