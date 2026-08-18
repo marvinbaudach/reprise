@@ -62,9 +62,9 @@ impl PlayerController {
         {
             tracing::error!(%error, episode_id, "could not mark podcast played");
         } else {
-            // Same reason as in `finish_queued_episode`: a database-backed
-            // sidebar count moved, and no other path here recomputes it.
-            self.notify_episode_played();
+            // Same reason as in `finish_queued_episode`: database-backed
+            // sidebar counts and the source row's status just moved.
+            self.notify_episode_played(episode_id);
         }
         let automatic_target = {
             let mut external = self.external.borrow_mut();
@@ -116,11 +116,9 @@ impl PlayerController {
         {
             tracing::error!(%error, episode_id, "could not mark queued podcast played");
         } else {
-            // The unplayed counts behind the Podcasts and YouTube rows just
-            // dropped. The queue-changed path below only patches the Queue
-            // badge, so without this the sidebar would keep showing the old
-            // number until some unrelated rebuild happened to fire.
-            self.notify_episode_played();
+            // The unplayed counts and the completed source row just changed.
+            // The queue-changed path below only patches the Queue badge.
+            self.notify_episode_played(episode_id);
         }
         self.external.borrow_mut().clear_session();
         self.notify_external_changed();
@@ -207,9 +205,14 @@ mod tests {
     /// exactly "these two calls stay together".
     #[test]
     fn every_mark_played_announces_the_changed_sidebar_count() {
-        let source = include_str!("external_media_completion.rs");
+        let source = include_str!("external_media_completion.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
         let played = source.matches("store::mark_played(").count();
-        let announced = source.matches("self.notify_episode_played();").count();
+        let announced = source
+            .matches("self.notify_episode_played(episode_id);")
+            .count();
 
         assert!(
             played > 0,
@@ -220,5 +223,37 @@ mod tests {
             "each of the {played} mark_played call(s) needs its own \
              notify_episode_played, found {announced}"
         );
+    }
+
+    #[test]
+    fn completed_episode_ids_reach_both_source_views_and_the_sidebar() {
+        let completion = include_str!("external_media_completion.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let callbacks = include_str!("external_media.rs");
+        let window = include_str!("../window/window.rs");
+        let source_views = include_str!("../window/source_views.rs");
+
+        assert_eq!(
+            completion
+                .matches("self.notify_episode_played(episode_id);")
+                .count(),
+            completion.matches("store::mark_played(").count()
+        );
+        assert!(callbacks.contains("callback: impl Fn(i64) + 'static"));
+        assert!(callbacks.contains("fn notify_episode_played(&self, episode_id: i64)"));
+        assert!(window.contains("source_views.wire_episode_played(player, &sidebar)"));
+        assert!(source_views.contains("player.add_on_episode_played(move |episode_id|"));
+        assert!(source_views.contains("sidebar.refresh(\"episode played\")"));
+        assert_eq!(
+            source_views
+                .matches("update_played_state(episode_id);")
+                .count(),
+            1,
+            "the Podcasts and YouTube views must both receive the completed ID"
+        );
+        assert!(source_views.contains("Rc::downgrade(&self.podcasts)"));
+        assert!(source_views.contains("Rc::downgrade(&self.youtube)"));
     }
 }

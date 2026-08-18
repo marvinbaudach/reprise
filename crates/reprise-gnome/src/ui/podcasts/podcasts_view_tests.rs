@@ -378,6 +378,54 @@ fn descendant_buttons(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Button> {
     buttons
 }
 
+fn status_chip(widget: &gtk4::Widget) -> Option<gtk4::Label> {
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Ok(label) = current.clone().downcast::<gtk4::Label>() {
+            if label.has_css_class("reprise-source-row-chip") {
+                return Some(label);
+            }
+        }
+        if let Some(label) = status_chip(&current) {
+            return Some(label);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn finishing_an_episode_updates_its_status_without_rebuilding_the_list() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    let episode_id = subscribe_with_one_episode(&conn);
+    store::save_position(&conn, episode_id, 30_000).unwrap();
+    let view = view(conn, PodcastKind::Rss);
+    let subscription_id = view.rows.borrow()[0].subscription_id;
+    view.expanded_sources.borrow_mut().insert(subscription_id);
+    view.render();
+    let before = view.download_widgets.borrow()[&episode_id].root.clone();
+    let before_chip = status_chip(before.upcast_ref()).expect("resumed episode status");
+    assert!(before_chip.text().starts_with("Resume"));
+    view.update_played_state(episode_id);
+    let row = view.rows.borrow()[0].clone();
+    let after = view.download_widgets.borrow()[&episode_id].root.clone();
+    assert!(row.played_at.is_some());
+    assert_eq!(row.position_ms, 0);
+    assert_eq!(before.as_ptr(), after.as_ptr(), "the row was rebuilt");
+    assert!(view.expanded_sources.borrow().contains(&subscription_id));
+    assert_eq!(
+        status_chip(after.upcast_ref())
+            .expect("the completed episode keeps a status chip")
+            .text(),
+        strings::text(strings::PODCAST_STATUS_PLAYED)
+    );
+    view.update_played_state(i64::MAX);
+    assert_eq!(view.rows.borrow()[0], row, "an unknown ID changed the view");
+}
+
 /// `SRC-10` addendum (Block B2): the filter-mismatch state is the exact
 /// opposite of the true empty state — the filter row stays visible, with a
 /// "Clear filters" action, because clearing the filter (not adding a show)

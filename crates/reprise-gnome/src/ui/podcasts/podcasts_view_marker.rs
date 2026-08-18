@@ -207,6 +207,25 @@ impl PodcastsView {
         self.youtube_detail.update_playback_state(mark);
     }
 
+    pub(in crate::ui) fn update_played_state(&self, episode_id: i64) {
+        let played_at = chrono::Utc::now().timestamp();
+        let row = {
+            let mut rows = self.rows.borrow_mut();
+            let Some(row) = rows.iter_mut().find(|row| row.id == episode_id) else {
+                return;
+            };
+            row.played_at = Some(played_at);
+            row.position_ms = 0;
+            row.clone()
+        };
+        let widgets = self.download_widgets.borrow().get(&episode_id).cloned();
+        if let Some(widgets) = widgets {
+            podcasts_groups::update_episode_status(&widgets, &row);
+        }
+        self.youtube_detail
+            .update_played_state(episode_id, played_at);
+    }
+
     pub(in crate::ui) fn set_unavailable_episode(&self, episode_id: Option<i64>) {
         if self.unavailable_episode.replace(episode_id) != episode_id {
             self.render();
