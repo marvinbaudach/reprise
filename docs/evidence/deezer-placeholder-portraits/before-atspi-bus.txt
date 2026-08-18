@@ -1,2 +1,0 @@
-address=unix:path=/tmp/reprise-deezer.W6R4eJ/runtime-before/at-spi/bus_2
-registry_owner=true
