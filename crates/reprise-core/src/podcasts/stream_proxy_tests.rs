@@ -10,8 +10,8 @@ use std::{
 };
 
 use super::{
-    activate, register, register_resolved_with_refresh, register_with_refresh, revoke,
-    revoke_active, StreamProxyError, StreamSource,
+    activate, constant_time_eq, register, register_resolved_with_refresh, register_with_refresh,
+    revoke, revoke_active, StreamProxyError, StreamSource,
 };
 use crate::podcasts::ytdlp::ResolvedAudio;
 
@@ -235,6 +235,21 @@ fn request(url: &str, range: Option<&str>) -> TestResponse {
     }
 }
 
+fn request_until_transport_error(url: &str) -> (Vec<u8>, std::io::Error) {
+    let url = url::Url::parse(url).unwrap();
+    let address = format!("{}:{}", url.host_str().unwrap(), url.port().unwrap());
+    let mut stream = TcpStream::connect(address).unwrap();
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        &url[url::Position::BeforePath..],
+        url.host_str().unwrap()
+    );
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut bytes = Vec::new();
+    let error = stream.read_to_end(&mut bytes).unwrap_err();
+    (bytes, error)
+}
+
 fn fixture_bytes(length: usize) -> Vec<u8> {
     (0..length).map(|index| (index % 251) as u8).collect()
 }
@@ -288,6 +303,23 @@ fn open_client_range_returns_partial_headers_and_bytes_from_the_requested_offset
 }
 
 #[test]
+fn closed_client_range_is_intentionally_rejected() {
+    let data = fixture_bytes(1_024);
+    let origin = FakeOrigin::new(data.clone());
+    let token = register(origin.url(), data.len() as u64).unwrap();
+
+    let response = request(token.playback_url(), Some("bytes=0-100"));
+
+    assert_eq!(response.status, 416);
+    assert_eq!(
+        response.headers.get("content-range").map(String::as_str),
+        Some("bytes */1024")
+    );
+    assert!(response.body.is_empty());
+    revoke(&token);
+}
+
+#[test]
 fn unknown_and_revoked_tokens_return_not_found() {
     let data = fixture_bytes(32);
     let origin = FakeOrigin::new(data.clone());
@@ -322,6 +354,29 @@ fn transient_origin_failure_retries_the_same_window_without_a_gap() {
             .count(),
         2
     );
+    revoke(&token);
+}
+
+#[test]
+fn exhausted_later_window_retries_reset_the_client_connection() {
+    let data = fixture_bytes(1_500_005);
+    let origin = FakeOrigin::with_failures(
+        data,
+        HashMap::from([(1_000_000, VecDeque::from([500, 500, 500]))]),
+    );
+    let token = register(origin.url(), 1_500_005).unwrap();
+
+    let (received, error) = request_until_transport_error(token.playback_url());
+
+    let header_end = received
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .unwrap();
+    assert!(received.len() - header_end - 4 < 1_500_005);
+    assert!(matches!(
+        error.kind(),
+        std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+    ));
     revoke(&token);
 }
 
@@ -398,4 +453,11 @@ fn resolved_stream_without_a_content_length_is_rejected() {
     .unwrap_err();
 
     assert!(matches!(error, StreamProxyError::InvalidLength));
+}
+
+#[test]
+fn token_comparison_covers_equal_unequal_and_different_length_values() {
+    assert!(constant_time_eq(b"0123456789abcdef", b"0123456789abcdef"));
+    assert!(!constant_time_eq(b"0123456789abcdef", b"0123456789abcdeg"));
+    assert!(!constant_time_eq(b"0123456789abcdef", b"0123456789abcde"));
 }

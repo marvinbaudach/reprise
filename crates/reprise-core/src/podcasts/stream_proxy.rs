@@ -3,9 +3,9 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream},
+    net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -19,7 +19,11 @@ pub const WINDOW_BYTES: u64 = 1_000_000;
 
 const MAX_REQUEST_BYTES: usize = 16 * 1024;
 const MAX_WINDOW_ATTEMPTS: usize = 3;
+const MAX_UNAUTHENTICATED_CLIENTS: usize = 8;
+const REQUEST_HEADER_TIMEOUT: Duration = Duration::from_secs(5);
+const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 const ORIGIN_TIMEOUT: Duration = Duration::from_secs(15);
+const TOKEN_BYTES: usize = 16;
 
 type Refresh = dyn Fn() -> Result<StreamSource, StreamProxyError> + Send + Sync;
 
@@ -30,6 +34,10 @@ static ACTIVE_TOKEN: Mutex<Option<StreamToken>> = Mutex::new(None);
 pub enum StreamProxyError {
     #[error("could not start the local YouTube stream proxy: {0}")]
     Start(std::io::Error),
+    #[error("could not generate a local YouTube stream token: {0}")]
+    Random(String),
+    #[error("could not start a local YouTube stream worker: {0}")]
+    Worker(std::io::Error),
     #[error("YouTube did not report a usable audio stream length")]
     InvalidLength,
     #[error("the YouTube audio stream could not be refreshed: {0}")]
@@ -104,6 +112,42 @@ struct Registration {
     agent: ureq::Agent,
 }
 
+struct UnauthenticatedClient {
+    count: Arc<AtomicUsize>,
+    active: bool,
+}
+
+impl UnauthenticatedClient {
+    fn try_acquire(count: &Arc<AtomicUsize>) -> Option<Self> {
+        count
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                (current < MAX_UNAUTHENTICATED_CLIENTS).then_some(current + 1)
+            })
+            .ok()?;
+        Some(Self {
+            count: Arc::clone(count),
+            active: true,
+        })
+    }
+
+    fn authenticated(mut self) {
+        self.release();
+    }
+
+    fn release(&mut self) {
+        if self.active {
+            self.count.fetch_sub(1, Ordering::AcqRel);
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for UnauthenticatedClient {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 enum FetchFailure {
     Forbidden,
     Retryable,
@@ -168,7 +212,7 @@ fn register_inner(
     });
     let mut registrations = server.registrations.lock().unwrap();
     let id = loop {
-        let candidate = format!("{:016x}{:016x}", fastrand::u64(..), fastrand::u64(..));
+        let candidate = generate_token_id()?;
         if !registrations.contains_key(&candidate) {
             break candidate;
         }
@@ -178,6 +222,19 @@ fn register_inner(
         playback_url: format!("http://{}/{id}", server.address),
         id,
     })
+}
+
+fn generate_token_id() -> Result<String, StreamProxyError> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    let mut random = [0_u8; TOKEN_BYTES];
+    getrandom::fill(&mut random).map_err(|error| StreamProxyError::Random(error.to_string()))?;
+    let mut id = String::with_capacity(TOKEN_BYTES * 2);
+    for byte in random {
+        id.push(char::from(HEX[usize::from(byte >> 4)]));
+        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(id)
 }
 
 /// Invalidates a registration. Existing client writes stop at the next
@@ -225,6 +282,7 @@ fn running_server() -> Result<Arc<Server>, StreamProxyError> {
 }
 
 fn listen(listener: TcpListener, registrations: Arc<Mutex<HashMap<String, Arc<Registration>>>>) {
+    let unauthenticated_clients = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
         let stream = match stream {
             Ok(stream) => stream,
@@ -234,16 +292,37 @@ fn listen(listener: TcpListener, registrations: Arc<Mutex<HashMap<String, Arc<Re
                 break;
             }
         };
+        if let Err(error) = configure_client_stream(&stream) {
+            tracing::warn!(%error, "local YouTube stream proxy rejected an unconfigurable client");
+            continue;
+        }
+        let Some(unauthenticated) = UnauthenticatedClient::try_acquire(&unauthenticated_clients)
+        else {
+            let _ = stream.shutdown(Shutdown::Both);
+            continue;
+        };
         let registrations = Arc::clone(&registrations);
-        let _ = thread::Builder::new()
+        if let Err(error) = thread::Builder::new()
             .name("reprise-youtube-stream-client".to_owned())
-            .spawn(move || serve_client(stream, &registrations));
+            .spawn(move || serve_client(stream, &registrations, unauthenticated))
+        {
+            tracing::error!(%error, "local YouTube stream proxy could not start a client worker");
+        }
     }
     drop(listener);
     drop(registrations);
 }
 
-fn serve_client(mut stream: TcpStream, registrations: &Mutex<HashMap<String, Arc<Registration>>>) {
+fn configure_client_stream(stream: &TcpStream) -> std::io::Result<()> {
+    stream.set_read_timeout(Some(REQUEST_HEADER_TIMEOUT))?;
+    stream.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT))
+}
+
+fn serve_client(
+    mut stream: TcpStream,
+    registrations: &Mutex<HashMap<String, Arc<Registration>>>,
+    unauthenticated: UnauthenticatedClient,
+) {
     let Some(request) = read_client_request(&mut stream) else {
         write_empty_response(&mut stream, 400, &[]);
         return;
@@ -260,13 +339,17 @@ fn serve_client(mut stream: TcpStream, registrations: &Mutex<HashMap<String, Arc
         write_empty_response(&mut stream, 404, &[]);
         return;
     };
-    let registration = registrations.lock().unwrap().get(id).cloned();
+    let registration = find_registration(&registrations.lock().unwrap(), id);
     let Some(registration) = registration else {
         write_empty_response(&mut stream, 404, &[]);
         return;
     };
+    unauthenticated.authenticated();
     let Some(start) = request.range_start else {
         if request.had_range {
+            // souphttpsrc was measured sending only an open `bytes=N-`
+            // range for seeks. Closed ranges stay deliberately unsupported
+            // instead of adding an unneeded second response-length path.
             write_empty_response(
                 &mut stream,
                 416,
@@ -292,6 +375,29 @@ fn serve_client(mut stream: TcpStream, registrations: &Mutex<HashMap<String, Arc
         return;
     }
     stream_registration(&mut stream, &registration, start, true);
+}
+
+fn find_registration(
+    registrations: &HashMap<String, Arc<Registration>>,
+    id: &str,
+) -> Option<Arc<Registration>> {
+    let mut found = None;
+    for (candidate, registration) in registrations {
+        if constant_time_eq(candidate.as_bytes(), id.as_bytes()) {
+            found = Some(Arc::clone(registration));
+        }
+    }
+    found
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut difference = left.len() ^ right.len();
+    for index in 0..left.len().max(right.len()) {
+        let left_byte = left.get(index).copied().unwrap_or_default();
+        let right_byte = right.get(index).copied().unwrap_or_default();
+        difference |= usize::from(left_byte ^ right_byte);
+    }
+    difference == 0
 }
 
 struct ClientRequest {
@@ -331,6 +437,8 @@ fn read_client_request(stream: &mut TcpStream) -> Option<ClientRequest> {
 }
 
 fn parse_open_range(value: &str) -> Option<u64> {
+    // The measured souphttpsrc seek contract is `bytes=N-`. A closed
+    // `bytes=N-M` range is intentionally rejected with 416 by `serve_client`.
     let value = value.strip_prefix("bytes=")?;
     let (start, end) = value.split_once('-')?;
     if start.is_empty() || !end.is_empty() || value.contains(',') {
@@ -387,14 +495,58 @@ fn stream_registration(
         let Some(next) = next else {
             return;
         };
-        let Ok(handle) = next else {
-            return;
+        let handle = match next {
+            Ok(handle) => handle,
+            Err(error) => {
+                abort_failed_window(
+                    stream,
+                    registration,
+                    next_offset,
+                    &StreamProxyError::Worker(error),
+                );
+                return;
+            }
         };
-        let Ok(Ok(bytes)) = handle.join() else {
-            return;
+        let bytes = match handle.join() {
+            Ok(Ok(bytes)) => bytes,
+            Ok(Err(error)) => {
+                abort_failed_window(stream, registration, next_offset, &error);
+                return;
+            }
+            Err(_) => {
+                abort_failed_window(
+                    stream,
+                    registration,
+                    next_offset,
+                    &StreamProxyError::Upstream,
+                );
+                return;
+            }
         };
         current = bytes;
         offset = next_offset;
+    }
+}
+
+fn abort_failed_window(
+    stream: &mut TcpStream,
+    registration: &Registration,
+    offset: u64,
+    error: &StreamProxyError,
+) {
+    let window_end = (offset + WINDOW_BYTES - 1).min(registration.total_len - 1);
+    tracing::error!(
+        offset,
+        window_end,
+        cause = %error,
+        "local YouTube stream proxy could not fetch a later origin window"
+    );
+    let socket = socket2::SockRef::from(&*stream);
+    if let Err(linger_error) = socket.set_linger(Some(Duration::ZERO)) {
+        tracing::error!(
+            %linger_error,
+            "local YouTube stream proxy could not arm an abrupt client reset"
+        );
     }
 }
 
