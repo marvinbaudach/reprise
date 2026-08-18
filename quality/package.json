@@ -2,12 +2,19 @@
   "name": "reprise-project-quality",
   "private": true,
   "scripts": {
+    "lint": "npm run lint:python && npm run lint:yaml && npm run lint:markdown",
+    "lint:markdown": "node run-markdown-lint.mjs",
     "lint:python": "node run-python-lint.mjs",
     "lint:yaml": "node run-yaml-lint.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:markdown": "node --test tests/markdown-lint-contract.test.mjs",
     "test:python": "node --test tests/python-lint-contract.test.mjs",
     "test:yaml": "node --test tests/yaml-lint-contract.test.mjs"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.23.2"
   }
 }
