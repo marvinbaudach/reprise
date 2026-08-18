@@ -230,3 +230,40 @@ Welle 3 bleibt `youtube-channel-tile-shows-an-episode-thumbnail`.
 Diagnose des Befunds verschoben, nicht bestätigt — einmal durch eine
 Datenbankmessung, einmal durch das Lesen der Regel, die der Code umsetzt. Die
 Befunde sind Ausgangspunkte, keine Diagnosen.
+
+---
+
+## Nachtrag: die Welle ist gelandet (18.08.2026, 22:10)
+
+Alle drei Stränge sind auf `dev`:
+
+| PR | Strang | `dev` danach |
+| --- | --- | --- |
+| #558 | Dublettenschlüssel auf Künstler·Datum·Stadt | `443da7bf76` |
+| #559 | Filterleiste benennt, was sie leert | `e238ca3661` |
+| #560 | Der erste Grund gewinnt | `d361f5732d` |
+
+Die Live-Migration wurde vor dem Landen erneut gefahren (die Sieger-Regel hatte
+sich durch die Reviewfixes geändert): **413 → 408**, `user_version = 76`, null
+Dublettengruppen, zweiter Lauf unverändert bei 408, dieselben fünf Sieger. Der
+dev-Lauf für #558 war vollständig grün **inklusive Core-Suite**.
+
+Strang 1 musste dreimal rebasen, weil fremde Sitzungen zwischendurch #561 und
+#562 nach `dev` gemergt haben; die Version zog jedes Mal nach (zuletzt 0.1.23).
+Zuletzt fmt/clippy grün und 5360/0 auf `783b49b3e0`.
+
+### Eine neue Falle
+
+**`stats_23_missing_portrait_falls_back_to_the_album_cover` flackert.** Der Test
+hat den dev-Lauf für #559 rot gemacht, obwohl #559 nur zwei
+Beschriftungskonstanten und die Kataloge anfasst. Lokal fällt er in **1 von 5**
+Läufen auf demselben Baum mit derselben Behauptung (`requests == 1`, bekommen
+`0`); die drei Wiederholungen des Display-Gates fangen ihn nicht. Ursache: die
+Wartebedingung `settle_until(… image_loaded == Some(true))` kann schon durch das
+**Albumcover** erfüllt sein, bevor die Porträtanfrage gezählt ist. Wer auf das
+Bild wartet, wartet nicht auf die Anfrage.
+
+### Was offen bleibt
+
+`scripts/tests/gettext-catalogs.sh` ist weiterhin auf `dev` rot und läuft in
+keinem Gate. Die zehn `todo`-Befunde aus dem Abschnitt oben stehen unverändert.
