@@ -2,7 +2,7 @@
 slug: list-geometry-service
 worktree: ~/Projects/reprise/.worktrees/list-geometry-service
 branch: feat/list-geometry-service
-phase: grilled
+phase: shipped
 codex_session:
 created: 2026-08-10
 ---

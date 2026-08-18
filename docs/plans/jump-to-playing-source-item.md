@@ -2,7 +2,7 @@
 slug: jump-to-playing-source-item
 worktree: ~/Projects/reprise-jump-to-playing-source-item
 branch: feature/jump-to-playing-source-item
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-04
 ---

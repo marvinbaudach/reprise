@@ -2,7 +2,7 @@
 slug: releases-view-scope
 worktree: ~/Projects/reprise-releases-view-scope
 branch: feature/releases-view-scope
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-07
 ---

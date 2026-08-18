@@ -2,7 +2,7 @@
 slug: doctor-progress-and-window-chrome
 worktree: ~/Projects/reprise/.worktrees/doctor-progress
 branch: fix/doctor-progress-and-chrome
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-09
 ---

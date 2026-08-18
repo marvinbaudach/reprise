@@ -2,7 +2,7 @@
 slug: ptr-e2e-compact-flow-respec
 worktree: ~/Projects/reprise-ptr-e2e-harness-debt
 branch: feature/ptr-e2e-harness-debt
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-12
 implemented: 2026-08-12

@@ -2,7 +2,7 @@
 slug: delete-responsiveness
 worktree: ~/Projects/reprise-delete-perf
 branch: perf/delete-responsiveness
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-08
 ---

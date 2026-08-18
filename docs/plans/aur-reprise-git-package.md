@@ -2,7 +2,7 @@
 slug: aur-reprise-git-package
 worktree: /home/marvin/Projects/reprise-aur-reprise-git-package
 branch: feature/aur-reprise-git-package
-phase: coding
+phase: shipped
 codex_session:
 created: 2026-08-13
 ---
