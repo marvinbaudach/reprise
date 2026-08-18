@@ -49,10 +49,18 @@ getrennt, die der Befund noch zusammen gesehen hat.
    die allgemeinere gehalten werden. Der Kommentar über
    `PODCAST_CLEAR_SELECTION` verlangt das bereits („the two must not read
    alike") — er wird endlich eingelöst.
-2. **Die Auto-Auswahl beim Sitzungsstart entfällt.** Die Zeile wird weiterhin
-   aufgedeckt und markiert, aber nicht ausgewählt — wie in der Track-Liste. Das
-   trifft den gemeldeten Fall an der Wurzel: ohne Auswahl gibt es weder Zählung
-   noch Schaltfläche.
+2. **Die Auto-Auswahl beim Sitzungsstart bleibt.** Im Grill war sie als
+   Abweichung der Podcast-Ansicht eingeordnet worden — das war falsch. Sie ist
+   die Umsetzung der **aktiven** Regel `START-3`
+   (`docs/ux-rules.md:1398`: „that row becomes the sole selection and is
+   centered", ausdrücklich für „the last loaded track **or episode**"). Die
+   Track-Liste tut dasselbe und nagelt es fest
+   (`start_restore_tests.rs:121`: „START-3 gives the restored loaded track the
+   sole selection"); `TrackRevealPolicy::MarkerOnly` regelt das Zentrieren, nicht
+   die Auswahl. Eine Streichung wäre eine Regeländerung mit eigenem Radius —
+   auch `docs/ux-rules.md:3264` argumentiert mit ihr. Entschieden am 18.08.2026:
+   nicht im Vorbeigehen, und wenn, dann für Track-Liste und Episodenliste
+   gemeinsam.
 3. **Die Sichtbarkeitsregel bleibt, wie sie ist.** Sobald eine Auswahl besteht,
    bleibt der Weg sie aufzulösen sichtbar — auch bei eingeklapptem Kanal. Eine
    Aktion zu verstecken, deren Zustand („1 selected") weiter angezeigt wird,
@@ -74,19 +82,12 @@ getrennt, die der Befund noch zusammen gesehen hat.
      **„Limpiar selección"** (bestehende Linie: „Clear all" = „Limpiar todo").
    Die übrigen Sprachen (ar, bn, fr, hi, zh_CN) sind nicht als vollständig
    geführt und bleiben unübersetzt.
-3. **Auto-Auswahl streichen** in
-   `crates/reprise-gnome/src/ui/podcasts/podcasts_view_marker.rs:173-177`: der
-   `select_row`-Aufruf im `SessionRestore`-Zweig entfällt. Alles andere in
-   diesem Zweig — das Aufdecken, das Ausklappen der Quelle, der Marker — bleibt
-   unverändert. Ein kurzer Kommentar hält fest, warum: `SessionRestore` markiert,
-   wie in `current_track_selection.rs`, und wählt nicht aus.
+3. **`podcasts_view_marker.rs` bleibt unangetastet.** Siehe Entscheidung 2.
 
 ## Tests
 
-1. `podcasts_view_tests.rs`: nach einer Sitzungswiederherstellung mit
-   `RevealRequest::Episode` ist die Auswahl **leer** und die
-   Auswahl-Schaltfläche unsichtbar — die Zeile bleibt trotzdem aufgedeckt und
-   markiert.
+1. `start_3_restored_episode_uses_the_selection_reveal_path` bleibt unverändert
+   grün — der Test, der `START-3` in dieser Ansicht festhält.
 2. Ein einfacher Klick auf eine Zeile wählt weiterhin aus, die Schaltfläche
    erscheint (das bestehende Verhalten darf nicht mitverschwinden).
 3. Die Beschriftungen: die Filter-Schaltfläche trägt „Clear filters", die
@@ -96,9 +97,10 @@ getrennt, die der Befund noch zusammen gesehen hat.
 
 ## Nachweis
 
-1. App starten, ohne etwas anzuklicken: die Leiste zeigt
-   „4 channels · 106 episodes · 26 new" **ohne** „1 selected" und **ohne**
-   Schaltfläche — das ist der gemeldete Screenshot, korrigiert.
+1. App starten, ohne etwas anzuklicken: die wiederhergestellte Episode ist
+   weiterhin ausgewählt (`START-3`), die Schaltfläche daneben heißt aber
+   **„Clear selection"** und ist damit nicht mehr mit dem Filter zu
+   verwechseln — das war der gemeldete Fehler.
 2. Eine Episode einfach anklicken: „1 selected" und **„Clear selection"**
    erscheinen; die Schaltfläche räumt die Auswahl, nicht den Filter.
 3. Einen Filter setzen: rechts steht **„Clear filters"**, und zwar auch dann,
@@ -107,7 +109,6 @@ getrennt, die der Befund noch zusammen gesehen hat.
 
 ## Parallelität
 
-**Nicht teilbar.** Drei kleine Aufgaben in drei Dateien, aber Aufgabe 2 hängt
-unmittelbar an den Zeichenketten aus Aufgabe 1 (dieselben `msgid`s), und die
-Tests aus 1 und 3 liegen in derselben Testdatei. Der Schnitt brächte keine
-Wanduhr-Zeit, nur zwei Zweige mit einer gemeinsamen Datei.
+**Nicht teilbar.** Nach dem Wegfall von Aufgabe 3 bleiben zwei Aufgaben, und
+Aufgabe 2 hängt unmittelbar an den Zeichenketten aus Aufgabe 1 (dieselben
+`msgid`s).
