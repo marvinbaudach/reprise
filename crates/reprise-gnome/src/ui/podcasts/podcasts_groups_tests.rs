@@ -709,6 +709,7 @@ fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
     gtk4::init().unwrap();
     let widgets = DownloadRowWidgets {
         root: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
+        detail: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
         status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
         action: gtk4::Button::new(),
         marker: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),

@@ -64,7 +64,7 @@ impl PlayerController {
     /// what lets that path patch a single badge instead of rebuilding. Marking
     /// an episode played *does* move one — the unplayed counts behind the
     /// Podcasts and YouTube rows — so it needs a signal of its own.
-    pub(in crate::ui) fn add_on_episode_played(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn add_on_episode_played(&self, callback: impl Fn(i64) + 'static) {
         self.external
             .borrow_mut()
             .episode_played_callbacks
@@ -73,11 +73,11 @@ impl PlayerController {
 
     /// Announces a completed episode. Callbacks are cloned out first so no
     /// borrow on `external` is live while they run — they reach back into the
-    /// sidebar and must be free to touch player state.
-    pub(in crate::ui) fn notify_episode_played(&self) {
+    /// sidebar and source views and must be free to touch player state.
+    pub(in crate::ui) fn notify_episode_played(&self, episode_id: i64) {
         let callbacks = self.external.borrow().episode_played_callbacks.clone();
         for callback in callbacks {
-            callback();
+            callback(episode_id);
         }
     }
 

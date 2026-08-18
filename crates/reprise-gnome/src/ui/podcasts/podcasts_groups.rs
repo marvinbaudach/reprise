@@ -35,6 +35,7 @@ pub(super) const SELECTED_ROW_CLASS: &str = "reprise-podcast-episode-selected";
 #[derive(Clone)]
 pub(super) struct DownloadRowWidgets {
     pub(super) root: gtk4::Box,
+    pub(super) detail: gtk4::Box,
     pub(super) status: gtk4::Box,
     pub(super) action: gtk4::Button,
     pub(super) marker: gtk4::Box,
@@ -449,6 +450,7 @@ fn episode_row(
     download.set_action_target_value(Some(&row.id.to_variant()));
     let download_row = DownloadRowWidgets {
         root: root.clone(),
+        detail: detail_row,
         status,
         action: download.clone(),
         marker,
@@ -504,6 +506,19 @@ pub(super) use super::podcasts_row_state::{update_download_state, update_network
 
 pub(super) fn update_playback_state(widgets: &DownloadRowWidgets, playing: bool) {
     playing_marker::set_playing(&widgets.marker, playing);
+}
+
+pub(super) fn update_episode_status(widgets: &DownloadRowWidgets, row: &EpisodeRow) {
+    let mut child = widgets.detail.first_child();
+    while let Some(current) = child {
+        child = current.next_sibling();
+        if current.has_css_class("reprise-source-row-chip") {
+            widgets.detail.remove(&current);
+        }
+    }
+    if let Some(spec) = chip_spec(row) {
+        widgets.detail.append(&crate::ui::source_row::chip(&spec));
+    }
 }
 
 #[cfg(test)]

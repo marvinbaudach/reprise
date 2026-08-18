@@ -73,6 +73,57 @@ fn src_16_the_channel_page_renders_the_status_as_a_chip() {
     assert!(chips[0].text().starts_with("Resume"));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn finishing_a_video_updates_the_channel_status_without_rebuilding_the_row() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let stack = gtk4::Stack::new();
+    let detail = YoutubeChannelDetail::new(&stack, false);
+    let mut video = episode(1, Some(3_600));
+    video.position_ms = 1_800_000;
+    let group = reprise_core::podcasts::SourceGroup {
+        subscription_id: 7,
+        title: "Channel".into(),
+        author: None,
+        image_url: None,
+        kind: PodcastKind::Youtube,
+        episodes: vec![video],
+    };
+    detail.update(
+        &[RenderedSourceGroup {
+            summary: source_summary(&group, &BTreeMap::new()),
+            group,
+        }],
+        &BTreeMap::new(),
+        false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
+        None,
+    );
+    detail.state.borrow_mut().open_channel(7);
+    detail.render_active();
+    let before = detail.download_widgets.borrow()[&1].root.clone();
+
+    detail.update_played_state(1, 99);
+
+    let after = detail.download_widgets.borrow()[&1].root.clone();
+    let stored = detail.groups.borrow()[0].group.episodes[0].clone();
+    assert_eq!(stored.played_at, Some(99));
+    assert_eq!(stored.position_ms, 0);
+    assert_eq!(
+        before.as_ptr(),
+        after.as_ptr(),
+        "the channel row was rebuilt"
+    );
+    let chip = descendants(after.upcast_ref())
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Label>().ok())
+        .find(|label| label.has_css_class("reprise-podcast-status-played"))
+        .expect("the completed video has a Played chip");
+    assert_eq!(chip.text(), strings::text(strings::PODCAST_STATUS_PLAYED));
+}
+
 /// `SRC-17`: the channel page reserves the same quiet row-menu surface.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
