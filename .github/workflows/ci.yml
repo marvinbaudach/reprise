@@ -222,6 +222,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node Current
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26.7.0"
+          cache: npm
+          cache-dependency-path: |
+            quality/package-lock.json
+            showroom/package-lock.json
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7.6.0
+        with:
+          version: "0.12.3"
+
       - name: Cache Cargo downloads
         uses: actions/cache@v6
         with:
