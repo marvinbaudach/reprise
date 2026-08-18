@@ -4,14 +4,14 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
     },
     thread,
 };
 
 use super::{
     activate, constant_time_eq, register, register_resolved_with_refresh, register_with_refresh,
-    revoke, revoke_active, StreamProxyError, StreamSource,
+    revoke, revoke_active, StreamProxyError, StreamSource, CLIENT_WRITE_TIMEOUT,
 };
 use crate::podcasts::ytdlp::ResolvedAudio;
 
@@ -27,14 +27,41 @@ struct FakeOrigin {
     address: std::net::SocketAddr,
     requests: Arc<Mutex<Vec<Option<RequestedRange>>>>,
     failures: Arc<Mutex<HashMap<u64, VecDeque<u16>>>>,
+    gate: Option<Arc<OriginGate>>,
+}
+
+struct OriginGate {
+    start: u64,
+    released: Mutex<bool>,
+    changed: Condvar,
 }
 
 impl FakeOrigin {
     fn new(data: Vec<u8>) -> Self {
-        Self::with_failures(data, HashMap::new())
+        Self::with_behavior(data, HashMap::new(), None)
     }
 
     fn with_failures(data: Vec<u8>, failures: HashMap<u64, VecDeque<u16>>) -> Self {
+        Self::with_behavior(data, failures, None)
+    }
+
+    fn with_gate(data: Vec<u8>, start: u64) -> Self {
+        Self::with_behavior(
+            data,
+            HashMap::new(),
+            Some(Arc::new(OriginGate {
+                start,
+                released: Mutex::new(false),
+                changed: Condvar::new(),
+            })),
+        )
+    }
+
+    fn with_behavior(
+        data: Vec<u8>,
+        failures: HashMap<u64, VecDeque<u16>>,
+        gate: Option<Arc<OriginGate>>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let data = Arc::new(data);
@@ -42,6 +69,7 @@ impl FakeOrigin {
         let failures = Arc::new(Mutex::new(failures));
         let thread_requests = Arc::clone(&requests);
         let thread_failures = Arc::clone(&failures);
+        let thread_gate = gate.clone();
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else {
@@ -50,13 +78,17 @@ impl FakeOrigin {
                 let data = Arc::clone(&data);
                 let requests = Arc::clone(&thread_requests);
                 let failures = Arc::clone(&thread_failures);
-                thread::spawn(move || serve_origin(&mut stream, &data, &requests, &failures));
+                let gate = thread_gate.clone();
+                thread::spawn(move || {
+                    serve_origin(&mut stream, &data, &requests, &failures, gate.as_deref());
+                });
             }
         });
         Self {
             address,
             requests,
             failures,
+            gate,
         }
     }
 
@@ -75,6 +107,12 @@ impl FakeOrigin {
             .get(&start)
             .map_or(0, VecDeque::len)
     }
+
+    fn release_gate(&self) {
+        let gate = self.gate.as_ref().unwrap();
+        *gate.released.lock().unwrap() = true;
+        gate.changed.notify_all();
+    }
 }
 
 fn serve_origin(
@@ -82,6 +120,7 @@ fn serve_origin(
     data: &[u8],
     requests: &Mutex<Vec<Option<RequestedRange>>>,
     failures: &Mutex<HashMap<u64, VecDeque<u16>>>,
+    gate: Option<&OriginGate>,
 ) {
     let Some(target) = read_request_target(stream) else {
         return;
@@ -92,6 +131,12 @@ fn serve_origin(
         write_response(stream, 403, &[], &[]);
         return;
     };
+    if let Some(gate) = gate.filter(|gate| gate.start == range.start) {
+        let mut released = gate.released.lock().unwrap();
+        while !*released {
+            released = gate.changed.wait(released).unwrap();
+        }
+    }
     let length = range.end.saturating_sub(range.start).saturating_add(1);
     if length >= REJECTED_RANGE_BYTES {
         write_response(stream, 403, &[], &[]);
@@ -277,6 +322,51 @@ fn complete_stream_is_reassembled_from_bounded_origin_windows() {
     assert!(requests.iter().all(|request| request
         .as_ref()
         .is_some_and(|range| { range.end - range.start + 1 < REJECTED_RANGE_BYTES })));
+    revoke(&token);
+}
+
+#[test]
+fn paused_client_receives_the_complete_stream_after_a_write_timeout() {
+    let data = fixture_bytes(12_000_007);
+    let origin = FakeOrigin::with_gate(data.clone(), 1_000_000);
+    let token = register(origin.url(), data.len() as u64).unwrap();
+    let url = url::Url::parse(token.playback_url()).unwrap();
+    let address = format!("{}:{}", url.host_str().unwrap(), url.port().unwrap())
+        .parse::<std::net::SocketAddr>()
+        .unwrap();
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::TCP),
+    )
+    .unwrap();
+    socket.set_recv_buffer_size(64 * 1024).unwrap();
+    socket.connect(&address.into()).unwrap();
+    let mut stream = TcpStream::from(socket);
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .unwrap();
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        &url[url::Position::BeforePath..],
+        url.host_str().unwrap()
+    );
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut received = vec![0; 4 * 1024];
+    stream.read_exact(&mut received).unwrap();
+
+    origin.release_gate();
+    thread::sleep(CLIENT_WRITE_TIMEOUT * 10);
+    stream.read_to_end(&mut received).unwrap();
+
+    let header_end = received
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .unwrap();
+    assert!(
+        received[header_end + 4..] == data,
+        "paused client received a truncated or corrupted stream"
+    );
     revoke(&token);
 }
 

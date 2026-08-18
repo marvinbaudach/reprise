@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
     net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -21,7 +21,12 @@ const MAX_REQUEST_BYTES: usize = 16 * 1024;
 const MAX_WINDOW_ATTEMPTS: usize = 3;
 const MAX_UNAUTHENTICATED_CLIENTS: usize = 8;
 const REQUEST_HEADER_TIMEOUT: Duration = Duration::from_secs(5);
+/// Wake-up interval for observing a revoked registration during a blocked
+/// client write. A paused client may outlive any number of these intervals.
+#[cfg(not(test))]
 const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_millis(100);
 const ORIGIN_TIMEOUT: Duration = Duration::from_secs(15);
 const TOKEN_BYTES: usize = 16;
 
@@ -315,7 +320,10 @@ fn listen(listener: TcpListener, registrations: Arc<Mutex<HashMap<String, Arc<Re
 
 fn configure_client_stream(stream: &TcpStream) -> std::io::Result<()> {
     stream.set_read_timeout(Some(REQUEST_HEADER_TIMEOUT))?;
-    stream.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT))
+    stream.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT))?;
+    #[cfg(test)]
+    socket2::SockRef::from(stream).set_send_buffer_size(64 * 1024)?;
+    Ok(())
 }
 
 fn serve_client(
@@ -489,7 +497,7 @@ fn stream_registration(
                 .name("reprise-youtube-stream-prefetch".to_owned())
                 .spawn(move || fetch_window(&registration, next_offset))
         });
-        if stream.write_all(&current).is_err() {
+        if !write_stream_bytes(stream, registration, &current) {
             return;
         }
         let Some(next) = next else {
@@ -526,6 +534,27 @@ fn stream_registration(
         current = bytes;
         offset = next_offset;
     }
+}
+
+fn write_stream_bytes(stream: &mut TcpStream, registration: &Registration, bytes: &[u8]) -> bool {
+    let mut written = 0;
+    while written < bytes.len() {
+        if !registration.active.load(Ordering::Acquire) {
+            return false;
+        }
+        match stream.write(&bytes[written..]) {
+            Ok(0) => return false,
+            Ok(count) => written += count,
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) => {
+                if !registration.active.load(Ordering::Acquire) {
+                    return false;
+                }
+            }
+            Err(_) => return false,
+        }
+    }
+    true
 }
 
 fn abort_failed_window(
