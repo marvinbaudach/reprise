@@ -2,7 +2,7 @@
 slug: filter-bar-clear-without-a-filter
 worktree: /home/marvin/Projects/reprise-filter-bar-clear-without-a-filter
 branch: feature/filter-bar-clear-without-a-filter
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
