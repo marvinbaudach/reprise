@@ -27,12 +27,12 @@ class ApplicationIdentityTest {
     }
 
     @Test
-    fun installedIdentityUsesTheProductIdAndWorkspaceVersion() {
+    fun installedIdentityUsesTheProductIdAndMobileVersion() {
         val application = RuntimeEnvironment.getApplication()
         val packageInfo = application.packageManager.getPackageInfo(application.packageName, 0)
 
         assertEquals("org.reprise", application.packageName)
         assertEquals("org.reprise", BuildConfig.APPLICATION_ID)
-        assertEquals(BuildConfig.REPRISE_CORE_VERSION, packageInfo.versionName)
+        assertEquals(BuildConfig.VERSION_NAME, packageInfo.versionName)
     }
 }

@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Raise the app version by one patch step, everywhere it is written down.
+# Raise the affected app versions by one patch step.
 #
 # Called by the pipeline's land.sh right before a branch is merged into dev, so
-# every merge ships a version the previous one did not have. Usable by hand too.
+# Desktop and Android builds advance independently. Shared Core/View changes
+# advance both; documentation, CI and Showroom changes advance neither. Usable
+# by hand too.
 #
 #   ./scripts/bump-version.sh current            print the workspace version
 #   ./scripts/bump-version.sh next [<version>]   print that version with patch+1
 #   ./scripts/bump-version.sh set <version>      write <version> everywhere
 #   ./scripts/bump-version.sh --base <git-ref>   patch+1 over <ref>, then write
 #
-# `--base` is the form the landing script uses, and it is the reason this is
-# computed against a ref rather than against the working copy: the branch is
-# rebased onto origin/dev immediately before the merge, so the only version that
-# guarantees monotonicity is dev's own plus one. Deriving it from the branch
-# would hand out a number a parallel merge may already have taken.
+# `--base` is the form the landing script uses. It classifies committed paths
+# since the ref, then computes each selected app's next version from that ref.
+# The branch is rebased onto origin/dev immediately before the merge, so dev's
+# own app versions are the only bases that guarantee monotonicity.
 #
 # Never lowers a version. A working copy already ahead of the computed target
 # keeps what it has — a hand-made release bump is not something a landing run
 # gets to undo.
 #
-# Writes three places. `Cargo.toml` is the single source; `Cargo.lock` carries
-# the same number for every workspace member and a stale one leaves the tree
-# dirty on the next build; Android's `versionCode` is an integer of its own that
-# nothing derives from the version string, and it has to keep climbing or the
-# installer refuses a newer APK over an older one. `versionName` needs no touch,
-# it reads the workspace version through `workspacePackageValue("version")`.
+# Desktop writes `Cargo.toml` plus inherited workspace packages in `Cargo.lock`.
+# Android writes its independent literal `versionName` plus its monotonic
+# integer `versionCode`; the installer refuses a newer APK when that code does
+# not advance. The explicit `set` mode remains the deliberate way to align both
+# versions to one value.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -74,6 +74,27 @@ print(found.group(1))
 PY
 }
 
+read_android_version() {
+  python3 - "$1" "${2:-}" <<'PY'
+import re
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+found = re.search(r'^\s*versionName\s*=\s*"([^"]+)"\s*$', text, re.M)
+if found:
+    print(found.group(1))
+    sys.exit()
+coupled = re.search(r'^\s*versionName\s*=\s*workspacePackageValue\("version"\)\s*$', text, re.M)
+if not coupled or not sys.argv[2]:
+    sys.exit("no supported versionName line")
+cargo = open(sys.argv[2], encoding="utf-8").read()
+section = re.search(r'^\[workspace\.package\]\s*$(.*?)(?=^\[|\Z)', cargo, re.M | re.S)
+version = re.search(r'^version\s*=\s*"([^"]+)"', section.group(1), re.M) if section else None
+if not version:
+    sys.exit("no workspace version for coupled Android versionName")
+print(version.group(1))
+PY
+}
+
 next_patch() {
   python3 - "$1" <<'PY'
 import sys
@@ -97,14 +118,14 @@ PY
 
 # --- writing -------------------------------------------------------------------
 
-write_everywhere() {
-  local target=$1 target_code=$2
-  python3 - "$cargo_toml" "$cargo_lock" "$gradle" "$target" "$target_code" <<'PY'
+write_desktop() {
+  local target=$1
+  python3 - "$cargo_toml" "$cargo_lock" "$target" <<'PY'
 import re
 import sys
 import pathlib
 
-cargo_toml, cargo_lock, gradle, target, target_code = sys.argv[1:6]
+cargo_toml, cargo_lock, target = sys.argv[1:4]
 
 # 1. The source of truth.
 path = pathlib.Path(cargo_toml)
@@ -146,9 +167,27 @@ if lock_path.exists():
     if missing:
         sys.exit(f"Cargo.lock still carries the old version for: {', '.join(missing)}")
 
-# 3. Android's own counter.
+print(f"desktop {old} -> {target}", file=sys.stderr)
+PY
+}
+
+write_android() {
+  local target=$1 target_code=$2
+  python3 - "$gradle" "$target" "$target_code" <<'PY'
+import re
+import sys
+import pathlib
+
+gradle, target, target_code = sys.argv[1:4]
+
 gradle_path = pathlib.Path(gradle)
 gradle_text = gradle_path.read_text(encoding="utf-8")
+old = re.search(r'^\s*versionName\s*=\s*"([^"]+)"\s*$', gradle_text, re.M)
+if not old:
+    sys.exit("literal versionName line not found")
+gradle_text = re.sub(r'^(\s*versionName\s*=\s*)"[^"]+"\s*$',
+                     lambda m: f'{m.group(1)}"{target}"',
+                     gradle_text, count=1, flags=re.M)
 gradle_text, count = re.subn(r'^(\s*versionCode\s*=\s*)\d+\s*$',
                              lambda m: f"{m.group(1)}{target_code}",
                              gradle_text, count=1, flags=re.M)
@@ -156,8 +195,13 @@ if count != 1:
     sys.exit("versionCode line not found — Android would keep shipping the old code")
 gradle_path.write_text(gradle_text, encoding="utf-8")
 
-print(f"{old} -> {target} (versionCode {target_code})", file=sys.stderr)
+print(f"android {old.group(1)} -> {target} (versionCode {target_code})", file=sys.stderr)
 PY
+}
+
+write_everywhere() {
+  write_desktop "$1"
+  write_android "$1" "$2"
 }
 
 # --- modes ---------------------------------------------------------------------
@@ -183,6 +227,50 @@ case "$mode" in
     git rev-parse --verify --quiet "$ref^{commit}" >/dev/null \
       || die "no such git ref: $ref"
 
+    classification_head=HEAD
+    if [[ $(git log -1 --pretty=%s) == "chore: bump version to "* ]]; then
+      generated_bump=1
+      touched=0
+      while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        touched=1
+        case "$path" in
+          Cargo.toml|Cargo.lock|android/app/build.gradle.kts) ;;
+          *) generated_bump= ;;
+        esac
+      done < <(git show --name-only --pretty=format: HEAD)
+      if [ -n "$generated_bump" ] && [ "$touched" -eq 1 ]; then
+        classification_head=HEAD^
+      fi
+    fi
+
+    bump_desktop=
+    bump_android=
+    while IFS= read -r path; do
+      case "$path" in
+        android/*|crates/reprise-android-ffi/*) bump_android=1 ;;
+        crates/reprise-core/*|crates/reprise-view/*|Cargo.toml|Cargo.lock)
+          bump_desktop=1
+          bump_android=1
+          ;;
+        crates/reprise-gnome/*|crates/reprise-platform-linux/*|\
+        crates/reprise-runtime/*|crates/reprise-runtime-client/*|\
+        crates/reprise-runtime-protocol/*|crates/reprise-stems/*|\
+        build-aux/*|data/*|flatpak/*|packaging/*|po/*|meson.build)
+          bump_desktop=1
+          ;;
+        io.github.marvinbaudach.Reprise.yml|meson_options.txt)
+          bump_desktop=1
+          ;;
+        *) ;;
+      esac
+    done < <(git diff --name-only "$ref"..."$classification_head")
+    if [ -z "$bump_desktop" ] && [ -z "$bump_android" ]; then
+      printf 'no desktop or Android app changes\n' >&2
+      printf 'none\n'
+      exit 0
+    fi
+
     # Read the ref through files, not a pipe: the readers hand their program to
     # python3 on stdin, so stdin is already spoken for.
     scratch=$(mktemp -d)
@@ -192,28 +280,42 @@ case "$mode" in
     git show "$ref:$gradle" > "$scratch/build.gradle.kts" \
       || die "could not read $gradle from $ref"
 
-    base_version=$(read_version "$scratch/Cargo.toml")
-    base_code=$(read_version_code "$scratch/build.gradle.kts")
-
-    target=$(next_patch "$base_version")
-    target_code=$(( base_code + 1 ))
-
-    current=$(read_version "$cargo_toml")
-    current_code=$(read_version_code "$gradle")
-    # Never walk a version backwards: a release bump made by hand outranks the
-    # step this run would have taken.
-    if version_gt "$current" "$target"; then
-      target=$current
+    summary=()
+    if [ -n "$bump_desktop" ]; then
+      base_version=$(read_version "$scratch/Cargo.toml")
+      desktop_target=$(next_patch "$base_version")
+      current=$(read_version "$cargo_toml")
+      if version_gt "$current" "$desktop_target"; then
+        desktop_target=$current
+      fi
+      if [ "$current" != "$desktop_target" ]; then
+        write_desktop "$desktop_target"
+      fi
+      summary+=("desktop $desktop_target")
     fi
-    [ "$current_code" -gt "$target_code" ] && target_code=$current_code
 
-    if [ "$current" = "$target" ] && [ "$current_code" = "$target_code" ]; then
-      printf 'already at %s (versionCode %s)\n' "$target" "$target_code" >&2
-      printf '%s\n' "$target"
-      exit 0
+    if [ -n "$bump_android" ]; then
+      base_android=$(read_android_version "$scratch/build.gradle.kts" "$scratch/Cargo.toml")
+      base_code=$(read_version_code "$scratch/build.gradle.kts")
+      android_target=$(next_patch "$base_android")
+      target_code=$(( base_code + 1 ))
+      current_android=$(read_android_version "$gradle" "$cargo_toml")
+      current_code=$(read_version_code "$gradle")
+      if version_gt "$current_android" "$android_target"; then
+        android_target=$current_android
+      fi
+      [ "$current_code" -gt "$target_code" ] && target_code=$current_code
+      if [ "$current_android" != "$android_target" ] || [ "$current_code" != "$target_code" ]; then
+        write_android "$android_target" "$target_code"
+      fi
+      summary+=("android $android_target")
     fi
-    write_everywhere "$target" "$target_code"
-    printf '%s\n' "$target"
+
+    summary_text=${summary[0]}
+    for item in "${summary[@]:1}"; do
+      summary_text+=", $item"
+    done
+    printf '%s\n' "$summary_text"
     ;;
 
   *)
