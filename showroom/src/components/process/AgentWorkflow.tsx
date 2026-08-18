@@ -20,6 +20,7 @@ export function AgentWorkflow() {
     <figure
       className="agent-workflow"
       data-showcase="agent-workflow"
+      data-reveal
       aria-labelledby="agent-workflow-title"
     >
       <header className="process-heading">
@@ -31,6 +32,7 @@ export function AgentWorkflow() {
         {WORKFLOW.map((step, index) => (
           <li
             className="agent-workflow__step"
+            data-reveal
             data-role={'role' in step ? step.role : undefined}
             key={step.label}
           >

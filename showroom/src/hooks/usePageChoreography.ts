@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { prepareCounter, runCountersIn } from '../lib/counters';
+import { prepareCounter, runCounter, runCountersIn } from '../lib/counters';
 import { prepareReveals, type RevealState, sweepReveals } from '../lib/reveal';
 
 /**
@@ -32,8 +32,15 @@ export function usePageChoreography(still: boolean): void {
     const sections = Array.from(root.querySelectorAll<HTMLElement>('[data-ground]'));
     const navLinks = Array.from(root.querySelectorAll<HTMLAnchorElement>('[data-navlink]'));
 
-    for (const element of root.querySelectorAll<HTMLElement>('[data-counter]'))
+    for (const element of root.querySelectorAll<HTMLElement>('[data-counter]')) {
       prepareCounter(element);
+      if (still) runCounter(element, 0, true);
+    }
+    if (!still) {
+      for (const bar of root.querySelectorAll<HTMLElement>('[data-ratio] > span')) {
+        if (bar.getBoundingClientRect().top >= window.innerHeight * 0.88) bar.style.width = '0%';
+      }
+    }
     let reveals: RevealState = prepareReveals(root, still);
     let ratioRun = false;
     let currentGround: HTMLElement | null = null;

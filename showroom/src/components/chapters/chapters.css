@@ -100,71 +100,148 @@
   scroll-margin-block-start: 3rem;
 }
 
-.chapter__body {
-  display: grid;
-  gap: var(--gap-block);
+.chapter--design {
+  padding: clamp(4.5rem, 3rem + 7vw, 9rem) 0;
 }
 
-.chapter__body > .rule {
-  margin-top: var(--gap-block);
+.chapter--design > .frame {
+  width: 100%;
+  max-width: var(--frame-max);
+  padding-inline: var(--frame-pad);
+}
+
+.chapter__eyebrow {
+  margin: 0 0 14px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.chapter__title {
+  margin: 0 0 clamp(2.5rem, 1.8rem + 2vw, 4rem);
+  font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: oklch(97% 0.004 269);
+  font-variation-settings:
+    "wdth" 106,
+    "wght" 580;
+}
+
+.chapter__intro {
+  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 0;
+  max-width: 68ch;
+  color: oklch(80% 0.008 269);
+  text-wrap: pretty;
+}
+
+.chapter__intro--after-rungs,
+.chapter__intro--closing {
+  margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);
+}
+
+.chapter__subhead {
+  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 18px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.evidence-heading {
+  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 22px;
+}
+
+.evidence-heading > p:first-child {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: oklch(68% 0.011 269);
+}
+
+.evidence-heading h3 {
+  margin: 0 0 12px;
+  max-width: 46ch;
+  font-size: clamp(1.35rem, 1.1rem + 1.1vw, 2.1rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: oklch(97% 0.004 269);
+  font-variation-settings:
+    "wdth" 104,
+    "wght" 560;
+}
+
+.evidence-heading > p:last-child {
+  max-width: 62ch;
+  color: oklch(76% 0.009 269);
+  text-wrap: pretty;
 }
 
 /* --- The verification staircase ------------------------------------------ */
 
 .rungs {
   display: grid;
-  gap: 1px;
-  background: var(--surface-line-soft);
-  border: 1px solid var(--surface-line);
+  gap: 8px;
 }
 
 .rungs__rung {
   display: grid;
-  /* The count column has to hold "5'280" set in the display face at its largest.
-     Too narrow and the figure does not wrap — it overlaps the name beside it. */
-  grid-template-columns: minmax(7.5rem, 9rem) minmax(11rem, 1fr) 1fr 1fr;
-  gap: var(--gap-line);
+  grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr;
+  gap: 10px 22px;
   align-items: baseline;
-  padding: var(--gap-line) var(--gap-line) var(--gap-line)
-    calc(var(--gap-line) + var(--rung-index, 0) * 0.75rem);
-  background: var(--surface-base);
-  border-left: 3px solid transparent;
+  padding: 18px 20px;
+  border: 1px solid oklch(28% 0.018 269);
+  border-left: 2px solid oklch(40% 0.018 269);
+  border-radius: 8px;
+  background: oklch(17% 0.016 269 / 0.7);
 }
 
-/* The two agent-driven rungs are the point of the chapter, so they carry the
-   accent — the rest of the staircase stays quiet. */
+.rungs__rung:nth-child(2) {
+  border-left-color: oklch(46% 0.018 269);
+}
+
+.rungs__rung:nth-child(3) {
+  border-left-color: oklch(52% 0.018 269);
+}
+
 .rungs__rung--agent {
-  border-left-color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 5%, var(--surface-base));
+  border-color: oklch(30% 0.03 195);
+  border-left: 2px solid #4fdbd4;
+  background: linear-gradient(120deg, oklch(22% 0.04 195 / 0.5), oklch(17% 0.016 269 / 0.7));
 }
 
-/* Two classes deep on purpose: the shared `.figure-value` sets the display size
-   and its stylesheet may land after this one in the bundle. A rule that only
-   wins by import order is a rule that breaks the day the imports move. */
-.rungs__rung .rungs__count {
-  font-size: clamp(1.375rem, 1rem + 1.1vw, 1.875rem);
-  font-variation-settings:
-    "wdth" 100,
-    "wght" 700;
-  line-height: 1.05;
+.rungs__rung:nth-child(5) {
+  background: linear-gradient(120deg, oklch(24% 0.05 195 / 0.55), oklch(17% 0.016 269 / 0.7));
+}
+
+.rungs__count {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  letter-spacing: -0.03em;
+  color: oklch(97% 0.004 269);
 }
 
 .rungs__name {
-  font-variation-settings:
-    "wdth" 92,
-    "wght" 550;
-  color: var(--text-strong);
+  color: oklch(94% 0.004 269);
+  font-weight: 500;
 }
 
 .rungs__proves,
 .rungs__cannot {
-  color: var(--text-muted);
-  line-height: 1.5;
+  font-size: 0.86rem;
+  color: oklch(76% 0.009 269);
 }
 
 .rungs__marker {
-  display: block;
-  font-size: var(--text-eyebrow);
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -174,7 +251,7 @@
 }
 
 .rungs__marker--cannot {
-  color: var(--second);
+  color: #ff6f5e;
 }
 
 /* --- Folded detail ------------------------------------------------------- */
@@ -303,17 +380,6 @@
 
 .site-footer__links a:hover {
   color: var(--accent);
-}
-
-@media (max-width: 60rem) {
-  .rungs__rung {
-    grid-template-columns: minmax(4.5rem, 5.5rem) 1fr;
-  }
-
-  .rungs__proves,
-  .rungs__cannot {
-    grid-column: 2;
-  }
 }
 
 /* --- Tempo band ---------------------------------------------------------- */
