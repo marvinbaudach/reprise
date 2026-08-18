@@ -2,7 +2,7 @@
 slug: showroom-plate-plays-the-visualizer
 worktree: /home/marvin/Projects/reprise-showroom-plate-plays-the-visualizer
 branch: feature/showroom-plate-plays-the-visualizer
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-18
 ---
@@ -323,3 +323,15 @@ Strang.
 
 Die Parallelisierung ist hier auch schlicht nicht nötig: der Umfang liegt weit
 unter dem, was einen zweiten Worktree rechtfertigt.
+
+---
+
+## Nachtrag: Sichtprüfung (18.08.2026)
+
+Aufgabe 8 ist erledigt. Der Auftraggeber hat die laufende Platte im Dev-Server
+angesehen und abgenommen: „die visualization klappt". Die Bewegung trifft
+also das, was §2.0 gemessen hat — die dort gemessene mittlere Abweichung von
+3,2 von 255 gegen den Cairo-Pfad gilt nach dem Bau weiter.
+
+Nicht geprüft und weiterhin offen ist Einschränkung 4: gemessen wurde gegen den
+GNOME-Cairo-Renderer, gezeigt wird eine Android-Platte.
