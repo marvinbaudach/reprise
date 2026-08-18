@@ -17,25 +17,28 @@ pub fn normalize_component(value: &str) -> String {
         .join(" ")
 }
 
-pub fn dedupe_key(date_key: &str, city: &str, venue: &str) -> String {
+pub fn dedupe_key(artist_key: &str, date_key: &str, city: &str) -> String {
     format!(
         "{}|{}|{}",
-        date_key.trim(),
-        normalize_component(city),
-        normalize_component(venue)
+        normalize_component(artist_key),
+        normalize_component(date_key),
+        normalize_component(city)
     )
 }
 
-pub fn merge(events: Vec<ProviderEvent>) -> Vec<ProviderEvent> {
+pub fn merge(artist_key: &str, events: Vec<ProviderEvent>) -> Vec<ProviderEvent> {
     let mut merged = Vec::with_capacity(events.len());
     let mut positions = HashMap::new();
     for event in events {
-        let key = dedupe_key(&event.date_key, &event.city, &event.venue);
+        let key = dedupe_key(artist_key, &event.date_key, &event.city);
         if let Some(&position) = positions.get(&key) {
             let existing: &ProviderEvent = &merged[position];
-            if existing.provider == ProviderKind::Ticketmaster
-                && event.provider == ProviderKind::Bandsintown
-            {
+            if ProviderKind::listing_winner_is_incoming(
+                existing.provider,
+                existing.ticket_url.as_deref(),
+                event.provider,
+                event.ticket_url.as_deref(),
+            ) {
                 merged[position] = event;
             }
             continue;
@@ -44,6 +47,49 @@ pub fn merge(events: Vec<ProviderEvent>) -> Vec<ProviderEvent> {
         merged.push(event);
     }
     merged
+}
+
+impl ProviderKind {
+    pub(crate) fn owns_ticket_url(self, ticket_url: Option<&str>) -> bool {
+        provider_owns_ticket_url(self, ticket_url)
+    }
+
+    pub(crate) fn listing_winner_is_incoming(
+        existing_provider: Self,
+        existing_ticket_url: Option<&str>,
+        incoming_provider: Self,
+        incoming_ticket_url: Option<&str>,
+    ) -> bool {
+        if existing_provider == incoming_provider {
+            let existing_is_owned = existing_provider.owns_ticket_url(existing_ticket_url);
+            let incoming_is_owned = incoming_provider.owns_ticket_url(incoming_ticket_url);
+            return incoming_is_owned && !existing_is_owned;
+        }
+
+        existing_provider == Self::Ticketmaster && incoming_provider == Self::Bandsintown
+    }
+}
+
+fn provider_owns_ticket_url(provider: ProviderKind, ticket_url: Option<&str>) -> bool {
+    let expected_label = match provider {
+        ProviderKind::Bandsintown => "bandsintown",
+        ProviderKind::Ticketmaster => "ticketmaster",
+    };
+    ticket_url
+        .and_then(|value| Url::parse(value).ok())
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| registrable_domain_label(&host) == Some(expected_label))
+}
+
+fn registrable_domain_label(host: &str) -> Option<&str> {
+    let mut labels = host.rsplit('.');
+    let top_level = labels.next()?;
+    let candidate = labels.next()?;
+    if top_level.len() == 2 && matches!(candidate, "co" | "com" | "net" | "org") {
+        labels.next()
+    } else {
+        Some(candidate)
+    }
 }
 
 pub fn ticket_source_label(value: &str) -> Option<String> {

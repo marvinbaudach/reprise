@@ -1,6 +1,10 @@
 //! Schema migration for cached concerts and their per-artist fetch ledger.
 
-use rusqlite::Connection;
+use std::collections::HashMap;
+
+use rusqlite::{params, Connection};
+
+use crate::concerts::{dedupe_key, ProviderKind};
 
 const SCHEMA_V31: &str = r#"
 CREATE TABLE IF NOT EXISTS concert_artists (
@@ -86,6 +90,109 @@ pub(crate) fn migrate_v75(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.execute_batch(SCHEMA_V75)?;
     transaction.pragma_update(None, "user_version", 75)?;
     transaction.commit()
+}
+
+#[derive(Debug)]
+struct StoredListing {
+    id: i64,
+    dedupe_key: String,
+    provider: Option<ProviderKind>,
+    ticket_url: Option<String>,
+}
+
+pub(crate) fn migrate_v76(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 76 {
+        return Ok(());
+    }
+
+    let transaction = conn.unchecked_transaction()?;
+    let listings = {
+        let mut statement = transaction.prepare(
+            "SELECT id, artist_key, date_key, city, provider, ticket_url
+               FROM concert_events
+              ORDER BY id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let provider: String = row.get(4)?;
+            Ok(StoredListing {
+                id: row.get(0)?,
+                dedupe_key: dedupe_key(
+                    row.get_ref(1)?.as_str()?,
+                    row.get_ref(2)?.as_str()?,
+                    row.get_ref(3)?.as_str()?,
+                ),
+                provider: parse_provider(&provider),
+                ticket_url: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let mut winners: Vec<StoredListing> = Vec::with_capacity(listings.len());
+    let mut positions: HashMap<String, usize> = HashMap::with_capacity(listings.len());
+    let mut loser_ids = Vec::new();
+    for listing in listings {
+        if let Some(&position) = positions.get(&listing.dedupe_key) {
+            let existing = &winners[position];
+            if stored_listing_winner_is_incoming(existing, &listing) {
+                loser_ids.push(existing.id);
+                winners[position] = listing;
+            } else {
+                loser_ids.push(listing.id);
+            }
+        } else {
+            positions.insert(listing.dedupe_key.clone(), winners.len());
+            winners.push(listing);
+        }
+    }
+
+    for id in loser_ids {
+        transaction.execute("DELETE FROM concert_events WHERE id = ?1", [id])?;
+    }
+    for listing in &winners {
+        transaction.execute(
+            "UPDATE concert_events SET dedupe_key = ?1 WHERE id = ?2",
+            params![format!("\0reprise-v76-{}", listing.id), listing.id],
+        )?;
+    }
+    for listing in winners {
+        transaction.execute(
+            "UPDATE concert_events SET dedupe_key = ?1 WHERE id = ?2",
+            params![listing.dedupe_key, listing.id],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", 76)?;
+    transaction.commit()
+}
+
+fn parse_provider(value: &str) -> Option<ProviderKind> {
+    match value {
+        "bandsintown" => Some(ProviderKind::Bandsintown),
+        "ticketmaster" => Some(ProviderKind::Ticketmaster),
+        _ => None,
+    }
+}
+
+fn stored_listing_winner_is_incoming(existing: &StoredListing, incoming: &StoredListing) -> bool {
+    match (existing.provider, incoming.provider) {
+        (Some(existing_provider), Some(incoming_provider)) => {
+            ProviderKind::listing_winner_is_incoming(
+                existing_provider,
+                existing.ticket_url.as_deref(),
+                incoming_provider,
+                incoming.ticket_url.as_deref(),
+            )
+        }
+        _ => {
+            let existing_is_owned = existing
+                .provider
+                .is_some_and(|provider| provider.owns_ticket_url(existing.ticket_url.as_deref()));
+            let incoming_is_owned = incoming
+                .provider
+                .is_some_and(|provider| provider.owns_ticket_url(incoming.ticket_url.as_deref()));
+            incoming_is_owned && !existing_is_owned
+        }
+    }
 }
 
 #[cfg(test)]

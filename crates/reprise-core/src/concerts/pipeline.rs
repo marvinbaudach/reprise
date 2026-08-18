@@ -6,7 +6,7 @@ use std::sync::{
 use std::time::Duration;
 
 use chrono::NaiveDate;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::candidates::{self, ArtistCandidate, MAX_ARTISTS_PER_RUN};
 use super::resolution::{self, LedgerArtist, ResolvedIdentity, StoredOutcome};
@@ -272,6 +272,7 @@ fn refresh_with_similar_fetch_cancellable(
         };
         let today_key = today.format("%Y-%m-%d").to_string();
         let events = merge(
+            artist.key,
             events
                 .into_iter()
                 .filter(|event| event.date_key.as_str() >= today_key.as_str())
@@ -426,7 +427,13 @@ fn reconcile_artist(
     let mut fresh_keys = HashSet::with_capacity(events.len());
     let mut upserted = 0;
     for event in events {
-        let key = dedupe_key(&event.date_key, &event.city, &event.venue);
+        let key = dedupe_key(artist.key, &event.date_key, &event.city);
+        let keep_stored_listing = stored_provider_owned_listing_wins(
+            &transaction,
+            &key,
+            identity.provider,
+            event.ticket_url.as_deref(),
+        )?;
         fresh_keys.insert(key.clone());
         upserted += transaction.execute(
             "INSERT INTO concert_events (
@@ -439,27 +446,25 @@ fn reconcile_artist(
                ?14, ?15, ?16, ?17, ?18, ?19
              )
              ON CONFLICT(dedupe_key) DO UPDATE SET
-               artist_key = CASE
-                 WHEN concert_events.is_similar = 1 AND excluded.is_similar = 0
-                   THEN excluded.artist_key
-                 ELSE concert_events.artist_key
-               END,
-               artist_name = CASE
-                 WHEN concert_events.is_similar = 1 AND excluded.is_similar = 0
-                   THEN excluded.artist_name
-                 ELSE concert_events.artist_name
-               END,
+               artist_key = excluded.artist_key,
+               artist_name = excluded.artist_name,
                starts_at = excluded.starts_at,
                date_key = excluded.date_key,
-               venue = excluded.venue,
+               venue = CASE WHEN ?20
+                 THEN concert_events.venue ELSE excluded.venue END,
                city = excluded.city,
                region = excluded.region,
                country = excluded.country,
-               latitude = excluded.latitude,
-               longitude = excluded.longitude,
-               ticket_url = excluded.ticket_url,
-               ticket_source = excluded.ticket_source,
-               event_url = excluded.event_url,
+               latitude = CASE WHEN ?20
+                 THEN concert_events.latitude ELSE excluded.latitude END,
+               longitude = CASE WHEN ?20
+                 THEN concert_events.longitude ELSE excluded.longitude END,
+               ticket_url = CASE WHEN ?20
+                 THEN concert_events.ticket_url ELSE excluded.ticket_url END,
+               ticket_source = CASE WHEN ?20
+                 THEN concert_events.ticket_source ELSE excluded.ticket_source END,
+               event_url = CASE WHEN ?20
+                 THEN concert_events.event_url ELSE excluded.event_url END,
                provider = excluded.provider,
                is_similar = MIN(concert_events.is_similar, excluded.is_similar),
                similar_to = CASE
@@ -488,7 +493,8 @@ fn reconcile_artist(
                 artist.similar_to,
                 now,
                 key,
-                event.availability.as_str()
+                event.availability.as_str(),
+                keep_stored_listing
             ],
         )?;
     }
@@ -516,6 +522,33 @@ fn reconcile_artist(
     Ok(upserted)
 }
 
+fn stored_provider_owned_listing_wins(
+    conn: &Connection,
+    dedupe_key: &str,
+    incoming_provider: ProviderKind,
+    incoming_ticket_url: Option<&str>,
+) -> Result<bool, rusqlite::Error> {
+    let stored = conn
+        .query_row(
+            "SELECT provider, ticket_url FROM concert_events WHERE dedupe_key = ?1",
+            [dedupe_key],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()?;
+    let Some((stored_provider, stored_ticket_url)) = stored else {
+        return Ok(false);
+    };
+    let stored_provider = match stored_provider.as_str() {
+        "bandsintown" => Some(ProviderKind::Bandsintown),
+        "ticketmaster" => Some(ProviderKind::Ticketmaster),
+        _ => None,
+    };
+    Ok(stored_provider.is_some_and(|provider| {
+        provider.owns_ticket_url(stored_ticket_url.as_deref())
+            && !incoming_provider.owns_ticket_url(incoming_ticket_url)
+    }))
+}
+
 pub(crate) fn delete_past_events(
     conn: &Connection,
     today: NaiveDate,
@@ -525,3 +558,7 @@ pub(crate) fn delete_past_events(
         [today.format("%Y-%m-%d").to_string()],
     )
 }
+
+#[cfg(test)]
+#[path = "pipeline_reconcile_tests.rs"]
+mod reconcile_tests;
