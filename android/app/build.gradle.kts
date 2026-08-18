@@ -78,7 +78,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     // Navigation is not part of the Compose BOM. 2.9.8 is the newest stable
     // Navigation release compatible with the BOM's stable Compose 1.11 line.
     implementation("androidx.navigation:navigation-compose:2.9.8")
@@ -100,7 +100,7 @@ dependencies {
     // under com/sun/jna/<os>-<arch>/. The plain jar carries that layout, so the
     // test classpath gets one it can actually load.
     testImplementation("net.java.dev.jna:jna:5.19.1")
-    testImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    testImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("org.robolectric:robolectric:4.16.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
