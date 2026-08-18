@@ -23,21 +23,139 @@ fn event(provider: ProviderKind, venue: &str) -> ProviderEvent {
 fn normalized_dedupe_key_folds_case_diacritics_and_whitespace() {
     assert_eq!(normalize_component("  MÜNCHEN   Süd  "), "munchen sud");
     assert_eq!(
-        dedupe_key("2026-10-17", " München ", "  ZÉNITH  Hall "),
-        "2026-10-17|munchen|zenith hall"
+        dedupe_key("  BJÖRK  ", "2026-10-17", " München "),
+        "bjork|2026-10-17|munchen"
     );
 }
 
 #[test]
-fn merge_keeps_the_stable_slot_and_prefers_bandsintown() {
-    let rows = merge(vec![
-        event(ProviderKind::Ticketmaster, "Zénith"),
-        event(ProviderKind::Bandsintown, "ZENITH"),
-        event(ProviderKind::Ticketmaster, "Backstage"),
-    ]);
-    assert_eq!(rows.len(), 2);
+fn merge_collapses_venues_and_prefers_bandsintown() {
+    let rows = merge(
+        "Lorna Shore",
+        vec![
+            event(ProviderKind::Ticketmaster, "Zénith"),
+            event(ProviderKind::Bandsintown, "ZENITH"),
+            event(ProviderKind::Ticketmaster, "Backstage"),
+        ],
+    );
+    assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].provider, ProviderKind::Bandsintown);
-    assert_eq!(rows[1].venue, "Backstage");
+    assert_eq!(rows[0].venue, "ZENITH");
+}
+
+#[test]
+fn merge_collapses_two_venues_for_the_same_artist_date_and_city() {
+    let rows = merge(
+        "Lorna Shore",
+        vec![
+            event(ProviderKind::Ticketmaster, "Matinee Hall"),
+            event(ProviderKind::Ticketmaster, "Evening Hall"),
+        ],
+    );
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].venue, "Matinee Hall");
+}
+
+#[test]
+fn measured_duplicate_pairs_keep_the_provider_owned_ticket_listing() {
+    let cases = [
+        (
+            "Catch Your Breath",
+            "2026-11-15",
+            "New Haven",
+            ("Toads Place - CT", "https://etix.com/event/other"),
+            (
+                "Toad's Place",
+                "https://ticketmaster.com/event/Z7r9jZ1A70U-U",
+            ),
+            "https://ticketmaster.com/event/Z7r9jZ1A70U-U",
+        ),
+        (
+            "Chelsea Grin",
+            "2026-11-28",
+            "Chicago",
+            ("Riviera Theatre- IL", "https://axs.com/events/other"),
+            (
+                "Riviera Theatre",
+                "https://ticketmaster.com/event/Z7r9jZ1A7P88F",
+            ),
+            "https://ticketmaster.com/event/Z7r9jZ1A7P88F",
+        ),
+        (
+            "Electric Callboy",
+            "2027-02-14",
+            "Amsterdam",
+            ("Ziggo Dome", "https://ticketmaster.nl/event/vip-upgrades"),
+            (
+                "Ziggo Dome Club",
+                "https://ticketmaster.nl/event/premium-packages",
+            ),
+            "https://ticketmaster.nl/event/vip-upgrades",
+        ),
+        (
+            "Ocean Sleeper",
+            "2026-09-19",
+            "Grand Rapids",
+            ("The Intersection", "https://etix.com/event/other"),
+            (
+                "Intersection",
+                "https://ticketmaster.com/event/Z7r9jZ1AAZ3xp",
+            ),
+            "https://ticketmaster.com/event/Z7r9jZ1AAZ3xp",
+        ),
+        (
+            "Wage War",
+            "2027-01-15",
+            "Cardiff",
+            (
+                "Y Plas, Cardiff Students Union",
+                "https://universe.com/events/other?ref=ticketmaster",
+            ),
+            (
+                "Cardiff University Students Union",
+                "https://ticketmaster.co.uk/event/other",
+            ),
+            "https://ticketmaster.co.uk/event/other",
+        ),
+    ];
+
+    for (artist, date, city, first, second, expected_url) in cases {
+        let mut first_event = event(ProviderKind::Ticketmaster, first.0);
+        first_event.date_key = date.into();
+        first_event.city = city.into();
+        first_event.ticket_url = Some(first.1.into());
+        let mut second_event = event(ProviderKind::Ticketmaster, second.0);
+        second_event.date_key = date.into();
+        second_event.city = city.into();
+        second_event.ticket_url = Some(second.1.into());
+
+        let rows = merge(artist, vec![first_event, second_event]);
+
+        assert_eq!(rows.len(), 1, "{artist}");
+        assert_eq!(
+            rows[0].ticket_url.as_deref(),
+            Some(expected_url),
+            "{artist}"
+        );
+    }
+}
+
+#[test]
+fn lookalike_ticketmaster_host_loses_to_the_provider_owned_listing() {
+    let mut lookalike = event(ProviderKind::Ticketmaster, "Lookalike Hall");
+    lookalike.ticket_url = Some("https://ticketmaster.evil.com/event/other".into());
+    let mut provider_owned = event(ProviderKind::Ticketmaster, "Provider Hall");
+    provider_owned.ticket_url = Some("https://tickets.ticketmaster.co.uk/event/real".into());
+
+    let rows = merge("Lorna Shore", vec![lookalike, provider_owned]);
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].venue, "Provider Hall");
+    assert_eq!(
+        rows[0].ticket_url.as_deref(),
+        Some("https://tickets.ticketmaster.co.uk/event/real")
+    );
 }
 
 #[test]
