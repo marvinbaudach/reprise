@@ -6454,3 +6454,15 @@ rule here is phrased as something a stylesheet either states or does not.
   has no transform transitions; the cue may appear at once.
 - **SHOW-5** [active] [web] — Without hover capability there is no hover
   state, so none can stick after a tap.
+- **SHOW-6** [active] [web] — The gate wall names the checks the merge gate
+  script actually runs, in script order; the list and the number shown come from
+  the same derivation out of that script.
+- **SHOW-7** [active] [web] — No lane of the pipeline figure carries marks in
+  both a writing and a judging step, and the human lane carries exactly one
+  mark.
+- **SHOW-8** [active] [web] — A failed gate cell blocks the readout and names
+  how many checks are failing; with every cell cleared it reads ready again.
+- **SHOW-9** [active] [web] — Under `prefers-reduced-motion: reduce` marks and
+  gate cells stand in their end state, with no sequence.
+- **SHOW-10** [active] [web] — The gate count appears nowhere as a literal;
+  every place that shows it reads the derivation.
