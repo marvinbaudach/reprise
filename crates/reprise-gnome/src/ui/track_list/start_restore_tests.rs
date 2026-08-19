@@ -56,6 +56,24 @@ fn synthetic_track_list(rows: i64) -> (TrackList, gtk4::Window) {
     (track_list, window)
 }
 
+/// How far from the arithmetic centre a centered restore may land.
+///
+/// The restore places the viewport on a **row edge** — the one nearest the
+/// centre — because that is the only kind of value GTK's own anchor
+/// reproduces: `scroll_to` aligns a row with the top of the viewport, and a
+/// value no anchor row explains is overwritten during the allocation pass that
+/// follows a model swap (`centered_scroll_restore::centered_anchor`). Half a
+/// row is therefore the honest bound, and it is what these tests hold the path
+/// to. In this fixture's geometry the edge falls 0.5 px from the centre.
+fn centering_tolerance(track_list: &TrackList) -> f64 {
+    let adjustment = track_list
+        .shared
+        .column_view
+        .vadjustment()
+        .expect("a realized track list has a vertical adjustment");
+    adjustment.upper() / f64::from(track_list.shared.model.n_items()) / 2.0
+}
+
 fn centered_value(track_list: &TrackList, position: u32) -> Option<f64> {
     let adjustment = track_list.shared.column_view.vadjustment()?;
     scroll_center::centered_scroll_value(
@@ -97,15 +115,18 @@ fn start_3_loaded_track_is_selected_centered_and_marked_paused() {
 
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        let tolerance = centering_tolerance(&track_list);
         centered_value(&track_list, position)
-            .is_some_and(|target| (adjustment.value() - target).abs() < 0.5)
+            .is_some_and(|target| (adjustment.value() - target).abs() <= tolerance)
     });
 
     let expected = centered_value(&track_list, position)
         .expect("a 100-row list in a 320px window must have centering geometry");
+    let tolerance = centering_tolerance(&track_list);
     assert!(
-        (adjustment.value() - expected).abs() < 0.5,
-        "a normal start must center the loaded track: actual {}, expected {expected}",
+        (adjustment.value() - expected).abs() <= tolerance,
+        "a normal start must center the loaded track: actual {}, expected {expected} \
+         (within {tolerance})",
         adjustment.value()
     );
     assert!(

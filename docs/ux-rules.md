@@ -3062,6 +3062,10 @@ property is set and yet nothing happens.
   is gone too, the top. The rule needs a pre-search anchor to have been taken,
   which happens only on the transition from an empty to a non-empty query:
   clearing facets alone, with no query ever typed, stays with FIL-9.
+  (Revised 2026-08-19: whichever of those places the viewport takes, it is
+  reached in one move — the restoration is never visible as an intermediate
+  position first. The eye lands on the destination, it does not follow the
+  list there.)
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
@@ -3299,6 +3303,17 @@ property is set and yet nothing happens.
   Auto-advance centers only if no scroll movement has occurred for 1.5
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.
+- **NAV-19** [active] [gtk] — **Switching source in the sidebar centers the
+  running track.** Choosing a different place in the sidebar puts the loaded
+  track in the middle of the track table it opens, if that table lists it —
+  the same promise SRC-13 already makes for the source lists ("revealed …
+  row centered — on entering the view"). It arrives there in one move, not
+  through an intermediate position (SEARCH-16). If the new view does not list
+  the loaded track, the view's remembered position stands unchanged, and the
+  centering never switches view or tab to find a track to show. It changes
+  neither focus nor selection: the view keeps the selection it remembers.
+  Back and Forward are not source switches and are not covered — BROWSE-2
+  keeps restoring exactly what was left behind.
 - **QUE-7** [active] [gtk] — Up Next consists of the manual queue plus a
   virtual, named context tail with a count. The tail is not materialized as
   individual rows but only rendered within the visible window; the
