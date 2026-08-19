@@ -14,10 +14,33 @@ Nutzer.
 | Basis | `origin/dev` @ `7bb1a3c433` | **der Gallery-Branch**, nicht dev |
 | Commits | 8 (inkl. Refactor) | 5 darüber |
 | `phase` | `reviewed` | `planned` (Statuszeile noch nicht nachgezogen) |
-| Gate | **grün** (`GATE_EXIT=0`) | lief zuletzt; Ergebnis prüfen |
+| Gate | **grün** (`GATE_EXIT=0`) | **muss neu laufen** — siehe unten |
 
 `wake-lock gallery-hover` wird noch gehalten → `wake-lock release gallery-hover`,
 wenn die Welle abgeschlossen ist.
+
+## Das Kapitel-Zwei-Gate steht noch aus
+
+Der Lauf vom 19.08. wurde nach 36 Stufen **von außen abgebrochen** — `SIGTERM`
+mitten in den Linux-Platform-Tests, beim `gnome_conformance`-Binary
+(`GATE_EXIT=143`, „Terminated"). Das ist **kein** fehlgeschlagener Test, und die
+Ursache ist ungeklärt: weder ein Testfehler noch eine Meldung im Log, nur der
+Abbruch. Alles davor war grün.
+
+Vor dem PR also einmal sauber durchfahren:
+
+```
+export ANDROID_HOME=/home/marvin/.local/share/android-sdk
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+export MERGE_READINESS_SKIP_ANDROID_QUALITY=1
+MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh --no-fetch
+```
+
+Detachen (`setsid nohup … > log 2>&1 &`) und **nachsehen, dass der Prozess
+wirklich lebt** — ein Lauf, der gar nicht startet, sieht genauso aus wie einer,
+der noch läuft. Wiederholt er den Abbruch an derselben Stelle, ist das ein
+eigener Befund und nichts, was dieser Branch verursacht hat: er fasst kein
+Rust-Crate an.
 
 ## Landen (Reihenfolge zwingend)
 
