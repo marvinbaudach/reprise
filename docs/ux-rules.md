@@ -22,15 +22,17 @@ against replaced rules are re-hung onto the new rule in the same commit.
 
 **Test levels.** Every rule carries a level tag: `[core]` (reprise-core,
 workspace suite), `[gtk]` (widget/logic tests in reprise-gnome), `[e2e]`
-(cua-e2e harness against the real app), `[manual]` (RELEASING.md checklist,
-which references the same rule IDs). Testing happens at the **lowest level
+(cua-e2e harness against the real app), `[web]` (showroom suite,
+`showroom/tests/`), `[manual]` (RELEASING.md checklist, which references the
+same rule IDs). Testing happens at the **lowest level
 that can disprove the rule**. Timing numbers (100 ms, 150 ms, …) are design
 intent, not assertions: the *what* (feedback exists) is automated, the
 *how fast* is checked manually. If a `[manual]` rule later becomes
 automatable, only its tag changes, never its ID.
 
 **Traceability.** A test carries **exactly one primary rule ID in its
-name** (Rust: `fn play_1a_…`, cua-e2e scenario: `play-1a-…`). If a scenario
+name** (Rust: `fn play_1a_…`, cua-e2e scenario: `play-1a-…`, showroom:
+`test('show-1 …')`). If a scenario
 happens to cover further rules along the way, that does not count — the
 second rule needs its own test. `#[ignore = "UX <ID> [planned] — …"]` is
 only allowed on `[planned]` rules. `scripts/check-ux-traceability.sh` (part
@@ -6433,3 +6435,22 @@ committee published on 2026-05-29.
   comments.
 - **GP-20** [planned] [core] — No dead code: no unused items, and no
   `#[allow(dead_code)]` without a stated reason on the same or preceding line.
+
+## AJ. Showroom (public site)
+
+Rules in this section govern `showroom/`, the public site. Their level is
+`[web]`: the showroom suite is static analysis over the built page, the built
+CSS and the component source — it has no DOM and cannot measure layout, so a
+rule here is phrased as something a stylesheet either states or does not.
+
+- **SHOW-1** [active] [web] — A screenshot plate holds its frame still. On
+  hover only the picture inside it moves; no hover or focus rule changes a
+  layout-affecting property of the plate.
+- **SHOW-2** [active] [web] — No pointer-led sheen: no overlay layer with a
+  cursor-dependent gradient, and no `pointermove` handler on a plate.
+- **SHOW-3** [active] [web] — Pointing and keyboard focus produce the same
+  state: the same lift, the same picture zoom, the same zoom cue.
+- **SHOW-4** [active] [web] — Under `prefers-reduced-motion: reduce` a plate
+  has no transform transitions; the cue may appear at once.
+- **SHOW-5** [active] [web] — Without hover capability there is no hover
+  state, so none can stick after a tap.
