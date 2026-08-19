@@ -104,22 +104,6 @@
   font-size: 0.9rem;
 }
 
-.mosaic .shot-tile--phone .shot-tile__description {
-  font-size: 0.78rem;
-}
-
-.mosaic .shot-tile--phone .shot-tile__sheen {
-  background:
-    radial-gradient(240px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%),
-    linear-gradient(
-      122deg,
-      oklch(85% 0.13 190 / 0.12),
-      transparent 40%,
-      transparent 60%,
-      oklch(78% 0.16 30 / 0.12)
-    );
-}
-
 .mosaic-tile--gnome-podcasts {
   flex: 1.62 1 340px;
 }
@@ -166,31 +150,4 @@
 
 .mosaic .mosaic-tile--gnome-listening-stats .shot-tile__title {
   font-size: 1.02rem;
-}
-
-.mosaic .mosaic-tile--gnome-youtube .shot-tile__sheen,
-.mosaic .mosaic-tile--gnome-radio .shot-tile__sheen,
-.mosaic .mosaic-tile--gnome-device-sync .shot-tile__sheen,
-.mosaic .mosaic-tile--gnome-layout-controls .shot-tile__sheen {
-  background:
-    radial-gradient(300px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%),
-    linear-gradient(
-      122deg,
-      oklch(85% 0.13 190 / 0.1),
-      transparent 34%,
-      transparent 64%,
-      oklch(78% 0.16 30 / 0.1)
-    );
-}
-
-.mosaic .mosaic-tile--gnome-listening-stats .shot-tile__sheen {
-  background:
-    radial-gradient(420px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.14), transparent 62%),
-    linear-gradient(
-      122deg,
-      oklch(85% 0.13 190 / 0.1),
-      transparent 34%,
-      transparent 64%,
-      oklch(78% 0.16 30 / 0.1)
-    );
 }

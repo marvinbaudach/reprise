@@ -4,11 +4,7 @@ import { Lightbox } from './Lightbox';
 import { ShotTile } from './ShotTile';
 import './showcase.css';
 
-interface ProductGalleryProps {
-  readonly reducedMotion: boolean;
-}
-
-export function ProductGallery({ reducedMotion }: ProductGalleryProps) {
+export function ProductGallery() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [returnFocus, setReturnFocus] = useState<HTMLButtonElement | null>(null);
   const close = useCallback(() => setActiveIndex(null), []);
@@ -58,7 +54,6 @@ export function ProductGallery({ reducedMotion }: ProductGalleryProps) {
                   className={`mosaic-tile mosaic-tile--${capture.id}`}
                   capture={capture}
                   reveal="img"
-                  reducedMotion={reducedMotion}
                   variant={capture.platform === 'Android' ? 'phone' : 'desktop'}
                   onOpen={(trigger) => open(capture.id, trigger)}
                   key={capture.id}
