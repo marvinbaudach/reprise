@@ -312,6 +312,21 @@ export function countRust(source) {
 }
 
 /**
+ * Declared test functions. `#[test]`, its async and parameterised spellings,
+ * and Kotlin's `@Test` — counted where they are written, not where they run.
+ *
+ * This is a count of *declarations*, which is not the same as the number a test
+ * run reports: `#[ignore]`d tests are declared and not run, and one `#[rstest]`
+ * case can expand into several. It is stated that way wherever it is quoted.
+ *
+ * @param {string} source @param {boolean} kotlin @returns {number}
+ */
+export function countTestFunctions(source, kotlin) {
+  const pattern = kotlin ? /^[ \t]*@Test\b/gm : /^[ \t]*#\[(?:tokio::)?(?:test|rstest)\b/gm;
+  return [...source.matchAll(pattern)].length;
+}
+
+/**
  * Non-blank lines of any source, counted whole.
  *
  * @param {string} source
@@ -365,6 +380,7 @@ const isUnder = (path, segment) => path.split(sep).includes(segment);
  * @property {number} total every non-blank line the three add up to
  * @property {number} test every non-blank test line of the three
  * @property {number} files how many files were read
+ * @property {number} testFunctions declared `#[test]`/`@Test` functions
  */
 
 /**
@@ -378,6 +394,7 @@ export function census(repoRoot) {
   const bridge = { product: 0, test: 0 };
   const kotlin = { product: 0, test: 0 };
   let files = 0;
+  let testFunctions = 0;
 
   const bridgeRoot = join(repoRoot, 'crates', 'reprise-android-ffi');
 
@@ -464,6 +481,7 @@ export function census(repoRoot) {
   }
 
   for (const [path, source] of sources) {
+    testFunctions += countTestFunctions(source, false);
     const into = path.startsWith(bridgeRoot + sep) ? bridge : rust;
     if (isUnder(path, 'tests') || wholeTestFiles.has(path)) {
       into.test += countLines(source);
@@ -481,6 +499,7 @@ export function census(repoRoot) {
   )) {
     const source = readFileSync(path, 'utf8');
     const lines = countLines(source);
+    testFunctions += countTestFunctions(source, true);
     if (isUnder(path, 'test') || isUnder(path, 'androidTest')) kotlin.test += lines;
     else kotlin.product += lines;
     files += 1;
@@ -495,7 +514,7 @@ export function census(repoRoot) {
   const total =
     rust.product + rust.test + bridge.product + bridge.test + kotlin.product + kotlin.test;
   const test = rust.test + bridge.test + kotlin.test;
-  return { rust, bridge, kotlin, total, test, files };
+  return { rust, bridge, kotlin, total, test, files, testFunctions };
 }
 
 /** @param {string} path @returns {boolean} */
@@ -541,4 +560,5 @@ if (import.meta.main) {
   }
   process.stdout.write(`  ${'total'.padEnd(22)} ${group(counted.total).padStart(9)}\n`);
   process.stdout.write(`  ${'of them tests'.padEnd(22)} ${group(counted.test).padStart(9)}   ${share(counted.test)}\n`);
+  process.stdout.write(`\n  ${'declared tests'.padEnd(22)} ${group(counted.testFunctions).padStart(9)}   (#[test] and @Test, run count differs)\n`);
 }

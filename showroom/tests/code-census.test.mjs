@@ -5,6 +5,7 @@ import {
   census,
   countLines,
   countRust,
+  countTestFunctions,
   declaredModules,
   rustTestRanges,
   scanRust,
@@ -162,6 +163,28 @@ test('blank lines count for nothing and comments count as lines', () => {
   assert.equal(countLines('// only a comment\n'), 1);
 });
 
+test('declared test functions are counted where they are written', () => {
+  const rust = `#[test]
+fn plain() {}
+
+#[tokio::test]
+async fn asynchronous() {}
+
+#[rstest]
+fn parameterised() {}
+
+// #[test] in a comment is still a declaration on its own line, and that is
+// accepted: the count is a floor for how much test surface exists, and a
+// comment that looks exactly like a test is rare enough to leave alone.
+fn product() {}
+`;
+  assert.equal(countTestFunctions(rust, false), 3);
+  assert.equal(countTestFunctions('@Test\nfun a() {}\n@Test\nfun b() {}\n', true), 2);
+  // The Rust and Kotlin spellings never count each other.
+  assert.equal(countTestFunctions('@Test\nfun a() {}\n', false), 0);
+  assert.equal(countTestFunctions('#[test]\nfn a() {}\n', true), 0);
+});
+
 test('the census reads the repository it is standing in', () => {
   const counted = census(repoRoot);
 
@@ -184,6 +207,7 @@ test('the census reads the repository it is standing in', () => {
   );
   assert.equal(counted.test, counted.rust.test + counted.bridge.test + counted.kotlin.test);
   assert.ok(counted.test < counted.total);
+  assert.ok(counted.testFunctions > 1000, `counted ${counted.testFunctions} declared tests`);
 });
 
 test('an empty tree is a failure, not a page full of zeroes', () => {
