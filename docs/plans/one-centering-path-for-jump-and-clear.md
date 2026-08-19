@@ -2,7 +2,7 @@
 slug: one-centering-path-for-jump-and-clear
 worktree: /home/marvin/Projects/reprise-one-centering-path-for-jump-and-clear
 branch: feature/one-centering-path-for-jump-and-clear
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-18
 ---
