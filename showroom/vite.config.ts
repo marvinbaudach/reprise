@@ -120,6 +120,15 @@ export default defineConfig({
   plugins: [react(), derivedFacts()],
   build: {
     target: 'es2022',
+    // Vite 8 minifies CSS with Lightning CSS against a widely-available baseline,
+    // and that baseline still predates `oklch()`: every colour then ships twice,
+    // once as a hex approximation and once as `lab()`. The whole palette is
+    // authored in oklch, so the site would go out in a downlevelled colour space
+    // it never asked for — and the built stylesheet, which the display rules are
+    // asserted against, would stop showing the colours the design speaks in.
+    // These four are the floor for `oklch()` support; below it there is no site
+    // to look at anyway.
+    cssTarget: ['chrome120', 'edge120', 'firefox120', 'safari17'],
     cssCodeSplit: false,
     assetsInlineLimit: 2048,
   },
