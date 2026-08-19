@@ -2,7 +2,7 @@
 slug: chapter-two-two-figures
 worktree: /home/marvin/Projects/reprise-chapter-two-two-figures
 branch: feature/chapter-two-two-figures
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-19
 ---
