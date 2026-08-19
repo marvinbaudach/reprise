@@ -507,13 +507,48 @@ grün vor dem PR.
 
 **Suite.** `npm --prefix showroom test` grün.
 
-**Echte Messung** (nach dem Codex-Lauf): headless Chrome über den
-Remote-Debugging-Port auf den Vite-Preview, pro Platte
-`getBoundingClientRect().height` in Ruhe und mit erzwungenem Hover.
+**Echte Messung** (19.08.2026, Chromium 151 headless über den
+Remote-Debugging-Port auf `vite preview`, Fenster 1440x900, Gerätefaktor 1).
+Pro Platte `getBoundingClientRect().height` in Ruhe und unter echtem Zeiger
+(`Input.dispatchMouseEvent`), 1,3 s Wartezeit, damit die 620-ms- und
+900-ms-Übergänge ausgelaufen sind.
 
-| Platte | Ruhe | Hover |
-|--------|------|-------|
-| _wird nach dem Lauf eingetragen_ | | |
+**Zwei Fallen, beide beim ersten Lauf zugeschnappt:**
+
+1. `CSS.forcePseudoState` mit `['hover']` bleibt hier wirkungslos — der
+   Rechenwert von `--plate-lift` blieb `0px`. Gemessen wurde also mit einem
+   echten `mouseMoved` auf die Plattenmitte.
+2. Headless-Chromium meldet `hover: none`, `matchMedia('(hover: hover)')` ist
+   `false`, und damit greift der ganze `@media (hover: hover)`-Block nie. Eine
+   Nullmessung wäre dann trivial und hätte nichts belegt. Der Start braucht
+   `--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4`.
+   Nebenbei ist das der beste Beleg für SHOW-5: ohne Hover-Fähigkeit passiert
+   wirklich nichts.
+
+Die letzten drei Spalten sind der **Kontrollarm** — sie belegen, dass der
+Hover-Zustand tatsächlich anlag, als die Höhe gelesen wurde. Ohne sie misst die
+Tabelle nur, dass nichts passiert ist.
+
+| Platte | Variante | Ruhe (px) | Hover (px) | Hub | Bildzoom | Lupe |
+|--------|----------|-----------|------------|-----|----------|------|
+| Music library | desktop | 327.19 | 327.19 | -6px | 1.045 | 1 |
+| Now Playing | phone | 285.02 | 285.02 | -6px | 1.045 | 1 |
+| Podcasts | desktop | 465.19 | 465.19 | -6px | 1.045 | 1 |
+| Android library | phone | 759.58 | 759.58 | -6px | 1.045 | 1 |
+| YouTube | desktop | 336.59 | 336.59 | -6px | 1.045 | 1 |
+| Radio discovery | desktop | 336.61 | 336.61 | -6px | 1.045 | 1 |
+| Library Doctor | desktop | 479.47 | 479.47 | -6px | 1.045 | 1 |
+| Artwork mode | phone | 707.19 | 707.19 | -6px | 1.045 | 1 |
+| Device sync | desktop | 333.14 | 333.14 | -6px | 1.045 | 1 |
+| Layout controls | desktop | 340.06 | 340.06 | -6px | 1.045 | 1 |
+| Listening statistics | desktop | 694.08 | 694.08 | -6px | 1.045 | 1 |
+
+Elf von elf Platten halten ihre Höhe **und** ihre Breite. Der erste Sweep las
+für *Podcasts* 465,18 in Ruhe gegen 465,19 im Hover; eine gezielte Nachmessung
+(zehn Lesungen je Zustand, Zeiger geparkt bzw. auf der Platte) liefert in beiden
+Zuständen konstant 465,19/765,52. Die Hundertstel stammen aus einer noch nicht
+ausgelaufenen Layout-Zeile direkt nach `scrollIntoView` — die Platte ist
+`flex: 1.62 1 340px` —, nicht aus dem Hover.
 
 **Sichtprüfung.** Je ein Screenshot in Ruhe und mit Hover, damit Hub, Bildzoom,
 Lupenzeichen und der weiterhin sitzende Visualizer einmal ein Mensch gesehen hat
