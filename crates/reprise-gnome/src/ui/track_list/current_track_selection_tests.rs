@@ -250,6 +250,10 @@ fn assert_playing_track_centered(
         .position(|id| *id == playing_id)
         .and_then(|position| u32::try_from(position).ok())
         .unwrap();
+    // Half a row, and why: see `centering_tolerance` in `start_restore_tests`.
+    // The restore lands on the row edge nearest the centre, because that is
+    // the only value GTK's own anchor reproduces.
+    let tolerance = adjustment.upper() / f64::from(track_list.shared.model.n_items()) / 2.0;
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
         scroll_center::centered_scroll_value(
             playing_position,
@@ -257,7 +261,7 @@ fn assert_playing_track_centered(
             adjustment.upper(),
             adjustment.page_size(),
         )
-        .is_some_and(|target| (adjustment.value() - target).abs() < 0.5)
+        .is_some_and(|target| (adjustment.value() - target).abs() <= tolerance)
     });
     let expected = scroll_center::centered_scroll_value(
         playing_position,
@@ -267,9 +271,9 @@ fn assert_playing_track_centered(
     )
     .expect("expanded list must have centering geometry");
     assert!(
-        (adjustment.value() - expected).abs() < 0.5,
+        (adjustment.value() - expected).abs() <= tolerance,
         "filter change must center playing track {playing_id}: \
-         actual {}, expected {expected}",
+         actual {}, expected {expected} (within {tolerance})",
         adjustment.value()
     );
 }

@@ -256,7 +256,7 @@ fn restore_reload_anchor(
                     hold.release_now();
                 }
             }
-            super::centered_scroll_restore::schedule(shared, playing_track_id, current_ids);
+            super::centered_scroll_restore::schedule(shared, playing_track_id, &current_ids);
             return;
         }
     }
@@ -349,7 +349,29 @@ pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
     };
     shared.selection.unselect_all();
     shared.selection.select_item(position as u32, false);
-    super::centered_scroll_restore::schedule(shared, Some(track_id), current_ids);
+    super::centered_scroll_restore::schedule(shared, Some(track_id), &current_ids);
+}
+
+/// NAV-19: places the loaded track in the middle of the view the sidebar just
+/// switched to, and does nothing else.
+///
+/// The same placement as [`center_loaded_track`] without its cold-start
+/// selection: entering a view is not a reason to replace the selection that
+/// view remembers. A loaded track the new view does not list leaves the
+/// restored viewport alone — this never navigates to find one.
+pub(in crate::ui) fn center_playing_track_in_view(shared: &Rc<Shared>) {
+    let Some(track_id) = shared.playing_track_id.get() else {
+        return;
+    };
+    let current_ids = shared.current_view_ids();
+    if !current_ids.contains(&track_id) {
+        tracing::debug!(
+            track_id,
+            "source switch left the viewport alone: loaded track is not in this view"
+        );
+        return;
+    }
+    super::centered_scroll_restore::schedule(shared, Some(track_id), &current_ids);
 }
 
 /// Sets `shared.filter` and reloads — the one place that mutates the filter

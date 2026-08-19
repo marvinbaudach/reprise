@@ -338,3 +338,205 @@ fn search_16_clearing_without_a_play_returns_to_the_pre_search_place() {
 
     stage.window.close();
 }
+
+// ---------------------------------------------------------------------------
+// SEARCH-16's intermediate state: the value *sequence*, not just the endpoint.
+//
+// The sibling tests above assert where the viewport ends up. That cannot see
+// the bug the user reported — "it hops through the top first" — because a hop
+// and a clean move have the same endpoint. These two record every position the
+// adjustment actually took while the restore ran, and who asked for it.
+// ---------------------------------------------------------------------------
+
+/// One position the viewport actually settled at, and the writer that asked
+/// for it. `writer` is `gtk` when no probe claimed the value — that is GTK's
+/// own allocation pass writing the old offset back, and it is a different bug
+/// from ours.
+#[derive(Debug)]
+struct ViewportStep {
+    writer: String,
+    value: f64,
+}
+
+/// Reduces a probe trail to the steps a user could see.
+///
+/// A write that asks for the value already on screen emits no change and is
+/// not a step; two writes to the same place are one step. What survives is the
+/// count the report turns on: one step is a viewport that moved once, two are
+/// the hop.
+///
+/// "Same place" is a whole pixel, not an exact float. The view floors the
+/// scroll offset to an integer after we write it — measured here as a
+/// `centered.*.apply` asking for 2923.5 followed by an unclaimed 2923.0 — and
+/// counting that as a second step would report a hop nobody can see.
+/// `scroll_glide` documents the same flooring from the other side.
+const SUB_PIXEL: f64 = 1.0;
+
+fn viewport_steps(entries: Vec<crate::ui::scroll_probe::trail::Entry>) -> Vec<ViewportStep> {
+    use crate::ui::scroll_probe::trail::Entry;
+
+    let mut steps: Vec<ViewportStep> = Vec::new();
+    let mut asked_by: Option<String> = None;
+    for entry in entries {
+        match entry {
+            Entry::Write { writer, .. } | Entry::ScrollTo { writer, .. } => {
+                asked_by = Some(writer);
+            }
+            Entry::Observed { value } => {
+                let writer = asked_by.take().unwrap_or_else(|| "gtk".to_owned());
+                if steps
+                    .last()
+                    .is_some_and(|last| (last.value - value).abs() < SUB_PIXEL)
+                {
+                    continue;
+                }
+                steps.push(ViewportStep { writer, value });
+            }
+        }
+    }
+    steps
+}
+
+/// Records every position the adjustment takes until the handler is dropped.
+fn record_viewport_steps(adjustment: &gtk4::Adjustment) -> gtk4::glib::SignalHandlerId {
+    let handler = adjustment.connect_value_changed(|changed| {
+        crate::ui::scroll_probe::trail::note_observed(changed.value());
+    });
+    crate::ui::scroll_probe::trail::start();
+    handler
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_16_clearing_after_a_play_reaches_the_track_in_one_step() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let stage = clear_search_stage();
+    let playing_id = 90;
+    stage
+        .track_list
+        .update_current_track(playing_id, None, CurrentTrackChange::PlaybackStarted);
+
+    let handler = record_viewport_steps(&stage.adjustment);
+    assert!(stage.search.clear_active_query());
+    crate::ui::test_settle::settle_for(Duration::from_millis(500));
+    stage.adjustment.disconnect(handler);
+    let steps = viewport_steps(crate::ui::scroll_probe::trail::take());
+
+    let current_ids = stage.track_list.shared.current_view_ids();
+    let row_height = stage.adjustment.upper() / current_ids.len() as f64;
+    let expected = super::reload_restore::centered_track_scroll_target(
+        Some(playing_id),
+        &current_ids,
+        row_height,
+        stage.adjustment.page_size(),
+    )
+    .expect("the cleared list must have a centered target");
+
+    // Built as a control arm, and it ran as one. Before the rebuild this read
+    // `steps.len() == 2` and passed, recording the defect on purpose:
+    // `centered.scroll_to 3026.0` — the edge snap this path fired before it
+    // could centre — followed by `centered.changed.apply 2923.5`, the centring
+    // that moved the list the rest of the way. The second move is the hop the
+    // user reported; the first one was ours.
+    //
+    // One move now, because the restore writes a value an anchor row explains,
+    // so GTK's allocation pass reproduces it instead of correcting it
+    // (`centered_scroll_restore::centered_anchor`). Going back to a value no
+    // anchor row explains is what this test refuses.
+    assert_eq!(
+        steps.len(),
+        1,
+        "clearing the search must place the loaded track in one move: {steps:?}"
+    );
+    assert!(
+        steps[0].writer.starts_with("centered."),
+        "the centering path must own the move — an unclaimed value would be \
+         GTK's allocation pass writing over it: {steps:?}"
+    );
+    assert!(
+        (steps[0].value - expected).abs() <= row_height,
+        "the single move must land on the centered target {expected}: {steps:?}"
+    );
+
+    stage.window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn start_3_centering_the_loaded_track_reaches_it_in_one_step() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    let fixture_conn = crate::test_db::connection(&conn);
+    let tx = fixture_conn.unchecked_transaction().unwrap();
+    for id in 1..=200 {
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) \
+             VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+            (
+                id,
+                format!("/synthetic/{id:03}.flac"),
+                format!("Track {id:03}"),
+            ),
+        )
+        .unwrap();
+    }
+    tx.commit().unwrap();
+
+    let track_list = Rc::new(TrackList::new(
+        Rc::new(conn),
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        super::super::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    ));
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(320)
+        .child(track_list.widget())
+        .build();
+    window.present();
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        adjustment.upper() > adjustment.page_size()
+    });
+
+    // START-3's own order: the session marks the loaded track, then
+    // `center_loaded_track` places the viewport on it.
+    let position = 140_u32;
+    let track_id = track_list.shared.model.track_at(position).unwrap().id;
+    track_list.update_current_track(track_id, None, CurrentTrackChange::SessionRestore);
+
+    let handler = record_viewport_steps(&adjustment);
+    track_list.center_loaded_track();
+    crate::ui::test_settle::settle_for(Duration::from_millis(500));
+    adjustment.disconnect(handler);
+    let steps = viewport_steps(crate::ui::scroll_probe::trail::take());
+
+    let current_ids = track_list.shared.current_view_ids();
+    let row_height = adjustment.upper() / current_ids.len() as f64;
+    let expected = super::reload_restore::centered_track_scroll_target(
+        Some(track_id),
+        &current_ids,
+        row_height,
+        adjustment.page_size(),
+    )
+    .expect("a 200-row list in a 320px window must have a centered target");
+
+    assert_eq!(
+        steps.len(),
+        1,
+        "the start must place the loaded track in one move: {steps:?}"
+    );
+    assert!(
+        (steps[0].value - expected).abs() <= row_height,
+        "the single move must land on the centered target {expected}: {steps:?}"
+    );
+    assert!(
+        steps[0].writer.starts_with("centered."),
+        "the centering path must own the move: {steps:?}"
+    );
+
+    window.close();
+}
