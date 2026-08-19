@@ -83,8 +83,26 @@ aus `git log --diff-filter=A` im lokalen Klon, wo die Historie vollständig ist.
 der aus einem Frontend vier wurden, also genau die Woche, die
 `HEADLINE_FIGURES[2]` („1 → 4") behauptet. Nur `DEPTH` trägt keinen
 Geburtstermin, sondern eine Abwesenheit: die einzige Woche ohne neue Oberfläche.
-Der Wortlaut der Spalte „What landed" geht dem Nutzer zur Korrektur zu, bevor
-die Datei eingecheckt wird — sie ist eine Behauptung über sein Projekt.
+**Der Wortlaut ist abgestimmt** (Nutzer, 19.08., 22:52 Uhr). Die Spalte „What
+landed" ist eine Behauptung über sein Projekt und ging ihm deshalb vor dem
+Einchecken zur Korrektur zu; er hat sie unverändert freigegeben. Das ist der
+Inhalt, der nach `docs/showroom/timeline.md` geht — Wortlaut nicht neu erfinden:
+
+| Week | Span | Theme | What landed |
+|---|---|---|---|
+| 1 | 2026-07-11 … 2026-07-17 | CORE | The idea, the workspace split into `reprise-core` and a Linux platform layer, and the UX rulebook that has governed every change since. |
+| 2 | 2026-07-18 … 2026-07-24 | SURFACES | One frontend became four: `reprise-cli`, `reprise-mcp` and `reprise-stems` joined the GNOME app. |
+| 3 | 2026-07-25 … 2026-07-31 | DEPTH | No new surface. The single-owner runtime, its versioned protocol and its client went in underneath the ones that already existed. |
+| 4 | 2026-08-01 … 2026-08-07 | ANDROID | The shared presentation layer, then the FFI bridge and the Android app on top of it — the library running on a phone. |
+| 5 | 2026-08-08 … 2026-08-14 | SIGNATURE | The GNOME conformance rulebook, and the showroom itself: a prerendered page that reads its own numbers out of the tree. |
+
+Die Spanne der Wochen ist **gegen `origin/dev` mit Autor-Daten** nachgemessen,
+nicht mit Committer-Daten: Rebases und Squash-Merges schreiben letztere um, ein
+`git log --since` darauf zählt Wochen falsch zu. Commits je Woche (ohne Merges):
+955 · 735 · 409 · 142 · 246. Zusätzliche Anker über den Entwurf hinaus:
+`reprise-runtime-protocol` und `reprise-runtime` geboren 28.07.,
+`reprise-runtime-client` 29.07. (Woche 3), `reprise-view` 02.08. (Woche 4, die
+Voraussetzung für Android), das GNOME-Regelwerk 12.08. (Woche 5).
 
 ### Der Leser
 
@@ -289,11 +307,20 @@ importieren. SHOW-11 bis SHOW-13 erben es unverändert.
 
 ## §6 Reihenfolge
 
-1. Rebase auf das gelandete `origin/dev` (wirft `bdda74095e` weg).
-2. §3 zuerst — der Schnitt ist klein und hebt `GATES.length`; alles Weitere
-   rechnet dann schon mit der neuen Zahl.
-3. §2 Zeilen-Census inklusive seiner Scanner-Tests, dann Messprotokoll und
-   `SPECTRAL_AXIS`, dann Footer.
-4. §1 Timeline: erst die Quelle belegen und abstimmen, dann Leser, dann
-   Komponente.
+**Stand 19.08., 22:52 Uhr — Schritte 1 bis 3a sind erledigt und committet.**
+Was der Branch schon trägt, steht in
+`docs/plans/showroom-figures-and-timeline.HANDOFF.md`; dort stehen auch drei
+Annahmen, die die Messung widerlegt hat. **Nichts davon neu bauen.**
+
+1. ~~Rebase auf das gelandete `origin/dev`~~ — erledigt.
+2. ~~§3 Gate für die Skript-Selbsttests~~ — erledigt, `468b60b7d5`. Die
+   Gate-Anzahl steht jetzt bei 27.
+3. **§2 Zeilen-Census** — der Zähler selbst ist erledigt (`1520de3b22`,
+   `1aebcf234d`): `showroom/derive/code-census.mjs` plus 16 Tests. **Offen ist
+   die Verdrahtung** (`virtual:code-census` samt `.d.mts`,
+   `HEADLINE_FIGURES[0]`/`[1]`, die vier `CODE_SEGMENTS`), danach
+   `docs/measurements/index-rebuild.md`, `SPECTRAL_AXIS`, dann der Footer.
+4. **§1 Timeline** — die Quelle ist belegt und ihr Wortlaut ist abgestimmt (die
+   Tabelle in §1). Also: `docs/showroom/timeline.md` einchecken, dann
+   `readTimeline()` und `virtual:build-timeline`, dann `TempoBand.tsx` ersetzen.
 5. Regeln und Abnahme.
