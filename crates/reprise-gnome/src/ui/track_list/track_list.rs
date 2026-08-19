@@ -461,7 +461,14 @@ impl TrackList {
             reload(&self.shared);
             return;
         }
-        let _ = self.restore_browser_place(&reprise_core::browser::BrowserPlace::from(source));
+        if self.restore_browser_place(&reprise_core::browser::BrowserPlace::from(source)) {
+            // NAV-19, in lock step with SRC-13's "revealed … row centered — on
+            // entering the view". Deliberately here and not inside
+            // `view_session::restore_browser_place`: that function also serves
+            // Back and Forward (`window::library_shell`), which BROWSE-2 binds
+            // to restoring exactly what was left behind.
+            super::track_list_reload::center_playing_track_in_view(&self.shared);
+        }
     }
 
     pub(in crate::ui) fn browser_place(&self) -> reprise_core::browser::BrowserPlace {
@@ -579,3 +586,7 @@ impl TrackList {
         crate::ui::tag_edit_flow::begin_for_ids(&self.shared, ids);
     }
 }
+
+#[cfg(test)]
+#[path = "source_switch_centering_display_tests.rs"]
+mod source_switch_centering_display_tests;

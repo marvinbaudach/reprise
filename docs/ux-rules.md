@@ -3303,6 +3303,17 @@ property is set and yet nothing happens.
   Auto-advance centers only if no scroll movement has occurred for 1.5
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.
+- **NAV-19** [active] [gtk] — **Switching source in the sidebar centers the
+  running track.** Choosing a different place in the sidebar puts the loaded
+  track in the middle of the track table it opens, if that table lists it —
+  the same promise SRC-13 already makes for the source lists ("revealed …
+  row centered — on entering the view"). It arrives there in one move, not
+  through an intermediate position (SEARCH-16). If the new view does not list
+  the loaded track, the view's remembered position stands unchanged, and the
+  centering never switches view or tab to find a track to show. It changes
+  neither focus nor selection: the view keeps the selection it remembers.
+  Back and Forward are not source switches and are not covered — BROWSE-2
+  keeps restoring exactly what was left behind.
 - **QUE-7** [active] [gtk] — Up Next consists of the manual queue plus a
   virtual, named context tail with a count. The tail is not materialized as
   individual rows but only rendered within the visible window; the
