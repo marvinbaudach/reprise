@@ -2,7 +2,7 @@
 slug: showroom-figures-derive-themselves
 worktree: /home/marvin/Projects/reprise-showroom-figures-derive-themselves
 branch: feature/showroom-figures-derive-themselves
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-19
 ---
