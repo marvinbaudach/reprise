@@ -189,7 +189,9 @@ pub(super) fn reveal_position(
         .column_view
         .model()
         .map_or(0, |model| model.n_items());
-    match motion {
+    // Whether the row is on screen even though this attempt did not finish —
+    // which decides whether the floor below is a rescue or a step backwards.
+    let placed_provisionally = match motion {
         RevealMotion::Glide => {
             if let Some((adjustment, value)) = crate::ui::scroll_center::centered_scroll_target(
                 &shared.column_view,
@@ -199,6 +201,7 @@ pub(super) fn reveal_position(
                 shared.scroll_glide.glide_to(&adjustment, value);
                 return true;
             }
+            false
         }
         RevealMotion::Instant => {
             match super::centered_scroll_restore::write_centered(shared, position, n_rows) {
@@ -207,12 +210,18 @@ pub(super) fn reveal_position(
                 // confirmed. Re-running once it has costs nothing when the
                 // prediction held — the same value is written again and the
                 // viewport does not move.
-                Centering::Predicted | Centering::Unavailable => {}
+                Centering::Predicted => true,
+                Centering::Unavailable => false,
             }
         }
-    }
+    };
     if attempts == 0 {
-        ensure_visible(shared, position);
+        // Only when nothing was ever placed. A predicted centring that ran out
+        // of rounds is off by the error in a remembered row height; snapping it
+        // to the viewport edge would trade that for a whole screen.
+        if !placed_provisionally {
+            ensure_visible(shared, position);
+        }
         return false;
     }
     let generation = shared.model.generation();
