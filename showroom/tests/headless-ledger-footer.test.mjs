@@ -121,8 +121,15 @@ test('the design footer carries provenance availability and the exact contact tr
     css,
     /\.availability\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,300px\),1fr\)/,
   );
-  assert.match(
-    css,
-    /\.availability__contact\{[^}]*padding:14px 22px[^}]*border:1px solid #4fdbd4[^}]*border-radius:8px/,
-  );
+  // Lightning CSS (Vite 8's minifier) sorts declarations inside a block, so the
+  // contact button is checked for what it carries, not for the order.
+  const contact = css.match(/\.availability__contact\{[^}]*\}/)?.[0];
+  assert.ok(contact, '.availability__contact must exist in the built CSS');
+  for (const declaration of [
+    'padding:14px 22px',
+    'border:1px solid #4fdbd4',
+    'border-radius:8px',
+  ]) {
+    assert.ok(contact.includes(declaration), `.availability__contact must carry ${declaration}`);
+  }
 });

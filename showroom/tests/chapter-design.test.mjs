@@ -33,7 +33,13 @@ test('chapter one carries the design figures counters and animated ratio band', 
   for (const width of ['49.6', '41.7', '2.9', '5.8']) {
     assert.match(ratio, new RegExp(`data-w="${width}"`));
   }
-  assert.match(css, /\.ratio__bar\{[^}]*height:40px[^}]*border-radius:6px/);
+  // Lightning CSS (Vite 8's minifier) sorts declarations inside a block; the bar
+  // is checked for what it carries, not for the order it carries it in.
+  const bar = css.match(/\.ratio__bar\{[^}]*\}/)?.[0];
+  assert.ok(bar, '.ratio__bar must exist in the built CSS');
+  for (const declaration of ['height:40px', 'border-radius:6px']) {
+    assert.ok(bar.includes(declaration), `.ratio__bar must carry ${declaration}`);
+  }
   assert.match(css, /width 1\.4s cubic-bezier\(\.16,1,\.3,1\)/);
 });
 
