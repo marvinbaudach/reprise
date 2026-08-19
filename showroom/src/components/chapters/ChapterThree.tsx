@@ -39,7 +39,7 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
         <SpectralSeekTrack reducedMotion={reducedMotion} />
       </div>
 
-      <ProductGallery reducedMotion={reducedMotion} />
+      <ProductGallery />
     </section>
   );
 }

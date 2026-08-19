@@ -12,7 +12,7 @@ async function builtCss() {
   return readFile(join(assets, stylesheet), 'utf8');
 }
 
-test('ShotTile owns the design tilt sheen loading sweep and expandable caption', async () => {
+test('ShotTile owns the still frame the loading sweep and the zoom cue', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
   const source = await readFile(
@@ -21,23 +21,24 @@ test('ShotTile owns the design tilt sheen loading sweep and expandable caption',
   );
 
   assert.equal((html.match(/<button[^>]+class="[^"]*shot-tile[^"]*"/g) ?? []).length, 11);
-  for (const attribute of ['data-shot', 'data-sheen', 'data-sweep', 'data-dwrap']) {
+  for (const attribute of ['data-shot', 'data-sweep', 'data-zoom']) {
     assert.match(html, new RegExp(`${attribute}=""`));
   }
 
-  assert.match(source, /const TILT_DEGREES = 8/);
-  assert.match(source, /setProperty\('--mx'/);
-  assert.match(source, /setProperty\('--my'/);
-  assert.match(source, /perspective\(1200px\)/);
+  // The picture wrap carries the zoom so the hero phone's visualizer canvas —
+  // a sibling of the image — travels with the screenshot instead of standing
+  // still on top of a growing one.
+  assert.match(source, /className="shot-tile__picture"[\s\S]*?<ProductShot[\s\S]*?\{children\}/);
   assert.doesNotMatch(source, /requestAnimationFrame/);
   assert.match(css, /@keyframes rp-sweep/);
   assert.match(css, /animation:rp-sweep 1\.5s linear infinite/);
-  assert.match(css, /grid-template-rows:0fr/);
-  assert.match(css, /grid-template-rows:1fr/);
-  assert.match(css, /radial-gradient\(340px circle at var\(--mx\) var\(--my\)/);
   assert.match(
     css,
-    /prefers-reduced-motion:reduce[^}]*\}[\s\S]*?\.shot-tile__sheen[^}]*display:none/,
+    /prefers-reduced-motion:reduce[^}]*\}[\s\S]*?\.shot-tile__sweep[^}]*display:none/,
+  );
+  assert.match(
+    css,
+    /prefers-reduced-motion:reduce[^{]*\{[^}]*\.shot-tile__zoom[^}]*transition:none/,
   );
 });
 

@@ -24,11 +24,11 @@ while read -r id st; do
 done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned|replaced)' "$doc" \
   | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(active|planned|replaced)/\1 \2/')
 
-# --- Read the document: ID -> level (core|gtk|e2e|manual) ---
+# --- Read the document: ID -> level (core|gtk|e2e|web|manual) ---
 declare -A level_of
 while read -r id lvl; do
   level_of[$id]=$lvl
-done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned)\] \[(core|gtk|e2e|manual)\]' "$doc" \
+done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned)\] \[(core|gtk|e2e|web|manual)\]' "$doc" \
   | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(active|planned)\] \[([a-z0-9]+)\]/\1 \3/')
 
 # Derive the section prefixes from the document itself, so a new rulebook
@@ -47,6 +47,12 @@ kebab_refs=$(grep -rhE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" scripts/cua-e2e 2
   | grep -vE '^[[:space:]]*#' \
   | grep -oE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" \
   | grep -oE "^(${prefixes})-[0-9]+[a-z]?" | sort -u || true)
+# Showroom: the rule ID leads the test name, so only test() lines count. The
+# anchor is load-bearing, not cosmetic: `prefixes` is derived from the document
+# and contains the one-letter `p`, so a free run over showroom/tests would catch
+# `p-2-…` inside some selector regex and report an unknown rule.
+web_refs=$(grep -rhoE "^test\\('(${prefixes})-[0-9]+[a-z]?" showroom/tests 2>/dev/null \
+  | sed -E "s/^test\\('//" | sort -u || true)
 
 # --- Collect checklist references (RELEASING.md, word-bounded IDs) ---
 releasing=RELEASING.md
@@ -68,7 +74,7 @@ to_id() { # play_1a or play-1a -> PLAY-1a
 }
 
 declare -A tested
-for ref in $snake_refs $kebab_refs; do
+for ref in $snake_refs $kebab_refs $web_refs; do
   id=$(to_id "$ref")
   tested[$id]=1
   case "${status_of[$id]:-missing}" in
