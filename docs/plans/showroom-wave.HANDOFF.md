@@ -13,41 +13,34 @@ Nutzer.
 | Worktree | `/home/marvin/Projects/reprise-gallery-hover-holds-the-frame-still` | `/home/marvin/Projects/reprise-chapter-two-two-figures` |
 | Basis | `origin/dev` @ `7bb1a3c433` | **der Gallery-Branch**, nicht dev |
 | Commits | 8 (inkl. Refactor) | 5 darüber |
-| `phase` | `reviewed` | `planned` (Statuszeile noch nicht nachgezogen) |
-| Gate | **grün** (`GATE_EXIT=0`) | **muss neu laufen** — siehe unten |
+| `phase` | `shipped` | `coded` (`land.sh` zieht sie nach) |
+| Gate | **grün** (`GATE_EXIT=0`) | **grün** (`GATE_EXIT=0`) — siehe unten |
 
-`wake-lock gallery-hover` wird noch gehalten → `wake-lock release gallery-hover`,
-wenn die Welle abgeschlossen ist.
+## Das Kapitel-Zwei-Gate ist durch — und warum es zweimal gebraucht hat
 
-## Das Kapitel-Zwei-Gate steht noch aus
+Der zweite Lauf endete am 19.08. um 19:10 Uhr mit `GATE_EXIT=0`,
+„Merge-readiness checks passed against origin/dev". Die regelbenannte
+Display-Suite: **0 von 531 rot**.
 
-Der Lauf vom 19.08. wurde nach 36 Stufen **von außen abgebrochen** — `SIGTERM`
-mitten in den Linux-Platform-Tests, beim `gnome_conformance`-Binary
-(`GATE_EXIT=143`, „Terminated"). Das ist **kein** fehlgeschlagener Test, und die
-Ursache ist ungeklärt: weder ein Testfehler noch eine Meldung im Log, nur der
-Abbruch. Alles davor war grün.
+Der erste Lauf war **nicht** rot, sondern wurde von außen abgeschossen, und der
+Grund dafür steht in der Stufe selbst: `scripts/check-display-tests.sh` schreibt
+**bis zum Ende keine einzige Zeile**. Sie sammelt jeden Testlog in ein
+temporäres Verzeichnis und gibt erst danach die ganze Bilanz aus. Ein
+Log-Stall-Detektor sieht dort zwangsläufig eine halbe Stunde Stille und meldet
+„hängt" — dabei läuft die Suite seriell (`DISPLAY_TEST_JOBS=1`) mit einem
+eigenen Xvfb pro Test.
 
-Vor dem PR also einmal sauber durchfahren:
-
-```
-export ANDROID_HOME=/home/marvin/.local/share/android-sdk
-export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
-export MERGE_READINESS_SKIP_ANDROID_QUALITY=1
-MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh --no-fetch
-```
-
-Detachen (`setsid nohup … > log 2>&1 &`) und **nachsehen, dass der Prozess
-wirklich lebt** — ein Lauf, der gar nicht startet, sieht genauso aus wie einer,
-der noch läuft. Wiederholt er den Abbruch an derselben Stelle, ist das ein
-eigener Befund und nichts, was dieser Branch verursacht hat: er fasst kein
-Rust-Crate an.
+Der ehrliche Fortschrittsmesser dieser Stufe ist nicht das Log, sondern ihr
+Ergebnisverzeichnis: das `mktemp -d`, in dem `<index>.status` mit `pass`/`fail`
+und `<index>.log` je Test auflaufen. Zählen statt lesen — und erst wenn diese
+Zahl steht, ist die Stufe wirklich stehengeblieben.
 
 ## Landen (Reihenfolge zwingend)
 
-1. `land.sh` für **Gallery**.
-2. Kapitel-Zwei-Worktree auf das neue `origin/dev` rebasen. Er sitzt aktuell auf
-   dem Gallery-Branch, nicht auf dev — der Rebase wirft die dann gelandeten
-   Gallery-Commits weg und behält die fünf eigenen.
+1. ~~`land.sh` für **Gallery**~~ — gelandet als `c213e2a02e` (#574).
+2. ~~Kapitel-Zwei-Worktree auf das neue `origin/dev` rebasen~~ — sauber
+   durchgelaufen; der Baum ist danach bis auf die `phase`-Zeile des
+   Gallery-Plans identisch mit dem, auf dem das Gate grün war.
 3. `land.sh` für **Kapitel Zwei**.
 4. Danach einmal `scripts/check-ux-traceability.sh` — das ist der Moment, in dem
    SHOW-1…5 und SHOW-6…10 sich erstmals im selben Baum sehen.
@@ -130,5 +123,7 @@ reduzierte Bewegung: Marken und Zellen sofort auf `matrix(1,0,0,1,0,0)`, Delay 0
 - **`scripts/tests/project-quality.sh` läuft in keinem Gate.** Der Contract-Test
   war nach der Gate-Verdrahtung rot und ist im Gallery-Branch nachgezogen — aber
   gemerkt hat das ein Reviewer, kein Gate.
-- **`feature/showroom-plate-plays-the-visualizer`** liegt noch als Worktree
-  herum; Inhalt scheint bereits auf `dev`. Vor dem Aufräumen prüfen.
+- ~~**`feature/showroom-plate-plays-the-visualizer`** liegt noch als Worktree
+  herum~~ — geprüft und geschlossen: die Visualizer-Quellen liegen byteidentisch
+  auf `dev` (kamen über #561 hinein), das Plandokument wurde mit #571 bewusst
+  gepflückt. Worktree und Branch sind entfernt, ein Remote-Ref gab es nie.
