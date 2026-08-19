@@ -13,12 +13,22 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * appears in this file, not even as an example.
  */
 export function displaySpan(from: string, to: string): string {
-  const [, fromMonth, fromDay] = from.split('-').map(Number) as [number, number, number];
-  const [, toMonth, toDay] = to.split('-').map(Number) as [number, number, number];
+  // The build guarantees ISO days, and this reads them back rather than casting
+  // that guarantee into place: a cast would turn a weakened guarantee into a
+  // silently wrong date, which is the one thing this whole feature is against.
+  const parts = (day: string): { month: number; date: number } => {
+    const [, month, date] = day.split('-').map(Number);
+    if (month === undefined || date === undefined || !MONTHS[month - 1]) {
+      throw new Error(`the timeline gave "${day}", which is not an ISO day`);
+    }
+    return { month, date };
+  };
+  const start = parts(from);
+  const end = parts(to);
   const name = (month: number) => MONTHS[month - 1] ?? '';
-  return fromMonth === toMonth
-    ? `${fromDay}–${toDay} ${name(toMonth)}`
-    : `${fromDay} ${name(fromMonth)} – ${toDay} ${name(toMonth)}`;
+  return start.month === end.month
+    ? `${start.date}–${end.date} ${name(end.month)}`
+    : `${start.date} ${name(start.month)} – ${end.date} ${name(end.month)}`;
 }
 
 /**

@@ -353,12 +353,22 @@
   inset: 5px 0 auto 18px;
   height: 1px;
   background: linear-gradient(90deg, oklch(58% 0.11 195), oklch(32% 0.03 195));
-  transform: scaleX(0);
+  transform: scaleX(1);
   transform-origin: left center;
   transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1) var(--week-delay, 0ms);
 }
 
-.tempo__track[data-shown] .tempo__week::after {
+/*
+ * Drawn by default, collapsed only by the choreography that is going to animate
+ * it — the same way the ratio bar is zeroed. Without JavaScript the page is
+ * still a page, and a rail whose lines never arrive would leave five
+ * disconnected cards where a timeline was promised.
+ */
+.tempo__track[data-collapsed] .tempo__week::after {
+  transform: scaleX(0);
+}
+
+.tempo__track[data-collapsed][data-shown] .tempo__week::after {
   transform: scaleX(1);
 }
 

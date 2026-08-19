@@ -97,6 +97,10 @@ require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
 # layout: the gate must still name the project-quality wrapper, and it must
 # still hand `--rule-named` to the display suite instead of running all of it.
 require_pattern 'quality_cmd=\(scripts/check-project-quality\.sh' scripts/check-merge-readiness.sh
+# Naming the wrapper is not the same as running it. Without this second line the
+# gate call could be deleted and the assignment left behind as dead code, and
+# project quality would stop running with every assertion still green.
+require_pattern 'gate "Project quality" -- "\$\{quality_cmd\[@\]\}"' scripts/check-merge-readiness.sh
 require_pattern 'worktree-gc.sh' scripts/check-merge-readiness.sh
 require_pattern 'worktree-gc-schedule.sh' scripts/check-merge-readiness.sh
 require_pattern 'shellcheck' .github/workflows/ci.yml

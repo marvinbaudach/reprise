@@ -141,7 +141,12 @@ function readTimeline(): readonly TimelineWeek[] {
   const row =
     /^\|\s*(\d+)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*(?:…|\.\.\.)\s*(\d{4}-\d{2}-\d{2})\s*\|([^|]+)\|(.+?)\|\s*$/gm;
 
-  for (const match of text.matchAll(row)) {
+  // The first table only. The record carries a second one under `## The
+  // anchors` with the same column count, and a row of it that ever happened to
+  // start with a date range would otherwise be read as a sixth week.
+  const firstTable = text.split(/\n#{1,6} /)[0] ?? text;
+
+  for (const match of firstTable.matchAll(row)) {
     const [, week, from, to, theme, landed] = match;
     if (
       week === undefined ||
