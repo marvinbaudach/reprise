@@ -54,7 +54,17 @@ interface RegisteredRenderer {
 
 export const SEEK_FRAME_EVENT = 'reprise:seek-frame';
 const BAR_STEP_PX = 4;
-const BAR_WIDTH_PX = 2;
+/*
+ * The bars are wider than they are apart is generous, and deliberately so. The
+ * spectral ramp runs between two light brand colours through violet, where sRGB
+ * caps how colourful a pixel at that lightness may be — so the colour cannot be
+ * strengthened without ceasing to be the app's colour. What can be strengthened
+ * is how much of it there is, and what it sits against.
+ */
+const BAR_WIDTH_PX = 3;
+/** Alpha of the additive halo drawn under a played bar, in that bar's own colour. */
+const HALO_ALPHA = 0.26;
+const HALO_SPREAD_PX = 2.5;
 const MIN_BAR_COUNT = 40;
 const MAX_DEVICE_SCALE = 2;
 const renderers = new Set<RegisteredRenderer>();
@@ -128,10 +138,32 @@ export function createSeekRenderer({
         continue;
       }
       const barHeight = Math.max(3, (shaped.levels[index] ?? 0) * maximumHeight);
-      context.fillStyle = light.played
+      const colour = light.played
         ? colourCss(liftLightness(spectralColour(shaped.centroids[index] ?? 0.5), light.lift))
         : `oklch(${light.lightness.toFixed(1)}% 0.012 269)`;
       const y = middle - barHeight / 2;
+
+      // The halo goes down first and the bar covers it, so the reading of the
+      // bar itself stays the colour the function returned — the spill into the
+      // ground beside it is the only thing added.
+      if (light.played) {
+        context.save();
+        context.globalCompositeOperation = 'lighter';
+        context.globalAlpha = HALO_ALPHA;
+        context.fillStyle = colour;
+        context.beginPath();
+        context.roundRect(
+          x - HALO_SPREAD_PX,
+          y - HALO_SPREAD_PX,
+          BAR_WIDTH_PX + HALO_SPREAD_PX * 2,
+          barHeight + HALO_SPREAD_PX * 2,
+          3,
+        );
+        context.fill();
+        context.restore();
+      }
+
+      context.fillStyle = colour;
       context.beginPath();
       context.roundRect(x, y, BAR_WIDTH_PX, barHeight, 1);
       context.fill();
