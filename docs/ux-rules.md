@@ -6481,3 +6481,17 @@ rule here is phrased as something a stylesheet either states or does not.
   gate cells stand in their end state, with no sequence.
 - **SHOW-10** [active] [web] — The gate count appears nowhere as a literal;
   every place that shows it reads the derivation.
+- **SHOW-11** [active] [web] — The tempo timeline names its weeks from a
+  checked-in record. Neither a week's name, nor a date span, nor how many weeks
+  there are appears as a literal in a `.tsx`.
+- **SHOW-12** [active] [web] — No line count and no share appears as a literal
+  beside the words that would claim it; the page reads them from the build's own
+  count of the tree.
+- **SHOW-13** [active] [web] — The performance figures quote a checked-in
+  measurement record carrying a commit and a date; none of them appears as a
+  literal in a `.tsx`.
+- **SHOW-14** [active] [web] — The footer says, for every group of figures,
+  whether it is counted, quoted or stated. It no longer claims the measurement
+  is still to come.
+- **SHOW-15** [active] [web] — Under `prefers-reduced-motion: reduce` the
+  timeline's rail stands still.

@@ -4,7 +4,13 @@ export type SeekBarLight =
   | { readonly played: true; readonly lift: number }
   | { readonly played: false; readonly lightness: number };
 
-/** Return the playhead's asymmetric light wake without changing bar geometry. */
+/**
+ * Return the playhead's asymmetric light wake without changing bar geometry.
+ *
+ * The unplayed grey is kept below the played colour rather than beside it: the
+ * spectral ramp is pale where it passes through violet, and a grey of similar
+ * lightness next to it takes the colour out of the whole strip.
+ */
 export function seekBarLight(index: number, playBar: number, pulse: number): SeekBarLight {
   const played = index <= playBar;
   const distance = playBar - index;
@@ -14,5 +20,5 @@ export function seekBarLight(index: number, playBar: number, pulse: number): See
 
   return played
     ? { played, lift: proximity * (3 + 6 * pulse) }
-    : { played, lightness: 33 + proximity * 9 * (0.6 + 0.4 * pulse) };
+    : { played, lightness: 27 + proximity * 9 * (0.6 + 0.4 * pulse) };
 }

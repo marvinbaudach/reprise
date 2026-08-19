@@ -1,4 +1,9 @@
-import { PERFORMANCE, PERFORMANCE_PRICE } from '../../data/measurements';
+import {
+  PERFORMANCE,
+  PERFORMANCE_PRICE,
+  PERFORMANCE_RECORD,
+  permalink,
+} from '../../data/measurements';
 import './ChapterFive.css';
 
 export function ChapterFive() {
@@ -28,7 +33,9 @@ export function ChapterFive() {
           <div className="ledger-card__body">
             <table className="ledger">
               <caption>
-                Measured over 100&apos;000 tracks. Before and after the index rebuild.
+                Measured over 100&apos;000 tracks, before and after the index rebuild. Quoted from{' '}
+                <a href={permalink(PERFORMANCE_RECORD)}>the record</a>, which carries the commit,
+                the date and the method behind every row.
               </caption>
               <thead>
                 <tr>

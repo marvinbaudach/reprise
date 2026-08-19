@@ -11,7 +11,7 @@
   padding: 12px 16px;
   border: 1px solid oklch(28% 0.018 269);
   border-radius: 12px;
-  background: oklch(16% 0.016 269 / 0.72);
+  background: oklch(11% 0.014 269 / 0.86);
   box-shadow: 0 24px 60px -44px oklch(4% 0.02 269 / 0.9);
 }
 
@@ -98,7 +98,12 @@
   padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem);
   border: 1px solid oklch(30% 0.02 300);
   border-radius: 14px;
-  background: linear-gradient(160deg, oklch(19% 0.03 300 / 0.7), oklch(16% 0.016 269 / 0.8));
+  /*
+   * Darker than the chapter behind it. The bars carry the app's own ramp, which
+   * is pale through the middle; against a lighter card that pallor reads as a
+   * washed-out image rather than as the colour it is.
+   */
+  background: linear-gradient(160deg, oklch(13% 0.026 300 / 0.78), oklch(10% 0.014 269 / 0.88));
 }
 
 .seek-card__heading {

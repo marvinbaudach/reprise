@@ -267,6 +267,11 @@
 
 .tempo__frame {
   display: grid;
+  gap: clamp(2rem, 1.4rem + 2.5vw, 3.4rem);
+}
+
+.tempo__head {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: clamp(1.6rem, 1.2rem + 2vw, 3.5rem);
   align-items: end;
@@ -306,30 +311,117 @@
   text-wrap: pretty;
 }
 
-.tempo__stats {
+/*
+ * The rail. Every week is a dot with a line leaving it: the line is what the
+ * reveal draws, so the band reads left to right the way the work happened. The
+ * segments stop at each card's own edge rather than reaching across the gap,
+ * which keeps the rail honest when the grid wraps to a second row.
+ */
+.tempo__track {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 18px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 172px), 1fr));
+  gap: clamp(1.1rem, 0.8rem + 1.2vw, 2.2rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.tempo__stats p {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.tempo__week {
+  position: relative;
+  padding-top: 30px;
 }
 
-.tempo__stats p > span:first-child {
-  font-family: var(--font-mono);
-  font-size: 1.5rem;
-  letter-spacing: -0.03em;
-  color: oklch(97% 0.004 269);
+.tempo__week::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--brand-teal);
+  border-radius: 999px;
+  background: oklch(14% 0.03 195);
 }
 
-.tempo__stats p > span:last-child {
-  font-size: 0.86rem;
-  color: oklch(74% 0.009 269);
+/* The last week is the alpha: the one dot that is filled in. */
+.tempo__week:last-child::before {
+  background: var(--brand-teal);
 }
 
-.tempo__accent {
+.tempo__week::after {
+  content: "";
+  position: absolute;
+  inset: 5px 0 auto 18px;
+  height: 1px;
+  background: linear-gradient(90deg, oklch(58% 0.11 195), oklch(32% 0.03 195));
+  transform: scaleX(1);
+  transform-origin: left center;
+  transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1) var(--week-delay, 0ms);
+}
+
+/*
+ * Drawn by default, collapsed only by the choreography that is going to animate
+ * it — the same way the ratio bar is zeroed. Without JavaScript the page is
+ * still a page, and a rail whose lines never arrive would leave five
+ * disconnected cards where a timeline was promised.
+ */
+.tempo__track[data-collapsed] .tempo__week::after {
+  transform: scaleX(0);
+}
+
+.tempo__track[data-collapsed][data-shown] .tempo__week::after {
+  transform: scaleX(1);
+}
+
+.tempo__week:nth-child(2) {
+  --week-delay: 90ms;
+}
+
+.tempo__week:nth-child(3) {
+  --week-delay: 180ms;
+}
+
+.tempo__week:nth-child(4) {
+  --week-delay: 270ms;
+}
+
+.tempo__week:nth-child(n + 5) {
+  --week-delay: 360ms;
+}
+
+.tempo__span {
+  margin-bottom: 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  color: oklch(70% 0.011 269);
+}
+
+.tempo__theme {
+  margin-bottom: 8px;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.16em;
   color: var(--brand-teal);
+  font-variation-settings:
+    "wdth" 100,
+    "wght" 600;
+}
+
+.tempo__landed {
+  max-width: 34ch;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: oklch(80% 0.009 269);
+  text-wrap: pretty;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * No sequence. The rail is drawn from the first frame; the order it would have
+   * animated in is already written in the dates.
+   */
+  .tempo__week::after {
+    transform: scaleX(1);
+    transition: none;
+    transition-delay: 0ms;
+  }
 }

@@ -54,7 +54,17 @@ interface RegisteredRenderer {
 
 export const SEEK_FRAME_EVENT = 'reprise:seek-frame';
 const BAR_STEP_PX = 4;
-const BAR_WIDTH_PX = 2;
+/*
+ * The bars are wider than they are apart is generous, and deliberately so. The
+ * spectral ramp runs between two light brand colours through violet, where sRGB
+ * caps how colourful a pixel at that lightness may be — so the colour cannot be
+ * strengthened without ceasing to be the app's colour. What can be strengthened
+ * is how much of it there is, and what it sits against.
+ */
+const BAR_WIDTH_PX = 3;
+/** Alpha of the additive halo drawn under a played bar, in that bar's own colour. */
+const HALO_ALPHA = 0.26;
+const HALO_SPREAD_PX = 2.5;
 const MIN_BAR_COUNT = 40;
 const MAX_DEVICE_SCALE = 2;
 const renderers = new Set<RegisteredRenderer>();
@@ -79,6 +89,10 @@ export function createSeekRenderer({
   let hover: number | null = null;
   const clock = createSeekClock(track.durationMs);
   let strip: SeekStrip = { left: 0, width: 0 };
+  // Reused between frames: the bar count only changes when the canvas resizes.
+  let colours: string[] = [];
+  let heights = new Float32Array(0);
+  let played = new Uint8Array(0);
 
   const prepare = (bars: number): PreparedTrack => {
     if (prepared?.bars === bars) return prepared;
@@ -116,21 +130,67 @@ export function createSeekRenderer({
     const maximumHeight = height * 0.9;
     const playBar = Math.floor(position * bars);
     const pulse = still ? 0.5 : 0.5 + 0.5 * Math.sin(timestamp * 0.002_3);
+    if (colours.length !== bars) {
+      colours = new Array<string>(bars);
+      heights = new Float32Array(bars);
+      played = new Uint8Array(bars);
+    }
 
     context.setTransform(scale, 0, 0, scale, 0, 0);
     context.clearRect(0, 0, width, height);
+
+    // Shaped once, drawn twice. The composite mode and the alpha the halo pass
+    // needs are the same for every bar, so they are set once per frame rather
+    // than saved and restored a few hundred times inside the loop — at the end
+    // of a track nearly every bar is played, and this runs at 60 fps.
+    for (let index = 0; index < bars; index += 1) {
+      const barHeight = shaped.silent[index]
+        ? 2
+        : Math.max(3, (shaped.levels[index] ?? 0) * maximumHeight);
+      const light = seekBarLight(index, playBar, pulse);
+      heights[index] = barHeight;
+      played[index] = light.played ? 1 : 0;
+      colours[index] = shaped.silent[index]
+        ? light.played
+          ? 'oklch(70% 0.02 269)'
+          : 'oklch(34% 0.014 269)'
+        : light.played
+          ? colourCss(liftLightness(spectralColour(shaped.centroids[index] ?? 0.5), light.lift))
+          : `oklch(${light.lightness.toFixed(1)}% 0.012 269)`;
+    }
+
+    // The halos go down first and the bars cover them, so each bar still reads
+    // as exactly the colour the function returned; the spill into the ground
+    // beside it is the only thing added.
+    context.save();
+    context.globalCompositeOperation = 'lighter';
+    context.globalAlpha = HALO_ALPHA;
+    for (let index = 0; index < bars; index += 1) {
+      if (!played[index] || shaped.silent[index]) continue;
+      const x = left + index * BAR_STEP_PX;
+      const barHeight = heights[index] ?? 3;
+      const y = middle - barHeight / 2;
+      context.fillStyle = colours[index] ?? '';
+      context.beginPath();
+      context.roundRect(
+        x - HALO_SPREAD_PX,
+        y - HALO_SPREAD_PX,
+        BAR_WIDTH_PX + HALO_SPREAD_PX * 2,
+        barHeight + HALO_SPREAD_PX * 2,
+        3,
+      );
+      context.fill();
+    }
+    context.restore();
+
     for (let index = 0; index < bars; index += 1) {
       const x = left + index * BAR_STEP_PX;
-      const light = seekBarLight(index, playBar, pulse);
+      context.fillStyle = colours[index] ?? '';
       if (shaped.silent[index]) {
-        context.fillStyle = light.played ? 'oklch(70% 0.02 269)' : 'oklch(34% 0.014 269)';
         context.fillRect(x, middle - 1, BAR_WIDTH_PX, 2);
         continue;
       }
-      const barHeight = Math.max(3, (shaped.levels[index] ?? 0) * maximumHeight);
-      context.fillStyle = light.played
-        ? colourCss(liftLightness(spectralColour(shaped.centroids[index] ?? 0.5), light.lift))
-        : `oklch(${light.lightness.toFixed(1)}% 0.012 269)`;
+      const barHeight = heights[index] ?? 3;
       const y = middle - barHeight / 2;
       context.beginPath();
       context.roundRect(x, y, BAR_WIDTH_PX, barHeight, 1);
