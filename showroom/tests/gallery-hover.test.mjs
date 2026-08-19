@@ -43,20 +43,45 @@ function propertyNames(body) {
   return declarations(body).map((entry) => entry.slice(0, entry.indexOf(':')).trim());
 }
 
-/** The span of `@media(hover:hover){…}`, brace-matched. */
-function hoverQuerySpan(css) {
-  const start = css.indexOf('@media(hover:hover){');
-  assert.notEqual(start, -1, 'the built CSS must carry an @media(hover:hover) block');
-  let depth = 0;
-  for (let index = css.indexOf('{', start); index < css.length; index += 1) {
-    if (css[index] === '{') depth += 1;
-    else if (css[index] === '}') {
-      depth -= 1;
-      if (depth === 0) return { start, end: index };
+/**
+ * Every `<prelude>{…}` block in the stylesheet, brace-matched, in source order.
+ *
+ * A lazy `[\s\S]*?` between the prelude and the rule under test is not good
+ * enough: the stylesheet carries several unrelated `prefers-reduced-motion`
+ * queries, so such a pattern latches onto the nearest one and reports a rule as
+ * guarded that has escaped its query entirely — which is the exact regression
+ * these assertions exist to catch.
+ */
+function atRuleSpans(css, prelude) {
+  const spans = [];
+  let from = 0;
+  for (;;) {
+    const start = css.indexOf(prelude, from);
+    if (start === -1) return spans;
+    let depth = 0;
+    let end = -1;
+    for (let index = css.indexOf('{', start); index < css.length; index += 1) {
+      if (css[index] === '{') depth += 1;
+      else if (css[index] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = index;
+          break;
+        }
+      }
     }
+    assert.notEqual(end, -1, `unbalanced ${prelude} block`);
+    spans.push({ start, end, body: css.slice(start, end + 1) });
+    from = end + 1;
   }
-  throw new assert.AssertionError({ message: 'unbalanced @media(hover:hover) block' });
 }
+
+const positions = (css, needle) =>
+  [...css.matchAll(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))].map(
+    (match) => match.index,
+  );
+
+const inside = (spans, index) => spans.some((span) => index > span.start && index < span.end);
 
 // A plate that changes its own box on hover pushes the row below it. The suite
 // has no DOM and cannot measure that, so the guarantee is written as a contract
@@ -137,6 +162,12 @@ test('show-2 no pointer-led sheen survives in markup, stylesheet or component', 
   const css = await builtCss();
   const source = await shotTileSource();
 
+  // Positive control first: all three sources must actually carry the plate, or
+  // every absence below is satisfied by an empty or stale build artefact.
+  assert.match(html, /data-shot=""/);
+  assert.match(css, /\.shot-tile__picture\{/);
+  assert.match(source, /export function ShotTile\(/);
+
   assert.doesNotMatch(html, /data-sheen/);
   assert.doesNotMatch(html, /shot-tile__sheen/);
 
@@ -170,33 +201,51 @@ test('show-3 pointing and keyboard focus declare the very same state', async () 
 test('show-4 reduced motion leaves a plate without transform transitions', async () => {
   const css = await builtCss();
 
-  for (const selector of ['\\.shot-tile', '\\.shot-tile__picture', '\\.shot-tile__zoom']) {
-    assert.match(
-      css,
-      new RegExp(`prefers-reduced-motion:reduce[\\s\\S]*?${selector}[^{]*\\{[^}]*transition:none`),
-      `${selector} keeps a transition under reduced motion`,
+  // The stylesheet holds several reduced-motion queries. Take the one that
+  // actually governs the plates, and assert only inside it — a rule that has
+  // fallen out of its query then has nowhere to hide.
+  const guards = atRuleSpans(css, '@media(prefers-reduced-motion:reduce)').filter((span) =>
+    span.body.includes('.shot-tile'),
+  );
+  assert.equal(guards.length, 1, 'exactly one reduced-motion query may govern the plates');
+
+  const guarded = rules(guards[0].body);
+  for (const selector of ['.shot-tile', '.shot-tile__picture', '.shot-tile__zoom']) {
+    const rule = guarded.find(
+      (candidate) =>
+        candidate.selector
+          .split(',')
+          .map((entry) => entry.trim())
+          .includes(selector) &&
+        candidate.body.includes('transform:none') &&
+        candidate.body.includes('transition:none'),
     );
-    assert.match(
-      css,
-      new RegExp(`prefers-reduced-motion:reduce[\\s\\S]*?${selector}[^{]*\\{[^}]*transform:none`),
-      `${selector} keeps a transform under reduced motion`,
+    assert.ok(
+      rule,
+      `${selector} must drop transform and transition inside the reduced-motion query`,
     );
   }
 });
 
 test('show-5 a device without hover never enters the hover state', async () => {
   const css = await builtCss();
-  const { start, end } = hoverQuerySpan(css);
+  const spans = atRuleSpans(css, '@media(hover:hover)');
+  assert.ok(spans.length >= 1, 'the built CSS must carry an @media(hover:hover) block');
 
-  const hover = css.indexOf('.shot-tile:hover');
-  assert.notEqual(hover, -1, '.shot-tile:hover must exist');
-  assert.ok(hover > start && hover < end, '.shot-tile:hover must sit inside @media(hover:hover)');
-  assert.equal(css.indexOf('.shot-tile:hover', hover + 1), -1, 'only one hover rule may exist');
+  // Every hover rule, not just the first: a second one outside the query would
+  // stick to a plate after a tap, which is the whole point of the rule.
+  const hovers = positions(css, '.shot-tile:hover');
+  assert.ok(hovers.length >= 1, '.shot-tile:hover must exist');
+  for (const index of hovers) {
+    assert.ok(inside(spans, index), '.shot-tile:hover must sit inside @media(hover:hover)');
+  }
 
-  const focus = css.indexOf('.shot-tile:focus-visible');
-  assert.notEqual(focus, -1, '.shot-tile:focus-visible must exist');
-  assert.ok(
-    focus < start || focus > end,
-    '.shot-tile:focus-visible must stay outside @media(hover:hover) — keyboards exist everywhere',
-  );
+  const focuses = positions(css, '.shot-tile:focus-visible');
+  assert.ok(focuses.length >= 1, '.shot-tile:focus-visible must exist');
+  for (const index of focuses) {
+    assert.ok(
+      !inside(spans, index),
+      '.shot-tile:focus-visible must stay outside @media(hover:hover) — keyboards exist everywhere',
+    );
+  }
 });
