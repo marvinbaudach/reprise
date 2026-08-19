@@ -1,16 +1,16 @@
-.agent-workflow,
-.exploration-loop {
+.swimlane,
+.gate-wall {
   padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem);
   border: 1px solid oklch(28% 0.018 269);
   border-radius: 12px;
   background: oklch(17% 0.016 269 / 0.72);
 }
 
-.agent-workflow {
+.swimlane {
   margin: 0;
 }
 
-.exploration-loop {
+.gate-wall {
   margin: clamp(2rem, 1.5rem + 2vw, 3.5rem) 0 0;
 }
 
@@ -30,67 +30,128 @@
     "wght" 560;
 }
 
-.agent-workflow__path {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
-  margin: 0 0 26px;
+/* --- The swimlane ------------------------------------------------------- */
+
+/*
+ * Below its natural width the grid scrolls sideways instead of wrapping: a
+ * wrapped row would put one actor's steps on two lines and destroy the one
+ * thing the figure says, which is which column a mark sits in.
+ */
+.swimlane__scroll {
+  overflow-x: auto;
+  margin: 0 0 22px;
+  overscroll-behavior-x: contain;
 }
 
-.agent-workflow__step {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px;
-  border: 1px solid oklch(28% 0.018 269);
-  border-radius: 8px;
-  background: oklch(20% 0.018 269 / 0.6);
+.swimlane__grid {
+  min-width: max-content;
+  width: 100%;
+  border-collapse: collapse;
 }
 
-.agent-workflow__step[data-role="human-checkpoint"] {
-  border-color: #ff6f5e;
-  background: linear-gradient(140deg, oklch(28% 0.07 30 / 0.4), oklch(20% 0.018 269 / 0.6));
-}
-
-.agent-workflow__step:last-child {
-  border-color: #4fdbd4;
-  background: linear-gradient(140deg, oklch(28% 0.06 195 / 0.45), oklch(20% 0.018 269 / 0.6));
-}
-
-.agent-workflow__index {
+.swimlane__grid caption {
+  padding-bottom: 14px;
+  font-family: var(--font-mono);
   font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-align: left;
   color: oklch(68% 0.011 269);
 }
 
-.agent-workflow__step[data-role="human-checkpoint"] .agent-workflow__index {
-  color: #ff6f5e;
+.swimlane__step {
+  padding: 0 14px 12px;
+  font-weight: 400;
+  text-align: left;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 
-.agent-workflow__step:last-child .agent-workflow__index {
-  color: #4fdbd4;
+.swimlane__number {
+  display: block;
+  font-size: 0.68rem;
+  color: oklch(60% 0.011 269);
 }
 
-.agent-workflow__step strong {
+.swimlane__phase {
+  color: oklch(88% 0.006 269);
+  font-size: 0.86rem;
+}
+
+/*
+ * The label column stays put while the steps scroll under it, so a mark is
+ * never orphaned from the actor it belongs to. It carries its own background
+ * for exactly that reason.
+ */
+.swimlane__corner,
+.swimlane__actor {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 0 20px 0 0;
+  background: oklch(17% 0.016 269);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.swimlane__actor {
+  font-weight: 400;
   color: oklch(96% 0.004 269);
-  font-weight: 500;
 }
 
-.agent-workflow__step > span:last-child {
-  font-size: 0.82rem;
-  color: oklch(70% 0.009 269);
+.swimlane__lane > * {
+  border-top: 1px solid oklch(24% 0.016 269);
 }
 
-.agent-workflow__step[data-role="human-checkpoint"] strong,
-.agent-workflow__step:last-child strong {
+.swimlane__cell {
+  padding: 10px 14px 10px 0;
+}
+
+/*
+ * The mark's text is always readable — the entrance is the chip filling behind
+ * it, left to right in step order, so a reader without scripting still sees the
+ * assignment rather than an empty grid.
+ */
+.swimlane__mark {
+  position: relative;
+  /* Own stacking context, so the chip at z-index -1 stays behind the verb and
+     not behind the row it sits in. */
+  isolation: isolate;
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
   color: oklch(97% 0.004 269);
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
-.agent-workflow__step[data-role="human-checkpoint"] > span:last-child,
-.agent-workflow__step:last-child > span:last-child {
-  color: oklch(74% 0.009 269);
+.swimlane__mark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid oklch(46% 0.03 195);
+  border-radius: inherit;
+  background: oklch(30% 0.05 195 / 0.55);
+  transform: scaleX(0.06);
+  transform-origin: left center;
+  transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1) var(--mark-delay, 0ms);
 }
 
-.agent-workflow__independence {
+.swimlane[data-shown] .swimlane__mark::before {
+  transform: scaleX(1);
+}
+
+/* The one human step is the checkpoint, and it should read as the exception. */
+.swimlane__lane[data-role="human"] .swimlane__mark {
+  color: oklch(98% 0.004 269);
+}
+
+.swimlane__lane[data-role="human"] .swimlane__mark::before {
+  border-color: #ff6f5e;
+  background: oklch(32% 0.08 30 / 0.55);
+}
+
+.swimlane__independence {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 26px;
@@ -99,16 +160,16 @@
   border-bottom: 1px solid oklch(28% 0.018 269);
 }
 
-.agent-workflow__independence strong {
+.swimlane__independence strong {
   color: oklch(96% 0.004 269);
   font-weight: 500;
 }
 
-.agent-workflow__independence span {
+.swimlane__independence span {
   color: oklch(68% 0.011 269);
 }
 
-.agent-workflow__context {
+.swimlane__context {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -119,95 +180,140 @@
   font-size: 0.68rem;
 }
 
-.agent-workflow__context p {
+.swimlane__context p {
   color: oklch(68% 0.011 269);
 }
 
-.agent-workflow__context nav {
+.swimlane__context nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 18px;
 }
 
-.exploration-loop .process-heading .eyebrow {
+/* --- The gate wall ------------------------------------------------------ */
+
+.gate-wall .process-heading .eyebrow {
   color: #ff6f5e;
 }
 
-.exploration-loop .process-heading h3 {
-  margin-bottom: 26px;
-}
-
-.exploration-loop__body {
+.gate-wall__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: clamp(1.2rem, 1rem + 1vw, 2.4rem);
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
 }
 
-.exploration-loop__actions {
-  display: grid;
-  gap: 2px;
-}
-
-.exploration-loop__actions li {
+.gate-wall__cell {
+  position: relative;
   display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 1px solid oklch(24% 0.016 269);
-}
-
-.exploration-loop__actions li:last-child {
-  border-bottom: 0;
-}
-
-.exploration-loop__actions span {
-  font-size: 0.68rem;
-  color: #4fdbd4;
-}
-
-.exploration-loop__actions strong {
-  color: oklch(92% 0.006 269);
-  font-weight: 400;
-}
-
-.exploration-loop__findings {
-  padding: 18px 20px;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 11px 13px;
+  overflow: hidden;
   border: 1px solid oklch(28% 0.018 269);
   border-radius: 8px;
   background: oklch(20% 0.018 269 / 0.6);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 240ms ease,
+    background-color 240ms ease;
 }
 
-.exploration-loop__findings .eyebrow {
-  margin: 0 0 14px;
-  font-size: 0.68rem;
-  letter-spacing: 0.16em;
+/* The pass state arrives cell by cell, in the order the script runs them. */
+.gate-wall__cell::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  border-radius: 999px;
+  background: #4fdbd4;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1) var(--cell-delay, 0ms);
+}
+
+.gate-wall[data-shown] .gate-wall__cell::after {
+  transform: scaleX(1);
+}
+
+.gate-wall__cell:hover,
+.gate-wall__cell:focus-visible {
+  border-color: oklch(46% 0.03 195);
+  background: oklch(24% 0.02 269 / 0.75);
+}
+
+.gate-wall__cell[aria-pressed="true"] {
+  border-color: #ff6f5e;
+  background: oklch(26% 0.06 30 / 0.5);
+}
+
+.gate-wall__cell[aria-pressed="true"]::after {
+  background: #ff6f5e;
+}
+
+.gate-wall__index {
+  font-size: 0.66rem;
+  color: oklch(60% 0.011 269);
+}
+
+.gate-wall__cell[aria-pressed="true"] .gate-wall__index {
   color: #ff6f5e;
 }
 
-.exploration-loop__findings ul {
-  display: grid;
-  gap: 12px;
+.gate-wall__name {
+  color: oklch(94% 0.005 269);
+  font-size: 0.86rem;
+}
+
+.gate-wall__readout {
   margin: 0 0 16px;
-}
-
-.exploration-loop__findings li strong {
-  display: block;
+  padding: 14px 16px;
+  border: 1px solid oklch(46% 0.03 195);
+  border-radius: 8px;
+  background: oklch(24% 0.045 195 / 0.35);
   color: oklch(96% 0.004 269);
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
 }
 
-.exploration-loop__findings li span {
-  font-size: 0.84rem;
-  color: oklch(68% 0.011 269);
+.gate-wall__readout[data-blocked="true"] {
+  border-color: #ff6f5e;
+  background: oklch(26% 0.06 30 / 0.45);
 }
 
-.exploration-loop__findings a {
-  font-size: 0.68rem;
-}
-
-.exploration-loop figcaption {
-  margin-top: 22px;
+.gate-wall__source {
   max-width: 68ch;
   color: oklch(74% 0.009 269);
   font-size: 0.94rem;
   text-wrap: pretty;
+}
+
+.gate-wall__source code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  color: oklch(88% 0.006 269);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * No sequence. Marks and cells stand in their end state from the first frame,
+   * which is what the figure is for — the order is already written in the column
+   * headers.
+   */
+  .swimlane__mark::before,
+  .gate-wall__cell::after {
+    transform: scaleX(1);
+    transition: none;
+    transition-delay: 0ms;
+  }
+
+  .gate-wall__cell {
+    transition: none;
+  }
 }

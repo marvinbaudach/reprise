@@ -1,3 +1,4 @@
+import { GATES } from 'virtual:merge-gates';
 import './chapters.css';
 
 /**
@@ -36,7 +37,7 @@ export function TempoBand() {
           </p>
           <p>
             <span className="tempo__accent" data-counter>
-              21
+              {GATES.length}
             </span>
             <span>gates on every merge</span>
           </p>
