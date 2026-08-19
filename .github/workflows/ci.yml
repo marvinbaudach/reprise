@@ -90,6 +90,7 @@ jobs:
 
       - name: Verify repository and workflow contracts
         run: |
+          scripts/check-architecture.sh
           scripts/check-shell.sh
           scripts/tests/github-flow.sh
           for contract in .github/tests/*.sh; do
