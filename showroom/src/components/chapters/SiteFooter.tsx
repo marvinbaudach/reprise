@@ -1,5 +1,11 @@
 import { TIMELINE } from 'virtual:build-timeline';
-import { BASELINE, CENSUS_SCOPE, PERFORMANCE_RECORD, permalink } from '../../data/measurements';
+import {
+  BASELINE,
+  CENSUS_SCOPE,
+  group,
+  PERFORMANCE_RECORD,
+  permalink,
+} from '../../data/measurements';
 import './SiteFooter.css';
 
 const MARK = `${import.meta.env.BASE_URL}brand/reprise-mark.svg`;
@@ -19,9 +25,9 @@ export function SiteFooter() {
           <a href={permalink(CENSUS_SCOPE.source)}>
             <code>code-census.mjs</code>
           </a>{' '}
-          walked {CENSUS_SCOPE.files} files for the volumes, counting every line with something on
-          it. <strong>Quoted:</strong> the index rebuild describes a change that happened once and
-          cannot be recounted from the tree, so it is read from{' '}
+          walked {group(CENSUS_SCOPE.files)} files for the volumes, counting every line with
+          something on it. <strong>Quoted:</strong> the index rebuild describes a change that
+          happened once and cannot be recounted from the tree, so it is read from{' '}
           <a href={permalink(PERFORMANCE_RECORD)}>
             <code>index-rebuild.md</code>
           </a>

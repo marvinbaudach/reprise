@@ -35,18 +35,20 @@ export function TempoBand() {
     <section className="tempo" data-ground="oklch(14% 0.03 195)">
       <div className="tempo__frame frame">
         <div className="tempo__head">
-          <p className="eyebrow tempo__label" data-reveal>
-            Idea to alpha
-          </p>
-          <p className="tempo__figure" data-reveal>
-            <span data-counter>{TIMELINE.length}</span>
-            <span className="tempo__unit">weeks</span>
-          </p>
+          <div>
+            <p className="eyebrow tempo__label" data-reveal>
+              Idea to alpha
+            </p>
+            <p className="tempo__figure" data-reveal>
+              <span data-counter>{TIMELINE.length}</span>
+              <span className="tempo__unit">weeks</span>
+            </p>
+          </div>
           <p className="tempo__note" data-reveal>
             Counted from the first commit — a design document, not a line of product code — to a
             running alpha on all four frontends. The weeks are the record in{' '}
-            <a href={permalink('docs/showroom/timeline.md')}>timeline.md</a>, and the number above
-            is how many rows it has.
+            <a href={permalink('docs/showroom/timeline.md')}>timeline.md</a>, and the number beside
+            it is how many rows it has.
           </p>
         </div>
 
