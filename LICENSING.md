@@ -55,6 +55,17 @@ a GPL-3.0-or-later work with its notice preserved. Reprise does not copy CAVA's 
 integration, audio backends, threading, or renderers. The upstream copyright and permission
 notice is preserved in [`LICENSES/CAVA-MIT.txt`](LICENSES/CAVA-MIT.txt).
 
+## Third-party icon note — Phosphor (MIT)
+
+The showroom's screenshot plates carry a zoom cue whose path data is the
+`ArrowsOutSimple` icon (regular weight) from Phosphor Icons, taken verbatim from
+`phosphor-icons/core` and inlined into
+`showroom/src/components/showcase/ShotTile.tsx`. Phosphor is MIT-licensed, which
+composes into a GPL-3.0-or-later work with its notice preserved. No other
+Phosphor asset is used, and the icon set is not a dependency. The upstream
+copyright and permission notice is preserved in
+[`LICENSES/PHOSPHOR-MIT.txt`](LICENSES/PHOSPHOR-MIT.txt).
+
 ## Ownership / contributions
 Marvin Baudach is the sole copyright holder and may relicense his own code — but only for as
 long as that stays true. **Before accepting external contributions, add a CLA or DCO**, or
