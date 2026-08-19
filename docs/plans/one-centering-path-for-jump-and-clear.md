@@ -20,10 +20,49 @@ Seitenleisten-Wechsel zentriert den laufenden Titel (Task 6).
 geteilte Hauptcheckout steht auf `be5f014d3b`, also vor #489 — wer dort
 nachliest, bekommt einen Stand, den es nicht mehr gibt. `git show origin/dev:<pfad>`.
 
-## Stand 19.08.2026 — was die Messung ergeben hat
+## Stand 19.08.2026, abends — alle Aufgaben sind auf dem Zweig
 
-**Tasks 1, 2 und 5 sind auf dem Zweig. Tasks 3, 4 und 6 nicht.** Der Grund ist
-die Messung aus Task 2, und sie widerlegt die Vorentscheidung dieses Plans.
+**Tasks 1, 2, 3, 5 und 6 sind umgesetzt. Task 4 ist ersatzlos entfallen.**
+Der Weg dorthin lief über zwei Messungen: die aus Task 2, die die
+Vorentscheidung dieses Plans widerlegt hat, und eine zweite beim
+Wiederaufnehmen, die den Umbau in seine endgültige Form gebracht hat. Beide
+stehen unten. Der ältere Abschnitt bleibt stehen, weil er erklärt, warum die
+naheliegende Lösung nicht funktioniert.
+
+### Was am Ende gebaut wurde
+
+Ein Zug reicht nur, wenn zwei Dinge zusammenkommen — keines allein genügt:
+
+1. **Der Bereich vor dem Wert.** `ListGeometry::configure` sät `upper` aus der
+   gemerkten Zeilenhöhe und schreibt den Wert im selben Aufruf. Ohne das wird
+   das Ziel in den *alten* Bereich geklemmt (714 bei 21 Treffern) und die
+   Schreibung ist schlicht weg.
+2. **Ein Wert, den GTKs Anker reproduziert.** Die zweite Messung hat gezeigt,
+   dass `scroll_to` die Zeile **bedingungslos oben ausrichtet** — auch dann,
+   wenn sie bereits zentriert im Blick steht (aus 2923.5 wie aus 2927.0 wurde
+   `scroll_to(89)` → 3026.0 = 89 × 34). Die Werte, die ein einziger Zug halten
+   kann, sind damit genau die Zeilenkanten. `centered_anchor` nimmt die Kante,
+   die dem arithmetischen Mittelwert am nächsten liegt, und übergibt GTK die
+   Zeile, die diesen Wert erklärt.
+
+Der Preis ist höchstens eine halbe Zeile Versatz — in der gemessenen Geometrie
+0,5 px von 239 px Viewport. Zwei Geschwistertests halten den Pfad deshalb auf
+eine halbe Zeile statt auf einen halben Pixel.
+
+**Task 4 entfällt.** Ein `AdjustmentHold` korrigiert aus einem Idle heraus und
+ist damit immer ein zweiter sichtbarer Schritt — genau die Prügelei, die die
+erste Messung protokolliert hat. Die Verankerung ersetzt ihn: es gibt nichts
+mehr zu korrigieren. `hold.release_now()` vor der Zentrierung bleibt, wie es
+war.
+
+**Nachweis.** Der Kontrollarm aus Task 2 ist umgedreht — er hieß
+`…_hops_through_an_intermediate_position` und behauptet jetzt als
+`search_16_clearing_after_a_play_reaches_the_track_in_one_step` den einen Zug.
+Zwei Mutationen töten ihn und sonst nichts Sichtbares:
+`RevealMotion::Instant` → `Glide` reproduziert exakt die alten 6460.0, und das
+Zurückdrehen der Kantenwahl auf den exakten Mittelwert macht wieder zwei
+Schritte (2927.0 → 2924.0), während der Endwerttest daneben grün bleibt —
+genau der blinde Fleck, für den der Kontrollarm gebaut wurde.
 
 ### Der Kontrollarm hat getragen
 
@@ -79,37 +118,43 @@ hold                     2923.5
 Der Endwert stimmte, der Weg dorthin war vierstufig statt einstufig, also
 schlimmer als der Zustand, den der Plan beheben wollte.
 
-### Was ein Nachfolgeplan tun müsste
+### Die zweite Messung: was davon getragen hat
 
-Die Ansicht muss GTKs Allokationsschreibung **auf dem zentrierten Wert** landen
-lassen, statt sie hinterher zu korrigieren. Genau das kann der Ankerpfad schon:
-`reload_anchor_scroll::apply` sät den Bereich vor (`geometry.configure`) und
-setzt das Halteziel, **bevor** es die Settled-Prüfung macht. Der Zentrierpfad
-bräuchte dieselbe Behandlung — ein vorhergesagtes Ziel aus der gecachten
-Zeilenhöhe, nicht erst eines nach dem Settle.
+Der Vorsatz war, GTKs Allokationsschreibung **auf dem zentrierten Wert** landen
+zu lassen statt sie hinterher zu korrigieren — mit der Behandlung des
+Ankerpfads: Bereich vorsäen, Ziel vorhersagen statt nach dem Settle ableiten.
+Die Hälfte davon trägt (Punkt 1 oben). Die andere Hälfte trägt **nicht**: mit
+vorgesätem Bereich, aber ohne Anker, schrieb GTK weiterhin das Listenende
+darüber (`6561.0 = upper − page`, zweimal). Erst der Anker auf einer
+Zeilenkante hat den Zug auf einen reduziert.
 
-Zwei Sackgassen sind ausgeschlossen und müssen nicht erneut geprüft werden:
+Drei Sackgassen sind ausgeschlossen und müssen nicht erneut geprüft werden:
 
 - **GTK kann nicht zentriert scrollen.** `gtk4::ScrollInfo` (0.11.4) kennt nur
-  `set_enable_horizontal`/`set_enable_vertical`, keine Ausrichtung. Der
-  Kantenanschlag ist alles, was die API anbietet.
-- **Ein Halt, der erst beim Schreiben scharf gestellt wird, kommt zu spät** —
-  GTKs Schreibung liegt davor und ist dann bereits ein sichtbarer Schritt.
+  `set_enable_horizontal`/`set_enable_vertical`, keine Ausrichtung.
+- **`scroll_to` ist kein „minimales Sichtbarmachen".** Es richtet die Zeile
+  bedingungslos oben aus, auch wenn sie bereits vollständig und mittig im Blick
+  steht. Ein Anker, der den exakten Mittelwert halten soll, existiert nicht.
+- **Ein Halt kommt zu spät und ist selbst ein Schritt** — er korrigiert aus
+  einem Idle, GTKs Schreibung liegt davor und ist dann bereits sichtbar.
 
-### Wo der Umbau liegt
+### Der geparkte Umbau ist überholt
 
-Zweig `wip/one-centering-path-rebuild`, ein Commit über diesem Zweig. Er
-enthält Tasks 3 und 4 vollständig ausgeführt, inklusive `RevealMotion`,
-`ScrollGlide::jump_to`, dem Notnagel hinter den Versuchen und dem Abräumen der
-dadurch toten Helfer (`live_row_height`, `release_now`,
-`centered_track_scroll_target` nur noch `#[cfg(test)]`). Er ist **nicht**
-landereif: die beiden SEARCH-16-Endwerttests sind rot.
+`wip/one-centering-path-rebuild` war die Vorlage: `RevealMotion`,
+`ScrollGlide::jump_to`, der Notnagel hinter den Versuchen und das Abräumen der
+toten Helfer (`live_row_height`, `centered_track_scroll_target` nur noch
+`#[cfg(test)]`) sind daraus übernommen. Was daran rot war — der Halt und die
+fehlende Verankerung — ist ersetzt. Der Zweig wird nicht mehr gebraucht.
 
-### Task 6 ist unberührt geblieben
+### Task 6 ist gebaut
 
-Der Seitenleisten-Wechsel setzt den fertigen Pfad aus Task 3 voraus
-(`RevealMotion::Instant`). Ohne Task 3 gibt es nichts, worauf er aufsetzen
-könnte, also wurde er nicht angefangen.
+Der Seitenleisten-Wechsel zentriert den laufenden Titel über denselben Pfad
+(NAV-19, neu in `docs/ux-rules.md`, `[active]` im selben Commit). Die
+Unterscheidung zur Verlaufsnavigation liegt an der Aufrufstelle
+(`TrackList::set_source`), nicht in `view_session::restore_browser_place` —
+Vor/Zurück bleiben unter BROWSE-2 unverändert. Anders als START-3 fasst die
+Zentrierung die Auswahl nicht an; `center_loaded_track` behält seinen eigenen
+Auswahlschritt, `center_playing_track_in_view` trägt nur die Platzierung.
 
 ## Was am Code belegt ist
 
@@ -213,7 +258,7 @@ Fällen eine fertige Aufgabe und muss nicht anhalten.
 
 ## Aufgaben
 
-### Task 1 — Die Sonde deckt den letzten blinden Schreiber ab
+### Task 1 [erledigt] — Die Sonde deckt den letzten blinden Schreiber ab
 
 `probe_scroll_to("centered.scroll_to", …)` vor dem `scroll_to` in
 `centered_scroll_restore.rs`, und ein Name pro Nachbesserung statt des einen
@@ -221,7 +266,7 @@ Fällen eine fertige Aufgabe und muss nicht anhalten.
 `centered.changed.apply`, `centered.idle.apply`. Reine Diagnostik hinter
 `REPRISE_SCROLL_PROBE`, kein Verhalten ändert sich.
 
-### Task 2 — Kontrollarm: der Zwischenzustand als Wertfolge
+### Task 2 [erledigt, danach umgedreht] — Kontrollarm: der Zwischenzustand als Wertfolge
 
 Ein `#[ignore]`-Display-Test in `track_list/search_viewport_display_tests.rs`,
 neben `search_16_clearing_after_a_play_centers_the_loaded_track` (`:290`), der
@@ -239,7 +284,7 @@ stoppen und berichten, nicht weiterbauen.
 Der Test protokolliert zusätzlich **welcher** Schreiber welche Stufe erzeugt
 hat (die Namen aus Task 1). Das ist die Antwort auf (a) vs. (b).
 
-### Task 3 — Ein Pfad: `reveal_position` bekommt eine Bewegungsart
+### Task 3 [erledigt, mit Verankerung statt bloßem Umbau] — Ein Pfad: `reveal_position` bekommt eine Bewegungsart
 
 `reveal_position(shared, position, attempts)` wird zu
 `reveal_position(shared, position, attempts, motion)` mit
@@ -276,7 +321,7 @@ Zwei Dinge dürfen nicht verloren gehen:
   sein, ob er die Marke setzen darf — ein Reload, der auf sich selbst wartet,
   wäre eine neue Schleife.
 
-### Task 4 — Der Halt deckt die Zentrierung mit ab
+### Task 4 [entfallen] — Der Halt deckt die Zentrierung mit ab
 
 Statt `hold.release_now()` vor `centered_scroll_restore::schedule`
 (`track_list_reload.rs`, im Zweig `CenterPlayingElsePreSearch`) den
@@ -284,13 +329,19 @@ Statt `hold.release_now()` vor `centered_scroll_restore::schedule`
 erlaubtem Schreiber — so wie ihn der Ankerpfad bekommt. Die Freigabe erfolgt
 dann, wenn die Zentrierung ihr Ziel geschrieben hat oder endgültig aufgibt.
 
-**Vorbehalt, entschieden durch Task 2:** zeigt die Messung Fall (a), ist Task 3
+**Entschieden: entfallen.** Die Messung zeigte weder (a) noch (b) allein,
+sondern beides — und ein Halt hilft gegen (b) nicht, weil er selbst aus einem
+Idle korrigiert und damit ein zweiter sichtbarer Schritt ist. An seine Stelle
+tritt die Verankerung auf einer Zeilenkante (siehe „Stand" oben). Der Rest
+dieses Abschnitts steht als Protokoll dessen, was geprüft wurde.
+
+**Ursprünglicher Vorbehalt:** zeigt die Messung Fall (a), ist Task 3
 die ganze Ursache — dann entfällt Task 4 ersatzlos und der Plan vermerkt das.
 Zeigt sie Fall (b), ist Task 4 zwingend. Beachten: zwei Holds auf einem
 Adjustment sind eine Schlägerei, kein doppelter Schutz
 (`adjustment_hold.rs:12-28`) — es darf nur der eine geben, der schon existiert.
 
-### Task 5 — SEARCH-16 benennt den Zwischenzustand
+### Task 5 [erledigt] — SEARCH-16 benennt den Zwischenzustand
 
 `docs/ux-rules.md`, SEARCH-16 (`:3054`) bekommt einen Satz: die Wiederherstellung
 ist nicht als Zwischenposition sichtbar — der Blick landet in einem Zug am Ziel.
@@ -298,7 +349,7 @@ Revisionsvermerk wie beim bestehenden „Revised 2026-08-14". Der Test aus Task 
 trägt danach den Namen `search_16_*`. Regel bleibt `[active]`, also muss der
 Test im selben Commit grün sein.
 
-### Task 6 — Der Seitenleisten-Wechsel zentriert den laufenden Titel
+### Task 6 [erledigt als NAV-19] — Der Seitenleisten-Wechsel zentriert den laufenden Titel
 
 Beim Wechsel der Quelle über die Seitenleiste (`TrackList::set_source` →
 `restore_browser_place`, `track_list.rs:459-466`) wird der laufende Titel
@@ -348,9 +399,17 @@ vermerken, dass der Umbau sie berührt hat.
   `glide_reload_display_tests.rs`, `delete_follow_display_tests.rs` grün.
 - Vor/Zurück unverändert: die BROWSE-2-Tests grün, ohne Anpassung. Eine
   Anpassung dort ist ein Fehlschlag von Task 6, kein Ergebnis.
-- **Mutationsnachweis:** `RevealMotion::Instant` auf `Glide` zurückdrehen macht
-  genau den Test aus Task 2 rot und sonst nichts (genau ein Vorkommen tauschen,
-  Rücknahme über `git checkout --` im `trap`).
+- **Mutationsnachweis, gelaufen 19.08.2026** (jeweils genau ein Vorkommen
+  getauscht, Rücknahme über `git checkout --` im `trap` — **erst committen,
+  dann mutieren**, sonst wirft der Trap uncommittete Arbeit weg):
+  - `RevealMotion::Instant` → `Glide`: Kontrollarm rot mit
+    `gtk 6460.0 / glide.instant 2923.5 / gtk 6460.0`, also exakt die alte
+    Messung; der Endwerttest fällt mit.
+  - Kantenwahl → exakter Mittelwert (`Some((anchor, centre))`): Kontrollarm rot
+    mit zwei Schritten (2927.0 → 2924.0), **Endwerttest bleibt grün** — genau
+    der blinde Fleck, für den der Kontrollarm existiert.
+  - NAV-19: `center_playing_track_in_view` am Aufrufort entfernt — der positive
+    Fall rot, der negative (Ansicht ohne den Titel) grün.
 - `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, Display-Suite (`scripts/check-display-tests.sh`).
   **Nicht** `scripts/check-merge-readiness.sh` — das Sammel-Gate läuft nie
