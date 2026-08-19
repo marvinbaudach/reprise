@@ -2,7 +2,7 @@
 slug: gallery-hover-holds-the-frame-still
 worktree: /home/marvin/Projects/reprise-gallery-hover-holds-the-frame-still
 branch: feature/gallery-hover-holds-the-frame-still
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-18
 ---
