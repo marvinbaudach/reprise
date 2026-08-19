@@ -7,11 +7,7 @@ import './showcase.css';
 
 const [desktop, phone] = HERO_CAPTURES;
 
-interface HeroProductProps {
-  readonly reducedMotion: boolean;
-}
-
-export function HeroProduct({ reducedMotion }: HeroProductProps) {
+export function HeroProduct() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [returnFocus, setReturnFocus] = useState<HTMLButtonElement | null>(null);
   const close = useCallback(() => setActiveIndex(null), []);
@@ -38,7 +34,6 @@ export function HeroProduct({ reducedMotion }: HeroProductProps) {
         className="hero-product__desktop"
         capture={desktop}
         eager
-        reducedMotion={reducedMotion}
         variant="desktop"
         onOpen={(trigger) => open(0, trigger)}
       />
@@ -47,7 +42,6 @@ export function HeroProduct({ reducedMotion }: HeroProductProps) {
         className="hero-product__phone"
         capture={phone}
         eager
-        reducedMotion={reducedMotion}
         variant="phone"
         onOpen={(trigger) => open(1, trigger)}
       >

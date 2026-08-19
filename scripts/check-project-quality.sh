@@ -50,6 +50,9 @@ if (( showroom != 0 )); then
   npm --prefix showroom ci
   npm --prefix showroom run lint
   node --test showroom/tests/lint-contract.test.mjs
+  # The lint contract runs first because it needs no build and may fail fast.
+  # The full suite reads dist/, so `npm test` builds before it asserts.
+  npm --prefix showroom test
 fi
 
 if (( android != 0 )); then
