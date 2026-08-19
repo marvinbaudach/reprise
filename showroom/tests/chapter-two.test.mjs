@@ -205,10 +205,10 @@ test('show-10 the gate count is nowhere a literal', async () => {
     }
   }
 
-  // And the three places that show it read the same module.
+  // And the two places that show it read the same module. The tempo band used to
+  // be a third; it now shows the weeks instead, and states no count of its own.
   for (const file of [
     join(showroomRoot, 'src', 'data', 'measurements.ts'),
-    join(showroomRoot, 'src', 'components', 'chapters', 'TempoBand.tsx'),
     join(showroomRoot, 'src', 'components', 'process', 'GateWall.tsx'),
   ]) {
     assert.match(await readFile(file, 'utf8'), /from 'virtual:merge-gates'/);
