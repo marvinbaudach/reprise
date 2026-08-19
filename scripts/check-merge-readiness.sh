@@ -85,6 +85,13 @@ gate "Project quality" -- "${quality_cmd[@]}"
 gate "Worktree GC" -- scripts/tests/worktree-gc.sh
 gate "Worktree GC schedule" -- scripts/tests/worktree-gc-schedule.sh
 gate "Gettext catalogues" -- scripts/tests/gettext-catalogs.sh
+# The rest of scripts/tests/ hung on qa-linters.sh, and qa-linters.sh hung on
+# scripts/check-release.sh — which neither this gate nor CI ever calls. So the
+# self-tests of the scripts that guard the repository were themselves unguarded,
+# and two of their assertions had gone stale without anyone hearing about it.
+# 84s measured; the three lines above it stay because check-release.sh reaches
+# them by a different road.
+gate "Script self-tests" -- scripts/tests/qa-linters.sh
 gate "Architecture" -- scripts/check-architecture.sh
 gate "Device-sync GStreamer" -- scripts/check-device-sync-gstreamer.sh
 gate "Accessibility semantics" -- scripts/check-accessibility-semantics.sh

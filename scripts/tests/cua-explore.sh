@@ -131,10 +131,14 @@ else
   echo "skipping exploratory namespace D-Bus probe: dbus-run-session or dbus-send missing"
 fi
 
+# The third pattern is the behaviour, not the spelling: the stub root has to be
+# prepended to the inherited XDG_DATA_DIRS. Whether that lands in the
+# environment directly or by way of a local variable is the caller's business —
+# asserting the assignment itself is what made this check go stale once already.
 for required in \
   'org.freedesktop.secrets' \
   'org.freedesktop.impl.portal.Secret' \
-  'XDG_DATA_DIRS="$stub_root:'; do
+  '"$stub_root:${XDG_DATA_DIRS'; do
   if ! rg --quiet --fixed-strings "$required" scripts/cua-common/session.sh; then
     echo "private session must neutralise the secret service: $required" >&2
     exit 1

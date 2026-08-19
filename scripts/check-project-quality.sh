@@ -49,6 +49,10 @@ if (( showroom != 0 )); then
   echo "== Showroom source quality =="
   npm --prefix showroom ci
   npm --prefix showroom run lint
+  # package.json has carried a `typecheck` script that no gate called. The
+  # TypeScript 5.9 → 7.0 bump went through on that blind spot; a type error
+  # would only have surfaced as a build failure, or not at all.
+  npm --prefix showroom run typecheck
   node --test showroom/tests/lint-contract.test.mjs
   # The lint contract runs first because it needs no build and may fail fast.
   # The full suite reads dist/, so `npm test` builds before it asserts.
