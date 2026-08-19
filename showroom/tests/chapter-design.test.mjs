@@ -3,6 +3,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { census } from '../derive/code-census.mjs';
+
 const showroomRoot = new URL('..', import.meta.url).pathname;
 
 async function builtCss() {
@@ -23,15 +25,29 @@ test('chapter one carries the design figures counters and animated ratio band', 
     await readFile(join(showroomRoot, '..', 'scripts', 'check-merge-readiness.sh'), 'utf8')
   ).match(/^gate "[^"]+"/gm);
   assert.ok(gates && gates.length > 0);
-  for (const value of ["347(?:'|&#x27;)842", '45\\.8 %', String(gates.length)]) {
+  // The volumes are counted, so they are derived here too rather than typed —
+  // SHOW-12 owns whether they are right; this test owns whether they count up.
+  const counted = census(join(showroomRoot, '..'));
+  const group = (value) => String(value).replace(/\B(?=(\d{3})+(?!\d))/g, "(?:'|&#x27;)");
+  for (const value of [
+    group(counted.total),
+    `${((counted.test / counted.total) * 100).toFixed(1)} %`,
+    String(gates.length),
+  ]) {
     assert.match(chapter, new RegExp(`data-counter="(?:true)?">${value}<`));
   }
   assert.doesNotMatch(chapter, /data-counter="(?:true)?">1 → 4</);
 
   const ratio = chapter.match(/<div[^>]+data-ratio="(?:true)?"[\s\S]+?<\/div>/)?.[0];
   assert.ok(ratio);
-  for (const width of ['49.6', '41.7', '2.9', '5.8']) {
-    assert.match(ratio, new RegExp(`data-w="${width}"`));
+  for (const lines of [
+    counted.rust.product,
+    counted.rust.test,
+    counted.bridge.product + counted.bridge.test,
+    counted.kotlin.product + counted.kotlin.test,
+  ]) {
+    const width = ((lines / counted.total) * 100).toFixed(1);
+    assert.match(ratio, new RegExp(`data-w="${width.replace('.', '\\.')}"`));
   }
   // Lightning CSS (Vite 8's minifier) sorts declarations inside a block; the bar
   // is checked for what it carries, not for the order it carries it in.
