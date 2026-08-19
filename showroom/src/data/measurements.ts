@@ -1,3 +1,5 @@
+import { GATES } from 'virtual:merge-gates';
+
 /**
  * Every figure the showroom prints, and where it comes from.
  *
@@ -52,7 +54,10 @@ export const HEADLINE_FIGURES: readonly Figure[] = [
     detail: 'GNOME · Android · CLI · MCP',
   },
   {
-    value: '21',
+    // Derived, not typed: the wall in chapter two, the tempo band and this
+    // figure all count the same `gate` calls in the merge gate script, so the
+    // page cannot end up disagreeing with itself.
+    value: String(GATES.length),
     label: 'gates before every merge',
     detail: 'all of them, every time',
     counter: true,
@@ -96,76 +101,6 @@ export const CODE_SEGMENTS: readonly CodeSegment[] = [
     lines: 20_677,
     note: 'the whole Android frontend, product and tests',
     share: '5.8',
-  },
-];
-
-/** Chapter two: the five rungs, weakest evidence first. */
-export interface VerificationRung {
-  readonly count: string;
-  readonly name: string;
-  readonly proves: string;
-  readonly cannotProve: string;
-  readonly agentDriven: boolean;
-}
-
-export const VERIFICATION_RUNGS: readonly VerificationRung[] = [
-  {
-    count: "5'596",
-    name: 'Test functions, standard run',
-    proves: 'the logic holds for the cases someone thought of',
-    cannotProve: 'that the window ever appeared',
-    agentDriven: false,
-  },
-  {
-    count: '676',
-    name: 'Display tests, own gate',
-    proves: 'real widgets, real allocation, real GTK',
-    cannotProve: 'that a human could reach the button',
-    agentDriven: false,
-  },
-  {
-    count: '9',
-    name: 'Pointer flows on real windows',
-    proves: 'the click lands where the pixel is',
-    cannotProve: 'that the flow makes sense',
-    agentDriven: false,
-  },
-  {
-    count: '11',
-    name: 'Semantic workflows over AT-SPI',
-    proves: 'the app can be operated without seeing it',
-    cannotProve: 'what nobody scripted',
-    agentDriven: true,
-  },
-  {
-    count: '6',
-    name: 'Agentic exploration missions',
-    proves: 'what no one thought to look for',
-    cannotProve: 'nothing — it is the last rung',
-    agentDriven: true,
-  },
-];
-
-/** Chapter two: the rulebook, and how much of it is traceable. */
-export const RULEBOOK_FIGURES: readonly Figure[] = [
-  {
-    value: '571',
-    label: 'active UX rules, binding',
-    href: permalink('docs/ux-rules.md'),
-    counter: true,
-  },
-  {
-    value: '100 %',
-    label: 'of enforceable rules have a test of the same name',
-    counter: true,
-  },
-  { value: '897', label: 'files holding those tests', counter: true },
-  { value: '250', label: 'files under docs/', href: treelink('docs'), counter: true },
-  {
-    value: '24',
-    label: 'MCP tools over the same layer',
-    href: treelink('crates/reprise-mcp'),
-    counter: true,
   },
 ];
 
