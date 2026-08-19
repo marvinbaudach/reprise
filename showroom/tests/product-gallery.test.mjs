@@ -88,16 +88,27 @@ test('the gallery uses the five design mosaic rows and their exact flex ratios',
     css,
     /\.mosaic-frame\{[^}]*max-width:78rem[^}]*padding-inline:clamp\(1\.25rem,4vw,4rem\)/,
   );
-  assert.match(css, /\.mosaic-row\{[^}]*display:flex[^}]*flex-wrap:wrap/);
-  assert.match(css, /\.mosaic-tile--gnome-podcasts\{[^}]*flex:1\.62 1 340px/);
-  assert.match(css, /\.mosaic-tile--android-library\{[^}]*flex:\.58 1 190px/);
-  assert.match(css, /\.mosaic-tile--gnome-library-doctor\{[^}]*flex:1\.7 1 360px/);
-  assert.match(css, /\.mosaic-tile--android-cover\{[^}]*flex:\.55 1 180px/);
+  // Lightning CSS (Vite 8's minifier) sorts declarations inside a block, so the
+  // row is checked for what it carries rather than for the order it carries it in.
+  const row = css.match(/\.mosaic-row\{[^}]*\}/)?.[0];
+  assert.ok(row, '.mosaic-row must exist in the built CSS');
+  for (const declaration of ['display:flex', 'flex-wrap:wrap']) {
+    assert.ok(row.includes(declaration), `.mosaic-row must carry ${declaration}`);
+  }
+  // Lightning CSS (Vite 8's minifier) drops the flex-shrink when it is the
+  // default 1, so `flex:1.62 1 340px` is printed as `flex:1.62 340px`. Both
+  // spellings are the same box; the ratio is what this test owns.
+  assert.match(css, /\.mosaic-tile--gnome-podcasts\{[^}]*flex:1\.62 (?:1 )?340px/);
+  assert.match(css, /\.mosaic-tile--android-library\{[^}]*flex:\.58 (?:1 )?190px/);
+  assert.match(css, /\.mosaic-tile--gnome-library-doctor\{[^}]*flex:1\.7 (?:1 )?360px/);
+  assert.match(css, /\.mosaic-tile--android-cover\{[^}]*flex:\.55 (?:1 )?180px/);
   assert.match(
     css,
-    /\.mosaic-tile--gnome-youtube,\.mosaic-tile--gnome-radio,\.mosaic-tile--gnome-device-sync\{[^}]*flex:1 1 320px/,
+    // `flex:1 1 320px` is the same box as the minifier's `flex:320px` — grow and
+    // shrink are both 1 by default once a basis is given.
+    /\.mosaic-tile--gnome-youtube,\.mosaic-tile--gnome-radio,\.mosaic-tile--gnome-device-sync\{[^}]*flex:(?:1 (?:1 )?)?320px/,
   );
-  assert.match(css, /\.mosaic-tile--gnome-layout-controls\{[^}]*flex:1\.05 1 320px/);
+  assert.match(css, /\.mosaic-tile--gnome-layout-controls\{[^}]*flex:1\.05 (?:1 )?320px/);
   assert.match(css, /\.mosaic-tile--gnome-listening-stats\{[^}]*width:100%/);
   assert.doesNotMatch(css, /scroll-snap-type/);
   assert.doesNotMatch(css, /\.mosaic\{[^}]*overflow-x:auto/);

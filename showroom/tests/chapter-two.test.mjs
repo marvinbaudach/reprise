@@ -147,9 +147,13 @@ test('show-9 reduced motion places marks and gate cells in their end state', asy
   // Several unrelated reduced-motion queries sit in this stylesheet. Take the
   // one that governs these two figures; a lazy walk from the first one would
   // call an escaped rule guarded.
+  // Vite 8 minifies with Lightning CSS, which prints a space after `@media`
+  // where esbuild printed none. The space is the minifier's, so it is optional here.
+  const prelude = /@media\s*\(prefers-reduced-motion:reduce\)/g;
   const guards = [];
   for (let from = 0; ; ) {
-    const start = css.indexOf('@media(prefers-reduced-motion:reduce)', from);
+    prelude.lastIndex = from;
+    const start = prelude.exec(css)?.index ?? -1;
     if (start === -1) break;
     let depth = 0;
     let end = -1;
@@ -176,7 +180,10 @@ test('show-9 reduced motion places marks and gate cells in their end state', asy
   assert.match(guarded, /\.gate-wall__cell::?after/);
   assert.match(guarded, /transform:scaleX\(1\)/);
   assert.match(guarded, /transition:none/);
-  assert.match(guarded, /transition-delay:0(?:ms|s)?/);
+  // With `transition:none` there is no delay left to state, and Lightning CSS
+  // folds the explicit `transition-delay:0s` away for exactly that reason. What
+  // must never survive inside this query is a delay that actually waits.
+  assert.doesNotMatch(guarded, /transition-delay:(?!0(?:ms|s)?[;}])/);
 });
 
 test('show-10 the gate count is nowhere a literal', async () => {

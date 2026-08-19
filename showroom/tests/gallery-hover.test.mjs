@@ -53,10 +53,18 @@ function propertyNames(body) {
  * these assertions exist to catch.
  */
 function atRuleSpans(css, prelude) {
+  // Vite 8 minifies with Lightning CSS, which prints `@media (hover:hover)` where
+  // esbuild printed `@media(hover:hover)`. That space belongs to the minifier, not
+  // to the rule under test, so the prelude is matched with it optional.
+  const pattern = new RegExp(
+    prelude.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^@media/, '@media\\s*'),
+    'g',
+  );
   const spans = [];
   let from = 0;
   for (;;) {
-    const start = css.indexOf(prelude, from);
+    pattern.lastIndex = from;
+    const start = pattern.exec(css)?.index ?? -1;
     if (start === -1) return spans;
     let depth = 0;
     let end = -1;
