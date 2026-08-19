@@ -408,7 +408,7 @@ fn record_viewport_steps(adjustment: &gtk4::Adjustment) -> gtk4::glib::SignalHan
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_16_clearing_after_a_play_hops_through_an_intermediate_position() {
+fn search_16_clearing_after_a_play_reaches_the_track_in_one_step() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let stage = clear_search_stage();
@@ -433,30 +433,30 @@ fn search_16_clearing_after_a_play_hops_through_an_intermediate_position() {
     )
     .expect("the cleared list must have a centered target");
 
-    // The control arm, asserting the defect on purpose. Two moves: the edge
-    // snap brings the row minimally into view, and the centering refinement
-    // that follows moves it the rest of the way. The second move is the hop
-    // the user reported, and the first one is ours — measured 2026-08-19 as
-    // `centered.scroll_to 3026.0` then `centered.changed.apply 2923.5`.
+    // Built as a control arm, and it ran as one. Before the rebuild this read
+    // `steps.len() == 2` and passed, recording the defect on purpose:
+    // `centered.scroll_to 3026.0` — the edge snap this path fired before it
+    // could centre — followed by `centered.changed.apply 2923.5`, the centring
+    // that moved the list the rest of the way. The second move is the hop the
+    // user reported; the first one was ours.
     //
-    // This is what makes the rebuild that follows measurable rather than
-    // hopeful: with the snap behind the centering attempts instead of in
-    // front of them, this becomes one move and the test says so.
+    // One move now, because the restore writes a value an anchor row explains,
+    // so GTK's allocation pass reproduces it instead of correcting it
+    // (`centered_scroll_restore::centered_anchor`). Going back to a value no
+    // anchor row explains is what this test refuses.
     assert_eq!(
         steps.len(),
-        2,
-        "the control arm must see the two-step restore it was built for; if \
-         it does not, the diagnosis behind the rebuild is wrong: {steps:?}"
-    );
-    assert_eq!(
-        steps[0].writer, "centered.scroll_to",
-        "the intermediate position must be our own edge snap — an unclaimed \
-         value would mean GTK's allocation pass writes it, which no rebuild \
-         of this path can fix: {steps:?}"
+        1,
+        "clearing the search must place the loaded track in one move: {steps:?}"
     );
     assert!(
-        (steps[1].value - expected).abs() <= row_height,
-        "the restore must still end on the centered target {expected}: {steps:?}"
+        steps[0].writer.starts_with("centered."),
+        "the centering path must own the move — an unclaimed value would be \
+         GTK's allocation pass writing over it: {steps:?}"
+    );
+    assert!(
+        (steps[0].value - expected).abs() <= row_height,
+        "the single move must land on the centered target {expected}: {steps:?}"
     );
 
     stage.window.close();

@@ -61,7 +61,12 @@ fn nav_10b_centering_lands_on_the_logical_pixel_nearest_the_target() {
     let start = target - adjustment.page_size();
     adjustment.set_value(start);
 
-    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, position, 8);
+    crate::ui::track_list::track_reveal::reveal_position(
+        &track_list.shared,
+        position,
+        8,
+        crate::ui::track_list::track_reveal::RevealMotion::Glide,
+    );
     assert!(
         (adjustment.value() - target).abs() > 0.5,
         "centering must begin a glide instead of teleporting"
@@ -98,7 +103,12 @@ fn nav_10b_a_user_scroll_during_the_glide_wins() {
     let start = target - adjustment.page_size();
     adjustment.set_value(start);
 
-    crate::ui::track_list::track_reveal::reveal_position(&track_list.shared, position, 8);
+    crate::ui::track_list::track_reveal::reveal_position(
+        &track_list.shared,
+        position,
+        8,
+        crate::ui::track_list::track_reveal::RevealMotion::Glide,
+    );
     let started =
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
             (adjustment.value() - start).abs() > 0.5

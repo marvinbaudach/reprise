@@ -256,7 +256,7 @@ fn restore_reload_anchor(
                     hold.release_now();
                 }
             }
-            super::centered_scroll_restore::schedule(shared, playing_track_id, current_ids);
+            super::centered_scroll_restore::schedule(shared, playing_track_id, &current_ids);
             return;
         }
     }
@@ -349,7 +349,7 @@ pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
     };
     shared.selection.unselect_all();
     shared.selection.select_item(position as u32, false);
-    super::centered_scroll_restore::schedule(shared, Some(track_id), current_ids);
+    super::centered_scroll_restore::schedule(shared, Some(track_id), &current_ids);
 }
 
 /// Sets `shared.filter` and reloads — the one place that mutates the filter
