@@ -388,10 +388,54 @@ zusätzliche Glättung im Fernfeld vom Kompositionspfad kommt und nicht vom Loch
 Kein Testvertrag: die Suite ist statische Analyse, und hier ändert sich weder
 Struktur noch Rolle noch Text.
 
+## 6 — Nachtrag: der Hintergrund hängt dem Scrollen nach
+
+Ebenfalls nicht aus dem Design-Review, sondern am 21.08. beim Durchscrollen
+gemeldet: „es wirkt langsam und träge, ich sehe nach dem Scrollen, wie sich die
+Farbe noch verändert."
+
+**Befund.** Zwei Ursachen, beide mit Nachlauf über das Anhalten hinaus.
+
+1. Die Grundfarbe war eine **Stufe**: `usePageChoreography` schrieb
+   `ground.style.backgroundColor`, sobald eine andere Sektion die Bildschirmmitte
+   besaß, und `transition: background-color 1500ms` blendete danach nach. Die
+   Farbe gehörte damit zum Ereignis, nicht zur Position — beim Zurückscrollen
+   lief sie nicht denselben Weg zurück.
+2. `transition: transform 1600ms` auf `.backdrop-oil`, obwohl die Choreografie
+   den Parallax-Transform **pro Frame** schreibt. Jeder Frame startete eine neue
+   1,6-Sekunden-Transition; die Schicht kam nie an und kroch nach dem Anhalten
+   über eine Sekunde weiter.
+
+**Umbau.** Die Grundfarbe wird zur Funktion der Scrollposition: eine Mischung
+aus der Sektion, die die Mitte besitzt, und der folgenden, gewichtet danach, wie
+weit deren Oberkante noch bis zur Mitte hat (`GROUND_BLEND_FRACTION`, eine halbe
+Bildschirmhöhe). Gemischt wird mit `color-mix(in oklab, …)` — es sind
+oklch-Farben, und von Hand zu interpolieren hieße, den Hue-Wraparound selbst zu
+besitzen. Die Rects werden höchstens eine Sektion über den Besitzer hinaus
+gelesen, der Frame kostet also so viel wie der alte Besitztest.
+
+Beide Schichten behalten **800 ms** Nachgiebigkeit, halbiert gegenüber den
+1500/1600 ms des Design-Frames. Beschluss des Nutzers am 21.08.: ganz ohne
+Transition wirkt die Schicht tot, 800 ms geben ihr Gewicht. Der Unterschied zum
+Frame ist nicht nur die Zahl — die 800 ms sitzen jetzt auf einer Rampe, die
+ohnehin mit dem Leser mitläuft, statt auf einer Stufe, die aufholen muss.
+
+**Abnahme.** Dev-Server bei 1280×900, alle Reveals vorher ausgelöst, damit die
+Seitenhöhe fest steht; nach einem Sprung alle 100 ms abgetastet, bis sich 400 ms
+nichts mehr rührt. Beruhigungszeit fällt von 2100/2500/2700/2900 ms (Frame-Wert
+1600 ms) auf 1500/1800/1900/2100 ms. Umkehrprobe: y=3600 direkt und y=3600 über
+den Umweg y=11000 liefern dieselbe Grundfarbe.
+
+**Testvertrag.** `tests/backdrop-design.test.mjs` nagelte die 1600 ms als
+Design-Entscheidung fest. Die Regel wird nicht gelöscht, sondern auf die neuen
+Werte umgeschrieben, mit Begründung im Kommentar, dass sie bewusst vom Frame
+abweicht. Die Sweep-Maske aus Abschnitt 5 wird bei der Gelegenheit ebenfalls
+angenagelt.
+
 ## Reihenfolge und Commits
 
 Vier Commits in dieser Reihenfolge — 1 Hover, 2 Pipeline, 3 Header/Hero,
-4 Ledger; Abschnitt 5 kam später dazu und hängt hinten an. Jeder Commit lässt `npm run lint`, `npm run typecheck` und
+4 Ledger; die Abschnitte 5 und 6 kamen später dazu und hängen hinten an. Jeder Commit lässt `npm run lint`, `npm run typecheck` und
 `npm run test` in `showroom/` grün; die Testanpassungen liegen im selben
 Commit wie die Änderung, die sie beschreiben.
 
