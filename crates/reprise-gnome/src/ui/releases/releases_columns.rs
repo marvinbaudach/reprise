@@ -6,7 +6,8 @@ use reprise_core::artist_news::{release_status, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
 use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
-use super::releases_cell_surface as cell_surface;
+use super::releases_cell_surface::{self as cell_surface, OnWireCell};
+use super::releases_column_layout::column_contract;
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
 use super::releases_presentation::{
@@ -21,72 +22,11 @@ const ACTION_PAGE: &str = "action";
 pub(super) type OnSetHidden = Rc<dyn Fn(String, bool)>;
 pub(super) type OnOpenTarget = Rc<dyn Fn(String)>;
 
-pub(super) fn column_contract() -> Vec<String> {
-    [
-        strings::COLUMN_COVER,
-        strings::RELEASES_DATE,
-        strings::RELEASES_TITLE,
-        strings::RELEASES_ARTIST,
-        strings::RELEASES_TYPE,
-        strings::RELEASES_STATUS,
-        strings::RELEASES_LINK,
-    ]
-    .into_iter()
-    .map(strings::text)
-    .collect()
-}
-
-fn cover_column(view: &gtk4::ColumnView) {
-    let factory = gtk4::SignalListItemFactory::new();
-    factory.connect_setup(move |_, object| {
-        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
-            return;
-        };
-        let cover = crate::ui::updates::release_cover::LazyReleaseCover::new_unbound(widths::COVER);
-        cell_surface::set_child(item, cover.widget());
-    });
-    factory.connect_bind(move |_, object| {
-        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
-            return;
-        };
-        let Some(root) = cell_surface::child::<gtk4::Overlay>(item) else {
-            return;
-        };
-        let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
-        else {
-            return;
-        };
-        let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
-            return;
-        };
-        let entry = object.entry();
-        cover.set_release(&entry.release_group_mbid, &entry.artist_name);
-    });
-    factory.connect_unbind(move |_, object| {
-        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
-            return;
-        };
-        let Some(root) = cell_surface::child::<gtk4::Overlay>(item) else {
-            return;
-        };
-        if let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
-        {
-            cover.set_release("", "");
-        }
-    });
-    let column = gtk4::ColumnViewColumn::builder()
-        .title(strings::text(strings::COLUMN_COVER))
-        .factory(&factory)
-        .resizable(false)
-        .build();
-    widths::pin(&column, widths::COVER);
-    view.append_column(&column);
-}
-
 /// `sizing` fixes the column's width; see [`widths`] for why every column
 /// must carry one (STYLE-9).
 fn text_column(
     view: &gtk4::ColumnView,
+    on_wire_cell: &OnWireCell,
     title: &str,
     id: Option<&str>,
     sizing: widths::Sizing,
@@ -94,6 +34,7 @@ fn text_column(
     render: impl Fn(&HistoryEntry) -> String + 'static,
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
+    let on_wire_cell = on_wire_cell.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -102,7 +43,7 @@ fn text_column(
         label.set_xalign(0.0);
         label.set_hexpand(true);
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        cell_surface::set_child(item, &label);
+        cell_surface::set_child(item, &label, on_wire_cell.as_ref());
     });
     let query = query.cloned();
     factory.connect_bind(move |_, object| {
@@ -145,9 +86,10 @@ fn text_column(
     column
 }
 
-fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
+fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden, on_wire_cell: &OnWireCell) {
     let factory = gtk4::SignalListItemFactory::new();
     let on_set_hidden = on_set_hidden.clone();
+    let on_wire_cell = on_wire_cell.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -223,7 +165,7 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
         }
         cell.add_controller(focus);
         cell.append(&stack);
-        cell_surface::set_child(item, &cell);
+        cell_surface::set_child(item, &cell, on_wire_cell.as_ref());
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -307,9 +249,10 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
     view.append_column(&column);
 }
 
-fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
+fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &OnWireCell) {
     let factory = gtk4::SignalListItemFactory::new();
     let on_open = on_open.clone();
+    let on_wire_cell = on_wire_cell.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -332,7 +275,7 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
             }
         });
         cell.append(&button);
-        cell_surface::set_child(item, &cell);
+        cell_surface::set_child(item, &cell, on_wire_cell.as_ref());
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -391,12 +334,13 @@ pub(super) fn append_columns(
     on_set_hidden: &OnSetHidden,
     on_open: &OnOpenTarget,
     filter_bar: &Rc<ReleasesFilterBar>,
+    on_wire_cell: &OnWireCell,
 ) -> gtk4::ColumnViewColumn {
     let query: crate::ui::search_highlight::QuerySource = {
         let filter_bar = filter_bar.clone();
         Rc::new(move || filter_bar.query())
     };
-    append_columns_with_query(view, on_set_hidden, on_open, &query)
+    append_columns_with_query_and_wire(view, on_set_hidden, on_open, &query, on_wire_cell)
 }
 
 fn append_columns_with_query(
@@ -405,10 +349,22 @@ fn append_columns_with_query(
     on_open: &OnOpenTarget,
     query: &crate::ui::search_highlight::QuerySource,
 ) -> gtk4::ColumnViewColumn {
+    let on_wire_cell: OnWireCell = Rc::new(|_, _| {});
+    append_columns_with_query_and_wire(view, on_set_hidden, on_open, query, &on_wire_cell)
+}
+
+fn append_columns_with_query_and_wire(
+    view: &gtk4::ColumnView,
+    on_set_hidden: &OnSetHidden,
+    on_open: &OnOpenTarget,
+    query: &crate::ui::search_highlight::QuerySource,
+    on_wire_cell: &OnWireCell,
+) -> gtk4::ColumnViewColumn {
     let titles = column_contract();
-    cover_column(view);
+    super::releases_cover_column::append(view, on_wire_cell);
     let date = text_column(
         view,
+        on_wire_cell,
         &titles[1],
         Some(ReleaseColumn::Date.as_str()),
         widths::Sizing::pinned(widths::DATE),
@@ -423,6 +379,7 @@ fn append_columns_with_query(
     // Title is the filler: it owns whatever width the pinned columns leave.
     text_column(
         view,
+        on_wire_cell,
         &titles[2],
         Some(ReleaseColumn::Title.as_str()),
         widths::Sizing::filler(widths::TITLE_MIN),
@@ -431,6 +388,7 @@ fn append_columns_with_query(
     );
     text_column(
         view,
+        on_wire_cell,
         &titles[3],
         Some(ReleaseColumn::Artist.as_str()),
         widths::Sizing::pinned(widths::NAME),
@@ -439,14 +397,15 @@ fn append_columns_with_query(
     );
     text_column(
         view,
+        on_wire_cell,
         &titles[4],
         Some(ReleaseColumn::Type.as_str()),
         widths::Sizing::pinned(widths::SHORT_LABEL),
         None,
         |entry| release_type_label(&entry.release_type),
     );
-    status_column(view, on_set_hidden);
-    link_column(view, on_open);
+    status_column(view, on_set_hidden, on_wire_cell);
+    link_column(view, on_open, on_wire_cell);
     date
 }
 

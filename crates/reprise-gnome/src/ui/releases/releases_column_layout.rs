@@ -4,11 +4,15 @@ use std::rc::Rc;
 
 use reprise_core::db::Db;
 use reprise_core::library::settings::{RELEASES_COLUMN_LAYOUT_KEY, RELEASES_COLUMN_WIDTHS_KEY};
-use reprise_view::columns::ReleaseColumn;
+use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
 use crate::ui::table_column_widths as widths;
 use crate::ui::table_columns::registry::{bind_columns_by_id, ColumnRegistry, TableKeys};
 use crate::ui::table_columns::{width_persistence, EditorModel};
+
+pub(super) fn column_contract() -> Vec<String> {
+    ReleaseColumn::all().iter().copied().map(label).collect()
+}
 
 pub(super) fn registry(view: &gtk4::ColumnView, conn: Rc<Db>) -> Rc<ColumnRegistry<ReleaseColumn>> {
     let columns = bind_columns_by_id::<ReleaseColumn>(view);

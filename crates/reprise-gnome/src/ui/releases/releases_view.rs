@@ -47,10 +47,11 @@ type FetchOverride = std::sync::Arc<
         + Sync,
 >;
 
-struct Shared {
+pub(super) struct Shared {
     conn: Rc<Db>,
     database_path: PathBuf,
-    model: Rc<ReleasesModel>,
+    pub(super) model: Rc<ReleasesModel>,
+    pub(super) selection_anchor: super::releases_selection::ReleasesAnchor,
     filter_bar: Rc<ReleasesFilterBar>,
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<HistoryEntry>>,
@@ -93,6 +94,17 @@ impl ReleasesView {
         column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
         let shared_target = Rc::new(RefCell::new(None::<std::rc::Weak<Shared>>));
+        let selection_target = shared_target.clone();
+        let on_wire_cell: super::releases_cell_surface::OnWireCell =
+            Rc::new(move |surface, item| {
+                let shared = selection_target
+                    .borrow()
+                    .as_ref()
+                    .and_then(std::rc::Weak::upgrade);
+                if let Some(shared) = shared {
+                    super::releases_selection::wire_cell(surface, item, &shared);
+                }
+            });
         let visibility_target = shared_target.clone();
         let on_set_hidden: releases_columns::OnSetHidden = Rc::new(move |mbid, hidden| {
             let shared = visibility_target
@@ -113,8 +125,13 @@ impl ReleasesView {
                 external_link::launch(&url, "Bandcamp purchase", Some(&shared.on_launch_error));
             }
         });
-        let date_column =
-            releases_columns::append_columns(&column_view, &on_set_hidden, &on_open, &filter_bar);
+        let date_column = releases_columns::append_columns(
+            &column_view,
+            &on_set_hidden,
+            &on_open,
+            &filter_bar,
+            &on_wire_cell,
+        );
         let column_registry = super::releases_column_layout::registry(&column_view, conn.clone());
         let column_model = super::releases_column_layout::model(&column_registry);
         crate::ui::table_columns::header_popover::install_header_popover(
@@ -166,6 +183,7 @@ impl ReleasesView {
             conn,
             database_path,
             model,
+            selection_anchor: super::releases_selection::ReleasesAnchor::default(),
             filter_bar: filter_bar.clone(),
             end_of_results,
             rows: RefCell::new(Vec::new()),
