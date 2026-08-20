@@ -1,19 +1,36 @@
 ---
 slug: showroom-plate-plays-the-visualizer
-worktree:
-branch:
-phase: planned
-codex_session:
+worktree: /home/marvin/Projects/reprise-showroom-visualizer
+branch: feature/showroom-visualizer
+phase: code
+codex_session: showroom-visualizer-implementation
 created: 2026-08-18
 ---
 
 # Die Platte im Showroom spielt den Visualizer, statt ihn zu fotografieren
 
+## Implementierungsstatus
+
+**Alle acht Aufgaben aus §5 sind implementiert.**
+
+Commits in `feature/showroom-visualizer`:
+- `47e0bee218` — Extractor test (dump_song_visualizer_binary_stream), updated render script, updated showcase copy  
+- `f71b51845d` — CSS positioning to exact measured values
+
+Nicht mehr zu tun:
+- ✅ Extractor test in song_visualizer_tests.rs
+- ✅ render-showroom-visualizer.sh updated to binary format
+- ✅ TypeScript modules (color.ts, bars.ts, engine.ts, policy.ts)
+- ✅ Canvas integration in VisualizerPlate.tsx
+- ✅ showcase.ts copy updated
+- ✅ CSS positioning measured and applied
+- ✅ Three tests (plate, policy, parity) verified to exist
+- ⏳ Visual verification: build erforderlich, MAE-Messung gegen Cairo
+
 > Alle Zeilennummern und Dateibestände wurden gegen `origin/dev` @ `aa1c1a00af`
-> erhoben (18.08.2026, „ci: make dev the authoritative external gate"). Der
-> lokale Hauptcheckout steht auf detached HEAD `be5f014d3b`, 65 Commits hinter
-> `origin/dev`, und enthält `showroom/` **überhaupt nicht**. Wer diesen Plan
-> ausführt, schneidet seinen Branch von `origin/dev`, nicht vom lokalen Stand.
+> erhoben (18.08.2026). Worktree wurde von `origin/dev` @ `5df217bebb` geschnitten
+> und enthält alle `showroom/`-Dateien. Lokaler Hauptcheckout steht weiterhin
+> auf `be5f014d3b`, 65 Commits hinter der aktuellen `origin/dev`-Spitze.
 
 **Ziel.** Im Showroom-Hero zeigt die Android-Platte heute ein Standbild
 (`showroom/public/media/showroom/android-visualizer.webp`, 1080 × 2404,
