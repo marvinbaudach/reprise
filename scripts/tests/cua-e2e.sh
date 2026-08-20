@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# This suite builds its fixtures with jq, and it runs in the merge gate — and
+# so on every `git push` through the pre-push hook. Without this the first jq
+# call dies a hundred lines in as "jq: command not found", exit 127, with
+# nothing naming the tool that is actually missing.
+if ! command -v jq >/dev/null; then
+  echo "cua-e2e self-tests need jq (they build their snapshot fixtures with it)" >&2
+  exit 1
+fi
+
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 runner="$repo_root/scripts/cua-e2e/run.sh"
