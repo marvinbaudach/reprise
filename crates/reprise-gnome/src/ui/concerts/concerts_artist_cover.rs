@@ -1,7 +1,5 @@
 //! Lazy artist portraits for recycled Concerts table cells.
 
-#![allow(dead_code)] // T4 connects the completed column to ConcertsView.
-
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -27,6 +25,7 @@ pub(super) struct ConcertsArtistImage {
 }
 
 impl ConcertsArtistImage {
+    #[cfg(not(test))]
     pub(super) fn new() -> Rc<Self> {
         Self::with_resolver(
             |artist| match reprise_core::artist_portrait::load_cached(artist) {

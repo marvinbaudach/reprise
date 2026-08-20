@@ -242,7 +242,9 @@ pub(super) fn append_columns(
     view: &gtk4::ColumnView,
     query: &crate::ui::search_highlight::QuerySource,
     radius_source: &RadiusSource,
+    image: &Rc<super::concerts_artist_cover::ConcertsArtistImage>,
 ) -> SortColumns {
+    super::concerts_artist_cover::cover_column(view, image);
     let date = text_column(
         view,
         TextColumnSpec {
@@ -352,7 +354,8 @@ mod tests {
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
         let query: crate::ui::search_highlight::QuerySource = Rc::new(|| "fall".into());
         let radius: RadiusSource = Rc::new(|| None);
-        append_columns(&view, &query, &radius);
+        let image = super::super::concerts_artist_cover::ConcertsArtistImage::for_test(|_| None);
+        append_columns(&view, &query, &radius, &image);
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 300);
@@ -434,7 +437,8 @@ mod tests {
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
         let radius: RadiusSource = Rc::new(|| None);
-        append_columns(&view, &query, &radius);
+        let image = super::super::concerts_artist_cover::ConcertsArtistImage::for_test(|_| None);
+        append_columns(&view, &query, &radius, &image);
 
         crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
             let mut long = row(Some("https://tickets.example/offer"), None);
@@ -455,7 +459,8 @@ mod tests {
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
         let radius: RadiusSource = Rc::new(|| None);
-        append_columns(&view, &query, &radius);
+        let image = super::super::concerts_artist_cover::ConcertsArtistImage::for_test(|_| None);
+        append_columns(&view, &query, &radius, &image);
         let registry = super::super::concerts_column_layout::registry(
             &view,
             Rc::new(crate::test_db::open().unwrap()),
