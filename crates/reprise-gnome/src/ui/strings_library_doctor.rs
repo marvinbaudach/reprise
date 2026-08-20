@@ -378,16 +378,6 @@ pub fn doctor_review_subtitle(albums: usize) -> String {
     )
 }
 
-pub fn doctor_stale_notice(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "{count} fix is out of date — this file changed after the scan.",
-        "{count} fixes are out of date — these files changed after the scan.",
-        count,
-        &[("count", &count_text)],
-    )
-}
-
 /// The review header and the post-apply card: two counts, two plural forms,
 /// joined by the separator this page uses everywhere. Nothing between them is
 /// translatable, so the join stays out of the catalog — the same shape as
@@ -426,16 +416,6 @@ pub fn doctor_change_count_none_selected(count: usize) -> String {
     plural(
         "{count} change · none selected",
         "{count} changes · none selected",
-        count,
-        &[("count", &count_text)],
-    )
-}
-
-pub fn doctor_change_count_out_of_date(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "{count} change · out of date",
-        "{count} changes · out of date",
         count,
         &[("count", &count_text)],
     )
@@ -684,14 +664,6 @@ mod tests {
         assert_eq!(
             doctor_review_subtitle(3),
             "Across 3 albums · everything is preselected, uncheck what you disagree with"
-        );
-        assert_eq!(
-            doctor_stale_notice(1),
-            "1 fix is out of date — this file changed after the scan."
-        );
-        assert_eq!(
-            doctor_stale_notice(4),
-            "4 fixes are out of date — these files changed after the scan."
         );
         assert_eq!(doctor_changes_and_albums(1, 1), "1 change · 1 album");
         assert_eq!(doctor_changes_and_albums(2, 3), "2 changes · 3 albums");

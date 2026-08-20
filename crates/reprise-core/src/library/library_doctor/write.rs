@@ -425,6 +425,7 @@ fn terminal_failure(
 
 fn terminal_success(
     conn: &Connection,
+    job_id: i64,
     file: &ExecutableFile,
     applied: &[GuardedTagField],
     conflicts: &[GuardedTagField],
@@ -474,6 +475,14 @@ fn terminal_success(
             Some("all selected fields conflict".into()),
         ),
     };
+    if wrote && state == "complete" {
+        super::store::refresh_snapshot_after_successful_doctor_write(
+            &transaction,
+            job_id,
+            file.id,
+            file.track_id,
+        )?;
+    }
     transaction.execute(
         "UPDATE tag_write_job_files SET state=?1, error_kind=?2, error_message=?3, \
          file_written=?4 WHERE id=?5 AND state='running'",
@@ -556,6 +565,7 @@ pub(super) fn run_job(
         match commit_guarded_tag_changes(conn, file.track_id, &file.path, &file.changes, true) {
             Ok(outcome) => terminal_success(
                 conn,
+                job_id,
                 file,
                 &outcome.applied,
                 &outcome.conflicts,

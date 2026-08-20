@@ -474,19 +474,17 @@ fn doc_8b_the_tie_path_runs_the_same_selection_predicate() {
         .stale = true;
     let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
     let group_id = review.groups()[0].id;
-
     review
         .choose_candidate(group_id, &DoctorValue::Text("An Ocean".into()))
         .unwrap();
-
     let mut selected = review
         .rows()
         .iter()
         .map(|row| (row.track_id, row.selected))
         .collect::<Vec<_>>();
     selected.sort_unstable();
-    // 1 reduces specificity, 3 is stale, 2 is the plain casing fix.
-    assert_eq!(selected, vec![(1, false), (2, true), (3, false)]);
+    // Track 1 reduces specificity; track 2 is ready; stale track 3 is absent.
+    assert_eq!(selected, vec![(1, false), (2, true)]);
 }
 
 #[test]
@@ -534,11 +532,10 @@ fn candidate_switch_preserves_manual_deselections() {
 
 #[test]
 fn stale_and_conflict_rows_cannot_be_selected() {
-    let mut source = scan(vec![
+    let source = scan(vec![
         proposal(1, DoctorField::Artist, ProposalSource::MusicBrainz),
         proposal(2, DoctorField::Artist, ProposalSource::MusicBrainz),
     ]);
-    source.tracks[0].stale = true;
     let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
     let stale = review
         .rows()
@@ -546,6 +543,9 @@ fn stale_and_conflict_rows_cannot_be_selected() {
         .find(|row| row.track_id == 1)
         .unwrap()
         .id;
+    review
+        .mark_state(stale, DoctorReviewRowState::Stale)
+        .unwrap();
     let conflict = review
         .rows()
         .iter()
