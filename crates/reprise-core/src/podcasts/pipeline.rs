@@ -153,7 +153,9 @@ pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usiz
     ParsedFeed {
         title: channel.clone(),
         author: channel,
-        image_url: None,
+        // Was a hard `None` until 2026-08-18, which is why
+        // `podcast_subscriptions.image_url` could never hold a channel avatar.
+        image_url: listing.image_url,
         episodes: listing
             .episodes
             .into_iter()
@@ -645,8 +647,24 @@ fn database_seed(conn: &Connection) -> Result<String, rusqlite::Error> {
 }
 
 #[cfg(test)]
-#[path = "pipeline_youtube_tests.rs"]
-mod youtube_tests;
+#[path = "pipeline_youtube_test_support.rs"]
+mod youtube_test_support;
+
+#[cfg(test)]
+#[path = "pipeline_youtube_projection_tests.rs"]
+mod youtube_projection_tests;
+
+#[cfg(test)]
+#[path = "pipeline_youtube_handle_tests.rs"]
+mod youtube_handle_tests;
+
+#[cfg(test)]
+#[path = "pipeline_youtube_window_tests.rs"]
+mod youtube_window_tests;
+
+#[cfg(test)]
+#[path = "pipeline_youtube_gate_tests.rs"]
+mod youtube_gate_tests;
 
 #[cfg(test)]
 #[path = "pipeline_refresh_tests.rs"]

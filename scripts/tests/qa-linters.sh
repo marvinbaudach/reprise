@@ -75,6 +75,9 @@ require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
 require_executable scripts/tests/worktree-gc.sh
 require_executable scripts/tests/worktree-gc-schedule.sh
+require_executable scripts/tests/architecture-size-limits.sh
+require_executable scripts/tests/cua-explore.sh
+require_executable scripts/tests/check-android-suite.sh
 require_executable scripts/reprise-worktree-gc.sh
 require_executable scripts/close-worktree.sh
 require_executable scripts/install-worktree-gc-timer.sh
@@ -89,7 +92,15 @@ require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings'
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
 require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
-require_pattern '^scripts/check-project-quality\.sh$' scripts/check-merge-readiness.sh
+# Both calls moved into the `gate "<name>" -- <command>` form, so neither path
+# starts its own line any more. The assertion follows the call rather than the
+# layout: the gate must still name the project-quality wrapper, and it must
+# still hand `--rule-named` to the display suite instead of running all of it.
+require_pattern 'quality_cmd=\(scripts/check-project-quality\.sh' scripts/check-merge-readiness.sh
+# Naming the wrapper is not the same as running it. Without this second line the
+# gate call could be deleted and the assignment left behind as dead code, and
+# project quality would stop running with every assertion still green.
+require_pattern 'gate "Project quality" -- "\$\{quality_cmd\[@\]\}"' scripts/check-merge-readiness.sh
 require_pattern 'worktree-gc.sh' scripts/check-merge-readiness.sh
 require_pattern 'worktree-gc-schedule.sh' scripts/check-merge-readiness.sh
 require_pattern 'shellcheck' .github/workflows/ci.yml
@@ -98,8 +109,8 @@ require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
-require_pattern '^scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
-reject_pattern '^scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
+require_pattern 'scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
+reject_pattern 'scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
 reject_pattern '--motion' scripts/check-display-tests.sh
 require_pattern 'mode=css' scripts/check-display-tests.sh
 require_pattern 'display_test_passed' scripts/check-display-tests.sh
@@ -162,6 +173,11 @@ scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
 scripts/tests/worktree-gc.sh
 scripts/tests/worktree-gc-schedule.sh
+# These three had no caller at all — not here, not in CI, not in the merge gate.
+# They were written, they pass, and nothing ever ran them.
+scripts/tests/architecture-size-limits.sh
+scripts/tests/cua-explore.sh
+scripts/tests/check-android-suite.sh
 scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"

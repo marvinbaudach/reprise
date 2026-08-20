@@ -42,7 +42,7 @@ export function Hero({ reducedMotion }: HeroProps) {
           </div>
         </div>
 
-        <HeroProduct reducedMotion={reducedMotion} />
+        <HeroProduct />
       </div>
       <HeroSeekTrack reducedMotion={reducedMotion} />
     </section>

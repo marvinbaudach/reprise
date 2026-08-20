@@ -191,6 +191,12 @@ pub(in crate::ui) fn reanchor_on_track(
 /// Computes the scroll offset that vertically centers `track_id` after a
 /// filter change. Returns `None` when no playing track exists, the track is
 /// outside the new view, or the whole list fits in the viewport.
+///
+/// The restore itself no longer asks: it needs the value GTK's own anchor
+/// reproduces, which is a row edge rather than the arithmetic centre
+/// (`centered_scroll_restore::centered_anchor`). What survives here is the
+/// independent oracle the display tests measure that restore against.
+#[cfg(test)]
 pub(in crate::ui) fn centered_track_scroll_target(
     track_id: Option<i64>,
     current_ids: &[i64],

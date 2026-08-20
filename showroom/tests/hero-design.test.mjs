@@ -34,11 +34,22 @@ test('the design hero opens with two screenshot buttons', async () => {
     css,
     /\.hero__grid\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,22rem\),1fr\)\)/,
   );
-  assert.match(css, /\.hero-product__phone\{[^}]*right:-5%[^}]*bottom:-6%[^}]*width:24%/);
-  assert.match(
-    css,
-    /\.hero-product__visualizer\{[^}]*left:19\.63%[^}]*top:24\.46%[^}]*width:60\.74%[^}]*height:27\.87%/,
-  );
+  // Vite 8 minifies CSS with Lightning CSS, which sorts the declarations inside a
+  // block. The order they appear in is therefore the minifier's business; what
+  // this test owns is that the rule carries all three.
+  const phone = css.match(/\.hero-product__phone\{[^}]*\}/)?.[0];
+  assert.ok(phone, '.hero-product__phone must exist in the built CSS');
+  for (const declaration of ['right:-5%', 'bottom:-6%', 'width:24%']) {
+    assert.ok(phone.includes(declaration), `.hero-product__phone must carry ${declaration}`);
+  }
+  const visualizer = css.match(/\.hero-product__visualizer\{[^}]*\}/)?.[0];
+  assert.ok(visualizer, '.hero-product__visualizer must exist in the built CSS');
+  for (const declaration of ['left:19.63%', 'top:24.46%', 'width:60.74%', 'height:27.87%']) {
+    assert.ok(
+      visualizer.includes(declaration),
+      `.hero-product__visualizer must carry ${declaration}`,
+    );
+  }
   assert.match(css, /@keyframes rp-cue/);
 });
 

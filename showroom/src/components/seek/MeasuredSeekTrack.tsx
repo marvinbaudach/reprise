@@ -323,40 +323,34 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
       </div>
 
       <p className="seek-card__note" data-reveal="">
-        Move across the measured track to inspect its values. The phone in the hero runs the same
-        treatment for its Now Playing scene: 64 CAVA columns, 16 segments, peaks and reflections
-        from{' '}
+        Move across the measured track to inspect its values. The bars are shaped by the same
+        functions the apps use —{' '}
         <a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-core/src/visuals/modes/bars.rs">
           bars.rs
         </a>
-        , with only the band values standing in for live PCM. The bars below are shaped by the same
-        functions the apps use —{' '}
+        ,{' '}
         <a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-view/src/waveform.rs">
           waveform.rs
         </a>{' '}
-        for the heights and{' '}
+        and{' '}
         <a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-view/src/spectral_colour.rs">
           spectral_colour.rs
         </a>{' '}
-        for the ramp.
+        — with only the band values standing in for live PCM.
       </p>
 
       <div className="seek-legends">
         <article data-reveal="" data-seek-legend="height">
           <h4>Height — the body</h4>
           <p>
-            Every bar is the RMS of its slice of the track, mapped through the track's own p10–p95
-            window and a γ1.6 curve, then smoothed 25/50/25 against flicker. A compressed master
-            still shows verse against chorus instead of one loud wall. Anything below −50 dB of the
-            track's own maximum renders as a fixed 2 px dot.
+            Every bar is the RMS of its slice, mapped through the track's own p10–p95 window and
+            smoothed against flicker. A compressed master still shows verse against chorus instead
+            of one loud wall.
           </p>
         </article>
         <article data-reveal="" data-seek-legend="colour">
           <h4>Colour — the frequency</h4>
-          <p>
-            The tint is the spectral centroid: coral is low and weighty; teal is high and airy. The
-            ramp walks OKLCH the long way round, hue falling through magenta, violet and blue.
-          </p>
+          <p>The tint is the spectral centroid: coral is low and weighty, teal high and airy.</p>
           <div className="seek-legends__axis" aria-hidden="true" />
           <div className="seek-legends__ends">
             <span>#FF6F5E · low</span>

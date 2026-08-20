@@ -24,8 +24,8 @@ android {
         applicationId = "org.reprise"
         minSdk = 26
         targetSdk = 37
-        versionCode = 19
-        versionName = "0.1.19"
+        versionCode = 20
+        versionName = "0.1.20"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
         buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"All Rights Reserved\"")
@@ -78,7 +78,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     // Navigation is not part of the Compose BOM. 2.9.8 is the newest stable
     // Navigation release compatible with the BOM's stable Compose 1.11 line.
     implementation("androidx.navigation:navigation-compose:2.9.8")
@@ -89,8 +89,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
-    implementation("androidx.media3:media3-exoplayer:1.10.1")
-    implementation("androidx.media3:media3-session:1.10.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation("androidx.media3:media3-session:1.11.0")
     // UniFFI's Kotlin bindings call into the .so through JNA.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     testImplementation("junit:junit:4.13.2")
@@ -100,7 +100,7 @@ dependencies {
     // under com/sun/jna/<os>-<arch>/. The plain jar carries that layout, so the
     // test classpath gets one it can actually load.
     testImplementation("net.java.dev.jna:jna:5.19.1")
-    testImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    testImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("org.robolectric:robolectric:4.16.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

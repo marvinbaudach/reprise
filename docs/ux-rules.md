@@ -22,15 +22,17 @@ against replaced rules are re-hung onto the new rule in the same commit.
 
 **Test levels.** Every rule carries a level tag: `[core]` (reprise-core,
 workspace suite), `[gtk]` (widget/logic tests in reprise-gnome), `[e2e]`
-(cua-e2e harness against the real app), `[manual]` (RELEASING.md checklist,
-which references the same rule IDs). Testing happens at the **lowest level
+(cua-e2e harness against the real app), `[web]` (showroom suite,
+`showroom/tests/`), `[manual]` (RELEASING.md checklist, which references the
+same rule IDs). Testing happens at the **lowest level
 that can disprove the rule**. Timing numbers (100 ms, 150 ms, …) are design
 intent, not assertions: the *what* (feedback exists) is automated, the
 *how fast* is checked manually. If a `[manual]` rule later becomes
 automatable, only its tag changes, never its ID.
 
 **Traceability.** A test carries **exactly one primary rule ID in its
-name** (Rust: `fn play_1a_…`, cua-e2e scenario: `play-1a-…`). If a scenario
+name** (Rust: `fn play_1a_…`, cua-e2e scenario: `play-1a-…`, showroom:
+`test('show-1 …')`). If a scenario
 happens to cover further rules along the way, that does not count — the
 second rule needs its own test. `#[ignore = "UX <ID> [planned] — …"]` is
 only allowed on `[planned]` rules. `scripts/check-ux-traceability.sh` (part
@@ -3060,6 +3062,10 @@ property is set and yet nothing happens.
   is gone too, the top. The rule needs a pre-search anchor to have been taken,
   which happens only on the transition from an empty to a non-empty query:
   clearing facets alone, with no query ever typed, stays with FIL-9.
+  (Revised 2026-08-19: whichever of those places the viewport takes, it is
+  reached in one move — the restoration is never visible as an intermediate
+  position first. The eye lands on the destination, it does not follow the
+  list there.)
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
@@ -3297,6 +3303,17 @@ property is set and yet nothing happens.
   Auto-advance centers only if no scroll movement has occurred for 1.5
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.
+- **NAV-19** [active] [gtk] — **Switching source in the sidebar centers the
+  running track.** Choosing a different place in the sidebar puts the loaded
+  track in the middle of the track table it opens, if that table lists it —
+  the same promise SRC-13 already makes for the source lists ("revealed …
+  row centered — on entering the view"). It arrives there in one move, not
+  through an intermediate position (SEARCH-16). If the new view does not list
+  the loaded track, the view's remembered position stands unchanged, and the
+  centering never switches view or tab to find a track to show. It changes
+  neither focus nor selection: the view keeps the selection it remembers.
+  Back and Forward are not source switches and are not covered — BROWSE-2
+  keeps restoring exactly what was left behind.
 - **QUE-7** [active] [gtk] — Up Next consists of the manual queue plus a
   virtual, named context tail with a count. The tail is not materialized as
   individual rows but only rendered within the visible window; the
@@ -5562,9 +5579,16 @@ listening statistics.
   image stays on its glyph. Both stages use the same row generation, so a
   recycled row cannot accept either image from its predecessor. The same chain
   applies to YouTube channel detail and playback artwork, but not to MPRIS,
-  which continues to project one URL. When a YouTube channel itself has no
-  image, its library group header shows the newest episode's image; RSS group
-  headers never borrow an episode image. Every caller (podcast library view,
+  which continues to project one URL. A channel's own image comes from
+  its yt-dlp channel dump, and that dump needs its own selection rule: the
+  largest square `thumbnails` entry, else `avatar_uncropped`, never a banner
+  crop (the video-level rule would hand out a 6:1 strip). No group header ever
+  borrows an episode image — neither YouTube nor RSS: a channel without an
+  avatar stays on its glyph, so the library group header and the channel detail
+  header always agree, and a missing avatar stays visible instead of being
+  masked by the newest episode's cover. A YouTube subscription is therefore
+  created without an image at all; the search hit's video thumbnail stays a
+  preview, and the first refresh fills in the avatar. Every caller (podcast library view,
   YouTube channel detail, all three add dialogs) computes the gate and selects
   the cache scope itself at its own connection rather than relying on an
   upstream checkpoint or URL heuristic — the lesson from `T6-G1-gap`: a
@@ -6426,3 +6450,48 @@ committee published on 2026-05-29.
   comments.
 - **GP-20** [planned] [core] — No dead code: no unused items, and no
   `#[allow(dead_code)]` without a stated reason on the same or preceding line.
+
+## AJ. Showroom (public site)
+
+Rules in this section govern `showroom/`, the public site. Their level is
+`[web]`: the showroom suite is static analysis over the built page, the built
+CSS and the component source — it has no DOM and cannot measure layout, so a
+rule here is phrased as something a stylesheet either states or does not.
+
+- **SHOW-1** [active] [web] — A screenshot plate holds its frame still. On
+  hover only the picture inside it moves; no hover or focus rule changes a
+  layout-affecting property of the plate.
+- **SHOW-2** [active] [web] — No pointer-led sheen: no overlay layer with a
+  cursor-dependent gradient, and no `pointermove` handler on a plate.
+- **SHOW-3** [active] [web] — Pointing and keyboard focus produce the same
+  state: the same lift, the same picture zoom, the same zoom cue.
+- **SHOW-4** [active] [web] — Under `prefers-reduced-motion: reduce` a plate
+  has no transform transitions; the cue may appear at once.
+- **SHOW-5** [active] [web] — Without hover capability there is no hover
+  state, so none can stick after a tap.
+- **SHOW-6** [active] [web] — The gate wall names the checks the merge gate
+  script actually runs, in script order; the list and the number shown come from
+  the same derivation out of that script.
+- **SHOW-7** [active] [web] — No lane of the pipeline figure carries marks in
+  both a writing and a judging step, and the human lane carries exactly one
+  mark.
+- **SHOW-8** [active] [web] — A failed gate cell blocks the readout and names
+  how many checks are failing; with every cell cleared it reads ready again.
+- **SHOW-9** [active] [web] — Under `prefers-reduced-motion: reduce` marks and
+  gate cells stand in their end state, with no sequence.
+- **SHOW-10** [active] [web] — The gate count appears nowhere as a literal;
+  every place that shows it reads the derivation.
+- **SHOW-11** [active] [web] — The tempo timeline names its weeks from a
+  checked-in record. Neither a week's name, nor a date span, nor how many weeks
+  there are appears as a literal in a `.tsx`.
+- **SHOW-12** [active] [web] — No line count and no share appears as a literal
+  beside the words that would claim it; the page reads them from the build's own
+  count of the tree.
+- **SHOW-13** [active] [web] — The performance figures quote a checked-in
+  measurement record carrying a commit and a date; none of them appears as a
+  literal in a `.tsx`.
+- **SHOW-14** [active] [web] — The footer says, for every group of figures,
+  whether it is counted, quoted or stated. It no longer claims the measurement
+  is still to come.
+- **SHOW-15** [active] [web] — Under `prefers-reduced-motion: reduce` the
+  timeline's rail stands still.

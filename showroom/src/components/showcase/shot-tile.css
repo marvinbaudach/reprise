@@ -1,6 +1,13 @@
 .shot-tile {
-  --mx: 50%;
-  --my: 50%;
+  /*
+   * Hover and :focus-visible cannot share a selector list — one lives inside a
+   * `(hover: hover)` query, the other must not. They set these four tokens
+   * instead, so the state is written once and invoked twice.
+   */
+  --plate-lift: 0px;
+  --shot-zoom: 1;
+  --cue-opacity: 0;
+  --cue-rise: 5px;
 
   position: relative;
   display: block;
@@ -16,11 +23,11 @@
   text-align: left;
   color: inherit;
   font: inherit;
-  transform-style: preserve-3d;
+  transform: translate3d(0, var(--plate-lift), 0);
   transition:
     transform 620ms cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 620ms ease,
-    border-color 400ms ease;
+    border-color 620ms ease;
 }
 
 .shot-tile--phone {
@@ -30,24 +37,39 @@
   box-shadow: 0 30px 70px -34px oklch(3% 0.02 269 / 0.95);
 }
 
-.shot-tile > .product-shot {
+/*
+ * The wrap exists so the picture and everything laid over it — the hero phone's
+ * visualizer canvas, a *sibling* of the image with percentage geometry — scale
+ * as one. Zooming the <img> alone would leave the canvas behind and slide the
+ * square out of the phone display.
+ *
+ * `display: block` is mandatory: an inline wrap builds a line box with a
+ * descender, the wrap ends up a few pixels taller than the image, and that
+ * difference is exactly what the visualizer's percentages resolve against.
+ */
+.shot-tile__picture {
+  position: relative;
+  display: block;
+  transform-origin: center;
+  transform: scale(var(--shot-zoom));
+  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shot-tile__picture > .product-shot {
   transition: opacity 700ms ease;
 }
 
-.shot-tile[data-loading="true"] > .product-shot {
+.shot-tile[data-loading="true"] .shot-tile__picture > .product-shot {
   opacity: 0;
 }
 
-.shot-tile__sweep,
-.shot-tile__sheen {
+/* The loading shimmer — not a hover effect. It rides above the picture wrap. */
+.shot-tile__sweep {
   position: absolute;
   inset: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
-}
-
-.shot-tile__sweep {
-  overflow: hidden;
   transition: opacity 400ms ease;
 }
 
@@ -63,43 +85,75 @@
   animation: rp-sweep 1.5s linear infinite;
 }
 
-.shot-tile__sheen {
-  transition: opacity 420ms ease;
-  background:
-    radial-gradient(340px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.16), transparent 62%),
-    linear-gradient(
-      122deg,
-      oklch(85% 0.13 190 / 0.1),
-      transparent 34%,
-      transparent 64%,
-      oklch(78% 0.16 30 / 0.1)
-    );
+/*
+ * The cue announces the click that opens the lightbox. It is decoration over a
+ * button that already carries `aria-label="Open screenshot: …"`, so it stays out
+ * of the accessibility tree and out of the hit test.
+ */
+.shot-tile__zoom {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: oklch(14% 0.014 269 / 0.72);
+  color: oklch(96% 0.004 269);
+  opacity: var(--cue-opacity);
+  pointer-events: none;
+  transform: translateY(var(--cue-rise));
+  transition:
+    opacity 320ms ease,
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.shot-tile--phone .shot-tile__sheen {
-  background:
-    radial-gradient(220px circle at var(--mx) var(--my), oklch(100% 0 0 / 0.18), transparent 60%),
-    linear-gradient(
-      122deg,
-      oklch(85% 0.13 190 / 0.12),
-      transparent 40%,
-      transparent 60%,
-      oklch(78% 0.16 30 / 0.12)
-    );
+.shot-tile__zoom > svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Phone plates are 110–190px wide — 30px would be a quarter of that. */
+.shot-tile--phone .shot-tile__zoom {
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+}
+
+.shot-tile--phone .shot-tile__zoom > svg {
+  width: 12px;
+  height: 12px;
 }
 
 /*
- * The sheen never reaches full strength. At `opacity: 1` the specular highlight
- * washed out the screenshot underneath — and the screenshot is the point of the
- * tile. One knob so the strength stays adjustable without touching the gradients.
+ * `(hover: hover)` without `pointer: fine`: a touch-only device gets no hover
+ * state at all, so none can stick after a tap; trackpad and stylus keep theirs.
+ * :focus-visible stays outside — keyboard operation exists on every device.
  */
-.shot-tile__sheen {
-  --sheen-peak: 0.62;
+@media (hover: hover) {
+  .shot-tile:hover {
+    --plate-lift: -6px;
+    --shot-zoom: 1.045;
+    --cue-opacity: 1;
+    --cue-rise: 0px;
+    border-color: oklch(46% 0.03 195);
+    box-shadow:
+      0 40px 90px -46px oklch(3% 0.02 269 / 0.98),
+      0 0 40px -18px oklch(80% 0.12 190 / 0.35);
+  }
 }
 
-.shot-tile:hover .shot-tile__sheen,
-.shot-tile:focus-visible .shot-tile__sheen {
-  opacity: var(--sheen-peak);
+.shot-tile:focus-visible {
+  --plate-lift: -6px;
+  --shot-zoom: 1.045;
+  --cue-opacity: 1;
+  --cue-rise: 0px;
+  border-color: oklch(46% 0.03 195);
+  box-shadow:
+    0 40px 90px -46px oklch(3% 0.02 269 / 0.98),
+    0 0 40px -18px oklch(80% 0.12 190 / 0.35);
 }
 
 .shot-tile__caption {
@@ -145,31 +199,6 @@
   font-size: 0.78rem;
 }
 
-.shot-tile__description-wrap {
-  display: grid;
-  grid-template-rows: 0fr;
-  overflow: hidden;
-  transition: grid-template-rows 440ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.shot-tile__description {
-  min-height: 0;
-  opacity: 0;
-  font-size: 0.8rem;
-  color: oklch(74% 0.009 269);
-  transition: opacity 320ms ease;
-}
-
-.shot-tile:hover .shot-tile__description-wrap,
-.shot-tile:focus-visible .shot-tile__description-wrap {
-  grid-template-rows: 1fr;
-}
-
-.shot-tile:hover .shot-tile__description,
-.shot-tile:focus-visible .shot-tile__description {
-  opacity: 1;
-}
-
 @keyframes rp-sweep {
   0% {
     transform: translateX(-130%);
@@ -181,19 +210,23 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shot-tile {
+  /*
+   * One `transform: none` neutralises the lift, the picture zoom and the cue's
+   * rise at once. The cue's opacity stays bound to --cue-opacity and therefore
+   * appears at once instead of fading — the hint may be instant, it may not move.
+   */
+  .shot-tile,
+  .shot-tile__picture,
+  .shot-tile__zoom {
     transform: none !important;
     transition: none;
   }
 
-  .shot-tile__sheen,
   .shot-tile__sweep {
     display: none;
   }
 
-  .shot-tile__description-wrap,
-  .shot-tile__description,
-  .shot-tile > .product-shot {
+  .shot-tile__picture > .product-shot {
     transition: none;
   }
 }

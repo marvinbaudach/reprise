@@ -50,6 +50,13 @@ export function usePageChoreography(still: boolean): void {
       for (const bar of root.querySelectorAll<HTMLElement>('[data-ratio] > span')) {
         if (bar.getBoundingClientRect().top >= window.innerHeight * 0.88) bar.style.width = '0%';
       }
+      // Same bargain for the timeline's rail: it is drawn in the markup, and
+      // only a run that is going to animate it may take it away first.
+      for (const track of root.querySelectorAll<HTMLElement>('[data-weeks]')) {
+        if (track.getBoundingClientRect().top >= window.innerHeight * 0.88) {
+          track.dataset.collapsed = '';
+        }
+      }
     }
     let reveals: RevealState = prepareReveals(root, still);
     let ratioRun = false;

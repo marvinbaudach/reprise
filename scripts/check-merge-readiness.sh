@@ -45,67 +45,73 @@ if ! git merge-base --is-ancestor "$base_ref" HEAD; then
   exit 1
 fi
 
-echo "== Branch diff =="
-git diff --check "$base_ref"...HEAD
+# Every check below runs through `gate`, so the wall in the showroom's chapter
+# two can derive its cells from this file with one anchored expression instead
+# of guessing which lines are checks. The preparation steps above stay outside
+# it deliberately: they are preconditions, not checks, and counting them would
+# inflate the number the page shows.
+gate() {
+  local name=$1
+  shift
+  if [[ ${1:-} == -- ]]; then
+    shift
+  fi
+  echo "== $name =="
+  "$@"
+}
 
-scripts/check-shell.sh
+# The two checks that are not a single command each get a wrapper, so every
+# caller stays one `gate` line and the derivation keeps working.
+quality_cmd=(scripts/check-project-quality.sh)
 # The core-suite container has neither Java nor an Android UniFFI bindgen step.
 # base-contracts covers --project --showroom; android-unit-suite covers --android.
 case "${MERGE_READINESS_SKIP_ANDROID_QUALITY:-}" in
   1 | true)
     echo "Skipping the Android area here; it runs in the android-unit-suite job."
-    scripts/check-project-quality.sh --project --showroom
-    ;;
-  *)
-    scripts/check-project-quality.sh
+    quality_cmd=(scripts/check-project-quality.sh --project --showroom)
     ;;
 esac
-scripts/tests/worktree-gc.sh
-scripts/tests/worktree-gc-schedule.sh
 
-echo "== Gettext catalogues =="
-scripts/tests/gettext-catalogs.sh
+run_audit() {
+  if ! cargo audit; then
+    echo "live advisory refresh unavailable; checking the cached database" >&2
+    cargo audit --no-fetch
+  fi
+}
 
-scripts/check-architecture.sh
-
-echo "== Android Opus/MP3 sync runtime =="
-scripts/check-device-sync-gstreamer.sh
-
-echo "== Accessibility semantics and input parity =="
-scripts/check-accessibility-semantics.sh
-scripts/check-input-parity.sh
-
-scripts/check-runtime-service-install.sh
-
-echo "== Frontend thinness =="
-scripts/check-frontend-thinness.sh
-
-echo "== UX traceability =="
-scripts/check-ux-traceability.sh
-
-echo "== GNOME conformance =="
-scripts/check-appstream.sh
-scripts/check-flatpak-manifest.sh
-scripts/check-gnome-idioms.sh
-scripts/check-ai-hygiene.sh
-
-echo "== Motion tokens =="
-scripts/check-motion-tokens.sh
-
-echo "== Rust formatting =="
-cargo fmt --check
-
-echo "== Rust lint =="
-cargo clippy --locked --all-targets --workspace -- -D warnings
-
-echo "== Rust documentation =="
-env RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
+gate "Branch diff" -- git diff --check "$base_ref"...HEAD
+gate "Shell" -- scripts/check-shell.sh
+gate "Project quality" -- "${quality_cmd[@]}"
+gate "Worktree GC" -- scripts/tests/worktree-gc.sh
+gate "Worktree GC schedule" -- scripts/tests/worktree-gc-schedule.sh
+gate "Gettext catalogues" -- scripts/tests/gettext-catalogs.sh
+# The rest of scripts/tests/ hung on qa-linters.sh, and qa-linters.sh hung on
+# scripts/check-release.sh — which neither this gate nor CI ever calls. So the
+# self-tests of the scripts that guard the repository were themselves unguarded,
+# and two of their assertions had gone stale without anyone hearing about it.
+# 84s measured; the three lines above it stay because check-release.sh reaches
+# them by a different road.
+gate "Script self-tests" -- scripts/tests/qa-linters.sh
+gate "Architecture" -- scripts/check-architecture.sh
+gate "Device-sync GStreamer" -- scripts/check-device-sync-gstreamer.sh
+gate "Accessibility semantics" -- scripts/check-accessibility-semantics.sh
+gate "Input parity" -- scripts/check-input-parity.sh
+gate "Runtime service install" -- scripts/check-runtime-service-install.sh
+gate "Frontend thinness" -- scripts/check-frontend-thinness.sh
+gate "UX traceability" -- scripts/check-ux-traceability.sh
+gate "AppStream" -- scripts/check-appstream.sh
+gate "Flatpak manifest" -- scripts/check-flatpak-manifest.sh
+gate "GNOME idioms" -- scripts/check-gnome-idioms.sh
+gate "AI hygiene" -- scripts/check-ai-hygiene.sh
+gate "Motion tokens" -- scripts/check-motion-tokens.sh
+gate "Rust formatting" -- cargo fmt --check
+gate "Rust lint" -- cargo clippy --locked --all-targets --workspace -- -D warnings
+gate "Rust documentation" -- env RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 
 tmp_root=$(mktemp -d)
 trap 'rm -rf "$tmp_root"' EXIT
 
-echo "== Workspace tests =="
-env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
+gate "Workspace tests" -- env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
   REPRISE_AUDIO_SINK=fakesink \
   cargo test --locked --workspace --exclude reprise-platform-linux
 
@@ -114,24 +120,17 @@ env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
 # a pipeline state transition while the stream-generation tests wait on their
 # shared audio-sink lock. Keep only this package serial; the rest of the
 # workspace still uses Cargo's normal parallelism.
-echo "== Linux platform tests (serialized GStreamer) =="
-env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
+gate "Linux platform tests" -- env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
   REPRISE_AUDIO_SINK=fakesink \
   cargo test --locked -p reprise-platform-linux -- --test-threads=1
 
-echo "== Rule-owned display tests =="
-scripts/check-display-tests.sh --rule-named
+gate "Rule-owned display tests" -- scripts/check-display-tests.sh --rule-named
 
 # The runtime service's own tests need a session bus. A private one, so they
 # never touch the developer's running Reprise.
-echo "== Runtime service bus tests =="
-dbus-run-session -- cargo test --locked -p reprise-platform-linux \
+gate "Runtime service bus tests" -- dbus-run-session -- cargo test --locked -p reprise-platform-linux \
   --test runtime_service -- --ignored --test-threads=1
 
-echo "== Dependency audit =="
-if ! cargo audit; then
-  echo "live advisory refresh unavailable; checking the cached database" >&2
-  cargo audit --no-fetch
-fi
+gate "Dependency audit" -- run_audit
 
 echo "Merge-readiness checks passed against $base_ref"

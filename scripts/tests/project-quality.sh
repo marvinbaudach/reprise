@@ -40,7 +40,9 @@ npm --prefix quality run lint
 npm --prefix quality test
 npm --prefix showroom ci
 npm --prefix showroom run lint
+npm --prefix showroom run typecheck
 node --test showroom/tests/lint-contract.test.mjs
+npm --prefix showroom test
 npm --prefix android run lint
 npm --prefix android run test:lint
 EOF
@@ -56,7 +58,9 @@ run_gate --showroom --android
 diff -u - "$log" <<'EOF'
 npm --prefix showroom ci
 npm --prefix showroom run lint
+npm --prefix showroom run typecheck
 node --test showroom/tests/lint-contract.test.mjs
+npm --prefix showroom test
 npm --prefix android run lint
 npm --prefix android run test:lint
 EOF

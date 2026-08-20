@@ -114,32 +114,62 @@ if rg --quiet --fixed-strings -- '--map-root-user' "$runner" scripts/cua-explore
   echo "exploratory app must not map root inside its network namespace" >&2
   exit 1
 fi
-host_network=$(readlink /proc/self/ns/net)
-private_network=$(unshare --user --map-current-user --net readlink /proc/self/ns/net)
-if [[ $host_network == "$private_network" ]]; then
-  echo "exploratory app network namespace must differ from the host" >&2
-  exit 1
+# Unprivileged user namespaces are switched off on plenty of hardened hosts and
+# in plenty of containers, and this script now runs in the merge gate — and so on
+# every `git push` through the pre-push hook. An unguarded probe would fail those
+# pushes, and the CI container, for a reason that has nothing to do with what was
+# pushed. Both probes below need a working namespace, so the capability is
+# established once here rather than re-derived per probe: asking only whether the
+# D-Bus tools exist let the second probe run where the first had already given up.
+if command -v unshare >/dev/null &&
+  unshare --user --map-current-user --net true >/dev/null 2>&1; then
+  user_namespaces=true
+else
+  user_namespaces=false
 fi
-if command -v dbus-run-session >/dev/null && command -v dbus-send >/dev/null; then
-  if ! timeout 20 dbus-run-session -- unshare --user --map-current-user --net \
-    dbus-send --session --print-reply --dest=org.freedesktop.DBus \
-    /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null; then
-    echo "exploratory app namespace must retain private session-bus access" >&2
+
+if [[ $user_namespaces == true ]]; then
+  host_network=$(readlink /proc/self/ns/net)
+  private_network=$(unshare --user --map-current-user --net readlink /proc/self/ns/net)
+  if [[ $host_network == "$private_network" ]]; then
+    echo "exploratory app network namespace must differ from the host" >&2
     exit 1
   fi
 else
-  echo "skipping exploratory namespace D-Bus probe: dbus-run-session or dbus-send missing"
+  echo "skipping exploratory namespace probe: unprivileged user namespaces unavailable"
 fi
 
+if [[ $user_namespaces != true ]]; then
+  echo "skipping exploratory namespace D-Bus probe: unprivileged user namespaces unavailable"
+elif ! command -v dbus-run-session >/dev/null || ! command -v dbus-send >/dev/null; then
+  echo "skipping exploratory namespace D-Bus probe: dbus-run-session or dbus-send missing"
+elif ! timeout 20 dbus-run-session -- unshare --user --map-current-user --net \
+  dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+  /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null; then
+  echo "exploratory app namespace must retain private session-bus access" >&2
+  exit 1
+fi
+
+# The third pattern is the behaviour, not the spelling: the stub root has to be
+# prepended to the inherited XDG_DATA_DIRS. Whether that lands in the
+# environment directly or by way of a local variable is the caller's business —
+# asserting the assignment itself is what made this check go stale once already.
 for required in \
   'org.freedesktop.secrets' \
-  'org.freedesktop.impl.portal.Secret' \
-  'XDG_DATA_DIRS="$stub_root:'; do
+  'org.freedesktop.impl.portal.Secret'; do
   if ! rg --quiet --fixed-strings "$required" scripts/cua-common/session.sh; then
     echo "private session must neutralise the secret service: $required" >&2
     exit 1
   fi
 done
+
+# The prepend itself, and on a line that assigns something. A bare text search
+# for the same characters passes on a comment that merely quotes them, which
+# would let the neutralisation be removed while this check stayed green.
+if ! rg --quiet '^[^#]*="\$stub_root:\$\{XDG_DATA_DIRS' scripts/cua-common/session.sh; then
+  echo "private session must prepend the stub root to XDG_DATA_DIRS" >&2
+  exit 1
+fi
 # The stub must make activation fail immediately instead of waiting out the
 # bus timeout. Measured on a developer host: 25s without it, 18ms with it.
 stub_root=$(mktemp -d)

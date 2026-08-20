@@ -1,12 +1,11 @@
-import { CODE_SEGMENTS } from '../../data/measurements';
+import { CODE_SEGMENTS, group } from '../../data/measurements';
 import './ui.css';
-
-const formatter = new Intl.NumberFormat('de-CH');
 
 /**
  * One bar across the full width, segmented by where the lines actually sit.
  *
- * The exact shares are authored evidence from the counted design baseline.
+ * Both the lengths and the labels come from the build's own count of this tree,
+ * so the bar cannot end up drawn to shares the legend contradicts.
  */
 export function CodeRatioBar() {
   return (
@@ -17,7 +16,7 @@ export function CodeRatioBar() {
         data-ratio
         role="img"
         aria-label={CODE_SEGMENTS.map(
-          (segment) => `${segment.label}: ${formatter.format(segment.lines)} lines`,
+          (segment) => `${segment.label}: ${group(segment.lines)} lines`,
         ).join(', ')}
       >
         {CODE_SEGMENTS.map((segment) => (
@@ -35,7 +34,7 @@ export function CodeRatioBar() {
           <li className="ratio__row" key={segment.key}>
             <span className="ratio__label">
               <span className={`ratio__swatch ratio__segment--${segment.key}`} aria-hidden="true" />
-              {segment.label} · {formatter.format(segment.lines)}
+              {segment.label} · {group(segment.lines)}
             </span>
             <span className="ratio__note">{segment.note}</span>
           </li>

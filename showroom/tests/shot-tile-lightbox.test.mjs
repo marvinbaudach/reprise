@@ -12,7 +12,7 @@ async function builtCss() {
   return readFile(join(assets, stylesheet), 'utf8');
 }
 
-test('ShotTile owns the design tilt sheen loading sweep and expandable caption', async () => {
+test('ShotTile owns the still frame the loading sweep and the zoom cue', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
   const source = await readFile(
@@ -21,23 +21,30 @@ test('ShotTile owns the design tilt sheen loading sweep and expandable caption',
   );
 
   assert.equal((html.match(/<button[^>]+class="[^"]*shot-tile[^"]*"/g) ?? []).length, 11);
-  for (const attribute of ['data-shot', 'data-sheen', 'data-sweep', 'data-dwrap']) {
+  for (const attribute of ['data-shot', 'data-sweep', 'data-zoom']) {
     assert.match(html, new RegExp(`${attribute}=""`));
   }
 
-  assert.match(source, /const TILT_DEGREES = 8/);
-  assert.match(source, /setProperty\('--mx'/);
-  assert.match(source, /setProperty\('--my'/);
-  assert.match(source, /perspective\(1200px\)/);
+  // The picture wrap carries the zoom so the hero phone's visualizer canvas —
+  // a sibling of the image — travels with the screenshot instead of standing
+  // still on top of a growing one.
+  assert.match(source, /className="shot-tile__picture"[\s\S]*?<ProductShot[\s\S]*?\{children\}/);
   assert.doesNotMatch(source, /requestAnimationFrame/);
   assert.match(css, /@keyframes rp-sweep/);
-  assert.match(css, /animation:rp-sweep 1\.5s linear infinite/);
-  assert.match(css, /grid-template-rows:0fr/);
-  assert.match(css, /grid-template-rows:1fr/);
-  assert.match(css, /radial-gradient\(340px circle at var\(--mx\) var\(--my\)/);
+  // Lightning CSS rewrites the `animation` shorthand into its canonical order, so
+  // the parts are asserted, not the sequence they were authored in.
+  const sweep = css.match(/animation:[^;}]*rp-sweep[^;}]*/)?.[0];
+  assert.ok(sweep, 'the sweep must be driven by an animation shorthand');
+  for (const part of ['1.5s', 'linear', 'infinite']) {
+    assert.ok(sweep.includes(part), `the sweep animation must carry ${part}`);
+  }
   assert.match(
     css,
-    /prefers-reduced-motion:reduce[^}]*\}[\s\S]*?\.shot-tile__sheen[^}]*display:none/,
+    /prefers-reduced-motion:reduce[^}]*\}[\s\S]*?\.shot-tile__sweep[^}]*display:none/,
+  );
+  assert.match(
+    css,
+    /prefers-reduced-motion:reduce[^{]*\{[^}]*\.shot-tile__zoom[^}]*transition:none/,
   );
 });
 
@@ -58,13 +65,28 @@ test('Lightbox traps focus and restores its trigger around keyboard navigation a
   assert.match(source, /returnFocus\.focus\(\)/);
   assert.match(source, /scale\(2\.1\)/);
   assert.match(source, /transformOrigin/);
-  assert.match(css, /animation:rp-fade \.26s ease both/);
-  assert.match(css, /animation:rp-lb-in \.42s cubic-bezier\(\.16,1,\.3,1\) both/);
+  // Same rewrite as the sweep above, plus one drop: `ease` is the initial timing
+  // function, so Lightning CSS leaves it out of the shorthand. The eased curve is
+  // still what runs — asserting the literal word would assert the minifier.
+  const fade = css.match(/animation:[^;}]*rp-fade[^;}]*/)?.[0];
+  assert.ok(fade, 'the backdrop must fade in through an animation shorthand');
+  for (const part of ['.26s', 'both']) {
+    assert.ok(fade.includes(part), `the fade animation must carry ${part}`);
+  }
+  const lightboxIn = css.match(/animation:[^;}]*rp-lb-in[^;}]*/)?.[0];
+  assert.ok(lightboxIn, 'the lightbox must open through an animation shorthand');
+  for (const part of ['.42s', 'cubic-bezier(.16,1,.3,1)', 'both']) {
+    assert.ok(lightboxIn.includes(part), `the lightbox animation must carry ${part}`);
+  }
   assert.match(css, /backdrop-filter:blur\(14px\)/);
   // The zoom wrapper must stay a resolved box and the frame must keep the
   // picture's ratio, or the picture is cropped and the plate sits off it.
   assert.match(css, /\.lightbox__zoom\{[^}]*height:100%/);
-  assert.match(css, /\.lightbox__frame\{[^}]*height:100%[^}]*width:auto/);
+  const frame = css.match(/\.lightbox__frame\{[^}]*\}/)?.[0];
+  assert.ok(frame, '.lightbox__frame must exist in the built CSS');
+  for (const declaration of ['height:100%', 'width:auto']) {
+    assert.ok(frame.includes(declaration), `.lightbox__frame must carry ${declaration}`);
+  }
   assert.match(css, /\.lightbox__image\{[^}]*width:100%[^}]*height:100%/);
 });
 

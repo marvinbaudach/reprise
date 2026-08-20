@@ -310,7 +310,7 @@ case "$*" in
     printf '%s\n' '{"title":"search","entries":[{"id":"s1","title":"Search hit","duration":30}]}'
     ;;
   "--no-warnings --flat-playlist --extractor-args youtubetab:approximate_date -J https://youtube.test/@show")
-    printf '%s\n' '{"title":"Channel title","channel_url":"https://youtube.test/@show","thumbnail":"https://img.test/channel.jpg","entries":[{"id":"v1","title":"One","duration":12.8,"channel_id":"UC-stable","timestamp":1775001600,"thumbnail":"https://img.test/v1.jpg"},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null,"upload_date":"20260730"},{"id":"blank-title","title":"   "}]}'
+    printf '%s\n' '{"title":"Channel title","channel_url":"https://youtube.test/@show","thumbnails":[{"url":"https://img.test/banner.jpg","width":1060,"height":175,"id":"0"},{"url":"https://img.test/channel.jpg","width":900,"height":900,"id":"7"},{"url":"https://img.test/avatar-uncropped.jpg","id":"avatar_uncropped"}],"entries":[{"id":"v1","title":"One","duration":12.8,"channel_id":"UC-stable","timestamp":1775001600,"thumbnail":"https://img.test/v1.jpg"},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null,"upload_date":"20260730"},{"id":"blank-title","title":"   "}]}'
     ;;
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
 esac

@@ -8,8 +8,10 @@ if [[ ${CI:-} == true ]]; then
     git config --global --add safe.directory "$repo_root"
 fi
 
+# scripts/check-architecture.sh is repo-wide - it caps every Rust file and
+# resolves every documentation path cited from crates/ and scripts/ - so it
+# runs in the base-contracts job, which is not routed by changed paths.
 echo "== GNOME contracts =="
-scripts/check-architecture.sh
 scripts/check-accessibility-semantics.sh
 scripts/check-input-parity.sh
 scripts/check-runtime-service-install.sh

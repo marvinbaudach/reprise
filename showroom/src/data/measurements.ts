@@ -1,18 +1,34 @@
+import { CENSUS } from 'virtual:code-census';
+import { INDEX_REBUILD } from 'virtual:measurements';
+import { GATES } from 'virtual:merge-gates';
+import { AXIS } from 'virtual:spectral-axis';
+
 /**
  * Every figure the showroom prints, and where it comes from.
  *
- * These values were counted on `dev@604677322e` with cloc 2.08, product and test
- * code separated by an AST pass over every Rust file, and each one was verified
- * a second time by hand on 2026-08-14 before it was allowed onto this page.
+ * Three kinds of number appear on this page and they are not interchangeable:
  *
- * They are typed here, not measured by the build. That is the honest state and
- * the footer says so. The measurement strand replaces this module with generated
- * JSON; until then, a figure without a `source` has no business being here.
+ * - **Counted.** The line volumes and their shares come from
+ *   `derive/code-census.mjs`, which walks this very tree at build time. Nobody
+ *   types them; changing the code changes the page.
+ * - **Quoted.** The index rebuild's before/after figures describe a change that
+ *   happened once and cannot be re-counted from the tree. They are read from
+ *   `docs/measurements/index-rebuild.md`, where each row carries its commit, its
+ *   date and its method.
+ * - **Stated.** "1 → 4" is a claim about architecture, not a measurement. It is
+ *   typed, and it says so.
+ *
+ * The footer tells the reader which is which. A figure that fits none of the
+ * three has no business being here.
  */
 
 export const BASELINE = {
+  /**
+   * The commit every permalink on this page points at — and nothing else. The
+   * volumes used to be counted here too; now they are counted at build time, so
+   * this is a link target, not a provenance claim.
+   */
   commit: '604677322e',
-  countedOn: '2026-08-14',
   repository: 'https://github.com/marvinbaudach/reprise',
 } as const;
 
@@ -23,6 +39,28 @@ export function permalink(path: string): string {
 export function treelink(path = ''): string {
   return `${BASELINE.repository}/tree/${BASELINE.commit}${path ? `/${path}` : ''}`;
 }
+
+/**
+ * Thousands grouped the way the whole page groups them. `Intl` would do this
+ * too, but its separator for `de-CH` has changed character between ICU versions
+ * — and a figure whose punctuation depends on the Node build it was rendered
+ * with is not a figure anyone can assert against.
+ */
+export function group(value: number): string {
+  return Math.round(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+}
+
+/** One decimal, which is as fine as a line count deserves to be read. */
+function share(part: number, whole: number): string {
+  return `${((part / whole) * 100).toFixed(1)} %`;
+}
+
+const RUST_TOTAL =
+  CENSUS.rust.product + CENSUS.rust.test + CENSUS.bridge.product + CENSUS.bridge.test;
+const KOTLIN_TOTAL = CENSUS.kotlin.product + CENSUS.kotlin.test;
+const RUST_TESTS = CENSUS.rust.test + CENSUS.bridge.test;
 
 export interface Figure {
   readonly value: string;
@@ -35,24 +73,30 @@ export interface Figure {
 /** The four numbers that carry chapter one. */
 export const HEADLINE_FIGURES: readonly Figure[] = [
   {
-    value: "347'842",
+    // Counted: every non-blank line under `crates/` and `android/`.
+    value: group(CENSUS.total),
     label: 'lines of Rust and Kotlin',
-    detail: "327'165 Rust · 20'677 Kotlin",
+    detail: `${group(RUST_TOTAL)} Rust · ${group(KOTLIN_TOTAL)} Kotlin`,
     counter: true,
   },
   {
-    value: '45.8 %',
+    value: share(CENSUS.test, CENSUS.total),
     label: 'of them are tests',
-    detail: "149'504 Rust · 9'884 Kotlin",
+    detail: `${group(RUST_TESTS)} Rust · ${group(CENSUS.kotlin.test)} Kotlin`,
     counter: true,
   },
   {
+    // Stated, not counted: four frontends over one core is an architectural
+    // claim, and the four names are the evidence for it.
     value: '1 → 4',
     label: 'one core, four frontends',
     detail: 'GNOME · Android · CLI · MCP',
   },
   {
-    value: '21',
+    // Derived, not typed: the wall in chapter two, the tempo band and this
+    // figure all count the same `gate` calls in the merge gate script, so the
+    // page cannot end up disagreeing with itself.
+    value: String(GATES.length),
     label: 'gates before every merge',
     detail: 'all of them, every time',
     counter: true,
@@ -68,111 +112,43 @@ export interface CodeSegment {
   readonly share: string;
 }
 
-export const CODE_SEGMENTS: readonly CodeSegment[] = [
-  {
-    key: 'rust-product',
-    label: 'Rust, product',
-    lines: 177_661,
-    note: 'the core and everything built on it',
-    share: '49.6',
-  },
-  {
-    key: 'rust-test',
-    label: 'Rust, tests',
-    lines: 149_504,
-    note: 'inline `#[cfg(test)]` modules and integration suites',
-    share: '41.7',
-  },
-  {
-    key: 'android-bridge',
-    label: 'Rust, Android bridge',
-    lines: 10_245,
-    note: 'crates/reprise-android-ffi',
-    share: '2.9',
-  },
-  {
-    key: 'kotlin',
-    label: 'Kotlin',
-    lines: 20_677,
-    note: 'the whole Android frontend, product and tests',
-    share: '5.8',
-  },
-];
-
-/** Chapter two: the five rungs, weakest evidence first. */
-export interface VerificationRung {
-  readonly count: string;
-  readonly name: string;
-  readonly proves: string;
-  readonly cannotProve: string;
-  readonly agentDriven: boolean;
+function segment(key: string, label: string, lines: number, note: string): CodeSegment {
+  return { key, label, lines, note, share: ((lines / CENSUS.total) * 100).toFixed(1) };
 }
 
-export const VERIFICATION_RUNGS: readonly VerificationRung[] = [
-  {
-    count: "5'596",
-    name: 'Test functions, standard run',
-    proves: 'the logic holds for the cases someone thought of',
-    cannotProve: 'that the window ever appeared',
-    agentDriven: false,
-  },
-  {
-    count: '676',
-    name: 'Display tests, own gate',
-    proves: 'real widgets, real allocation, real GTK',
-    cannotProve: 'that a human could reach the button',
-    agentDriven: false,
-  },
-  {
-    count: '9',
-    name: 'Pointer flows on real windows',
-    proves: 'the click lands where the pixel is',
-    cannotProve: 'that the flow makes sense',
-    agentDriven: false,
-  },
-  {
-    count: '11',
-    name: 'Semantic workflows over AT-SPI',
-    proves: 'the app can be operated without seeing it',
-    cannotProve: 'what nobody scripted',
-    agentDriven: true,
-  },
-  {
-    count: '6',
-    name: 'Agentic exploration missions',
-    proves: 'what no one thought to look for',
-    cannotProve: 'nothing — it is the last rung',
-    agentDriven: true,
-  },
+export const CODE_SEGMENTS: readonly CodeSegment[] = [
+  segment(
+    'rust-product',
+    'Rust, product',
+    CENSUS.rust.product,
+    'the core and everything built on it',
+  ),
+  segment(
+    'rust-test',
+    'Rust, tests',
+    CENSUS.rust.test,
+    'inline `#[cfg(test)]` items and the files they pull in',
+  ),
+  segment(
+    'android-bridge',
+    'Rust, Android bridge',
+    CENSUS.bridge.product + CENSUS.bridge.test,
+    'crates/reprise-android-ffi',
+  ),
+  segment('kotlin', 'Kotlin', KOTLIN_TOTAL, 'the whole Android frontend, product and tests'),
 ];
 
-/** Chapter two: the rulebook, and how much of it is traceable. */
-export const RULEBOOK_FIGURES: readonly Figure[] = [
-  {
-    value: '571',
-    label: 'active UX rules, binding',
-    href: permalink('docs/ux-rules.md'),
-    counter: true,
-  },
-  {
-    value: '100 %',
-    label: 'of enforceable rules have a test of the same name',
-    counter: true,
-  },
-  { value: '897', label: 'files holding those tests', counter: true },
-  { value: '250', label: 'files under docs/', href: treelink('docs'), counter: true },
-  {
-    value: '24',
-    label: 'MCP tools over the same layer',
-    href: treelink('crates/reprise-mcp'),
-    counter: true,
-  },
-];
+/** How many files the count read, and how many tests it found declared. */
+export const CENSUS_SCOPE = {
+  files: CENSUS.files,
+  testFunctions: CENSUS.testFunctions,
+  source: 'showroom/derive/code-census.mjs',
+} as const;
 
-/** Chapter three: the two ends of the spectral axis, verbatim from the source. */
+/** Chapter three: the two ends of the spectral axis, read from the function. */
 export const SPECTRAL_AXIS = {
-  coral: '#FF6F5E',
-  teal: '#4FDBD4',
+  coral: AXIS.coral,
+  teal: AXIS.teal,
   source: 'crates/reprise-view/src/spectral_colour.rs',
 } as const;
 
@@ -182,19 +158,13 @@ export interface Measurement {
   readonly before: string;
   readonly after: string;
   readonly delta: string;
+  readonly commit: string;
+  readonly date: string;
+  readonly method: string;
 }
 
-export const PERFORMANCE: readonly Measurement[] = [
-  {
-    what: "Title window over 100'000 tracks",
-    before: "53'605 µs",
-    after: "1'333 µs",
-    delta: '−97.51 %',
-  },
-  { what: 'Playback ID projection', before: "8'125 µs", after: '298 µs', delta: '−96.33 %' },
-  { what: 'Main-thread CPU while idle', before: '110 ms/s', after: '64 ms/s', delta: '−41.8 %' },
-  { what: 'Tag reads on a warm start', before: '419', after: '0', delta: '−100 %' },
-];
+export const PERFORMANCE: readonly Measurement[] = INDEX_REBUILD.rows;
 
-export const PERFORMANCE_PRICE =
-  "The price sits next to it, not in the small print: the title index costs 2'379'776 extra database bytes, up 9.85 %. The track list stays pinned by test to eight cached SQL windows and 1'600 retained rows — unchanged between 10'000 and 100'000 tracks.";
+export const PERFORMANCE_PRICE = INDEX_REBUILD.price;
+
+export const PERFORMANCE_RECORD = 'docs/measurements/index-rebuild.md';
