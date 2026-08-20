@@ -16,6 +16,14 @@ use crate::ui::table_column_widths as widths;
 use crate::ui::updates::release_cover::LazyReleaseCover;
 
 type CachedPortraitResolver = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
+type CacheOnlyPortraitResolver = fn(&str) -> reprise_core::artist_portrait::PortraitOutcome;
+
+// This resolver has no NET-1a gate of its own. Pinning its function type and
+// identity to Core's cache-only entry point keeps production construction from
+// silently gaining network access; the test below compares identity only and
+// never invokes it against the real XDG cache.
+const PRODUCTION_CACHE_ONLY_RESOLVER: CacheOnlyPortraitResolver =
+    reprise_core::artist_portrait::load_cached;
 
 pub(super) struct ConcertsArtistImage {
     portrait: RefCell<Option<Rc<ArtistPortraitRuntime>>>,
@@ -27,12 +35,10 @@ pub(super) struct ConcertsArtistImage {
 impl ConcertsArtistImage {
     #[cfg(not(test))]
     pub(super) fn new() -> Rc<Self> {
-        Self::with_resolver(
-            |artist| match reprise_core::artist_portrait::load_cached(artist) {
-                reprise_core::artist_portrait::PortraitOutcome::Found(path) => Some(path),
-                reprise_core::artist_portrait::PortraitOutcome::NotFound => None,
-            },
-        )
+        Self::with_resolver(|artist| match PRODUCTION_CACHE_ONLY_RESOLVER(artist) {
+            reprise_core::artist_portrait::PortraitOutcome::Found(path) => Some(path),
+            reprise_core::artist_portrait::PortraitOutcome::NotFound => None,
+        })
     }
 
     #[cfg(test)]
@@ -270,5 +276,16 @@ mod tests {
 
         assert!(source.contains(&guarded_fetch));
         assert!(source.contains(&private_fetch));
+    }
+
+    #[test]
+    fn production_portrait_resolver_is_pinned_to_the_cache_only_api() {
+        let resolver: CacheOnlyPortraitResolver = PRODUCTION_CACHE_ONLY_RESOLVER;
+        let cache_only = reprise_core::artist_portrait::load_cached as CacheOnlyPortraitResolver;
+        assert!(std::ptr::fn_addr_eq(resolver, cache_only));
+
+        let source = include_str!("concerts_artist_cover.rs");
+        let forbidden_fetch = ["load_", "or_fetch"].concat();
+        assert!(!source.contains(&forbidden_fetch));
     }
 }
