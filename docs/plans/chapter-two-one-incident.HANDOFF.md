@@ -1,9 +1,10 @@
 # Handover — CH.02 rebuilt as one incident
 
-State on 2026-08-20. Plan: `docs/plans/chapter-two-one-incident.md` (`phase: refactored`).
-Worktree `/home/marvin/Projects/reprise-ch02-incident`, branch
-`feature/chapter-two-one-incident`, 10 commits ahead of `origin/dev`, 0 behind (rebased
-onto `5df217bebb`), worktree clean, nothing pushed.
+State on 2026-08-20. Plan: `docs/plans/chapter-two-one-incident.md` (`phase: refactored`
+— `land.sh` writes `shipped`, never by hand). Worktree
+`/home/marvin/Projects/reprise-ch02-incident`, branch
+`feature/chapter-two-one-incident`, 15 commits ahead of `origin/dev`, 0 behind, worktree
+clean, pushed, open as PR **#596** against `dev`.
 
 ## What the change is
 
@@ -17,17 +18,23 @@ quote) → the `Fixes #444` rule → figure 2 "fail closed" → the six groups �
 ## Commits
 
 ```
-1f2fd0…  fix(showroom): clear stale pointer gate peeks          (N)
-…        fix(showroom): color gate readout by displayed result  (M)
-…        docs: the plan is refactored
-…        docs(showroom): record chapter two review fixes
-…        fix(showroom): harden chapter two review contracts     (A–L)
-…        docs: the plan is coded, not shipped
-…        docs(showroom): record aggregate gate blocker
-…        docs(showroom): record chapter two verification
-…        feat(showroom): rebuild chapter two around one incident
-307e9c15  wip: CH.02 as one incident — plan plus a partial build
+fix(showroom): align the incident quote measure            (Q)
+docs: register chapter two showroom rules                  (SHOW-17..21)
+docs(showroom): record chapter two width verification
+fix(showroom): fill chapter two figures                    (O)
+docs: hand over CH.02 with the open column-width finding
+fix(showroom): clear stale pointer gate peeks              (N)
+fix(showroom): color gate readout by displayed result      (M)
+docs: the plan is refactored
+docs(showroom): record chapter two review fixes
+fix(showroom): harden chapter two review contracts         (A–L)
+docs: the plan is coded, not shipped
+docs(showroom): record aggregate gate blocker
+docs(showroom): record chapter two verification
+feat(showroom): rebuild chapter two around one incident
+wip: CH.02 as one incident — plan plus a partial build
 ```
+
 Hashes shift on every rebase; find them with `git log --oneline origin/dev..HEAD`.
 Codex's own evidence (decisions, mutation-probe tables) is in the tracked
 `.pipeline-codex.md` — read the **committed** copy (`git show HEAD:.pipeline-codex.md`),
@@ -63,42 +70,37 @@ assertion** — the suite is static analysis and cannot reproduce browser hit-te
 recorded that rather than writing a test that cannot fail. Do not "fix" that gap with a
 green placeholder.
 
-## OPEN — finding O, the one thing left
+## Findings O and Q — done, measured, closed
 
-**CH.02 is the only chapter whose figures do not fill the column.** Measured at a 1344px
-viewport; the `.frame` is identical across CH.01/02/03 (title runs 1137px in all three):
+**O — CH.02 was the only chapter whose figures did not fill the column.** Three unequal
+hardcoded caps in `ChapterTwo.css` (`.incident-figure` 48rem, `.gate-figure` 52rem,
+`.gate-groups` 48rem) stacked four different right edges down the page where every
+neighbour has two. All three are gone. `.gate-strip__rail` became `flex: 1 1 26px` with
+a 26px minimum so the *visible* `merge` pill — not merely its layout box — reaches the
+column edge; the rail grew from 26 to 654px to prove it moved.
 
-| chapter | block | width |
+**Q — the quote was the last stray edge.** `.incident-quote` carried the same kind of
+leftover cap and sat alone at 858. It now uses the running text's `68ch` measure.
+
+Measured at 1344px against the production build, every top-level block in CH.02 lands
+on one of exactly two right edges, the same two CH.01 and CH.03 use:
+
+| block | before | after |
 |---|---|---|
-| CH.01 | `FIGURE.architecture`, `FIGURE.ratio` | 1137 |
-| CH.03 | `FIGURE.seek-card` | 1137 |
-| CH.03 | `SECTION.mosaic` | 1148 |
-| **CH.02** | `FIGURE.incident-figure` | **768** |
-| **CH.02** | `FIGURE.gate-figure` | **824** |
-| **CH.02** | `DIV.gate-groups` | **760** |
+| `FIGURE.incident-figure` | 768 | 1148, right edge 1238.5 |
+| `FIGURE.gate-figure` | 824 | 1148, right edge 1238.5 |
+| `DIV.gate-groups` | 760 | 1148, right edge 1238.5 |
+| `BLOCKQUOTE.incident-quote` | 768 | 558, right edge 648.5 |
 
-Cause: three unequal hardcoded caps in `ChapterTwo.css` — `.incident-figure`
-`max-width: 48rem`, `.gate-figure` `52rem`, `.gate-groups` `48rem`. With the 552px body
-measure that stacks **four different right edges** where every neighbour has two. The plan
-never asked for them.
+The incident charts deliberately keep their own `min(100%, 17.75rem)` measure: the
+figure fills the column, the measured bars stay at the size they are measured at. Four
+panel alternatives were rendered and compared (chart centred, panels pushed to the ends,
+bars spread); all three pulled the two charts apart and weakened the comparison the
+figure exists for. The current layout was chosen deliberately — **do not "fix" the
+empty right half of each panel** without changing the markup so something lives there.
 
-**Decided with the user: the three blocks fill the column.** Running text keeps its narrow
-measure. Three things make this more than deleting three lines:
-
-- `.gate-groups` is already `repeat(2, minmax(0, 1fr))` — dropping the cap is enough.
-- `.gate-figure` — dropping the cap is **not** enough. `.gate-strip__row` is a content-sized
-  flex row, so the box would measure 1137 while the visible edge stays at ~824. The rail
-  before the `merge` pill has to take the slack, which is also what the plan's sketch draws:
-  `one change ||||||||||||||||||||||||||| —— [ merge ]`. Keep the wrapped phone layout
-  (44px targets, four rows) intact.
-- `.incident-figure` — widening gives two panels of ~554px. The dashed floor rule is
-  positioned `right: 88px` against the chart box with a right-aligned caption; it must stay
-  visually tied to the bars it measures rather than stretching off to the right. The figure
-  fills the column; the bars do not have to.
-
-A Codex prompt for exactly this was written to `.pipeline-task.md` in the worktree and a run
-was started right after this file was committed. **`.pipeline-task.md` is gitignored** — if
-the run is gone, everything needed to rewrite it is in this section.
+Phone unchanged throughout: no horizontal overflow (390/390), 27 hit targets at exactly
+44×44 across four wrapped rows, bars 84px wide at 60/102/108/108.
 
 ## Verifying it — the harness and its traps
 
@@ -137,32 +139,40 @@ after the failure stay bright, failures accumulate, reduced motion drops the tra
 phone targets 44×44px across four rows, figure 1 stacks keeping its 3× scale (60/102/108),
 no horizontal overflow (375/375).
 
-## The merge-readiness gate is NOT green yet
+## The merge-readiness gate is green
 
-`scripts/check-merge-readiness.sh` has never completed here. In order:
+It passes against `origin/dev`: 50 stages, 5407 Rust tests passed, 0 failed, no errors.
 
-1. The mandatory `git fetch` failed on `Bad owner or permissions on
-   /etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf`. **Fixed** — the fetch now succeeds.
-2. `branch is stale`. **Fixed** by the rebase onto `5df217bebb`.
-3. One attempt died on `merge-readiness requires a clean worktree, including untracked
-   files` listing `quality/tests/.markdown-lint-fixture/` and `.yaml-lint-fixture/`. Those
-   are the script's own self-test fixtures — a race with a **second** gate run from another
-   session. Do not run two at once; check `ps` for a foreign `check-merge-readiness.sh`
-   first. The dirs are gone and the worktree is clean.
-4. The furthest run reached the Android lint stage and Gradle failed there. Codex reported
-   the same stop and attributed it to no Android SDK on this host. **Unconfirmed** — nobody
-   has read that Gradle failure properly yet. Do that before treating it as environmental.
+Two stages were skipped deliberately, and both run in CI:
 
-**`heavy-run` swallows the child's stderr.** Running the gate through it logged only the
-`== Refresh origin/dev ==` header while the real reason sat on stderr; that cost three
-attempts. Redirect *inside* the child:
-`heavy-run heavy -- bash -c './scripts/check-merge-readiness.sh > LOG 2>&1'`.
+- **`Rule-owned display tests`** — the user asked for no GTK4 tests. The branch touches
+  no Rust at all, so the display suite has nothing of this change to see.
+- **`Android source quality`** — `MERGE_READINESS_SKIP_ANDROID_QUALITY=1`. This is the
+  documented case the switch exists for: the Kotlin package `uniffi.reprise_android_ffi`
+  is generated and gitignored, so Android lint cannot build in any fresh worktree. That
+  is what the earlier Gradle stop was, and it is not this branch's doing — it touches
+  neither `android/` nor `crates/`.
+
+The earlier blockers are all resolved: the `ssh_config.d` permission failure that broke
+`git fetch`, the stale branch, and a foreign gate run from another session racing on the
+script's own self-test fixtures.
+
+One real finding came out of finally reaching the far stages: **five tests referenced UX
+rules that did not exist** (`SHOW-17` … `SHOW-21`). `scripts/check-ux-traceability.sh`
+collects every `test('show-<N>` title under `showroom/tests/` and demands a matching
+rule in `docs/ux-rules.md`, which stopped at SHOW-15. The five rules are now written.
+**Anything adding a `show-N` test must add its `SHOW-N` rule in the same commit.**
+
+**`heavy-run` swallows the child's stderr.** Redirect *inside* the child:
+`heavy-run heavy -- bash -c './scripts/<gate> > LOG 2>&1'`.
 
 ## Next steps
 
-1. Finish finding O and re-measure the three widths against CH.01/CH.03.
-2. Get `check-merge-readiness.sh` to a real verdict, or record precisely which stage is
-   environmental and why.
-3. `land.sh <pr>` — the plan carries `branch:`, so the script finds its own status line and
-   writes `phase: shipped` into the feature PR itself. Do not set that phase by hand;
-   Codex did once in the code phase and it had to be reverted.
+1. PR **#596** against `dev` is open. Watch CI; `Rule-owned display tests` and the
+   Android job are the two stages no local run covered.
+2. `land.sh 596` — the plan carries `branch:`, so the script finds its own status line
+   and writes `phase: shipped` into the feature PR itself. Do not set that phase by
+   hand; Codex did once in the code phase and it had to be reverted.
+3. Follow-up, not part of this change: the three §4C mutations behind `Fixes #444`, and
+   finding `N` (a pointer peek going stale when the layout moves under a stationary
+   cursor) which has no assertion because the suite is static analysis.
