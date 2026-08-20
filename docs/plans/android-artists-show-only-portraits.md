@@ -2,7 +2,7 @@
 slug: android-artists-show-only-portraits
 worktree: /home/marvin/Projects/reprise-android-artists-show-only-portraits
 branch: feature/android-artists-show-only-portraits
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-20
 related: android-artist-portrait-before-album-cover, android-artist-photos
