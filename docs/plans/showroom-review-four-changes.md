@@ -362,10 +362,36 @@ Scrollen, und die Tabellenrollen stehen im ausgelieferten HTML.
 
 ---
 
+## 5 — Nachtrag: der Konus im Hintergrund endet in einem Punkt
+
+Nicht Teil des Design-Reviews, sondern am 20.08. beim Draufschauen gefunden und
+auf Wunsch des Nutzers an diesen Branch gehängt.
+
+`.backdrop-oil__sweep` in `src/components/chrome/backdrop.css` ist ein
+`conic-gradient`. Der interpoliert über den Winkel, also schrumpft die
+Pixelbreite jedes Farbübergangs mit dem Radius, und alle sechs fallen im
+Mittelpunkt auf einen Punkt zusammen — ein Windrad mit harten Speichen. Die
+Schicht ist `position: fixed`, dieser Punkt sitzt daher immer in der
+Bildschirmmitte und wandert beim Lesen mit.
+
+**Umbau.** Eine radiale Maske auf denselben Selektor, sonst nichts:
+`mask-image: radial-gradient(circle closest-side at 50% 50%, transparent 0 8%, #000 30%)`
+(mit `-webkit-`-Zwilling). Prozente statt Pixel, weil die Schicht in `vmax`
+bemessen ist — ein festes Loch würde den Konus auf dem Handy schlucken und auf
+einem breiten Bildschirm verschwinden. Farben, Winkel, Dauer, Opazität bleiben.
+
+**Abnahme.** Konus allein über Schwarz, Drift eingefroren, gegen den gebauten
+`dist/` über CDP bei 390/768/1280/1920: der mittlere Helligkeitssprung pro Pixel
+innerhalb von r < 40px fällt von 0,41 auf 0,00, das Fernfeld behält seinen
+Charakter. Kontrollarm mit einer überall deckenden Maske zeigt, dass die
+zusätzliche Glättung im Fernfeld vom Kompositionspfad kommt und nicht vom Loch.
+Kein Testvertrag: die Suite ist statische Analyse, und hier ändert sich weder
+Struktur noch Rolle noch Text.
+
 ## Reihenfolge und Commits
 
 Vier Commits in dieser Reihenfolge — 1 Hover, 2 Pipeline, 3 Header/Hero,
-4 Ledger. Jeder Commit lässt `npm run lint`, `npm run typecheck` und
+4 Ledger; Abschnitt 5 kam später dazu und hängt hinten an. Jeder Commit lässt `npm run lint`, `npm run typecheck` und
 `npm run test` in `showroom/` grün; die Testanpassungen liegen im selben
 Commit wie die Änderung, die sie beschreiben.
 
