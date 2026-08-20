@@ -5,6 +5,7 @@ use std::rc::Rc;
 use reprise_core::db::Db;
 
 mod concerts_activation;
+mod concerts_artist_cover;
 mod concerts_column_layout;
 mod concerts_columns;
 mod concerts_empty_state;

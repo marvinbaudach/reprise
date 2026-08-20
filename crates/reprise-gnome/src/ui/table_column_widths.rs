@@ -23,8 +23,8 @@
 #[cfg(test)]
 use gtk4::prelude::*;
 
-/// A compact square release-artwork cell.
-pub(in crate::ui) const COVER: i32 = 40;
+/// A square release-cover or artist-portrait cell.
+pub(in crate::ui) const COVER: i32 = 56;
 /// A date cell — mirrors the library's Added column.
 pub(in crate::ui) const DATE: i32 = 160;
 /// Lower bound for the filler column — mirrors the library's Title column,
@@ -187,4 +187,12 @@ pub(in crate::ui) fn assert_stable_across_row_change(
         before, after,
         "columns moved when the rows on screen changed — the table shifts while scrolling"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn concert_and_release_artwork_cells_are_fifty_six_pixels() {
+        assert_eq!(super::COVER, 56);
+    }
 }
