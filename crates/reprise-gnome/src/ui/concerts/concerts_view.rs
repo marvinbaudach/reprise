@@ -77,6 +77,7 @@ struct Shared {
 pub(in crate::ui) struct ConcertsView {
     root: gtk4::Widget,
     shared: Rc<Shared>,
+    artist_image: Rc<super::concerts_artist_cover::ConcertsArtistImage>,
 }
 
 impl ConcertsView {
@@ -108,7 +109,16 @@ impl ConcertsView {
             let filter_bar = filter_bar.clone();
             Rc::new(move || filter_bar.filter().radius_km)
         };
-        let columns = concerts_columns::append_columns(&column_view, &query_source, &radius_source);
+        #[cfg(not(test))]
+        let artist_image = super::concerts_artist_cover::ConcertsArtistImage::new();
+        #[cfg(test)]
+        let artist_image = super::concerts_artist_cover::ConcertsArtistImage::for_test(|_| None);
+        let columns = concerts_columns::append_columns(
+            &column_view,
+            &query_source,
+            &radius_source,
+            &artist_image,
+        );
         let column_registry = super::concerts_column_layout::registry(&column_view, conn.clone());
         let (location_columns, column_model) =
             LocationColumns::new(column_registry, &column_view, columns);
@@ -319,7 +329,16 @@ impl ConcertsView {
         Self {
             root: root.upcast(),
             shared,
+            artist_image,
         }
+    }
+
+    pub(in crate::ui) fn set_artist_image(
+        &self,
+        loader: Rc<crate::ui::cover_loader::CoverLoader>,
+        runtime: Rc<crate::ui::artist_portrait_worker::ArtistPortraitRuntime>,
+    ) {
+        self.artist_image.set_sources(loader, runtime);
     }
 
     pub(in crate::ui) fn root(&self) -> &gtk4::Widget {

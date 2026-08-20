@@ -1,15 +1,25 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { promisify } from 'node:util';
 
-import { readout, toggle } from '../src/lib/mergeGates.ts';
+import { displayedReadout, readout, toggle } from '../src/lib/mergeGates.ts';
 
 const showroomRoot = new URL('..', import.meta.url).pathname;
 const repoRoot = new URL('../..', import.meta.url).pathname;
+const run = promisify(execFile);
 
 const GATE_SCRIPT = join(repoRoot, 'scripts', 'check-merge-readiness.sh');
-const PIPELINE_DOC = join(repoRoot, 'docs', 'agents', 'pipeline.md');
+const INCIDENT_RECORD = join(repoRoot, 'docs', 'plans', 'queue-anchor-grill-followups.md');
+
+function cssRule(css, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const declarations = css.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`, 'm'))?.[1];
+  assert.ok(declarations, `${selector} must have its own rule`);
+  return declarations;
+}
 
 async function builtCss() {
   const assets = join(showroomRoot, 'dist', 'assets');
@@ -20,6 +30,13 @@ async function builtCss() {
 
 const prerenderedPage = () => readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
 
+const chapterTwo = async () => {
+  const html = await prerenderedPage();
+  const section = html.match(/<section id="ch-02"[\s\S]+?<section id="ch-03"/)?.[0];
+  assert.ok(section, 'the prerendered page must carry CH.02 ahead of CH.03');
+  return section;
+};
+
 /**
  * The gate names, derived here a second time and independently of the build. If
  * the page and this list disagree, one of them was not rebuilt — which is the
@@ -27,24 +44,11 @@ const prerenderedPage = () => readFile(join(showroomRoot, 'dist', 'index.html'),
  */
 async function gateNames() {
   const script = await readFile(GATE_SCRIPT, 'utf8');
-  const names = [...script.matchAll(/^gate "([^"]+)"/gm)].map((match) => match[1]);
+  const names = [...script.matchAll(/^\s*gate\s+(["'])([^"']+)\1(?:\s|$)/gm)].map(
+    (match) => match[2],
+  );
   assert.ok(names.length > 0, 'the gate script must carry gate calls');
   return names;
-}
-
-async function pipelineSteps() {
-  const doc = await readFile(PIPELINE_DOC, 'utf8');
-  const steps = [...doc.matchAll(/^\|\s*(\d{2})\s*\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|\s*$/gm)].map(
-    ([, step, phase, actor, writes, judges]) => ({
-      step,
-      phase: phase.trim(),
-      actor: actor.trim(),
-      writes: writes.trim() === 'yes',
-      judges: judges.trim() === 'yes',
-    }),
-  );
-  assert.ok(steps.length > 0, 'the pipeline document must carry its table');
-  return steps;
 }
 
 /** Source files that put the gate count in front of a reader. */
@@ -62,77 +66,162 @@ async function displaySources() {
   return files;
 }
 
-test('show-6 the gate wall names the checks the script runs, in script order', async () => {
+test('show-6 the gate strip carries one mark per gate call, named in script order', async () => {
+  const chapter = await chapterTwo();
   const names = await gateNames();
-  const html = await prerenderedPage();
 
-  const wall = html.match(/<figure[^>]+data-showcase="gate-wall"[\s\S]+?<\/figure>/)?.[0];
-  assert.ok(wall, 'the gate wall must be prerendered');
+  const marks = [...chapter.matchAll(/data-gate="([^"]*)"/g)].map((match) => match[1]);
+  assert.equal(
+    marks.length,
+    names.length,
+    'every gate call in the script must reach the strip exactly once',
+  );
+  assert.deepEqual(marks, names, 'the marks must follow the script, not an authored order');
 
-  const shown = [...wall.matchAll(/data-gate="([^"]+)"/g)].map((match) => match[1]);
-  // Order, not just membership: the wall claims to show the run order.
-  assert.deepEqual(shown, names);
-
-  assert.match(wall, new RegExp(`data-gates="${names.length}"`));
-  assert.match(wall, new RegExp(`${names.length} checks green`));
-});
-
-test('show-7 no lane both writes and judges, and the human lane holds one mark', async () => {
-  const steps = await pipelineSteps();
-  const html = await prerenderedPage();
-
-  const byActor = new Map();
-  for (const step of steps) {
-    const seen = byActor.get(step.actor) ?? { writes: false, judges: false, steps: 0 };
-    byActor.set(step.actor, {
-      writes: seen.writes || step.writes,
-      judges: seen.judges || step.judges,
-      steps: seen.steps + 1,
-    });
-  }
-
-  for (const [actor, lane] of byActor) {
+  // The wall of visible labels is gone — a name is what a mark announces, not
+  // what it prints. Reading them off the surface meant nothing to anyone
+  // outside this repository.
+  assert.doesNotMatch(chapter, /gate-wall/);
+  for (const [index, name] of names.entries()) {
+    const label = `${String(index + 1).padStart(2, '0')} · ${name}`;
     assert.ok(
-      !(lane.writes && lane.judges),
-      `${actor} both writes and judges — the invariant the figure claims is broken`,
+      chapter.includes(`aria-label="${label}"`),
+      `mark ${index + 1} must announce itself as "${label}"`,
     );
   }
-  assert.equal(byActor.get('Human')?.steps, 1, 'the human lane must carry exactly one mark');
-
-  const swimlane = html.match(/<figure[^>]+data-showcase="agent-swimlane"[\s\S]+?<\/figure>/)?.[0];
-  assert.ok(swimlane, 'the swimlane must be prerendered');
-  for (const actor of byActor.keys()) {
-    assert.match(swimlane, new RegExp(`<th[^>]*scope="row"[^>]*>${actor}</th>`));
-  }
-  for (const step of steps) {
-    assert.match(
-      swimlane,
-      new RegExp(`>${step.phase}<`),
-      `step ${step.step} is missing its column`,
-    );
-  }
-  // One mark per step, no more: a mark the table does not license is a claim
-  // nobody can check.
-  assert.equal((swimlane.match(/data-mark=""/g) ?? []).length, steps.length);
 });
 
-test('show-8 a failed check blocks the readout and clearing it releases again', () => {
+test('show-7 the incident is quoted from the record, never recounted from the tree', async () => {
+  const chapter = await chapterTwo();
+  const record = await readFile(INCIDENT_RECORD, 'utf8');
+  const measurements = await readFile(join(showroomRoot, 'src', 'data', 'measurements.ts'), 'utf8');
+  const commit = measurements.match(/commit:\s*'([0-9a-f]{7,40})'/)?.[1];
+  const stylePath = measurements.match(/STYLE_SOURCE\s*=\s*'([^']+)'/)?.[1];
+  assert.ok(commit, 'measurements.ts must pin a commit');
+  assert.ok(stylePath, 'measurements.ts must name the quoted style source');
+  const { stdout: style } = await run('git', ['show', `${commit}:${stylePath}`], {
+    cwd: repoRoot,
+  });
+
+  // The quote is the chapter's load-bearing claim. It must still be the doc
+  // comment's own words, character for character.
+  const QUOTE =
+    'A geometry assertion against unstyled widgets passes while the shipped button is a different size.';
+  assert.ok(
+    style
+      .replace(/^\s*\/\/\/ ?/gm, '')
+      .replace(/\s+/g, ' ')
+      .includes(QUOTE),
+  );
+  assert.ok(
+    chapter
+      .replace(/&#x27;|&quot;|[“”]/g, '')
+      .replace(/<!-- -->/g, '')
+      .replace(/\s+/g, ' ')
+      .includes(QUOTE),
+    'CH.02 must quote the doc comment verbatim',
+  );
+
+  // Three heights, and all three are reported in §1 of the record. A figure
+  // that grew a fourth number would be stating one, not quoting it.
+  const normalizedChapter = chapter.replace(/<!-- -->/g, '');
+  const drawn = [
+    ...normalizedChapter.matchAll(/<span class="data incident-panel__value">(\d+) px<\/span>/g),
+  ].map((match) => Number(match[1]));
+  assert.deepEqual(drawn, [20, 34, 36, 36], 'the two panels must carry exactly four bars');
+  const heights = new Set(drawn);
+  assert.deepEqual(
+    [...heights].sort((a, b) => a - b),
+    [20, 34, 36],
+  );
+  assert.ok(record.includes('header_samples=[20.0, 34.0]'), 'the record must report 20 and 34');
+  assert.ok(
+    record.includes('SECTION_HEADER_MIN_HEIGHT: i32 = 36'),
+    'the record must report the 36px floor',
+  );
+
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.tsx'),
+    'utf8',
+  );
+  assert.match(source, /const FLOOR_PX = 36/);
+  assert.match(source, /\{ px: 20,/);
+  assert.match(source, /\{ px: 34,/);
+  assert.doesNotMatch(
+    source,
+    /INCIDENT\.(?:measured|floor)/,
+    'only the conflicting date may be derived from the incident record',
+  );
+
+  // Both links have to reach a real anchor, not the file's top.
+  assert.match(chapter, /style\/mod\.rs#L41-L45/);
+  assert.match(chapter, /queue-anchor-grill-followups\.md#c-gate-the-444-claim/);
+  const range = source.match(/permalink\(STYLE_SOURCE\)\}#L(\d+)-L(\d+)/);
+  assert.ok(range, 'the quote permalink must carry an explicit line range');
+  const start = Number(range[1]);
+  const end = Number(range[2]);
+  const linkedLines = style.split('\n').slice(start - 1, end);
+  assert.match(linkedLines[0] ?? '', /^\s*\/\/\//, 'the link must start on the doc comment');
+  assert.match(
+    linkedLines.at(-1) ?? '',
+    /fn app_css_for_test\(\)/,
+    'the link must end on the function the comment documents',
+  );
+  assert.ok(
+    linkedLines
+      .join('\n')
+      .replace(/^\s*\/\/\/ ?/gm, '')
+      .replace(/\s+/g, ' ')
+      .includes(QUOTE),
+    `the quoted words must occupy ${stylePath}#L${start}-L${end} at ${commit}`,
+  );
+  const heading = '### C. Gate the #444 claim on mutations, not on a green test';
+  assert.ok(record.includes(heading), 'the §4C heading the link derives its fragment from moved');
+});
+
+test('show-8 a failed check blocks the readout and clearing it releases again', async () => {
   const total = 26;
 
   const ready = readout(new Set(), total);
   assert.equal(ready.blocked, false);
-  assert.match(ready.message, /^Ready to merge · 26 checks green$/);
+  assert.match(ready.message, /^26 checks green · ready to merge$/);
 
   const one = readout(new Set(['Rust lint']), total);
   assert.equal(one.blocked, true);
   assert.equal(one.failed, 1);
-  assert.match(one.message, /^Merge blocked · 1 of 26 failing$/);
+  assert.match(one.message, /^1 of 26 red · the change does not land$/);
 
   const three = readout(new Set(['Rust lint', 'Shell', 'AppStream']), total);
   assert.equal(three.failed, 3);
-  assert.match(three.message, /^Merge blocked · 3 of 26 failing$/);
+  assert.match(three.message, /^3 of 26 red · the change does not land$/);
+  assert.deepEqual(
+    displayedReadout(three, 7, 'Architecture', false),
+    { message: '08 · Architecture', tone: 'neutral' },
+    'hover or focus must reveal a check even while another check is red',
+  );
+  assert.deepEqual(
+    displayedReadout(three, 7, 'Architecture', true),
+    { message: '08 · Architecture', tone: 'failed' },
+    'a reached failed check must keep the failure colour',
+  );
+  assert.deepEqual(
+    displayedReadout(three, -1),
+    { message: three.message, tone: 'failed' },
+    'the blocked verdict is the resting copy',
+  );
 
-  // The toggle is what the cell does, and it must not mutate what it was given.
+  const css = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.css'),
+    'utf8',
+  );
+  assert.match(css, /\.gate-strip__readout\[data-tone="failed"\] \{/);
+  assert.doesNotMatch(
+    css,
+    /\.gate-strip\[data-blocked="true"\] \.gate-strip__readout/,
+    'the strip verdict must not colour an unrelated passing peek',
+  );
+
+  // The toggle is what the mark does, and it must not mutate what it was given.
   const before = new Set(['Shell']);
   const after = toggle(before, 'Shell');
   assert.deepEqual([...before], ['Shell']);
@@ -141,76 +230,110 @@ test('show-8 a failed check blocks the readout and clearing it releases again', 
   assert.equal(toggle(after, 'Shell').size, 1);
 });
 
-test('show-9 reduced motion places marks and gate cells in their end state', async () => {
+test('show-9 reduced motion leaves the figure and the strip without travel', async () => {
   const css = await builtCss();
+  const sourceCss = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.css'),
+    'utf8',
+  );
 
-  // Several unrelated reduced-motion queries sit in this stylesheet. Take the
-  // one that governs these two figures; a lazy walk from the first one would
-  // call an escaped rule guarded.
-  // Vite 8 minifies with Lightning CSS, which prints a space after `@media`
-  // where esbuild printed none. The space is the minifier's, so it is optional here.
-  const prelude = /@media\s*\(prefers-reduced-motion:reduce\)/g;
-  const guards = [];
-  for (let from = 0; ; ) {
-    prelude.lastIndex = from;
-    const start = prelude.exec(css)?.index ?? -1;
-    if (start === -1) break;
-    let depth = 0;
-    let end = -1;
-    for (let index = css.indexOf('{', start); index < css.length; index += 1) {
-      if (css[index] === '{') depth += 1;
-      else if (css[index] === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          end = index;
-          break;
-        }
-      }
-    }
-    assert.notEqual(end, -1, 'unbalanced reduced-motion query');
-    guards.push(css.slice(start, end + 1));
-    from = end + 1;
-  }
+  // A measurement may not arrive by moving: a bar that grows into place is a
+  // bar whose value the reader watched change. The figure keeps the opacity
+  // half of the shared reveal and drops its transform, in every motion setting.
+  assert.match(css, /\.incident-figure\[data-reveal\]\{transform:none *!important\}/);
 
-  const mine = guards.filter((guard) => guard.includes('.swimlane__mark'));
-  assert.equal(mine.length, 1, 'exactly one reduced-motion query may govern the two figures');
-  const guarded = mine[0];
-  // The minifier writes `:before` for `::before`, so accept either spelling.
-  assert.match(guarded, /\.swimlane__mark::?before/);
-  assert.match(guarded, /\.gate-wall__cell::?after/);
-  assert.match(guarded, /transform:scaleX\(1\)/);
-  assert.match(guarded, /transition:none/);
-  // With `transition:none` there is no delay left to state, and Lightning CSS
-  // folds the explicit `transition-delay:0s` away for exactly that reason. What
-  // must never survive inside this query is a delay that actually waits.
-  assert.doesNotMatch(guarded, /transition-delay:(?!0(?:ms|s)?[;}])/);
+  const guarded = css.match(
+    /@media\s*\(prefers-reduced-motion:reduce\)\{(?:[^{}]|\{[^{}]*\})*\.gate-strip__tick(?:[^{}]|\{[^{}]*\})*\}/,
+  );
+  assert.ok(guarded, 'a reduced-motion query must govern the gate strip');
+  assert.match(guarded[0], /transition:none/);
+
+  const touch = sourceCss.match(
+    /@media \(hover: none\), \(max-width: 46rem\) \{[\s\S]*?\.gate-strip__tick \{[\s\S]*?\n {2}\}\n/,
+  )?.[0];
+  assert.ok(touch, 'a touch-width media query must widen the gate buttons');
+  assert.match(touch, /\.gate-strip__tick \{\s*width: 44px;/);
 });
 
-test('show-10 the gate count is nowhere a literal', async () => {
+test('show-10 the gate count is nowhere a literal, not even in the meta description', async () => {
   const names = await gateNames();
   const count = String(names.length);
 
-  // A bare `26` may legitimately be an icon's width. What the rule forbids is
-  // the count typed where the page states it, so the check is the literal in the
-  // company of the words it would be claiming.
-  const literal = new RegExp(`(?<![\\d.'’])${count}(?![\\d.'’%])`, 'g');
+  // Every place a reader meets the number, it has to have been derived.
   for (const file of await displaySources()) {
     const source = await readFile(file, 'utf8');
-    for (const match of source.matchAll(literal)) {
-      const around = source.slice(Math.max(0, match.index - 90), match.index + 90);
-      assert.ok(
-        !/gate|merge|check/i.test(around),
-        `${file} types ${count} next to the words it claims — it must read the derivation`,
-      );
-    }
+    assert.doesNotMatch(
+      source,
+      new RegExp(`(?<![\\d.])${count}(?![\\d.])`),
+      `${file} types the gate count instead of deriving it`,
+    );
   }
 
-  // And the two places that show it read the same module. The tempo band used to
-  // be a third; it now shows the weeks instead, and states no count of its own.
-  for (const file of [
-    join(showroomRoot, 'src', 'data', 'measurements.ts'),
-    join(showroomRoot, 'src', 'components', 'process', 'GateWall.tsx'),
-  ]) {
-    assert.match(await readFile(file, 'utf8'), /from 'virtual:merge-gates'/);
+  // The meta description is the first number a reader sees — in a search
+  // result, in every link unfurl — and it used to be the only typed one.
+  const template = await readFile(join(showroomRoot, 'index.html'), 'utf8');
+  assert.match(template, /content="[^"]*%GATE_COUNT% gates/);
+
+  const built = await prerenderedPage();
+  assert.doesNotMatch(built, /%GATE_COUNT%/, 'the placeholder must be filled at build time');
+  assert.match(
+    built,
+    new RegExp(`<meta\\s+name="description"\\s+content="[^"]*decided by ${count} gates`),
+  );
+});
+
+test('show-18 the six gate groups partition every parsed check exactly once', async () => {
+  const chapter = await chapterTwo();
+  const names = await gateNames();
+  const cells = [...chapter.matchAll(/<article class="gate-group"[\s\S]*?<\/article>/g)].map(
+    (match) => match[0],
+  );
+
+  assert.equal(cells.length, 6, 'the coverage figure must have exactly six groups');
+
+  const assigned = [];
+  let counted = 0;
+  for (const cell of cells) {
+    const count = Number(cell.match(/data-gate-count="(\d+)"/)?.[1]);
+    const gates = cell.match(/data-gates="([^"]*)"/)?.[1]?.split('|') ?? [];
+    assert.ok(Number.isInteger(count), 'every group must expose its derived count');
+    assert.equal(count, gates.length, 'a group count must come from its assigned checks');
+    counted += count;
+    assigned.push(...gates);
   }
+
+  assert.equal(counted, names.length, 'the six counts must sum to GATES.length');
+  assert.deepEqual(
+    [...assigned].sort(),
+    [...names].sort(),
+    'every parsed check must be assigned once, with no omissions or duplicates',
+  );
+});
+
+test('show-21 chapter two figures fill the frame without stretching the measured bars', async () => {
+  const css = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.css'),
+    'utf8',
+  );
+
+  for (const selector of ['.incident-figure', '.gate-figure', '.gate-groups']) {
+    assert.doesNotMatch(
+      cssRule(css, selector),
+      /\bmax-width\s*:/,
+      `${selector} must reach the frame edge instead of introducing another measure`,
+    );
+  }
+
+  const rail = cssRule(css, '.gate-strip__rail');
+  assert.match(rail, /\bflex:\s*1 1 26px\s*;/, 'the rail must consume the desktop row slack');
+  assert.match(rail, /\bmin-width:\s*26px\s*;/, 'the rail must retain its authored minimum');
+
+  const chart = cssRule(css, '.incident-panel__chart');
+  assert.match(chart, /\bwidth:\s*min\(100%, 17\.75rem\)\s*;/);
+  assert.match(chart, /\bgap:\s*1\.75rem\s*;/);
+  assert.match(chart, /\bheight:\s*132px\s*;/);
+
+  const bar = cssRule(css, '.incident-panel__bar');
+  assert.match(bar, /\bwidth:\s*84px\s*;/);
+  assert.match(bar, /\bborder-radius:\s*3px 3px 0 0\s*;/);
 });

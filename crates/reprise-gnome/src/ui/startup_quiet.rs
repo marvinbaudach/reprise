@@ -7,7 +7,8 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use gtk4::prelude::*;
 
@@ -46,6 +47,7 @@ struct Gate {
     armed: bool,
     open: bool,
     waiting: Vec<Callback>,
+    measurement_started: Option<Instant>,
 }
 
 thread_local! {
@@ -59,6 +61,9 @@ thread_local! {
 /// user request routed through the same subsystem.
 pub(crate) fn run_after_quiet(work: impl FnOnce() + 'static) {
     let work = GATE.with_borrow_mut(|gate| {
+        if measurement_enabled() && gate.measurement_started.is_none() {
+            gate.measurement_started = Some(Instant::now());
+        }
         if gate.open {
             Some(Box::new(work) as Callback)
         } else {
@@ -120,16 +125,27 @@ pub(crate) fn arm(window: &impl IsA<gtk4::Widget>) {
 }
 
 fn release() {
-    let waiting = GATE.with_borrow_mut(|gate| {
+    let (waiting, measurement_started) = GATE.with_borrow_mut(|gate| {
         if gate.open {
-            return Vec::new();
+            return (Vec::new(), None);
         }
         gate.open = true;
-        std::mem::take(&mut gate.waiting)
+        (std::mem::take(&mut gate.waiting), gate.measurement_started)
     });
+    if let Some(started) = measurement_started {
+        eprintln!(
+            "source-artwork-measure phase=quiet_open wait_us={}",
+            started.elapsed().as_micros()
+        );
+    }
     for work in waiting {
         work();
     }
+}
+
+fn measurement_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("REPRISE_MEASURE_SOURCE_ARTWORK").is_some())
 }
 
 #[cfg(test)]

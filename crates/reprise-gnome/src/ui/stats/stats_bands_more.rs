@@ -1,6 +1,6 @@
 //! Ranks six through twenty of the artist ranking (STATS-23).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -15,14 +15,21 @@ const AVATAR_SIZE: i32 = 32;
 
 pub(super) struct ContinuationRow {
     pub(super) root: gtk4::Box,
-    #[cfg(test)]
     pub(super) open_button: gtk4::Button,
-    #[cfg(test)]
-    pub(super) unify_button: gtk4::Button,
-    #[cfg(test)]
+    name: gtk4::Label,
     pub(super) bar: gtk4::LevelBar,
-    #[cfg(test)]
-    artist: String,
+    value: gtk4::Label,
+    pub(super) unify_button: gtk4::Button,
+    avatar: adw::Avatar,
+    picture: gtk4::Picture,
+    image: Rc<StatsArtistImage>,
+    artist: Rc<RefCell<String>>,
+    artist_key: Rc<RefCell<String>>,
+    candidates: Rc<RefCell<Vec<String>>>,
+    generation: Rc<Cell<u64>>,
+    token: Cell<u64>,
+    image_started: Cell<bool>,
+    expanded: Rc<Cell<bool>>,
 }
 
 pub(super) struct ContinuationCallbacks {
@@ -81,8 +88,14 @@ pub(super) fn build_row(
     line.append(&value);
 
     open_button.set_child(Some(&line));
-    let artist_name = artist.group.label.clone();
-    open_button.connect_clicked(move |_| (callbacks.open_artist)(artist_name.clone()));
+    let artist_name = Rc::new(RefCell::new(artist.group.label.clone()));
+    open_button.connect_clicked({
+        let artist_name = artist_name.clone();
+        move |_| {
+            let artist = artist_name.borrow().clone();
+            (callbacks.open_artist)(artist);
+        }
+    });
     root.append(&open_button);
 
     let unify_button = gtk4::Button::from_icon_name("document-edit-symbolic");
@@ -95,39 +108,35 @@ pub(super) fn build_row(
         unify_button.update_property(&[gtk4::accessible::Property::Label(hint)]);
     }
     unify_button.set_visible(artist.group.variant_count >= 2);
-    let artist_key = artist.group.key.clone();
-    unify_button.connect_clicked(move |_| (callbacks.unify)(artist_key.clone()));
+    let artist_key = Rc::new(RefCell::new(artist.group.key.clone()));
+    unify_button.connect_clicked({
+        let artist_key = artist_key.clone();
+        move |_| {
+            let key = artist_key.borrow().clone();
+            (callbacks.unify)(key);
+        }
+    });
     root.append(&unify_button);
 
-    let token = generation.get();
     let picture = gtk4::Picture::new();
-    let avatar_for_image = avatar.clone();
-    let picture_for_image = picture.clone();
-    image.load(
-        &picture,
-        ArtistImageRequest {
-            artist: artist.group.label.clone(),
-            candidates: artist.cover_candidates.clone(),
-            size: reprise_core::cover::ThumbnailSize::List,
-            token,
-            generation: generation.clone(),
-            on_loaded: Rc::new(move |loaded| {
-                let paintable = loaded.then(|| picture_for_image.paintable()).flatten();
-                avatar_for_image.set_custom_image(paintable.as_ref());
-            }),
-        },
-    );
 
     ContinuationRow {
         root,
-        #[cfg(test)]
         open_button,
-        #[cfg(test)]
-        unify_button,
-        #[cfg(test)]
+        name,
         bar,
-        #[cfg(test)]
-        artist: artist.group.label.clone(),
+        value,
+        unify_button,
+        avatar,
+        picture,
+        image: image.clone(),
+        artist: artist_name,
+        artist_key,
+        candidates: Rc::new(RefCell::new(artist.cover_candidates.clone())),
+        generation: generation.clone(),
+        token: Cell::new(generation.get()),
+        image_started: Cell::new(false),
+        expanded: Rc::new(Cell::new(false)),
     }
 }
 
@@ -139,9 +148,83 @@ fn metric_text(artist: &RankedGroup, sort_by: SortBy) -> String {
 }
 
 impl ContinuationRow {
+    pub(super) fn set_data(
+        &self,
+        artist: &RankedGroup,
+        leader_metric: i64,
+        sort_by: SortBy,
+        expanded: bool,
+    ) {
+        self.open_button
+            .update_property(&[gtk4::accessible::Property::Label(&artist.group.label)]);
+        self.name.set_label(&artist.group.label);
+        let metric = super::stats_bands_row::artist_metric(artist, sort_by);
+        self.bar.set_value(share_of_leader(metric, leader_metric));
+        self.value.set_label(&metric_text(artist, sort_by));
+
+        let unify_hint = (artist.group.variant_count >= 2)
+            .then(|| strings::spellings_merged_hint(artist.group.variant_count));
+        self.unify_button.set_tooltip_text(unify_hint.as_deref());
+        self.unify_button
+            .update_property(&[gtk4::accessible::Property::Label(
+                unify_hint.as_deref().unwrap_or(""),
+            )]);
+        self.unify_button
+            .set_visible(artist.group.variant_count >= 2);
+
+        *self.artist.borrow_mut() = artist.group.label.clone();
+        *self.artist_key.borrow_mut() = artist.group.key.clone();
+        *self.candidates.borrow_mut() = artist.cover_candidates.clone();
+        self.avatar.set_text(Some(&artist.group.label));
+        self.avatar.set_custom_image(None::<&gtk4::gdk::Paintable>);
+        self.picture.set_paintable(None::<&gtk4::gdk::Paintable>);
+        self.token.set(self.generation.get());
+        self.image_started.set(false);
+        self.set_expanded(expanded);
+        self.prepare_image();
+    }
+
+    pub(super) fn prepare_image(&self) {
+        if self.image_started.replace(true) {
+            return;
+        }
+        let avatar = self.avatar.clone();
+        let picture = self.picture.clone();
+        let expanded = self.expanded.clone();
+        let artist = self.artist.borrow().clone();
+        let candidates = self.candidates.borrow().clone();
+        self.image.load(
+            &self.picture,
+            ArtistImageRequest {
+                artist,
+                candidates,
+                size: reprise_core::cover::ThumbnailSize::List,
+                token: self.token.get(),
+                generation: self.generation.clone(),
+                on_loaded: Rc::new(move |loaded| {
+                    let paintable = loaded.then(|| picture.paintable()).flatten();
+                    if expanded.get() {
+                        avatar.set_custom_image(paintable.as_ref());
+                    }
+                }),
+            },
+        );
+    }
+
+    pub(super) fn set_expanded(&self, expanded: bool) {
+        self.expanded.set(expanded);
+        if expanded {
+            if let Some(paintable) = self.picture.paintable() {
+                self.avatar.set_custom_image(Some(&paintable));
+            }
+        } else {
+            self.avatar.set_custom_image(None::<&gtk4::gdk::Paintable>);
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn artist_label(&self) -> String {
-        self.artist.clone()
+        self.artist.borrow().clone()
     }
 }
 

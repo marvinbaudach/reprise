@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{
     DoctorCandidate, DoctorError, DoctorField, DoctorGroupMember, DoctorProposal, DoctorScan,
@@ -268,6 +268,50 @@ pub(super) fn last_complete_scan(conn: &Connection) -> Result<Option<DoctorScan>
     }))
 }
 
+/// Keep a scan's file identity aligned with the exact reconciliation produced
+/// by its own successful Apply file.
+///
+/// The write path calls this only after Lofty saved the file and the scanner
+/// reconciled `tracks` from the file it just read. The exact current job, file,
+/// and track must still be running and must belong to `doctor_apply`; a crashed
+/// job therefore cannot authorize a later watcher or Tag Editor write. Failed
+/// writes and failed reconciliations never reach this function.
+pub(super) fn refresh_snapshot_after_successful_doctor_write(
+    conn: &Connection,
+    job_id: i64,
+    file_id: i64,
+    track_id: i64,
+) -> Result<(), DoctorError> {
+    let scan_id = conn
+        .query_row(
+            "SELECT j.scan_id FROM tag_write_jobs j
+             JOIN tag_write_job_files f ON f.job_id=j.id
+             WHERE j.id=?1 AND f.id=?2 AND f.track_id=?3
+               AND j.kind='doctor_apply' AND j.state='running'
+               AND f.state='running'",
+            params![job_id, file_id, track_id],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .optional()?
+        .flatten();
+    let Some(scan_id) = scan_id else {
+        return Ok(());
+    };
+    conn.execute(
+        &format!(
+            "UPDATE library_doctor_scan_tracks
+             SET (path, file_mtime, file_size, device, inode) = (
+               SELECT path, file_mtime, file_size, device, inode
+               FROM tracks WHERE id=?1 AND {}
+             )
+             WHERE scan_id=?2 AND track_id=?1",
+            crate::queries::PRESENT
+        ),
+        params![track_id, scan_id],
+    )?;
+    Ok(())
+}
+
 pub fn set_reviewed_scan(conn: &Connection, scan_id: i64) -> Result<(), DoctorError> {
     conn.execute(
         "UPDATE library_doctor_state SET reviewed_scan_id=?1 WHERE singleton=1",
@@ -300,6 +344,7 @@ impl super::LibraryDoctor<'_> {
 }
 
 fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapshot>, DoctorError> {
+    let stale = stale_flags(conn, scan_id)?;
     let mut statement = conn.prepare(
         "SELECT track_id, path, file_mtime, file_size, device, inode, read_ok, \
          title, artist, album, album_artist, year, track_no, genre \
@@ -329,8 +374,7 @@ fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapsho
             } else {
                 None
             };
-            let stale = current_identity(conn, reference.track_id)?
-                .is_none_or(|current| current != reference);
+            let stale = stale.get(&reference.track_id).copied().unwrap_or(true);
             Ok(DoctorTrackSnapshot {
                 reference,
                 tags,
@@ -415,31 +459,6 @@ pub fn stale_flags(conn: &Connection, scan_id: i64) -> Result<HashMap<i64, bool>
         stale.insert(snapshot.track_id, changed);
     }
     Ok(stale)
-}
-
-fn current_identity(
-    conn: &Connection,
-    track_id: i64,
-) -> Result<Option<DoctorTrackRef>, rusqlite::Error> {
-    conn.query_row(
-        &format!(
-            "SELECT id, path, file_mtime, file_size, device, inode \
-             FROM tracks WHERE id=?1 AND {}",
-            crate::queries::PRESENT
-        ),
-        [track_id],
-        |row| {
-            Ok(DoctorTrackRef {
-                track_id: row.get(0)?,
-                path: std::path::PathBuf::from(row.get::<_, String>(1)?),
-                file_mtime: row.get(2)?,
-                file_size: row.get(3)?,
-                device: row.get(4)?,
-                inode: row.get(5)?,
-            })
-        },
-    )
-    .optional()
 }
 
 fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>, DoctorError> {

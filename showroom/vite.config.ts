@@ -6,27 +6,23 @@ import { census } from './derive/code-census.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const GATE_SCRIPT = fileURLToPath(new URL('../scripts/check-merge-readiness.sh', import.meta.url));
-const PIPELINE_DOC = fileURLToPath(new URL('../docs/agents/pipeline.md', import.meta.url));
 const TIMELINE_DOC = fileURLToPath(new URL('../docs/showroom/timeline.md', import.meta.url));
 const LEDGER_DOC = fileURLToPath(new URL('../docs/measurements/index-rebuild.md', import.meta.url));
+const INCIDENT_DOC = fileURLToPath(
+  new URL('../docs/plans/queue-anchor-grill-followups.md', import.meta.url),
+);
 const SPECTRAL_SOURCE = fileURLToPath(
   new URL('../crates/reprise-view/src/spectral_colour.rs', import.meta.url),
 );
 
+const GATE_COUNT_TOKEN = '%GATE_COUNT%';
+
 const MERGE_GATES = 'virtual:merge-gates';
-const AGENT_PIPELINE = 'virtual:agent-pipeline';
 const CODE_CENSUS = 'virtual:code-census';
 const BUILD_TIMELINE = 'virtual:build-timeline';
 const MEASUREMENTS = 'virtual:measurements';
 const SPECTRAL_AXIS = 'virtual:spectral-axis';
-
-interface PipelineStep {
-  readonly step: string;
-  readonly phase: string;
-  readonly actor: string;
-  readonly writes: boolean;
-  readonly judges: boolean;
-}
+const INCIDENT = 'virtual:incident';
 
 interface TimelineWeek {
   readonly week: number;
@@ -51,66 +47,141 @@ interface Ledger {
   readonly price: string;
 }
 
+interface GateGroup {
+  readonly name: string;
+  readonly line: string;
+  readonly gates: readonly string[];
+}
+
+interface GateGroupDefinition {
+  readonly name: string;
+  readonly line: string;
+  readonly checks: readonly string[];
+}
+
 /**
- * The gate names, in script order. One `gate "<name>"` call is one check; the
+ * Coverage categories for the merge gate. The check names are the assignment;
+ * their order and the displayed counts still come from the parsed gate calls.
+ * Keeping this beside `readGates()` makes a new or renamed check fail the build
+ * instead of silently falling out of the public figure.
+ */
+const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
+  {
+    name: 'Boundaries',
+    line: 'The core cannot grow a UI framework.',
+    checks: ['Architecture', 'Device-sync GStreamer', 'Frontend thinness', 'GNOME idioms'],
+  },
+  {
+    name: 'Distribution',
+    line: 'It installs as a desktop app, not as a demo.',
+    checks: [
+      'Gettext catalogues',
+      'Runtime service install',
+      'AppStream',
+      'Flatpak manifest',
+      'Dependency audit',
+    ],
+  },
+  {
+    name: 'Reachable',
+    line: 'Every action works without a mouse.',
+    checks: ['Accessibility semantics', 'Input parity', 'Motion tokens'],
+  },
+  {
+    name: 'Traceable',
+    line: 'A rule without a test fails the build.',
+    checks: ['UX traceability', 'AI hygiene', 'Rule-owned display tests'],
+  },
+  {
+    name: 'Green means green',
+    line: 'Tests, lints, formatting, documented API.',
+    checks: [
+      'Project quality',
+      'Rust formatting',
+      'Rust lint',
+      'Rust documentation',
+      'Workspace tests',
+      'Linux platform tests',
+      'Runtime service bus tests',
+    ],
+  },
+  {
+    name: 'Toolchain hygiene',
+    line: 'The branch, the shell scripts, the worktrees.',
+    checks: ['Branch diff', 'Shell', 'Worktree GC', 'Worktree GC schedule', 'Script self-tests'],
+  },
+];
+
+/**
+ * The gate names, in script order. One `gate <quoted name>` call is one check; the
  * preparation steps above them are preconditions and carry no `gate` call, which
  * is what keeps this count honest.
  */
-function readGates(): readonly string[] {
-  const text = readFileSync(GATE_SCRIPT, 'utf8');
+export function parseGateNames(text: string, source: string): readonly string[] {
+  const invocationLines = text.split(/\r?\n/).filter((line) => {
+    const trimmed = line.trimStart();
+    return !trimmed.startsWith('#') && /^gate[\t ]+/.test(trimmed);
+  });
   const names: string[] = [];
-  for (const match of text.matchAll(/^gate "([^"]+)"/gm)) {
-    const name = match[1];
+  for (const match of text.matchAll(/^\s*gate\s+(["'])([^"']+)\1(?:\s|$)/gm)) {
+    const name = match[2];
     if (name !== undefined) names.push(name);
+  }
+  if (names.length !== invocationLines.length) {
+    throw new Error(
+      `parsed ${names.length} of ${invocationLines.length} gate invocations from ${source} — a call no longer has a static quoted name`,
+    );
   }
   // An empty derivation is the one failure that would look like success: a wall
   // of zero cells and the number 0, silently agreeing with itself.
   if (names.length === 0) {
+    throw new Error(`derived no gate names from ${source} — the expression or the script moved`);
+  }
+  const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
+  if (duplicates.length > 0) {
     throw new Error(
-      `derived no gate names from ${GATE_SCRIPT} — the expression or the script moved`,
+      `duplicate merge gate names in ${source}: ${[...new Set(duplicates)].join(', ')}`,
     );
   }
   return names;
 }
 
-function readPipeline(): readonly PipelineStep[] {
-  const text = readFileSync(PIPELINE_DOC, 'utf8');
-  const flag = (raw: string, column: string, step: string): boolean => {
-    const value = raw.trim();
-    if (value === 'yes') return true;
-    if (value === 'no') return false;
-    throw new Error(
-      `step ${step} has "${value}" under ${column} in ${PIPELINE_DOC} — expected yes or no`,
-    );
-  };
+function readGates(): readonly string[] {
+  return parseGateNames(readFileSync(GATE_SCRIPT, 'utf8'), GATE_SCRIPT);
+}
 
-  const steps: PipelineStep[] = [];
-  for (const match of text.matchAll(/^\|\s*(\d{2})\s*\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|\s*$/gm)) {
-    const [, step, phase, actor, writes, judges] = match;
-    if (
-      step === undefined ||
-      phase === undefined ||
-      actor === undefined ||
-      writes === undefined ||
-      judges === undefined
-    ) {
-      throw new Error(`a pipeline row in ${PIPELINE_DOC} is missing columns`);
+export function groupGates(
+  gates: readonly string[],
+  definitions: readonly GateGroupDefinition[] = GATE_GROUP_ASSIGNMENTS,
+): readonly GateGroup[] {
+  const assigned = new Map<string, string>();
+
+  for (const group of definitions) {
+    for (const check of group.checks) {
+      if (!gates.includes(check)) {
+        throw new Error(`gate group "${group.name}" assigns missing check "${check}"`);
+      }
+      const previous = assigned.get(check);
+      if (previous !== undefined) {
+        if (previous === group.name) {
+          throw new Error(`gate "${check}" is listed more than once in group "${group.name}"`);
+        }
+        throw new Error(`gate "${check}" is assigned to both "${previous}" and "${group.name}"`);
+      }
+      assigned.set(check, group.name);
     }
-    steps.push({
-      step,
-      phase: phase.trim(),
-      actor: actor.trim(),
-      writes: flag(writes, 'Writes', step),
-      judges: flag(judges, 'Judges', step),
-    });
   }
 
-  if (steps.length === 0) {
-    throw new Error(
-      `derived no pipeline steps from ${PIPELINE_DOC} — the table or the expression moved`,
-    );
+  const unassigned = gates.filter((gate) => !assigned.has(gate));
+  if (unassigned.length > 0) {
+    throw new Error(`merge checks have no coverage group: ${unassigned.join(', ')}`);
   }
-  return steps;
+
+  return definitions.map((group) => ({
+    name: group.name,
+    line: group.line,
+    gates: gates.filter((gate) => group.checks.includes(gate)),
+  }));
 }
 
 const DAY_MS = 86_400_000;
@@ -254,6 +325,25 @@ function readLedger(): Ledger {
   return { rows, price: price.replace(/\s*\n\s*/g, ' ') };
 }
 
+/**
+ * The incident date, out of the record that decided it.
+ *
+ * The three heights are deliberately typed in the figure because the record is
+ * historical evidence, not a changing data source. The date alone is read here
+ * because it also happens to be a timeline boundary, and the timeline contract
+ * rightly rejects that date when a component copies it.
+ */
+function readIncident(): { readonly date: string } {
+  const text = readFileSync(INCIDENT_DOC, 'utf8');
+
+  const date = text.match(/^# .*\((\d{4}-\d{2}-\d{2})\)\s*$/m)?.[1];
+  if (date === undefined) {
+    throw new Error(`found no incident date in the heading of ${INCIDENT_DOC}`);
+  }
+
+  return { date };
+}
+
 /** `pub const CORAL: (u8, u8, u8) = (255, 111, 94);` — the axis, from its function. */
 function readSpectralAxis(): { readonly coral: string; readonly teal: string } {
   const text = readFileSync(SPECTRAL_SOURCE, 'utf8');
@@ -277,25 +367,36 @@ function readSpectralAxis(): { readonly coral: string; readonly teal: string } {
 
 /**
  * The facts the page states are read out of the repository at build time rather
- * than typed next to the words: the checks the merge gate runs, who runs which
- * step of the pipeline, how many lines of what kind the tree holds, the weeks
- * the work took, the index rebuild's ledger, and the two ends of the spectral
- * axis. Changing any source changes the page — or turns a test red, which is the
- * point.
+ * than typed next to the words: the checks the merge gate runs, how many lines
+ * of what kind the tree holds, the weeks the work took, the index rebuild's
+ * ledger, and the two ends of the spectral axis. Changing any source changes the
+ * page — or turns a test red, which is the point.
+ *
+ * The gate count reaches `index.html` the same way. A meta description is the
+ * first number a reader sees — in a search result, in every link unfurl — and it
+ * used to be the one number on this page that was typed. It said 21 while the
+ * page derived 27.
  */
 function derivedFacts(): Plugin {
+  const gates = readGates();
   const resolved = new Map(
-    [MERGE_GATES, AGENT_PIPELINE, CODE_CENSUS, BUILD_TIMELINE, MEASUREMENTS, SPECTRAL_AXIS].map(
-      (id) => [id, `\0${id}`],
-    ),
+    [MERGE_GATES, CODE_CENSUS, BUILD_TIMELINE, MEASUREMENTS, SPECTRAL_AXIS, INCIDENT].map((id) => [
+      id,
+      `\0${id}`,
+    ]),
   );
   const modules = new Map<string, () => string>([
-    [MERGE_GATES, () => `export const GATES = ${JSON.stringify(readGates())};\n`],
-    [AGENT_PIPELINE, () => `export const PIPELINE = ${JSON.stringify(readPipeline())};\n`],
+    [
+      MERGE_GATES,
+      () =>
+        `export const GATES = ${JSON.stringify(gates)};\n` +
+        `export const GATE_GROUPS = ${JSON.stringify(groupGates(gates))};\n`,
+    ],
     [CODE_CENSUS, () => `export const CENSUS = ${JSON.stringify(census(REPO_ROOT))};\n`],
     [BUILD_TIMELINE, () => `export const TIMELINE = ${JSON.stringify(readTimeline())};\n`],
     [MEASUREMENTS, () => `export const INDEX_REBUILD = ${JSON.stringify(readLedger())};\n`],
     [SPECTRAL_AXIS, () => `export const AXIS = ${JSON.stringify(readSpectralAxis())};\n`],
+    [INCIDENT, () => `export const INCIDENT = ${JSON.stringify(readIncident())};\n`],
   ]);
 
   return {
@@ -309,15 +410,24 @@ function derivedFacts(): Plugin {
       }
       return null;
     },
+    transformIndexHtml(html) {
+      const count = String(gates.length);
+      if (!html.includes(GATE_COUNT_TOKEN)) {
+        throw new Error(
+          `${GATE_COUNT_TOKEN} is not in index.html — the meta description would ship a stale count`,
+        );
+      }
+      return html.replaceAll(GATE_COUNT_TOKEN, count);
+    },
     configureServer(server) {
       // None of these sources live under the Vite root, so the dev server does
       // not watch them on its own. The census reads the whole tree; watching the
       // two crate roots it counts is what makes an edit there show up.
       server.watcher.add([
         GATE_SCRIPT,
-        PIPELINE_DOC,
         TIMELINE_DOC,
         LEDGER_DOC,
+        INCIDENT_DOC,
         SPECTRAL_SOURCE,
         `${REPO_ROOT}crates`,
         `${REPO_ROOT}android`,

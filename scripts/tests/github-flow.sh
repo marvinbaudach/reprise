@@ -74,7 +74,13 @@ require_pattern 'hotfix/' AGENTS.md
 require_pattern 'Until Reprise is publicly distributed' AGENTS.md
 require_pattern 'agents may perform this promotion autonomously' AGENTS.md
 require_pattern 'package-ecosystem: github-actions' .github/dependabot.yml
-if [[ $(rg -c '^    target-branch: dev$' .github/dependabot.yml) -ne 2 ]]; then
+# Count the streams instead of a literal, and accept both spellings of the
+# branch. The old check hardcoded 2 because exactly two streams happened to
+# write `dev` unquoted while the other two wrote `"dev"` — it never saw those,
+# so it asserted a coincidence rather than the rule in its own message.
+streams=$(rg -c '^  - package-ecosystem: ' .github/dependabot.yml || true)
+targeted=$(rg -c '^    target-branch: ("dev"|dev)$' .github/dependabot.yml || true)
+if [[ ${streams:-0} -eq 0 || ${streams:-0} -ne ${targeted:-0} ]]; then
   echo ".github/dependabot.yml must target dev for every update stream" >&2
   exit 1
 fi

@@ -3295,6 +3295,12 @@ property is set and yet nothing happens.
   selected and centered at startup: that row is placed, so starting it only
   starts the audio. Centring it again would be a second visible scroll on a
   viewport that is already the target.
+  In a list with section headers, "centered" means centered in the complete
+  content geometry including every header above the row, never in an imagined
+  headerless row sequence. A reveal in a stationary list targets the exact
+  row-to-viewport midpoint. A restore after replacing the model instead uses
+  the nearest row edge GTK can reproduce and may therefore differ from that
+  midpoint by at most half a row.
   Centring moves the viewport over the Standard token rather than
   teleporting it, and yields immediately to anything else that writes the
   scroll position — the user's own scrolling, a model replacement, or GTK's
@@ -3861,7 +3867,14 @@ STYLE-1).
   old impulses are not carried over into newer CAVA frames. A loaded,
   paused scene follows AC-27: only its display projection breathes, while
   the last CAVA values remain intact and the peak caps keep their normal
-  independent decay.
+  independent decay while its presentation clock is active. During ongoing
+  playback, peak-cap decay continues while the Visual view is not visible,
+  because live audio frames keep supplying elapsed time; restoring the view
+  therefore has no accumulated cap decay to catch up. When playback is paused
+  or stopped and the view is also hidden, no presentation tick is active and
+  paused audio ingests do not own cap decay, so no elapsed time is applied to
+  the caps. They hold until either source becomes active again; the engine
+  reads no clock and does not catch up a hidden paused gap.
   The glow layer behind the columns is never derived from the CAVA
   bands. Auto-sensitivity keeps re-normalizing those, so a quiet sung
   passage climbs to the same band values as a drop and the glow would
@@ -4303,7 +4316,7 @@ means deterministic and high-confidence, never „without review".
   touches a stale or conflicting row. The master stays reachable in the narrow
   layout, where the column titles are hidden and it is labelled instead.
   *Tests:* `doc_3c_the_master_check_mirrors_the_visible_selection`,
-  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_album_header_state_names_only_conflict_reason_at_zero`,
   `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`.
   *Amended 2026-08-14: the sensitivity and reason contract now covers album
   group checkboxes as well as the page master.*
@@ -4540,22 +4553,19 @@ means deterministic and high-confidence, never „without review".
   row back to `reverted`, which makes it a finding again. There is exactly one
   predicate for this (`library_doctor::finding_kind`), asked with the track's
   real staleness, and the sidebar count and the result page both read it. The
-  sidebar badge counts only Ready fixes the review page can apply now. Stale
-  findings never inflate that number; the review page names their count once in
-  an out-of-date notice and offers the same-scope scan path. They
-  used to disagree: the count asked with `stale: false` while the pages asked
-  with the real value, so a restart turned every fix the quiet job had just
-  written into a review row — our own write moves the file's mtime, a moved
-  mtime reads as "changed under us", and a stale row falls out of the quiet
-  tier. One scan then reported 85 findings in the sidebar and 200 on its own
-  page, and offered rows whose current and proposed values were identical.
+  sidebar badge counts only fingerprint-current fixes the review page can apply
+  now. Fingerprint-stale findings are absent from both the badge and the review
+  session. After a successful Doctor write and database reconciliation, the
+  scan snapshot adopts the track's actual new fingerprint, so the Doctor's own
+  mtime change does not hide the remaining proposals on that track. A genuine
+  external change remains excluded until a new scan.
   *Tests:*
   `doc_8a_the_menu_carries_exactly_one_library_doctor_item_and_no_sync_device`,
   `doc_8a_the_issues_entry_appears_only_with_unreviewed_findings`,
   `doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none`,
   `doc_8a_pending_review_count_excludes_everything_already_written_for_that_scan`,
   `doc_8a_pending_review_count_is_zero_once_the_scan_is_marked_reviewed`,
-  `doc_8a_pending_review_count_splits_ready_and_stale_findings`,
+  `doc_8a_pending_review_count_excludes_fingerprint_stale_findings`,
   `doc_8a_the_badge_and_unfiltered_review_header_count_the_same_ready_fixes`,
   `doc_8a_conflicts_alone_do_not_produce_a_pending_count`,
   `doc_8a_auto_tier_write_conflict_does_not_produce_a_pending_count`,
@@ -4565,7 +4575,9 @@ means deterministic and high-confidence, never „without review".
 - **DOC-8b** [active] [core] — **Two tiers, and exactly one predicate
   decides.** A proposal is applied without asking when it is a MusicBrainz
   recording ID, or when it is local and preselected; never when its track is
-  stale. Everything else is shown for review, preselected. Recording IDs never
+  stale. A fingerprint-stale proposal falls out of both tiers: it is neither
+  applied without asking nor admitted to the review session. Every other
+  non-quiet proposal is shown for review, preselected. Recording IDs never
   appear in the review list. The applied set is enqueued as a tag-write job the
   moment the scan completes, before the summary is presented, and is reported
   as done; nothing is written while the scan is still running. There is no
@@ -4579,6 +4591,7 @@ means deterministic and high-confidence, never „without review".
   `doc_8b_recording_mbid_never_reaches_the_review_tier`,
   `doc_8b_all_preset_selects_every_ready_row_and_none_clears_them`,
   `doc_8b_the_tie_path_runs_the_same_selection_predicate`,
+  `fingerprint_stale_tracks_are_absent_from_session_and_badge`,
   `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
   `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
   *Amended 2026-08-08: “Everything else is shown for review, preselected” has
@@ -4671,7 +4684,13 @@ means deterministic and high-confidence, never „without review".
   optional container with „Skip all". The virtualized list scrolls under one
   sticky page header and above one sticky footer, without pagination or a
   collapsed remainder row. Album pills, toolbar, and footer count tag changes
-  that will be written rather than display rows. *Tests:*
+  that will be written rather than display rows. Fingerprint-stale tracks are
+  excluded before rows or unresolved-group members are built; they have no
+  category, banner, grey row, album-header wording, or badge count. A successful
+  Doctor write refreshes the scan snapshot from the reconciled post-write track
+  identity before the remaining proposals are classified. The manual `Stale`
+  path in DOC-3a remains available for failures discovered after the session is
+  built. *Tests:*
   `doc_9b_rows_group_by_album_in_scope_order`,
   `doc_9b_album_level_change_collapses_into_one_row_over_all_tracks`,
   `doc_9b_tracks_without_an_album_form_one_trailing_group`,
@@ -4688,14 +4707,14 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_the_conflicts_panel_covers_no_row`,
   `doc_9b_the_first_row_carries_its_album_header`,
   `doc_9b_a_fully_deselected_album_says_none_selected`,
-  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_album_header_state_names_only_conflict_reason_at_zero`,
   `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`,
   `doc_9b_a_stale_row_names_its_reason_where_the_click_happens`,
   `doc_9b_activating_an_unselectable_row_selects_nothing`,
   `doc_9b_every_section_boundary_binds_a_non_empty_header`,
   `doc_9b_an_album_wide_change_renders_all_n_tracks_italic_and_muted`,
   `doc_9b_a_recycled_row_loses_the_italic_style_again`,
-  `doc_9b_stale_notice_is_unfiltered_and_hidden_at_zero`,
+  `doc_9b_stale_notice_follows_category_filter_and_is_hidden_at_zero`,
   `doc_9b_the_unfiltered_footer_names_selection_and_ready_inventory`,
   `doc_9b_every_count_on_the_review_page_inflects`.
   *Amended 2026-08-08: “every reviewable row starts selected” means every Ready
@@ -4705,10 +4724,14 @@ means deterministic and high-confidence, never „without review".
   tracks" in italic muted text; and every row, including the first, appears
   beneath an album header.*
   *Amended 2026-08-14: an album header's change count is its written-change
-  inventory; when none is selectable, the reason appears next to that count.
-  A refused row names its reason in the Source cell and accessible description;
-  activating it changes nothing and performs no refresh, while the page banner
-  remains the aggregate explanation.*
+  inventory. When a Conflict-blocked album has no selectable row, its reason
+  appears next to that count. A refused row names its reason in the Source cell
+  and accessible description; activating it changes nothing and performs no
+  refresh.*
+  *Amended 2026-08-20: fingerprint-stale scan rows are absent from the session,
+  while a row manually marked `Stale` after construction retains the row-level
+  reason required by DOC-3a. The removed aggregate banner and out-of-date album
+  wording must not be restored.*
 
 - **DOC-9d** [active] [gtk] — **An active filter limits everything.** Apply
   writes only the filtered set and counts that set in its label. `All` and
@@ -5357,14 +5380,29 @@ available. The player plays only finished files.
   Test: `conc_16_the_source_column_is_available_but_off_by_default`
   (`ui/concerts/concerts_view_tests.rs`).
 
-- **CONC-17** [active] [gtk] — The Concerts table shows `Artist · Date ·
+- **CONC-17** [replaced by CONC-17a] [gtk] — The Concerts table shows `Artist · Date ·
   City · Distance · Tickets` by default, with `Venue` and `Source` hidden.
   Date, Artist, City, Venue, Distance, and Source are sortable; `Tickets`
   carries no sorter because its cell is a button. Migration v75 discards a
   stored Concerts column layout once while preserving stored column widths.
-  Tests: `the_default_concert_layout_leads_with_the_artist_and_hides_venue_and_source`
+
+- **CONC-17a** [active] [gtk] — replaces CONC-17. The Concerts table's
+  default columns are `Cover · Artist · Date · City · Distance · Tickets`,
+  with `Venue` and `Source` hidden; this is the default, not a fixed order,
+  and every unpinned column is hideable and movable. The `Cover` column stays
+  pinned at the leading edge, carries no id and no sorter, and shows the
+  artist's portrait for every row including similar-artist recommendations —
+  cached first, otherwise fetched through the artwork gate of NET-1a, with
+  the accent-coloured initials tile of NR-2 standing in until an image
+  resolves and remaining in place when none does. Sorting, filters, counts,
+  activation semantics and the migration-v75 note of CONC-17 are otherwise
+  unchanged.
+  Tests: `conc_17a_the_default_concert_layout_leads_with_the_cover`
   (`reprise-view/src/columns/concert.rs`),
-  `conc_17_every_sortable_concerts_header_orders_its_own_column` and
+  `conc_17a_the_concerts_cover_column_is_pinned_id_less_and_unsorted`,
+  `conc_17a_a_concert_cover_shows_initials_until_a_portrait_resolves` and
+  `conc_17a_a_rebound_concert_cover_never_shows_the_previous_artist`,
+  `conc_17a_every_sortable_concerts_header_orders_its_own_column` and
   `only_the_ticket_header_carries_no_sorter`
   (`ui/concerts/concerts_view_tests.rs`), and
   `v75_drops_the_stored_concerts_column_layout_and_keeps_the_widths`
@@ -5817,8 +5855,8 @@ listening statistics.
   handed to Apple.
   That same country drives the text search below it, so the chip and the
   results it sits above can never mean two different catalogs. The label uses
-  the country **code**, matching `RAD-5`'s "Metal in DE": real country names
-  would need a translated table covering every Apple storefront. Chart rows are
+  the country **code** (`Popular in DE`): real country names would need a
+  translated table covering every Apple storefront. Chart rows are
   ordinary search results — same row widget, same already-subscribed filtering
   (`SRC-5`), same freshness segment (`SRC-18`) — assembled from the chart
   feed's ids plus **one** batched lookup, restored to chart order, with ids the
@@ -6191,13 +6229,13 @@ listening statistics.
   one with the most **listening time** — not the most files, so a large
   unplayed collection cannot out-vote what gets played — folded across
   spelling variants and clamped per listen exactly as the stats screen
-  clamps it. A stored country narrows the search and shows in the label
-  ("Metal in DE"); without one the chip keeps the genre and searches
-  worldwide rather than becoming a second "Near you". A library that has
+  clamps it. The library chip always searches that genre worldwide and shows
+  only the genre name; location-filtered discovery belongs to "Near you" and
+  only that chip. A library that has
   played nothing with a genre gets **no chip at all** instead of a
   suggestion it has no evidence for — never a hard-coded genre, which was
-  only ever right for one library in one country. Genre and country are both
-  read fresh each time the dialog opens, because the dialog outlives both.
+  only ever right for one library in one country. The genre is read fresh each
+  time the dialog opens, because the dialog outlives it.
   "Near you"
   reuses the one app-level, already-consented location (`O-4`); it never
   queries the XDG Location portal or a geocoder itself, and hoisting that
@@ -6495,3 +6533,15 @@ rule here is phrased as something a stylesheet either states or does not.
   is still to come.
 - **SHOW-15** [active] [web] — Under `prefers-reduced-motion: reduce` the
   timeline's rail stands still.
+- **SHOW-17** [active] [web] — Every source permalink the page offers names a
+  path that exists at the revision the page pins.
+- **SHOW-18** [active] [web] — The six coverage groups account for every merge
+  check exactly once, and their displayed counts add up to the derived total.
+- **SHOW-19** [active] [web] — The gate list and count remain complete across
+  harmless shell formatting; when the source cannot be read with certainty,
+  the page fails to build instead of publishing an incomplete figure.
+- **SHOW-20** [active] [web] — Each merge check appears in one coverage group:
+  never twice within a group and never in two groups.
+- **SHOW-21** [active] [web] — Chapter two's incident, merge and coverage
+  figures reach the same column edge as their neighbours while the incident
+  charts keep the measure, gaps and bar dimensions they report.

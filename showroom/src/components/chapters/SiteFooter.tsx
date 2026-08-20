@@ -3,6 +3,7 @@ import {
   BASELINE,
   CENSUS_SCOPE,
   group,
+  INCIDENT_RECORD,
   PERFORMANCE_RECORD,
   permalink,
 } from '../../data/measurements';
@@ -20,21 +21,26 @@ export function SiteFooter() {
 
         <p className="site-footer__honesty" data-reveal>
           Three kinds of number appear on this page and they are not the same kind of claim.{' '}
-          <strong>Counted:</strong> the line volumes, their shares, the gate count, the pipeline
-          table and the five weeks are read out of this repository while the page is built —{' '}
+          <strong>Counted:</strong> the line volumes, their shares, the gate and group counts, and
+          the five weeks are read out of this repository while the page is built —{' '}
           <a href={permalink(CENSUS_SCOPE.source)}>
             <code>code-census.mjs</code>
           </a>{' '}
           walked {group(CENSUS_SCOPE.files)} files for the volumes, counting every line with
-          something on it. <strong>Quoted:</strong> the index rebuild describes a change that
-          happened once and cannot be recounted from the tree, so it is read from{' '}
+          something on it. <strong>Quoted:</strong> the index rebuild and the incident CH.02
+          recounts both describe things that happened once and cannot be recounted from the tree, so
+          they are read from{' '}
           <a href={permalink(PERFORMANCE_RECORD)}>
             <code>index-rebuild.md</code>
+          </a>{' '}
+          and{' '}
+          <a href={permalink(INCIDENT_RECORD)}>
+            <code>queue-anchor-grill-followups.md</code>
           </a>
-          , where every row carries its commit, its date and its method. <strong>Stated:</strong>{' '}
-          &ldquo;1 → 4&rdquo; is an architectural claim, not a measurement, and the four frontends
-          are its evidence. Nothing on this page is typed next to the words it would be asserting; a
-          test in the suite is what keeps it that way.
+          , where every row and every claim carries its commit, its date and its method.{' '}
+          <strong>Stated:</strong> &ldquo;1 → 4&rdquo; is an architectural claim, not a measurement,
+          and the four frontends are its evidence. Every live count is parsed rather than copied;
+          the suite is what keeps it that way.
         </p>
 
         <div className="site-footer__links" data-reveal>

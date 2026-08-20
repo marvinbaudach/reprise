@@ -38,6 +38,8 @@ mod review_query_tests;
 #[cfg(test)]
 mod review_tests;
 #[cfg(test)]
+mod snapshot_refresh_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod write_tests;

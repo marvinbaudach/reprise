@@ -193,11 +193,14 @@ pub(super) fn reveal_position(
     // which decides whether the floor below is a rescue or a step backwards.
     let placed_provisionally = match motion {
         RevealMotion::Glide => {
-            if let Some((adjustment, value)) = crate::ui::scroll_center::centered_scroll_target(
-                &shared.column_view,
-                n_rows,
-                position,
-            ) {
+            let layout = super::track_list_geometry::layout(shared, None, n_rows as usize);
+            if let Some((adjustment, value)) = layout.and_then(|layout| {
+                crate::ui::scroll_center::centered_scroll_target(
+                    &shared.column_view,
+                    n_rows,
+                    (position, layout),
+                )
+            }) {
                 shared.scroll_glide.glide_to(&adjustment, value);
                 return true;
             }
@@ -300,10 +303,13 @@ mod tests {
             Some(5)
         );
         // Carrying the old index instead would have centered row 42 of a
-        // 30-row list; the bound check in `centered_scroll_value` is the second
+        // 30-row list; `ListLayout`'s bound check is the second
         // line of defence and refuses it outright.
+        let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
+            crate::ui::list_geometry::RowHeight::new(10.0).unwrap(),
+        );
         assert_eq!(
-            crate::ui::scroll_center::centered_scroll_value(42, 30, 300.0, 200.0),
+            layout.centered_value(42, 30, 200.0),
             None,
             "a row the list no longer has must not produce a scroll target"
         );

@@ -23,7 +23,8 @@ pub(super) fn episode_thumbnail(
             images_allowed,
             reprise_core::remote_image::CacheScope::Persistent,
             super::source_image::StartupTiming::AfterQuiet,
-        ),
+        )
+        .visible_only_when_mapped(),
         match row.kind {
             PodcastKind::Rss => "audio-input-microphone-symbolic",
             PodcastKind::Youtube => "video-x-generic-symbolic",

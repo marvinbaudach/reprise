@@ -1,11 +1,29 @@
 use super::*;
 
+use std::time::Duration;
+
 use chrono::Utc;
 use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
 
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::stats::stats_artist_image::StatsArtistImage;
+
+const MAX_CLICK_FRAME_GAP: Duration = Duration::from_micros(16_700);
+const MAX_CLICK_TEARDOWN: Duration = Duration::from_millis(3);
+const MAX_CLICK_REBUILD: Duration = Duration::from_millis(1);
+
+#[derive(Clone, Copy, Debug)]
+struct ClickMeasurement {
+    longest_frame_gap: Duration,
+    timing: ContinuationTiming,
+}
+
+#[derive(Clone, Copy)]
+enum ClickControl {
+    Reveal,
+    SortWhileCollapsed,
+}
 
 /// The continuation continues the ranking: five surfaces on screen, fifteen
 /// more behind the button, no rank shown twice.
@@ -85,9 +103,43 @@ fn stats_23_show_more_reveals_the_continuation_rows() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_23_a_continuation_row_opens_its_artist() {
+fn stats_23_collapsing_hides_the_continuation_after_the_transition() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let (card, snapshot) = card_and_snapshot_with(6);
+    let (card, snapshot) = card_and_snapshot_with(20);
+    // A token, not a literal: check-motion-tokens.sh reads this file as
+    // production source, because it is pulled in by `#[path]` rather than
+    // wrapped in an inline `#[cfg(test)] mod`. MICRO_MS is the shortest one the
+    // motion module offers, and the test waits on `child-revealed` anyway.
+    card.revealer
+        .set_transition_duration(crate::ui::motion::MICRO_MS);
+    card.set_data(&snapshot);
+
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(900)
+        .child(card.widget())
+        .build();
+    window.present();
+
+    card.reveal_button.emit_clicked();
+    wait_for_child_revealed(&card.revealer, true);
+    assert!(card.revealer.is_visible());
+
+    card.reveal_button.emit_clicked();
+    wait_for_child_revealed(&card.revealer, false);
+    assert!(
+        !card.revealer.is_visible(),
+        "collapsed continuation remained in the widget and accessibility trees"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_a_sorted_continuation_row_opens_its_displayed_artist() {
+    gtk4::init().unwrap();
+    let (card, snapshot) = card_and_full_ranking_snapshot();
     let opened = Rc::new(RefCell::new(Vec::new()));
     card.set_on_open_artist({
         let opened = opened.clone();
@@ -95,10 +147,12 @@ fn stats_23_a_continuation_row_opens_its_artist() {
     });
 
     card.set_data(&snapshot);
+    card.sort_toggle.set_active_name(Some("plays"));
     card.reveal_button.emit_clicked();
+    assert_eq!(card.state.rows.borrow()[0].artist_label(), "Other Five");
     card.state.rows.borrow()[0].open_button.emit_clicked();
 
-    assert_eq!(&*opened.borrow(), &["Artist 06"]);
+    assert_eq!(&*opened.borrow(), &["Other Five"]);
 }
 
 #[test]
@@ -169,6 +223,220 @@ fn stats_23_continuation_bar_matches_the_song_ranking_geometry() {
 
     assert_eq!(rows[0].bar.height_request(), 8);
     assert_eq!(rows[0].bar.valign(), gtk4::Align::Center);
+}
+
+/// STATS-23: expanding and collapsing the artist continuation must leave the
+/// frame clock enough room to paint at 60 Hz, even for a 151-artist snapshot.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_hiding_more_top_artists_does_not_stall_the_frame_clock() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let expand = measure_click(false, ClickControl::Reveal);
+    let collapse = measure_click(true, ClickControl::Reveal);
+    println!(
+        "STATS-23 control: expand gap={:.3} ms, teardown={:.3} ms, rebuild={:.3} ms, rows={}; collapse gap={:.3} ms, teardown={:.3} ms, rebuild={:.3} ms, rows={}",
+        millis(expand.longest_frame_gap),
+        millis(expand.timing.teardown),
+        millis(expand.timing.rebuild),
+        expand.timing.row_count,
+        millis(collapse.longest_frame_gap),
+        millis(collapse.timing.teardown),
+        millis(collapse.timing.rebuild),
+        collapse.timing.row_count,
+    );
+
+    assert_eq!(expand.timing.row_count, ARTIST_ROW_EXTRA);
+    assert!(
+        expand.longest_frame_gap <= MAX_CLICK_FRAME_GAP,
+        "expanding stalled the frame clock for {:.3} ms (teardown {:.3} ms, rebuild {:.3} ms, {} rows)",
+        millis(expand.longest_frame_gap),
+        millis(expand.timing.teardown),
+        millis(expand.timing.rebuild),
+        expand.timing.row_count,
+    );
+    assert!(
+        collapse.longest_frame_gap <= MAX_CLICK_FRAME_GAP,
+        "collapsing stalled the frame clock for {:.3} ms (teardown {:.3} ms, rebuild {:.3} ms)",
+        millis(collapse.longest_frame_gap),
+        millis(collapse.timing.teardown),
+        millis(collapse.timing.rebuild),
+    );
+    for (direction, measurement) in [("expanding", expand), ("collapsing", collapse)] {
+        assert!(
+            measurement.timing.teardown <= MAX_CLICK_TEARDOWN,
+            "{direction} spent {:.3} ms tearing down continuation rows",
+            millis(measurement.timing.teardown),
+        );
+        assert!(
+            measurement.timing.rebuild <= MAX_CLICK_REBUILD,
+            "{direction} spent {:.3} ms rebuilding continuation rows",
+            millis(measurement.timing.rebuild),
+        );
+    }
+}
+
+/// STATS-23: changing the artist sort while the continuation is collapsed must
+/// not rebuild the hidden continuation in the sort-toggle click.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_sorting_collapsed_top_artists_does_not_stall_the_frame_clock() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let sort = measure_click(false, ClickControl::SortWhileCollapsed);
+    println!(
+        "STATS-23 collapsed-sort control: gap={:.3} ms, teardown={:.3} ms, rebuild={:.3} ms, rows={}",
+        millis(sort.longest_frame_gap),
+        millis(sort.timing.teardown),
+        millis(sort.timing.rebuild),
+        sort.timing.row_count,
+    );
+
+    assert_eq!(sort.timing.row_count, ARTIST_ROW_EXTRA);
+    assert!(
+        sort.longest_frame_gap <= MAX_CLICK_FRAME_GAP,
+        "sorting while collapsed stalled the frame clock for {:.3} ms (teardown {:.3} ms, rebuild {:.3} ms, {} rows)",
+        millis(sort.longest_frame_gap),
+        millis(sort.timing.teardown),
+        millis(sort.timing.rebuild),
+        sort.timing.row_count,
+    );
+    assert!(
+        sort.timing.teardown <= MAX_CLICK_TEARDOWN,
+        "sorting while collapsed spent {:.3} ms tearing down continuation rows",
+        millis(sort.timing.teardown),
+    );
+    assert!(
+        sort.timing.rebuild <= MAX_CLICK_REBUILD,
+        "sorting while collapsed spent {:.3} ms rebuilding continuation rows",
+        millis(sort.timing.rebuild),
+    );
+}
+
+fn measure_click(start_expanded: bool, control: ClickControl) -> ClickMeasurement {
+    let (card, snapshot) = card_and_snapshot_with(151);
+    assert_eq!(snapshot.top_artists.len(), 151);
+    card.set_data(&snapshot);
+    if start_expanded {
+        card.reveal_button.emit_clicked();
+        assert_eq!(card.continuation_rows(), ARTIST_ROW_EXTRA);
+    }
+
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(900)
+        .child(card.widget())
+        .build();
+    window.present();
+
+    let longest_frame_gap = Rc::new(Cell::new(Duration::ZERO));
+    let last_frame = Rc::new(Cell::new(None::<i64>));
+    let frames = Rc::new(Cell::new(0_u8));
+    let clicked = Rc::new(Cell::new(false));
+    let post_click_frames = Rc::new(Cell::new(0_u8));
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let tick_loop = main_loop.clone();
+    let click: Rc<dyn Fn()> = match control {
+        ClickControl::Reveal => {
+            let button = card.reveal_button.clone();
+            Rc::new(move || button.emit_clicked())
+        }
+        ClickControl::SortWhileCollapsed => {
+            assert!(!card.revealer.reveals_child());
+            let toggle = card.sort_toggle.clone();
+            Rc::new(move || toggle.set_active_name(Some("plays")))
+        }
+    };
+    let tick_longest = longest_frame_gap.clone();
+    let tick_last = last_frame.clone();
+    let tick_frames = frames.clone();
+    let tick_clicked = clicked.clone();
+    let tick_post_click_frames = post_click_frames.clone();
+    window.add_tick_callback(move |_, frame_clock| {
+        // GTK's presentation-frame timestamp measures whether the click misses
+        // a frame without folding scheduler jitter into the oracle. It is not
+        // a continuous wall-clock work measurement, so earlier Instant-based
+        // figures are not comparable with values produced here.
+        let now = frame_clock.frame_time();
+        if tick_clicked.get() {
+            if let Some(last) = tick_last.get() {
+                let gap = Duration::from_micros(u64::try_from(now - last).unwrap_or(u64::MAX));
+                tick_longest.set(tick_longest.get().max(gap));
+            }
+            tick_post_click_frames.set(tick_post_click_frames.get() + 1);
+            if tick_post_click_frames.get() == 4 {
+                tick_loop.quit();
+                return gtk4::glib::ControlFlow::Break;
+            }
+        } else if tick_frames.get() == 4 {
+            tick_clicked.set(true);
+            click();
+        } else {
+            tick_frames.set(tick_frames.get() + 1);
+        }
+        tick_last.set(Some(now));
+        gtk4::glib::ControlFlow::Continue
+    });
+
+    let timed_out = Rc::new(Cell::new(false));
+    let timeout_loop = main_loop.clone();
+    let timeout_flag = timed_out.clone();
+    let timeout = gtk4::glib::timeout_add_local_once(Duration::from_secs(3), move || {
+        timeout_flag.set(true);
+        timeout_loop.quit();
+    });
+    main_loop.run();
+    if !timed_out.get() {
+        timeout.remove();
+    }
+    assert!(
+        !timed_out.get(),
+        "timed out waiting for click-adjacent frames"
+    );
+
+    let timing = card.continuation_timing();
+    window.close();
+    ClickMeasurement {
+        longest_frame_gap: longest_frame_gap.get(),
+        timing,
+    }
+}
+
+fn millis(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000.0
+}
+
+fn wait_for_child_revealed(revealer: &gtk4::Revealer, expected: bool) {
+    if revealer.is_child_revealed() == expected {
+        return;
+    }
+
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let notify_loop = main_loop.clone();
+    let handler = revealer.connect_child_revealed_notify(move |revealer| {
+        if revealer.is_child_revealed() == expected {
+            notify_loop.quit();
+        }
+    });
+    let timed_out = Rc::new(Cell::new(false));
+    let timeout_loop = main_loop.clone();
+    let timeout_flag = timed_out.clone();
+    let timeout = gtk4::glib::timeout_add_local_once(Duration::from_secs(3), move || {
+        timeout_flag.set(true);
+        timeout_loop.quit();
+    });
+
+    main_loop.run();
+    revealer.disconnect(handler);
+    if !timed_out.get() {
+        timeout.remove();
+    }
+    assert!(
+        !timed_out.get(),
+        "timed out waiting for child-revealed={expected}"
+    );
 }
 
 fn card_and_full_ranking_snapshot() -> (StatsBandsCard, StatsSnapshot) {
