@@ -559,7 +559,6 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
         None,
         &conn,
         &on_added,
-        false,
     );
 
     // The heading is appended first, so the candidate row is the last child.
@@ -585,6 +584,41 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
         "the acknowledged action must not be pressable again"
     );
     assert!(button.has_css_class("reprise-source-added"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_add_dialog_no_longer_offers_an_auto_download_switch() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let on_added: OnAdded = Rc::new(|_| {});
+    append_preview(
+        &parent,
+        Preview {
+            kind: PodcastKind::Rss,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            count: 10,
+            url: "https://example.test/feed".into(),
+            guids: Vec::new(),
+        },
+        10,
+        &conn,
+        &on_added,
+    );
+
+    let option_labels = std::iter::successors(parent.first_child(), WidgetExt::next_sibling)
+        .filter_map(|child| child.downcast::<gtk4::CheckButton>().ok())
+        .filter_map(|button| button.label())
+        .collect::<Vec<_>>();
+    assert!(
+        !option_labels
+            .iter()
+            .any(|label| label.to_lowercase().contains("download")),
+        "a switch that changes nothing must not be shown: {option_labels:?}"
+    );
 }
 
 /// `SRC-19`: the chart path owns its empty sentence. Borrowing the search
@@ -669,19 +703,22 @@ fn disabling_initial_import_persists_the_previewed_guid_baseline() {
 }
 
 #[test]
-fn new_subscription_uses_the_configured_auto_download_default() {
-    let config = podcasts::config::PodcastConfig {
-        import_count: 25,
-        auto_download_default: true,
-        cleanup_policy: podcasts::config::CleanupPolicy::KeepAll,
-        youtube_import_count: 10,
-        youtube_hide_shorts_default: true,
-        youtube_browser: None,
-        ytdlp_path: None,
-        refresh_hours: 6,
-        latest_per_channel_default: 5,
-        keep_downloaded_default: 5,
-    };
-    assert!(configured_auto_download_default(Some(&config)));
-    assert!(!configured_auto_download_default(None));
+fn new_subscription_leaves_the_retired_auto_download_column_disabled() {
+    let conn = crate::test_db::open().unwrap();
+    let id = subscribe(
+        &conn,
+        &Candidate {
+            kind: PodcastKind::Rss,
+            title: "Show".into(),
+            subtitle: "Publisher".into(),
+            author: Some("Publisher".into()),
+            image_url: None,
+            url: "https://example.test/feed".into(),
+            identity_guids: Vec::new(),
+        },
+        None,
+    )
+    .unwrap();
+    let subscription = podcasts::store::subscription(&conn, id).unwrap().unwrap();
+    assert!(!subscription.auto_download);
 }

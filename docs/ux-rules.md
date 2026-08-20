@@ -925,9 +925,9 @@ result.
   it left off. The executor itself is singular too, down to the function: the
   GTK worker has no download body of its own — both lanes call
   `reprise_core::podcasts::pipeline::download_episode`, the same function the
-  refresh pipeline's auto-download branch and MCP's `music_manage_episodes`
-  call, so the episode lookup, `NET-1a` gate, `.part` handling, and progress
-  emission cannot drift between a manual click and a preparation download.
+  fill-up, playback, and MCP's `music_manage_episodes` call, so the episode
+  lookup, `NET-1a` gate, `.part` handling, and progress emission cannot drift
+  between a manual click and a preparation download.
 - **MTP-45** [active] [core] — The intended set for the playlists target is a
   pure projection from the playlist selection and library state. It yields "N
   of M selected · K tracks", preserves playlist order and duplicate entries,
@@ -5914,13 +5914,15 @@ listening statistics.
   jitter; upserts preserve seen and position state. Automatic refresh
   requires an active module, at least one subscription, a due TTL, and
   an unmetered connection.
-- **POD-3** [active] [core] — YouTube sits exclusively behind the
-  yt-dlp provider boundary: flat playlist for listing, audio
-  resolution only at playback time, with the ephemeral stream URL never
-  persisted. The same full playback extraction, and the existing download
-  extraction, may persist the raw first media category when yt-dlp supplies
-  one; flat listings never trigger an extra extraction for it, and a missing
-  or malformed category remains nullable and non-fatal. Errors are
+- **POD-3** [active] [core] [gtk] — YouTube sits exclusively behind the
+  yt-dlp provider boundary: flat playlist for listing and one shared download
+  extraction for every path that needs audio. Playback never resolves an
+  ephemeral stream URL: when no local file exists it starts that download,
+  remains in its resolving state while progress reaches the episode row, and
+  starts automatically from the persisted local path when the download
+  finishes. Listing ingest persists duration, while the download may persist
+  the raw first media category when yt-dlp supplies one; a missing or malformed
+  category remains nullable and non-fatal. Errors are
   classified into actionable, provider-safe UI messages and never
   crash; operation, failure category, exit code or timeout are logged
   without URLs, tokens, cookie paths, raw provider text, or local
@@ -5933,11 +5935,14 @@ listening statistics.
   same show by date via toast and a persistent player-bar button, but
   never plays it automatically. Podcast sessions produce neither
   scrobbles nor `listen_events` nor play counts.
-- **POD-5** [active] [gtk] — Downloads are opt-in per subscription,
-  live in the app's XDG data path under a GUID-stable path, follow the
-  chosen cleanup policy, and are preferentially played back locally
-  offline. The "keep last N downloaded" cleanup policy's N is a global
-  default (`podcasts.keep_downloaded_default`, itself defaulting to 5) that
+- **POD-5** [active] [core] [gtk] — The newest N live, unplayed episodes of
+  every subscription are kept in the app's XDG data path under GUID-stable
+  paths, and episode playback always uses a local file. There is no per-source
+  or global auto-download switch: after each refresh the background fill-up
+  brings every subscription to its target and reports the normal POD-7 row
+  progress. Filling never deletes. Deletion still follows only the chosen
+  cleanup policy, whose N is a global default
+  (`podcasts.keep_downloaded_default`, itself defaulting to 10) that
   any channel's own "Keep N downloaded" override replaces outright for that
   channel — never intersected with the default, never a silent minimum of
   the two (`O-5`). `0`, on either the default or an override, means
@@ -6023,8 +6028,8 @@ listening statistics.
   pointer-only affordance, so it stays reachable for keyboard and touch
   users too. The reason is one of a fixed, closed set of categories (timed
   out, could not be reached, returned an HTTP error, returned invalid data,
-  disabled in preferences, or "YouTube source could not be read with
-  yt-dlp") — the same classifier `source_actions::podcast_source_error`
+  disabled in preferences, or one of yt-dlp's failure-specific repair
+  instructions) — the same classifier `source_actions::podcast_source_error`
   already used for every other podcast provider failure; the underlying
   provider error text is discarded at the point of failure and never
   reaches the UI or a normal-level log line, so a signed URL, a query

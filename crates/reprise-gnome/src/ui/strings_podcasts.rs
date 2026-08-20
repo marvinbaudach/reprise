@@ -127,7 +127,6 @@ pub const PODCAST_RSS_DETECTED: &str = N_!("RSS feed detected");
 pub const PODCAST_YOUTUBE_DETECTED: &str =
     N_!("YouTube channel detected — videos become episodes · audio only via yt-dlp");
 pub const PODCAST_IMPORT_LATEST: &str = N_!("Import the latest episodes");
-pub const PODCAST_AUTO_DOWNLOAD: &str = N_!("Download new episodes automatically");
 pub const PODCAST_YOUTUBE_FOOTNOTE: &str =
     N_!("YouTube subscriptions are played audio-only via yt-dlp.");
 pub const PODCAST_PREVIEW_FAILED: &str = N_!("Could not preview this podcast");
@@ -181,7 +180,6 @@ pub const PODCAST_DELETE_FILES: &str = N_!("Delete files");
 pub const PODCAST_PLAY_NEXT_EPISODE: &str = N_!("Play next episode");
 pub const PODCAST_STREAMING_LOADED: &str = N_!("Streaming · {percent}% loaded");
 pub const PODCAST_EPISODES_PER_SHOW: &str = N_!("Episodes per show");
-pub const PODCAST_PREFERENCES_AUTO_DOWNLOAD: &str = N_!("Download new episodes");
 pub const PODCAST_PREFERENCES_CLEANUP: &str = N_!("Delete played episodes");
 pub const PODCAST_CLEANUP_KEEP_ALL: &str = N_!("Keep all");
 pub const PODCAST_CLEANUP_DELETE_PLAYED: &str = N_!("After 7 days");
