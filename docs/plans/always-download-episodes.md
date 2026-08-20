@@ -1547,3 +1547,147 @@ den tatsächlichen Zahlen und Abfragen. `phase:` im Frontmatter auf `verified`.
 git add docs/plans/always-download-episodes.md
 git commit -m "docs: record the acceptance run for always-download episodes"
 ```
+
+## Abnahme
+
+### 1. Whole test suite
+
+- [ ] offen
+
+Run from the repository root (Bash):
+
+```bash
+acceptance_data=$(mktemp -d)
+acceptance_cache=$(mktemp -d)
+acceptance_log=$(mktemp /tmp/reprise-always-download-suite.XXXXXX.log)
+XDG_DATA_HOME="$acceptance_data" XDG_CACHE_HOME="$acceptance_cache" \
+  cargo test --workspace > "$acceptance_log" 2>&1
+tail -30 "$acceptance_log"
+```
+
+### 2. Fill-up and cleanup convergence
+
+- [ ] offen
+
+Create a transactionally consistent copy of the real database, including its
+current WAL contents, and run only that copy (Bash):
+
+```bash
+acceptance_root=$(mktemp -d)
+mkdir -p "$acceptance_root/data/reprise" "$acceptance_root/cache"
+acceptance_db="$acceptance_root/data/reprise/reprise.db"
+sqlite3 "$HOME/.local/share/reprise/reprise.db" ".backup '$acceptance_db'"
+dbus-run-session -- env \
+  XDG_DATA_HOME="$acceptance_root/data" \
+  XDG_CACHE_HOME="$acceptance_root/cache" \
+  cargo run -p reprise-gnome
+```
+
+In the isolated application, refresh twice and let both fill-up and cleanup
+finish after each refresh. Then both queries below must return no rows:
+
+```bash
+sqlite3 "$acceptance_db" <<'SQL'
+WITH ranked AS (
+  SELECT e.id, e.title, e.downloaded_path, e.played_at,
+         COALESCE(
+           s.keep_downloaded,
+           MIN(MAX(CAST(COALESCE(
+             (SELECT value FROM settings
+              WHERE key = 'podcasts.keep_downloaded_default'),
+             '10') AS INTEGER), 0), 100)
+         ) AS keep_target,
+         ROW_NUMBER() OVER (
+           PARTITION BY e.subscription_id
+           ORDER BY e.published_at IS NULL,
+                    e.published_at DESC,
+                    e.first_seen_at DESC,
+                    e.id DESC
+         ) AS episode_rank
+  FROM podcast_episodes e
+  JOIN podcast_subscriptions s ON s.id = e.subscription_id
+  WHERE s.removed_at IS NULL AND e.removed_at IS NULL
+)
+SELECT id, title, episode_rank, keep_target
+FROM ranked
+WHERE (keep_target = 0 OR episode_rank <= keep_target)
+  AND downloaded_path IS NULL
+  AND played_at IS NULL;
+
+WITH config AS (
+  SELECT COALESCE(
+           (SELECT value FROM settings WHERE key = 'podcasts.cleanup_policy'),
+           'keep_all'
+         ) AS cleanup_policy,
+         MIN(MAX(CAST(COALESCE(
+           (SELECT value FROM settings
+            WHERE key = 'podcasts.keep_downloaded_default'),
+           '10') AS INTEGER), 0), 100) AS default_keep
+), downloaded_ranked AS (
+  SELECT e.id, e.title, e.played_at,
+         COALESCE(s.keep_downloaded, config.default_keep) AS keep_target,
+         ROW_NUMBER() OVER (
+           PARTITION BY e.subscription_id
+           ORDER BY e.published_at IS NULL,
+                    e.published_at DESC,
+                    e.first_seen_at DESC,
+                    e.id DESC
+         ) AS episode_rank,
+         config.cleanup_policy
+  FROM podcast_episodes e
+  JOIN podcast_subscriptions s ON s.id = e.subscription_id
+  CROSS JOIN config
+  WHERE s.removed_at IS NULL AND e.downloaded_path IS NOT NULL
+)
+SELECT id, title, cleanup_policy, episode_rank, keep_target
+FROM downloaded_ranked
+WHERE (cleanup_policy = 'delete_played_7d'
+       AND played_at IS NOT NULL
+       AND played_at <= CAST(strftime('%s', 'now') AS INTEGER) - 604800)
+   OR (cleanup_policy = 'keep_last_5'
+       AND keep_target <> 0
+       AND episode_rank > keep_target);
+SQL
+```
+
+### 3. Playback from disk
+
+- [ ] offen
+
+Use the isolated application command from section 2, select an undownloaded
+YouTube episode, record its numeric ID, and start playback. After progress has
+finished and playback has begun, run (Bash):
+
+```bash
+episode_id=REPLACE_WITH_EPISODE_ID
+sqlite3 "$acceptance_db" \
+  "SELECT id, title, downloaded_path, downloaded_bytes
+   FROM podcast_episodes
+   WHERE id = $episode_id AND downloaded_path IS NOT NULL;"
+```
+
+The query must return exactly that episode with a non-empty local path.
+
+### 4. Failure-specific yt-dlp message
+
+- [ ] offen
+
+Choose an undownloaded YouTube episode in the isolated database, point the app
+at a known outdated executable, and start playback (Bash):
+
+```bash
+failure_episode_id=REPLACE_WITH_EPISODE_ID
+outdated_ytdlp=/absolute/path/to/outdated/yt-dlp
+sqlite3 "$acceptance_db" \
+  "SELECT id, title, downloaded_path
+   FROM podcast_episodes
+   WHERE id = $failure_episode_id AND downloaded_path IS NULL;"
+dbus-run-session -- env \
+  XDG_DATA_HOME="$acceptance_root/data" \
+  XDG_CACHE_HOME="$acceptance_root/cache" \
+  REPRISE_YTDLP_BIN="$outdated_ytdlp" \
+  cargo run -p reprise-gnome
+```
+
+The episode row must instruct the user to update yt-dlp and must not show the
+old generic message. Record the visible text verbatim when closing this item.
