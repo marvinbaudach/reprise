@@ -11,10 +11,10 @@ export function ChapterTwo() {
       aria-labelledby="ch-02-heading"
     >
       <div className="frame">
-        <p className="chapter__eyebrow" data-reveal>
+        <p className="chapter__eyebrow chapter__eyebrow--standalone" data-reveal>
           CH.02
         </p>
-        <h2 id="ch-02-heading" className="chapter__title" data-reveal>
+        <h2 id="ch-02-heading" className="chapter__title visually-hidden">
           Built by agents. Merged by gates.
         </h2>
 
