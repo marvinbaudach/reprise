@@ -6,6 +6,8 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::prelude::*;
 use reprise_core::artist_news_history::HistoryEntry;
+use reprise_core::browser::navigation::NavigationIntent;
+use reprise_core::browser::{AlbumKey, ArtistKey};
 
 use super::releases_menu;
 use super::releases_model::ReleaseObject;
@@ -83,13 +85,41 @@ pub(super) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         });
         group.add_action(&action);
     }
-    for name in [
-        releases_menu::ACTION_GO_TO_ARTIST,
-        releases_menu::ACTION_GO_TO_ALBUM,
-    ] {
-        let action = gio::SimpleAction::new(name, None);
+    {
+        let shared = shared.clone();
+        let action = gio::SimpleAction::new(releases_menu::ACTION_GO_TO_ARTIST, None);
         action.connect_activate(move |_, _| {
-            tracing::warn!(action = name, "releases menu action not wired yet");
+            let Some(entry) = single_selected_entry(&shared) else {
+                return;
+            };
+            dispatch_navigation(
+                &shared,
+                NavigationIntent::OpenArtist {
+                    artist: ArtistKey::new(&entry.artist_name),
+                    anchor_track_id: None,
+                },
+            );
+        });
+        group.add_action(&action);
+    }
+    {
+        let shared = shared.clone();
+        let action = gio::SimpleAction::new(releases_menu::ACTION_GO_TO_ALBUM, None);
+        action.connect_activate(move |_, _| {
+            let Some(entry) = single_selected_entry(&shared) else {
+                return;
+            };
+            if entry.local_track_count <= 0 {
+                tracing::warn!("album navigation fired for a release without local tracks");
+                return;
+            }
+            dispatch_navigation(
+                &shared,
+                NavigationIntent::OpenAlbum {
+                    album: AlbumKey::new(&entry.title, &entry.artist_name),
+                    anchor_track_id: None,
+                },
+            );
         });
         group.add_action(&action);
     }
@@ -112,6 +142,31 @@ pub(super) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         gtk4::glib::Propagation::Stop
     });
     column_view.add_controller(keys);
+}
+
+fn single_selected_entry(shared: &Rc<Shared>) -> Option<HistoryEntry> {
+    let entries = selected_entries(shared);
+    let [entry] = entries.as_slice() else {
+        // CTX-4: the menu only offers navigation for a single row, so a
+        // multi-row activation means the model and the actions disagree.
+        tracing::warn!("navigation action fired without a single selected release");
+        return None;
+    };
+    Some(entry.clone())
+}
+
+fn dispatch_navigation(shared: &Shared, intent: NavigationIntent) {
+    let callback = shared.on_navigate.borrow().clone();
+    if let Some(callback) = callback {
+        callback(intent);
+    }
+}
+
+#[cfg(test)]
+pub(super) fn activate_for_test(shared: &Rc<Shared>, action: &str) {
+    let _ = shared
+        .column_view
+        .activate_action(&format!("{}.{}", releases_menu::ACTION_GROUP, action), None);
 }
 
 fn present_keyboard_popover(column_view: &gtk4::ColumnView, popover: &gtk4::PopoverMenu) {

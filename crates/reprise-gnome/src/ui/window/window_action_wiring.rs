@@ -31,6 +31,7 @@ pub(in crate::ui) struct ActionWiring<'a> {
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
     pub(in crate::ui) stats_view: &'a StatsView,
+    pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
@@ -47,6 +48,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         sidebar,
         player,
         stats_view,
+        releases_view,
         content_stack,
         scan_controls,
         watcher_state,
@@ -325,6 +327,12 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 },
                 "track-list artist link",
             );
+        });
+    }
+    {
+        let navigator = metadata_navigator.clone();
+        releases_view.set_on_navigate(move |intent| {
+            navigator.navigate(intent, "releases context menu");
         });
     }
     {

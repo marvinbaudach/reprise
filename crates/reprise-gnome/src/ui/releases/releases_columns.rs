@@ -343,6 +343,7 @@ pub(super) fn append_columns(
     append_columns_with_query_and_wire(view, on_set_hidden, on_open, &query, on_wire_cell)
 }
 
+#[cfg(test)]
 fn append_columns_with_query(
     view: &gtk4::ColumnView,
     on_set_hidden: &OnSetHidden,

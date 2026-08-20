@@ -12,6 +12,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::artist_news::{self, ReleaseSortDirection};
 use reprise_core::artist_news_history::HistoryEntry;
+use reprise_core::browser::navigation::NavigationIntent;
 use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
 use reprise_core::source_error::{FailureAction, FailureSurface, SourceError, SourceErrorKind};
@@ -54,11 +55,12 @@ pub(super) struct Shared {
     pub(super) model: Rc<ReleasesModel>,
     pub(super) selection_anchor: super::releases_selection::ReleasesAnchor,
     pub(super) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(super) on_navigate: RefCell<Option<Rc<dyn Fn(NavigationIntent)>>>,
     filter_bar: Rc<ReleasesFilterBar>,
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<HistoryEntry>>,
     cached_items: Cell<usize>,
-    column_view: gtk4::ColumnView,
+    pub(super) column_view: gtk4::ColumnView,
     column_model: Rc<dyn crate::ui::table_columns::EditorModel>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
@@ -188,6 +190,7 @@ impl ReleasesView {
             model,
             selection_anchor: super::releases_selection::ReleasesAnchor::default(),
             toast_overlay: glib::WeakRef::new(),
+            on_navigate: RefCell::new(None),
             filter_bar: filter_bar.clone(),
             end_of_results,
             rows: RefCell::new(Vec::new()),
@@ -303,6 +306,10 @@ impl ReleasesView {
 
     pub(in crate::ui) fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
         self.shared.toast_overlay.set(Some(overlay));
+    }
+
+    pub(in crate::ui) fn set_on_navigate(&self, callback: impl Fn(NavigationIntent) + 'static) {
+        *self.shared.on_navigate.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {

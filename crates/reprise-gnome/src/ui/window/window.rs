@@ -364,6 +364,7 @@ pub fn build(
         sidebar: &sidebar,
         player: &player,
         stats_view: &stats_view,
+        releases_view: &releases_view,
         content_stack: &content_stack,
         scan_controls: &scan_controls,
         watcher_state: &watcher_state,
