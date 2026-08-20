@@ -201,6 +201,7 @@ impl ReleasesView {
             fetch_override: RefCell::new(None),
         });
         shared_target.replace(Some(Rc::downgrade(&shared)));
+        super::releases_selection::wire(&column_view, &shared);
         super::releases_context_menu::wire(&column_view, &shared);
         {
             let shared = Rc::downgrade(&shared);
