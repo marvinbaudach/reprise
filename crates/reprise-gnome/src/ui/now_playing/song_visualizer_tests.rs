@@ -317,6 +317,109 @@ fn render_bass_pressure_moments_ppm() {
     }
 }
 
+/// Extracts quantized band and kick data for the showroom visualizer asset.
+///
+/// Reads decoded PCM, processes through CAVA and bass-pressure detector, and
+/// writes quantized uint8 streams to `bands.u8` and `kick.u8`. Each frame is
+/// one row of 64 band values (uint8) or one kick value (uint8).
+///
+/// `REPRISE_VIS_OUT` receives:
+/// - `bands.u8`: 64 bytes/frame × N frames (e.g., 259 frames × 64 B = 16,576 B)
+/// - `kick.u8`: 1 byte/frame × N frames (e.g., 259 bytes)
+/// Set `REPRISE_VIS_WRITE_RGB=1` to also write Cairo renders as `frames.rgb`.
+#[test]
+#[ignore = "extractor: needs REPRISE_VIS_PCM (raw mono f32 44.1 kHz)"]
+fn extract_showroom_visualizer_asset() {
+    use reprise_core::playback::{
+        BassPressureDetector, CavaBarProcessor, CavaConfig, SpectrumFrame, SPECTRUM_BAND_COUNT,
+    };
+    use std::io::Write as _;
+
+    const SAMPLE_RATE: u32 = 44_100;
+    const CHUNK_SAMPLES: usize = 1_024;
+    const DEFAULT_RENDER_WIDTH: f32 = 663.0;
+    const DEFAULT_RENDER_HEIGHT: f32 = 652.0;
+
+    let pcm_path = std::env::var("REPRISE_VIS_PCM").expect("REPRISE_VIS_PCM");
+    let output_dir = std::env::var("REPRISE_VIS_OUT").expect("REPRISE_VIS_OUT");
+    let render_width = visualizer_measurement_dimension("REPRISE_VIS_W", DEFAULT_RENDER_WIDTH);
+    let render_height = visualizer_measurement_dimension("REPRISE_VIS_H", DEFAULT_RENDER_HEIGHT);
+    let write_rgb = std::env::var("REPRISE_VIS_WRITE_RGB").as_deref() == Ok("1");
+
+    std::fs::create_dir_all(&output_dir).expect("writable REPRISE_VIS_OUT");
+    let bytes = std::fs::read(&pcm_path).expect("readable raw PCM");
+    let samples: Vec<f32> = bytes
+        .chunks_exact(size_of::<f32>())
+        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+        .collect();
+
+    let mut cava = CavaBarProcessor::new(CavaConfig::new(SAMPLE_RATE, SPECTRUM_BAND_COUNT))
+        .expect("CAVA processor");
+    let mut detector = BassPressureDetector::new(SAMPLE_RATE);
+    let mut engine = VisualEngine::new();
+    engine.set_playing(true);
+    engine.set_has_track(true);
+    engine.set_accent((0.22, 0.78, 0.74));
+
+    let mut bands_output = std::io::BufWriter::new(
+        std::fs::File::create(format!("{output_dir}/bands.u8")).expect("writable bands.u8"),
+    );
+    let mut kick_output = std::io::BufWriter::new(
+        std::fs::File::create(format!("{output_dir}/kick.u8")).expect("writable kick.u8"),
+    );
+    let mut rgb_output = write_rgb.then(|| {
+        std::io::BufWriter::new(
+            std::fs::File::create(format!("{output_dir}/frames.rgb"))
+                .expect("writable frames.rgb"),
+        )
+    });
+    let mut frame_count = 0_usize;
+
+    for chunk in samples.chunks(CHUNK_SAMPLES) {
+        let bands: [f32; SPECTRUM_BAND_COUNT] = cava
+            .process(chunk)
+            .try_into()
+            .expect("the configured bar count");
+        let pressure = detector.observe(chunk);
+        engine.ingest(&SpectrumFrame::from_cava_bars(bands).with_bass_pressure(pressure));
+        engine.tick();
+
+        // Quantize bands to uint8: clamp [0.0, 1.0] to [0, 255]
+        let band_bytes: Vec<u8> = bands
+            .iter()
+            .map(|&value| (value.clamp(0.0, 1.0) * 255.0).round() as u8)
+            .collect();
+        bands_output
+            .write_all(&band_bytes)
+            .expect("wrote band row to bands.u8");
+
+        // Quantize kick to uint8
+        let kick_byte = (pressure.kick.clamp(0.0, 1.0) * 255.0).round() as u8;
+        kick_output
+            .write_all(&[kick_byte])
+            .expect("wrote kick byte to kick.u8");
+
+        if let Some(output) = &mut rgb_output {
+            write_visualizer_rgb_frame(output, &engine, render_width, render_height);
+        }
+        frame_count += 1;
+    }
+
+    bands_output.flush().unwrap();
+    kick_output.flush().unwrap();
+    if let Some(output) = &mut rgb_output {
+        output.flush().unwrap();
+    }
+    println!(
+        "extracted frames={frame_count} size={}x{} fps={:.3} bands={} kick={}",
+        render_width as usize,
+        render_height as usize,
+        SAMPLE_RATE as f32 / CHUNK_SAMPLES as f32,
+        format!("{output_dir}/bands.u8"),
+        format!("{output_dir}/kick.u8")
+    );
+}
+
 /// Streams every input that the Bars renderer sees from decoded PCM.
 ///
 /// `REPRISE_VIS_OUT` receives `bands.csv` and `pressure.csv`. Set
