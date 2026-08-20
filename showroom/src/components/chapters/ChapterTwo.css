@@ -192,7 +192,7 @@
 .incident-quote {
   margin: var(--gap-block) 0 0;
   padding: 1.4rem 1.75rem;
-  max-width: 48rem;
+  max-width: 68ch;
   border-left: 2px solid var(--second);
   border-radius: 0 var(--radius-plate) var(--radius-plate) 0;
   background: var(--surface-raised);
