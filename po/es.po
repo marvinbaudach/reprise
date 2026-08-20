@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-20 13:46+0200\n"
+"POT-Creation-Date: 2026-08-20 15:47+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -2536,6 +2536,7 @@ msgid "Open announcement"
 msgstr "Abrir el anuncio"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:128
+#: crates/reprise-gnome/src/ui/strings_releases.rs:38
 msgid "Show again"
 msgstr "Mostrar de nuevo"
 
@@ -3189,11 +3190,21 @@ msgstr "Aún no hay datos de discografía"
 msgid "No missing releases"
 msgstr "No faltan lanzamientos"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:38
+#: crates/reprise-gnome/src/ui/strings_releases.rs:39
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
+msgid "Go to artist"
+msgstr "Ir al artista"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:40
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
+msgid "Go to album"
+msgstr "Ir al álbum"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:41
 msgid "Couldn't refresh new releases"
 msgstr "No se pudieron actualizar los nuevos lanzamientos"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:40
+#: crates/reprise-gnome/src/ui/strings_releases.rs:43
 #, rust-format
 msgid ""
 "Showing saved releases from {time}. Announcement links need a connection."
@@ -3201,34 +3212,62 @@ msgstr ""
 "Se muestran los lanzamientos guardados de {time}. Los enlaces de anuncios "
 "necesitan conexión."
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:42
+#: crates/reprise-gnome/src/ui/strings_releases.rs:45
 msgid "There are no saved releases to show. Your library is unaffected."
 msgstr ""
 "No hay lanzamientos guardados que mostrar. Tu biblioteca no se ve afectada."
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:43
+#: crates/reprise-gnome/src/ui/strings_releases.rs:46
 msgid "an earlier update"
 msgstr "una actualización anterior"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:59
+#: crates/reprise-gnome/src/ui/strings_releases.rs:62
 #, rust-format
 msgid "{shown} of {total} gaps"
 msgstr "{shown} de {total} faltantes"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:65
+#: crates/reprise-gnome/src/ui/strings_releases.rs:68
 #, rust-format
 msgid "{total} gaps"
 msgstr "{total} faltantes"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:70
+#: crates/reprise-gnome/src/ui/strings_releases.rs:73
 #, rust-format
 msgid "Show all {total} gaps"
 msgstr "Mostrar los {total} faltantes"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:77
+#: crates/reprise-gnome/src/ui/strings_releases.rs:80
 #, rust-format
 msgid "{local} of {total} tracks"
 msgstr "{local} de {total} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:91
+#, rust-format
+msgid "Hide {count} releases"
+msgstr "Ocultar {count} lanzamientos"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:98
+#, rust-format
+msgid "Show {count} releases again"
+msgstr "Mostrar de nuevo {count} lanzamientos"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:105
+msgid "1 release hidden"
+msgstr "1 lanzamiento ocultado"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:106
+#, rust-format
+msgid "{count} releases hidden"
+msgstr "{count} lanzamientos ocultados"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:113
+msgid "1 release restored"
+msgstr "1 lanzamiento restaurado"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:114
+#, rust-format
+msgid "{count} releases restored"
+msgstr "{count} lanzamientos restaurados"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:11
 msgid "Podcasts"
@@ -5382,14 +5421,6 @@ msgstr "Añadir a la lista de reproducción"
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:7
 msgid "Move to top"
 msgstr "Mover al principio"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
-msgid "Go to album"
-msgstr "Ir al álbum"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
-msgid "Go to artist"
-msgstr "Ir al artista"
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:13
 msgid "New playlist…"
