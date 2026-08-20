@@ -38,14 +38,14 @@ internal fun OnlineSourcesSettingsPage(
             item {
                 SettingsSwitchRow(
                     title = "Download artist photos",
-                    supporting = "Fetch a portrait when you open an artist.",
+                    supporting = "Fetch portraits after a library scan or restore.",
                     checked = enabled,
                     onCheckedChange = setEnabled,
                 )
             }
             item {
                 Text(
-                    "Each artist name whose page you open is sent to Deezer. " +
+                    "Artist names in your library are sent to Deezer after a scan or restore. " +
                         "The app sends nothing else to the internet. " +
                         "With downloads off, album covers remain available.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

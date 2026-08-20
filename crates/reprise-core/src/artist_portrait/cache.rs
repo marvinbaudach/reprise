@@ -13,6 +13,19 @@ const NEGATIVE_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 static CACHE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CacheVerdict {
+    FreshPortrait(PathBuf),
+    FreshNegative,
+    NeedsFetch { stale_portrait: Option<PathBuf> },
+}
+
+impl CacheVerdict {
+    pub fn needs_fetch(&self) -> bool {
+        matches!(self, Self::NeedsFetch { .. })
+    }
+}
+
 pub(crate) fn cache_dir() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
@@ -43,6 +56,23 @@ pub(crate) fn is_fresh(fetched_at: i64, now: i64, positive: bool) -> bool {
         NEGATIVE_TTL_SECONDS
     };
     age <= ttl
+}
+
+/// Resolves the current positive, negative, or refreshable cache state.
+pub fn verdict(dir: &Path, name: &str, now: i64) -> CacheVerdict {
+    let portrait = portrait_path_in(dir, name);
+    if let Some(path) = portrait.as_ref() {
+        if is_fresh(file_epoch_secs(path), now, true) {
+            return CacheVerdict::FreshPortrait(path.clone());
+        }
+    }
+    let marker = negative_marker_path(dir, name);
+    if marker.exists() && is_fresh(file_epoch_secs(&marker), now, false) {
+        return CacheVerdict::FreshNegative;
+    }
+    CacheVerdict::NeedsFetch {
+        stale_portrait: portrait,
+    }
 }
 
 pub(crate) fn file_epoch_secs(path: &Path) -> i64 {
@@ -138,6 +168,43 @@ mod tests {
         assert!(!is_fresh(1_000, 1_000 + 31 * day, true));
         assert!(is_fresh(1_000, 1_000 + 6 * day, false));
         assert!(!is_fresh(1_000, 1_000 + 8 * day, false));
+    }
+
+    #[test]
+    fn cache_verdict_distinguishes_fresh_positive_negative_stale_and_missing_entries() {
+        let dir = std::env::temp_dir().join(format!("rp-portrait-{}", fastrand::u64(..)));
+        let fresh_portrait = store_image(&dir, "Fresh", b"img", "jpg").unwrap();
+        let portrait_time = file_epoch_secs(&fresh_portrait);
+        write_negative(&dir, "Known missing");
+        let marker = negative_marker_path(&dir, "Known missing");
+        let marker_time = file_epoch_secs(&marker);
+
+        assert!(matches!(
+            verdict(&dir, "Fresh", portrait_time + POSITIVE_TTL_SECONDS),
+            CacheVerdict::FreshPortrait(_)
+        ));
+        assert_eq!(
+            verdict(&dir, "Known missing", marker_time + NEGATIVE_TTL_SECONDS,),
+            CacheVerdict::FreshNegative
+        );
+        assert!(matches!(
+            verdict(
+                &dir,
+                "Known missing",
+                marker_time + NEGATIVE_TTL_SECONDS + 1,
+            ),
+            CacheVerdict::NeedsFetch {
+                stale_portrait: None
+            }
+        ));
+        assert!(matches!(
+            verdict(&dir, "Never seen", marker_time),
+            CacheVerdict::NeedsFetch {
+                stale_portrait: None
+            }
+        ));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

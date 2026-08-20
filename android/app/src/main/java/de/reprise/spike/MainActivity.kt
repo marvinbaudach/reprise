@@ -73,13 +73,21 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+    private val sessionPort by lazy {
+        AndroidLibrarySessionPort(
+            resolver = contentResolver,
+            preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
+            library = library,
+        )
+    }
+    private val artistPortraitPrefetchDelegate = lazy {
+        ArtistPortraitPrefetch(sessionPort)
+    }
+    private val artistPortraitPrefetch by artistPortraitPrefetchDelegate
     private val session by lazy {
         LibrarySession(
-            AndroidLibrarySessionPort(
-                resolver = contentResolver,
-                preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
-                library = library,
-            ),
+            port = sessionPort,
+            startPortraitPrefetch = artistPortraitPrefetch::start,
         )
     }
     private val artworkDelegate = lazy {
@@ -468,6 +476,9 @@ class MainActivity : ComponentActivity() {
         }
         if (artworkDelegate.isInitialized()) {
             artworkDelegate.value.shutdown()
+        }
+        if (artistPortraitPrefetchDelegate.isInitialized()) {
+            artistPortraitPrefetchDelegate.value.shutdown()
         }
         if (libraryDelegate.isInitialized()) {
             libraryDelegate.value.close()

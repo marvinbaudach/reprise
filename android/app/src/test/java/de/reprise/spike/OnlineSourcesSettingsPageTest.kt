@@ -45,11 +45,15 @@ class OnlineSourcesSettingsPageTest {
     }
 
     @Test
-    fun thePageNamesDeezerAndSaysWhatLeavesTheDevice() {
+    fun thePageExplainsLibraryWidePortraitPrefetch() {
         showPage(enabled = false)
 
-        compose.onNodeWithText("Deezer", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("artist name", substring = true, ignoreCase = true)
+        compose.onNodeWithText("Fetch portraits after a library scan or restore.")
+            .assertIsDisplayed()
+        compose.onNodeWithText(
+            "Artist names in your library are sent to Deezer after a scan or restore.",
+            substring = true,
+        )
             .assertIsDisplayed()
     }
 

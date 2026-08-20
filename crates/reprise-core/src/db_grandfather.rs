@@ -89,8 +89,7 @@ pub(crate) fn grandfather_network_features(
     if existing_database && cache_contains_image(cover_cache, crate::cover_download::IMAGE_EXTS) {
         enable_setting_if_unset(tx, LEGACY_COVER_DOWNLOAD_KEY)?;
     }
-    if existing_database
-        && cache_contains_image(portrait_cache, crate::artist_portrait::cache::IMAGE_EXTS)
+    if existing_database && cache_contains_image(portrait_cache, crate::artist_portrait::IMAGE_EXTS)
     {
         enable_setting_if_unset(tx, LEGACY_ARTIST_PORTRAITS_KEY)?;
     }
@@ -122,10 +121,7 @@ pub(crate) fn grandfather_online_sources_gate(
         radio_favourite,
         downloaded_episode,
         cover_cache: cache_contains_image(cover_cache, crate::cover_download::IMAGE_EXTS),
-        portrait_cache: cache_contains_image(
-            portrait_cache,
-            crate::artist_portrait::cache::IMAGE_EXTS,
-        ),
+        portrait_cache: cache_contains_image(portrait_cache, crate::artist_portrait::IMAGE_EXTS),
         online_module_enabled: any_online_module_enabled(tx)?,
     };
     let value = if online_gate_default(existing_database, evidence) {
