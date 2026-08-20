@@ -344,6 +344,7 @@ impl super::LibraryDoctor<'_> {
 }
 
 fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapshot>, DoctorError> {
+    let stale = stale_flags(conn, scan_id)?;
     let mut statement = conn.prepare(
         "SELECT track_id, path, file_mtime, file_size, device, inode, read_ok, \
          title, artist, album, album_artist, year, track_no, genre \
@@ -373,8 +374,7 @@ fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapsho
             } else {
                 None
             };
-            let stale = current_identity(conn, reference.track_id)?
-                .is_none_or(|current| current != reference);
+            let stale = stale.get(&reference.track_id).copied().unwrap_or(true);
             Ok(DoctorTrackSnapshot {
                 reference,
                 tags,
@@ -459,31 +459,6 @@ pub fn stale_flags(conn: &Connection, scan_id: i64) -> Result<HashMap<i64, bool>
         stale.insert(snapshot.track_id, changed);
     }
     Ok(stale)
-}
-
-fn current_identity(
-    conn: &Connection,
-    track_id: i64,
-) -> Result<Option<DoctorTrackRef>, rusqlite::Error> {
-    conn.query_row(
-        &format!(
-            "SELECT id, path, file_mtime, file_size, device, inode \
-             FROM tracks WHERE id=?1 AND {}",
-            crate::queries::PRESENT
-        ),
-        [track_id],
-        |row| {
-            Ok(DoctorTrackRef {
-                track_id: row.get(0)?,
-                path: std::path::PathBuf::from(row.get::<_, String>(1)?),
-                file_mtime: row.get(2)?,
-                file_size: row.get(3)?,
-                device: row.get(4)?,
-                inode: row.get(5)?,
-            })
-        },
-    )
-    .optional()
 }
 
 fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>, DoctorError> {

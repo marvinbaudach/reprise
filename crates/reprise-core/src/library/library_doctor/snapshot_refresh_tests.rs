@@ -99,3 +99,41 @@ fn doctor_apply_refreshes_snapshot_before_remaining_rows_are_classified() {
         .iter()
         .all(|row| row.state == DoctorReviewRowState::Ready));
 }
+
+#[test]
+fn badge_and_review_share_one_fingerprint_comparison() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path());
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let scan = scan_track(&db, &path);
+    let track_id = scan.track_ids[0];
+    db.conn()
+        .execute(
+            "UPDATE tracks SET file_mtime = file_mtime + 1 WHERE id=?1",
+            [track_id],
+        )
+        .unwrap();
+
+    let badge_stale = stale_flags(db.conn(), scan.id)
+        .unwrap()
+        .into_iter()
+        .filter_map(|(track_id, stale)| stale.then_some(track_id))
+        .collect::<std::collections::HashSet<_>>();
+    let review_stale = LibraryDoctor::new(&db)
+        .last_complete_scan()
+        .unwrap()
+        .unwrap()
+        .stale_track_ids()
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(badge_stale, review_stale);
+    assert_eq!(badge_stale, std::collections::HashSet::from([track_id]));
+
+    let source = include_str!("store.rs");
+    assert_eq!(
+        source.matches(".is_none_or(|current| current !=").count(),
+        1,
+        "the badge and session must not implement fingerprint comparison separately"
+    );
+}
