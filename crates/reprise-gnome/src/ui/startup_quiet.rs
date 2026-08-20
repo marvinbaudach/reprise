@@ -7,6 +7,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use gtk4::prelude::*;
@@ -143,7 +144,8 @@ fn release() {
 }
 
 fn measurement_enabled() -> bool {
-    std::env::var_os("REPRISE_MEASURE_SOURCE_ARTWORK").is_some()
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("REPRISE_MEASURE_SOURCE_ARTWORK").is_some())
 }
 
 #[cfg(test)]

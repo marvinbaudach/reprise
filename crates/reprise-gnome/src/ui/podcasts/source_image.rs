@@ -120,6 +120,22 @@ enum ArtworkStage {
     Primary,
 }
 
+#[derive(Clone)]
+struct MeasurementTarget {
+    row_id: u64,
+    widget: gtk4::glib::WeakRef<gtk4::Widget>,
+}
+
+fn measurement_target(widget: &gtk4::Widget) -> Option<MeasurementTarget> {
+    if !source_artwork_queue::measurement_enabled() {
+        return None;
+    }
+    Some(MeasurementTarget {
+        row_id: NEXT_MEASUREMENT_ROW_ID.fetch_add(1, Ordering::Relaxed),
+        widget: widget.downgrade(),
+    })
+}
+
 fn artwork_chain(
     primary_url: Option<&str>,
     fallback_url: Option<&str>,
@@ -305,14 +321,12 @@ impl SourceImage {
         self.artwork.set_paintable(gtk4::gdk::Paintable::NONE);
         let weak_root = self.root.downgrade();
         let weak_artwork = self.artwork.downgrade();
-        let row_id = NEXT_MEASUREMENT_ROW_ID.fetch_add(1, Ordering::Relaxed);
-        let visibility_widget = self.root.clone().upcast::<gtk4::Widget>().downgrade();
+        let measurement = measurement_target(self.root.upcast_ref());
         load_texture_chain(
             request,
             generation,
             &self.generation,
-            row_id,
-            &visibility_widget,
+            measurement.as_ref(),
             move |texture| {
                 // The observer runs even if the widget itself is already gone:
                 // it feeds a different surface, whose own generation check
@@ -335,8 +349,7 @@ fn load_texture_chain(
     request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
-    row_id: u64,
-    visibility_widget: &gtk4::glib::WeakRef<gtk4::Widget>,
+    measurement: Option<&MeasurementTarget>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
     let primary_visible = Rc::new(Cell::new(false));
@@ -345,7 +358,7 @@ fn load_texture_chain(
         let primary_visible = primary_visible.clone();
         let current_for_callback = current.clone();
         let on_ready = on_ready.clone();
-        let visibility_widget = visibility_widget.clone();
+        let measurement = measurement.cloned();
         if stage == ArtworkStage::Fallback {
             if let Some(texture) = cached_texture_at_any_size(&url, request.cache_scope) {
                 if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
@@ -358,8 +371,7 @@ fn load_texture_chain(
             request,
             generation,
             current,
-            row_id,
-            visibility_widget,
+            measurement,
             move |texture| {
                 if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
                     on_ready(texture);
@@ -376,8 +388,7 @@ fn load_texture(
     request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
-    row_id: u64,
-    visibility_widget: gtk4::glib::WeakRef<gtk4::Widget>,
+    measurement: Option<MeasurementTarget>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
     let (width, height) = request.dimensions;
@@ -406,11 +417,13 @@ fn load_texture(
         // The quiet callback runs before the newly routed source page paints.
         // A retained but not-yet-mapped widget is therefore a startup row;
         // discarded rows from the superseded render fail the weak upgrade.
-        let registration = source_artwork_queue::registration_context(
-            row_id,
-            &visibility_widget,
-            request.retained_is_startup_visible,
-        );
+        let registration = measurement.as_ref().map(|target| {
+            source_artwork_queue::registration_context(
+                target.row_id,
+                &target.widget,
+                request.retained_is_startup_visible,
+            )
+        });
         let receiver = source_artwork_queue::queue(
             url.clone(),
             width,
@@ -457,14 +470,12 @@ pub(crate) fn load_into_image(
     }
     crate::ui::cover_loader::CoverLoader::set_placeholder(image);
     let weak_image = image.downgrade();
-    let row_id = NEXT_MEASUREMENT_ROW_ID.fetch_add(1, Ordering::Relaxed);
-    let visibility_widget = image.clone().upcast::<gtk4::Widget>().downgrade();
+    let measurement = measurement_target(image.upcast_ref());
     load_texture_chain(
         request,
         generation,
         current,
-        row_id,
-        &visibility_widget,
+        measurement.as_ref(),
         move |texture| {
             let Some(image) = weak_image.upgrade() else {
                 return;

@@ -2,7 +2,7 @@
 slug: episode-covers-appear-seconds-after-start
 worktree: /home/marvin/Projects/reprise-episode-covers-appear-seconds-after-start
 branch: feature/episode-covers-appear-seconds-after-start
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-08-20
 ---
@@ -166,6 +166,29 @@ Mutationsprobe an der in Task 2 gewählten Stelle — **genau ein Vorkommen** �
 Beleg, dass Task 1 rot wird. Erst committen, dann mutieren.
 
 Entfällt zusammen mit Task 2, falls Task 1 die Ursache vor dem Gate verortet.
+
+## Measurement scope and caveats
+
+The seeded profile did not reproduce the reported symptom. Its measured worst
+case was approximately 523 ms before the quiet gate opened plus approximately
+43 ms from queueing to the GTK-thread return, or approximately 566 ms in total,
+while the report described a delay of a couple of seconds. The 94.8% share is
+internally consistent because both sequential intervals use the same `Instant`,
+but its external validity for the actual complaint remains unconfirmed. The
+supported conclusion is therefore only that queue priority and a persistent
+pixel cache cannot explain the approximately 491 ms measured in this profile;
+it is not a claim that they can never matter. A follow-up startup investigation
+needs a profile close to the user's real library. The seed of 1,686 tracks,
+four channels, 60 episodes, and 64 covers was too small for that purpose.
+
+`jobs_ahead` is a cross-subsystem counter, not a stable podcast-startup queue
+length. `queued_jobs` is read at submission time from the shared artwork queue
+used by podcasts, radio, now playing, and external media; those surfaces each
+register their own `run_after_quiet` callbacks while their widgets are being
+constructed. The five-run series `36, 36, 0, 28, 19` therefore records which
+subsystem won that construction race in each run. The `0` belongs to a
+different regime rather than being ordinary noise, and five samples are too
+few to treat the median as representative.
 
 ## Nicht in diesem Plan
 
