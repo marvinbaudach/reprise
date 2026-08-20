@@ -2,6 +2,8 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+#[cfg(test)]
+use std::time::{Duration, Instant};
 
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -15,6 +17,14 @@ use super::stats_view_widgets::clear;
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+struct ContinuationTiming {
+    teardown: Duration,
+    rebuild: Duration,
+    row_count: usize,
+}
 
 /// Ranks the expander adds below the five artist surfaces already on screen.
 pub(super) const ARTIST_ROW_EXTRA: usize = 15;
@@ -38,10 +48,14 @@ struct RankingState {
     sort_by: Rc<Cell<SortBy>>,
     on_open_artist: StringCallback,
     on_unify: StringCallback,
+    #[cfg(test)]
+    timing: Rc<Cell<ContinuationTiming>>,
 }
 
 impl RankingState {
     fn render(&self, expanded: bool) -> bool {
+        #[cfg(test)]
+        self.timing.set(ContinuationTiming::default());
         let Some(snapshot) = self.snapshot.borrow().clone() else {
             self.bands_row.clear_data();
             self.clear_continuation();
@@ -62,11 +76,19 @@ impl RankingState {
     }
 
     fn clear_continuation(&self) {
+        #[cfg(test)]
+        let started = Instant::now();
         self.generation.set(self.generation.get().wrapping_add(1));
         for column in &self.columns {
             clear(column);
         }
         self.rows.borrow_mut().clear();
+        #[cfg(test)]
+        {
+            let mut timing = self.timing.get();
+            timing.teardown = started.elapsed();
+            self.timing.set(timing);
+        }
     }
 
     fn render_continuation(&self, artists: &[RankedGroup], sort_by: SortBy) {
@@ -83,6 +105,8 @@ impl RankingState {
             .collect::<Vec<_>>();
         let first_column_rows = continuation.len().div_ceil(2);
         let mut rendered_rows = Vec::with_capacity(continuation.len());
+        #[cfg(test)]
+        let started = Instant::now();
         for (offset, artist) in continuation.into_iter().enumerate() {
             let open_callback = self.on_open_artist.clone();
             let unify_callback = self.on_unify.clone();
@@ -101,6 +125,13 @@ impl RankingState {
             let column = usize::from(offset >= first_column_rows);
             self.columns[column].append(&row.root);
             rendered_rows.push(row);
+        }
+        #[cfg(test)]
+        {
+            let mut timing = self.timing.get();
+            timing.rebuild = started.elapsed();
+            timing.row_count = rendered_rows.len();
+            self.timing.set(timing);
         }
         *self.rows.borrow_mut() = rendered_rows;
         debug_assert_eq!(generation.get(), token);
@@ -191,6 +222,8 @@ impl StatsBandsCard {
             sort_by: Rc::new(Cell::new(SortBy::Time)),
             on_open_artist: Rc::new(RefCell::new(None)),
             on_unify: Rc::new(RefCell::new(None)),
+            #[cfg(test)]
+            timing: Rc::new(Cell::new(ContinuationTiming::default())),
         };
 
         reveal_button.connect_clicked({
@@ -310,6 +343,11 @@ impl StatsBandsCard {
     #[cfg(test)]
     pub(super) fn continuation_rows(&self) -> usize {
         self.state.rows.borrow().len()
+    }
+
+    #[cfg(test)]
+    fn continuation_timing(&self) -> ContinuationTiming {
+        self.state.timing.get()
     }
 
     #[cfg(test)]
