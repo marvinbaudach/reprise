@@ -24,8 +24,8 @@ android {
         applicationId = "org.reprise"
         minSdk = 26
         targetSdk = 37
-        versionCode = 22
-        versionName = "0.1.22"
+        versionCode = 23
+        versionName = "0.1.23"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
         buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"All Rights Reserved\"")
