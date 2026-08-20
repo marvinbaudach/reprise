@@ -191,12 +191,12 @@ impl LazyReleaseCover {
     }
 
     #[cfg(test)]
-    fn initials_text(&self) -> String {
+    pub(in crate::ui) fn initials_text(&self) -> String {
         self.initials.text().to_string()
     }
 
     #[cfg(test)]
-    fn shows_image(&self) -> bool {
+    pub(in crate::ui) fn shows_image(&self) -> bool {
         self.picture.is_visible()
     }
 }
