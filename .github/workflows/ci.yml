@@ -168,7 +168,7 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed
           base-devel cargo-audit dbus gettext git gstreamer gst-plugins-base
-          gst-plugins-good gtk4 libadwaita libsecret mesa
+          gst-plugins-good gtk4 jq libadwaita libsecret mesa
           meson openssh pkgconf
           ripgrep shellcheck rust sqlite xdotool xorg-server-xvfb xorg-xauth
 
@@ -214,7 +214,7 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed
           base-devel cargo-audit dbus gettext git gstreamer gst-plugins-base
-          gst-plugins-good gtk4 libadwaita libsecret mesa
+          gst-plugins-good gtk4 jq libadwaita libsecret mesa
           meson openssh pkgconf
           ripgrep shellcheck rust sqlite xdotool xorg-server-xvfb xorg-xauth
 
