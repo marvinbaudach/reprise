@@ -41,7 +41,6 @@
 
 .incident-figure {
   margin: var(--gap-block) 0 0;
-  max-width: 48rem;
 }
 
 /*
@@ -123,6 +122,7 @@
   display: flex;
   align-items: flex-end;
   gap: 1.75rem;
+  width: min(100%, 17.75rem);
   height: 132px;
 }
 
@@ -218,7 +218,6 @@
 
 .gate-figure {
   margin: var(--gap-line) 0 0;
-  max-width: 52rem;
 }
 
 .gate-strip {
@@ -293,7 +292,8 @@
 }
 
 .gate-strip__rail {
-  width: 26px;
+  flex: 1 1 26px;
+  min-width: 26px;
   height: 1px;
   background: var(--accent);
   transition: background var(--duration-normal) ease;
@@ -354,7 +354,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   margin-top: var(--gap-line);
-  max-width: 48rem;
   background: var(--surface-line-soft);
 }
 

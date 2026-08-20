@@ -13,6 +13,14 @@ const run = promisify(execFile);
 
 const GATE_SCRIPT = join(repoRoot, 'scripts', 'check-merge-readiness.sh');
 const INCIDENT_RECORD = join(repoRoot, 'docs', 'plans', 'queue-anchor-grill-followups.md');
+
+function cssRule(css, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const declarations = css.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`, 'm'))?.[1];
+  assert.ok(declarations, `${selector} must have its own rule`);
+  return declarations;
+}
+
 async function builtCss() {
   const assets = join(showroomRoot, 'dist', 'assets');
   const stylesheet = (await readdir(assets)).find((entry) => entry.endsWith('.css'));
@@ -300,4 +308,32 @@ test('show-18 the six gate groups partition every parsed check exactly once', as
     [...names].sort(),
     'every parsed check must be assigned once, with no omissions or duplicates',
   );
+});
+
+test('show-21 chapter two figures fill the frame without stretching the measured bars', async () => {
+  const css = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.css'),
+    'utf8',
+  );
+
+  for (const selector of ['.incident-figure', '.gate-figure', '.gate-groups']) {
+    assert.doesNotMatch(
+      cssRule(css, selector),
+      /\bmax-width\s*:/,
+      `${selector} must reach the frame edge instead of introducing another measure`,
+    );
+  }
+
+  const rail = cssRule(css, '.gate-strip__rail');
+  assert.match(rail, /\bflex:\s*1 1 26px\s*;/, 'the rail must consume the desktop row slack');
+  assert.match(rail, /\bmin-width:\s*26px\s*;/, 'the rail must retain its authored minimum');
+
+  const chart = cssRule(css, '.incident-panel__chart');
+  assert.match(chart, /\bwidth:\s*min\(100%, 17\.75rem\)\s*;/);
+  assert.match(chart, /\bgap:\s*1\.75rem\s*;/);
+  assert.match(chart, /\bheight:\s*132px\s*;/);
+
+  const bar = cssRule(css, '.incident-panel__bar');
+  assert.match(bar, /\bwidth:\s*84px\s*;/);
+  assert.match(bar, /\bborder-radius:\s*3px 3px 0 0\s*;/);
 });
