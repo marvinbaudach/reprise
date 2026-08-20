@@ -127,6 +127,9 @@ internal class AndroidLibrarySessionPort(
             .onFailure { error -> Log.w(TAG, "Could not fetch artist portrait", error) }
             .getOrNull()
 
+    override fun artistsMissingPortraits(limit: UInt): List<String> =
+        library.artistsMissingPortraits(limit)
+
     override fun setFavourite(trackId: Long, favourite: Boolean) {
         library.setTrackRating(trackId, if (favourite) 5 else 0)
         rememberedTreeUri()?.let { treeUri -> publishListenReport(Uri.parse(treeUri)) }

@@ -268,6 +268,59 @@ fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
 }
 
 @Test
+fun aFinishedScanStartsThePrefetch() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = emptyList(),
+    )
+    var starts = 0
+    val session = LibrarySession(
+        port = port,
+        startPortraitPrefetch = { starts += 1 },
+    )
+
+    session.chooseTree("content://provider/tree/Music") { }
+
+    assertEquals(1, starts)
+}
+
+@Test
+fun thePrefetchNeverRunsInsideTheScan() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = emptyList(),
+    )
+    val session = LibrarySession(
+        port = port,
+        startPortraitPrefetch = { port.operations += "prefetch" },
+    )
+
+    session.chooseTree("content://provider/tree/Music") { }
+
+    assertTrue(port.operations.indexOf("prefetch") > port.operations.indexOf("scan"))
+}
+
+@Test
+fun restoringAnExistingLibraryStartsThePrefetch() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = emptyList(),
+    )
+    var starts = 0
+    val session = LibrarySession(
+        port = port,
+        startPortraitPrefetch = { starts += 1 },
+    )
+
+    session.restore()
+
+    assertEquals(1, starts)
+}
+
+@Test
 fun rescanUsesRememberedTreeWithoutChoosingAgain() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",
@@ -476,6 +529,8 @@ private class RecordingLibrarySessionPort(
     }
 
     override fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? = null
+
+    override fun artistsMissingPortraits(limit: UInt): List<String> = emptyList()
 
     override fun setFavourite(trackId: Long, favourite: Boolean) = Unit
 }
