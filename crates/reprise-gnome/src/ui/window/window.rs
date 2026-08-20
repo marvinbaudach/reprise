@@ -306,6 +306,7 @@ pub fn build(
         &concerts_runtime,
         &location_broadcast,
     ));
+    concerts_view.set_artist_image(track_list.shared_cover_loader(), artist_portrait.clone());
     super::startup_report::mark("concerts");
     let releases_view = Rc::new(crate::ui::releases::install(
         conn.clone(),
