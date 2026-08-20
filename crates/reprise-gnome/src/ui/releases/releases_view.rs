@@ -103,6 +103,7 @@ impl ReleasesView {
                     .and_then(std::rc::Weak::upgrade);
                 if let Some(shared) = shared {
                     super::releases_selection::wire_cell(surface, item, &shared);
+                    super::releases_context_menu::wire_cell(surface, item, &shared);
                 }
             });
         let visibility_target = shared_target.clone();
@@ -208,6 +209,7 @@ impl ReleasesView {
             fetch_override: RefCell::new(None),
         });
         shared_target.replace(Some(Rc::downgrade(&shared)));
+        super::releases_context_menu::wire(&column_view, &shared);
         {
             let shared = Rc::downgrade(&shared);
             filter_bar.set_on_changed(move |_| {
