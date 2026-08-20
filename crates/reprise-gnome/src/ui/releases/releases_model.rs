@@ -4,6 +4,7 @@
 
 use std::cell::RefCell;
 
+use gtk4::prelude::*;
 use gtk4::{gio, glib};
 use reprise_core::artist_news_history::HistoryEntry;
 
@@ -54,13 +55,13 @@ impl ReleaseObject {
 
 pub(super) struct ReleasesModel {
     store: gio::ListStore,
-    selection: gtk4::SingleSelection,
+    selection: gtk4::MultiSelection,
 }
 
 impl ReleasesModel {
     pub(super) fn new() -> Self {
         let store = gio::ListStore::new::<ReleaseObject>();
-        let selection = gtk4::SingleSelection::new(Some(store.clone()));
+        let selection = gtk4::MultiSelection::new(Some(store.clone()));
         Self { store, selection }
     }
 
@@ -75,8 +76,40 @@ impl ReleasesModel {
         &self.store
     }
 
-    pub(super) fn selection(&self) -> &gtk4::SingleSelection {
+    pub(super) fn selection(&self) -> &gtk4::MultiSelection {
         &self.selection
+    }
+
+    pub(super) fn position_of(&self, mbid: &str) -> Option<u32> {
+        (0..self.store.n_items()).find(|position| {
+            self.store
+                .item(*position)
+                .and_downcast::<ReleaseObject>()
+                .is_some_and(|object| object.entry().release_group_mbid == mbid)
+        })
+    }
+
+    pub(super) fn selected_mbids(&self) -> Vec<String> {
+        let bitset = self.selection.selection();
+        let Some((mut iter, first)) = gtk4::BitsetIter::init_first(&bitset) else {
+            return Vec::new();
+        };
+        let mut positions = vec![first];
+        positions.extend(iter.by_ref());
+        positions
+            .into_iter()
+            .filter_map(|position| self.store.item(position).and_downcast::<ReleaseObject>())
+            .map(|object| object.entry().release_group_mbid)
+            .collect()
+    }
+
+    pub(super) fn select_mbids(&self, mbids: &[String]) {
+        self.selection.unselect_all();
+        for mbid in mbids {
+            if let Some(position) = self.position_of(mbid) {
+                self.selection.select_item(position, false);
+            }
+        }
     }
 }
 
