@@ -128,7 +128,9 @@ internal class AndroidLibrarySessionPort(
             .getOrNull()
 
     override fun artistsMissingPortraits(limit: UInt): List<String> =
-        library.artistsMissingPortraits(limit)
+        runCatching { library.artistsMissingPortraits(limit) }
+            .onFailure { error -> Log.w(TAG, "Could not list artists missing portraits", error) }
+            .getOrDefault(emptyList())
 
     override fun setFavourite(trackId: Long, favourite: Boolean) {
         library.setTrackRating(trackId, if (favourite) 5 else 0)

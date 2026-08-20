@@ -1,4 +1,5 @@
-//! Artist portraits are always fetched from Deezer, which receives each viewed artist name.
+//! Artist portraits are fetched from Deezer after a library scan or restore, which sends the
+//! library's artist names to Deezer.
 //! Blocking; call from a worker thread.
 
 mod cache;
