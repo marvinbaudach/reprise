@@ -161,6 +161,15 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
 }
 
 #[test]
+fn a_fill_downloads_request_does_not_cancel_a_running_refresh() {
+    let current = 7;
+    assert_eq!(
+        request_generation(current, PodcastsOperation::FillDownloads),
+        current
+    );
+}
+
+#[test]
 fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publish() {
     let conn = crate::test_db::open().unwrap();
     let episode_id = episode(&conn);

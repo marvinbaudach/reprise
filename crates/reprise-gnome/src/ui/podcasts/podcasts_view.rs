@@ -124,6 +124,7 @@ pub(in crate::ui) struct PodcastsView {
     /// requests can overlap; the oldest completion must not release the
     /// button while a newer request is still fetching.
     refresh_in_flight: Cell<usize>,
+    fill_in_flight: Cell<bool>,
     groups: RefCell<Vec<SourceGroup>>,
     rows: RefCell<Vec<EpisodeRow>>,
     expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
@@ -233,6 +234,7 @@ impl PodcastsView {
             refresh_stack,
             refresh_spinner,
             refresh_in_flight: Cell::new(0),
+            fill_in_flight: Cell::new(false),
             groups: RefCell::new(Vec::new()),
             rows: RefCell::new(Vec::new()),
             expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
@@ -575,6 +577,7 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
                     Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
+                    Ok(PodcastsWorkerResult::Filled(_)) => {}
                     Err(error) => {
                         tracing::warn!(%error, episode_id, "podcast download failed");
                         view.set_download_state(

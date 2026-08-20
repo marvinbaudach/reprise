@@ -20,6 +20,10 @@ pub(in crate::ui) enum PodcastsOperation {
     Download {
         episode_id: i64,
     },
+    /// Brings every subscription up to its `keep_downloaded` target after a
+    /// refresh, without making the refresh wait for a potentially large
+    /// first-run backlog.
+    FillDownloads,
 }
 
 pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsOperation) -> u64 {
@@ -30,7 +34,7 @@ pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsO
         // Neither is allowed to cancel a refresh/load-more already in
         // flight, and both are themselves allowed to keep running alongside
         // one — same non-cancelling treatment `Download` already has.
-        PodcastsOperation::Download { .. } => current,
+        PodcastsOperation::Download { .. } | PodcastsOperation::FillDownloads => current,
     }
 }
 
@@ -99,6 +103,7 @@ pub(in crate::ui) enum PodcastsWorkerResult {
         episode_id: i64,
         state: podcasts::download_state::DownloadState,
     },
+    Filled(podcasts::fill_downloads::FillSummary),
 }
 
 type OnEnabled = Rc<dyn Fn(bool)>;
@@ -254,18 +259,12 @@ fn process_request(
                 .and_then(|config| {
                     let ytdlp =
                         super::metadata_ytdlp(config.ytdlp_path.as_deref(), config.youtube_browser);
-                    podcasts::pipeline::refresh_with_download_progress(
+                    podcasts::pipeline::refresh(
                         conn,
                         &podcasts::pipeline::HttpFeedFetcher,
                         &ytdlp,
                         chrono::Utc::now().timestamp(),
                         podcasts::refresh::RefreshRequest { policy, kind },
-                        &mut |episode_id, state| {
-                            send_response(
-                                request,
-                                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
-                            );
-                        },
                     )
                     .map(PodcastsWorkerResult::Refreshed)
                     .map_err(|error| error.to_string())
@@ -299,13 +298,42 @@ fn process_request(
         PodcastsOperation::Download { episode_id } => {
             download_episode(conn, request, episode_id);
         }
+        PodcastsOperation::FillDownloads => {
+            let result = podcasts::config::load(conn)
+                .map_err(|error| error.to_string())
+                .and_then(|config| {
+                    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
+                        config.ytdlp_path.as_deref(),
+                        config.youtube_browser,
+                    );
+                    podcasts::fill_downloads::fill_downloads(
+                        conn,
+                        &podcasts::pipeline::HttpFeedFetcher,
+                        &ytdlp,
+                        &podcasts::downloads::default_download_root(),
+                        &mut |episode_id, state| {
+                            send_response(
+                                request,
+                                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
+                            );
+                        },
+                    )
+                    .map(PodcastsWorkerResult::Filled)
+                    .map_err(|error| error.to_string())
+                });
+            send_response(request, result);
+        }
     }
 }
 
 fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult, String>) {
     let terminal = match &result {
         Err(_)
-        | Ok(PodcastsWorkerResult::Refreshed(_) | PodcastsWorkerResult::LoadedMore { .. }) => true,
+        | Ok(
+            PodcastsWorkerResult::Refreshed(_)
+            | PodcastsWorkerResult::LoadedMore { .. }
+            | PodcastsWorkerResult::Filled(_),
+        ) => true,
         Ok(PodcastsWorkerResult::DownloadState { state, .. }) => matches!(
             state,
             podcasts::download_state::DownloadState::Downloaded { .. }
@@ -325,10 +353,10 @@ fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult,
 
 /// `POD-7`: the worker's only download executor is
 /// `reprise_core::podcasts::pipeline::download_episode` — the same body the
-/// refresh pipeline's auto-download branch and MCP's `music_manage_episodes`
-/// already call. There is no second episode lookup, `NET-1a` check, `.part`
-/// handling, or progress emission here; this just wires up the fetchers and
-/// forwards progress/terminal states onto the response channel.
+/// fill-up and MCP's `music_manage_episodes` already call. There is no second
+/// episode lookup, `NET-1a` check, `.part` handling, or progress emission
+/// here; this just wires up the fetchers and forwards progress/terminal states
+/// onto the response channel.
 fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
     let config = match podcasts::config::load(conn) {
         Ok(config) => config,
