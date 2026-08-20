@@ -1,7 +1,7 @@
 //! Artist portraits are always fetched from Deezer, which receives each viewed artist name.
 //! Blocking; call from a worker thread.
 
-pub(crate) mod cache;
+pub mod cache;
 pub(crate) mod deezer;
 mod placeholder;
 
@@ -111,16 +111,11 @@ where
         return Ok(PortraitOutcome::NotFound);
     }
 
-    let cached_path = cache::portrait_path_in(dir, name);
-    if let Some(path) = cached_path.as_ref() {
-        if cache::is_fresh(cache::file_epoch_secs(path), now, true) {
-            return Ok(PortraitOutcome::Found(path.clone()));
-        }
-    }
-    let marker = cache::negative_marker_path(dir, name);
-    if marker.exists() && cache::is_fresh(cache::file_epoch_secs(&marker), now, false) {
-        return Ok(PortraitOutcome::NotFound);
-    }
+    let cached_path = match cache::verdict(dir, name, now) {
+        cache::CacheVerdict::FreshPortrait(path) => return Ok(PortraitOutcome::Found(path)),
+        cache::CacheVerdict::FreshNegative => return Ok(PortraitOutcome::NotFound),
+        cache::CacheVerdict::NeedsFetch { stale_portrait } => stale_portrait,
+    };
 
     let body = match search(&deezer::search_url(name)) {
         Ok(body) => body,
