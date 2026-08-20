@@ -27,8 +27,14 @@ export const BASELINE = {
    * The commit every permalink on this page points at — and nothing else. The
    * volumes used to be counted here too; now they are counted at build time, so
    * this is a link target, not a provenance claim.
+   *
+   * It has to be a commit that carries every path the page cites. The previous
+   * pin did not: it predated `index-rebuild.md`, `timeline.md` and
+   * `code-census.mjs`, so four links this page has been shipping resolved to a
+   * 404. `permalinks-resolve.test.mjs` now fails the build on that, which is
+   * the only reason this stays true.
    */
-  commit: '604677322e',
+  commit: 'a776f8a963',
   repository: 'https://github.com/marvinbaudach/reprise',
 } as const;
 
@@ -168,3 +174,15 @@ export const PERFORMANCE: readonly Measurement[] = INDEX_REBUILD.rows;
 export const PERFORMANCE_PRICE = INDEX_REBUILD.price;
 
 export const PERFORMANCE_RECORD = 'docs/measurements/index-rebuild.md';
+
+/**
+ * The incident CH.02 quotes. Like the ledger above it is *quoted*, not counted:
+ * it happened once and cannot be recovered from the tree.
+ */
+export const INCIDENT_RECORD = 'docs/plans/queue-anchor-grill-followups.md';
+
+/** The doc comment CH.02 quotes, and the trap it named before it was sprung. */
+export const STYLE_SOURCE = 'crates/reprise-gnome/src/ui/style/mod.rs';
+
+/** The script whose parsed gate calls supply CH.02's strip and coverage groups. */
+export const MERGE_GATE_SOURCE = 'scripts/check-merge-readiness.sh';

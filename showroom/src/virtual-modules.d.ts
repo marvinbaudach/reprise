@@ -7,19 +7,16 @@
 declare module 'virtual:merge-gates' {
   /** The merge gate's checks, in the order `scripts/check-merge-readiness.sh` runs them. */
   export const GATES: readonly string[];
-}
 
-declare module 'virtual:agent-pipeline' {
-  export interface PipelineStep {
-    readonly step: string;
-    readonly phase: string;
-    readonly actor: string;
-    readonly writes: boolean;
-    readonly judges: boolean;
+  export interface GateGroup {
+    readonly name: string;
+    readonly line: string;
+    /** Checks assigned to this group, retained in script order. */
+    readonly gates: readonly string[];
   }
 
-  /** The pipeline's steps, read from the table in `docs/agents/pipeline.md`. */
-  export const PIPELINE: readonly PipelineStep[];
+  /** Six exhaustive coverage groups, validated against `GATES` at build time. */
+  export const GATE_GROUPS: readonly GateGroup[];
 }
 
 declare module 'virtual:code-census' {
@@ -83,5 +80,11 @@ declare module 'virtual:spectral-axis' {
   export const AXIS: {
     readonly coral: string;
     readonly teal: string;
+  };
+}
+
+declare module 'virtual:incident' {
+  export const INCIDENT: {
+    readonly date: string;
   };
 }

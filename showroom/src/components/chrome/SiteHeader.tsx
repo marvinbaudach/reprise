@@ -2,9 +2,10 @@ import './chrome.css';
 
 const CHAPTERS: readonly { id: string; label: string }[] = [
   { id: 'ch-01', label: '01 Core' },
-  { id: 'ch-02', label: '02 Gates' },
+  { id: 'ch-02', label: '02 Judgement' },
   { id: 'ch-03', label: '03 Signature' },
   { id: 'ch-04', label: '04 Headless' },
+  { id: 'ch-05', label: '05 Measured' },
 ];
 
 const MARK = `${import.meta.env.BASE_URL}brand/reprise-mark.svg`;
