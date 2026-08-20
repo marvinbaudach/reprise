@@ -49,6 +49,9 @@ pub(in crate::ui) struct SongVisualizer {
     /// Mirrored outside the engine (which has no getter) so `set_spectrum`
     /// can gate on "are we actually playing" without borrowing it.
     playback: Rc<Cell<PlaybackState>>,
+    /// Monotonic time of the last audio frame handed to the portable engine.
+    /// Peak caps decay from this elapsed time even while the panel is hidden.
+    last_ingest_us: Rc<Cell<i64>>,
     panel_active: Rc<Cell<bool>>,
     /// Mirrored from the panel, which owns the envelope — the readout names
     /// every value the reactive light runs on, and `swell` is one of them.
@@ -75,6 +78,7 @@ impl SongVisualizer {
             engine,
             readout,
             playback: Rc::new(Cell::new(PlaybackState::Stopped)),
+            last_ingest_us: Rc::new(Cell::new(0)),
             panel_active: Rc::new(Cell::new(false)),
             swell: Rc::new(Cell::new(0.0)),
             tick_id: Rc::new(RefCell::new(None)),
@@ -88,6 +92,7 @@ impl SongVisualizer {
     /// A new track started: resets the Bars envelope and impact overlay so
     /// motion from the previous track does not bleed into the new one.
     pub(in crate::ui) fn note_track_changed(&self) {
+        self.last_ingest_us.set(0);
         self.engine.borrow_mut().note_track_changed();
         self.readout
             .set(self.engine.borrow().bass_pressure(), self.swell.get());
@@ -120,13 +125,23 @@ impl SongVisualizer {
         if !motion::animations_enabled() || self.playback.get() != PlaybackState::Playing {
             return;
         }
-        self.engine.borrow_mut().ingest(&frame);
+        let now = gtk4::glib::monotonic_time();
+        let previous = self.last_ingest_us.replace(now);
+        let elapsed = if previous == 0 {
+            Duration::from_micros(16_667)
+        } else {
+            Duration::from_micros(u64::try_from(now.saturating_sub(previous)).unwrap_or_default())
+        };
+        self.engine.borrow_mut().ingest((&frame, elapsed));
         self.readout.update(frame.bass_pressure(), self.swell.get());
         self.ensure_tick();
     }
 
     pub(in crate::ui) fn set_playback_state(&self, playback: PlaybackState) {
         self.playback.set(playback);
+        if playback != PlaybackState::Playing {
+            self.last_ingest_us.set(0);
+        }
         let animations_enabled = motion::animations_enabled();
         {
             let mut engine = self.engine.borrow_mut();
