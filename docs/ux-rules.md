@@ -3295,6 +3295,12 @@ property is set and yet nothing happens.
   selected and centered at startup: that row is placed, so starting it only
   starts the audio. Centring it again would be a second visible scroll on a
   viewport that is already the target.
+  In a list with section headers, "centered" means centered in the complete
+  content geometry including every header above the row, never in an imagined
+  headerless row sequence. A reveal in a stationary list targets the exact
+  row-to-viewport midpoint. A restore after replacing the model instead uses
+  the nearest row edge GTK can reproduce and may therefore differ from that
+  midpoint by at most half a row.
   Centring moves the viewport over the Standard token rather than
   teleporting it, and yields immediately to anything else that writes the
   scroll position — the user's own scrolling, a model replacement, or GTK's

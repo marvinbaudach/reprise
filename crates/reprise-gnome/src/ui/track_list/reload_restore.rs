@@ -188,16 +188,19 @@ pub(in crate::ui) fn reanchor_on_track(
     opened
 }
 
-/// Computes the scroll offset that vertically centers `track_id` after a
-/// filter change. Returns `None` when no playing track exists, the track is
+/// Flat-list-only test oracle for the scroll offset that vertically centers
+/// `track_id` after a filter change. `current_ids` must describe a view with no
+/// section headers. Returns `None` when no playing track exists, the track is
 /// outside the new view, or the whole list fits in the viewport.
 ///
 /// The restore itself no longer asks: it needs the value GTK's own anchor
 /// reproduces, which is a row edge rather than the arithmetic centre
 /// (`centered_scroll_restore::centered_anchor`). What survives here is the
-/// independent oracle the display tests measure that restore against.
+/// independent rows-only countercalculation the display tests measure that
+/// restore against. Sectioned Queue centering has its own widget-geometry
+/// proof and must not use this oracle.
 #[cfg(test)]
-pub(in crate::ui) fn centered_track_scroll_target(
+pub(in crate::ui) fn flat_list_centered_track_scroll_target(
     track_id: Option<i64>,
     current_ids: &[i64],
     row_height: f64,
@@ -206,14 +209,8 @@ pub(in crate::ui) fn centered_track_scroll_target(
     let track_id = track_id?;
     let position = current_ids.iter().position(|&id| id == track_id)?;
     let position = u32::try_from(position).ok()?;
-    let n_rows = u32::try_from(current_ids.len()).ok()?;
     let row_height = crate::ui::list_geometry::RowHeight::new(row_height)?;
-    crate::ui::scroll_center::centered_scroll_value_with_height(
-        position,
-        n_rows,
-        row_height,
-        viewport_height,
-    )
+    ListLayout::rows_only(row_height).centered_value(position, current_ids.len(), viewport_height)
 }
 
 #[cfg(test)]
@@ -326,7 +323,7 @@ mod tests {
         let current_ids = (1..=100).collect::<Vec<_>>();
 
         assert_eq!(
-            centered_track_scroll_target(Some(51), &current_ids, 20.0, 200.0),
+            flat_list_centered_track_scroll_target(Some(51), &current_ids, 20.0, 200.0),
             Some(910.0)
         );
     }

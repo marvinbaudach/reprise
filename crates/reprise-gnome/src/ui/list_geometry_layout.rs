@@ -45,9 +45,9 @@ pub(in crate::ui) fn headers_above_in(starts: &[u32], position: u32) -> usize {
 /// place that knows a row's top edge is
 /// `position * row_height + headers_above(position) * section_header_height`.
 ///
-/// Deliberately GTK-free. `scroll_center::centered_scroll_value_with_height`
-/// still models a list as rows only; it centres rather than anchors and is
-/// tracked separately -- it is the last remaining copy of this model.
+/// Deliberately GTK-free. Both centering and anchor restoration use this
+/// complete row-and-header model; GTK-facing code only supplies measurements
+/// and writes the resulting adjustment value.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct ListLayout {
     row_height: RowHeight,
@@ -156,6 +156,29 @@ impl ListLayout {
 
     pub(in crate::ui) fn max_scroll(&self, n_rows: usize, viewport_height: f64) -> f64 {
         (self.content_height(n_rows) - viewport_height).max(0.0)
+    }
+
+    /// Returns the adjustment value that puts the exact middle of `position`
+    /// at the viewport middle, including every section header above the row.
+    ///
+    /// The stale-position rejection is load-bearing: clamping an index from a
+    /// replaced model into the new scroll range would otherwise return a
+    /// plausible target for an unrelated row.
+    pub(in crate::ui) fn centered_value(
+        &self,
+        position: u32,
+        n_rows: usize,
+        page_size: f64,
+    ) -> Option<f64> {
+        let content_height = self.content_height(n_rows);
+        if n_rows == 0 || page_size <= 0.0 || content_height <= page_size {
+            return None;
+        }
+        if usize::try_from(position).ok()? >= n_rows {
+            return None;
+        }
+        let target = self.row_top(position) + self.row_height.pixels() / 2.0 - page_size / 2.0;
+        Some(target.clamp(0.0, self.max_scroll(n_rows, page_size)))
     }
 
     /// Whether a live allocation can judge this layout's assumed header height.
@@ -359,5 +382,30 @@ mod tests {
         assert_eq!(sectioned.row_top(12), rows_only.row_top(12));
         assert_eq!(sectioned.content_height(100), rows_only.content_height(100));
         assert_eq!(sectioned.has_sections(), rows_only.has_sections());
+    }
+
+    #[test]
+    fn centered_value_preserves_the_flat_list_contract() {
+        let layout = ListLayout::rows_only(height(10.0));
+
+        assert_eq!(layout.centered_value(50, 100, 200.0), Some(405.0));
+        assert_eq!(layout.centered_value(0, 100, 200.0), Some(0.0));
+        assert_eq!(layout.centered_value(99, 100, 200.0), Some(800.0));
+        assert_eq!(layout.centered_value(5, 100, 0.0), None);
+        assert_eq!(layout.centered_value(5, 10, 200.0), None);
+        assert_eq!(layout.centered_value(0, 0, 200.0), None);
+        assert_eq!(layout.centered_value(42, 30, 200.0), None);
+        assert_eq!(layout.centered_value(29, 30, 200.0), Some(100.0));
+    }
+
+    #[test]
+    fn centered_value_counts_every_header_above_the_row() {
+        let rows_only = ListLayout::rows_only(height(10.0));
+        let sectioned = layout(10.0, 36.0, &[0, 20, 40]);
+        let flat = rows_only.centered_value(50, 100, 200.0).unwrap();
+        let with_headers = sectioned.centered_value(50, 100, 200.0).unwrap();
+
+        assert_eq!(with_headers, 513.0);
+        assert_eq!(with_headers - flat, 3.0 * 36.0);
     }
 }

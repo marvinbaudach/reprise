@@ -668,3 +668,6 @@ fn queue_anchor_names_the_row_at_the_viewport_top() {
 
     fixture.window.close();
 }
+
+#[path = "queue_section_centering_display_tests.rs"]
+mod queue_section_centering_display_tests;
