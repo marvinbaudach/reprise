@@ -2,7 +2,7 @@
 slug: queue-centering-ignores-section-headers
 worktree: /home/marvin/Projects/reprise-queue-centering-ignores-section-headers
 branch: feature/queue-centering-ignores-section-headers
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-19
 ---
