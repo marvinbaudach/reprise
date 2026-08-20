@@ -2,7 +2,7 @@
 slug: library-doctor-out-of-date-rows-are-unreadable
 worktree: /home/marvin/Projects/reprise-library-doctor-out-of-date-rows-are-unreadable
 branch: feature/library-doctor-out-of-date-rows-are-unreadable
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
