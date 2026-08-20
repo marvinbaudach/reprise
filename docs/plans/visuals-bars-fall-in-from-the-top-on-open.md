@@ -2,7 +2,7 @@
 slug: visuals-bars-fall-in-from-the-top-on-open
 worktree: /home/marvin/Projects/reprise-visuals-bars-fall-in-from-the-top-on-open
 branch: feature/visuals-bars-fall-in-from-the-top-on-open
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
