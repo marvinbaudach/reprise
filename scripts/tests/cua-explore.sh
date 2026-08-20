@@ -114,13 +114,21 @@ if rg --quiet --fixed-strings -- '--map-root-user' "$runner" scripts/cua-explore
   echo "exploratory app must not map root inside its network namespace" >&2
   exit 1
 fi
-# Guarded like the D-Bus probe below it. Unprivileged user namespaces are
-# switched off on plenty of hardened hosts and in plenty of containers, and this
-# script now runs in the merge gate — and so on every `git push` through the
-# pre-push hook. An unguarded probe would fail those pushes for a reason that
-# has nothing to do with what was pushed.
+# Unprivileged user namespaces are switched off on plenty of hardened hosts and
+# in plenty of containers, and this script now runs in the merge gate — and so on
+# every `git push` through the pre-push hook. An unguarded probe would fail those
+# pushes, and the CI container, for a reason that has nothing to do with what was
+# pushed. Both probes below need a working namespace, so the capability is
+# established once here rather than re-derived per probe: asking only whether the
+# D-Bus tools exist let the second probe run where the first had already given up.
 if command -v unshare >/dev/null &&
   unshare --user --map-current-user --net true >/dev/null 2>&1; then
+  user_namespaces=true
+else
+  user_namespaces=false
+fi
+
+if [[ $user_namespaces == true ]]; then
   host_network=$(readlink /proc/self/ns/net)
   private_network=$(unshare --user --map-current-user --net readlink /proc/self/ns/net)
   if [[ $host_network == "$private_network" ]]; then
@@ -130,15 +138,16 @@ if command -v unshare >/dev/null &&
 else
   echo "skipping exploratory namespace probe: unprivileged user namespaces unavailable"
 fi
-if command -v dbus-run-session >/dev/null && command -v dbus-send >/dev/null; then
-  if ! timeout 20 dbus-run-session -- unshare --user --map-current-user --net \
-    dbus-send --session --print-reply --dest=org.freedesktop.DBus \
-    /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null; then
-    echo "exploratory app namespace must retain private session-bus access" >&2
-    exit 1
-  fi
-else
+
+if [[ $user_namespaces != true ]]; then
+  echo "skipping exploratory namespace D-Bus probe: unprivileged user namespaces unavailable"
+elif ! command -v dbus-run-session >/dev/null || ! command -v dbus-send >/dev/null; then
   echo "skipping exploratory namespace D-Bus probe: dbus-run-session or dbus-send missing"
+elif ! timeout 20 dbus-run-session -- unshare --user --map-current-user --net \
+  dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+  /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null; then
+  echo "exploratory app namespace must retain private session-bus access" >&2
+  exit 1
 fi
 
 # The third pattern is the behaviour, not the spelling: the stub root has to be
