@@ -2,7 +2,7 @@
 slug: concerts-artist-portrait-column
 worktree: /home/marvin/Projects/reprise-concerts-artist-portrait-column
 branch: feature/concerts-artist-portrait-column
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
