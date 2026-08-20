@@ -47,9 +47,6 @@ pub enum DoctorFindingKind {
     /// Applied without asking: unambiguous, or a MusicBrainz recording ID that
     /// changes nothing a human can see.
     Quiet,
-    /// Not admitted to either tier because the track no longer matches the
-    /// fingerprint captured by the scan.
-    Hidden,
     /// Shown for review when its track still matches the scan fingerprint.
     NeedsReview,
 }
@@ -68,13 +65,9 @@ pub fn finding_kind(
     source: ProposalSource,
     preselected: bool,
     written: bool,
-    stale: bool,
 ) -> DoctorFindingKind {
     if written {
         return DoctorFindingKind::Written;
-    }
-    if stale {
-        return DoctorFindingKind::Hidden;
     }
     if field == DoctorField::RecordingMbid || (source == ProposalSource::Local && preselected) {
         return DoctorFindingKind::Quiet;
@@ -92,7 +85,8 @@ pub(crate) fn is_auto_applied_parts(
     preselected: bool,
     stale: bool,
 ) -> bool {
-    finding_kind(field, source, preselected, false, stale) == DoctorFindingKind::Quiet
+    fingerprint_allows_review(stale)
+        && finding_kind(field, source, preselected, false) == DoctorFindingKind::Quiet
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

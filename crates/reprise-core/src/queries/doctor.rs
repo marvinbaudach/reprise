@@ -53,7 +53,6 @@ pub fn count_doctor_findings(db: &Db) -> Result<DoctorFindingCounts, rusqlite::E
             source,
             preselected,
             written.contains(&(track_id, field)),
-            is_stale,
         );
         if kind == crate::library_doctor::DoctorFindingKind::NeedsReview {
             counts.ready = counts.ready.saturating_add(1);
