@@ -102,17 +102,25 @@ impl ReleasesModel {
     }
 
     pub(super) fn select_mbids(&self, mbids: &[String]) {
-        self.selection.unselect_all();
+        let selected = self.selection.selection().copy();
+        selected.remove_all();
         for mbid in mbids {
             if let Some(position) = self.position_of(mbid) {
-                self.selection.select_item(position, false);
+                selected.add(position);
             }
         }
+        let mask = self.selection.selection().copy();
+        mask.remove_all();
+        mask.add_range(0, self.store.n_items());
+        self.selection.set_selection(&selected, &mask);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use gtk4::gio::prelude::*;
     use reprise_core::artist_news::LibraryPresence;
 
@@ -168,5 +176,30 @@ mod tests {
         model.replace(vec![entry("three"), entry("one"), entry("four")]);
 
         assert_eq!(model.selected_mbids(), ["three", "one"]);
+    }
+
+    #[test]
+    fn restoring_multiple_mbids_never_emits_a_single_row_selection() {
+        let model = ReleasesModel::new();
+        model.replace(vec![entry("one"), entry("two"), entry("three")]);
+        let observed_sizes = Rc::new(RefCell::new(Vec::new()));
+        {
+            let observed_sizes = observed_sizes.clone();
+            model
+                .selection()
+                .connect_selection_changed(move |selection, _, _| {
+                    observed_sizes
+                        .borrow_mut()
+                        .push(selection.selection().size());
+                });
+        }
+
+        model.select_mbids(&["one".to_owned(), "two".to_owned(), "three".to_owned()]);
+
+        assert_eq!(
+            observed_sizes.borrow().as_slice(),
+            [3],
+            "restore must emit the complete selection once"
+        );
     }
 }
