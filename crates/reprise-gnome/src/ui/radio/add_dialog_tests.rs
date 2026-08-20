@@ -482,8 +482,10 @@ fn seed_played_genre(conn: &Db, genre: &str) {
 }
 
 /// `RAD-5`: the library chip end to end — hidden while the library has
-/// nothing to suggest, labelled from the played genre and the stored country
-/// once it has, and dispatching that very search when clicked.
+/// nothing to suggest, labelled from the played genre alone once it has, and
+/// dispatching that very search when clicked. A stored country is deliberately
+/// present here and must not reach the chip: location-filtered discovery
+/// belongs to "Near you", so this chip searches the genre worldwide.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn rad_5_the_library_chip_appears_from_the_library_and_searches_what_it_says() {
@@ -509,8 +511,8 @@ fn rad_5_the_library_chip_appears_from_the_library_and_searches_what_it_says() {
     assert!(dialog.widgets.chip_library.is_visible());
     assert_eq!(
         dialog.widgets.chip_library.label().as_deref(),
-        Some("Metal in DE"),
-        "the chip names the genre this library plays and the country it knows"
+        Some("Metal"),
+        "the chip names the genre this library plays and nothing else"
     );
 
     dialog.widgets.chip_library.emit_clicked();
@@ -519,7 +521,7 @@ fn rad_5_the_library_chip_appears_from_the_library_and_searches_what_it_says() {
         matches!(dialog.state.borrow().phase, AddDialogPhase::Searching),
         "the chip must dispatch the search it advertises"
     );
-    assert_eq!(dialog.widgets.entry.text().as_str(), "Metal in DE");
+    assert_eq!(dialog.widgets.entry.text().as_str(), "Metal");
 }
 
 /// `SRC-8`: the dialog keeps one width, whatever a search returns. A
