@@ -54,6 +54,14 @@ struct RankingState {
 
 impl RankingState {
     fn render(&self, expanded: bool) -> bool {
+        self.render_with(expanded, false)
+    }
+
+    fn render_after_sort(&self, expanded: bool) -> bool {
+        self.render_with(expanded, true)
+    }
+
+    fn render_with(&self, expanded: bool, reuse_continuation: bool) -> bool {
         #[cfg(test)]
         self.timing.set(ContinuationTiming::default());
         let Some(snapshot) = self.snapshot.borrow().clone() else {
@@ -67,7 +75,9 @@ impl RankingState {
             .first()
             .map_or(0, |leader| snapshot.artist_share_percent(leader));
         self.bands_row.set_data(&artists, share, sort_by);
-        self.render_continuation(&artists, sort_by, expanded);
+        if !reuse_continuation || !self.update_continuation(&artists, sort_by, expanded) {
+            self.render_continuation(&artists, sort_by, expanded);
+        }
         has_continuation(artists.len())
     }
 
@@ -120,9 +130,8 @@ impl RankingState {
             ));
             let column = usize::from(offset >= first_column_rows);
             self.columns[column].append(&row.root);
-            if expanded {
-                row.load_image();
-            }
+            row.set_expanded(expanded);
+            row.prepare_image();
             rendered_rows.push(row);
         }
         #[cfg(test)]
@@ -136,17 +145,46 @@ impl RankingState {
         debug_assert_eq!(generation.get(), token);
     }
 
+    fn update_continuation(
+        &self,
+        artists: &[RankedGroup],
+        sort_by: SortBy,
+        expanded: bool,
+    ) -> bool {
+        let continuation = artists
+            .iter()
+            .skip(RUNNER_UP_COUNT + 1)
+            .take(ARTIST_ROW_EXTRA)
+            .collect::<Vec<_>>();
+        let rows = self.rows.borrow().clone();
+        if rows.len() != continuation.len() {
+            return false;
+        }
+
+        self.generation.set(self.generation.get().wrapping_add(1));
+        let leader_metric = artists.first().map_or(0, |artist| {
+            super::stats_bands_row::artist_metric(artist, sort_by)
+        });
+        for (row, artist) in rows.iter().zip(continuation) {
+            row.set_data(artist, leader_metric, sort_by, expanded);
+        }
+        #[cfg(test)]
+        self.timing.set(ContinuationTiming {
+            row_count: rows.len(),
+            ..ContinuationTiming::default()
+        });
+        true
+    }
+
     fn set_expanded(&self, expanded: bool) {
         #[cfg(test)]
         self.timing.set(ContinuationTiming {
             row_count: self.rows.borrow().len(),
             ..ContinuationTiming::default()
         });
-        if expanded {
-            let rows = self.rows.borrow().clone();
-            for row in &rows {
-                row.load_image();
-            }
+        let rows = self.rows.borrow().clone();
+        for row in &rows {
+            row.set_expanded(expanded);
         }
     }
 }
@@ -214,11 +252,6 @@ impl StatsBandsCard {
         revealer.set_reveal_child(false);
         revealer.set_child(Some(&continuation));
         revealer.set_visible(false);
-        revealer.connect_child_revealed_notify(|revealer| {
-            if !revealer.is_child_revealed() && !revealer.reveals_child() {
-                revealer.set_visible(false);
-            }
-        });
         root.append(&revealer);
         reveal_button.update_relation(&[gtk4::accessible::Relation::Controls(&[
             revealer.upcast_ref()
@@ -267,10 +300,11 @@ impl StatsBandsCard {
                 state
                     .sort_by
                     .set(sort_for_toggle_name(toggle.active_name().as_deref()));
-                let offer = state.render(revealer.reveals_child());
+                let offer = state.render_after_sort(revealer.reveals_child());
                 reveal_button.set_visible(offer);
                 if !offer {
                     revealer.set_reveal_child(false);
+                    revealer.set_visible(false);
                     update_reveal_button(&reveal_button, false);
                 }
             }
@@ -293,8 +327,11 @@ impl StatsBandsCard {
         *self.state.snapshot.borrow_mut() = Some(snapshot.clone());
         let offer = self.state.render(self.revealer.reveals_child());
         self.reveal_button.set_visible(offer);
-        if !offer {
+        if offer {
+            self.revealer.set_visible(true);
+        } else {
             self.revealer.set_reveal_child(false);
+            self.revealer.set_visible(false);
             update_reveal_button(&self.reveal_button, false);
         }
     }
@@ -308,6 +345,7 @@ impl StatsBandsCard {
         *self.state.snapshot.borrow_mut() = None;
         self.state.render(false);
         self.revealer.set_reveal_child(false);
+        self.revealer.set_visible(false);
         update_reveal_button(&self.reveal_button, false);
         self.reveal_button.set_visible(false);
     }

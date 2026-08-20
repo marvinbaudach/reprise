@@ -1,6 +1,6 @@
 use super::*;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use chrono::Utc;
 use reprise_core::library::stats_period::StatsPeriod;
@@ -9,7 +9,7 @@ use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::stats::stats_artist_image::StatsArtistImage;
 
-const MAX_CLICK_FRAME_GAP: Duration = Duration::from_millis(20);
+const MAX_CLICK_FRAME_GAP: Duration = Duration::from_micros(16_700);
 const MAX_CLICK_TEARDOWN: Duration = Duration::from_millis(3);
 const MAX_CLICK_REBUILD: Duration = Duration::from_millis(1);
 
@@ -17,6 +17,12 @@ const MAX_CLICK_REBUILD: Duration = Duration::from_millis(1);
 struct ClickMeasurement {
     longest_frame_gap: Duration,
     timing: ContinuationTiming,
+}
+
+#[derive(Clone, Copy)]
+enum ClickControl {
+    Reveal,
+    SortWhileCollapsed,
 }
 
 /// The continuation continues the ranking: five surfaces on screen, fifteen
@@ -97,9 +103,9 @@ fn stats_23_show_more_reveals_the_continuation_rows() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_23_a_continuation_row_opens_its_artist() {
+fn stats_23_a_sorted_continuation_row_opens_its_displayed_artist() {
     gtk4::init().unwrap();
-    let (card, snapshot) = card_and_snapshot_with(6);
+    let (card, snapshot) = card_and_full_ranking_snapshot();
     let opened = Rc::new(RefCell::new(Vec::new()));
     card.set_on_open_artist({
         let opened = opened.clone();
@@ -107,10 +113,12 @@ fn stats_23_a_continuation_row_opens_its_artist() {
     });
 
     card.set_data(&snapshot);
+    card.sort_toggle.set_active_name(Some("plays"));
     card.reveal_button.emit_clicked();
+    assert_eq!(card.state.rows.borrow()[0].artist_label(), "Other Five");
     card.state.rows.borrow()[0].open_button.emit_clicked();
 
-    assert_eq!(&*opened.borrow(), &["Artist 06"]);
+    assert_eq!(&*opened.borrow(), &["Other Five"]);
 }
 
 #[test]
@@ -191,8 +199,8 @@ fn stats_23_hiding_more_top_artists_does_not_stall_the_frame_clock() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
 
-    let expand = measure_click(false);
-    let collapse = measure_click(true);
+    let expand = measure_click(false, ClickControl::Reveal);
+    let collapse = measure_click(true, ClickControl::Reveal);
     println!(
         "STATS-23 control: expand gap={:.3} ms, teardown={:.3} ms, rebuild={:.3} ms, rows={}; collapse gap={:.3} ms, teardown={:.3} ms, rebuild={:.3} ms, rows={}",
         millis(expand.longest_frame_gap),
@@ -235,7 +243,45 @@ fn stats_23_hiding_more_top_artists_does_not_stall_the_frame_clock() {
     }
 }
 
-fn measure_click(start_expanded: bool) -> ClickMeasurement {
+/// STATS-23: changing the artist sort while the continuation is collapsed must
+/// not rebuild the hidden continuation in the sort-toggle click.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_sorting_collapsed_top_artists_does_not_stall_the_frame_clock() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let sort = measure_click(false, ClickControl::SortWhileCollapsed);
+    println!(
+        "STATS-23 collapsed-sort control: gap={:.3} ms, teardown={:.3} ms, rebuild={:.3} ms, rows={}",
+        millis(sort.longest_frame_gap),
+        millis(sort.timing.teardown),
+        millis(sort.timing.rebuild),
+        sort.timing.row_count,
+    );
+
+    assert_eq!(sort.timing.row_count, ARTIST_ROW_EXTRA);
+    assert!(
+        sort.longest_frame_gap <= MAX_CLICK_FRAME_GAP,
+        "sorting while collapsed stalled the frame clock for {:.3} ms (teardown {:.3} ms, rebuild {:.3} ms, {} rows)",
+        millis(sort.longest_frame_gap),
+        millis(sort.timing.teardown),
+        millis(sort.timing.rebuild),
+        sort.timing.row_count,
+    );
+    assert!(
+        sort.timing.teardown <= MAX_CLICK_TEARDOWN,
+        "sorting while collapsed spent {:.3} ms tearing down continuation rows",
+        millis(sort.timing.teardown),
+    );
+    assert!(
+        sort.timing.rebuild <= MAX_CLICK_REBUILD,
+        "sorting while collapsed spent {:.3} ms rebuilding continuation rows",
+        millis(sort.timing.rebuild),
+    );
+}
+
+fn measure_click(start_expanded: bool, control: ClickControl) -> ClickMeasurement {
     let (card, snapshot) = card_and_snapshot_with(151);
     assert_eq!(snapshot.top_artists.len(), 151);
     card.set_data(&snapshot);
@@ -252,23 +298,34 @@ fn measure_click(start_expanded: bool) -> ClickMeasurement {
     window.present();
 
     let longest_frame_gap = Rc::new(Cell::new(Duration::ZERO));
-    let last_frame = Rc::new(Cell::new(None::<Instant>));
+    let last_frame = Rc::new(Cell::new(None::<i64>));
     let frames = Rc::new(Cell::new(0_u8));
     let clicked = Rc::new(Cell::new(false));
     let post_click_frames = Rc::new(Cell::new(0_u8));
     let main_loop = gtk4::glib::MainLoop::new(None, false);
     let tick_loop = main_loop.clone();
-    let tick_button = card.reveal_button.clone();
+    let click: Rc<dyn Fn()> = match control {
+        ClickControl::Reveal => {
+            let button = card.reveal_button.clone();
+            Rc::new(move || button.emit_clicked())
+        }
+        ClickControl::SortWhileCollapsed => {
+            assert!(!card.revealer.reveals_child());
+            let toggle = card.sort_toggle.clone();
+            Rc::new(move || toggle.set_active_name(Some("plays")))
+        }
+    };
     let tick_longest = longest_frame_gap.clone();
     let tick_last = last_frame.clone();
     let tick_frames = frames.clone();
     let tick_clicked = clicked.clone();
     let tick_post_click_frames = post_click_frames.clone();
-    window.add_tick_callback(move |_, _| {
-        let now = Instant::now();
+    window.add_tick_callback(move |_, frame_clock| {
+        let now = frame_clock.frame_time();
         if tick_clicked.get() {
             if let Some(last) = tick_last.get() {
-                tick_longest.set(tick_longest.get().max(now.duration_since(last)));
+                let gap = Duration::from_micros(u64::try_from(now - last).unwrap_or(u64::MAX));
+                tick_longest.set(tick_longest.get().max(gap));
             }
             tick_post_click_frames.set(tick_post_click_frames.get() + 1);
             if tick_post_click_frames.get() == 4 {
@@ -277,7 +334,7 @@ fn measure_click(start_expanded: bool) -> ClickMeasurement {
             }
         } else if tick_frames.get() == 4 {
             tick_clicked.set(true);
-            tick_button.emit_clicked();
+            click();
         } else {
             tick_frames.set(tick_frames.get() + 1);
         }
