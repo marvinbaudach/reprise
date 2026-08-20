@@ -367,17 +367,13 @@ impl RadioAddDialog {
 
     /// `RAD-5`: recompute the library chip from the library itself, on every
     /// open rather than once at construction — the dialog object outlives
-    /// both the listening history and the stored location.
+    /// the listening history.
     pub(super) fn refresh_library_chip(&self) {
         let genre = reprise_core::library::taste::top_genre(&self.conn).unwrap_or_else(|error| {
             tracing::warn!(%error, "could not read the library's top genre for the radio chip");
             None
         });
-        let location = reprise_core::location::app_location(&self.conn).unwrap_or_else(|error| {
-            tracing::warn!(%error, "could not read the stored location for the radio chip");
-            None
-        });
-        let suggestion = radio_chips::library_suggestion(genre, location.as_ref());
+        let suggestion = radio_chips::library_suggestion(genre);
         radio_chips::apply_library_suggestion(&self.widgets.chip_library, suggestion.as_ref());
         *self.library_suggestion.borrow_mut() = suggestion;
     }
