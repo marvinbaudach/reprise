@@ -2,7 +2,7 @@
 slug: episode-covers-appear-seconds-after-start
 worktree: /home/marvin/Projects/reprise-episode-covers-appear-seconds-after-start
 branch: feature/episode-covers-appear-seconds-after-start
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
