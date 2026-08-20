@@ -14,14 +14,12 @@ use crate::podcasts::{
 };
 
 /// Downloads one specific episode by id, synchronously. This is the same
-/// body the auto-download branch of `refresh_to_root_with_download_progress`
-/// runs for newly discovered episodes of an `auto_download` subscription —
-/// factored out (Block H, MCP parity) so `music_manage_episodes`'s `download`
+/// executor the background fill-up, `music_manage_episodes`'s `download`
 /// action, and (`MTP-44`/`POD-7`) the GTK worker's manual and device-sync
-/// preparation downloads, all drive the exact same download path instead of
-/// a second one that could drift from it. Idempotent: an episode that
-/// already has a downloaded file is reported `Downloaded` immediately
-/// without a second network round trip.
+/// preparation downloads all drive, instead of maintaining paths that could
+/// drift from each other. Idempotent: an episode that already has a downloaded
+/// file is reported `Downloaded` immediately without a second network round
+/// trip.
 ///
 /// `NET-1a`: gated per the episode's own source kind, not a blanket check —
 /// a download is a network (RSS) or subprocess (yt-dlp) entry point in its

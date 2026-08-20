@@ -12,6 +12,7 @@ pub mod download_state;
 pub mod downloads;
 pub mod episode_tags;
 pub mod feed;
+pub mod fill_downloads;
 pub mod http;
 pub mod itunes;
 pub mod itunes_charts;
@@ -31,6 +32,7 @@ pub mod ytdlp;
 mod ytdlp_download;
 pub mod ytdlp_search;
 
+pub use fill_downloads::{fill_downloads, FillSummary};
 pub use media_character::{character_from_category, MediaCharacter};
 
 #[cfg(test)]
