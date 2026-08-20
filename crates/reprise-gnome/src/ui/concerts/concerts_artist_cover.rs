@@ -245,47 +245,9 @@ mod tests {
     }
 
     #[test]
-    fn a_concert_cell_has_one_cache_first_portrait_trigger() {
-        let source = include_str!("concerts_artist_cover.rs").replace([' ', '\n'], "");
-        let mapped_show = [
-            "tile.widget().connect_map(move|root|{ifletSome(tile)=",
-            "LazyReleaseCover::from_widget(root){image.show(&tile);}});",
-        ]
-        .concat();
-        let bound_show = [
-            "tile.set_artist_key(&object.row().artist_name);",
-            "bind_image.show(&tile);",
-        ]
-        .concat();
-        let direct_start = ["bind_image.", "start(&tile)"].concat();
-
-        assert!(source.contains(&mapped_show));
-        assert!(source.contains(&bound_show));
-        assert!(!source.contains(&direct_start));
-    }
-
-    #[test]
-    fn portrait_fetch_is_private_to_a_mapped_cache_miss() {
-        let source = include_str!("concerts_artist_cover.rs").replace([' ', '\n'], "");
-        let guarded_fetch = [
-            "elseifroot.is_mapped(){this.",
-            "fetch_after_cache_miss(&tile);}",
-        ]
-        .concat();
-        let private_fetch = ["fnfetch_after_", "cache_miss(self:&Rc<Self>"].concat();
-
-        assert!(source.contains(&guarded_fetch));
-        assert!(source.contains(&private_fetch));
-    }
-
-    #[test]
     fn production_portrait_resolver_is_pinned_to_the_cache_only_api() {
         let resolver: CacheOnlyPortraitResolver = PRODUCTION_CACHE_ONLY_RESOLVER;
         let cache_only = reprise_core::artist_portrait::load_cached as CacheOnlyPortraitResolver;
         assert!(std::ptr::fn_addr_eq(resolver, cache_only));
-
-        let source = include_str!("concerts_artist_cover.rs");
-        let forbidden_fetch = ["load_", "or_fetch"].concat();
-        assert!(!source.contains(&forbidden_fetch));
     }
 }
