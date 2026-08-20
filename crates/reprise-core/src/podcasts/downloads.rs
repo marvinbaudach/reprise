@@ -343,6 +343,20 @@ pub enum CleanupError {
     OutsideDownloadRoot,
 }
 
+/// The one definition of "newest episode first", shared by the cleanup
+/// (`cleanup_candidates`) and the fill-up
+/// (`fill_downloads::missing_episode_ids_in`).
+///
+/// The two rank different populations on purpose — the cleanup ranks only
+/// downloaded episodes (see the P1 note in `cleanup_candidates`), the fill-up
+/// ranks all live ones — so they cannot share a query. What they must share is
+/// what "newest" means, or one starts fetching what the other just deleted.
+///
+/// Uses the table alias `e`; every consumer must alias `podcast_episodes` that
+/// way.
+pub(super) const NEWEST_EPISODE_FIRST: &str = "e.published_at IS NULL, e.published_at DESC, \
+     e.first_seen_at DESC, e.id DESC";
+
 fn cleanup_candidates(
     conn: &Connection,
     policy: CleanupPolicy,
@@ -382,21 +396,21 @@ fn cleanup_candidates(
         // though far fewer than N were ever downloaded. Ranking must be
         // computed over downloaded episodes only.
         CleanupPolicy::KeepLast5 => {
-            let mut statement = conn.prepare(
+            let sql = format!(
                 "SELECT id, downloaded_path, keep_downloaded, episode_rank FROM (
                    SELECT e.id, e.downloaded_path, s.keep_downloaded,
                           ROW_NUMBER() OVER (
                             PARTITION BY e.subscription_id
-                            ORDER BY e.published_at IS NULL, e.published_at DESC,
-                                     e.first_seen_at DESC, e.id DESC
+                            ORDER BY {NEWEST_EPISODE_FIRST}
                           ) AS episode_rank
                    FROM podcast_episodes e
                    JOIN podcast_subscriptions s ON s.id = e.subscription_id
                    WHERE s.removed_at IS NULL
                      AND e.downloaded_path IS NOT NULL
                  )
-                 ORDER BY id",
-            )?;
+                 ORDER BY id"
+            );
+            let mut statement = conn.prepare(&sql)?;
             let rows = statement.query_map([], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,

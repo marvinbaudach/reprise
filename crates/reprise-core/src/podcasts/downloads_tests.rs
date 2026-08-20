@@ -10,6 +10,18 @@ fn conn() -> Db {
     Db::open_in_memory().unwrap()
 }
 
+#[test]
+fn the_newest_first_ordering_puts_undated_episodes_last() {
+    // The ordering is shared by the cleanup and the fill-up. This pins its
+    // three tie-breakers so a change to either consumer cannot quietly
+    // redefine "newest" for the other.
+    assert_eq!(
+        super::NEWEST_EPISODE_FIRST,
+        "e.published_at IS NULL, e.published_at DESC, \
+         e.first_seen_at DESC, e.id DESC"
+    );
+}
+
 const DEFAULT_FEED_URL: &str = "https://example.test/feed";
 
 fn add_show(conn: &Connection) -> i64 {
