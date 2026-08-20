@@ -39,6 +39,7 @@ const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
 const FAILURE_PAGE: &str = "failure";
 type Callback = Rc<dyn Fn()>;
+type NavigateCallback = Rc<dyn Fn(NavigationIntent)>;
 #[cfg(test)]
 type FetchOverride = std::sync::Arc<
     dyn Fn(
@@ -55,7 +56,7 @@ pub(super) struct Shared {
     pub(super) model: Rc<ReleasesModel>,
     pub(super) selection_anchor: super::releases_selection::ReleasesAnchor,
     pub(super) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
-    pub(super) on_navigate: RefCell<Option<Rc<dyn Fn(NavigationIntent)>>>,
+    pub(super) on_navigate: RefCell<Option<NavigateCallback>>,
     filter_bar: Rc<ReleasesFilterBar>,
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<HistoryEntry>>,
