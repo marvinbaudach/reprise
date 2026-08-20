@@ -1,4 +1,4 @@
-use std::{cell::Cell, rc::Rc};
+use std::rc::Rc;
 
 use chrono::Local;
 use gtk4::prelude::*;
@@ -16,10 +16,6 @@ use super::releases_presentation::{
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
 
-const PILL_PAGE: &str = "pill";
-const ACTION_PAGE: &str = "action";
-
-pub(super) type OnSetHidden = Rc<dyn Fn(String, bool)>;
 pub(super) type OnOpenTarget = Rc<dyn Fn(String)>;
 
 /// `sizing` fixes the column's width; see [`widths`] for why every column
@@ -86,104 +82,23 @@ fn text_column(
     column
 }
 
-fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden, on_wire_cell: &OnWireCell) {
+fn status_column(view: &gtk4::ColumnView, on_wire_cell: &OnWireCell) {
     let factory = gtk4::SignalListItemFactory::new();
-    let on_set_hidden = on_set_hidden.clone();
     let on_wire_cell = on_wire_cell.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         let label = gtk4::Label::new(None);
         label.add_css_class("reprise-release-pill");
         label.set_xalign(0.5);
-        let button = gtk4::Button::new();
-        button.add_css_class("flat");
-        let item_weak = item.downgrade();
-        let on_set_hidden = on_set_hidden.clone();
-        button.connect_clicked(move |_| {
-            let Some(item) = item_weak.upgrade() else {
-                return;
-            };
-            let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
-                return;
-            };
-            let entry = object.entry();
-            on_set_hidden(entry.release_group_mbid, !entry.hidden);
-        });
-        let stack = gtk4::Stack::new();
-        stack.add_named(&label, Some(PILL_PAGE));
-        stack.add_named(&button, Some(ACTION_PAGE));
-        stack.set_visible_child_name(PILL_PAGE);
-        let pointer_inside = Rc::new(Cell::new(false));
-        let focus_inside = Rc::new(Cell::new(false));
-        let motion = gtk4::EventControllerMotion::new();
-        {
-            let stack = stack.clone();
-            let pointer_inside = pointer_inside.clone();
-            let focus_inside = focus_inside.clone();
-            motion.connect_enter(move |_, _, _| {
-                pointer_inside.set(true);
-                stack.set_visible_child_name(ACTION_PAGE);
-                if focus_inside.get() {
-                    stack.set_visible_child_name(ACTION_PAGE);
-                }
-            });
-        }
-        {
-            let stack = stack.clone();
-            let pointer_inside = pointer_inside.clone();
-            let focus_inside = focus_inside.clone();
-            motion.connect_leave(move |_| {
-                pointer_inside.set(false);
-                if !focus_inside.get() {
-                    stack.set_visible_child_name(PILL_PAGE);
-                }
-            });
-        }
-        cell.add_controller(motion);
-        let focus = gtk4::EventControllerFocus::new();
-        {
-            let stack = stack.clone();
-            let focus_inside = focus_inside.clone();
-            focus.connect_enter(move |_| {
-                focus_inside.set(true);
-                stack.set_visible_child_name(ACTION_PAGE);
-            });
-        }
-        {
-            let stack = stack.clone();
-            let pointer_inside = pointer_inside.clone();
-            let focus_inside = focus_inside.clone();
-            focus.connect_leave(move |_| {
-                focus_inside.set(false);
-                if !pointer_inside.get() {
-                    stack.set_visible_child_name(PILL_PAGE);
-                }
-            });
-        }
-        cell.add_controller(focus);
-        cell.append(&stack);
-        cell_surface::set_child(item, &cell, on_wire_cell.as_ref());
+        cell_surface::set_child(item, &label, on_wire_cell.as_ref());
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = cell_surface::child::<gtk4::Box>(item) else {
-            return;
-        };
-        let Some(stack) = cell.first_child().and_downcast::<gtk4::Stack>() else {
-            return;
-        };
-        let Some(label) = stack.child_by_name(PILL_PAGE).and_downcast::<gtk4::Label>() else {
-            return;
-        };
-        let Some(button) = stack
-            .child_by_name(ACTION_PAGE)
-            .and_downcast::<gtk4::Button>()
-        else {
+        let Some(label) = cell_surface::child::<gtk4::Label>(item) else {
             return;
         };
         let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
@@ -204,39 +119,15 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden, on_wire_c
         };
         label.add_css_class(class);
         label.set_text(&release_status_label(&entry, Local::now().date_naive()));
-        let action = strings::text(if entry.hidden {
-            strings::SHOW_AGAIN
-        } else {
-            strings::RELEASES_HIDE
-        });
-        button.set_label(&action);
-        button.set_tooltip_text(Some(&action));
-        button.update_property(&[gtk4::accessible::Property::Label(&action)]);
-        stack.set_visible_child_name(PILL_PAGE);
     });
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = cell_surface::child::<gtk4::Box>(item) else {
-            return;
-        };
-        let Some(stack) = cell.first_child().and_downcast::<gtk4::Stack>() else {
-            return;
-        };
-        let Some(label) = stack.child_by_name(PILL_PAGE).and_downcast::<gtk4::Label>() else {
-            return;
-        };
-        let Some(button) = stack
-            .child_by_name(ACTION_PAGE)
-            .and_downcast::<gtk4::Button>()
-        else {
+        let Some(label) = cell_surface::child::<gtk4::Label>(item) else {
             return;
         };
         label.set_text("");
-        button.set_label("");
-        button.set_tooltip_text(None);
-        stack.set_visible_child_name(PILL_PAGE);
     });
     let column = gtk4::ColumnViewColumn::builder()
         .id(ReleaseColumn::Status.as_str())
@@ -331,7 +222,6 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &O
 
 pub(super) fn append_columns(
     view: &gtk4::ColumnView,
-    on_set_hidden: &OnSetHidden,
     on_open: &OnOpenTarget,
     filter_bar: &Rc<ReleasesFilterBar>,
     on_wire_cell: &OnWireCell,
@@ -340,23 +230,21 @@ pub(super) fn append_columns(
         let filter_bar = filter_bar.clone();
         Rc::new(move || filter_bar.query())
     };
-    append_columns_with_query_and_wire(view, on_set_hidden, on_open, &query, on_wire_cell)
+    append_columns_with_query_and_wire(view, on_open, &query, on_wire_cell)
 }
 
 #[cfg(test)]
 fn append_columns_with_query(
     view: &gtk4::ColumnView,
-    on_set_hidden: &OnSetHidden,
     on_open: &OnOpenTarget,
     query: &crate::ui::search_highlight::QuerySource,
 ) -> gtk4::ColumnViewColumn {
     let on_wire_cell: OnWireCell = Rc::new(|_, _| {});
-    append_columns_with_query_and_wire(view, on_set_hidden, on_open, query, &on_wire_cell)
+    append_columns_with_query_and_wire(view, on_open, query, &on_wire_cell)
 }
 
 fn append_columns_with_query_and_wire(
     view: &gtk4::ColumnView,
-    on_set_hidden: &OnSetHidden,
     on_open: &OnOpenTarget,
     query: &crate::ui::search_highlight::QuerySource,
     on_wire_cell: &OnWireCell,
@@ -405,7 +293,7 @@ fn append_columns_with_query_and_wire(
         None,
         |entry| release_type_label(&entry.release_type),
     );
-    status_column(view, on_set_hidden, on_wire_cell);
+    status_column(view, on_wire_cell);
     link_column(view, on_open, on_wire_cell);
     date
 }
@@ -485,10 +373,9 @@ mod tests {
         let selection = gtk4::SingleSelection::new(Some(store));
         selection.set_selected(0);
         let view = gtk4::ColumnView::new(Some(selection.clone()));
-        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
         let on_open: OnOpenTarget = Rc::new(|_| {});
         let query: crate::ui::search_highlight::QuerySource = Rc::new(|| "fall".into());
-        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        append_columns_with_query(&view, &on_open, &query);
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 300);
@@ -534,10 +421,9 @@ mod tests {
             "2026-01-02",
         )));
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
-        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
         let on_open: OnOpenTarget = Rc::new(|_| {});
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
-        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        append_columns_with_query(&view, &on_open, &query);
 
         crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
             store.splice(
@@ -595,10 +481,9 @@ mod tests {
             "Artist", "Year", "Album", "2026",
         )));
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
-        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
         let on_open: OnOpenTarget = Rc::new(|_| {});
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
-        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        append_columns_with_query(&view, &on_open, &query);
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 300);
@@ -645,14 +530,13 @@ mod tests {
             "Artist", "Album", "Album", "2026",
         )));
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
-        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
         let opened = Rc::new(RefCell::new(None));
         let on_open: OnOpenTarget = {
             let opened = opened.clone();
             Rc::new(move |target| *opened.borrow_mut() = Some(target))
         };
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
-        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        append_columns_with_query(&view, &on_open, &query);
         let window = gtk4::Window::new();
         window.set_default_size(1200, 300);
         window.set_child(Some(&view));
@@ -698,10 +582,9 @@ mod tests {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
-        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
         let on_open: OnOpenTarget = Rc::new(|_| {});
         let query: crate::ui::search_highlight::QuerySource = Rc::new(String::new);
-        append_columns_with_query(&view, &on_set_hidden, &on_open, &query);
+        append_columns_with_query(&view, &on_open, &query);
         let registry = super::super::releases_column_layout::registry(
             &view,
             Rc::new(crate::test_db::open().unwrap()),

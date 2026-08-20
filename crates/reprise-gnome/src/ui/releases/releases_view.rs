@@ -110,16 +110,6 @@ impl ReleasesView {
                     super::releases_context_menu::wire_cell(surface, item, &shared);
                 }
             });
-        let visibility_target = shared_target.clone();
-        let on_set_hidden: releases_columns::OnSetHidden = Rc::new(move |mbid, hidden| {
-            let shared = visibility_target
-                .borrow()
-                .as_ref()
-                .and_then(std::rc::Weak::upgrade);
-            if let Some(shared) = shared {
-                set_hidden(&shared, &mbid, hidden);
-            }
-        });
         let launch_target = shared_target.clone();
         let on_open: releases_columns::OnOpenTarget = Rc::new(move |url| {
             let shared = launch_target
@@ -130,13 +120,8 @@ impl ReleasesView {
                 external_link::launch(&url, "Bandcamp purchase", Some(&shared.on_launch_error));
             }
         });
-        let date_column = releases_columns::append_columns(
-            &column_view,
-            &on_set_hidden,
-            &on_open,
-            &filter_bar,
-            &on_wire_cell,
-        );
+        let date_column =
+            releases_columns::append_columns(&column_view, &on_open, &filter_bar, &on_wire_cell);
         let column_registry = super::releases_column_layout::registry(&column_view, conn.clone());
         let column_model = super::releases_column_layout::model(&column_registry);
         crate::ui::table_columns::header_popover::install_header_popover(
