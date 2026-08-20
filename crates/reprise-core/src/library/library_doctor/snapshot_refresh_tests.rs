@@ -164,6 +164,5 @@ fn fingerprint_stale_tracks_are_absent_from_session_and_badge() {
     let badge = crate::queries::count_doctor_findings(&db).unwrap();
 
     assert!(review.rows().is_empty());
-    assert_eq!(badge.ready, 0);
-    assert_eq!(badge.stale, 0);
+    assert_eq!(badge, crate::queries::DoctorFindingCounts { ready: 0 });
 }

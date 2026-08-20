@@ -4,7 +4,6 @@ use crate::library_doctor::{DoctorField, ProposalSource};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DoctorFindingCounts {
     pub ready: u32,
-    pub stale: u32,
 }
 
 pub fn count_doctor_findings(db: &Db) -> Result<DoctorFindingCounts, rusqlite::Error> {
@@ -249,8 +248,7 @@ mod tests {
 
         let counts = super::count_doctor_findings(&db).unwrap();
 
-        assert_eq!(counts.ready, 1);
-        assert_eq!(counts.stale, 0);
+        assert_eq!(counts, super::DoctorFindingCounts { ready: 1 });
         assert_eq!(super::count_pending_doctor_findings(&db).unwrap(), 1);
     }
 }
