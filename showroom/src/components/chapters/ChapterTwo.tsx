@@ -1,6 +1,6 @@
 import { INCIDENT } from 'virtual:incident';
 import { GATE_GROUPS, GATES } from 'virtual:merge-gates';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   INCIDENT_RECORD,
   MERGE_GATE_SOURCE,
@@ -117,11 +117,36 @@ function HeightPanel({
  */
 function GateStrip() {
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set<string>());
-  const [peek, setPeek] = useState<number>(-1);
+  const [pointerPeek, setPointerPeek] = useState<number>(-1);
+  const [focusPeek, setFocusPeek] = useState<number>(-1);
+  const pointerTarget = useRef<HTMLButtonElement | null>(null);
   const status = readout(failed, GATES.length);
+  const peek = focusPeek > -1 ? focusPeek : pointerPeek;
   const peeked = peek > -1 ? GATES[peek] : undefined;
 
   const display = displayedReadout(status, peek, peeked, peeked ? failed.has(peeked) : false);
+
+  useEffect(() => {
+    let pendingFrame = 0;
+    const clearStalePointerPeek = () => {
+      if (pointerTarget.current === null || pendingFrame !== 0) return;
+      pendingFrame = window.requestAnimationFrame(() => {
+        pendingFrame = 0;
+        if (pointerTarget.current?.matches(':hover')) return;
+        pointerTarget.current = null;
+        setPointerPeek(-1);
+      });
+    };
+
+    window.addEventListener('scroll', clearStalePointerPeek, {
+      capture: true,
+      passive: true,
+    });
+    return () => {
+      window.removeEventListener('scroll', clearStalePointerPeek, true);
+      window.cancelAnimationFrame(pendingFrame);
+    };
+  }, []);
 
   return (
     <div className="gate-strip" data-blocked={status.blocked ? 'true' : 'false'}>
@@ -139,10 +164,16 @@ function GateStrip() {
               data-gate={name}
               data-broken={failed.has(name) ? 'true' : 'false'}
               onClick={() => setFailed((current) => toggle(current, name))}
-              onMouseEnter={() => setPeek(index)}
-              onMouseLeave={() => setPeek(-1)}
-              onFocus={() => setPeek(index)}
-              onBlur={() => setPeek(-1)}
+              onMouseEnter={(event) => {
+                pointerTarget.current = event.currentTarget;
+                setPointerPeek(index);
+              }}
+              onMouseLeave={() => {
+                pointerTarget.current = null;
+                setPointerPeek(-1);
+              }}
+              onFocus={() => setFocusPeek(index)}
+              onBlur={() => setFocusPeek(-1)}
             >
               <span />
             </button>
