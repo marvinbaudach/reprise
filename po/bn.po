@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-18 22:02+0200\n"
+"POT-Creation-Date: 2026-08-20 07:44+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Bengali\n"
@@ -4019,12 +4019,7 @@ msgstr ""
 msgid "Open Preferences › Location"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:94
-#, rust-format
-msgid "{genre} in {country}"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_radio.rs:102
+#: crates/reprise-gnome/src/ui/strings_radio.rs:92
 #: crates/reprise-gnome/src/ui/strings_filter.rs:43
 #, rust-format
 msgid "{count} station"
@@ -4032,24 +4027,24 @@ msgid_plural "{count} stations"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:123
+#: crates/reprise-gnome/src/ui/strings_radio.rs:113
 #, rust-format
 msgid "{visible} of {total} stations"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:131
+#: crates/reprise-gnome/src/ui/strings_radio.rs:121
 #, rust-format
 msgid "{count} match · by votes"
 msgid_plural "{count} matches · by votes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:139
+#: crates/reprise-gnome/src/ui/strings_radio.rs:129
 #, rust-format
 msgid "Remove “{name}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:144
+#: crates/reprise-gnome/src/ui/strings_radio.rs:134
 #, rust-format
 msgid "Playlist file detected ({kind}) — resolved to {host}"
 msgstr ""

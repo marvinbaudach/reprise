@@ -5824,8 +5824,8 @@ listening statistics.
   handed to Apple.
   That same country drives the text search below it, so the chip and the
   results it sits above can never mean two different catalogs. The label uses
-  the country **code**, matching `RAD-5`'s "Metal in DE": real country names
-  would need a translated table covering every Apple storefront. Chart rows are
+  the country **code** (`Popular in DE`): real country names would need a
+  translated table covering every Apple storefront. Chart rows are
   ordinary search results — same row widget, same already-subscribed filtering
   (`SRC-5`), same freshness segment (`SRC-18`) — assembled from the chart
   feed's ids plus **one** batched lookup, restored to chart order, with ids the
@@ -6198,13 +6198,13 @@ listening statistics.
   one with the most **listening time** — not the most files, so a large
   unplayed collection cannot out-vote what gets played — folded across
   spelling variants and clamped per listen exactly as the stats screen
-  clamps it. A stored country narrows the search and shows in the label
-  ("Metal in DE"); without one the chip keeps the genre and searches
-  worldwide rather than becoming a second "Near you". A library that has
+  clamps it. The library chip always searches that genre worldwide and shows
+  only the genre name; location-filtered discovery belongs to "Near you" and
+  only that chip. A library that has
   played nothing with a genre gets **no chip at all** instead of a
   suggestion it has no evidence for — never a hard-coded genre, which was
-  only ever right for one library in one country. Genre and country are both
-  read fresh each time the dialog opens, because the dialog outlives both.
+  only ever right for one library in one country. The genre is read fresh each
+  time the dialog opens, because the dialog outlives it.
   "Near you"
   reuses the one app-level, already-consented location (`O-4`); it never
   queries the XDG Location portal or a geocoder itself, and hoisting that

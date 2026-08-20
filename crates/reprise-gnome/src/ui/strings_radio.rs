@@ -72,8 +72,8 @@ pub const RADIO_ORDER_CLICKS: &str = N_!("Clicks");
 pub const RADIO_UNKNOWN_NOW_PLAYING: &str = N_!("—");
 pub const RADIO_REPORT_PLAYS: &str = N_!("Report plays to the directory");
 /// `RAD-5`: the one-click radio-browser searches in the Add Station dialog.
-/// The first chip is the library's own genre and gets its label from
-/// [`radio_chip_genre_in_country`] or from the genre alone.
+/// The first chip is the library's own genre and uses that proper name as its
+/// label.
 pub const RADIO_CHIP_TOP_VOTED: &str = N_!("Top voted");
 pub const RADIO_CHIP_NEAR_YOU: &str = N_!("Near you");
 pub const RADIO_NEAR_YOU_NO_LOCATION_TITLE: &str = N_!("No location set");
@@ -85,16 +85,6 @@ pub const RADIO_NEAR_YOU_NO_COUNTRY_DESCRIPTION: &str = N_!(
     "Near you filters by country. The location from \"Use current location\" carries coordinates only — set a city to get one."
 );
 pub const RADIO_OPEN_LOCATION_PREFERENCES: &str = N_!("Open Preferences › Location");
-
-/// `RAD-5`: the library chip once a country is known — "Metal in DE". Both
-/// parts come from the user's own data, so the order has to stay
-/// translatable rather than being concatenated at the call site.
-pub fn radio_chip_genre_in_country(genre: &str, country: &str) -> String {
-    formatted(
-        N_!("{genre} in {country}"),
-        &[("genre", genre), ("country", country)],
-    )
-}
 
 pub fn radio_station_count(count: usize) -> String {
     let count_text = count.to_string();

@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-18 22:02+0200\n"
+"POT-Creation-Date: 2026-08-20 07:44+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -22,7 +22,12 @@ msgid ""
 "Artwork plugin in Preferences, Reprise can retrieve missing album covers "
 "from MusicBrainz and Cover Art Archive. Music files are changed only when "
 "you explicitly edit tags or move tracks to Trash."
-msgstr "Reprise hält deine Bibliothek lokal. Wenn du in den Einstellungen die Online-Quellen und das Artwork-Plugin aktivierst, kann Reprise fehlende Albumcover von MusicBrainz und dem Cover Art Archive holen. Musikdateien werden nur geändert, wenn du ausdrücklich Tags bearbeitest oder Titel in den Papierkorb verschiebst."
+msgstr ""
+"Reprise hält deine Bibliothek lokal. Wenn du in den Einstellungen die Online-"
+"Quellen und das Artwork-Plugin aktivierst, kann Reprise fehlende Albumcover "
+"von MusicBrainz und dem Cover Art Archive holen. Musikdateien werden nur "
+"geändert, wenn du ausdrücklich Tags bearbeitest oder Titel in den Papierkorb "
+"verschiebst."
 
 #: crates/reprise-gnome/src/ui/strings.rs:136
 msgid "Library folder"
@@ -1752,7 +1757,9 @@ msgstr "Veraltet"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
 msgid "This file changed after the scan — scan again to include this fix."
-msgstr "Diese Datei hat sich nach dem Scan geändert — scanne erneut, damit diese Korrektur mitkommt."
+msgstr ""
+"Diese Datei hat sich nach dem Scan geändert — scanne erneut, damit diese "
+"Korrektur mitkommt."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:88
 msgid "The spelling for this album is still unresolved — pick one below."
@@ -2244,12 +2251,16 @@ msgstr "Keine Treffer für „{query}“ in {category}"
 #: crates/reprise-gnome/src/ui/strings_library_doctor_search.rs:61
 #, rust-format
 msgid "{count} fix is hidden by search “{query}” and the {category} filter."
-msgstr "{count} Korrektur wird von der Suche „{query}“ und dem Filter {category} verborgen."
+msgstr ""
+"{count} Korrektur wird von der Suche „{query}“ und dem Filter {category} "
+"verborgen."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor_search.rs:62
 #, rust-format
 msgid "{count} fixes are hidden by search “{query}” and the {category} filter."
-msgstr "{count} Korrekturen werden von der Suche „{query}“ und dem Filter {category} verborgen."
+msgstr ""
+"{count} Korrekturen werden von der Suche „{query}“ und dem Filter {category} "
+"verborgen."
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:10
 msgid "Information"
@@ -2456,7 +2467,8 @@ msgstr "Veröffentlichungen werden aktualisiert …"
 #: crates/reprise-gnome/src/ui/strings_news.rs:62
 #, rust-format
 msgid "Update failed — showing saved releases from {time}"
-msgstr "Aktualisierung fehlgeschlagen — gespeicherte Veröffentlichungen von {time}"
+msgstr ""
+"Aktualisierung fehlgeschlagen — gespeicherte Veröffentlichungen von {time}"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:63
 #, rust-format
@@ -2669,7 +2681,8 @@ msgstr "Alle Neuigkeiten"
 
 #: crates/reprise-gnome/src/ui/strings_notifications.rs:18
 msgid "All updates also announces newly found concerts for your artists."
-msgstr "„Alle Neuigkeiten“ meldet auch neu gefundene Konzerte deiner Interpreten."
+msgstr ""
+"„Alle Neuigkeiten“ meldet auch neu gefundene Konzerte deiner Interpreten."
 
 #: crates/reprise-gnome/src/ui/strings_notifications.rs:22
 #, rust-format
@@ -2734,7 +2747,10 @@ msgstr "Online-Quellen"
 msgid ""
 "Three sources may reach the network. Off makes this a local player: no "
 "requests, no downloads, and their sidebar entries stay hidden."
-msgstr "Drei Quellen dürfen ins Netz. Aus macht daraus einen lokalen Player: keine Anfragen, keine Downloads, und ihre Einträge in der Seitenleiste bleiben verborgen."
+msgstr ""
+"Drei Quellen dürfen ins Netz. Aus macht daraus einen lokalen Player: keine "
+"Anfragen, keine Downloads, und ihre Einträge in der Seitenleiste bleiben "
+"verborgen."
 
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:32
 msgid "You can change this any time in Preferences · Plugins."
@@ -2880,7 +2896,9 @@ msgstr "Unbekannt"
 msgid ""
 "The ticket source reports no active sale. This can mean sold out, or not on "
 "sale yet."
-msgstr "Die Ticketquelle meldet keinen aktiven Verkauf. Das kann ausverkauft heißen oder noch nicht im Verkauf."
+msgstr ""
+"Die Ticketquelle meldet keinen aktiven Verkauf. Das kann ausverkauft heißen "
+"oder noch nicht im Verkauf."
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:25
 #: crates/reprise-gnome/src/ui/strings_releases.rs:21
@@ -2958,7 +2976,9 @@ msgstr "Konzerte brauchen Zugangsdaten des Anbieters"
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:44
 msgid ""
 "Saved concerts stay available. Ticket and event links need a connection."
-msgstr "Gespeicherte Konzerte bleiben verfügbar. Ticket- und Veranstaltungslinks brauchen eine Verbindung."
+msgstr ""
+"Gespeicherte Konzerte bleiben verfügbar. Ticket- und Veranstaltungslinks "
+"brauchen eine Verbindung."
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:46
 msgid "There are no saved concerts to show. Your music is unaffected."
@@ -3095,14 +3115,18 @@ msgstr "Alle {total} Konzerte anzeigen"
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:184
 #, rust-format
 msgid "End of results — {hidden} concerts hidden by the {radius} km radius"
-msgstr "Ende der Ergebnisse — {hidden} Konzerte durch den Radius von {radius} km verborgen"
+msgstr ""
+"Ende der Ergebnisse — {hidden} Konzerte durch den Radius von {radius} km "
+"verborgen"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:191
 #, rust-format
 msgid ""
 "End of results — {hidden} concerts hidden by the {radius} km radius around "
 "{city}"
-msgstr "Ende der Ergebnisse — {hidden} Konzerte durch den Radius von {radius} km um {city} verborgen"
+msgstr ""
+"Ende der Ergebnisse — {hidden} Konzerte durch den Radius von {radius} km um "
+"{city} verborgen"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:200
 #, rust-format
@@ -4144,7 +4168,9 @@ msgstr "Kein Standort gesetzt"
 msgid ""
 "Near you needs a city to look up stations. It is one setting, shared with "
 "Concerts and local podcasts."
-msgstr "„In deiner Nähe“ braucht eine Stadt, um Sender zu finden. Es ist eine Einstellung, geteilt mit Konzerten und lokalen Podcasts."
+msgstr ""
+"„In deiner Nähe“ braucht eine Stadt, um Sender zu finden. Es ist eine "
+"Einstellung, geteilt mit Konzerten und lokalen Podcasts."
 
 #: crates/reprise-gnome/src/ui/strings_radio.rs:83
 msgid "Location has no country"
@@ -4154,18 +4180,15 @@ msgstr "Standort ohne Land"
 msgid ""
 "Near you filters by country. The location from \"Use current location\" "
 "carries coordinates only — set a city to get one."
-msgstr "„In deiner Nähe“ filtert nach Land. Der Standort aus „Aktuellen Standort verwenden“ trägt nur Koordinaten — setze eine Stadt, um ein Land zu bekommen."
+msgstr ""
+"„In deiner Nähe“ filtert nach Land. Der Standort aus „Aktuellen Standort "
+"verwenden“ trägt nur Koordinaten — setze eine Stadt, um ein Land zu bekommen."
 
 #: crates/reprise-gnome/src/ui/strings_radio.rs:87
 msgid "Open Preferences › Location"
 msgstr "Einstellungen › Standort öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:94
-#, rust-format
-msgid "{genre} in {country}"
-msgstr "{genre} in {country}"
-
-#: crates/reprise-gnome/src/ui/strings_radio.rs:102
+#: crates/reprise-gnome/src/ui/strings_radio.rs:92
 #: crates/reprise-gnome/src/ui/strings_filter.rs:43
 #, rust-format
 msgid "{count} station"
@@ -4173,24 +4196,24 @@ msgid_plural "{count} stations"
 msgstr[0] "{count} Sender"
 msgstr[1] "{count} Sender"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:123
+#: crates/reprise-gnome/src/ui/strings_radio.rs:113
 #, rust-format
 msgid "{visible} of {total} stations"
 msgstr "{visible} von {total} Sendern"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:131
+#: crates/reprise-gnome/src/ui/strings_radio.rs:121
 #, rust-format
 msgid "{count} match · by votes"
 msgid_plural "{count} matches · by votes"
 msgstr[0] "{count} Treffer · nach Stimmen"
 msgstr[1] "{count} Treffer · nach Stimmen"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:139
+#: crates/reprise-gnome/src/ui/strings_radio.rs:129
 #, rust-format
 msgid "Remove “{name}”"
 msgstr "„{name}“ entfernen"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:144
+#: crates/reprise-gnome/src/ui/strings_radio.rs:134
 #, rust-format
 msgid "Playlist file detected ({kind}) — resolved to {host}"
 msgstr "Wiedergabelistendatei erkannt ({kind}) — zu {host} aufgelöst"
@@ -4755,7 +4778,8 @@ msgstr "{plays} Wiedergaben · {duration}"
 #: crates/reprise-gnome/src/ui/strings_stats.rs:45
 #, rust-format
 msgid "{plays} plays · {duration} · {percent}% of your artist listening"
-msgstr "{plays} Wiedergaben · {duration} · {percent}% deiner Interpreten-Hörzeit"
+msgstr ""
+"{plays} Wiedergaben · {duration} · {percent}% deiner Interpreten-Hörzeit"
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:46
 msgid "Start listening to see your stats"
