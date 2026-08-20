@@ -103,6 +103,35 @@ fn stats_23_show_more_reveals_the_continuation_rows() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn stats_23_collapsing_hides_the_continuation_after_the_transition() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (card, snapshot) = card_and_snapshot_with(20);
+    card.revealer.set_transition_duration(50);
+    card.set_data(&snapshot);
+
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(900)
+        .child(card.widget())
+        .build();
+    window.present();
+
+    card.reveal_button.emit_clicked();
+    wait_for_child_revealed(&card.revealer, true);
+    assert!(card.revealer.is_visible());
+
+    card.reveal_button.emit_clicked();
+    wait_for_child_revealed(&card.revealer, false);
+    assert!(
+        !card.revealer.is_visible(),
+        "collapsed continuation remained in the widget and accessibility trees"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn stats_23_a_sorted_continuation_row_opens_its_displayed_artist() {
     gtk4::init().unwrap();
     let (card, snapshot) = card_and_full_ranking_snapshot();
@@ -321,6 +350,10 @@ fn measure_click(start_expanded: bool, control: ClickControl) -> ClickMeasuremen
     let tick_clicked = clicked.clone();
     let tick_post_click_frames = post_click_frames.clone();
     window.add_tick_callback(move |_, frame_clock| {
+        // GTK's presentation-frame timestamp measures whether the click misses
+        // a frame without folding scheduler jitter into the oracle. It is not
+        // a continuous wall-clock work measurement, so earlier Instant-based
+        // figures are not comparable with values produced here.
         let now = frame_clock.frame_time();
         if tick_clicked.get() {
             if let Some(last) = tick_last.get() {
@@ -368,6 +401,37 @@ fn measure_click(start_expanded: bool, control: ClickControl) -> ClickMeasuremen
 
 fn millis(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1_000.0
+}
+
+fn wait_for_child_revealed(revealer: &gtk4::Revealer, expected: bool) {
+    if revealer.is_child_revealed() == expected {
+        return;
+    }
+
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let notify_loop = main_loop.clone();
+    let handler = revealer.connect_child_revealed_notify(move |revealer| {
+        if revealer.is_child_revealed() == expected {
+            notify_loop.quit();
+        }
+    });
+    let timed_out = Rc::new(Cell::new(false));
+    let timeout_loop = main_loop.clone();
+    let timeout_flag = timed_out.clone();
+    let timeout = gtk4::glib::timeout_add_local_once(Duration::from_secs(3), move || {
+        timeout_flag.set(true);
+        timeout_loop.quit();
+    });
+
+    main_loop.run();
+    revealer.disconnect(handler);
+    if !timed_out.get() {
+        timeout.remove();
+    }
+    assert!(
+        !timed_out.get(),
+        "timed out waiting for child-revealed={expected}"
+    );
 }
 
 fn card_and_full_ranking_snapshot() -> (StatsBandsCard, StatsSnapshot) {

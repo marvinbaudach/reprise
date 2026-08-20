@@ -257,6 +257,11 @@ impl StatsBandsCard {
             revealer.upcast_ref()
         ])]);
         reveal_button.update_state(&[gtk4::accessible::State::Expanded(Some(false))]);
+        revealer.connect_child_revealed_notify(|revealer| {
+            if !revealer.is_child_revealed() && !revealer.reveals_child() {
+                revealer.set_visible(false);
+            }
+        });
 
         let state = RankingState {
             bands_row,
@@ -304,7 +309,6 @@ impl StatsBandsCard {
                 reveal_button.set_visible(offer);
                 if !offer {
                     revealer.set_reveal_child(false);
-                    revealer.set_visible(false);
                     update_reveal_button(&reveal_button, false);
                 }
             }
@@ -327,11 +331,8 @@ impl StatsBandsCard {
         *self.state.snapshot.borrow_mut() = Some(snapshot.clone());
         let offer = self.state.render(self.revealer.reveals_child());
         self.reveal_button.set_visible(offer);
-        if offer {
-            self.revealer.set_visible(true);
-        } else {
+        if !offer {
             self.revealer.set_reveal_child(false);
-            self.revealer.set_visible(false);
             update_reveal_button(&self.reveal_button, false);
         }
     }
@@ -345,7 +346,6 @@ impl StatsBandsCard {
         *self.state.snapshot.borrow_mut() = None;
         self.state.render(false);
         self.revealer.set_reveal_child(false);
-        self.revealer.set_visible(false);
         update_reveal_button(&self.reveal_button, false);
         self.reveal_button.set_visible(false);
     }
