@@ -162,37 +162,6 @@ impl PlayerController {
             None => MprisPlaybackStatus::Stopped,
         }
     }
-
-    pub(super) fn update_podcast_duration(
-        &self,
-        generation: u64,
-        episode_id: i64,
-        duration_ms: i64,
-    ) {
-        {
-            let mut external = self.external.borrow_mut();
-            if external.generation != generation {
-                return;
-            }
-            let Some(ExternalSession::Podcast(session)) = external.session.as_mut() else {
-                return;
-            };
-            let ExternalMedia::Podcast {
-                episode_id: current_id,
-                duration_ms: current,
-                ..
-            } = &mut session.media
-            else {
-                return;
-            };
-            if *current_id != episode_id {
-                return;
-            }
-            *current = Some(duration_ms);
-            session.duration_known = true;
-        }
-        self.update_external_mpris(self.external_mpris_status());
-    }
 }
 
 fn project_radio_backend_state(phase: RadioPhase, backend: PlaybackState) -> PlaybackState {

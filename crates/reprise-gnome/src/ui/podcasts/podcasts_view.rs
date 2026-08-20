@@ -595,7 +595,7 @@ impl PodcastsView {
         true
     }
 
-    fn set_download_state(&self, episode_id: i64, state: &DownloadState) {
+    pub(in crate::ui) fn set_download_state(&self, episode_id: i64, state: &DownloadState) {
         self.download_states
             .borrow_mut()
             .insert(episode_id, state.clone());

@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use reprise_core::playback::PlaybackSessionId;
+use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{character_from_category, EpisodeRow, MediaCharacter, PodcastKind};
 use reprise_core::up_next::QueueItem;
 
@@ -42,6 +43,41 @@ pub(super) fn podcast_source_requires_resolution(
     source: &EpisodeSource,
 ) -> bool {
     kind == PodcastKind::Youtube && matches!(source, EpisodeSource::Url(_))
+}
+
+/// What to do once a YouTube episode fetch finishes.
+///
+/// Pure on purpose: this crate has no fake player for unit-testing the GLib
+/// wiring, so the decision that wiring makes remains directly testable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum FetchOutcome {
+    Play(String),
+    Fail(String),
+}
+
+pub(super) fn fetch_outcome(
+    result: Result<(), String>,
+    downloaded_path: Option<String>,
+) -> FetchOutcome {
+    match (result, downloaded_path) {
+        (Ok(()), Some(path)) => FetchOutcome::Play(path),
+        (Ok(()), None) => {
+            FetchOutcome::Fail("the episode reported a finished download but no file".into())
+        }
+        (Err(message), _) => FetchOutcome::Fail(message),
+    }
+}
+
+pub(super) fn fetch_download_outcome(
+    result: Result<DownloadState, String>,
+    downloaded_path: Option<String>,
+) -> FetchOutcome {
+    let result = match result {
+        Ok(DownloadState::Downloaded { .. }) => Ok(()),
+        Ok(DownloadState::Failed { message }) | Err(message) => Err(message),
+        Ok(state) => Err(format!("episode download stopped in state {state:?}")),
+    };
+    fetch_outcome(result, downloaded_path)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -341,6 +377,7 @@ type PlayNextCallback = Rc<dyn Fn(EpisodeRow)>;
 /// database-backed count and the source views' in-memory rows have changed.
 /// Playback alone never moves those values, but *finishing* an episode does.
 type EpisodePlayedCallback = Rc<dyn Fn(i64)>;
+pub(super) type EpisodeDownloadCallback = Rc<dyn Fn(i64, DownloadState)>;
 
 #[derive(Default)]
 pub(in crate::ui) struct ExternalPlaybackState {
@@ -354,6 +391,7 @@ pub(in crate::ui) struct ExternalPlaybackState {
     pub(super) changed_callbacks: Vec<ExternalChangedCallback>,
     pub(super) play_next_callbacks: Vec<PlayNextCallback>,
     pub(super) episode_played_callbacks: Vec<EpisodePlayedCallback>,
+    pub(super) episode_download_callbacks: Vec<EpisodeDownloadCallback>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

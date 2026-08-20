@@ -2,6 +2,32 @@
 
 use super::*;
 
+#[test]
+fn a_finished_fetch_plays_the_file_the_download_wrote() {
+    let outcome = fetch_outcome(Ok(()), Some("/music/episode.opus".into()));
+    assert_eq!(outcome, FetchOutcome::Play("/music/episode.opus".into()));
+}
+
+#[test]
+fn a_failed_fetch_carries_the_downloads_own_message() {
+    let outcome = fetch_download_outcome(
+        Ok(DownloadState::Failed {
+            message: "YouTube changed its response — update yt-dlp and try again".into(),
+        }),
+        None,
+    );
+    assert_eq!(
+        outcome,
+        FetchOutcome::Fail("YouTube changed its response — update yt-dlp and try again".into())
+    );
+}
+
+#[test]
+fn a_finished_fetch_without_a_file_fails_rather_than_playing_nothing() {
+    let outcome = fetch_outcome(Ok(()), None);
+    assert!(matches!(outcome, FetchOutcome::Fail(_)));
+}
+
 fn podcast_session(
     neighbours: Option<NeighbourContext>,
     automatic_advance: Option<AutomaticAdvance>,

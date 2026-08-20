@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::{PlaybackError, PlaybackState};
-use reprise_core::podcasts::{stream_proxy, ytdlp::YtDlp, EpisodeRow, PodcastKind};
+use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 use reprise_core::up_next::QueueItem;
 
 use crate::ui::player_controller::PlayerController;
@@ -68,6 +68,16 @@ impl PlayerController {
         self.external
             .borrow_mut()
             .episode_played_callbacks
+            .push(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn add_on_episode_download_state(
+        &self,
+        callback: impl Fn(i64, reprise_core::podcasts::download_state::DownloadState) + 'static,
+    ) {
+        self.external
+            .borrow_mut()
+            .episode_download_callbacks
             .push(Rc::new(callback));
     }
 
@@ -178,7 +188,6 @@ impl PlayerController {
     }
 
     fn prepare_external_playback(&self) {
-        stream_proxy::revoke_active();
         self.persist_external_position();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -275,108 +284,13 @@ impl PlayerController {
         self.notify_external_changed();
 
         if needs_ytdlp {
-            self.resolve_youtube(generation, episode_id, source, resume_ms);
+            self.fetch_youtube(generation, episode_id, resume_ms);
             return Ok(());
         }
         self.start_podcast_source(generation, episode_id, source, resume_ms)
     }
 
-    fn resolve_youtube(
-        self: &Rc<Self>,
-        generation: u64,
-        episode_id: i64,
-        source: EpisodeSource,
-        resume_ms: i64,
-    ) {
-        let EpisodeSource::Url(video_url) = source else {
-            self.fail_podcast(generation, "YouTube episodes require a video URL");
-            return;
-        };
-        let config = reprise_core::podcasts::config::load(&self.conn).ok();
-        let setting = config.as_ref().and_then(|config| config.ytdlp_path.clone());
-        let browser = config.and_then(|config| config.youtube_browser);
-        let refresh = (setting.clone(), video_url.clone());
-        let result = crate::ui::one_shot_task::spawn("reprise-youtube-resolve", move || {
-            YtDlp::discover_with_browser(setting.as_deref(), browser).resolve(&video_url)
-        });
-        let receiver = match result {
-            Ok(receiver) => receiver,
-            Err(error) => {
-                self.fail_podcast(generation, &error.to_string());
-                return;
-            }
-        };
-        let weak = Rc::downgrade(self);
-        gtk4::glib::spawn_future_local(async move {
-            let Ok(result) = receiver.recv().await else {
-                return;
-            };
-            let Some(controller) = weak.upgrade() else {
-                return;
-            };
-            match result {
-                Ok(audio) => {
-                    if !controller.external_generation_matches_podcast(generation) {
-                        return;
-                    }
-                    let media_category =
-                        audio.categories.first().filter(|v| !v.is_empty()).cloned();
-                    // Playback goes ahead either way — a failed write costs the
-                    // stored duration and category, not the episode. But it
-                    // must not vanish: without this the classification would
-                    // simply never stick, and the panel would look like the
-                    // feature was never built.
-                    if let Err(error) = reprise_core::podcasts::store::save_youtube_resolution(
-                        &controller.conn,
-                        episode_id,
-                        audio.duration_secs,
-                        media_category.as_deref(),
-                    ) {
-                        tracing::warn!(
-                            %error,
-                            episode_id,
-                            "could not persist the resolved episode metadata"
-                        );
-                    }
-                    if let Some(duration) = audio.duration_secs {
-                        controller.update_podcast_duration(
-                            generation,
-                            episode_id,
-                            duration * 1_000,
-                        );
-                    }
-                    let category_changed = controller
-                        .external
-                        .borrow_mut()
-                        .update_podcast_media_category(generation, episode_id, media_category);
-                    if category_changed {
-                        controller.notify_external_changed();
-                    }
-                    let token =
-                        match stream_proxy::register_resolved_with_refresh(audio, move || {
-                            YtDlp::discover_with_browser(refresh.0.as_deref(), browser)
-                                .resolve(&refresh.1)
-                        }) {
-                            Ok(token) => token,
-                            Err(error) => {
-                                controller.fail_podcast(generation, &error.to_string());
-                                return;
-                            }
-                        };
-                    let stream_url = stream_proxy::activate(token);
-                    let _ = controller.start_podcast_source(
-                        generation,
-                        episode_id,
-                        EpisodeSource::Url(stream_url),
-                        resume_ms,
-                    );
-                }
-                Err(error) => controller.fail_podcast(generation, &error.to_string()),
-            }
-        });
-    }
-
-    fn start_podcast_source(
+    pub(super) fn start_podcast_source(
         self: &Rc<Self>,
         generation: u64,
         episode_id: i64,
@@ -593,7 +507,6 @@ impl PlayerController {
     /// queue-takeover path is [`Self::leave_external_for_queue`], which leaves
     /// the loaded track alone.
     pub(in crate::ui) fn stop_external(&self) {
-        stream_proxy::revoke_active();
         self.persist_external_position();
         {
             let mut external = self.external.borrow_mut();
@@ -631,7 +544,6 @@ impl PlayerController {
     /// So the state is only cleared — and the change only announced — when
     /// there was in fact an external mode to leave.
     pub(in crate::ui) fn leave_external_for_queue(&self) {
-        stream_proxy::revoke_active();
         self.persist_external_position();
         let left_external_mode = {
             let mut external = self.external.borrow_mut();
@@ -767,7 +679,7 @@ impl PlayerController {
         external.generation == generation && external.mode() == mode
     }
 
-    fn external_generation_matches_podcast(&self, generation: u64) -> bool {
+    pub(super) fn external_generation_matches_podcast(&self, generation: u64) -> bool {
         let external = self.external.borrow();
         external.generation == generation
             && matches!(
