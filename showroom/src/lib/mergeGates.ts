@@ -35,6 +35,12 @@ export function readout(failed: ReadonlySet<string>, total: number): Readout {
   };
 }
 
+/** Show a reached check first; the merge verdict is the strip's resting copy. */
+export function displayedReadout(status: Readout, index: number, name?: string): string {
+  if (index < 0 || name === undefined) return status.message;
+  return `${String(index + 1).padStart(2, '0')} · ${name}`;
+}
+
 /** Flip one check between passing and failing, without touching the set given. */
 export function toggle(failed: ReadonlySet<string>, name: string): ReadonlySet<string> {
   const next = new Set(failed);

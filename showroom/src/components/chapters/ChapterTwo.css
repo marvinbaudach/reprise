@@ -16,7 +16,7 @@
 .incident__eyebrow {
   margin: 0;
   color: var(--second);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -101,7 +101,7 @@
 .incident-panel__eyebrow {
   margin: 0;
   color: var(--floor-ink);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.62rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -141,7 +141,7 @@
   bottom: 101px;
   margin: 0;
   color: var(--floor-ink);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.62rem;
   letter-spacing: 0.08em;
 }
@@ -182,7 +182,7 @@
   margin: var(--gap-line) 0 0;
   max-width: var(--measure);
   color: var(--text-muted);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.6;
 }
@@ -209,7 +209,7 @@
 .incident-quote > footer {
   margin-top: var(--gap-tight);
   color: var(--text-muted);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.6;
 }
@@ -237,7 +237,7 @@
 .gate-strip__end {
   margin: 0;
   color: var(--text-muted);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   white-space: nowrap;
@@ -305,7 +305,7 @@
   border: 1px solid oklch(38% 0.05 195);
   border-radius: var(--radius-sharp);
   color: var(--accent);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -329,7 +329,7 @@
   margin: 0;
   min-height: 1.2rem;
   color: var(--text-muted);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   letter-spacing: 0.04em;
 }
@@ -342,7 +342,7 @@
   margin-top: var(--gap-line);
   max-width: var(--measure);
   color: var(--text-muted);
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   line-height: 1.6;
 }

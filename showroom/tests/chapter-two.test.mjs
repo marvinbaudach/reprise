@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { promisify } from 'node:util';
 
-import { readout, toggle } from '../src/lib/mergeGates.ts';
+import { displayedReadout, readout, toggle } from '../src/lib/mergeGates.ts';
 
 const showroomRoot = new URL('..', import.meta.url).pathname;
 const repoRoot = new URL('../..', import.meta.url).pathname;
+const run = promisify(execFile);
 
 const GATE_SCRIPT = join(repoRoot, 'scripts', 'check-merge-readiness.sh');
 const INCIDENT_RECORD = join(repoRoot, 'docs', 'plans', 'queue-anchor-grill-followups.md');
-const STYLE_SOURCE = join(repoRoot, 'crates', 'reprise-gnome', 'src', 'ui', 'style', 'mod.rs');
-
 async function builtCss() {
   const assets = join(showroomRoot, 'dist', 'assets');
   const stylesheet = (await readdir(assets)).find((entry) => entry.endsWith('.css'));
@@ -35,7 +36,9 @@ const chapterTwo = async () => {
  */
 async function gateNames() {
   const script = await readFile(GATE_SCRIPT, 'utf8');
-  const names = [...script.matchAll(/^gate "([^"]+)"/gm)].map((match) => match[1]);
+  const names = [...script.matchAll(/^\s*gate\s+(["'])([^"']+)\1(?:\s|$)/gm)].map(
+    (match) => match[2],
+  );
   assert.ok(names.length > 0, 'the gate script must carry gate calls');
   return names;
 }
@@ -83,7 +86,14 @@ test('show-6 the gate strip carries one mark per gate call, named in script orde
 test('show-7 the incident is quoted from the record, never recounted from the tree', async () => {
   const chapter = await chapterTwo();
   const record = await readFile(INCIDENT_RECORD, 'utf8');
-  const style = await readFile(STYLE_SOURCE, 'utf8');
+  const measurements = await readFile(join(showroomRoot, 'src', 'data', 'measurements.ts'), 'utf8');
+  const commit = measurements.match(/commit:\s*'([0-9a-f]{7,40})'/)?.[1];
+  const stylePath = measurements.match(/STYLE_SOURCE\s*=\s*'([^']+)'/)?.[1];
+  assert.ok(commit, 'measurements.ts must pin a commit');
+  assert.ok(stylePath, 'measurements.ts must name the quoted style source');
+  const { stdout: style } = await run('git', ['show', `${commit}:${stylePath}`], {
+    cwd: repoRoot,
+  });
 
   // The quote is the chapter's load-bearing claim. It must still be the doc
   // comment's own words, character for character.
@@ -138,6 +148,25 @@ test('show-7 the incident is quoted from the record, never recounted from the tr
   // Both links have to reach a real anchor, not the file's top.
   assert.match(chapter, /style\/mod\.rs#L41-L45/);
   assert.match(chapter, /queue-anchor-grill-followups\.md#c-gate-the-444-claim/);
+  const range = source.match(/permalink\(STYLE_SOURCE\)\}#L(\d+)-L(\d+)/);
+  assert.ok(range, 'the quote permalink must carry an explicit line range');
+  const start = Number(range[1]);
+  const end = Number(range[2]);
+  const linkedLines = style.split('\n').slice(start - 1, end);
+  assert.match(linkedLines[0] ?? '', /^\s*\/\/\//, 'the link must start on the doc comment');
+  assert.match(
+    linkedLines.at(-1) ?? '',
+    /fn app_css_for_test\(\)/,
+    'the link must end on the function the comment documents',
+  );
+  assert.ok(
+    linkedLines
+      .join('\n')
+      .replace(/^\s*\/\/\/ ?/gm, '')
+      .replace(/\s+/g, ' ')
+      .includes(QUOTE),
+    `the quoted words must occupy ${stylePath}#L${start}-L${end} at ${commit}`,
+  );
   const heading = '### C. Gate the #444 claim on mutations, not on a green test';
   assert.ok(record.includes(heading), 'the §4C heading the link derives its fragment from moved');
 });
@@ -157,6 +186,16 @@ test('show-8 a failed check blocks the readout and clearing it releases again', 
   const three = readout(new Set(['Rust lint', 'Shell', 'AppStream']), total);
   assert.equal(three.failed, 3);
   assert.match(three.message, /^3 of 26 red · the change does not land$/);
+  assert.equal(
+    displayedReadout(three, 7, 'Architecture'),
+    '08 · Architecture',
+    'hover or focus must reveal a check even while another check is red',
+  );
+  assert.equal(
+    displayedReadout(three, -1),
+    three.message,
+    'the blocked verdict is the resting copy',
+  );
 
   // The toggle is what the mark does, and it must not mutate what it was given.
   const before = new Set(['Shell']);

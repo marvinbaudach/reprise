@@ -7,7 +7,7 @@ import {
   permalink,
   STYLE_SOURCE,
 } from '../../data/measurements';
-import { readout, toggle } from '../../lib/mergeGates';
+import { displayedReadout, readout, toggle } from '../../lib/mergeGates';
 import './ChapterTwo.css';
 import './chapters.css';
 
@@ -121,10 +121,7 @@ function GateStrip() {
   const status = readout(failed, GATES.length);
   const peeked = peek > -1 ? GATES[peek] : undefined;
 
-  const message =
-    status.blocked || peeked === undefined
-      ? status.message
-      : `${String(peek + 1).padStart(2, '0')} · ${peeked}`;
+  const message = displayedReadout(status, peek, peeked);
 
   return (
     <div className="gate-strip" data-blocked={status.blocked ? 'true' : 'false'}>
@@ -156,7 +153,7 @@ function GateStrip() {
         <p className="gate-strip__verdict">{status.blocked ? 'blocked' : 'merge'}</p>
       </div>
 
-      <p className="gate-strip__readout" role="status" aria-live="polite">
+      <p className="gate-strip__readout" role="status">
         {message}
       </p>
     </div>
@@ -233,7 +230,8 @@ export function ChapterTwo() {
           </div>
           <figcaption id="ch-02-figure-caption" className="incident-figure__caption">
             Section header heights, drawn at {SCALE}×. The unstyled fixture measured 20 px for Now
-            Playing and 34 px for Play Next. The app stylesheet gives both the {FLOOR_PX} px floor.
+            Playing as a bare label and 34 px for Play Next with a button. The app stylesheet makes
+            both uniform at the {FLOOR_PX} px floor.
           </figcaption>
         </figure>
 

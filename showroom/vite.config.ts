@@ -113,37 +113,59 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
 ];
 
 /**
- * The gate names, in script order. One `gate "<name>"` call is one check; the
+ * The gate names, in script order. One `gate <quoted name>` call is one check; the
  * preparation steps above them are preconditions and carry no `gate` call, which
  * is what keeps this count honest.
  */
-function readGates(): readonly string[] {
-  const text = readFileSync(GATE_SCRIPT, 'utf8');
+export function parseGateNames(text: string, source: string): readonly string[] {
+  const invocationLines = text.split(/\r?\n/).filter((line) => {
+    const trimmed = line.trimStart();
+    return !trimmed.startsWith('#') && /^gate[\t ]+/.test(trimmed);
+  });
   const names: string[] = [];
-  for (const match of text.matchAll(/^gate "([^"]+)"/gm)) {
-    const name = match[1];
+  for (const match of text.matchAll(/^\s*gate\s+(["'])([^"']+)\1(?:\s|$)/gm)) {
+    const name = match[2];
     if (name !== undefined) names.push(name);
+  }
+  if (names.length !== invocationLines.length) {
+    throw new Error(
+      `parsed ${names.length} of ${invocationLines.length} gate invocations from ${source} — a call no longer has a static quoted name`,
+    );
   }
   // An empty derivation is the one failure that would look like success: a wall
   // of zero cells and the number 0, silently agreeing with itself.
   if (names.length === 0) {
+    throw new Error(`derived no gate names from ${source} — the expression or the script moved`);
+  }
+  const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
+  if (duplicates.length > 0) {
     throw new Error(
-      `derived no gate names from ${GATE_SCRIPT} — the expression or the script moved`,
+      `duplicate merge gate names in ${source}: ${[...new Set(duplicates)].join(', ')}`,
     );
   }
   return names;
 }
 
-function groupGates(gates: readonly string[]): readonly GateGroup[] {
+function readGates(): readonly string[] {
+  return parseGateNames(readFileSync(GATE_SCRIPT, 'utf8'), GATE_SCRIPT);
+}
+
+export function groupGates(
+  gates: readonly string[],
+  definitions: readonly GateGroupDefinition[] = GATE_GROUP_ASSIGNMENTS,
+): readonly GateGroup[] {
   const assigned = new Map<string, string>();
 
-  for (const group of GATE_GROUP_ASSIGNMENTS) {
+  for (const group of definitions) {
     for (const check of group.checks) {
       if (!gates.includes(check)) {
         throw new Error(`gate group "${group.name}" assigns missing check "${check}"`);
       }
       const previous = assigned.get(check);
       if (previous !== undefined) {
+        if (previous === group.name) {
+          throw new Error(`gate "${check}" is listed more than once in group "${group.name}"`);
+        }
         throw new Error(`gate "${check}" is assigned to both "${previous}" and "${group.name}"`);
       }
       assigned.set(check, group.name);
@@ -155,7 +177,7 @@ function groupGates(gates: readonly string[]): readonly GateGroup[] {
     throw new Error(`merge checks have no coverage group: ${unassigned.join(', ')}`);
   }
 
-  return GATE_GROUP_ASSIGNMENTS.map((group) => ({
+  return definitions.map((group) => ({
     name: group.name,
     line: group.line,
     gates: gates.filter((gate) => group.checks.includes(gate)),
@@ -356,6 +378,7 @@ function readSpectralAxis(): { readonly coral: string; readonly teal: string } {
  * page derived 27.
  */
 function derivedFacts(): Plugin {
+  const gates = readGates();
   const resolved = new Map(
     [MERGE_GATES, CODE_CENSUS, BUILD_TIMELINE, MEASUREMENTS, SPECTRAL_AXIS, INCIDENT].map((id) => [
       id,
@@ -365,13 +388,9 @@ function derivedFacts(): Plugin {
   const modules = new Map<string, () => string>([
     [
       MERGE_GATES,
-      () => {
-        const gates = readGates();
-        return (
-          `export const GATES = ${JSON.stringify(gates)};\n` +
-          `export const GATE_GROUPS = ${JSON.stringify(groupGates(gates))};\n`
-        );
-      },
+      () =>
+        `export const GATES = ${JSON.stringify(gates)};\n` +
+        `export const GATE_GROUPS = ${JSON.stringify(groupGates(gates))};\n`,
     ],
     [CODE_CENSUS, () => `export const CENSUS = ${JSON.stringify(census(REPO_ROOT))};\n`],
     [BUILD_TIMELINE, () => `export const TIMELINE = ${JSON.stringify(readTimeline())};\n`],
@@ -392,7 +411,7 @@ function derivedFacts(): Plugin {
       return null;
     },
     transformIndexHtml(html) {
-      const count = String(readGates().length);
+      const count = String(gates.length);
       if (!html.includes(GATE_COUNT_TOKEN)) {
         throw new Error(
           `${GATE_COUNT_TOKEN} is not in index.html — the meta description would ship a stale count`,

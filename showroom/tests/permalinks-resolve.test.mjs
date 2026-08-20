@@ -62,6 +62,16 @@ async function citedPaths() {
     )) {
       constants.set(name, value);
     }
+    for (const [, objectName, body] of source.matchAll(
+      /(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*\{([\s\S]*?)\}\s*(?:as const)?\s*;/g,
+    )) {
+      assert.ok(body !== undefined);
+      for (const [, propertyName, value] of body.matchAll(
+        /(?:^|,)\s*([A-Za-z_$][\w$]*)\s*:\s*'([^']+)'/g,
+      )) {
+        constants.set(`${objectName}.${propertyName}`, value);
+      }
+    }
   }
 
   for (const file of files) {
@@ -82,9 +92,6 @@ async function citedPaths() {
         literals.add(named);
         continue;
       }
-      // `CENSUS_SCOPE.source` and friends are derived at build time; their value
-      // is asserted where it is produced, not here.
-      if (/^[A-Z][A-Z0-9_]*\.[a-z]/.test(argument)) continue;
       unresolved.add(`${file}: permalink(${argument})`);
     }
   }
