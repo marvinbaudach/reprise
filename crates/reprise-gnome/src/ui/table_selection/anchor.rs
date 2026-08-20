@@ -154,6 +154,69 @@ mod tests {
     }
 
     #[test]
+    fn string_ids_validate_live_cursor_and_drop_stale_anchor() {
+        let state = AnchorState {
+            anchor: Some(Anchored {
+                position: 4,
+                id: "stale-anchor".to_owned(),
+            }),
+            cursor: Some(Anchored {
+                position: 2,
+                id: "live-cursor".to_owned(),
+            }),
+        };
+
+        let validated = validate(state, |position| match position {
+            2 => Some("live-cursor".to_owned()),
+            4 => Some("replacement-row".to_owned()),
+            _ => None,
+        });
+
+        assert_eq!(validated.anchor, None);
+        assert_eq!(
+            validated.cursor,
+            Some(Anchored {
+                position: 2,
+                id: "live-cursor".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn string_ids_resolve_a_range_without_moving_the_anchor() {
+        let state = AnchorState {
+            anchor: Some(Anchored {
+                position: 5,
+                id: "anchor".to_owned(),
+            }),
+            cursor: None,
+        };
+        let target = Anchored {
+            position: 1,
+            id: "target".to_owned(),
+        };
+
+        let (op, state) = resolve(state, None, target.clone(), SelectMode::RangeAdditive);
+
+        assert_eq!(
+            op,
+            SelectionOp::SelectRange {
+                start: 1,
+                len: 5,
+                replace: false,
+            }
+        );
+        assert_eq!(
+            state.anchor,
+            Some(Anchored {
+                position: 5,
+                id: "anchor".to_owned(),
+            })
+        );
+        assert_eq!(state.cursor, Some(target));
+    }
+
+    #[test]
     fn nav_17_a_plain_click_sets_both_anchor_and_cursor() {
         let (op, state) = resolve(AnchorState::default(), None, at(7), SelectMode::Only);
         assert_eq!(op, SelectionOp::SelectOnly(7));
