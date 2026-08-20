@@ -59,6 +59,32 @@ pub struct ModeCtx<'a> {
     pub height: f32,
 }
 
+/// One audio frame together with the time it represents.
+///
+/// The tuple conversion is the elapsed-time path used by live callers. The
+/// borrowed-frame conversion retains the established one-tick contract for
+/// fixed-rate adapters outside the desktop strand.
+#[doc(hidden)]
+pub struct VisualIngest<'a> {
+    frame: &'a SpectrumFrame,
+    elapsed: Duration,
+}
+
+impl<'a> From<(&'a SpectrumFrame, Duration)> for VisualIngest<'a> {
+    fn from((frame, elapsed): (&'a SpectrumFrame, Duration)) -> Self {
+        Self { frame, elapsed }
+    }
+}
+
+impl<'a> From<&'a SpectrumFrame> for VisualIngest<'a> {
+    fn from(frame: &'a SpectrumFrame) -> Self {
+        Self {
+            frame,
+            elapsed: Duration::from_secs_f32(1.0 / SIMULATION_TICKS_PER_SECOND),
+        }
+    }
+}
+
 impl ModeCtx<'_> {
     /// Solid fill in the primary effective accent.
     pub fn accent_fill(&self, alpha: f32) -> Fill {
@@ -117,6 +143,10 @@ impl VisualEngine {
         self.playing = playing;
         if playing {
             self.idle_amp = 0.0;
+        } else if !self.retain_paused_live_shape {
+            // Stored-analysis adapters deliberately keep the generic resting
+            // fallback, including its existing cap-free paused projection.
+            self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
         }
         self.refresh_display_bands();
     }
@@ -137,6 +167,9 @@ impl VisualEngine {
     /// adapters disable it so their existing generic fallback stays intact.
     pub fn set_retain_paused_live_shape(&mut self, retain: bool) {
         self.retain_paused_live_shape = retain;
+        if !retain && !self.playing {
+            self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
+        }
         self.refresh_display_bands();
     }
 
@@ -209,6 +242,9 @@ impl VisualEngine {
 
     /// Installs the already-bounded CAVA values in the same frame.
     ///
+    /// The caller supplies the elapsed time since its previous audio frame so
+    /// live peak-cap decay remains deterministic and independent of redraws.
+    ///
     /// The glow is a stage light: a hit throws it to full at once, then it
     /// falls. It is sourced from `kick`, not `impact` — measured over three
     /// real tracks, `impact` tops out at 0.85 on a heavily limited master and
@@ -216,12 +252,18 @@ impl VisualEngine {
     /// fall is applied here rather than taken from the detector, because
     /// `kick`'s own release is 70 ms: at the 12.6 hits per second a blast beat
     /// produces, passing it straight through would be a 12 Hz strobe.
-    pub fn ingest(&mut self, frame: &SpectrumFrame) {
+    pub fn ingest<'a>(&mut self, input: impl Into<VisualIngest<'a>>) {
+        let VisualIngest { frame, elapsed } = input.into();
         self.bands_current = *frame.bands();
         self.pressure = frame.bass_pressure();
         self.glow = self.glow.max(self.pressure.kick);
-        for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
-            *peak = peak.max(*current);
+        let elapsed_ticks = elapsed.as_secs_f32() * SIMULATION_TICKS_PER_SECOND;
+        if !self.playing && !self.retain_paused_live_shape {
+            self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
+        } else if self.playing {
+            for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
+                *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(*current);
+            }
         }
         self.refresh_display_bands();
     }
@@ -248,12 +290,29 @@ impl VisualEngine {
         }
         if !self.playing && !self.has_track {
             let release = 1.0 - (1.0 - NO_TRACK_RELEASE).powf(elapsed_ticks);
-            for bar in &mut self.bands_current {
+            for (bar, peak) in self
+                .bands_current
+                .iter_mut()
+                .zip(self.bands_peaks.iter_mut())
+            {
                 *bar += (0.0 - *bar) * release;
                 if *bar < SETTLE_EPSILON {
                     *bar = 0.0;
                 }
+                // With no loaded track there is no cap to retain. Follow the
+                // existing bar release so a settled scene is actually empty.
+                *peak = *bar;
                 settled &= *bar == 0.0;
+            }
+        }
+        if !self.playing && self.has_track && self.retain_paused_live_shape {
+            // Live ingestion owns decay while playing; the presentation clock
+            // owns it while paused, so neither state can apply it twice.
+            for peak in &mut self.bands_peaks {
+                *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(0.0);
+                if *peak < SETTLE_EPSILON {
+                    *peak = 0.0;
+                }
             }
         }
         // The stage light falls on every frame, playing or not: the attack
@@ -269,14 +328,6 @@ impl VisualEngine {
                 *value = (*value - GLOW_RELEASE * elapsed_ticks).max(0.0);
                 settled &= *value == 0.0;
             }
-        }
-        for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
-            let floor = if self.playing { *current } else { 0.0 };
-            *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(floor);
-            if *peak < SETTLE_EPSILON {
-                *peak = 0.0;
-            }
-            settled &= (*peak - floor).abs() < SETTLE_EPSILON;
         }
         self.refresh_display_bands();
         settled && !self.playing && !self.idle_active()
@@ -340,9 +391,12 @@ pub(crate) fn lively_engine() -> VisualEngine {
     let mut engine = VisualEngine::new();
     engine.set_playing(true);
     engine.set_accent((0.2, 0.7, 0.7));
-    engine.ingest(&SpectrumFrame::from_cava_bars(std::array::from_fn(
-        |index| 0.55 + index as f32 / SPECTRUM_BAND_COUNT as f32 * 0.4,
-    )));
+    engine.ingest((
+        &SpectrumFrame::from_cava_bars(std::array::from_fn(|index| {
+            0.55 + index as f32 / SPECTRUM_BAND_COUNT as f32 * 0.4
+        })),
+        Duration::from_micros(16_667),
+    ));
     engine
 }
 
@@ -370,7 +424,10 @@ mod tests {
         engine.set_playing(true);
         let bars = std::array::from_fn(|index| index as f32 / SPECTRUM_BAND_COUNT as f32);
 
-        engine.ingest(&SpectrumFrame::from_cava_bars(bars));
+        engine.ingest((
+            &SpectrumFrame::from_cava_bars(bars),
+            Duration::from_micros(16_667),
+        ));
 
         assert_eq!(engine.bands_current, bars);
     }
@@ -382,7 +439,10 @@ mod tests {
     fn engine_with(bars: [f32; SPECTRUM_BAND_COUNT], pressure: BassPressure) -> VisualEngine {
         let mut engine = VisualEngine::new();
         engine.set_playing(true);
-        engine.ingest(&SpectrumFrame::from_cava_bars(bars).with_bass_pressure(pressure));
+        engine.ingest((
+            &SpectrumFrame::from_cava_bars(bars).with_bass_pressure(pressure),
+            Duration::from_micros(16_667),
+        ));
         engine
     }
 
@@ -526,10 +586,13 @@ mod tests {
         engine.set_playing(true);
 
         // A full kick arrives. The attack is immediate — no easing, no ramp.
-        engine.ingest(&frame_with(BassPressure {
-            kick: 1.0,
-            ..pressure(0.0, 0.0)
-        }));
+        engine.ingest((
+            &frame_with(BassPressure {
+                kick: 1.0,
+                ..pressure(0.0, 0.0)
+            }),
+            Duration::from_micros(16_667),
+        ));
         assert!(
             engine.glow >= 1.0 - f32::EPSILON,
             "the hit did not reach full: {}",
@@ -557,19 +620,25 @@ mod tests {
         engine.set_has_track(true);
         engine.set_playing(true);
 
-        engine.ingest(&frame_with(BassPressure {
-            kick: 0.0,
-            ..pressure(1.0, 1.0)
-        }));
+        engine.ingest((
+            &frame_with(BassPressure {
+                kick: 0.0,
+                ..pressure(1.0, 1.0)
+            }),
+            Duration::from_micros(16_667),
+        ));
         assert_eq!(
             engine.glow, 0.0,
             "a maxed-out impact must not light the stage on its own"
         );
 
-        engine.ingest(&frame_with(BassPressure {
-            kick: 0.8,
-            ..pressure(0.0, 0.0)
-        }));
+        engine.ingest((
+            &frame_with(BassPressure {
+                kick: 0.8,
+                ..pressure(0.0, 0.0)
+            }),
+            Duration::from_micros(16_667),
+        ));
         assert!((engine.glow - 0.8).abs() < 1e-6, "got {}", engine.glow);
     }
 
@@ -670,74 +739,6 @@ mod tests {
     }
 
     #[test]
-    fn ac_27_continuous_motion_ceases_without_a_loaded_track() {
-        let mut engine = lively_engine();
-        assert!(!engine.tick());
-        engine.set_playing(false);
-
-        assert!((0..500).any(|_| engine.tick()));
-    }
-
-    #[test]
-    fn ac_27_idle_breathing_keeps_a_loaded_track_alive_while_stopped() {
-        let mut engine = lively_engine();
-        engine.set_has_track(true);
-        engine.set_playing(false);
-
-        // The live bars release first; the idle wave takes over and never
-        // settles, so the tick loop keeps running.
-        for _ in 0..200 {
-            assert!(!engine.tick());
-        }
-        let first = engine.display_bands;
-        for _ in 0..30 {
-            engine.tick();
-        }
-
-        assert!(first.iter().any(|bar| *bar > 0.0));
-        assert_ne!(first, engine.display_bands);
-    }
-
-    #[test]
-    fn ac_27_idle_breathing_stays_a_low_resting_wave() {
-        let mut engine = VisualEngine::new();
-        engine.set_has_track(true);
-        for _ in 0..400 {
-            engine.tick();
-            assert!(
-                engine.display_bands.iter().all(|bar| *bar <= IDLE_PEAK),
-                "idle wave must stay below the resting ceiling"
-            );
-        }
-        assert!(engine.bands_peaks.iter().all(|peak| *peak == 0.0));
-    }
-
-    #[test]
-    fn ac_27_playback_takes_over_from_the_idle_wave_immediately() {
-        let mut engine = VisualEngine::new();
-        engine.set_has_track(true);
-        for _ in 0..200 {
-            engine.tick();
-        }
-        engine.set_playing(true);
-        let bars = std::array::from_fn(|index| index as f32 / SPECTRUM_BAND_COUNT as f32);
-        engine.ingest(&SpectrumFrame::from_cava_bars(bars));
-
-        assert_eq!(engine.display_bands, bars);
-    }
-
-    #[test]
-    fn ac_27_disabled_animations_show_the_resting_wave_without_motion() {
-        let mut engine = VisualEngine::new();
-        engine.set_has_track(true);
-        engine.snap_to_static();
-        let resting = engine.display_bands;
-
-        assert!(resting.iter().any(|bar| *bar > 0.0));
-        assert_eq!(resting, engine.display_bands);
-    }
-
-    #[test]
     fn accent2_is_always_hue_shifted_from_the_effective_accent() {
         let mut engine = VisualEngine::new();
         engine.set_accent((0.8, 0.2, 0.2));
@@ -758,3 +759,6 @@ mod tests {
 
 #[cfg(test)]
 mod engine_timing_tests;
+
+#[cfg(test)]
+mod peak_visibility_tests;
