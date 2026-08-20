@@ -80,14 +80,17 @@ impl ConcertsArtistImage {
             if let Some(path) = found {
                 this.show_path(&tile, &artist, &path);
             } else if root.is_mapped() {
-                this.start(&tile);
+                this.fetch_after_cache_miss(&tile);
             } else {
                 tile.mark_started("");
             }
         });
     }
 
-    pub(super) fn start(self: &Rc<Self>, tile: &LazyReleaseCover) {
+    // `show` is the only caller and reaches this helper only after a cache
+    // miss while the cell is mapped. Keeping that guard at the cache decision
+    // avoids duplicating it inside the private network-only continuation.
+    fn fetch_after_cache_miss(self: &Rc<Self>, tile: &LazyReleaseCover) {
         let artist = tile.artist_key();
         if artist.trim().is_empty() {
             return;
@@ -253,5 +256,19 @@ mod tests {
         assert!(source.contains(&mapped_show));
         assert!(source.contains(&bound_show));
         assert!(!source.contains(&direct_start));
+    }
+
+    #[test]
+    fn portrait_fetch_is_private_to_a_mapped_cache_miss() {
+        let source = include_str!("concerts_artist_cover.rs").replace([' ', '\n'], "");
+        let guarded_fetch = [
+            "elseifroot.is_mapped(){this.",
+            "fetch_after_cache_miss(&tile);}",
+        ]
+        .concat();
+        let private_fetch = ["fnfetch_after_", "cache_miss(self:&Rc<Self>"].concat();
+
+        assert!(source.contains(&guarded_fetch));
+        assert!(source.contains(&private_fetch));
     }
 }
