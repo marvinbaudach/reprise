@@ -1,7 +1,7 @@
 /**
- * The gate wall's state, as pure functions.
+ * The gate strip's state, as pure functions.
  *
- * The wall lets a visitor fail a check by clicking its cell, so the fail-closed
+ * The strip lets a visitor fail a check by clicking its mark, so the fail-closed
  * rule becomes something they trigger rather than something they are told. The
  * showroom suite has no DOM, so that behaviour is only checkable if the state
  * transition lives outside the component — the component stays a thin shell
@@ -17,6 +17,11 @@ export interface Readout {
   readonly message: string;
 }
 
+export interface DisplayedReadout {
+  readonly message: string;
+  readonly tone: 'neutral' | 'failed';
+}
+
 export function readout(failed: ReadonlySet<string>, total: number): Readout {
   if (!Number.isInteger(total) || total < 0) {
     throw new RangeError(`a wall of ${total} checks is not a wall`);
@@ -26,10 +31,28 @@ export function readout(failed: ReadonlySet<string>, total: number): Readout {
     blocked: count > 0,
     failed: count,
     total,
+    // The blocked half echoes the heading it sits under — "There is no partial
+    // merge" — rather than reporting a count and leaving the consequence unsaid.
     message:
       count === 0
-        ? `Ready to merge · ${total} checks green`
-        : `Merge blocked · ${count} of ${total} failing`,
+        ? `${total} checks green · ready to merge`
+        : `${count} of ${total} red · the change does not land`,
+  };
+}
+
+/** Show a reached check first; its own result also owns the displayed tone. */
+export function displayedReadout(
+  status: Readout,
+  index: number,
+  name?: string,
+  peekedFailed = false,
+): DisplayedReadout {
+  if (index < 0 || name === undefined) {
+    return { message: status.message, tone: status.blocked ? 'failed' : 'neutral' };
+  }
+  return {
+    message: `${String(index + 1).padStart(2, '0')} · ${name}`,
+    tone: peekedFailed ? 'failed' : 'neutral',
   };
 }
 

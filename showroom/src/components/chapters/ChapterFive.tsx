@@ -9,6 +9,7 @@ import './ChapterFive.css';
 export function ChapterFive() {
   return (
     <section
+      id="ch-05"
       className="chapter-five"
       data-chapter="05"
       data-ground="oklch(12.5% 0.018 24)"

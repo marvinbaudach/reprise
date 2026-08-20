@@ -6518,3 +6518,15 @@ rule here is phrased as something a stylesheet either states or does not.
   is still to come.
 - **SHOW-15** [active] [web] — Under `prefers-reduced-motion: reduce` the
   timeline's rail stands still.
+- **SHOW-17** [active] [web] — Every source permalink the page offers names a
+  path that exists at the revision the page pins.
+- **SHOW-18** [active] [web] — The six coverage groups account for every merge
+  check exactly once, and their displayed counts add up to the derived total.
+- **SHOW-19** [active] [web] — The gate list and count remain complete across
+  harmless shell formatting; when the source cannot be read with certainty,
+  the page fails to build instead of publishing an incomplete figure.
+- **SHOW-20** [active] [web] — Each merge check appears in one coverage group:
+  never twice within a group and never in two groups.
+- **SHOW-21** [active] [web] — Chapter two's incident, merge and coverage
+  figures reach the same column edge as their neighbours while the incident
+  charts keep the measure, gaps and bar dimensions they report.

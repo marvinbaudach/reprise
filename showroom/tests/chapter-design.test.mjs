@@ -59,27 +59,29 @@ test('chapter one carries the design figures counters and animated ratio band', 
   assert.match(css, /width 1\.4s cubic-bezier\(\.16,1,\.3,1\)/);
 });
 
-test('chapter two carries the two figures and nothing it used to count by hand', async () => {
+test('chapter two is one incident, with no process diagram left in it', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
-  const css = await builtCss();
   const chapter = html.match(/<section id="ch-02"[\s\S]+?<section id="ch-03"/)?.[0];
 
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(13\.5% 0\.02 205\)"/);
-  assert.match(chapter, /data-showcase="agent-swimlane"/);
-  assert.match(chapter, /data-showcase="gate-wall"/);
+  assert.match(chapter, /id="ch-02-heading"/);
+  assert.match(chapter, /Nobody judges their own writing\./);
+  assert.match(chapter, /A test was measuring an app that never ships\./);
 
-  // The five rungs and the five rulebook figures are gone, and with them three
-  // hand-counted numbers that had already rotted.
-  assert.doesNotMatch(chapter, /Evidence, weakest first/);
-  assert.doesNotMatch(chapter, /rungs__rung/);
-  for (const stale of ['571', '897', '250']) {
-    assert.doesNotMatch(chapter, new RegExp(`data-counter="(?:true)?">${stale}<`));
+  // The swimlane and the wall of 27 labels are gone, and nothing rebuilt them.
+  assert.doesNotMatch(chapter, /data-showcase="agent-swimlane"/);
+  assert.doesNotMatch(chapter, /data-showcase="gate-wall"/);
+  assert.doesNotMatch(chapter, /swimlane/);
+
+  // The figure states its equivalent in text; the bars themselves are hidden.
+  assert.match(chapter, /<figcaption[^>]*id="ch-02-figure-caption"/);
+  assert.match(chapter.replace(/<!-- -->/g, ''), /Section header heights, drawn at 3×/);
+  const chart = chapter.match(/class="incident-panel__chart"[^>]*>/g) ?? [];
+  assert.equal(chart.length, 2, 'the comparison needs both panels');
+  for (const panel of chart) {
+    assert.match(panel, /aria-hidden="true"/, 'the bars must stay out of the accessibility tree');
   }
-
-  assert.match(css, /\.swimlane(?:,\.gate-wall)?\{[^}]*border-radius:12px/);
-  // The label column has to survive a sideways scroll, or a mark loses its actor.
-  assert.match(css, /\.swimlane__actor\{[^}]*position:sticky/);
 });
 
 test('reduced motion settles every prepared counter at its authored value', async () => {
