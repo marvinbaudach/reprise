@@ -2,7 +2,7 @@
 slug: stats-hide-more-top-artists-stutters
 worktree: /home/marvin/Projects/reprise-stats-hide-more-top-artists-stutters
 branch: feature/stats-hide-more-top-artists-stutters
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
