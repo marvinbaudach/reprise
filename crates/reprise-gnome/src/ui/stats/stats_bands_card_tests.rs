@@ -10,6 +10,8 @@ use crate::ui::cover_loader::CoverLoader;
 use crate::ui::stats::stats_artist_image::StatsArtistImage;
 
 const MAX_CLICK_FRAME_GAP: Duration = Duration::from_millis(20);
+const MAX_CLICK_TEARDOWN: Duration = Duration::from_millis(3);
+const MAX_CLICK_REBUILD: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug)]
 struct ClickMeasurement {
@@ -219,6 +221,18 @@ fn stats_23_hiding_more_top_artists_does_not_stall_the_frame_clock() {
         millis(collapse.timing.teardown),
         millis(collapse.timing.rebuild),
     );
+    for (direction, measurement) in [("expanding", expand), ("collapsing", collapse)] {
+        assert!(
+            measurement.timing.teardown <= MAX_CLICK_TEARDOWN,
+            "{direction} spent {:.3} ms tearing down continuation rows",
+            millis(measurement.timing.teardown),
+        );
+        assert!(
+            measurement.timing.rebuild <= MAX_CLICK_REBUILD,
+            "{direction} spent {:.3} ms rebuilding continuation rows",
+            millis(measurement.timing.rebuild),
+        );
+    }
 }
 
 fn measure_click(start_expanded: bool) -> ClickMeasurement {
