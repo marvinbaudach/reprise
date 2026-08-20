@@ -4,9 +4,9 @@ use super::{RefreshRequest as R, *};
 use crate::podcasts::store::{self, NewSubscription};
 
 #[derive(Default)]
-struct FakeFeed {
-    responses: RefCell<Vec<Result<Response, PodcastError>>>,
-    downloads: RefCell<Vec<String>>,
+pub(super) struct FakeFeed {
+    pub(super) responses: RefCell<Vec<Result<Response, PodcastError>>>,
+    pub(super) downloads: RefCell<Vec<String>>,
 }
 
 impl FeedFetcher for FakeFeed {
@@ -21,7 +21,7 @@ impl FeedFetcher for FakeFeed {
 }
 
 #[derive(Default)]
-struct FakeYoutube;
+pub(super) struct FakeYoutube;
 
 impl YoutubeFetcher for FakeYoutube {
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
@@ -80,7 +80,7 @@ impl FeedFetcher for PartialFailureFeed {
     }
 }
 
-fn conn() -> Db {
+pub(super) fn conn() -> Db {
     let conn = Db::open_in_memory().unwrap();
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
     // itself (see the dedicated `net_1a_*` tests below), so Podcasts
@@ -90,7 +90,7 @@ fn conn() -> Db {
     conn
 }
 
-fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
+pub(super) fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
     store::add_or_restore_in(
         conn,
         &NewSubscription {
@@ -106,7 +106,7 @@ fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
     .unwrap()
 }
 
-fn feed_response(title: &str, episode_count: usize, etag: Option<&str>) -> Response {
+pub(super) fn feed_response(title: &str, episode_count: usize, etag: Option<&str>) -> Response {
     let items = (0..episode_count)
         .map(|index| {
             format!(

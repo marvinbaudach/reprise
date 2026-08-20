@@ -232,6 +232,8 @@ pub enum PipelineError {
     Cleanup(#[from] super::downloads::CleanupError),
     #[error("podcast episode does not exist")]
     EpisodeNotFound,
+    #[error("a download for this episode is already running")]
+    DownloadAlreadyRunning,
 }
 
 #[path = "pipeline_download.rs"]
@@ -669,6 +671,10 @@ mod youtube_gate_tests;
 #[cfg(test)]
 #[path = "pipeline_refresh_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pipeline_download_tests.rs"]
+mod download_tests;
 
 #[cfg(test)]
 #[path = "pipeline_refresh_policy_tests.rs"]

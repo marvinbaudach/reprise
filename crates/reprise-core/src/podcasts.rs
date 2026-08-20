@@ -7,6 +7,7 @@ use crate::source_error::{SourceError, SourceErrorKind};
 pub mod channel_window;
 pub mod config;
 pub mod discovery;
+mod download_claims;
 pub mod download_state;
 pub mod downloads;
 pub mod episode_tags;

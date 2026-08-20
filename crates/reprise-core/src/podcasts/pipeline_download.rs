@@ -60,6 +60,12 @@ pub(super) fn download_episode_in(
         on_progress(state.clone());
         return Ok(state);
     }
+    // Held for the rest of this call. A concurrent caller gets
+    // `DownloadAlreadyRunning` rather than a second run over the same `.part`
+    // file.
+    let Some(_claim) = super::super::download_claims::claim(episode_id) else {
+        return Err(PipelineError::DownloadAlreadyRunning);
+    };
     let subscription = store::subscription_in(conn, episode.subscription_id)?
         .ok_or(PipelineError::EpisodeNotFound)?;
     let extension = downloads::extension_for(subscription.kind, &episode.audio_url);
