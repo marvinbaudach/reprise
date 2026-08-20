@@ -249,6 +249,10 @@
   min-width: 195px;
 }
 
+.pipeline__node--verdict {
+  min-width: 169px;
+}
+
 .pipeline__kicker,
 .pipeline__detail {
   color: var(--text-muted);
@@ -461,6 +465,10 @@
   .pipeline {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .pipeline__node--verdict {
+    min-width: 0;
   }
 
   .pipeline__link {

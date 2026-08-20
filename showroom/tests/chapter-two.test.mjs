@@ -350,6 +350,9 @@ test('show-21 chapter two figures fill the frame without stretching the measured
   assert.equal(flexibleNodes[0]?.selector, '.pipeline__node--gates');
   assert.match(flexibleNodes[0]?.body ?? '', /\bflex:\s*1 1 200px\s*;/);
 
+  const verdict = cssRule(css, '.pipeline__node--verdict');
+  assert.match(verdict, /\bmin-width:\s*169px\s*;/);
+
   const chart = cssRule(css, '.incident-panel__chart');
   assert.match(chart, /\bwidth:\s*min\(100%, 17\.75rem\)\s*;/);
   assert.match(chart, /\bgap:\s*1\.75rem\s*;/);
