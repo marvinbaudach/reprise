@@ -107,7 +107,12 @@ fn stats_23_collapsing_hides_the_continuation_after_the_transition() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (card, snapshot) = card_and_snapshot_with(20);
-    card.revealer.set_transition_duration(50);
+    // A token, not a literal: check-motion-tokens.sh reads this file as
+    // production source, because it is pulled in by `#[path]` rather than
+    // wrapped in an inline `#[cfg(test)] mod`. MICRO_MS is the shortest one the
+    // motion module offers, and the test waits on `child-revealed` anyway.
+    card.revealer
+        .set_transition_duration(crate::ui::motion::MICRO_MS);
     card.set_data(&snapshot);
 
     let window = gtk4::Window::builder()
