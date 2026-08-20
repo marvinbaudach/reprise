@@ -71,16 +71,14 @@ A new widget-free module `ui/table_selection/` owns two things and nothing else:
   is currently selected, it returns whether the selection is replaced by the
   clicked row or left as it is. Right-clicking an unselected row replaces the
   selection; right-clicking inside an existing selection preserves it.
-- **The context-key predicate.** Which key event opens a context menu — Menu key
-  or `Shift+F10`, per GNOME convention. This already exists as
-  `track_list_context_keys.rs:11-14` and moves here unchanged, so both tables
-  answer the question the same way.
+The context-key predicate stays where it is. `track_list_context_keys.rs:11-14`
+already owns it and `source_context_surface.rs:91` already re-exports it to the
+source tables; releases calls the same function rather than adding a third copy.
 
 Both functions take and return plain values — positions, lengths, a small intent
 enum. No `SelectionModel`, no widget, no GTK types beyond `u32`.
 
-`track_list_selection_input.rs`, `track_list_selection_anchor.rs` and
-`track_list_context_keys.rs` are rewired
+`track_list_selection_input.rs` and `track_list_selection_anchor.rs` are rewired
 to call these functions; their existing tests move with the logic, so NAV-17 and
 the context-click rule keep exactly one home. The releases view gets its own
 thin wiring onto the same functions.
@@ -101,7 +99,23 @@ list. The two places that need care:
   from positions — the list can be reordered or refiltered between the write and
   the restore.
 
-### 3. Context menu
+### 3. The row surface
+
+Releases joins the interaction layer the source tables already share.
+`ui/source_context_surface.rs` exists for exactly this: `wrap()` gives a cell the
+full-row hit area (Adwaita owns `columnview > listview > row > cell` padding, so
+a gesture on the factory's own child leaves roughly half the row inert),
+`secondary_click()` and `context_keys()` hand out capture-phase controllers, and
+`TABLE_CSS_CLASS` moves the padding onto the surface. Radio already does this;
+releases opts in the same way, which means every cell factory in
+`releases_columns.rs` builds its child through `wrap`.
+
+This replaces the bespoke gesture plumbing an earlier draft of this design
+assumed. `radio_context_menu.rs` — 266 lines, a pure `build(row, …) -> gio::Menu`
+plus `wire_gesture`/`wire_keyboard` — is the template, not the much larger track
+list.
+
+### 4. Context menu
 
 New `releases_context_menu.rs` holds the `GestureClick`
 (`gdk::BUTTON_SECONDARY`), a key controller for the Menu key / `Shift+F10` path,
@@ -138,7 +152,7 @@ The existing column-header popover (`releases_columns.rs:762`) is untouched. The
 row gesture lives on the cell widgets, the header gesture on the header — as in
 the track list.
 
-### 4. Hide, restore, and undo
+### 5. Hide, restore, and undo
 
 `reprise-core` gains a batch sibling of `set_release_hidden` that writes a slice
 of `release_group_mbid` values in **one** transaction. This is not tidiness: undo
@@ -164,13 +178,32 @@ selection pointing at departed rows is not acceptable.
 Undo brings the rows back **and** re-selects them, so the user can see what
 returned.
 
-The toast uses the same timeout as the app's other undo toasts, not the short
-4 s informational default in `toasts.rs`.
+The toast runs ten seconds, the value FB-7 cites for every undo toast in the
+app, not the short 4 s informational default in `toasts.rs`.
 
-### 5. The inline button is removed
+Two seams do not exist yet and have to be laid: `ReleasesView` reaches neither a
+`ToastOverlay` nor the `MetadataNavigator`. Both follow patterns already in the
+codebase — a `glib::WeakRef<adw::ToastOverlay>` with a `set_toast_overlay` setter
+(`track_list.rs:258,550`), and a callback slot for navigation intents in the
+shape of the view's existing `set_on_refreshed` (`releases_view.rs:276`), wired
+at the window where the track list's navigation is wired.
+
+The radio table solves its own undo differently — SRC-4a tombstones a removed
+station and commits only when the toast expires. That is the right shape when
+the write is a deletion. Hiding is a boolean on a row that stays, so writing
+immediately and writing back on undo is simpler and survives an app exit with a
+pending toast without needing a commit-on-launch rule.
+
+### 6. The inline button is removed
 
 The hide/restore button in the status column (`releases_columns.rs:149-309`) is
-deleted along with its tests. Hiding becomes a context-menu action only.
+deleted: the `Button`, the `Stack` that swaps it against the status pill, and the
+motion/focus controllers that reveal it. The pill itself stays. No test covers
+that button today, so this removes no coverage — it closes a gap the new menu
+tests fill.
+
+There is precedent: SRC-4a took the same step for radio favorites — *"Removing a
+favorite is operated from the context menu alone; there is no hover star."*
 
 Stated tradeoff, recorded here so it is not rediscovered later as a bug: after
 this change hiding is reachable by secondary click and by the Menu key /
@@ -181,12 +214,17 @@ scope keeps working. It is the entrance that narrows, not the exit.
 
 ## UX rules
 
-- A new rule block for the releases context menu, referring to CTX-1 (one menu
-  builder), CTX-2 (selection actions only), CTX-6 (count currency) and CTX-8
-  (rows missing from the selection).
-- NR-4 is rewritten: hide is a menu entry, not a status-column button. The
-  `N hidden · Show` recovery text stays as it is.
-- NAV-17 is restated to cover both tables, matching the shared module.
+- A new rule in the `R. New releases` block, worded after SRC-14 — the podcast
+  episode table's active rule for exactly this grammar — so both tables read the
+  same. It cites CTX-2 (right-click claims an unselected row), CTX-4 (navigation
+  needs an unambiguous target) and CTX-6 (count currency).
+- **NR-4 is not the rule to touch.** It was superseded long ago: NR-4 → NR-12 →
+  NR-12a → NR-16 → NR-24. The rule this work falsifies is **NR-39** (line 2561),
+  which claims that hiding the Status column "removes the visible routes for
+  hiding a release" — after this change the Status column is not a route to
+  hiding at all. NR-39's hide clause is struck; its link-column clause stands.
+- NAV-17 is restated to cover both tables, matching the shared module, and to
+  name the branch that applies when a table has no playing row.
 - The lost touch path is written into the rule text as a known limitation.
 
 ## Verification
