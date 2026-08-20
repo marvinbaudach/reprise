@@ -1,6 +1,14 @@
 /*
  * The light behind the page.
  *
+ * The parallax `transform` on the oil layer is written once per frame by the
+ * choreography: it is a reading of where the page is, not an animation towards
+ * it. The 800ms transition on it is a follow filter that gives the light some
+ * mass. The frame's own 1600ms was twice that and started a fresh run on every
+ * one of those per-frame writes, so the layer crawled for more than a second
+ * after the reader had stopped. The long drift below is the
+ * only thing on this layer that runs on its own clock.
+ *
  * Every blob animates `transform` only, on its own long, prime-ish period, so the
  * three never line up into a visible loop. The whole layer is `mix-blend-mode:
  * screen` over the ground colour: the light adds, it does not paint over.
@@ -12,13 +20,25 @@
  * (header, nav, the product tiles) standing. Behind the page means behind it.
  */
 
+/*
+ * The choreography writes this colour as a blend that is a pure function of the
+ * scroll position, so the ground is anchored to the page rather than chasing
+ * it: stop scrolling and the colour stops with you, scroll back and it walks
+ * back. The 800ms on top of that is weight, not choreography, and it is not the
+ * frame's 1500ms returning: that one sat on a step — the colour jumped when a
+ * chapter took the middle of the viewport and then faded for a second and a
+ * half. This one sits on a ramp that is already moving with the reader, so it
+ * lends the motion mass instead of making it arrive late. `linear`, because the
+ * input is a smooth ramp and an easing curve on top of it would bend a motion
+ * that is not supposed to be bent.
+ */
 .backdrop-ground {
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   background-color: var(--surface-base);
-  transition: background-color 1500ms var(--ease-in-out-soft);
+  transition: background-color 800ms linear;
 }
 
 .backdrop-oil {
@@ -29,7 +49,7 @@
   overflow: hidden;
   mix-blend-mode: screen;
   opacity: var(--oil, 0.55);
-  transition: transform 1600ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 800ms ease-out;
   will-change: transform;
 }
 

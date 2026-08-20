@@ -17,6 +17,13 @@ const COUNTER_DELAY_MS = 80;
 const HEADER_SCROLL_PX = 60;
 /** A chapter counts as current once its top edge passes this share of the viewport. */
 const NAV_ACTIVE_FRACTION = 0.4;
+/**
+ * How far above the viewport middle the next chapter's top edge starts tinting
+ * the ground, as a share of the viewport. Half a screen is long enough that the
+ * blend never reads as a switch and short enough that the colour still clearly
+ * belongs to the chapter the reader is looking at.
+ */
+const GROUND_BLEND_FRACTION = 0.5;
 const OIL_POINTER_X_PX = 26;
 const OIL_POINTER_Y_PX = 20;
 const OIL_SCROLL_PX = 44;
@@ -60,7 +67,7 @@ export function usePageChoreography(still: boolean): void {
     }
     let reveals: RevealState = prepareReveals(root, still);
     let ratioRun = false;
-    let currentGround: HTMLElement | null = null;
+    let currentGround = '';
     let pointerX = 0;
     let pointerY = 0;
     let scrollBias = 0;
@@ -103,17 +110,40 @@ export function usePageChoreography(still: boolean): void {
         if (element.matches('[data-ratio]') || element.querySelector('[data-ratio]')) runRatio();
       });
 
-      // The ground is the section that owns the middle of the viewport, so the
-      // colour changes when a chapter takes over rather than when it first peeks in.
+      // The ground is a blend of the chapter that owns the middle of the viewport
+      // and the one coming after it, weighted by how far the next chapter's top
+      // edge still has to travel. That makes the colour a function of the scroll
+      // position instead of an event with a tail: it stops when the reader stops
+      // and it retraces itself on the way back up. Rects are read at most one
+      // past the owner, so this stays the same cost as the old ownership test.
       if (ground) {
         const middle = viewportHeight / 2;
-        const owner = sections.find((section) => {
-          const box = section.getBoundingClientRect();
-          return box.top <= middle && box.bottom > middle;
-        });
-        if (owner && owner !== currentGround) {
-          currentGround = owner;
-          ground.style.backgroundColor = owner.dataset.ground ?? '';
+        let ownerIndex = 0;
+        let nextTop = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < sections.length; i += 1) {
+          const section = sections[i];
+          if (!section) break;
+          const sectionTop = section.getBoundingClientRect().top;
+          if (sectionTop <= middle) {
+            ownerIndex = i;
+            continue;
+          }
+          nextTop = sectionTop;
+          break;
+        }
+        const from = sections[ownerIndex]?.dataset.ground ?? '';
+        const to = sections[ownerIndex + 1]?.dataset.ground ?? from;
+        const band = Math.max(1, viewportHeight * GROUND_BLEND_FRACTION);
+        const blend = Math.min(1, Math.max(0, 1 - (nextTop - middle) / band));
+        // Mixing in oklab is the browser's job: these are oklch colours, and
+        // interpolating them by hand would mean owning hue wrap-around too.
+        const mixed =
+          blend <= 0 || to === from
+            ? from
+            : `color-mix(in oklab, ${to} ${(blend * 100).toFixed(1)}%, ${from})`;
+        if (mixed !== currentGround) {
+          currentGround = mixed;
+          ground.style.backgroundColor = mixed;
         }
       }
 
