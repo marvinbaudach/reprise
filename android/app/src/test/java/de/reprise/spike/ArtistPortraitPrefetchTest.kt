@@ -140,6 +140,31 @@ class ArtistPortraitPrefetchTest {
             prefetch.shutdown()
         }
     }
+
+    @Test
+    fun aTransientlyFailingWholeBatchDoesNotHideLaterArtists() {
+        val transientNames = List(32) { index -> "Transient $index" }
+        val laterNames = listOf("Later One", "Later Two")
+        val allNames = transientNames + laterNames
+        val fetchedLater = CountDownLatch(laterNames.size)
+        val port = PrefetchLibrarySessionPort(
+            missingPortraits = { limit -> allNames.take(limit.toInt()) },
+            fetchPortrait = { name ->
+                if (name in transientNames) error("transient fetch failure")
+                fetchedLater.countDown()
+                null
+            },
+        )
+        val prefetch = ArtistPortraitPrefetch(port)
+
+        try {
+            prefetch.start()
+
+            assertTrue(fetchedLater.await(PREFETCH_WAIT_SECONDS, TimeUnit.SECONDS))
+        } finally {
+            prefetch.shutdown()
+        }
+    }
 }
 
 private fun queuedResponses(vararg responses: List<String>): (UInt) -> List<String> {

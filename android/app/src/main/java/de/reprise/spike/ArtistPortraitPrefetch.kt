@@ -30,9 +30,10 @@ internal class ArtistPortraitPrefetch(
 
     private fun fetchMissingPortraits() {
         val attempted = mutableSetOf<String>()
+        var requestLimit = PORTRAIT_PREFETCH_BATCH_SIZE
         while (!stopped) {
             val names = runCatching {
-                port.artistsMissingPortraits(PORTRAIT_PREFETCH_BATCH_SIZE)
+                port.artistsMissingPortraits(requestLimit)
             }.getOrElse { return }
             if (names.isEmpty()) return
 
@@ -45,7 +46,15 @@ internal class ArtistPortraitPrefetch(
                     port.artistPortraitFetched(name, AndroidArtworkSize.LIST)
                 }
             }
-            if (!foundNewName) return
+            if (!foundNewName) {
+                if (names.size < requestLimit.toInt()) return
+                val expandedLimit = minOf(
+                    Int.MAX_VALUE.toUInt(),
+                    requestLimit + PORTRAIT_PREFETCH_BATCH_SIZE,
+                )
+                if (expandedLimit == requestLimit) return
+                requestLimit = expandedLimit
+            }
         }
     }
 }
