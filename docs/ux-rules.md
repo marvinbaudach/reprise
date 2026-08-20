@@ -5401,8 +5401,12 @@ available. The player plays only finished files.
   (`reprise-view/src/columns/concert.rs`),
   `conc_17a_the_concerts_cover_column_is_pinned_id_less_and_unsorted`,
   `conc_17a_a_concert_cover_shows_initials_until_a_portrait_resolves` and
-  `conc_17a_a_rebound_concert_cover_never_shows_the_previous_artist`
-  (`ui/concerts/concerts_view_tests.rs`).
+  `conc_17a_a_rebound_concert_cover_never_shows_the_previous_artist`,
+  `conc_17a_every_sortable_concerts_header_orders_its_own_column` and
+  `only_the_ticket_header_carries_no_sorter`
+  (`ui/concerts/concerts_view_tests.rs`), and
+  `v75_drops_the_stored_concerts_column_layout_and_keeps_the_widths`
+  (`reprise-core/src/db_concerts_migration_tests.rs`).
 
 - **CONC-4c** [active] [gtk] — replaces CONC-4b. Without a credential,
   Concerts neutrally shows "No concert data yet" with no action; the Concerts
