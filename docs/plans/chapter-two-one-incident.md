@@ -30,7 +30,8 @@ One column, left-aligned, in the same `.frame` the other chapters use, with the
 `chapter__eyebrow` / `chapter__title` pattern and `data-reveal` on the blocks
 that arrive on scroll. `id="ch-02"`, `aria-labelledby="ch-02-heading"`,
 `data-ground="oklch(13.5% 0.02 205)"` (the value the old chapter used, inside the
-neighbours' range). The quote is the only element with a rule or a border.
+neighbours' range). The quote is the only bordered container; the figures retain
+only the internal floor rule, rail and verdict outline specified below.
 
 The two kickers stay distinct — `Fail closed` for the merge decision,
 `What the checks refuse` for coverage. Two identical kickers 300px apart read as
@@ -115,8 +116,8 @@ one change   ||||||||||||||||||||||||||| —— [ merge ]
 Rules: names come from the `gate` calls in `scripts/check-merge-readiness.sh`,
 parsed at build time; the count is `GATES.length`, never a literal. Each button
 carries `aria-label="08 · Architecture"` so the names are in the accessibility
-tree; the readout is `role="status"` / `aria-live="polite"`. Accent for passing,
-coral for failure, neutral for the dead rule — no green. Under
+tree; the readout is `role="status"`, which implies a polite live region. Accent
+for passing, coral for failure, neutral for the dead rule — no green. Under
 `prefers-reduced-motion` the height and colour transitions go and the state
 change stays instant.
 
@@ -211,8 +212,9 @@ offline, so the verdict does not depend on GitHub being reachable.
 | new | the six group counts sum to `GATES.length` and no check is unassigned |
 | `show-17` | every permalinked path exists at the pinned commit |
 
-`show-16` is taken by the hover branch (`gallery-hover.test.mjs`) — the `show-N`
-ids are one sequence across the whole suite, not per file.
+There is no `show-16`; the sequence intentionally skips from `show-15` to
+`show-17`. The assigned `show-N` ids remain unique across the whole suite, not
+per file.
 
 Each new assertion needs a mutation probe that reddens it, run against a
 **committed** tree: `git checkout --` during a probe otherwise reverts the change
