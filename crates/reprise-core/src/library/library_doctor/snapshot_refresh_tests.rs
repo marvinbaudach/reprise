@@ -50,11 +50,12 @@ fn scan_track(db: &crate::db::Db, path: &Path) -> DoctorScan {
 }
 
 #[test]
-fn doctor_apply_refreshes_snapshot_before_remaining_rows_are_classified() {
+fn doctor_apply_on_worker_connection_refreshes_snapshot_before_remaining_rows_are_classified() {
     let dir = tempfile::tempdir().unwrap();
     let path = fixture(dir.path());
-    let db = crate::db::Db::open_in_memory().unwrap();
-    let scan = scan_track(&db, &path);
+    let db_path = dir.path().join("reprise.db");
+    let scan_db = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
+    let scan = scan_track(&scan_db, &path);
     let track_id = scan.track_ids[0];
     let mut review = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::AutoApply);
     assert_eq!(
@@ -72,11 +73,12 @@ fn doctor_apply_refreshes_snapshot_before_remaining_rows_are_classified() {
     }
     assert_eq!(review.freeze_plan().tag_change_count(), 1);
 
-    LibraryDoctor::new(&db)
+    let apply_db = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
+    LibraryDoctor::new(&apply_db)
         .apply_review_plan(&review.freeze_plan(), |_| DoctorWriteControl::Continue)
         .unwrap();
 
-    let stored = LibraryDoctor::new(&db)
+    let stored = LibraryDoctor::new(&apply_db)
         .last_complete_scan()
         .unwrap()
         .unwrap();
@@ -85,7 +87,7 @@ fn doctor_apply_refreshes_snapshot_before_remaining_rows_are_classified() {
         2,
         "only the written row leaves the scan"
     );
-    let stale = stale_flags(db.conn(), scan.id).unwrap()[&track_id];
+    let stale = stale_flags(apply_db.conn(), scan.id).unwrap()[&track_id];
     let further_stale_rows = usize::from(stale) * stored.proposals.len();
     assert_eq!(
         further_stale_rows, 0,

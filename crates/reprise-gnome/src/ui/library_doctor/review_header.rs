@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_3c_album_header_state_names_the_reason_at_zero() {
+    fn doc_3c_album_header_state_names_only_conflict_reason_at_zero() {
         use reprise_core::library_doctor::DoctorReviewRowState;
 
         let stale = super::album_header_state(0, 0, 3, Some(DoctorReviewRowState::Stale));

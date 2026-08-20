@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{
     DoctorCandidate, DoctorError, DoctorField, DoctorGroupMember, DoctorProposal, DoctorScan,
@@ -68,7 +68,6 @@ pub(super) fn previous_scan_identities(
 pub(super) fn persist_complete_scan(
     data: &CompleteScanData<'_>,
 ) -> Result<DoctorScan, DoctorError> {
-    ensure_snapshot_refresh_after_doctor_write(data.conn)?;
     let conn = data.conn;
     let scope_kind = data.scope_kind;
     let created_at = data.created_at;
@@ -221,7 +220,6 @@ pub(super) fn persist_complete_scan(
 }
 
 pub(super) fn last_complete_scan(conn: &Connection) -> Result<Option<DoctorScan>, DoctorError> {
-    ensure_snapshot_refresh_after_doctor_write(conn)?;
     let scan_id = conn
         .query_row(
             "SELECT last_complete_scan_id FROM library_doctor_state WHERE singleton=1",
@@ -271,45 +269,47 @@ pub(super) fn last_complete_scan(conn: &Connection) -> Result<Option<DoctorScan>
 }
 
 /// Keep a scan's file identity aligned with the exact reconciliation produced
-/// by its own Apply job.
+/// by its own successful Apply file.
 ///
-/// The tag write reconciles `tracks` only after Lofty saved the file and read
-/// its new metadata. At that moment the matching Doctor job and file are both
-/// `running`, which distinguishes this write from a watcher or Tag Editor
-/// reconciliation. A failed write never updates `tracks`; a failed
-/// reconciliation never fires this trigger. The trigger is connection-local:
-/// a fresh scan installs it, and loading a persisted scan reinstalls it after
-/// a restart before that scan can produce an Apply plan.
-fn ensure_snapshot_refresh_after_doctor_write(conn: &Connection) -> Result<(), rusqlite::Error> {
-    conn.execute_batch(
-        "CREATE TEMP TRIGGER IF NOT EXISTS library_doctor_refresh_snapshot_after_apply
-         AFTER UPDATE OF path, file_mtime, file_size, device, inode ON tracks
-         WHEN EXISTS (
-           SELECT 1 FROM tag_write_job_files f
-           JOIN tag_write_jobs j ON j.id = f.job_id
-           WHERE f.track_id = NEW.id
-             AND f.state = 'running'
-             AND j.kind = 'doctor_apply'
-             AND j.state = 'running'
-         )
-         BEGIN
-           UPDATE library_doctor_scan_tracks
-           SET path = NEW.path,
-               file_mtime = NEW.file_mtime,
-               file_size = NEW.file_size,
-               device = NEW.device,
-               inode = NEW.inode
-           WHERE track_id = NEW.id
-             AND scan_id IN (
-               SELECT j.scan_id FROM tag_write_job_files f
-               JOIN tag_write_jobs j ON j.id = f.job_id
-               WHERE f.track_id = NEW.id
-                 AND f.state = 'running'
-                 AND j.kind = 'doctor_apply'
-                 AND j.state = 'running'
-             );
-         END;",
-    )
+/// The write path calls this only after Lofty saved the file and the scanner
+/// reconciled `tracks` from the file it just read. The exact current job, file,
+/// and track must still be running and must belong to `doctor_apply`; a crashed
+/// job therefore cannot authorize a later watcher or Tag Editor write. Failed
+/// writes and failed reconciliations never reach this function.
+pub(super) fn refresh_snapshot_after_successful_doctor_write(
+    conn: &Connection,
+    job_id: i64,
+    file_id: i64,
+    track_id: i64,
+) -> Result<(), DoctorError> {
+    let scan_id = conn
+        .query_row(
+            "SELECT j.scan_id FROM tag_write_jobs j
+             JOIN tag_write_job_files f ON f.job_id=j.id
+             WHERE j.id=?1 AND f.id=?2 AND f.track_id=?3
+               AND j.kind='doctor_apply' AND j.state='running'
+               AND f.state='running'",
+            params![job_id, file_id, track_id],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .optional()?
+        .flatten();
+    let Some(scan_id) = scan_id else {
+        return Ok(());
+    };
+    conn.execute(
+        &format!(
+            "UPDATE library_doctor_scan_tracks
+             SET (path, file_mtime, file_size, device, inode) = (
+               SELECT path, file_mtime, file_size, device, inode
+               FROM tracks WHERE id=?1 AND {}
+             )
+             WHERE scan_id=?2 AND track_id=?1",
+            crate::queries::PRESENT
+        ),
+        params![track_id, scan_id],
+    )?;
+    Ok(())
 }
 
 pub fn set_reviewed_scan(conn: &Connection, scan_id: i64) -> Result<(), DoctorError> {

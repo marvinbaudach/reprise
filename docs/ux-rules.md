@@ -4310,7 +4310,7 @@ means deterministic and high-confidence, never „without review".
   touches a stale or conflicting row. The master stays reachable in the narrow
   layout, where the column titles are hidden and it is labelled instead.
   *Tests:* `doc_3c_the_master_check_mirrors_the_visible_selection`,
-  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_album_header_state_names_only_conflict_reason_at_zero`,
   `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`.
   *Amended 2026-08-14: the sensitivity and reason contract now covers album
   group checkboxes as well as the page master.*
@@ -4701,7 +4701,7 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_the_conflicts_panel_covers_no_row`,
   `doc_9b_the_first_row_carries_its_album_header`,
   `doc_9b_a_fully_deselected_album_says_none_selected`,
-  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_album_header_state_names_only_conflict_reason_at_zero`,
   `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`,
   `doc_9b_a_stale_row_names_its_reason_where_the_click_happens`,
   `doc_9b_activating_an_unselectable_row_selects_nothing`,
@@ -4718,8 +4718,10 @@ means deterministic and high-confidence, never „without review".
   tracks" in italic muted text; and every row, including the first, appears
   beneath an album header.*
   *Amended 2026-08-14: an album header's change count is its written-change
-  inventory. A refused row names its reason in the Source cell and accessible
-  description; activating it changes nothing and performs no refresh.*
+  inventory. When a Conflict-blocked album has no selectable row, its reason
+  appears next to that count. A refused row names its reason in the Source cell
+  and accessible description; activating it changes nothing and performs no
+  refresh.*
   *Amended 2026-08-20: fingerprint-stale scan rows are absent from the session,
   while a row manually marked `Stale` after construction retains the row-level
   reason required by DOC-3a. The removed aggregate banner and out-of-date album
