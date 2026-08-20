@@ -402,11 +402,10 @@ pub fn set_release_hidden(
     release_group_mbid: &str,
     hidden: bool,
 ) -> Result<(), rusqlite::Error> {
-    set_releases_hidden(
-        db,
-        std::slice::from_ref(&release_group_mbid.to_owned()),
-        hidden,
-    )
+    let conn = db.conn();
+    let transaction = conn.unchecked_transaction()?;
+    apply_release_hidden_in(&transaction, release_group_mbid, hidden)?;
+    transaction.commit()
 }
 
 pub fn set_releases_hidden(
