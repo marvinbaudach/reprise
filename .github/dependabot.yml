@@ -1,58 +1,46 @@
 version: 2
 
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+
 updates:
   - package-ecosystem: github-actions
     directory: /
     target-branch: dev
-    schedule:
-      interval: weekly
-      day: monday
+    multi-ecosystem-group: all-dependencies
+    patterns:
+      - "*"
     commit-message:
-      prefix: "ci"
+      prefix: "chore"
 
   - package-ecosystem: cargo
     directory: /
     target-branch: dev
-    schedule:
-      interval: weekly
-      day: monday
+    multi-ecosystem-group: all-dependencies
+    patterns:
+      - "*"
     commit-message:
       prefix: "chore"
-    labels:
-      - dependencies
-    groups:
-      gstreamer:
-        patterns:
-          - "gstreamer*"
-      gtk:
-        patterns:
-          - "gtk4"
-          - "gdk4-*"
-          - "libadwaita"
-          - "gio"
-      serde:
-        patterns:
-          - "serde"
-          - "serde_json"
 
   - package-ecosystem: gradle
     directory: /android
-    target-branch: "dev"
-    schedule:
-      interval: weekly
-      day: monday
+    target-branch: dev
+    multi-ecosystem-group: all-dependencies
+    patterns:
+      - "*"
     commit-message:
       prefix: "chore"
-    labels:
-      - dependencies
 
   - package-ecosystem: npm
     directory: /showroom
-    target-branch: "dev"
-    schedule:
-      interval: weekly
-      day: monday
+    target-branch: dev
+    multi-ecosystem-group: all-dependencies
+    patterns:
+      - "*"
     commit-message:
       prefix: "chore"
-    labels:
-      - dependencies
