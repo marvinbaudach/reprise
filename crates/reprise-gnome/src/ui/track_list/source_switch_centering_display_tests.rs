@@ -78,7 +78,7 @@ fn two_source_track_list() -> (Rc<TrackList>, gtk4::Window, gtk4::Adjustment) {
 fn centered_target(track_list: &TrackList, track_id: i64, adjustment: &gtk4::Adjustment) -> f64 {
     let current_ids = track_list.shared.current_view_ids();
     let row_height = adjustment.upper() / current_ids.len() as f64;
-    crate::ui::track_list::reload_restore::centered_track_scroll_target(
+    crate::ui::track_list::reload_restore::flat_list_centered_track_scroll_target(
         Some(track_id),
         &current_ids,
         row_height,

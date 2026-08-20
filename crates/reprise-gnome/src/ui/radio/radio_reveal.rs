@@ -178,9 +178,20 @@ impl RadioReveal {
         let Ok(n_rows) = u32::try_from(rows.len()) else {
             return true;
         };
-        let Some((adjustment, value)) =
-            crate::ui::scroll_center::centered_scroll_target(column_view, n_rows, position)
+        let Some(adjustment) = column_view.vadjustment() else {
+            return false;
+        };
+        let Some(row_height) = crate::ui::list_geometry::ListGeometry::for_view(column_view)
+            .settled_row_height(adjustment.upper(), n_rows as usize)
         else {
+            return false;
+        };
+        let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(row_height);
+        let Some((adjustment, value)) = crate::ui::scroll_center::centered_scroll_target(
+            column_view,
+            n_rows,
+            (position, layout),
+        ) else {
             return false;
         };
         adjustment.set_value(value);

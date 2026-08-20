@@ -52,6 +52,22 @@ fn synthetic_track_list(rows: i64) -> (Rc<TrackList>, gtk4::Window) {
     (track_list, window)
 }
 
+fn centered_target(track_list: &TrackList, position: u32) -> (gtk4::Adjustment, f64) {
+    let n_rows = track_list.shared.model.n_items();
+    let layout = crate::ui::track_list::track_list_geometry::layout(
+        &track_list.shared,
+        None,
+        n_rows as usize,
+    )
+    .expect("the allocated list must have layout geometry");
+    crate::ui::scroll_center::centered_scroll_target(
+        &track_list.shared.column_view,
+        n_rows,
+        (position, layout),
+    )
+    .expect("the allocated list must have centering geometry")
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn nav_10b_a_scan_reload_mid_glide_does_not_strand_the_follow() {
@@ -70,23 +86,13 @@ fn nav_10b_a_scan_reload_mid_glide_does_not_strand_the_follow() {
         8,
         crate::ui::track_list::track_reveal::RevealMotion::Glide,
     );
-    let (_, start) = crate::ui::scroll_center::centered_scroll_target(
-        &track_list.shared.column_view,
-        track_list.shared.model.n_items(),
-        100,
-    )
-    .unwrap();
+    let (_, start) = centered_target(&track_list, 100);
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
         (adjustment.value() - start).abs() < 1.0
     });
 
     // Playback moves on: near enough for a glide rather than a jump.
-    let (_, target) = crate::ui::scroll_center::centered_scroll_target(
-        &track_list.shared.column_view,
-        track_list.shared.model.n_items(),
-        115,
-    )
-    .unwrap();
+    let (_, target) = centered_target(&track_list, 115);
     crate::ui::track_list::track_reveal::reveal_position(
         &track_list.shared,
         115,

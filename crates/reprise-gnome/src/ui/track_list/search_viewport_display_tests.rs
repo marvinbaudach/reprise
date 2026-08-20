@@ -185,7 +185,7 @@ fn search_16_a_result_set_that_fits_still_centers_after_clear_all() {
         "the expanded list must be genuinely scrollable"
     );
     let row_height = adjustment.upper() / current_ids.len() as f64;
-    let expected = super::reload_restore::centered_track_scroll_target(
+    let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(playing_id),
         &current_ids,
         row_height,
@@ -301,7 +301,7 @@ fn search_16_clearing_after_a_play_centers_the_loaded_track() {
 
     let current_ids = stage.track_list.shared.current_view_ids();
     let row_height = stage.adjustment.upper() / current_ids.len() as f64;
-    let expected = super::reload_restore::centered_track_scroll_target(
+    let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(playing_id),
         &current_ids,
         row_height,
@@ -425,7 +425,7 @@ fn search_16_clearing_after_a_play_reaches_the_track_in_one_step() {
 
     let current_ids = stage.track_list.shared.current_view_ids();
     let row_height = stage.adjustment.upper() / current_ids.len() as f64;
-    let expected = super::reload_restore::centered_track_scroll_target(
+    let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(playing_id),
         &current_ids,
         row_height,
@@ -516,7 +516,7 @@ fn start_3_centering_the_loaded_track_reaches_it_in_one_step() {
 
     let current_ids = track_list.shared.current_view_ids();
     let row_height = adjustment.upper() / current_ids.len() as f64;
-    let expected = super::reload_restore::centered_track_scroll_target(
+    let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(track_id),
         &current_ids,
         row_height,
