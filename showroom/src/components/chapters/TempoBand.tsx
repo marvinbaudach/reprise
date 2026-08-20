@@ -65,9 +65,8 @@ export function TempoBand() {
         <ol className="tempo__track" data-reveal data-weeks={TIMELINE.length}>
           {TIMELINE.map((week) => (
             <li className="tempo__week" key={week.week} data-week={week.week}>
-              <p className="data tempo__span">{displaySpan(week.from, week.to)}</p>
               <p className="tempo__theme">{week.theme}</p>
-              <p className="tempo__landed">{week.landed}</p>
+              <p className="data tempo__span">{displaySpan(week.from, week.to)}</p>
             </li>
           ))}
         </ol>

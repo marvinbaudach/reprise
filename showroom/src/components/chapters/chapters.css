@@ -335,8 +335,8 @@
  */
 .tempo__track {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 172px), 1fr));
-  gap: clamp(1.1rem, 0.8rem + 1.2vw, 2.2rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: clamp(1.4rem, 1rem + 1.5vw, 2.6rem);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -345,6 +345,8 @@
 .tempo__week {
   position: relative;
   padding-top: 30px;
+  padding-bottom: clamp(1rem, 0.8rem + 0.5vw, 1.4rem);
+  border-top: 1px solid oklch(26% 0.03 195);
 }
 
 .tempo__week::before {
@@ -404,22 +406,22 @@
   --week-delay: 360ms;
 }
 
+.tempo__theme {
+  margin-bottom: clamp(6px, 0.4rem + 0.2vw, 12px);
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 0.9rem + 0.5vw, 1.4rem);
+  letter-spacing: 0.08em;
+  color: var(--brand-teal);
+  font-variation-settings:
+    "wdth" 104,
+    "wght" 620;
+}
+
 .tempo__span {
-  margin-bottom: 8px;
+  margin: 0;
   font-size: 0.72rem;
   letter-spacing: 0.05em;
   color: oklch(70% 0.011 269);
-}
-
-.tempo__theme {
-  margin-bottom: 8px;
-  font-family: var(--font-display);
-  font-size: 0.82rem;
-  letter-spacing: 0.16em;
-  color: var(--brand-teal);
-  font-variation-settings:
-    "wdth" 100,
-    "wght" 600;
 }
 
 .tempo__landed {
