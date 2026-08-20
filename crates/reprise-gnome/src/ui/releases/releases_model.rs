@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn release_model_uses_single_selection_for_one_primary_action() {
+    fn release_model_binds_multi_selection_to_the_release_store() {
         let model = ReleasesModel::new();
         assert_eq!(model.selection().model().unwrap(), model.store().clone());
     }
