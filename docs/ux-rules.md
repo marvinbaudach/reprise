@@ -3861,9 +3861,14 @@ STYLE-1).
   old impulses are not carried over into newer CAVA frames. A loaded,
   paused scene follows AC-27: only its display projection breathes, while
   the last CAVA values remain intact and the peak caps keep their normal
-  independent decay. Peak-cap decay continues while the Visual view is not
-  visible, so resuming its tick loop never has accumulated cap decay to catch
-  up.
+  independent decay while its presentation clock is active. During ongoing
+  playback, peak-cap decay continues while the Visual view is not visible,
+  because live audio frames keep supplying elapsed time; restoring the view
+  therefore has no accumulated cap decay to catch up. When playback is paused
+  or stopped and the view is also hidden, no presentation tick is active and
+  paused audio ingests do not own cap decay, so no elapsed time is applied to
+  the caps. They hold until either source becomes active again; the engine
+  reads no clock and does not catch up a hidden paused gap.
   The glow layer behind the columns is never derived from the CAVA
   bands. Auto-sensitivity keeps re-normalizing those, so a quiet sung
   passage climbs to the same band values as a drop and the glow would

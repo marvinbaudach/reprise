@@ -74,7 +74,7 @@ fn ac_23_first_visible_tick_has_no_peak_cap_backlog() {
 }
 
 #[test]
-fn ac_27_paused_scene_keeps_peak_caps_without_fresh_ingest() {
+fn ac_23_paused_peak_caps_decay_without_fresh_ingest() {
     let mut engine = VisualEngine::new();
     engine.set_has_track(true);
     engine.set_playing(true);
@@ -87,13 +87,27 @@ fn ac_27_paused_scene_keeps_peak_caps_without_fresh_ingest() {
         FRAME_ELAPSED,
     ));
     engine.set_playing(false);
-    let paused_caps = engine.bands_peaks;
+    let before = median(engine.bands_peaks);
 
-    engine.advance_by(Duration::from_secs(10));
+    engine.advance_by(FRAME_ELAPSED);
+    let after_one_tick = median(engine.bands_peaks);
+    for _ in 1..49 {
+        engine.advance_by(FRAME_ELAPSED);
+    }
+    let after_49_ticks = median(engine.bands_peaks);
+    let first_tick_decay = before - after_one_tick;
 
-    assert_eq!(
-        engine.bands_peaks, paused_caps,
-        "paused peak caps changed without a fresh audio frame"
+    eprintln!(
+        "paused peak-cap decay: before {before:.4}, after one tick {after_one_tick:.4}, first-tick decay {first_tick_decay:.4}, after 49 ticks {after_49_ticks:.4}"
+    );
+
+    assert!(
+        (first_tick_decay - 0.018).abs() <= 0.0001,
+        "paused peak caps did not keep the normal 60 Hz decay: before {before:.4}, after one tick {after_one_tick:.4}, decay {first_tick_decay:.4}, expected 0.0180"
+    );
+    assert!(
+        after_49_ticks <= SETTLE_EPSILON,
+        "paused peak caps did not settle after 49 ticks (816.7 ms): {after_49_ticks:.4}"
     );
 }
 

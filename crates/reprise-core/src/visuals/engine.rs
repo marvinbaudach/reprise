@@ -243,7 +243,7 @@ impl VisualEngine {
     /// Installs the already-bounded CAVA values in the same frame.
     ///
     /// The caller supplies the elapsed time since its previous audio frame so
-    /// peak-cap decay remains deterministic and independent of redraws.
+    /// live peak-cap decay remains deterministic and independent of redraws.
     ///
     /// The glow is a stage light: a hit throws it to full at once, then it
     /// falls. It is sourced from `kick`, not `impact` — measured over three
@@ -260,10 +260,9 @@ impl VisualEngine {
         let elapsed_ticks = elapsed.as_secs_f32() * SIMULATION_TICKS_PER_SECOND;
         if !self.playing && !self.retain_paused_live_shape {
             self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
-        } else {
+        } else if self.playing {
             for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
-                let floor = if self.playing { *current } else { 0.0 };
-                *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(floor);
+                *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(*current);
             }
         }
         self.refresh_display_bands();
@@ -304,6 +303,16 @@ impl VisualEngine {
                 // existing bar release so a settled scene is actually empty.
                 *peak = *bar;
                 settled &= *bar == 0.0;
+            }
+        }
+        if !self.playing && self.has_track && self.retain_paused_live_shape {
+            // Live ingestion owns decay while playing; the presentation clock
+            // owns it while paused, so neither state can apply it twice.
+            for peak in &mut self.bands_peaks {
+                *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(0.0);
+                if *peak < SETTLE_EPSILON {
+                    *peak = 0.0;
+                }
             }
         }
         // The stage light falls on every frame, playing or not: the attack
