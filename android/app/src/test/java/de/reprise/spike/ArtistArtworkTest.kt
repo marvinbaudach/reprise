@@ -126,24 +126,29 @@ class ArtistArtworkTest {
     }
 
     @Test
-    fun anArtistWithoutAPortraitFallsBackToTheAlbumCover() {
+    fun anArtistWithoutAPortraitFallsBackToTheGeneratedAvatar() {
         val albumCover = bitmap(Color.GREEN)
+        val generated = bitmap(Color.MAGENTA)
+        val resolveCalls = AtomicInteger()
         val artwork = TrackArtwork(
             resolve = { uri, _ ->
+                resolveCalls.incrementAndGet()
                 assertEquals("content://albums/representative", uri)
                 "album-cover"
             },
             resolveArtistPortraitCached = { _, _ -> null },
             decode = { path -> if (path == "album-cover") albumCover else null },
+            fallback = { _, _, _ -> generated },
             cache = ArtworkCache(),
             onMainThread = { work -> work() },
         )
 
         try {
             assertSame(
-                albumCover,
+                generated,
                 resolveArtist(artwork, AndroidArtworkSize.LIST, allowFetch = false),
             )
+            assertEquals(0, resolveCalls.get())
         } finally {
             artwork.shutdown()
         }
@@ -153,8 +158,12 @@ class ArtistArtworkTest {
     fun anArtistWithoutEitherGetsTheGeneratedCover() {
         val generated = bitmap(Color.MAGENTA)
         val fallbackCalls = AtomicInteger()
+        val resolveCalls = AtomicInteger()
         val artwork = TrackArtwork(
-            resolve = { _, _ -> null },
+            resolve = { _, _ ->
+                resolveCalls.incrementAndGet()
+                null
+            },
             resolveArtistPortraitCached = { _, _ -> null },
             fallback = { title, _, _ ->
                 assertEquals("The Artist", title)
@@ -171,6 +180,7 @@ class ArtistArtworkTest {
                 resolveArtist(artwork, AndroidArtworkSize.LIST, allowFetch = false),
             )
             assertEquals(1, fallbackCalls.get())
+            assertEquals(0, resolveCalls.get())
         } finally {
             artwork.shutdown()
         }
