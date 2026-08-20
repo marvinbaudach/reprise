@@ -15,13 +15,19 @@ const AVATAR_SIZE: i32 = 32;
 
 pub(super) struct ContinuationRow {
     pub(super) root: gtk4::Box,
+    avatar: adw::Avatar,
+    picture: gtk4::Picture,
+    image: Rc<StatsArtistImage>,
+    candidates: Vec<String>,
+    generation: Rc<Cell<u64>>,
+    token: u64,
+    image_started: Cell<bool>,
     #[cfg(test)]
     pub(super) open_button: gtk4::Button,
     #[cfg(test)]
     pub(super) unify_button: gtk4::Button,
     #[cfg(test)]
     pub(super) bar: gtk4::LevelBar,
-    #[cfg(test)]
     artist: String,
 }
 
@@ -99,34 +105,23 @@ pub(super) fn build_row(
     unify_button.connect_clicked(move |_| (callbacks.unify)(artist_key.clone()));
     root.append(&unify_button);
 
-    let token = generation.get();
     let picture = gtk4::Picture::new();
-    let avatar_for_image = avatar.clone();
-    let picture_for_image = picture.clone();
-    image.load(
-        &picture,
-        ArtistImageRequest {
-            artist: artist.group.label.clone(),
-            candidates: artist.cover_candidates.clone(),
-            size: reprise_core::cover::ThumbnailSize::List,
-            token,
-            generation: generation.clone(),
-            on_loaded: Rc::new(move |loaded| {
-                let paintable = loaded.then(|| picture_for_image.paintable()).flatten();
-                avatar_for_image.set_custom_image(paintable.as_ref());
-            }),
-        },
-    );
 
     ContinuationRow {
         root,
+        avatar,
+        picture,
+        image: image.clone(),
+        candidates: artist.cover_candidates.clone(),
+        generation: generation.clone(),
+        token: generation.get(),
+        image_started: Cell::new(false),
         #[cfg(test)]
         open_button,
         #[cfg(test)]
         unify_button,
         #[cfg(test)]
         bar,
-        #[cfg(test)]
         artist: artist.group.label.clone(),
     }
 }
@@ -139,6 +134,28 @@ fn metric_text(artist: &RankedGroup, sort_by: SortBy) -> String {
 }
 
 impl ContinuationRow {
+    pub(super) fn load_image(&self) {
+        if self.image_started.replace(true) {
+            return;
+        }
+        let avatar = self.avatar.clone();
+        let picture = self.picture.clone();
+        self.image.load(
+            &self.picture,
+            ArtistImageRequest {
+                artist: self.artist.clone(),
+                candidates: self.candidates.clone(),
+                size: reprise_core::cover::ThumbnailSize::List,
+                token: self.token,
+                generation: self.generation.clone(),
+                on_loaded: Rc::new(move |loaded| {
+                    let paintable = loaded.then(|| picture.paintable()).flatten();
+                    avatar.set_custom_image(paintable.as_ref());
+                }),
+            },
+        );
+    }
+
     #[cfg(test)]
     pub(super) fn artist_label(&self) -> String {
         self.artist.clone()
