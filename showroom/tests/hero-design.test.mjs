@@ -84,6 +84,10 @@ test('the header and hero offer one in-page route to availability', async () => 
   }
   assert.match(normalizedHero, /class="hero__offer-link" href="#availability"/);
   assert.doesNotMatch(html, /mailto:/);
+  assert.match(
+    chromeCss,
+    /\.site-header__nav a:not\(\.site-header__hire\):hover,\s*\.site-header__nav a\[data-current="true"\]\s*\{/,
+  );
 
   const mobile = chromeCss.slice(
     chromeCss.indexOf('@media (max-width: 46rem)'),

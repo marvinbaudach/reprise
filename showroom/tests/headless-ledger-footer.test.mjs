@@ -81,6 +81,8 @@ test('chapter five exposes the complete measured ledger and its price without a 
   const table = chapter.match(/<table[^>]+class="ledger"[\s\S]+?<\/table>/)?.[0];
   assert.ok(table);
   assert.match(table, /<table[^>]+role="table"/);
+  assert.equal((table.match(/<(?:thead|tbody) role="rowgroup">/g) ?? []).length, 2);
+  assert.equal((table.match(/<th scope="col" role="columnheader">/g) ?? []).length, 4);
   assert.doesNotMatch(chapter, /<details|Folded away/);
   assert.doesNotMatch(chapter, / style=/);
   // The figures themselves are quoted from the record, so they are read from it

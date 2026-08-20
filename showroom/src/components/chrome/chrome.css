@@ -94,7 +94,7 @@
   transition: color 300ms ease;
 }
 
-.site-header__nav a:hover,
+.site-header__nav a:not(.site-header__hire):hover,
 .site-header__nav a[data-current="true"] {
   color: var(--brand-teal);
 }

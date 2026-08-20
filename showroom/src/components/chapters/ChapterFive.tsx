@@ -39,16 +39,30 @@ export function ChapterFive() {
                 <a href={permalink(PERFORMANCE_RECORD)}>the record</a>, which carries the commit,
                 the date and the method behind every row.
               </caption>
-              <thead>
+              {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+              <thead role="rowgroup">
                 {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
                 <tr role="row">
-                  <th scope="col">What</th>
-                  <th scope="col">Before</th>
-                  <th scope="col">After</th>
-                  <th scope="col">Delta</th>
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    What
+                  </th>
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    Before
+                  </th>
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    After
+                  </th>
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    Delta
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+              <tbody role="rowgroup">
                 {PERFORMANCE.map((row) => (
                   // biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver.
                   <tr key={row.what} role="row">
