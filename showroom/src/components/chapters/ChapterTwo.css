@@ -334,7 +334,7 @@
   letter-spacing: 0.04em;
 }
 
-.gate-strip[data-blocked="true"] .gate-strip__readout {
+.gate-strip__readout[data-tone="failed"] {
   color: var(--second);
 }
 

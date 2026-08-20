@@ -171,7 +171,7 @@ test('show-7 the incident is quoted from the record, never recounted from the tr
   assert.ok(record.includes(heading), 'the §4C heading the link derives its fragment from moved');
 });
 
-test('show-8 a failed check blocks the readout and clearing it releases again', () => {
+test('show-8 a failed check blocks the readout and clearing it releases again', async () => {
   const total = 26;
 
   const ready = readout(new Set(), total);
@@ -186,15 +186,31 @@ test('show-8 a failed check blocks the readout and clearing it releases again', 
   const three = readout(new Set(['Rust lint', 'Shell', 'AppStream']), total);
   assert.equal(three.failed, 3);
   assert.match(three.message, /^3 of 26 red · the change does not land$/);
-  assert.equal(
-    displayedReadout(three, 7, 'Architecture'),
-    '08 · Architecture',
+  assert.deepEqual(
+    displayedReadout(three, 7, 'Architecture', false),
+    { message: '08 · Architecture', tone: 'neutral' },
     'hover or focus must reveal a check even while another check is red',
   );
-  assert.equal(
+  assert.deepEqual(
+    displayedReadout(three, 7, 'Architecture', true),
+    { message: '08 · Architecture', tone: 'failed' },
+    'a reached failed check must keep the failure colour',
+  );
+  assert.deepEqual(
     displayedReadout(three, -1),
-    three.message,
+    { message: three.message, tone: 'failed' },
     'the blocked verdict is the resting copy',
+  );
+
+  const css = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.css'),
+    'utf8',
+  );
+  assert.match(css, /\.gate-strip__readout\[data-tone="failed"\] \{/);
+  assert.doesNotMatch(
+    css,
+    /\.gate-strip\[data-blocked="true"\] \.gate-strip__readout/,
+    'the strip verdict must not colour an unrelated passing peek',
   );
 
   // The toggle is what the mark does, and it must not mutate what it was given.

@@ -17,6 +17,11 @@ export interface Readout {
   readonly message: string;
 }
 
+export interface DisplayedReadout {
+  readonly message: string;
+  readonly tone: 'neutral' | 'failed';
+}
+
 export function readout(failed: ReadonlySet<string>, total: number): Readout {
   if (!Number.isInteger(total) || total < 0) {
     throw new RangeError(`a wall of ${total} checks is not a wall`);
@@ -35,10 +40,20 @@ export function readout(failed: ReadonlySet<string>, total: number): Readout {
   };
 }
 
-/** Show a reached check first; the merge verdict is the strip's resting copy. */
-export function displayedReadout(status: Readout, index: number, name?: string): string {
-  if (index < 0 || name === undefined) return status.message;
-  return `${String(index + 1).padStart(2, '0')} · ${name}`;
+/** Show a reached check first; its own result also owns the displayed tone. */
+export function displayedReadout(
+  status: Readout,
+  index: number,
+  name?: string,
+  peekedFailed = false,
+): DisplayedReadout {
+  if (index < 0 || name === undefined) {
+    return { message: status.message, tone: status.blocked ? 'failed' : 'neutral' };
+  }
+  return {
+    message: `${String(index + 1).padStart(2, '0')} · ${name}`,
+    tone: peekedFailed ? 'failed' : 'neutral',
+  };
 }
 
 /** Flip one check between passing and failing, without touching the set given. */

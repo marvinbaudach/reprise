@@ -121,7 +121,7 @@ function GateStrip() {
   const status = readout(failed, GATES.length);
   const peeked = peek > -1 ? GATES[peek] : undefined;
 
-  const message = displayedReadout(status, peek, peeked);
+  const display = displayedReadout(status, peek, peeked, peeked ? failed.has(peeked) : false);
 
   return (
     <div className="gate-strip" data-blocked={status.blocked ? 'true' : 'false'}>
@@ -153,8 +153,8 @@ function GateStrip() {
         <p className="gate-strip__verdict">{status.blocked ? 'blocked' : 'merge'}</p>
       </div>
 
-      <p className="gate-strip__readout" role="status">
-        {message}
+      <p className="gate-strip__readout" role="status" data-tone={display.tone}>
+        {display.message}
       </p>
     </div>
   );
