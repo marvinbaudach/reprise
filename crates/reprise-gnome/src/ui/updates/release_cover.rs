@@ -9,6 +9,7 @@ use crate::ui::{artist_avatar, one_shot_task};
 const INITIALS_CLASS: &str = "reprise-release-cover-initials";
 const PICTURE_CLASS: &str = "reprise-release-cover-picture";
 const MBID_CLASS: &str = "reprise-release-cover-mbid";
+const ARTIST_CLASS: &str = "reprise-release-cover-artist";
 const STARTED_CLASS: &str = "reprise-release-cover-started";
 
 pub(in crate::ui) struct LazyReleaseCover {
@@ -16,6 +17,7 @@ pub(in crate::ui) struct LazyReleaseCover {
     initials: gtk4::Label,
     picture: gtk4::Picture,
     mbid: gtk4::Label,
+    artist: gtk4::Label,
     started: gtk4::Label,
 }
 
@@ -95,12 +97,14 @@ impl LazyReleaseCover {
         });
         root.add_overlay(&hairline);
 
-        // GTK owns these two invisible labels with the cell, so a wrapper
+        // GTK owns these three invisible labels with the cell, so a wrapper
         // reconstructed during bind reaches the same per-cell async state
         // without unsafe qdata or a second GObject subclass.
         let mbid = state_label(MBID_CLASS);
+        let artist = state_label(ARTIST_CLASS);
         let started = state_label(STARTED_CLASS);
         root.add_overlay(&mbid);
+        root.add_overlay(&artist);
         root.add_overlay(&started);
 
         wire_lazy_fetch(&root, &picture, &mbid, &started);
@@ -109,6 +113,7 @@ impl LazyReleaseCover {
             initials,
             picture,
             mbid,
+            artist,
             started,
         }
     }
@@ -119,12 +124,14 @@ impl LazyReleaseCover {
             initials: child_with_class(root, INITIALS_CLASS)?,
             picture: child_with_class(root, PICTURE_CLASS)?,
             mbid: child_with_class(root, MBID_CLASS)?,
+            artist: child_with_class(root, ARTIST_CLASS)?,
             started: child_with_class(root, STARTED_CLASS)?,
         })
     }
 
     pub(in crate::ui) fn set_release(&self, release_group_mbid: &str, artist: &str) {
         self.mbid.set_text(release_group_mbid);
+        self.artist.set_text("");
         self.started.set_text("");
         self.initials.set_text(&artist_avatar::initials(artist));
         self.picture.set_filename(None::<&std::path::Path>);
@@ -147,6 +154,36 @@ impl LazyReleaseCover {
         if self.root.is_mapped() {
             start_fetch(&self.picture, &self.mbid, &self.started);
         }
+    }
+
+    /// Binds this cell to an artist instead of a release: initials tile,
+    /// no image, and the artist as the cell's key. The MBID label stays
+    /// empty, so neither `set_release` nor the map handler can ever start
+    /// a release-cover fetch from a concert cell.
+    pub(in crate::ui) fn set_artist_key(&self, artist: &str) {
+        self.mbid.set_text("");
+        self.artist.set_text(artist);
+        self.started.set_text("");
+        self.initials.set_text(&artist_avatar::initials(artist));
+        self.picture.set_paintable(None::<&gtk4::gdk::Paintable>);
+        self.picture.set_visible(false);
+    }
+
+    pub(in crate::ui) fn artist_key(&self) -> String {
+        self.artist.text().to_string()
+    }
+
+    pub(in crate::ui) fn show_paintable(&self, paintable: Option<&gtk4::gdk::Paintable>) {
+        self.picture.set_paintable(paintable);
+        self.picture.set_visible(paintable.is_some());
+    }
+
+    pub(in crate::ui) fn started(&self) -> String {
+        self.started.text().to_string()
+    }
+
+    pub(in crate::ui) fn mark_started(&self, artist: &str) {
+        self.started.set_text(artist);
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Overlay {
@@ -295,6 +332,22 @@ mod tests {
             !cover.shows_image(),
             "a rebound cell must clear its picture"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn concert_artist_binding_uses_a_separate_key_without_a_release_fetch() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let cover = LazyReleaseCover::new_unbound(56);
+
+        cover.set_artist_key("Falling Leaves");
+
+        assert_eq!(cover.artist_key(), "Falling Leaves");
+        assert_eq!(cover.initials_text(), "FL");
+        assert!(cover.mbid.text().is_empty());
+        assert!(cover.started.text().is_empty());
+        assert!(!cover.shows_image());
     }
 
     /// STYLE-10: `unbind`/`bind` can recycle one mapped cell for a different
