@@ -2,7 +2,7 @@
 slug: releases-multiselect-context-menu
 worktree: ~/Projects/reprise-releases-context-menu
 branch: feature/releases-multiselect-context-menu
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-20
 spec: docs/superpowers/specs/2026-08-20-releases-multiselect-and-context-menu-design.md
