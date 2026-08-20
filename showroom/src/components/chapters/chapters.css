@@ -72,6 +72,15 @@
   color: oklch(68% 0.011 269);
 }
 
+/*
+ * CH.02 carries its title for assistive technology only, which takes the
+ * title's bottom margin out of the flow with it. Without this the eyebrow would
+ * sit 14px above the first figure and break the rhythm CH.01 and CH.03 keep.
+ */
+.chapter__eyebrow--standalone {
+  margin-bottom: var(--gap-chapter-header);
+}
+
 .hero__scroll-line {
   width: 1px;
   height: 46px;
@@ -96,6 +105,13 @@
 /* --- Chapters ------------------------------------------------------------ */
 
 .chapter {
+  /*
+   * The drop from a chapter's header to its first block. It lives on the
+   * chapter because CH.02 hides its title and has to hand the same gap to the
+   * eyebrow — two places, one number.
+   */
+  --gap-chapter-header: clamp(2.5rem, 1.8rem + 2vw, 4rem);
+
   padding-block-end: var(--gap-chapter);
   scroll-margin-block-start: 3rem;
 }
@@ -120,7 +136,7 @@
 }
 
 .chapter__title {
-  margin: 0 0 clamp(2.5rem, 1.8rem + 2vw, 4rem);
+  margin: 0 0 var(--gap-chapter-header);
   font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem);
   line-height: 1.02;
   letter-spacing: -0.025em;
