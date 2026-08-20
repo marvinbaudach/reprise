@@ -1,8 +1,11 @@
 //! Unbounded, coalescing source-artwork worker queue.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
+use gtk4::prelude::*;
 use reprise_core::remote_image::{CacheScope, ImageOutcome};
 
 use super::{decode_pixels, DecodedPixels};
@@ -19,27 +22,116 @@ struct ArtworkWaiter {
     height: i32,
     cache_scope: CacheScope,
     response: async_channel::Sender<Option<DecodedPixels>>,
+    measurement: RequestMeasurement,
 }
 
-type Pending = Arc<Mutex<HashMap<ArtworkKey, Vec<ArtworkWaiter>>>>;
+#[derive(Default)]
+struct PendingJob {
+    waiters: Vec<ArtworkWaiter>,
+    started: bool,
+}
+
+type Pending = Arc<Mutex<HashMap<ArtworkKey, PendingJob>>>;
 
 #[derive(Clone)]
 pub(super) struct ArtworkQueue {
     sender: async_channel::Sender<ArtworkKey>,
     pending: Pending,
+    queued_jobs: Arc<AtomicUsize>,
+    next_request_id: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct RegistrationContext {
+    pub(super) row_id: u64,
+    pub(super) visible: bool,
+}
+
+pub(super) fn registration_context(
+    row_id: u64,
+    widget: &gtk4::glib::WeakRef<gtk4::Widget>,
+    retained_is_startup_visible: bool,
+) -> RegistrationContext {
+    let visible = widget.upgrade().is_some_and(|widget| {
+        visible_in_viewport(&widget) || (retained_is_startup_visible && !widget.is_mapped())
+    });
+    RegistrationContext { row_id, visible }
+}
+
+fn visible_in_viewport(widget: &gtk4::Widget) -> bool {
+    let mut ancestor = Some(widget.clone());
+    while let Some(current) = ancestor {
+        let parent = current.parent();
+        if parent.is_none() {
+            break;
+        }
+        if !current.is_visible() || !current.is_child_visible() {
+            return false;
+        }
+        ancestor = parent;
+    }
+    let Some(root) = widget.root() else {
+        return false;
+    };
+    let root_widget: &gtk4::Widget = root.upcast_ref();
+    widget.compute_bounds(root_widget).is_some_and(|bounds| {
+        bounds.x() + bounds.width() > 0.0
+            && bounds.y() + bounds.height() > 0.0
+            && bounds.x() < root_widget.width() as f32
+            && bounds.y() < root_widget.height() as f32
+    })
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RequestMeasurement {
+    request_id: u64,
+    row_id: u64,
+    visible: bool,
+    jobs_ahead: usize,
+    queued_at: Instant,
+}
+
+pub(super) struct ArtworkResponse {
+    receiver: async_channel::Receiver<Option<DecodedPixels>>,
+    measurement: RequestMeasurement,
+}
+
+impl ArtworkResponse {
+    pub(super) async fn recv(&self) -> Result<Option<DecodedPixels>, async_channel::RecvError> {
+        let result = self.receiver.recv().await;
+        record_measurement("gtk_return", self.measurement);
+        result
+    }
+
+    #[cfg(test)]
+    fn measurement(&self) -> RequestMeasurement {
+        self.measurement
+    }
+
+    #[cfg(test)]
+    fn try_recv(&self) -> Result<Option<DecodedPixels>, async_channel::TryRecvError> {
+        self.receiver.try_recv()
+    }
+
+    #[cfg(test)]
+    fn recv_blocking(&self) -> Result<Option<DecodedPixels>, async_channel::RecvError> {
+        self.receiver.recv_blocking()
+    }
 }
 
 impl ArtworkQueue {
     fn start() -> Self {
         let (sender, receiver) = async_channel::unbounded();
         let pending = Arc::new(Mutex::new(HashMap::new()));
+        let queued_jobs = Arc::new(AtomicUsize::new(0));
         for index in 0..ARTWORK_WORKERS {
             let receiver = receiver.clone();
             let pending = pending.clone();
+            let queued_jobs = queued_jobs.clone();
             if let Err(error) = std::thread::Builder::new()
                 .name(format!("reprise-source-artwork-{index}"))
                 .spawn(move || {
-                    run_worker(&receiver, &pending, &mut |url| {
+                    run_worker_with_depth(&receiver, &pending, &queued_jobs, &mut |url| {
                         reprise_core::podcasts::source_artwork::fetch(url)
                             .map_err(|error| error.to_string())
                     });
@@ -48,7 +140,12 @@ impl ArtworkQueue {
                 tracing::warn!(%error, "could not start source artwork worker");
             }
         }
-        Self { sender, pending }
+        Self {
+            sender,
+            pending,
+            queued_jobs,
+            next_request_id: Arc::new(AtomicU64::new(1)),
+        }
     }
 
     pub(super) fn submit(
@@ -57,35 +154,81 @@ impl ArtworkQueue {
         width: i32,
         height: i32,
         cache_scope: CacheScope,
-    ) -> async_channel::Receiver<Option<DecodedPixels>> {
+    ) -> ArtworkResponse {
+        self.submit_measured(
+            url,
+            width,
+            height,
+            cache_scope,
+            RegistrationContext {
+                row_id: 0,
+                visible: false,
+            },
+        )
+    }
+
+    pub(super) fn submit_measured(
+        &self,
+        url: String,
+        width: i32,
+        height: i32,
+        cache_scope: CacheScope,
+        context: RegistrationContext,
+    ) -> ArtworkResponse {
         let key = ArtworkKey { url };
         let (response, receiver) = async_channel::bounded(1);
+        let measurement = RequestMeasurement {
+            request_id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
+            row_id: context.row_id,
+            visible: context.visible,
+            jobs_ahead: self.queued_jobs.load(Ordering::Relaxed),
+            queued_at: Instant::now(),
+        };
         let waiter = ArtworkWaiter {
             width,
             height,
             cache_scope,
             response,
+            measurement,
         };
-        let is_new_job = {
+        let (is_new_job, joined_started_job) = {
             let mut pending = self
                 .pending
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             match pending.get_mut(&key) {
-                Some(waiters) => {
-                    waiters.push(waiter);
-                    false
+                Some(job) => {
+                    let started = job.started;
+                    job.waiters.push(waiter);
+                    (false, started)
                 }
                 None => {
-                    pending.insert(key.clone(), vec![waiter]);
-                    true
+                    pending.insert(
+                        key.clone(),
+                        PendingJob {
+                            waiters: vec![waiter],
+                            started: false,
+                        },
+                    );
+                    (true, false)
                 }
             }
         };
+        record_measurement("queued", measurement);
+        if joined_started_job {
+            record_measurement("worker_start", measurement);
+        }
+        if is_new_job {
+            self.queued_jobs.fetch_add(1, Ordering::Relaxed);
+        }
         if is_new_job && self.sender.try_send(key.clone()).is_err() {
+            self.queued_jobs.fetch_sub(1, Ordering::Relaxed);
             finish_without_image(&self.pending, &key);
         }
-        receiver
+        ArtworkResponse {
+            receiver,
+            measurement,
+        }
     }
 
     #[cfg(test)]
@@ -95,6 +238,8 @@ impl ArtworkQueue {
             Self {
                 sender,
                 pending: Arc::new(Mutex::new(HashMap::new())),
+                queued_jobs: Arc::new(AtomicUsize::new(0)),
+                next_request_id: Arc::new(AtomicU64::new(1)),
             },
             receiver,
         )
@@ -106,11 +251,30 @@ pub(super) fn queue(
     width: i32,
     height: i32,
     cache_scope: CacheScope,
-) -> async_channel::Receiver<Option<DecodedPixels>> {
+    context: RegistrationContext,
+) -> ArtworkResponse {
     static QUEUE: OnceLock<ArtworkQueue> = OnceLock::new();
     QUEUE
         .get_or_init(ArtworkQueue::start)
-        .submit(url, width, height, cache_scope)
+        .submit_measured(url, width, height, cache_scope, context)
+}
+
+fn measurement_enabled() -> bool {
+    std::env::var_os("REPRISE_MEASURE_SOURCE_ARTWORK").is_some()
+}
+
+fn record_measurement(phase: &str, measurement: RequestMeasurement) {
+    if !measurement_enabled() {
+        return;
+    }
+    eprintln!(
+        "source-artwork-measure phase={phase} request={} row={} visible={} jobs_ahead={} wait_us={}",
+        measurement.request_id,
+        measurement.row_id,
+        measurement.visible,
+        measurement.jobs_ahead,
+        measurement.queued_at.elapsed().as_micros()
+    );
 }
 
 /// Resolves one URL against the gate state at fetch time, then fans the result
@@ -152,10 +316,10 @@ fn process_job(
             let mut pending = pending
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let Some(waiters) = pending.get_mut(key) else {
+            let Some(job) = pending.get_mut(key) else {
                 return;
             };
-            std::mem::take(waiters)
+            std::mem::take(&mut job.waiters)
         };
         for waiter in waiters {
             let waiter_path = path.as_ref().and_then(|path| {
@@ -188,7 +352,7 @@ fn process_job(
         let mut pending = pending
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if pending.get(key).is_some_and(Vec::is_empty) {
+        if pending.get(key).is_some_and(|job| job.waiters.is_empty()) {
             pending.remove(key);
             return;
         }
@@ -200,7 +364,36 @@ fn run_worker(
     pending: &Pending,
     fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
 ) {
+    let queued_jobs = AtomicUsize::new(0);
+    run_worker_with_depth(receiver, pending, &queued_jobs, fetch);
+}
+
+fn run_worker_with_depth(
+    receiver: &async_channel::Receiver<ArtworkKey>,
+    pending: &Pending,
+    queued_jobs: &AtomicUsize,
+    fetch: &mut dyn FnMut(&str) -> Result<Vec<u8>, String>,
+) {
     while let Ok(job) = receiver.recv_blocking() {
+        let _ = queued_jobs.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |depth| {
+            depth.checked_sub(1)
+        });
+        let measurements = {
+            let mut pending = pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            pending.get_mut(&job).map(|job| {
+                job.started = true;
+                job.waiters
+                    .iter()
+                    .map(|waiter| waiter.measurement)
+                    .collect::<Vec<_>>()
+            })
+        }
+        .unwrap_or_default();
+        for measurement in measurements {
+            record_measurement("worker_start", measurement);
+        }
         // UNWIND ASSUMPTION: `fetch` is the stateless wrapper around the free fetch
         // function. This reused `FnMut` must never retain partially mutated state after a panic.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -221,9 +414,11 @@ fn requested_scopes(pending: &Pending, key: &ArtworkKey) -> Vec<CacheScope> {
         return vec![CacheScope::Persistent];
     };
     let persistent = waiters
+        .waiters
         .iter()
         .any(|waiter| waiter.cache_scope == CacheScope::Persistent);
     let transient = waiters
+        .waiters
         .iter()
         .any(|waiter| waiter.cache_scope == CacheScope::Transient);
     match (persistent, transient) {
@@ -246,7 +441,8 @@ fn finish_without_image(pending: &Pending, key: &ArtworkKey) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(key)
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .waiters;
     for waiter in waiters {
         let _ = waiter.response.send_blocking(None);
     }
@@ -273,6 +469,37 @@ mod tests {
             .unwrap()
             .as_nanos();
         format!("https://images.test/{label}-{nonce}.png")
+    }
+
+    #[test]
+    fn startup_measurement_keeps_row_visibility_and_queue_position_with_each_request() {
+        let (queue, _jobs) = super::ArtworkQueue::test_queue();
+        let first = queue.submit_measured(
+            unique_url("measurement"),
+            40,
+            40,
+            CacheScope::Persistent,
+            super::RegistrationContext {
+                row_id: 17,
+                visible: true,
+            },
+        );
+
+        let second = queue.submit_measured(
+            unique_url("measurement-second"),
+            40,
+            40,
+            CacheScope::Persistent,
+            super::RegistrationContext {
+                row_id: 18,
+                visible: false,
+            },
+        );
+
+        assert_eq!(first.measurement().row_id, 17);
+        assert!(first.measurement().visible);
+        assert_eq!(first.measurement().jobs_ahead, 0);
+        assert_eq!(second.measurement().jobs_ahead, 1);
     }
 
     #[test]

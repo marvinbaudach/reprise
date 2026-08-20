@@ -24,7 +24,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use gtk4::prelude::*;
 use reprise_core::db::Db;
@@ -66,6 +66,7 @@ use source_image_texture::{
 /// Starts `false` so a failed/unknown gate state (nothing has published a
 /// value yet) counts as not-allowed, per `NET-1a`.
 static GATE_OPEN: AtomicBool = AtomicBool::new(false);
+static NEXT_MEASUREMENT_ROW_ID: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(test)]
 static GATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -84,6 +85,7 @@ pub(crate) struct ArtworkRequest<'a> {
     images_allowed: bool,
     cache_scope: CacheScope,
     startup_timing: StartupTiming,
+    retained_is_startup_visible: bool,
 }
 
 impl<'a> ArtworkRequest<'a> {
@@ -102,7 +104,13 @@ impl<'a> ArtworkRequest<'a> {
             images_allowed,
             cache_scope,
             startup_timing,
+            retained_is_startup_visible: true,
         }
+    }
+
+    pub(crate) fn visible_only_when_mapped(mut self) -> Self {
+        self.retained_is_startup_visible = false;
+        self
     }
 }
 
@@ -297,20 +305,29 @@ impl SourceImage {
         self.artwork.set_paintable(gtk4::gdk::Paintable::NONE);
         let weak_root = self.root.downgrade();
         let weak_artwork = self.artwork.downgrade();
-        load_texture_chain(request, generation, &self.generation, move |texture| {
-            // The observer runs even if the widget itself is already gone:
-            // it feeds a different surface, whose own generation check
-            // decides whether the texture is still wanted.
-            on_texture(&texture);
-            let Some(root) = weak_root.upgrade() else {
-                return;
-            };
-            let Some(artwork) = weak_artwork.upgrade() else {
-                return;
-            };
-            artwork.set_paintable(Some(&texture));
-            root.set_visible_child(&artwork);
-        });
+        let row_id = NEXT_MEASUREMENT_ROW_ID.fetch_add(1, Ordering::Relaxed);
+        let visibility_widget = self.root.clone().upcast::<gtk4::Widget>().downgrade();
+        load_texture_chain(
+            request,
+            generation,
+            &self.generation,
+            row_id,
+            &visibility_widget,
+            move |texture| {
+                // The observer runs even if the widget itself is already gone:
+                // it feeds a different surface, whose own generation check
+                // decides whether the texture is still wanted.
+                on_texture(&texture);
+                let Some(root) = weak_root.upgrade() else {
+                    return;
+                };
+                let Some(artwork) = weak_artwork.upgrade() else {
+                    return;
+                };
+                artwork.set_paintable(Some(&texture));
+                root.set_visible_child(&artwork);
+            },
+        );
     }
 }
 
@@ -318,6 +335,8 @@ fn load_texture_chain(
     request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
+    row_id: u64,
+    visibility_widget: &gtk4::glib::WeakRef<gtk4::Widget>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
     let primary_visible = Rc::new(Cell::new(false));
@@ -326,6 +345,7 @@ fn load_texture_chain(
         let primary_visible = primary_visible.clone();
         let current_for_callback = current.clone();
         let on_ready = on_ready.clone();
+        let visibility_widget = visibility_widget.clone();
         if stage == ArtworkStage::Fallback {
             if let Some(texture) = cached_texture_at_any_size(&url, request.cache_scope) {
                 if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
@@ -333,11 +353,19 @@ fn load_texture_chain(
                 }
             }
         }
-        load_texture(Some(&url), request, generation, current, move |texture| {
-            if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
-                on_ready(texture);
-            }
-        });
+        load_texture(
+            Some(&url),
+            request,
+            generation,
+            current,
+            row_id,
+            visibility_widget,
+            move |texture| {
+                if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
+                    on_ready(texture);
+                }
+            },
+        );
     }
 }
 
@@ -348,6 +376,8 @@ fn load_texture(
     request: ArtworkRequest<'_>,
     generation: u64,
     current: &Rc<Cell<u64>>,
+    row_id: u64,
+    visibility_widget: gtk4::glib::WeakRef<gtk4::Widget>,
     on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
 ) {
     let (width, height) = request.dimensions;
@@ -373,7 +403,21 @@ fn load_texture(
         if current.get() != generation {
             return;
         }
-        let receiver = source_artwork_queue::queue(url.clone(), width, height, request.cache_scope);
+        // The quiet callback runs before the newly routed source page paints.
+        // A retained but not-yet-mapped widget is therefore a startup row;
+        // discarded rows from the superseded render fail the weak upgrade.
+        let registration = source_artwork_queue::registration_context(
+            row_id,
+            &visibility_widget,
+            request.retained_is_startup_visible,
+        );
+        let receiver = source_artwork_queue::queue(
+            url.clone(),
+            width,
+            height,
+            request.cache_scope,
+            registration,
+        );
         gtk4::glib::spawn_future_local(async move {
             let pixels = match receiver.recv().await {
                 Ok(Some(pixels)) => pixels,
@@ -413,12 +457,21 @@ pub(crate) fn load_into_image(
     }
     crate::ui::cover_loader::CoverLoader::set_placeholder(image);
     let weak_image = image.downgrade();
-    load_texture_chain(request, generation, current, move |texture| {
-        let Some(image) = weak_image.upgrade() else {
-            return;
-        };
-        image.set_paintable(Some(&texture));
-    });
+    let row_id = NEXT_MEASUREMENT_ROW_ID.fetch_add(1, Ordering::Relaxed);
+    let visibility_widget = image.clone().upcast::<gtk4::Widget>().downgrade();
+    load_texture_chain(
+        request,
+        generation,
+        current,
+        row_id,
+        &visibility_widget,
+        move |texture| {
+            let Some(image) = weak_image.upgrade() else {
+                return;
+            };
+            image.set_paintable(Some(&texture));
+        },
+    );
 }
 
 fn validated_url(value: &str) -> Option<String> {
