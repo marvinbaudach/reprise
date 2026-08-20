@@ -90,6 +90,7 @@ impl ReleasesView {
             .show_column_separators(false)
             .build();
         column_view.add_css_class("reprise-releases-table");
+        column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
         let shared_target = Rc::new(RefCell::new(None::<std::rc::Weak<Shared>>));
         let visibility_target = shared_target.clone();

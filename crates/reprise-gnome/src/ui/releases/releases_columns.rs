@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{cell::Cell, rc::Rc};
 
 use chrono::Local;
@@ -8,6 +6,7 @@ use reprise_core::artist_news::{release_status, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
 use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
+use super::releases_cell_surface as cell_surface;
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::ReleaseObject;
 use super::releases_presentation::{
@@ -44,13 +43,13 @@ fn cover_column(view: &gtk4::ColumnView) {
             return;
         };
         let cover = crate::ui::updates::release_cover::LazyReleaseCover::new_unbound(widths::COVER);
-        item.set_child(Some(cover.widget()));
+        cell_surface::set_child(item, cover.widget());
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(root) = item.child().and_downcast::<gtk4::Overlay>() else {
+        let Some(root) = cell_surface::child::<gtk4::Overlay>(item) else {
             return;
         };
         let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
@@ -67,7 +66,7 @@ fn cover_column(view: &gtk4::ColumnView) {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(root) = item.child().and_downcast::<gtk4::Overlay>() else {
+        let Some(root) = cell_surface::child::<gtk4::Overlay>(item) else {
             return;
         };
         if let Some(cover) = crate::ui::updates::release_cover::LazyReleaseCover::from_widget(&root)
@@ -103,14 +102,14 @@ fn text_column(
         label.set_xalign(0.0);
         label.set_hexpand(true);
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        item.set_child(Some(&label));
+        cell_surface::set_child(item, &label);
     });
     let query = query.cloned();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
+        let Some(label) = cell_surface::child::<gtk4::Label>(item) else {
             return;
         };
         let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
@@ -127,7 +126,7 @@ fn text_column(
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
+        let Some(label) = cell_surface::child::<gtk4::Label>(item) else {
             return;
         };
         label.set_text("");
@@ -224,13 +223,13 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
         }
         cell.add_controller(focus);
         cell.append(&stack);
-        item.set_child(Some(&cell));
+        cell_surface::set_child(item, &cell);
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+        let Some(cell) = cell_surface::child::<gtk4::Box>(item) else {
             return;
         };
         let Some(stack) = cell.first_child().and_downcast::<gtk4::Stack>() else {
@@ -277,7 +276,7 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+        let Some(cell) = cell_surface::child::<gtk4::Box>(item) else {
             return;
         };
         let Some(stack) = cell.first_child().and_downcast::<gtk4::Stack>() else {
@@ -333,13 +332,13 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
             }
         });
         cell.append(&button);
-        item.set_child(Some(&cell));
+        cell_surface::set_child(item, &cell);
     });
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+        let Some(cell) = cell_surface::child::<gtk4::Box>(item) else {
             return;
         };
         let Some(button) = cell.first_child().and_downcast::<gtk4::Button>() else {
@@ -366,7 +365,7 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
-        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
+        let Some(cell) = cell_surface::child::<gtk4::Box>(item) else {
             return;
         };
         let Some(button) = cell.first_child().and_downcast::<gtk4::Button>() else {
