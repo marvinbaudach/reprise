@@ -6,11 +6,10 @@
 //! instead of asking for one of its own, and it never fires an unfiltered
 //! search pretending to be location-aware.
 //!
-//! The first chip used to be a hard-coded "Metal in DE", which was only ever
-//! right for one library in one country. It now reads the genre this library
-//! has spent the most time listening to, and narrows it to the stored
-//! country when there is one — so it stays a genuine suggestion for a jazz
-//! library in Canada too.
+//! The first chip used to be a hard-coded genre and country, which was only
+//! ever right for one library in one place. It now reads the genre this
+//! library has spent the most time listening to and searches it worldwide;
+//! location-filtered discovery belongs to "Near you" alone.
 
 use gtk4::prelude::*;
 use reprise_core::library::taste::TopGenre;
@@ -59,24 +58,15 @@ pub(super) struct LibrarySuggestion {
 /// rather than proposing a genre out of thin air; "Top voted" and "Near you"
 /// still cover the discovery case.
 ///
-/// A stored country narrows the search and shows in the label ("Metal in
-/// DE"). Without one the chip keeps the genre and searches worldwide — a
-/// country-only chip would just duplicate "Near you".
-pub(super) fn library_suggestion(
-    genre: Option<TopGenre>,
-    location: Option<&AppLocation>,
-) -> Option<LibrarySuggestion> {
+/// The chip keeps the genre and searches worldwide. Country-filtered discovery
+/// belongs to "Near you" rather than this library-taste suggestion.
+pub(super) fn library_suggestion(genre: Option<TopGenre>) -> Option<LibrarySuggestion> {
     let genre = genre?;
-    let country_code = location.and_then(|location| location.country_code.clone());
-    let label = match country_code.as_deref() {
-        Some(country) => strings::radio_chip_genre_in_country(&genre.name, country),
-        None => genre.name.clone(),
-    };
     Some(LibrarySuggestion {
-        label,
+        label: genre.name.clone(),
         criteria: SearchCriteria {
             tag: Some(genre.tag),
-            country_code,
+            country_code: None,
         },
     })
 }
@@ -197,34 +187,12 @@ mod tests {
         }
     }
 
-    /// `RAD-5`: the chip suggests what this library listens to, narrowed to
-    /// the country it already knows — the fact that used to be hard-coded as
-    /// "Metal in DE" for every library on earth.
+    /// `RAD-5`: the chip suggests what this library listens to and searches
+    /// that genre worldwide.
     #[test]
-    fn rad_5_the_library_chip_filters_by_the_played_genre_and_the_stored_country() {
-        let suggestion = library_suggestion(
-            Some(top_genre("Metal", "metal")),
-            Some(&location(Some("DE"))),
-        )
-        .expect("a played genre must produce a chip");
-
-        assert_eq!(suggestion.label, "Metal in DE");
-        assert_eq!(
-            suggestion.criteria,
-            SearchCriteria {
-                tag: Some("metal".into()),
-                country_code: Some("DE".into()),
-            }
-        );
-    }
-
-    /// Without a country the chip keeps the genre and searches worldwide. It
-    /// must not silently become a country-less copy of "Near you", and it
-    /// must not claim a country it does not have.
-    #[test]
-    fn rad_5_without_a_country_the_library_chip_searches_the_genre_worldwide() {
-        let suggestion = library_suggestion(Some(top_genre("Jazz", "jazz")), None)
-            .expect("a played genre must produce a chip even without a location");
+    fn rad_5_the_library_chip_always_searches_the_played_genre_worldwide() {
+        let suggestion = library_suggestion(Some(top_genre("Jazz", "jazz")))
+            .expect("a played genre must produce a chip");
 
         assert_eq!(suggestion.label, "Jazz");
         assert_eq!(
@@ -236,22 +204,27 @@ mod tests {
         );
     }
 
-    /// A location without a country code is the XDG-portal case — same
-    /// answer as no location at all, never a guessed country.
+    /// `RAD-5`: the library chip's criteria never carry a country;
+    /// location-filtered discovery belongs exclusively to "Near you".
     #[test]
-    fn rad_5_a_countryless_location_does_not_narrow_the_library_chip() {
-        let suggestion = library_suggestion(Some(top_genre("Jazz", "jazz")), Some(&location(None)))
+    fn rad_5_the_library_chip_criteria_never_carry_a_country() {
+        let suggestion = library_suggestion(Some(top_genre("Metal", "metal")))
             .expect("a played genre must produce a chip");
 
-        assert_eq!(suggestion.label, "Jazz");
-        assert_eq!(suggestion.criteria.country_code, None);
+        assert_eq!(suggestion.label, "Metal");
+        assert_eq!(
+            suggestion.criteria,
+            SearchCriteria {
+                tag: Some("metal".into()),
+                country_code: None,
+            }
+        );
     }
 
     /// No played genre, no chip — "Top voted" and "Near you" carry the
     /// discovery case rather than the dialog inventing a taste.
     #[test]
     fn rad_5_a_library_without_a_played_genre_has_no_chip() {
-        assert_eq!(library_suggestion(None, Some(&location(Some("DE")))), None);
-        assert_eq!(library_suggestion(None, None), None);
+        assert_eq!(library_suggestion(None), None);
     }
 }

@@ -1,11 +1,11 @@
 //! What the library itself says the user listens to, for surfaces that want
 //! to suggest something instead of guessing.
 //!
-//! `RAD-5`: the Add Station chip that used to read a hard-coded "Metal in
-//! DE" derives its genre here. The measure is **listening time**, not shelf
-//! size: a large unplayed collection should not out-vote what actually gets
-//! played. The same fact feeds the podcast add dialog, so both surfaces
-//! suggest the same genre rather than each inventing its own rule.
+//! `RAD-5`: the Add Station chip that used to show a hard-coded genre derives
+//! its genre here. The measure is **listening time**, not shelf size: a large
+//! unplayed collection should not out-vote what actually gets played. The
+//! same fact feeds the podcast add dialog, so both surfaces suggest the same
+//! genre rather than each inventing its own rule.
 
 use rusqlite::Connection;
 
