@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use reprise_core::artist_portrait::{load_cached_from, PortraitOutcome};
+use reprise_core::artist_portrait::{load_cached_from, verdict, PortraitOutcome};
 use reprise_core::cover::{self, CoverSource};
 use reprise_core::library::source::UnixLibrarySource;
 
@@ -37,11 +37,14 @@ impl MusicLibrary {
         &self,
         limit: u32,
     ) -> Result<Vec<String>, crate::LibraryError> {
-        let reader = self.reader()?;
-        if !reprise_core::online_sources::network_allowed_or_off(
-            &reader,
-            &reprise_core::modules::ARTWORK_MODULE,
-        ) {
+        let allowed = {
+            let reader = self.reader()?;
+            reprise_core::online_sources::network_allowed_or_off(
+                &reader,
+                &reprise_core::modules::ARTWORK_MODULE,
+            )
+        };
+        if !allowed {
             return Ok(Vec::new());
         }
 
@@ -56,22 +59,23 @@ impl MusicLibrary {
         let mut missing = Vec::new();
         let mut offset = 0;
         loop {
-            let window = reprise_core::queries::query_artists(
-                &reader,
-                "",
-                reprise_core::queries::WindowRange {
-                    offset,
-                    limit: i64::MAX,
-                },
-            )
+            let window = {
+                let reader = self.reader()?;
+                reprise_core::queries::query_artists(
+                    &reader,
+                    "",
+                    reprise_core::queries::WindowRange {
+                        offset,
+                        limit: i64::MAX,
+                    },
+                )
+            }
             .map_err(|error| crate::LibraryError::Query {
                 detail: error.to_string(),
             })?;
             let returned = window.rows.len();
             for artist in window.rows {
-                if reprise_core::artist_portrait::cache::verdict(&portrait_dir, &artist.artist, now)
-                    .needs_fetch()
-                {
+                if verdict(&portrait_dir, &artist.artist, now).needs_fetch() {
                     missing.push(artist.artist);
                     if missing.len() == wanted {
                         return Ok(missing);

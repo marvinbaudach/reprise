@@ -527,7 +527,7 @@ CREATE INDEX idx_track_audio_analysis_status_retry
 /// passes unmodified.
 pub(crate) fn migrate_connection(conn: &Connection) -> Result<(), DbError> {
     let cover_cache = crate::cover_download::downloaded_dir();
-    let portrait_cache = crate::artist_portrait::cache::cache_dir();
+    let portrait_cache = crate::artist_portrait::cache_dir();
     migrate_with_cache_dirs(conn, &cover_cache, &portrait_cache)
 }
 

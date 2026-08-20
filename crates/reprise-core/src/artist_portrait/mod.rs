@@ -1,7 +1,7 @@
 //! Artist portraits are always fetched from Deezer, which receives each viewed artist name.
 //! Blocking; call from a worker thread.
 
-pub mod cache;
+mod cache;
 pub(crate) mod deezer;
 mod placeholder;
 
@@ -9,6 +9,9 @@ mod placeholder;
 mod placeholder_measurement;
 #[cfg(test)]
 mod test_fixtures;
+
+pub(crate) use cache::{cache_dir, IMAGE_EXTS};
+pub use cache::{verdict, CacheVerdict};
 
 use std::path::{Path, PathBuf};
 
