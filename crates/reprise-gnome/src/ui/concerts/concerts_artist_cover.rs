@@ -58,9 +58,10 @@ impl ConcertsArtistImage {
 
     pub(super) fn show(self: &Rc<Self>, tile: &LazyReleaseCover) {
         let artist = tile.artist_key();
-        if artist.trim().is_empty() {
+        if artist.trim().is_empty() || tile.started() == artist {
             return;
         }
+        tile.mark_started(&artist);
         let root = tile.widget().clone();
         let this = self.clone();
         glib::spawn_future_local(async move {
@@ -80,23 +81,26 @@ impl ConcertsArtistImage {
                 this.show_path(&tile, &artist, &path);
             } else if root.is_mapped() {
                 this.start(&tile);
+            } else {
+                tile.mark_started("");
             }
         });
     }
 
     pub(super) fn start(self: &Rc<Self>, tile: &LazyReleaseCover) {
         let artist = tile.artist_key();
-        if artist.trim().is_empty() || tile.started() == artist {
+        if artist.trim().is_empty() {
             return;
         }
         let runtime = self.portrait.borrow().clone();
         let Some(runtime) = runtime else {
+            tile.mark_started("");
             return;
         };
         if !runtime.request_would_run(&artist) {
+            tile.mark_started("");
             return;
         }
-        tile.mark_started(&artist);
 
         let guard_root = tile.widget().clone();
         let guard_artist = artist.clone();
@@ -170,7 +174,7 @@ pub(super) fn cover_column(view: &gtk4::ColumnView, image: &Rc<ConcertsArtistIma
         let image = setup_image.clone();
         tile.widget().connect_map(move |root| {
             if let Some(tile) = LazyReleaseCover::from_widget(root) {
-                image.start(&tile);
+                image.show(&tile);
             }
         });
         item.set_child(Some(tile.widget()));
@@ -191,7 +195,6 @@ pub(super) fn cover_column(view: &gtk4::ColumnView, image: &Rc<ConcertsArtistIma
         };
         tile.set_artist_key(&object.row().artist_name);
         bind_image.show(&tile);
-        bind_image.start(&tile);
     });
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -230,5 +233,25 @@ mod tests {
         );
         assert!(image.loader.borrow().is_none());
         assert!(image.portrait.borrow().is_none());
+    }
+
+    #[test]
+    fn a_concert_cell_has_one_cache_first_portrait_trigger() {
+        let source = include_str!("concerts_artist_cover.rs").replace([' ', '\n'], "");
+        let mapped_show = [
+            "tile.widget().connect_map(move|root|{ifletSome(tile)=",
+            "LazyReleaseCover::from_widget(root){image.show(&tile);}});",
+        ]
+        .concat();
+        let bound_show = [
+            "tile.set_artist_key(&object.row().artist_name);",
+            "bind_image.show(&tile);",
+        ]
+        .concat();
+        let direct_start = ["bind_image.", "start(&tile)"].concat();
+
+        assert!(source.contains(&mapped_show));
+        assert!(source.contains(&bound_show));
+        assert!(!source.contains(&direct_start));
     }
 }
