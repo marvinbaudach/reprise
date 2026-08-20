@@ -2,7 +2,7 @@
 slug: radio-genre-chip-drops-the-country
 worktree: /home/marvin/Projects/reprise-radio-genre-chip-drops-the-country
 branch: feature/radio-genre-chip-drops-the-country
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
