@@ -148,4 +148,15 @@ mod tests {
         let present = build(&summarize(&[entry("one", false, 3)]));
         assert!(labels(&present).iter().any(|label| label == "Go to album"));
     }
+
+    #[test]
+    fn nr_40_release_menu_has_one_primary_action_and_single_row_navigation() {
+        let menu = build(&summarize(&[entry("one", false, 3)]));
+
+        assert_eq!(
+            labels(&menu),
+            ["Hide", "Go to artist", "Go to album"],
+            "one visible local release has one primary action and both unambiguous routes"
+        );
+    }
 }
