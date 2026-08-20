@@ -35,6 +35,7 @@ pub(super) fn model(registry: &Rc<ColumnRegistry<ConcertColumn>>) -> Rc<dyn Edit
 
 fn label(key: ConcertColumn) -> String {
     let message = match key {
+        ConcertColumn::Cover => crate::ui::strings::COLUMN_COVER,
         ConcertColumn::Date => crate::ui::strings::CONCERTS_DATE,
         ConcertColumn::Artist => crate::ui::strings::CONCERTS_ARTIST,
         ConcertColumn::City => crate::ui::strings::CONCERTS_CITY,
@@ -48,6 +49,7 @@ fn label(key: ConcertColumn) -> String {
 
 fn width(key: ConcertColumn) -> i32 {
     match key {
+        ConcertColumn::Cover => widths::COVER,
         ConcertColumn::Date => widths::DATE,
         ConcertColumn::Artist => widths::TITLE_MIN,
         ConcertColumn::City => widths::LABEL,

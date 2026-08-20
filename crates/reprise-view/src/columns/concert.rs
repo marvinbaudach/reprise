@@ -4,6 +4,7 @@ use super::key::{ColumnKey, Pin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConcertColumn {
+    Cover,
     Date,
     Artist,
     City,
@@ -13,7 +14,8 @@ pub enum ConcertColumn {
     Source,
 }
 
-const ALL: [ConcertColumn; 7] = [
+const ALL: [ConcertColumn; 8] = [
+    ConcertColumn::Cover,
     ConcertColumn::Artist,
     ConcertColumn::Date,
     ConcertColumn::City,
@@ -34,6 +36,7 @@ const DEFAULT_VISIBLE: [ConcertColumn; 5] = [
 impl ColumnKey for ConcertColumn {
     fn as_str(self) -> &'static str {
         match self {
+            Self::Cover => "cover",
             Self::Date => "date",
             Self::Artist => "artist",
             Self::City => "city",
@@ -57,7 +60,10 @@ impl ColumnKey for ConcertColumn {
     }
 
     fn pin(self) -> Option<Pin> {
-        None
+        match self {
+            Self::Cover => Some(Pin::Leading),
+            _ => None,
+        }
     }
 }
 
@@ -77,11 +83,12 @@ mod tests {
     }
 
     #[test]
-    fn the_default_concert_layout_leads_with_the_artist_and_hides_venue_and_source() {
+    fn conc_17a_the_default_concert_layout_leads_with_the_cover() {
         let layout = Layout::<ConcertColumn>::default();
         assert_eq!(
             layout.order,
             vec![
+                ConcertColumn::Cover,
                 ConcertColumn::Artist,
                 ConcertColumn::Date,
                 ConcertColumn::City,
@@ -91,6 +98,7 @@ mod tests {
                 ConcertColumn::Source,
             ]
         );
+        assert!(layout.visible.contains(&ConcertColumn::Cover));
         assert!(layout.visible.contains(&ConcertColumn::Artist));
         assert!(layout.visible.contains(&ConcertColumn::Date));
         assert!(layout.visible.contains(&ConcertColumn::City));
@@ -98,5 +106,16 @@ mod tests {
         assert!(layout.visible.contains(&ConcertColumn::Tickets));
         assert!(!layout.visible.contains(&ConcertColumn::Venue));
         assert!(!layout.visible.contains(&ConcertColumn::Source));
+    }
+
+    #[test]
+    fn a_concert_layout_stored_before_the_cover_gains_it_at_the_leading_edge() {
+        let layout = crate::columns::layout::parse::<ConcertColumn>(
+            "artist,date,city,venue,distance,tickets,source;artist,date,city,distance,tickets",
+        )
+        .expect("the stored concert layout parses");
+
+        assert_eq!(layout.order.first(), Some(&ConcertColumn::Cover));
+        assert!(layout.visible.contains(&ConcertColumn::Cover));
     }
 }
