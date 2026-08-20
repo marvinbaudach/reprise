@@ -59,7 +59,7 @@ fn model_row_ids(view: &ConcertsView) -> Vec<i64> {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn conc_17_every_sortable_concerts_header_orders_its_own_column() {
+fn conc_17a_every_sortable_concerts_header_orders_its_own_column() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());

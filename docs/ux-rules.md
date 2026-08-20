@@ -5380,7 +5380,7 @@ available. The player plays only finished files.
   Test: `conc_16_the_source_column_is_available_but_off_by_default`
   (`ui/concerts/concerts_view_tests.rs`).
 
-- **CONC-17** [active] [gtk] — The Concerts table shows `Artist · Date ·
+- **CONC-17** [replaced by CONC-17a] [gtk] — The Concerts table shows `Artist · Date ·
   City · Distance · Tickets` by default, with `Venue` and `Source` hidden.
   Date, Artist, City, Venue, Distance, and Source are sortable; `Tickets`
   carries no sorter because its cell is a button. Migration v75 discards a
@@ -5392,6 +5392,24 @@ available. The player plays only finished files.
   (`ui/concerts/concerts_view_tests.rs`), and
   `v75_drops_the_stored_concerts_column_layout_and_keeps_the_widths`
   (`reprise-core/src/db_concerts_migration_tests.rs`).
+
+- **CONC-17a** [active] [gtk] — replaces CONC-17. The Concerts table's
+  default columns are `Cover · Artist · Date · City · Distance · Tickets`,
+  with `Venue` and `Source` hidden; this is the default, not a fixed order,
+  and every unpinned column is hideable and movable. The `Cover` column stays
+  pinned at the leading edge, carries no id and no sorter, and shows the
+  artist's portrait for every row including similar-artist recommendations —
+  cached first, otherwise fetched through the artwork gate of NET-1a, with
+  the accent-coloured initials tile of NR-2 standing in until an image
+  resolves and remaining in place when none does. Sorting, filters, counts,
+  activation semantics and the migration-v75 note of CONC-17 are otherwise
+  unchanged.
+  Tests: `conc_17a_the_default_concert_layout_leads_with_the_cover`
+  (`reprise-view/src/columns/concert.rs`),
+  `conc_17a_the_concerts_cover_column_is_pinned_id_less_and_unsorted`,
+  `conc_17a_a_concert_cover_shows_initials_until_a_portrait_resolves` and
+  `conc_17a_a_rebound_concert_cover_never_shows_the_previous_artist`
+  (`ui/concerts/concerts_view_tests.rs`).
 
 - **CONC-4c** [active] [gtk] — replaces CONC-4b. Without a credential,
   Concerts neutrally shows "No concert data yet" with no action; the Concerts
