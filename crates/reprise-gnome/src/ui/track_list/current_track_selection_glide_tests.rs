@@ -38,10 +38,14 @@ fn present(track_list: &TrackList) -> gtk4::Window {
 }
 
 fn target_for(track_list: &TrackList, position: u32) -> (gtk4::Adjustment, f64) {
+    let n_rows = track_table_row_count(&track_list.shared.column_view);
+    let layout =
+        super::super::track_list_geometry::layout(&track_list.shared, None, n_rows as usize)
+            .expect("the allocated long list must have layout geometry");
     scroll_center::centered_scroll_target(
         &track_list.shared.column_view,
-        track_table_row_count(&track_list.shared.column_view),
-        position,
+        n_rows,
+        (position, layout),
     )
     .expect("the allocated long list must have centering geometry")
 }
