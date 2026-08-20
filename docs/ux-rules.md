@@ -5385,13 +5385,6 @@ available. The player plays only finished files.
   Date, Artist, City, Venue, Distance, and Source are sortable; `Tickets`
   carries no sorter because its cell is a button. Migration v75 discards a
   stored Concerts column layout once while preserving stored column widths.
-  Tests: `the_default_concert_layout_leads_with_the_artist_and_hides_venue_and_source`
-  (`reprise-view/src/columns/concert.rs`),
-  `conc_17_every_sortable_concerts_header_orders_its_own_column` and
-  `only_the_ticket_header_carries_no_sorter`
-  (`ui/concerts/concerts_view_tests.rs`), and
-  `v75_drops_the_stored_concerts_column_layout_and_keeps_the_widths`
-  (`reprise-core/src/db_concerts_migration_tests.rs`).
 
 - **CONC-17a** [active] [gtk] — replaces CONC-17. The Concerts table's
   default columns are `Cover · Artist · Date · City · Distance · Tickets`,
