@@ -58,20 +58,31 @@ pub(in crate::ui) fn resolve<Id: Clone>(
     target: Anchored<Id>,
     mode: SelectMode,
 ) -> (SelectionOp, AnchorState<Id>) {
-    let moved = AnchorState {
-        anchor: Some(target.clone()),
-        cursor: Some(target.clone()),
-    };
     match mode {
-        SelectMode::Only => (SelectionOp::SelectOnly(target.position), moved),
-        SelectMode::Toggle => (SelectionOp::Toggle(target.position), moved),
+        SelectMode::Only | SelectMode::Toggle => {
+            let op = if mode == SelectMode::Only {
+                SelectionOp::SelectOnly(target.position)
+            } else {
+                SelectionOp::Toggle(target.position)
+            };
+            let moved = AnchorState {
+                anchor: Some(target.clone()),
+                cursor: Some(target),
+            };
+            (op, moved)
+        }
         SelectMode::Range | SelectMode::RangeAdditive => {
             // Without a user-owned anchor, the fallback is the range anchor.
             // If neither exists, a range is meaningless and this becomes a
             // plain click. This is NAV-17's core: GTK would stretch from row
             // zero here.
             let Some(anchor) = state.anchor.or(fallback) else {
-                return (SelectionOp::SelectOnly(target.position), moved);
+                let position = target.position;
+                let moved = AnchorState {
+                    anchor: Some(target.clone()),
+                    cursor: Some(target),
+                };
+                return (SelectionOp::SelectOnly(position), moved);
             };
             let (start, end) = if anchor.position <= target.position {
                 (anchor.position, target.position)
@@ -100,6 +111,16 @@ pub(in crate::ui) fn resolve<Id: Clone>(
 mod tests {
     use super::*;
 
+    #[derive(Debug)]
+    struct CountedId(std::rc::Rc<std::cell::Cell<usize>>);
+
+    impl Clone for CountedId {
+        fn clone(&self) -> Self {
+            self.0.set(self.0.get() + 1);
+            Self(self.0.clone())
+        }
+    }
+
     fn at(position: u32) -> Anchored<i64> {
         Anchored {
             position,
@@ -110,6 +131,26 @@ mod tests {
     /// In this model, row n carries track id n + 1000.
     fn stable(position: u32) -> Option<i64> {
         (position < 100).then(|| i64::from(position) + 1_000)
+    }
+
+    #[test]
+    fn a_range_with_an_anchor_does_not_clone_the_non_copy_target_id() {
+        let target_clones = std::rc::Rc::new(std::cell::Cell::new(0));
+        let state = AnchorState {
+            anchor: Some(Anchored {
+                position: 2,
+                id: CountedId(std::rc::Rc::new(std::cell::Cell::new(0))),
+            }),
+            cursor: None,
+        };
+        let target = Anchored {
+            position: 7,
+            id: CountedId(target_clones.clone()),
+        };
+
+        let _ = resolve(state, None, target, SelectMode::Range);
+
+        assert_eq!(target_clones.get(), 0);
     }
 
     #[test]
