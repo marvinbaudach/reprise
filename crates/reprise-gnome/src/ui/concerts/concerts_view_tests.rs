@@ -263,7 +263,7 @@ fn distance_class_changes_only_above_the_radius_boundary() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn concerts_view_exposes_seven_columns_and_row_activation() {
+fn concerts_view_exposes_eight_columns_and_row_activation() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let runtime = ConcertsRuntime::setup(&conn);
@@ -283,7 +283,9 @@ fn concerts_view_exposes_seven_columns_and_row_activation() {
         .and_downcast::<gtk4::ScrolledWindow>()
         .unwrap();
     let table = scrolled.child().and_downcast::<gtk4::ColumnView>().unwrap();
-    assert_eq!(table.columns().n_items(), 7);
+    // Cover, Artist, Date, City, Venue, Distance, Tickets, Source — the
+    // portrait (#600) is the eighth and the only one carrying a leading pin.
+    assert_eq!(table.columns().n_items(), 8);
     assert!(!table.enables_rubberband());
 }
 
@@ -479,12 +481,54 @@ fn fil_3a_the_concerts_end_of_results_sits_below_the_last_row() {
         crate::ui::end_of_results::LINE_CSS_CLASS,
     )
     .expect("Concerts owns the shared end-of-results line");
+    // The rule is a relation, not a coordinate: the marker belongs directly
+    // under the last row. A literal ceiling measured that only by accident —
+    // it broke the moment #600 made rows taller with the portrait column,
+    // although the marker still sat exactly where FIL-3a wants it. Anchor on
+    // the last row's own label instead, so row height stays free to change.
+    let last_row = descendant_label_with_text(view.root(), "Shown Artist 3")
+        .expect("the third filtered row must be on screen");
+    let last_bottom = last_row
+        .compute_bounds(view.root())
+        .map(|bounds| bounds.y() + bounds.height())
+        .expect("the last row must be allocated");
     let bounds = line.compute_bounds(view.root()).unwrap();
+    let viewport_bottom = view.root().height() as f32;
+    let gap_below_rows = bounds.y() - last_bottom;
+    let gap_to_viewport_bottom = viewport_bottom - bounds.y();
     assert!(
-        bounds.y() < 260.0,
-        "three rows placed their end marker in the viewport void at y={} instead of below the rows",
+        gap_below_rows >= 0.0,
+        "the end marker sits at y={}, above the last row's bottom edge at {last_bottom}",
         bounds.y()
     );
+    // No pixel ceiling: the void case is the marker pushed to the bottom of a
+    // viewport three rows cannot fill, so the marker must stay nearer to the
+    // rows it closes than to that bottom edge. This holds whatever a row is
+    // worth in pixels, which is exactly what the old literal could not do.
+    assert!(
+        gap_below_rows < gap_to_viewport_bottom,
+        "three rows placed their end marker in the viewport void at y={}: \
+         {gap_below_rows} px below the last row but only \
+         {gap_to_viewport_bottom} px above the viewport's bottom edge at \
+         {viewport_bottom}",
+        bounds.y()
+    );
+}
+
+fn descendant_label_with_text(widget: &gtk4::Widget, text: &str) -> Option<gtk4::Label> {
+    if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
+        if label.text() == text {
+            return Some(label);
+        }
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Some(found) = descendant_label_with_text(&current, text) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
 }
 
 #[path = "concerts_visual_tests.rs"]
