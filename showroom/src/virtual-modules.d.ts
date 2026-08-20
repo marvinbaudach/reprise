@@ -9,19 +9,6 @@ declare module 'virtual:merge-gates' {
   export const GATES: readonly string[];
 }
 
-declare module 'virtual:agent-pipeline' {
-  export interface PipelineStep {
-    readonly step: string;
-    readonly phase: string;
-    readonly actor: string;
-    readonly writes: boolean;
-    readonly judges: boolean;
-  }
-
-  /** The pipeline's steps, read from the table in `docs/agents/pipeline.md`. */
-  export const PIPELINE: readonly PipelineStep[];
-}
-
 declare module 'virtual:code-census' {
   export interface CensusSegment {
     readonly product: number;
@@ -83,5 +70,13 @@ declare module 'virtual:spectral-axis' {
   export const AXIS: {
     readonly coral: string;
     readonly teal: string;
+  };
+}
+
+declare module 'virtual:incident' {
+  export const INCIDENT: {
+    readonly date: string;
+    readonly measured: readonly number[];
+    readonly floor: number;
   };
 }

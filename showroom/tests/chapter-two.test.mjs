@@ -9,7 +9,8 @@ const showroomRoot = new URL('..', import.meta.url).pathname;
 const repoRoot = new URL('../..', import.meta.url).pathname;
 
 const GATE_SCRIPT = join(repoRoot, 'scripts', 'check-merge-readiness.sh');
-const PIPELINE_DOC = join(repoRoot, 'docs', 'agents', 'pipeline.md');
+const INCIDENT_RECORD = join(repoRoot, 'docs', 'plans', 'queue-anchor-grill-followups.md');
+const STYLE_SOURCE = join(repoRoot, 'crates', 'reprise-gnome', 'src', 'ui', 'style', 'mod.rs');
 
 async function builtCss() {
   const assets = join(showroomRoot, 'dist', 'assets');
@@ -19,6 +20,13 @@ async function builtCss() {
 }
 
 const prerenderedPage = () => readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
+
+const chapterTwo = async () => {
+  const html = await prerenderedPage();
+  const section = html.match(/<section id="ch-02"[\s\S]+?<section id="ch-03"/)?.[0];
+  assert.ok(section, 'the prerendered page must carry CH.02 ahead of CH.03');
+  return section;
+};
 
 /**
  * The gate names, derived here a second time and independently of the build. If
@@ -30,21 +38,6 @@ async function gateNames() {
   const names = [...script.matchAll(/^gate "([^"]+)"/gm)].map((match) => match[1]);
   assert.ok(names.length > 0, 'the gate script must carry gate calls');
   return names;
-}
-
-async function pipelineSteps() {
-  const doc = await readFile(PIPELINE_DOC, 'utf8');
-  const steps = [...doc.matchAll(/^\|\s*(\d{2})\s*\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|\s*$/gm)].map(
-    ([, step, phase, actor, writes, judges]) => ({
-      step,
-      phase: phase.trim(),
-      actor: actor.trim(),
-      writes: writes.trim() === 'yes',
-      judges: judges.trim() === 'yes',
-    }),
-  );
-  assert.ok(steps.length > 0, 'the pipeline document must carry its table');
-  return steps;
 }
 
 /** Source files that put the gate count in front of a reader. */
@@ -62,58 +55,62 @@ async function displaySources() {
   return files;
 }
 
-test('show-6 the gate wall names the checks the script runs, in script order', async () => {
+test('show-6 the gate strip carries one mark per gate call, named in script order', async () => {
+  const chapter = await chapterTwo();
   const names = await gateNames();
-  const html = await prerenderedPage();
 
-  const wall = html.match(/<figure[^>]+data-showcase="gate-wall"[\s\S]+?<\/figure>/)?.[0];
-  assert.ok(wall, 'the gate wall must be prerendered');
+  const marks = [...chapter.matchAll(/data-gate="([^"]*)"/g)].map((match) => match[1]);
+  assert.equal(
+    marks.length,
+    names.length,
+    'every gate call in the script must reach the strip exactly once',
+  );
+  assert.deepEqual(marks, names, 'the marks must follow the script, not an authored order');
 
-  const shown = [...wall.matchAll(/data-gate="([^"]+)"/g)].map((match) => match[1]);
-  // Order, not just membership: the wall claims to show the run order.
-  assert.deepEqual(shown, names);
-
-  assert.match(wall, new RegExp(`data-gates="${names.length}"`));
-  assert.match(wall, new RegExp(`${names.length} checks green`));
+  // The wall of visible labels is gone — a name is what a mark announces, not
+  // what it prints. Reading them off the surface meant nothing to anyone
+  // outside this repository.
+  assert.doesNotMatch(chapter, /gate-wall/);
+  for (const [index, name] of names.entries()) {
+    const label = `${String(index + 1).padStart(2, '0')} · ${name}`;
+    assert.ok(
+      chapter.includes(`aria-label="${label}"`),
+      `mark ${index + 1} must announce itself as "${label}"`,
+    );
+  }
 });
 
-test('show-7 no lane both writes and judges, and the human lane holds one mark', async () => {
-  const steps = await pipelineSteps();
-  const html = await prerenderedPage();
+test('show-7 the incident is quoted from the record, never recounted from the tree', async () => {
+  const chapter = await chapterTwo();
+  const record = await readFile(INCIDENT_RECORD, 'utf8');
+  const style = await readFile(STYLE_SOURCE, 'utf8');
 
-  const byActor = new Map();
-  for (const step of steps) {
-    const seen = byActor.get(step.actor) ?? { writes: false, judges: false, steps: 0 };
-    byActor.set(step.actor, {
-      writes: seen.writes || step.writes,
-      judges: seen.judges || step.judges,
-      steps: seen.steps + 1,
-    });
-  }
+  // The quote is the chapter's load-bearing claim. It must still be the doc
+  // comment's own words, character for character.
+  const QUOTE =
+    'A geometry assertion against unstyled widgets passes while the shipped button is a different size.';
+  assert.ok(style.includes(QUOTE.replace(/ /g, ' ')) || style.replace(/\s+/g, ' ').includes(QUOTE));
+  assert.ok(
+    chapter.replace(/&#x27;|&quot;|[“”]/g, '').replace(/\s+/g, ' ').includes(QUOTE),
+    'CH.02 must quote the doc comment verbatim',
+  );
 
-  for (const [actor, lane] of byActor) {
-    assert.ok(
-      !(lane.writes && lane.judges),
-      `${actor} both writes and judges — the invariant the figure claims is broken`,
-    );
-  }
-  assert.equal(byActor.get('Human')?.steps, 1, 'the human lane must carry exactly one mark');
+  // Three heights, and all three are reported in §1 of the record. A figure
+  // that grew a fourth number would be stating one, not quoting it.
+  const drawn = [...chapter.matchAll(/(\d+) px(?!\s*floor)/g)].map((match) => Number(match[1]));
+  const heights = new Set(drawn);
+  assert.deepEqual([...heights].sort((a, b) => a - b), [20, 34, 36]);
+  assert.ok(record.includes('header_samples=[20.0, 34.0]'), 'the record must report 20 and 34');
+  assert.ok(
+    record.includes('SECTION_HEADER_MIN_HEIGHT: i32 = 36'),
+    'the record must report the 36px floor',
+  );
 
-  const swimlane = html.match(/<figure[^>]+data-showcase="agent-swimlane"[\s\S]+?<\/figure>/)?.[0];
-  assert.ok(swimlane, 'the swimlane must be prerendered');
-  for (const actor of byActor.keys()) {
-    assert.match(swimlane, new RegExp(`<th[^>]*scope="row"[^>]*>${actor}</th>`));
-  }
-  for (const step of steps) {
-    assert.match(
-      swimlane,
-      new RegExp(`>${step.phase}<`),
-      `step ${step.step} is missing its column`,
-    );
-  }
-  // One mark per step, no more: a mark the table does not license is a claim
-  // nobody can check.
-  assert.equal((swimlane.match(/data-mark=""/g) ?? []).length, steps.length);
+  // Both links have to reach a real anchor, not the file's top.
+  assert.match(chapter, /style\/mod\.rs#L41-L45/);
+  assert.match(chapter, /queue-anchor-grill-followups\.md#c-gate-the-444-claim/);
+  const heading = '### C. Gate the #444 claim on mutations, not on a green test';
+  assert.ok(record.includes(heading), 'the §4C heading the link derives its fragment from moved');
 });
 
 test('show-8 a failed check blocks the readout and clearing it releases again', () => {
@@ -121,18 +118,18 @@ test('show-8 a failed check blocks the readout and clearing it releases again', 
 
   const ready = readout(new Set(), total);
   assert.equal(ready.blocked, false);
-  assert.match(ready.message, /^Ready to merge · 26 checks green$/);
+  assert.match(ready.message, /^26 checks green · ready to merge$/);
 
   const one = readout(new Set(['Rust lint']), total);
   assert.equal(one.blocked, true);
   assert.equal(one.failed, 1);
-  assert.match(one.message, /^Merge blocked · 1 of 26 failing$/);
+  assert.match(one.message, /^1 of 26 red · the change does not land$/);
 
   const three = readout(new Set(['Rust lint', 'Shell', 'AppStream']), total);
   assert.equal(three.failed, 3);
-  assert.match(three.message, /^Merge blocked · 3 of 26 failing$/);
+  assert.match(three.message, /^3 of 26 red · the change does not land$/);
 
-  // The toggle is what the cell does, and it must not mutate what it was given.
+  // The toggle is what the mark does, and it must not mutate what it was given.
   const before = new Set(['Shell']);
   const after = toggle(before, 'Shell');
   assert.deepEqual([...before], ['Shell']);
@@ -141,76 +138,44 @@ test('show-8 a failed check blocks the readout and clearing it releases again', 
   assert.equal(toggle(after, 'Shell').size, 1);
 });
 
-test('show-9 reduced motion places marks and gate cells in their end state', async () => {
+test('show-9 reduced motion leaves the figure and the strip without travel', async () => {
   const css = await builtCss();
 
-  // Several unrelated reduced-motion queries sit in this stylesheet. Take the
-  // one that governs these two figures; a lazy walk from the first one would
-  // call an escaped rule guarded.
-  // Vite 8 minifies with Lightning CSS, which prints a space after `@media`
-  // where esbuild printed none. The space is the minifier's, so it is optional here.
-  const prelude = /@media\s*\(prefers-reduced-motion:reduce\)/g;
-  const guards = [];
-  for (let from = 0; ; ) {
-    prelude.lastIndex = from;
-    const start = prelude.exec(css)?.index ?? -1;
-    if (start === -1) break;
-    let depth = 0;
-    let end = -1;
-    for (let index = css.indexOf('{', start); index < css.length; index += 1) {
-      if (css[index] === '{') depth += 1;
-      else if (css[index] === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          end = index;
-          break;
-        }
-      }
-    }
-    assert.notEqual(end, -1, 'unbalanced reduced-motion query');
-    guards.push(css.slice(start, end + 1));
-    from = end + 1;
-  }
+  // A measurement may not arrive by moving: a bar that grows into place is a
+  // bar whose value the reader watched change. The figure keeps the opacity
+  // half of the shared reveal and drops its transform, in every motion setting.
+  assert.match(css, /\.incident-figure\[data-reveal\]\{transform:none *!important\}/);
 
-  const mine = guards.filter((guard) => guard.includes('.swimlane__mark'));
-  assert.equal(mine.length, 1, 'exactly one reduced-motion query may govern the two figures');
-  const guarded = mine[0];
-  // The minifier writes `:before` for `::before`, so accept either spelling.
-  assert.match(guarded, /\.swimlane__mark::?before/);
-  assert.match(guarded, /\.gate-wall__cell::?after/);
-  assert.match(guarded, /transform:scaleX\(1\)/);
-  assert.match(guarded, /transition:none/);
-  // With `transition:none` there is no delay left to state, and Lightning CSS
-  // folds the explicit `transition-delay:0s` away for exactly that reason. What
-  // must never survive inside this query is a delay that actually waits.
-  assert.doesNotMatch(guarded, /transition-delay:(?!0(?:ms|s)?[;}])/);
+  const guarded = css.match(
+    /@media\s*\(prefers-reduced-motion:reduce\)\{(?:[^{}]|\{[^{}]*\})*\.gate-strip__tick(?:[^{}]|\{[^{}]*\})*\}/,
+  );
+  assert.ok(guarded, 'a reduced-motion query must govern the gate strip');
+  assert.match(guarded[0], /transition:none/);
 });
 
-test('show-10 the gate count is nowhere a literal', async () => {
+test('show-10 the gate count is nowhere a literal, not even in the meta description', async () => {
   const names = await gateNames();
   const count = String(names.length);
 
-  // A bare `26` may legitimately be an icon's width. What the rule forbids is
-  // the count typed where the page states it, so the check is the literal in the
-  // company of the words it would be claiming.
-  const literal = new RegExp(`(?<![\\d.'’])${count}(?![\\d.'’%])`, 'g');
+  // Every place a reader meets the number, it has to have been derived.
   for (const file of await displaySources()) {
     const source = await readFile(file, 'utf8');
-    for (const match of source.matchAll(literal)) {
-      const around = source.slice(Math.max(0, match.index - 90), match.index + 90);
-      assert.ok(
-        !/gate|merge|check/i.test(around),
-        `${file} types ${count} next to the words it claims — it must read the derivation`,
-      );
-    }
+    assert.doesNotMatch(
+      source,
+      new RegExp(`(?<![\\d.])${count}(?![\\d.])`),
+      `${file} types the gate count instead of deriving it`,
+    );
   }
 
-  // And the two places that show it read the same module. The tempo band used to
-  // be a third; it now shows the weeks instead, and states no count of its own.
-  for (const file of [
-    join(showroomRoot, 'src', 'data', 'measurements.ts'),
-    join(showroomRoot, 'src', 'components', 'process', 'GateWall.tsx'),
-  ]) {
-    assert.match(await readFile(file, 'utf8'), /from 'virtual:merge-gates'/);
-  }
+  // The meta description is the first number a reader sees — in a search
+  // result, in every link unfurl — and it used to be the only typed one.
+  const template = await readFile(join(showroomRoot, 'index.html'), 'utf8');
+  assert.match(template, /content="[^"]*%GATE_COUNT% gates/);
+
+  const built = await prerenderedPage();
+  assert.doesNotMatch(built, /%GATE_COUNT%/, 'the placeholder must be filled at build time');
+  assert.match(
+    built,
+    new RegExp(`<meta\\s+name="description"\\s+content="[^"]*decided by ${count} gates`),
+  );
 });

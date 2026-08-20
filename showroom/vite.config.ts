@@ -6,27 +6,23 @@ import { census } from './derive/code-census.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const GATE_SCRIPT = fileURLToPath(new URL('../scripts/check-merge-readiness.sh', import.meta.url));
-const PIPELINE_DOC = fileURLToPath(new URL('../docs/agents/pipeline.md', import.meta.url));
 const TIMELINE_DOC = fileURLToPath(new URL('../docs/showroom/timeline.md', import.meta.url));
 const LEDGER_DOC = fileURLToPath(new URL('../docs/measurements/index-rebuild.md', import.meta.url));
+const INCIDENT_DOC = fileURLToPath(
+  new URL('../docs/plans/queue-anchor-grill-followups.md', import.meta.url),
+);
 const SPECTRAL_SOURCE = fileURLToPath(
   new URL('../crates/reprise-view/src/spectral_colour.rs', import.meta.url),
 );
 
+const GATE_COUNT_TOKEN = '%GATE_COUNT%';
+
 const MERGE_GATES = 'virtual:merge-gates';
-const AGENT_PIPELINE = 'virtual:agent-pipeline';
 const CODE_CENSUS = 'virtual:code-census';
 const BUILD_TIMELINE = 'virtual:build-timeline';
 const MEASUREMENTS = 'virtual:measurements';
 const SPECTRAL_AXIS = 'virtual:spectral-axis';
-
-interface PipelineStep {
-  readonly step: string;
-  readonly phase: string;
-  readonly actor: string;
-  readonly writes: boolean;
-  readonly judges: boolean;
-}
+const INCIDENT = 'virtual:incident';
 
 interface TimelineWeek {
   readonly week: number;
@@ -71,46 +67,6 @@ function readGates(): readonly string[] {
     );
   }
   return names;
-}
-
-function readPipeline(): readonly PipelineStep[] {
-  const text = readFileSync(PIPELINE_DOC, 'utf8');
-  const flag = (raw: string, column: string, step: string): boolean => {
-    const value = raw.trim();
-    if (value === 'yes') return true;
-    if (value === 'no') return false;
-    throw new Error(
-      `step ${step} has "${value}" under ${column} in ${PIPELINE_DOC} — expected yes or no`,
-    );
-  };
-
-  const steps: PipelineStep[] = [];
-  for (const match of text.matchAll(/^\|\s*(\d{2})\s*\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|\s*$/gm)) {
-    const [, step, phase, actor, writes, judges] = match;
-    if (
-      step === undefined ||
-      phase === undefined ||
-      actor === undefined ||
-      writes === undefined ||
-      judges === undefined
-    ) {
-      throw new Error(`a pipeline row in ${PIPELINE_DOC} is missing columns`);
-    }
-    steps.push({
-      step,
-      phase: phase.trim(),
-      actor: actor.trim(),
-      writes: flag(writes, 'Writes', step),
-      judges: flag(judges, 'Judges', step),
-    });
-  }
-
-  if (steps.length === 0) {
-    throw new Error(
-      `derived no pipeline steps from ${PIPELINE_DOC} — the table or the expression moved`,
-    );
-  }
-  return steps;
 }
 
 const DAY_MS = 86_400_000;
@@ -254,6 +210,50 @@ function readLedger(): Ledger {
   return { rows, price: price.replace(/\s*\n\s*/g, ' ') };
 }
 
+/**
+ * The 2026-08-14 incident, out of the record that decided it.
+ *
+ * CH.02 draws three header heights and names a date. None of them may be typed
+ * beside the words: they describe something that happened once, so the page
+ * quotes the record rather than counting the tree — and quoting means reading
+ * the file, not copying out of it. Every expression here throws when it stops
+ * matching, because a figure that silently loses a number still looks finished.
+ */
+function readIncident(): {
+  readonly date: string;
+  readonly measured: readonly number[];
+  readonly floor: number;
+} {
+  const text = readFileSync(INCIDENT_DOC, 'utf8');
+
+  const date = text.match(/^# .*\((\d{4}-\d{2}-\d{2})\)\s*$/m)?.[1];
+  if (date === undefined) {
+    throw new Error(`found no incident date in the heading of ${INCIDENT_DOC}`);
+  }
+
+  const samples = text.match(/header_samples=\[([0-9., ]+)\]/)?.[1];
+  if (samples === undefined) {
+    throw new Error(`found no header_samples in ${INCIDENT_DOC} — §1 or its wording moved`);
+  }
+  const measured = samples.split(',').map((entry) => Number(entry.trim()));
+  if (measured.length !== 2 || measured.some((value) => !Number.isFinite(value))) {
+    throw new Error(`header_samples in ${INCIDENT_DOC} is not two numbers: ${samples}`);
+  }
+
+  const floor = Number(text.match(/SECTION_HEADER_MIN_HEIGHT: i32 = (\d+)/)?.[1]);
+  if (!Number.isInteger(floor) || floor <= 0) {
+    throw new Error(`found no SECTION_HEADER_MIN_HEIGHT in ${INCIDENT_DOC}`);
+  }
+  if (measured.some((value) => value > floor)) {
+    throw new Error(
+      `${INCIDENT_DOC} reports a measured header taller than the ${floor}px floor — the figure ` +
+        'would draw a bar through its own rule',
+    );
+  }
+
+  return { date, measured, floor };
+}
+
 /** `pub const CORAL: (u8, u8, u8) = (255, 111, 94);` — the axis, from its function. */
 function readSpectralAxis(): { readonly coral: string; readonly teal: string } {
   const text = readFileSync(SPECTRAL_SOURCE, 'utf8');
@@ -277,25 +277,29 @@ function readSpectralAxis(): { readonly coral: string; readonly teal: string } {
 
 /**
  * The facts the page states are read out of the repository at build time rather
- * than typed next to the words: the checks the merge gate runs, who runs which
- * step of the pipeline, how many lines of what kind the tree holds, the weeks
- * the work took, the index rebuild's ledger, and the two ends of the spectral
- * axis. Changing any source changes the page — or turns a test red, which is the
- * point.
+ * than typed next to the words: the checks the merge gate runs, how many lines
+ * of what kind the tree holds, the weeks the work took, the index rebuild's
+ * ledger, and the two ends of the spectral axis. Changing any source changes the
+ * page — or turns a test red, which is the point.
+ *
+ * The gate count reaches `index.html` the same way. A meta description is the
+ * first number a reader sees — in a search result, in every link unfurl — and it
+ * used to be the one number on this page that was typed. It said 21 while the
+ * page derived 27.
  */
 function derivedFacts(): Plugin {
   const resolved = new Map(
-    [MERGE_GATES, AGENT_PIPELINE, CODE_CENSUS, BUILD_TIMELINE, MEASUREMENTS, SPECTRAL_AXIS].map(
+    [MERGE_GATES, CODE_CENSUS, BUILD_TIMELINE, MEASUREMENTS, SPECTRAL_AXIS, INCIDENT].map(
       (id) => [id, `\0${id}`],
     ),
   );
   const modules = new Map<string, () => string>([
     [MERGE_GATES, () => `export const GATES = ${JSON.stringify(readGates())};\n`],
-    [AGENT_PIPELINE, () => `export const PIPELINE = ${JSON.stringify(readPipeline())};\n`],
     [CODE_CENSUS, () => `export const CENSUS = ${JSON.stringify(census(REPO_ROOT))};\n`],
     [BUILD_TIMELINE, () => `export const TIMELINE = ${JSON.stringify(readTimeline())};\n`],
     [MEASUREMENTS, () => `export const INDEX_REBUILD = ${JSON.stringify(readLedger())};\n`],
     [SPECTRAL_AXIS, () => `export const AXIS = ${JSON.stringify(readSpectralAxis())};\n`],
+    [INCIDENT, () => `export const INCIDENT = ${JSON.stringify(readIncident())};\n`],
   ]);
 
   return {
@@ -309,15 +313,24 @@ function derivedFacts(): Plugin {
       }
       return null;
     },
+    transformIndexHtml(html) {
+      const count = String(readGates().length);
+      if (!html.includes(GATE_COUNT_TOKEN)) {
+        throw new Error(
+          `${GATE_COUNT_TOKEN} is not in index.html — the meta description would ship a stale count`,
+        );
+      }
+      return html.replaceAll(GATE_COUNT_TOKEN, count);
+    },
     configureServer(server) {
       // None of these sources live under the Vite root, so the dev server does
       // not watch them on its own. The census reads the whole tree; watching the
       // two crate roots it counts is what makes an edit there show up.
       server.watcher.add([
         GATE_SCRIPT,
-        PIPELINE_DOC,
         TIMELINE_DOC,
         LEDGER_DOC,
+        INCIDENT_DOC,
         SPECTRAL_SOURCE,
         `${REPO_ROOT}crates`,
         `${REPO_ROOT}android`,

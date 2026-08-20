@@ -1,7 +1,7 @@
 /**
- * The gate wall's state, as pure functions.
+ * The gate strip's state, as pure functions.
  *
- * The wall lets a visitor fail a check by clicking its cell, so the fail-closed
+ * The strip lets a visitor fail a check by clicking its mark, so the fail-closed
  * rule becomes something they trigger rather than something they are told. The
  * showroom suite has no DOM, so that behaviour is only checkable if the state
  * transition lives outside the component — the component stays a thin shell
@@ -26,10 +26,12 @@ export function readout(failed: ReadonlySet<string>, total: number): Readout {
     blocked: count > 0,
     failed: count,
     total,
+    // The blocked half echoes the heading it sits under — "There is no partial
+    // merge" — rather than reporting a count and leaving the consequence unsaid.
     message:
       count === 0
-        ? `Ready to merge · ${total} checks green`
-        : `Merge blocked · ${count} of ${total} failing`,
+        ? `${total} checks green · ready to merge`
+        : `${count} of ${total} red · the change does not land`,
   };
 }
 

@@ -1,0 +1,351 @@
+/*
+ * CH.02 — one incident, drawn once and quoted once.
+ *
+ * The chapter is a single left-aligned column. The quote is the only element
+ * that carries a rule; the figure and the gate strip sit in the flow without a
+ * card around them, so the chapter still reads top to bottom in under a minute.
+ */
+
+.incident {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-hair);
+  margin-top: var(--gap-block);
+}
+
+.incident__eyebrow {
+  margin: 0;
+  color: var(--second);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* The gate strip's heading takes the accent instead — it is not the incident. */
+.incident__eyebrow--accent {
+  color: var(--accent);
+}
+
+.incident__title {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--text-strong);
+  font-size: clamp(1.45rem, 1.1rem + 1.5vw, 2rem);
+  line-height: 1.16;
+  letter-spacing: -0.015em;
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------------------------ figure */
+
+.incident-figure {
+  margin: var(--gap-block) 0 0;
+  max-width: 48rem;
+}
+
+/*
+ * The shared reveal translates and scales what it fades in. A measurement may
+ * not arrive by moving — a bar that grows into place is a bar whose value the
+ * reader watched change — so this figure keeps the opacity half and drops the
+ * transform. CSS `!important` outranks the inline style the reveal writes,
+ * which is the same lever the reduced-motion blocks use.
+ */
+.incident-figure[data-reveal] {
+  transform: none !important;
+}
+
+.incident-figure__panels {
+  display: grid;
+  /* Below roughly 640px the two panels stack. They keep the same 3× scale when
+     they do: a comparison drawn at two scales is not a comparison. */
+  grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
+  gap: var(--gap-line);
+}
+
+.incident-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-line);
+  padding: 1.4rem;
+  border: 1px solid var(--surface-line-soft);
+  border-radius: var(--radius-plate);
+  background: var(--surface-raised);
+}
+
+/*
+ * Neutral against accent, and deliberately not red. The left panel is not an
+ * error state — it is a correct measurement of the wrong thing.
+ */
+.incident-panel[data-tone="measured"] {
+  --bar-fill: oklch(38% 0.012 269);
+  --bar-top: oklch(48% 0.012 269);
+  --floor-line: var(--text-faint);
+  --floor-ink: var(--text-muted);
+  --value-ink: var(--text-body);
+}
+
+.incident-panel[data-tone="shipped"] {
+  --bar-fill: oklch(48% 0.075 195);
+  --bar-top: oklch(70% 0.11 195);
+  --floor-line: oklch(62% 0.09 195);
+  --floor-ink: var(--accent);
+  --value-ink: var(--accent);
+
+  border-color: oklch(34% 0.04 195);
+}
+
+.incident-panel__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.incident-panel__eyebrow {
+  margin: 0;
+  color: var(--floor-ink);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.incident-panel__title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 0.92rem;
+}
+
+/*
+ * 132px of chart box holds the 36px floor at 108px with room above it. The bar
+ * heights are written by the component as `value × 3`, so the two panels cannot
+ * drift apart: they read the same constant.
+ */
+.incident-panel__chart {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 1.75rem;
+  height: 132px;
+}
+
+.incident-panel__floor {
+  position: absolute;
+  /* Stops short of its own caption instead of running underneath it. */
+  right: 88px;
+  bottom: 108px;
+  left: 0;
+  border-top: 1px dashed var(--floor-line);
+}
+
+.incident-panel__floor-label {
+  position: absolute;
+  right: 0;
+  bottom: 101px;
+  margin: 0;
+  color: var(--floor-ink);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+}
+
+.incident-panel__bar {
+  width: 84px;
+  border-radius: 3px 3px 0 0;
+  background: var(--bar-fill);
+  box-shadow: inset 0 1px 0 var(--bar-top);
+}
+
+.incident-panel__names {
+  display: flex;
+  gap: 1.75rem;
+}
+
+/*
+ * The value goes under its bar, never above it. A label above needs its own
+ * line box plus the column gap — about 23px — so any bar within that distance
+ * of the floor rule would drive its label through the rule and rasterise as a
+ * strike-through. 34px is exactly such a value.
+ */
+.incident-panel__name {
+  margin: 0;
+  width: 84px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.incident-panel__value {
+  display: block;
+  color: var(--value-ink);
+}
+
+.incident-figure__caption {
+  margin: var(--gap-line) 0 0;
+  max-width: var(--measure);
+  color: var(--text-muted);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------------- quote */
+
+.incident-quote {
+  margin: var(--gap-block) 0 0;
+  padding: 1.4rem 1.75rem;
+  max-width: 48rem;
+  border-left: 2px solid var(--second);
+  border-radius: 0 var(--radius-plate) var(--radius-plate) 0;
+  background: var(--surface-raised);
+}
+
+.incident-quote > p {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: clamp(1.02rem, 0.95rem + 0.4vw, 1.2rem);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.incident-quote > footer {
+  margin-top: var(--gap-tight);
+  color: var(--text-muted);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+
+/* -------------------------------------------------------------- gate strip */
+
+.gate-strip {
+  margin: var(--gap-line) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-line);
+}
+
+.gate-strip__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-line);
+  flex-wrap: wrap;
+}
+
+.gate-strip__end {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.gate-strip__ticks {
+  display: flex;
+  align-items: center;
+}
+
+/*
+ * The mark is 3px wide; the button around it is 11px and 44px tall so the hit
+ * area clears the pointer target minimum without the strip growing to match.
+ */
+.gate-strip__tick {
+  display: grid;
+  place-items: center;
+  width: 11px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.gate-strip__tick > span {
+  display: block;
+  width: 3px;
+  height: 30px;
+  border-radius: 2px;
+  background: var(--accent);
+  transition:
+    height var(--duration-normal) var(--ease-out-expo),
+    background var(--duration-normal) ease;
+}
+
+.gate-strip__tick:hover > span,
+.gate-strip__tick:focus-visible > span {
+  height: 34px;
+  background: var(--text-strong);
+}
+
+.gate-strip__tick[data-broken="true"] > span {
+  height: 38px;
+  background: var(--second);
+}
+
+.gate-strip__tick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.gate-strip__rail {
+  width: 26px;
+  height: 1px;
+  background: var(--accent);
+  transition: background var(--duration-normal) ease;
+}
+
+.gate-strip__verdict {
+  margin: 0;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid oklch(38% 0.05 195);
+  border-radius: var(--radius-sharp);
+  color: var(--accent);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    color var(--duration-normal) ease,
+    border-color var(--duration-normal) ease;
+}
+
+.gate-strip[data-blocked="true"] .gate-strip__rail {
+  background: var(--surface-line);
+}
+
+.gate-strip[data-blocked="true"] .gate-strip__verdict {
+  border-color: oklch(40% 0.09 30);
+  color: var(--second);
+}
+
+/* Reserves the line so a hovered name cannot reflow the paragraph below it. */
+.gate-strip__readout {
+  margin: 0;
+  min-height: 1.2rem;
+  color: var(--text-muted);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.gate-strip[data-blocked="true"] .gate-strip__readout {
+  color: var(--second);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * The marks may change colour and height when a visitor fails a check — that
+   * is the answer to their click, not decoration — but they arrive at the new
+   * value instead of travelling to it.
+   */
+  .gate-strip__tick > span,
+  .gate-strip__rail,
+  .gate-strip__verdict {
+    transition: none;
+  }
+}
