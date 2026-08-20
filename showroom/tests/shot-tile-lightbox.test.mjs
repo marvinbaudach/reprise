@@ -21,9 +21,18 @@ test('ShotTile owns the still frame the loading sweep and the zoom cue', async (
   );
 
   assert.equal((html.match(/<button[^>]+class="[^"]*shot-tile[^"]*"/g) ?? []).length, 11);
-  for (const attribute of ['data-shot', 'data-sweep', 'data-zoom']) {
+  for (const attribute of ['data-shot', 'data-sweep', 'data-zoom', 'data-frame']) {
     assert.match(html, new RegExp(`${attribute}=""`));
   }
+
+  // The hover frame is decoration over a button that already names itself. It
+  // must never reach the accessibility tree, and it must never take a click.
+  const frames = html.match(/<span[^>]*class="shot-tile__frame"[^>]*>/g) ?? [];
+  assert.equal(frames.length, 11, 'every plate must carry exactly one hover frame');
+  for (const frame of frames) {
+    assert.match(frame, /aria-hidden="true"/);
+  }
+  assert.match(css, /\.shot-tile__frame\{[^}]*pointer-events:none/);
 
   // The picture wrap carries the zoom so the hero phone's visualizer canvas —
   // a sibling of the image — travels with the screenshot instead of standing

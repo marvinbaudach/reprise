@@ -1,13 +1,19 @@
 .shot-tile {
   /*
    * Hover and :focus-visible cannot share a selector list — one lives inside a
-   * `(hover: hover)` query, the other must not. They set these four tokens
+   * `(hover: hover)` query, the other must not. They set these five tokens
    * instead, so the state is written once and invoked twice.
+   *
+   * --plate-lift and --shot-zoom are held at rest in every state. They are kept
+   * because the geometry they drive must stay pinned where it can be asserted:
+   * the lift on the plate, the zoom on the picture wrap. A hover that moved
+   * either would push the row below it and soften the capture's own text.
    */
   --plate-lift: 0px;
   --shot-zoom: 1;
   --cue-opacity: 0;
   --cue-rise: 5px;
+  --frame-opacity: 0;
 
   position: relative;
   display: block;
@@ -24,10 +30,12 @@
   color: inherit;
   font: inherit;
   transform: translate3d(0, var(--plate-lift), 0);
-  transition:
-    transform 620ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 620ms ease,
-    border-color 620ms ease;
+  /*
+   * border-color and box-shadow used to be transitioned because hover moved
+   * them. It no longer does — the frame carries the whole response — so only
+   * the transform keeps a transition, and --plate-lift keeps it pinned at 0.
+   */
+  transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .shot-tile--phone {
@@ -86,6 +94,30 @@
 }
 
 /*
+ * The hover response. A 1px inset line on the picture's edge plus a short inner
+ * falloff — drawn, not glowing: the falloff is pulled far enough back that it
+ * reads as the line's own weight rather than as light spilling off the plate.
+ * `inset` box-shadows cost no layout, so the plate's box is identical in every
+ * state and the row below it cannot move.
+ */
+.shot-tile__frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 11px;
+  opacity: var(--frame-opacity);
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px oklch(62% 0.09 195),
+    inset 0 0 34px -14px oklch(70% 0.11 195);
+  transition: opacity 380ms ease;
+}
+
+/* Matches the phone plate's own 14px radius, one pixel in. */
+.shot-tile--phone .shot-tile__frame {
+  border-radius: 13px;
+}
+
+/*
  * The cue announces the click that opens the lightbox. It is decoration over a
  * button that already carries `aria-label="Open screenshot: …"`, so it stays out
  * of the accessibility tree and out of the hit test.
@@ -134,26 +166,20 @@
  */
 @media (hover: hover) {
   .shot-tile:hover {
-    --plate-lift: -6px;
-    --shot-zoom: 1.045;
+    --plate-lift: 0px;
+    --shot-zoom: 1;
     --cue-opacity: 1;
     --cue-rise: 0px;
-    border-color: oklch(46% 0.03 195);
-    box-shadow:
-      0 40px 90px -46px oklch(3% 0.02 269 / 0.98),
-      0 0 40px -18px oklch(80% 0.12 190 / 0.35);
+    --frame-opacity: 1;
   }
 }
 
 .shot-tile:focus-visible {
-  --plate-lift: -6px;
-  --shot-zoom: 1.045;
+  --plate-lift: 0px;
+  --shot-zoom: 1;
   --cue-opacity: 1;
   --cue-rise: 0px;
-  border-color: oklch(46% 0.03 195);
-  box-shadow:
-    0 40px 90px -46px oklch(3% 0.02 269 / 0.98),
-    0 0 40px -18px oklch(80% 0.12 190 / 0.35);
+  --frame-opacity: 1;
 }
 
 .shot-tile__caption {
@@ -212,12 +238,14 @@
 @media (prefers-reduced-motion: reduce) {
   /*
    * One `transform: none` neutralises the lift, the picture zoom and the cue's
-   * rise at once. The cue's opacity stays bound to --cue-opacity and therefore
-   * appears at once instead of fading — the hint may be instant, it may not move.
+   * rise at once. The cue's and the frame's opacity stay bound to their tokens
+   * and therefore appear at once instead of fading — the hint may be instant,
+   * it may not move.
    */
   .shot-tile,
   .shot-tile__picture,
-  .shot-tile__zoom {
+  .shot-tile__zoom,
+  .shot-tile__frame {
     transform: none !important;
     transition: none;
   }

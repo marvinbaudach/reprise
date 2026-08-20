@@ -62,6 +62,15 @@ export function ShotTile({
       <span className="shot-tile__sweep" data-sweep="" aria-hidden="true">
         <span />
       </span>
+      {/*
+       * The hover response, in full: a 1px accent line drawn on the picture's
+       * own edge. A screenshot is the one image class that must not be scaled —
+       * the text inside the capture goes soft and the window edges leave the
+       * frame, so the plate stops showing what the app looks like. Decoration
+       * over a button that already carries `aria-label="Open screenshot: …"`,
+       * so it stays out of the accessibility tree and out of the hit test.
+       */}
+      <span className="shot-tile__frame" data-frame="" aria-hidden="true" />
       {/* Phosphor `ArrowsOutSimple`, regular weight — see LICENSING.md. */}
       <span className="shot-tile__zoom" data-zoom="" aria-hidden="true">
         <svg viewBox="0 0 256 256" fill="currentColor" focusable="false" aria-hidden="true">

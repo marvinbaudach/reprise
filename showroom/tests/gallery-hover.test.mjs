@@ -202,8 +202,63 @@ test('show-3 pointing and keyboard focus declare the very same state', async () 
   const hoverEntries = declarations(hover.body).sort();
   const focusEntries = declarations(focus.body).sort();
   // Two blocks that were both missed would compare equal as empty lists.
-  assert.ok(hoverEntries.length >= 6, 'the hover state must carry its six declarations');
+  assert.ok(hoverEntries.length >= 5, 'the hover state must carry its five tokens');
   assert.deepEqual(hoverEntries, focusEntries);
+
+  // The response is the frame and the cue, nothing else. border-color and
+  // box-shadow used to be set here; a plate that re-acquires either is drawing
+  // its hover on the plate again instead of on the picture's edge.
+  for (const [name, rule] of [
+    ['hover', hover],
+    ['focus-visible', focus],
+  ]) {
+    for (const property of propertyNames(rule.body)) {
+      assert.ok(
+        property.startsWith('--'),
+        `the ${name} state sets ${property} — it may only move its own tokens`,
+      );
+    }
+  }
+});
+
+test('show-6 no pointer state scales, lifts or otherwise moves a plate', async () => {
+  const css = await builtCss();
+  const all = rules(css);
+
+  const pointerStates = all.filter(
+    ({ selector }) =>
+      selector.includes('.shot-tile') &&
+      (selector.includes(':hover') || selector.includes(':focus-visible')),
+  );
+  // Positive control: an empty list would satisfy every assertion below.
+  assert.ok(pointerStates.length >= 2, 'expected a hover and a focus-visible rule');
+
+  // A screenshot is the one image class that must not be scaled — the text
+  // inside the capture goes soft and the window edges leave the frame. The
+  // stylesheet is where that can regress silently, so it is asserted here
+  // rather than left to a measurement nobody re-runs.
+  for (const { selector, body } of pointerStates) {
+    for (const entry of declarations(body)) {
+      const [property, ...rest] = entry.split(':');
+      const value = rest.join(':').trim();
+
+      if (property?.trim() === '--shot-zoom') {
+        assert.equal(value, '1', `${selector} zooms the picture to ${value}`);
+      }
+      if (property?.trim() === '--plate-lift') {
+        assert.match(value, /^0(px)?$/, `${selector} lifts the plate by ${value}`);
+      }
+      for (const [, factor] of value.matchAll(/scale3?d?\(([^)]*)\)/g)) {
+        for (const argument of factor.split(',')) {
+          assert.equal(
+            argument.trim(),
+            '1',
+            `${selector} declares ${entry} — a pointer state may not scale a plate`,
+          );
+        }
+      }
+    }
+  }
 });
 
 test('show-4 reduced motion leaves a plate without transform transitions', async () => {
