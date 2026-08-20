@@ -4,7 +4,7 @@ use reprise_core::library_doctor::{DoctorField, DoctorValue, LibraryDoctor, Prob
 
 use super::super::review_row::contract_tests::{
     album_change_scan, conflict_scan, ready_and_stale_scan, scan,
-    seed_ready_and_stale_badge_fixture, stale_album_scan, three_album_scan,
+    seed_ready_and_stale_badge_fixture, three_album_scan,
 };
 use super::*;
 
@@ -145,39 +145,43 @@ fn doc_8a_the_badge_and_unfiltered_review_header_count_the_same_ready_fixes() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn doc_9b_stale_notice_follows_category_filter_and_is_hidden_at_zero() {
-    let mut fixture = ready_and_stale_scan();
-    fixture.proposals[0].problem_class = ProblemClass::MissingWrongYear;
-    let mut session = DoctorReviewSession::from_scan(fixture, DoctorReviewFilter::NeedsReview);
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder().build();
+    let on_edit = Rc::new(|_: &[i64]| {}) as Rc<dyn Fn(&[i64])>;
+    let fixture = ready_and_stale_scan();
+    let page = LibraryDoctorReviewPage::new(
+        &conn,
+        &parent,
+        &fixture,
+        Rc::new(|_| {}),
+        Rc::new(|| {}),
+        &on_edit,
+    );
+    parent.set_content(Some(page.navigation_page()));
+    parent.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
 
-    assert_eq!(
-        review_stale_notice(&session),
-        Some("1 fix is out of date — this file changed after the scan.".to_owned())
-    );
-    session.set_category_filter(Some(ReviewCategory::Year.problem_classes()));
-    assert_eq!(
-        review_stale_notice(&session),
-        None,
-        "a stale Genre fix is outside the active Year category"
-    );
-    assert_eq!(
-        review_stale_notice(&DoctorReviewSession::from_scan(
-            scan(),
-            DoctorReviewFilter::NeedsReview
-        )),
-        None
-    );
-
+    let rows = page.state.session.borrow();
+    assert_eq!(rows.rows().len(), 1);
+    assert_eq!(rows.rows()[0].track_id, 7);
+    assert!(rows
+        .rows()
+        .iter()
+        .all(|row| row.state != DoctorReviewRowState::Stale));
+    drop(rows);
+    assert!(descendants_with_css_class(
+        &page.navigation_page().clone().upcast(),
+        "doctor-review-stale"
+    )
+    .is_empty());
     let source = include_str!("review_page.rs");
-    let filter = source
-        .find("page_content.append(&state.filter_bar.root)")
-        .unwrap();
-    let notice = source
-        .find("page_content.append(&state.stale_notice)")
-        .unwrap();
-    let header = source.find("page_content.append(&header.root)").unwrap();
-    assert!(filter < notice && notice < header);
-    assert!(source.contains("self.state.rescan.set_sensitive(!running)"));
+    assert!(!source.contains("stale_notice"));
+    assert!(!source.contains("doctor-review-stale"));
 }
 
 /// A filter does change what is on screen, so the header follows it — and
@@ -399,11 +403,12 @@ fn doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check() {
     let page = LibraryDoctorReviewPage::new(
         &conn,
         &parent,
-        &stale_album_scan(),
+        &scan(),
         Rc::new(|_| {}),
         Rc::new(|| {}),
         &on_edit,
     );
+    page.mark_paths_stale(&[PathBuf::from("/tmp/doctor-review.flac")]);
     parent.set_content(Some(page.navigation_page()));
     parent.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
@@ -427,23 +432,20 @@ fn doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check() {
             .and_downcast::<gtk4::CheckButton>()
             .expect("album header begins with its checkbox")
     };
-    let ready = header("Ready album");
-    let stale = header("Stale album");
-
-    assert!(checkbox(ready).is_sensitive());
+    let stale = header("Album");
     assert!(
         !checkbox(stale).is_sensitive(),
-        "an album with no selectable changes must not expose an active checkbox"
+        "a manually invalidated album must not expose an active checkbox"
     );
     let stale_labels = descendant_label_text(stale);
     assert!(stale_labels
         .iter()
-        .any(|label| label == "1 change · out of date"));
+        .any(|label| label == "1 change · none selected"));
+    assert!(!stale_labels
+        .iter()
+        .any(|label| label.contains("out of date")));
     assert!(!stale_labels.iter().any(|label| label == "0 changes"));
-    assert_eq!(
-        stale.tooltip_text().as_deref(),
-        Some("This file changed after the scan — scan again to include this fix.")
-    );
+    assert_eq!(stale.tooltip_text(), None);
 }
 
 #[test]
@@ -458,11 +460,12 @@ fn doc_9b_activating_an_unselectable_row_selects_nothing() {
     let page = LibraryDoctorReviewPage::new(
         &conn,
         &parent,
-        &stale_album_scan(),
+        &three_album_scan(),
         Rc::new(|_| {}),
         Rc::new(|| {}),
         &on_edit,
     );
+    page.mark_paths_stale(&[PathBuf::from("/tmp/doctor-review.flac")]);
     let position_for = |state| {
         (0..page.state.selection.n_items())
             .find(|position| {

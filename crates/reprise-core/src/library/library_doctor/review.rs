@@ -24,10 +24,10 @@ pub struct DoctorReviewGroupId(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoctorReviewFilter {
-    /// Written without asking: local + preselected + not stale, plus every
+    /// Written without asking: local + preselected + fingerprint-current, plus every
     /// Recording MBID proposal regardless of source or confidence.
     AutoApply,
-    /// Shown for review, with every ready row preselected.
+    /// Shown for review, with every fingerprint-current row preselected.
     NeedsReview,
 }
 
@@ -47,9 +47,17 @@ pub enum DoctorFindingKind {
     /// Applied without asking: unambiguous, or a MusicBrainz recording ID that
     /// changes nothing a human can see.
     Quiet,
-    /// Shown for review. A track that changed under us since the scan read it
-    /// lands here too, marked stale, rather than being written unasked.
+    /// Shown for review when its track still matches the scan fingerprint.
     NeedsReview,
+}
+
+/// Whether a scan-time proposal is still safe to admit to either review tier.
+///
+/// This is deliberately one predicate for proposals and unresolved-group
+/// members. `Stale` remains a valid row state for failures discovered after a
+/// session has been built, but fingerprint-stale tracks never enter it.
+pub(crate) const fn fingerprint_allows_review(stale: bool) -> bool {
+    !stale
 }
 
 pub fn finding_kind(
@@ -57,14 +65,11 @@ pub fn finding_kind(
     source: ProposalSource,
     preselected: bool,
     written: bool,
-    stale: bool,
 ) -> DoctorFindingKind {
     if written {
         return DoctorFindingKind::Written;
     }
-    if !stale
-        && (field == DoctorField::RecordingMbid || (source == ProposalSource::Local && preselected))
-    {
+    if field == DoctorField::RecordingMbid || (source == ProposalSource::Local && preselected) {
         return DoctorFindingKind::Quiet;
     }
     DoctorFindingKind::NeedsReview
@@ -80,7 +85,8 @@ pub(crate) fn is_auto_applied_parts(
     preselected: bool,
     stale: bool,
 ) -> bool {
-    finding_kind(field, source, preselected, false, stale) == DoctorFindingKind::Quiet
+    fingerprint_allows_review(stale)
+        && finding_kind(field, source, preselected, false) == DoctorFindingKind::Quiet
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,16 +265,15 @@ impl DoctorReviewSession {
         let mut next_id = 0_u64;
         for proposal in scan.proposals {
             let is_stale = stale.get(&proposal.track_id).copied().unwrap_or(true);
+            if !fingerprint_allows_review(is_stale) {
+                continue;
+            }
             if is_auto_applied(&proposal, is_stale) != (filter == DoctorReviewFilter::AutoApply) {
                 continue;
             }
             let id = DoctorReviewRowId(next_id);
             next_id += 1;
-            let state = if is_stale {
-                DoctorReviewRowState::Stale
-            } else {
-                DoctorReviewRowState::Ready
-            };
+            let state = DoctorReviewRowState::Ready;
             sort_keys.insert(
                 id,
                 RowSortKey {
@@ -304,13 +309,16 @@ impl DoctorReviewSession {
                 let group_id = DoctorReviewGroupId(groups.len() as u64);
                 let mut templates = Vec::new();
                 for member in unresolved.members {
+                    let is_stale = stale.get(&member.track_id).copied().unwrap_or(true);
+                    if !fingerprint_allows_review(is_stale) {
+                        continue;
+                    }
                     let id = DoctorReviewRowId(next_id);
                     next_id += 1;
-                    let is_stale = stale.get(&member.track_id).copied().unwrap_or(true);
                     sort_keys.insert(
                         id,
                         RowSortKey {
-                            category: if is_stale { 5 } else { 1 },
+                            category: 1,
                             scope_position: scope_positions
                                 .get(&member.track_id)
                                 .copied()
@@ -324,12 +332,11 @@ impl DoctorReviewSession {
                         track_id: member.track_id,
                         field: unresolved.field,
                         current: member.current,
-                        state: if is_stale {
-                            DoctorReviewRowState::Stale
-                        } else {
-                            DoctorReviewRowState::Ready
-                        },
+                        state: DoctorReviewRowState::Ready,
                     });
+                }
+                if templates.is_empty() {
+                    continue;
                 }
                 tie_templates.insert(group_id, templates);
                 groups.push(DoctorReviewGroup {

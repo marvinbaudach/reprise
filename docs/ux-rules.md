@@ -4310,7 +4310,7 @@ means deterministic and high-confidence, never „without review".
   touches a stale or conflicting row. The master stays reachable in the narrow
   layout, where the column titles are hidden and it is labelled instead.
   *Tests:* `doc_3c_the_master_check_mirrors_the_visible_selection`,
-  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_album_header_state_names_only_conflict_reason_at_zero`,
   `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`.
   *Amended 2026-08-14: the sensitivity and reason contract now covers album
   group checkboxes as well as the page master.*
@@ -4547,22 +4547,19 @@ means deterministic and high-confidence, never „without review".
   row back to `reverted`, which makes it a finding again. There is exactly one
   predicate for this (`library_doctor::finding_kind`), asked with the track's
   real staleness, and the sidebar count and the result page both read it. The
-  sidebar badge counts only Ready fixes the review page can apply now. Stale
-  findings never inflate that number; the review page names their count once in
-  an out-of-date notice and offers the same-scope scan path. They
-  used to disagree: the count asked with `stale: false` while the pages asked
-  with the real value, so a restart turned every fix the quiet job had just
-  written into a review row — our own write moves the file's mtime, a moved
-  mtime reads as "changed under us", and a stale row falls out of the quiet
-  tier. One scan then reported 85 findings in the sidebar and 200 on its own
-  page, and offered rows whose current and proposed values were identical.
+  sidebar badge counts only fingerprint-current fixes the review page can apply
+  now. Fingerprint-stale findings are absent from both the badge and the review
+  session. After a successful Doctor write and database reconciliation, the
+  scan snapshot adopts the track's actual new fingerprint, so the Doctor's own
+  mtime change does not hide the remaining proposals on that track. A genuine
+  external change remains excluded until a new scan.
   *Tests:*
   `doc_8a_the_menu_carries_exactly_one_library_doctor_item_and_no_sync_device`,
   `doc_8a_the_issues_entry_appears_only_with_unreviewed_findings`,
   `doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none`,
   `doc_8a_pending_review_count_excludes_everything_already_written_for_that_scan`,
   `doc_8a_pending_review_count_is_zero_once_the_scan_is_marked_reviewed`,
-  `doc_8a_pending_review_count_splits_ready_and_stale_findings`,
+  `doc_8a_pending_review_count_excludes_fingerprint_stale_findings`,
   `doc_8a_the_badge_and_unfiltered_review_header_count_the_same_ready_fixes`,
   `doc_8a_conflicts_alone_do_not_produce_a_pending_count`,
   `doc_8a_auto_tier_write_conflict_does_not_produce_a_pending_count`,
@@ -4572,7 +4569,9 @@ means deterministic and high-confidence, never „without review".
 - **DOC-8b** [active] [core] — **Two tiers, and exactly one predicate
   decides.** A proposal is applied without asking when it is a MusicBrainz
   recording ID, or when it is local and preselected; never when its track is
-  stale. Everything else is shown for review, preselected. Recording IDs never
+  stale. A fingerprint-stale proposal falls out of both tiers: it is neither
+  applied without asking nor admitted to the review session. Every other
+  non-quiet proposal is shown for review, preselected. Recording IDs never
   appear in the review list. The applied set is enqueued as a tag-write job the
   moment the scan completes, before the summary is presented, and is reported
   as done; nothing is written while the scan is still running. There is no
@@ -4586,6 +4585,7 @@ means deterministic and high-confidence, never „without review".
   `doc_8b_recording_mbid_never_reaches_the_review_tier`,
   `doc_8b_all_preset_selects_every_ready_row_and_none_clears_them`,
   `doc_8b_the_tie_path_runs_the_same_selection_predicate`,
+  `fingerprint_stale_tracks_are_absent_from_session_and_badge`,
   `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
   `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
   *Amended 2026-08-08: “Everything else is shown for review, preselected” has
@@ -4678,7 +4678,13 @@ means deterministic and high-confidence, never „without review".
   optional container with „Skip all". The virtualized list scrolls under one
   sticky page header and above one sticky footer, without pagination or a
   collapsed remainder row. Album pills, toolbar, and footer count tag changes
-  that will be written rather than display rows. *Tests:*
+  that will be written rather than display rows. Fingerprint-stale tracks are
+  excluded before rows or unresolved-group members are built; they have no
+  category, banner, grey row, album-header wording, or badge count. A successful
+  Doctor write refreshes the scan snapshot from the reconciled post-write track
+  identity before the remaining proposals are classified. The manual `Stale`
+  path in DOC-3a remains available for failures discovered after the session is
+  built. *Tests:*
   `doc_9b_rows_group_by_album_in_scope_order`,
   `doc_9b_album_level_change_collapses_into_one_row_over_all_tracks`,
   `doc_9b_tracks_without_an_album_form_one_trailing_group`,
@@ -4695,14 +4701,14 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_the_conflicts_panel_covers_no_row`,
   `doc_9b_the_first_row_carries_its_album_header`,
   `doc_9b_a_fully_deselected_album_says_none_selected`,
-  `doc_3c_album_header_state_names_the_reason_at_zero`,
+  `doc_3c_album_header_state_names_only_conflict_reason_at_zero`,
   `doc_3c_an_album_with_nothing_selectable_binds_an_insensitive_header_check`,
   `doc_9b_a_stale_row_names_its_reason_where_the_click_happens`,
   `doc_9b_activating_an_unselectable_row_selects_nothing`,
   `doc_9b_every_section_boundary_binds_a_non_empty_header`,
   `doc_9b_an_album_wide_change_renders_all_n_tracks_italic_and_muted`,
   `doc_9b_a_recycled_row_loses_the_italic_style_again`,
-  `doc_9b_stale_notice_is_unfiltered_and_hidden_at_zero`,
+  `doc_9b_stale_notice_follows_category_filter_and_is_hidden_at_zero`,
   `doc_9b_the_unfiltered_footer_names_selection_and_ready_inventory`,
   `doc_9b_every_count_on_the_review_page_inflects`.
   *Amended 2026-08-08: “every reviewable row starts selected” means every Ready
@@ -4712,10 +4718,14 @@ means deterministic and high-confidence, never „without review".
   tracks" in italic muted text; and every row, including the first, appears
   beneath an album header.*
   *Amended 2026-08-14: an album header's change count is its written-change
-  inventory; when none is selectable, the reason appears next to that count.
-  A refused row names its reason in the Source cell and accessible description;
-  activating it changes nothing and performs no refresh, while the page banner
-  remains the aggregate explanation.*
+  inventory. When a Conflict-blocked album has no selectable row, its reason
+  appears next to that count. A refused row names its reason in the Source cell
+  and accessible description; activating it changes nothing and performs no
+  refresh.*
+  *Amended 2026-08-20: fingerprint-stale scan rows are absent from the session,
+  while a row manually marked `Stale` after construction retains the row-level
+  reason required by DOC-3a. The removed aggregate banner and out-of-date album
+  wording must not be restored.*
 
 - **DOC-9d** [active] [gtk] — **An active filter limits everything.** Apply
   writes only the filtered set and counts that set in its label. `All` and

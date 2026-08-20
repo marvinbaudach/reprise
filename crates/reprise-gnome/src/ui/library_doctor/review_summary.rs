@@ -1,11 +1,9 @@
 //! What the review page *states* about the rows it is showing: the header's
-//! inventory, the stale notice above the list, and the footer's summary.
+//! inventory and the footer's summary.
 //!
 //! These are derivations from the visible row set and nothing else — no widget,
 //! no `ReviewState`. They live apart from `review_page.rs` so that page keeps
 //! the wiring and this file keeps the arithmetic.
-
-use reprise_core::library_doctor::{DoctorReviewRowState, DoctorReviewSession};
 
 use super::review_model::ReviewCategory;
 #[cfg(test)]
@@ -26,16 +24,6 @@ use crate::ui::strings;
 pub(super) fn review_header_counts(rows: &[ReviewRowModel]) -> (usize, usize) {
     let totals = ReviewSnapshot::from_rows(rows.to_vec(), "").totals;
     (totals.changes, totals.albums)
-}
-
-pub(super) fn review_stale_notice(session: &DoctorReviewSession) -> Option<String> {
-    let count = session
-        .rows()
-        .iter()
-        .filter(|row| session.category_filter_matches(row.problem_class))
-        .filter(|row| row.state == DoctorReviewRowState::Stale)
-        .count();
-    (count > 0).then(|| strings::doctor_stale_notice(count))
 }
 
 pub(super) fn review_footer_summary(
