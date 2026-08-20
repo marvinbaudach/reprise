@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use chrono::Local;
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::artist_news::{self, ReleaseSortDirection};
@@ -48,10 +49,11 @@ type FetchOverride = std::sync::Arc<
 >;
 
 pub(super) struct Shared {
-    conn: Rc<Db>,
+    pub(super) conn: Rc<Db>,
     database_path: PathBuf,
     pub(super) model: Rc<ReleasesModel>,
     pub(super) selection_anchor: super::releases_selection::ReleasesAnchor,
+    pub(super) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     filter_bar: Rc<ReleasesFilterBar>,
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<HistoryEntry>>,
@@ -185,6 +187,7 @@ impl ReleasesView {
             database_path,
             model,
             selection_anchor: super::releases_selection::ReleasesAnchor::default(),
+            toast_overlay: glib::WeakRef::new(),
             filter_bar: filter_bar.clone(),
             end_of_results,
             rows: RefCell::new(Vec::new()),
@@ -298,6 +301,10 @@ impl ReleasesView {
         *self.shared.on_refreshed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
+        self.shared.toast_overlay.set(Some(overlay));
+    }
+
     pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
         self.shared.connectivity.set(value);
         let previous = self.shared.fetch_failure.borrow().clone();
@@ -328,7 +335,7 @@ fn releases_matching(rows: Vec<HistoryEntry>, query: &str) -> Vec<HistoryEntry> 
         .collect()
 }
 
-fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
+pub(super) fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let filter = shared.filter_bar.filter();
     let query = shared.filter_bar.query();
@@ -400,14 +407,7 @@ fn apply_empty_state(shared: &Shared, state: ReleasesEmptyState, total: usize) {
 }
 
 fn set_hidden(shared: &Rc<Shared>, mbid: &str, hidden: bool) {
-    if let Err(error) = artist_news::set_release_hidden(&shared.conn, mbid, hidden) {
-        tracing::warn!(%error, "could not change release visibility");
-        return;
-    }
-    if let Err(error) = render_cache(shared) {
-        tracing::warn!(%error, "could not reload Releases after visibility change");
-    }
-    notify_refreshed(shared);
+    super::releases_hide::set_hidden_batch(shared, vec![mbid.to_owned()], hidden);
 }
 
 fn activate_position(shared: &Rc<Shared>, position: u32) {
@@ -428,7 +428,7 @@ fn activate_position(shared: &Rc<Shared>, position: u32) {
     }
 }
 
-fn notify_refreshed(shared: &Shared) {
+pub(super) fn notify_refreshed(shared: &Shared) {
     if let Some(callback) = shared.on_refreshed.borrow().clone() {
         callback();
     }

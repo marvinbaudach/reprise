@@ -99,6 +99,22 @@ pub fn show_releases_again_label(count: usize) -> String {
     )
 }
 
+pub fn releases_hidden_toast(count: usize) -> String {
+    count_label(
+        count,
+        N_!("1 release hidden"),
+        N_!("{count} releases hidden"),
+    )
+}
+
+pub fn releases_restored_toast(count: usize) -> String {
+    count_label(
+        count,
+        N_!("1 release restored"),
+        N_!("{count} releases restored"),
+    )
+}
+
 fn count_label(count: usize, singular: &str, plural_message: &str) -> String {
     if count <= 1 {
         return text(singular);

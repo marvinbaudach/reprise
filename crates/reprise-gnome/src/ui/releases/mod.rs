@@ -14,6 +14,7 @@ mod releases_cover_column;
 mod releases_empty_state;
 mod releases_failure_ui;
 mod releases_filter_bar;
+mod releases_hide;
 mod releases_menu;
 mod releases_model;
 pub(in crate::ui) mod releases_presentation;

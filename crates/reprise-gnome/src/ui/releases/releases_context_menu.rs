@@ -68,9 +68,22 @@ pub(super) fn wire_cell(
 
 pub(super) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
     let group = gio::SimpleActionGroup::new();
+    for (name, hidden) in [
+        (releases_menu::ACTION_HIDE, true),
+        (releases_menu::ACTION_RESTORE, false),
+    ] {
+        let shared = shared.clone();
+        let action = gio::SimpleAction::new(name, None);
+        action.connect_activate(move |_, _| {
+            let mbids = selected_entries(&shared)
+                .into_iter()
+                .map(|entry| entry.release_group_mbid)
+                .collect();
+            super::releases_hide::set_hidden_batch(&shared, mbids, hidden);
+        });
+        group.add_action(&action);
+    }
     for name in [
-        releases_menu::ACTION_HIDE,
-        releases_menu::ACTION_RESTORE,
         releases_menu::ACTION_GO_TO_ARTIST,
         releases_menu::ACTION_GO_TO_ALBUM,
     ] {
