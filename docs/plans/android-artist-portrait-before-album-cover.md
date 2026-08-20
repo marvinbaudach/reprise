@@ -87,7 +87,61 @@ zu völlig verschiedener Arbeit:
 Nächster Schritt vor jedem Umbau: am Gerät für drei bis vier Interpreten
 festhalten, **welches** Bild vor und nach dem Tausch steht.
 
-## Lösungsrichtungen (offen)
+**Der Plan dazu steht in `docs/plans/android-artists-show-only-portraits.md`**
+(20.08.2026). Diese Datei bleibt der Befund; dort steht die Umsetzung.
+
+## Beschluss des Nutzers, 20.08.2026 — die Richtung ist entschieden
+
+> „es darf kein wechsel des bildes kommen. bei artisten nur artist-bilder.
+> ansonsten keins"
+>
+> „kann man nicht beim scannen im hintergrund noch die album- und
+> artist-covers ziehen"
+
+Damit sind die drei Lösungsrichtungen unten nicht mehr offen, sondern
+zusammengelegt und verschärft:
+
+1. **Der Album-Cover-Rückfall im Interpretenkontext entfällt ersatzlos.** Weder
+   Liste noch Detailkopf zeigen jemals `artist.representativeUri`. Ohne Porträt
+   steht dort der Platzhalter (generierter Avatar/Fallback-Farbe), nie ein
+   fremdes Album. Das kehrt zwei bestehende Tests um —
+   `anArtistWithoutAPortraitShowsTheAlbumCover` und
+   `anArtistWithoutAPortraitFallsBackToTheAlbumCover` müssen zu
+   „…ShowsThePlaceholder" werden, sonst schützen sie die verworfene Regel.
+2. **Vorlauf beim Scan.** Nach dem Commit des Scans (nicht währenddessen — der
+   Scan hält den Writer) läuft ein gedrosselter Hintergrunddurchlauf über die
+   Interpreten der Bibliothek und füllt den Porträt-Zwischenspeicher, damit die
+   Liste die Bilder schon hat, bevor jemand einen Interpreten öffnet.
+3. **Der netzfreie Listenpfad bleibt.** Der Vorlauf ist zeilenunabhängig, also
+   bleibt `scrollingTheArtistListNeverFetches` gültig und muss gültig bleiben.
+
+Restfall, der auch danach bleibt: Platzhalter → Porträt, wenn der Vorlauf einen
+Interpreten noch nicht erreicht hat oder Deezer nichts liefert. Kein Bildwechsel
+im Sinne der Beschwerde (nie ein fremdes Album), aber ein Nachziehen. Ob das
+akzeptabel ist oder die Zeile bis zum nächsten Betreten beim Platzhalter bleiben
+soll, ist noch nicht entschieden.
+
+## Befund zum Album-Cover-Zug: auf Android gibt es ihn noch gar nicht
+
+Gemessen auf `origin/dev` @ `afb839069e`: `crates/reprise-core/src/cover_download.rs`
+(MusicBrainz-Release → Cover Art Archive) hat genau einen Aufrufer,
+`crates/reprise-gnome/src/ui/cover/cover_download_worker.rs`. In
+`crates/reprise-android-ffi/` kommt `cover_download` **nirgends** vor. Album-
+Artwork auf dem Handy stammt heute ausschließlich aus Datei/Tag
+(`lib.rs:281 track_artwork`).
+
+Folge: „beim Scannen auch Album-Cover ziehen" ist auf Android kein Vorziehen
+eines vorhandenen Wegs, sondern ein neuer Strang — Brücke für den Downloader
+plus die Drosselung, die MusicBrainz verlangt (1 Anfrage/s, eigener
+User-Agent). Porträts dagegen liegen fertig an der Brücke:
+`crates/reprise-android-ffi/src/artist_portrait.rs:43 artist_portrait_fetch`,
+bereits hinter `online_sources::network_allowed_or_off(&reader, ARTWORK_MODULE)`.
+Beide Stränge sind trennbar und sollten getrennt gefahren werden — Porträts
+zuerst, weil nur sie die gemeldete Beschwerde beheben.
+
+## Lösungsrichtungen (offen) — überholt durch den Beschluss oben
+
+Zur Nachvollziehbarkeit stehen gelassen:
 
 1. **Vorlauf statt Nachladen.** Porträts für die sichtbaren/nächsten Zeilen im
    Hintergrund holen (gedrosselt, eine Warteschlange, kein Fetch pro
