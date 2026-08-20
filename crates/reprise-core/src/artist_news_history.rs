@@ -386,6 +386,31 @@ mod tests {
     }
 
     #[test]
+    fn redundant_hide_preserves_the_original_hidden_at_timestamp() {
+        let db = migrated_conn();
+        insert_history_row(&db, "one", 1_000, "2026-01-01", "Album");
+        db.conn()
+            .execute(
+                "UPDATE new_releases SET hidden = 1, hidden_at = 123
+                  WHERE release_group_mbid = 'one'",
+                [],
+            )
+            .unwrap();
+
+        crate::artist_news::set_release_hidden(&db, "one", true).unwrap();
+
+        let hidden_at: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT hidden_at FROM new_releases WHERE release_group_mbid = 'one'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(hidden_at, Some(123));
+    }
+
+    #[test]
     fn a_failed_restore_rolls_back_deleted_memory_and_release_visibility() {
         let db = migrated_conn();
         insert_history_row(&db, "one", 1_000, "2026-01-01", "Album");

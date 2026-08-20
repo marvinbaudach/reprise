@@ -453,7 +453,7 @@ pub(crate) fn update_release_hidden_in(
             SET hidden = ?1,
                 hidden_at = CASE WHEN ?1 = 1 THEN strftime('%s', 'now') ELSE NULL END,
                 hidden_by_deleted_memory = 0
-          WHERE release_group_mbid = ?2",
+          WHERE release_group_mbid = ?2 AND hidden != ?1",
         rusqlite::params![i64::from(hidden), release_group_mbid],
     )?;
     Ok(())
