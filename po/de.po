@@ -6078,6 +6078,10 @@ msgstr "Clientseitige Dekoration"
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
 
+#, rust-format
+#~ msgid "{genre} in {country}"
+#~ msgstr "{genre} in {country}"
+
 #~ msgid ""
 #~ "Reprise keeps your library local. Missing album covers are retrieved "
 #~ "automatically from MusicBrainz and Cover Art Archive. Music files are "

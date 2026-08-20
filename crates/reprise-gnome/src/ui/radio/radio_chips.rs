@@ -204,11 +204,10 @@ mod tests {
         );
     }
 
-    /// `RAD-5`: even when the app has a stored country, location-filtered
-    /// discovery belongs exclusively to "Near you".
+    /// `RAD-5`: the library chip's criteria never carry a country;
+    /// location-filtered discovery belongs exclusively to "Near you".
     #[test]
-    fn rad_5_a_stored_country_does_not_narrow_the_library_chip() {
-        let stored_location = location(Some("DE"));
+    fn rad_5_the_library_chip_criteria_never_carry_a_country() {
         let suggestion = library_suggestion(Some(top_genre("Metal", "metal")))
             .expect("a played genre must produce a chip");
 
@@ -219,10 +218,6 @@ mod tests {
                 tag: Some("metal".into()),
                 country_code: None,
             }
-        );
-        assert_ne!(
-            suggestion.criteria.country_code,
-            stored_location.country_code
         );
     }
 
