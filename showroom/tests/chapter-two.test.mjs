@@ -353,6 +353,10 @@ test('show-21 chapter two figures fill the frame without stretching the measured
   const verdict = cssRule(css, '.pipeline__node--verdict');
   assert.match(verdict, /\bmin-width:\s*169px\s*;/);
 
+  const cluster = cssRule(css, '.gate-cluster');
+  assert.match(cluster, /\bflex:\s*1 1 60px\s*;/);
+  assert.match(cluster, /\bmin-width:\s*60px\s*;/);
+
   const chart = cssRule(css, '.incident-panel__chart');
   assert.match(chart, /\bwidth:\s*min\(100%, 17\.75rem\)\s*;/);
   assert.match(chart, /\bgap:\s*1\.75rem\s*;/);

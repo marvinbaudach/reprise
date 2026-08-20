@@ -70,13 +70,13 @@ interface GateGroupDefinition {
 const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
   {
     name: 'Boundaries',
-    short: 'Boundaries',
+    short: 'Bounds',
     line: 'The core cannot grow a UI framework.',
     checks: ['Architecture', 'Device-sync GStreamer', 'Frontend thinness', 'GNOME idioms'],
   },
   {
     name: 'Distribution',
-    short: 'Distribution',
+    short: 'Install',
     line: 'It installs as a desktop app, not as a demo.',
     checks: [
       'Gettext catalogues',
