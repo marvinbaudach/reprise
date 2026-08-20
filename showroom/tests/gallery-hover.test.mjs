@@ -221,7 +221,7 @@ test('show-3 pointing and keyboard focus declare the very same state', async () 
   }
 });
 
-test('show-6 no pointer state scales, lifts or otherwise moves a plate', async () => {
+test('show-16 no pointer state scales, lifts or otherwise moves a plate', async () => {
   const css = await builtCss();
   const all = rules(css);
 
