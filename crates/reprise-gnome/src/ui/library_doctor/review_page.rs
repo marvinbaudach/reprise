@@ -30,9 +30,9 @@ use super::review_row::compare_rows;
 #[cfg(test)]
 use super::review_row::row_at;
 use super::review_snapshot::{review_ready_count, splice_selection_rows, ReviewSnapshot};
+use super::review_summary::review_footer_summary;
 #[cfg(test)]
 use super::review_summary::review_header_counts;
-use super::review_summary::{review_footer_summary, review_stale_notice};
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -53,8 +53,6 @@ struct ReviewState {
     selection: gtk4::SingleSelection,
     content: gtk4::Stack,
     filter_bar: ReviewFilterBar,
-    stale_notice: gtk4::Box,
-    stale_notice_label: gtk4::Label,
     rescan: gtk4::Button,
     apply: gtk4::Button,
     change_summary: gtk4::Label,
@@ -89,7 +87,6 @@ impl ReviewState {
             session.set_category_filter(None);
         }
         self.filter_bar.set_categories(&categories);
-        let stale_notice = review_stale_notice(&session);
         let ready_count = review_ready_count(&session);
         self.ready_count.set(ready_count);
         let grouped_rows_started = Instant::now();
@@ -109,9 +106,6 @@ impl ReviewState {
             "DOCTOR_REVIEW_REFRESH stage"
         );
         drop(session);
-        self.stale_notice.set_visible(stale_notice.is_some());
-        self.stale_notice_label
-            .set_label(stale_notice.as_deref().unwrap_or_default());
         let old_row_count = self.snapshot.borrow().rows.len();
         *self.snapshot.borrow_mut() = snapshot;
         let splice_started = Instant::now();
@@ -542,19 +536,10 @@ impl LibraryDoctorReviewPage {
                 }
             })
         });
-        let stale_notice_label = gtk4::Label::builder()
-            .xalign(0.0)
-            .hexpand(true)
-            .wrap(true)
-            .build();
         let rescan = gtk4::Button::builder()
             .label(strings::text(strings::DOCTOR_SCAN_AGAIN))
             .css_classes(["flat"])
             .build();
-        let stale_notice = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        stale_notice.add_css_class("doctor-review-stale");
-        stale_notice.append(&stale_notice_label);
-        stale_notice.append(&rescan);
         let empty = adw::StatusPage::builder()
             .icon_name(crate::ui::icons::DONE)
             .title(strings::text(strings::DOCTOR_NO_CHANGES))
@@ -607,8 +592,6 @@ impl LibraryDoctorReviewPage {
             selection,
             content,
             filter_bar,
-            stale_notice,
-            stale_notice_label,
             rescan,
             apply,
             change_summary,
@@ -673,7 +656,6 @@ impl LibraryDoctorReviewPage {
         }
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         page_content.append(&state.filter_bar.root);
-        page_content.append(&state.stale_notice);
         page_content.append(&header.root);
         page_content.append(&state.content);
         page_content.append(&footer);

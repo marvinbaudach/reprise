@@ -4,10 +4,10 @@ use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library::tag_edit::EditableTags;
 use reprise_core::library_doctor::{
-    DoctorCandidate, DoctorField, DoctorGroupMember, DoctorProposal, DoctorReviewRow,
-    DoctorReviewRowId, DoctorReviewRowOrigin, DoctorReviewRowState, DoctorScan, DoctorScanOptions,
-    DoctorTrackRef, DoctorTrackSnapshot, DoctorUnresolvedGroup, DoctorValue, ProblemClass,
-    ProposalSource,
+    DoctorCandidate, DoctorField, DoctorGroupMember, DoctorProposal, DoctorReviewFilter,
+    DoctorReviewRow, DoctorReviewRowId, DoctorReviewRowOrigin, DoctorReviewRowState,
+    DoctorReviewSession, DoctorScan, DoctorScanOptions, DoctorTrackRef, DoctorTrackSnapshot,
+    DoctorUnresolvedGroup, DoctorValue, ProblemClass, ProposalSource,
 };
 
 use super::super::review_header::ReviewHeader;
@@ -174,14 +174,6 @@ pub(in crate::ui::library_doctor) fn ready_and_stale_scan() -> DoctorScan {
     scan
 }
 
-pub(in crate::ui::library_doctor) fn stale_album_scan() -> DoctorScan {
-    let mut scan = ready_and_stale_scan();
-    scan.tracks[0].tags.as_mut().unwrap().album = "Ready album".into();
-    scan.tracks[1].tags.as_mut().unwrap().album = "Stale album".into();
-    scan.tracks[1].tags.as_mut().unwrap().title = "Stale track".into();
-    scan
-}
-
 pub(in crate::ui::library_doctor) fn seed_ready_and_stale_badge_fixture(db: &Db) {
     let conn = crate::test_db::connection(db);
     conn.execute(
@@ -307,7 +299,12 @@ fn doc_9b_a_stale_row_names_its_reason_where_the_click_happens() {
     }
     let header = ReviewHeader::new();
     let widgets = build_row(&header.groups);
-    let stale = row_model(DoctorReviewRowState::Stale);
+    let mut session = DoctorReviewSession::from_scan(scan(), DoctorReviewFilter::NeedsReview);
+    let row_id = session.rows()[0].id;
+    session
+        .mark_state(row_id, DoctorReviewRowState::Stale)
+        .unwrap();
+    let stale = row_model(session.rows()[0].state);
 
     bind(&widgets, &stale, ReviewLayout::Wide);
 

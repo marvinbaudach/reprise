@@ -2036,18 +2036,6 @@ msgstr ""
 "En {albums} · todo está preseleccionado; desmarca lo que no te parezca "
 "correcto"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:384
-#, rust-format
-msgid "{count} fix is out of date — this file changed after the scan."
-msgid_plural ""
-"{count} fixes are out of date — these files changed after the scan."
-msgstr[0] ""
-"{count} corrección está desactualizada — este archivo cambió después del "
-"análisis."
-msgstr[1] ""
-"{count} correcciones están desactualizadas — estos archivos cambiaron "
-"después del análisis."
-
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:406
 #, rust-format
 msgid "{count} album"
@@ -2066,13 +2054,6 @@ msgid "{count} change · none selected"
 msgid_plural "{count} changes · none selected"
 msgstr[0] "{count} cambio · ninguno seleccionado"
 msgstr[1] "{count} cambios · ninguno seleccionado"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:437
-#, rust-format
-msgid "{count} change · out of date"
-msgid_plural "{count} changes · out of date"
-msgstr[0] "{count} cambio · desactualizado"
-msgstr[1] "{count} cambios · desactualizados"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:447
 #, rust-format

@@ -20,13 +20,9 @@ pub fn count_doctor_findings(db: &Db) -> Result<DoctorFindingCounts, rusqlite::E
         return Ok(DoctorFindingCounts::default());
     };
 
-    // Both sets come from the store, which is also what `last_complete_scan`
-    // reads — so this query and the page use the same real staleness. They still
-    // count different states deliberately: `ready` badges fixes the page can
-    // apply now, while `stale` records findings the page must explain in words.
-    // Before real staleness reached this predicate, one scan reported 85 here
-    // and 200 on its own page; before this split, the badge instead included
-    // every stale row that the page could not apply.
+    // Both the badge and `last_complete_scan` use the store's fingerprint
+    // decision. Fingerprint-stale tracks are absent from both review tiers, so
+    // this count exactly matches the rows a newly built session can expose.
     let written = crate::library_doctor::written_pairs(db.conn(), scan_id)?;
     let stale = crate::library_doctor::stale_flags(db.conn(), scan_id)?;
 
@@ -49,6 +45,9 @@ pub fn count_doctor_findings(db: &Db) -> Result<DoctorFindingCounts, rusqlite::E
     for proposal in proposals {
         let (track_id, field, source, preselected) = proposal?;
         let is_stale = stale.get(&track_id).copied().unwrap_or(true);
+        if !crate::library_doctor::fingerprint_allows_review(is_stale) {
+            continue;
+        }
         let kind = crate::library_doctor::finding_kind(
             field,
             source,
@@ -57,11 +56,7 @@ pub fn count_doctor_findings(db: &Db) -> Result<DoctorFindingCounts, rusqlite::E
             is_stale,
         );
         if kind == crate::library_doctor::DoctorFindingKind::NeedsReview {
-            if is_stale {
-                counts.stale = counts.stale.saturating_add(1);
-            } else {
-                counts.ready = counts.ready.saturating_add(1);
-            }
+            counts.ready = counts.ready.saturating_add(1);
         }
     }
     Ok(counts)
@@ -244,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn doc_8a_pending_review_count_splits_ready_and_stale_findings() {
+    fn doc_8a_pending_review_count_excludes_fingerprint_stale_findings() {
         let db = crate::db::Db::open_in_memory().unwrap();
         let scan_id = seed_scan(&db);
         seed_proposal(&db, scan_id, 0, 1, "musicbrainz");
@@ -256,7 +251,7 @@ mod tests {
         let counts = super::count_doctor_findings(&db).unwrap();
 
         assert_eq!(counts.ready, 1);
-        assert_eq!(counts.stale, 1);
+        assert_eq!(counts.stale, 0);
         assert_eq!(super::count_pending_doctor_findings(&db).unwrap(), 1);
     }
 }

@@ -1972,14 +1972,6 @@ msgid ""
 "Across {albums} · everything is preselected, uncheck what you disagree with"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:384
-#, rust-format
-msgid "{count} fix is out of date — this file changed after the scan."
-msgid_plural ""
-"{count} fixes are out of date — these files changed after the scan."
-msgstr[0] ""
-msgstr[1] ""
-
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:406
 #, rust-format
 msgid "{count} album"
@@ -1996,13 +1988,6 @@ msgstr ""
 #, rust-format
 msgid "{count} change · none selected"
 msgid_plural "{count} changes · none selected"
-msgstr[0] ""
-msgstr[1] ""
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:437
-#, rust-format
-msgid "{count} change · out of date"
-msgid_plural "{count} changes · out of date"
 msgstr[0] ""
 msgstr[1] ""
 

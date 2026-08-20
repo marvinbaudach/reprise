@@ -137,3 +137,31 @@ fn badge_and_review_share_one_fingerprint_comparison() {
         "the badge and session must not implement fingerprint comparison separately"
     );
 }
+
+#[test]
+fn fingerprint_stale_tracks_are_absent_from_session_and_badge() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path());
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let scan = scan_track(&db, &path);
+    let track_id = scan.track_ids[0];
+    db.conn()
+        .execute(
+            "UPDATE tracks SET file_mtime = file_mtime + 1 WHERE id=?1",
+            [track_id],
+        )
+        .unwrap();
+
+    let stored = LibraryDoctor::new(&db)
+        .last_complete_scan()
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.stale_track_ids(), vec![track_id]);
+
+    let review = DoctorReviewSession::from_scan(stored, DoctorReviewFilter::NeedsReview);
+    let badge = crate::queries::count_doctor_findings(&db).unwrap();
+
+    assert!(review.rows().is_empty());
+    assert_eq!(badge.ready, 0);
+    assert_eq!(badge.stale, 0);
+}

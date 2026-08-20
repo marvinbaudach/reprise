@@ -93,17 +93,20 @@ pub(super) fn album_header_state(
             reason: None,
         };
     }
-    let blocked_by = blocked_by.unwrap_or(DoctorReviewRowState::Stale);
-    let pill = match blocked_by {
-        DoctorReviewRowState::Conflict => strings::doctor_change_count_unresolved(changes),
+    let blocked_by = blocked_by.unwrap_or(DoctorReviewRowState::Ready);
+    let (pill, reason) = match blocked_by {
+        DoctorReviewRowState::Conflict => (
+            strings::doctor_change_count_unresolved(changes),
+            row_state_reason(blocked_by).map(strings::text),
+        ),
         DoctorReviewRowState::Ready | DoctorReviewRowState::Stale => {
-            strings::doctor_change_count_out_of_date(changes)
+            (strings::doctor_change_count_none_selected(changes), None)
         }
     };
     AlbumHeaderState {
         check,
         pill,
-        reason: row_state_reason(blocked_by).map(strings::text),
+        reason,
     }
 }
 
@@ -538,11 +541,8 @@ mod tests {
         use reprise_core::library_doctor::DoctorReviewRowState;
 
         let stale = super::album_header_state(0, 0, 3, Some(DoctorReviewRowState::Stale));
-        assert_eq!(stale.pill, "3 changes · out of date");
-        assert_eq!(
-            stale.reason.as_deref(),
-            Some("This file changed after the scan — scan again to include this fix.")
-        );
+        assert_eq!(stale.pill, "3 changes · none selected");
+        assert_eq!(stale.reason, None);
         assert!(!stale.check.sensitive);
 
         let conflict = super::album_header_state(0, 0, 2, Some(DoctorReviewRowState::Conflict));
