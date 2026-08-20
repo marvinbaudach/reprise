@@ -1869,3 +1869,4 @@ Review pass 2 R1: complete (this commit, base 039817342d, removed two source-for
 # Releases multi-selection, row menu, and undoable hiding
 
 Task 1: complete (this commit, base 31d56c4783, moved the 16 widget-free NAV-17 anchor and input tests into one generic table-selection module, rewired the track list to use it, and passed 16 filtered table-selection tests, 16 non-display NAV-17 tests with four established display tests remaining ignored, GNOME check, formatting, and diff review)
+Task 2: complete (this commit, base 574d0f0926, added the one-transaction release-visibility batch writer and transaction-free row primitive, preserved deleted-release-memory restore semantics, and proved exact-set hide and undo, empty input, and rollback after a forced second-write failure against real in-memory SQLite; 22 artist-news query tests, 24 deleted-release tests, formatting, diff review, and the empty Core-purity match passed)

@@ -309,16 +309,15 @@ fn is_protected_by_fetch_window(first_release_date: &str, window_start: NaiveDat
     }
 }
 
-/// Un-hides exactly one release. Reuses `set_release_hidden`'s `hidden = 0`
-/// path (which also nulls `hidden_at`) so there is a single place that
-/// defines what "un-hidden" means. The Releases full view calls this for
-/// its per-row "Show again" action.
+/// Un-hides exactly one release through the shared transaction-free row
+/// operation, which also clears `hidden_at`. The Releases full view calls this
+/// for its per-row "Show again" action.
 pub fn restore_release(
     db: &crate::db::Db,
     release_group_mbid: &str,
 ) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    crate::artist_news_query::set_release_hidden_in(conn, release_group_mbid, false)
+    crate::artist_news_query::apply_release_hidden_in(conn, release_group_mbid, false)
 }
 
 #[cfg(test)]
