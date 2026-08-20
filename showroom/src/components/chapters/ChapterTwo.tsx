@@ -1,6 +1,12 @@
-import { GATES } from 'virtual:merge-gates';
+import { INCIDENT } from 'virtual:incident';
+import { GATE_GROUPS, GATES } from 'virtual:merge-gates';
 import { useState } from 'react';
-import { INCIDENT_RECORD, permalink, STYLE_SOURCE } from '../../data/measurements';
+import {
+  INCIDENT_RECORD,
+  MERGE_GATE_SOURCE,
+  permalink,
+  STYLE_SOURCE,
+} from '../../data/measurements';
 import { readout, toggle } from '../../lib/mergeGates';
 import './ChapterTwo.css';
 import './chapters.css';
@@ -13,6 +19,7 @@ import './chapters.css';
  */
 const QUOTE_LINK = `${permalink(STYLE_SOURCE)}#L41-L45`;
 const RULE_LINK = `${permalink(INCIDENT_RECORD)}#c-gate-the-444-claim-on-mutations-not-on-a-green-test`;
+const GATE_LINK = permalink(MERGE_GATE_SOURCE);
 
 /**
  * The measured header heights, drawn at 3×. Every number here is reported in §1
@@ -100,7 +107,7 @@ function HeightPanel({
 }
 
 /**
- * The gate strip. Twenty-seven marks, no names on the surface — the wall of
+ * The gate strip. One mark per check, no names on the surface — the wall of
  * labels it replaces meant nothing to a reader outside this repository. A name
  * appears on hover, and a click fails that check, so "fail closed" is something
  * a visitor triggers instead of something they are told.
@@ -124,9 +131,7 @@ function GateStrip() {
       <div className="gate-strip__row">
         <p className="gate-strip__end">one change</p>
 
-        {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: the
-            group only clears a hover readout its own buttons set. */}
-        <div className="gate-strip__ticks" onMouseLeave={() => setPeek(-1)}>
+        <div className="gate-strip__ticks">
           {GATES.map((name, index) => (
             <button
               key={name}
@@ -138,6 +143,7 @@ function GateStrip() {
               data-broken={failed.has(name) ? 'true' : 'false'}
               onClick={() => setFailed((current) => toggle(current, name))}
               onMouseEnter={() => setPeek(index)}
+              onMouseLeave={() => setPeek(-1)}
               onFocus={() => setPeek(index)}
               onBlur={() => setPeek(-1)}
             >
@@ -153,6 +159,29 @@ function GateStrip() {
       <p className="gate-strip__readout" role="status" aria-live="polite">
         {message}
       </p>
+    </div>
+  );
+}
+
+function GateGroups() {
+  return (
+    <div className="gate-groups">
+      {GATE_GROUPS.map((group) => (
+        <article
+          key={group.name}
+          className="gate-group"
+          data-gate-count={group.gates.length}
+          data-gates={group.gates.join('|')}
+        >
+          <h4 className="gate-group__title">
+            <span className="data gate-group__count">
+              {String(group.gates.length).padStart(2, '0')}
+            </span>
+            {group.name}
+          </h4>
+          <p>{group.line}</p>
+        </article>
+      ))}
     </div>
   );
 }
@@ -178,7 +207,7 @@ export function ChapterTwo() {
         </p>
 
         <div className="incident" data-reveal>
-          <p className="incident__eyebrow">One incident · 2026-08-14</p>
+          <p className="incident__eyebrow">One incident · {INCIDENT.date}</p>
           <h3 className="incident__title">A test was measuring an app that never ships.</h3>
         </div>
 
@@ -203,8 +232,8 @@ export function ChapterTwo() {
             />
           </div>
           <figcaption id="ch-02-figure-caption" className="incident-figure__caption">
-            Section header heights, drawn at {SCALE}×. The {FLOOR_PX} px floor exists only as CSS,
-            so the bare label collapses to 20 px in a fixture that never installs it.
+            Section header heights, drawn at {SCALE}×. The unstyled fixture measured 20 px for Now
+            Playing and 34 px for Play Next. The app stylesheet gives both the {FLOOR_PX} px floor.
           </figcaption>
         </figure>
 
@@ -229,14 +258,23 @@ export function ChapterTwo() {
           <h3 className="incident__title">There is no partial merge.</h3>
         </div>
 
-        <div data-reveal>
+        <figure className="gate-figure" data-reveal aria-labelledby="ch-02-gate-caption">
           <GateStrip />
+          <figcaption id="ch-02-gate-caption" className="gate-figure__caption">
+            {GATES.length} checks from <a href={GATE_LINK}>check-merge-readiness.sh</a>. Hover one
+            to see what it is; click one to fail it. A red check does not stop the report. It stops
+            the merge.
+          </figcaption>
+        </figure>
+
+        <div className="incident" data-reveal>
+          <p className="incident__eyebrow incident__eyebrow--accent">What the checks refuse</p>
+          <h3 className="incident__title">Six ways a change can stop short of the branch.</h3>
         </div>
 
-        <p className="chapter__intro" data-reveal>
-          {GATES.length} checks, no names needed. Hover one to see what it is, click one to fail it.
-          Nothing about the change degrades gracefully — it stops.
-        </p>
+        <div data-reveal>
+          <GateGroups />
+        </div>
 
         <p className="chapter__intro chapter__intro--closing" data-reveal>
           A rule ID leads to a test, the test to a commit, the commit to the decision. None of that

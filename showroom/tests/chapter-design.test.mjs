@@ -76,7 +76,7 @@ test('chapter two is one incident, with no process diagram left in it', async ()
 
   // The figure states its equivalent in text; the bars themselves are hidden.
   assert.match(chapter, /<figcaption[^>]*id="ch-02-figure-caption"/);
-  assert.match(chapter, /Section header heights, drawn at 3×/);
+  assert.match(chapter.replace(/<!-- -->/g, ''), /Section header heights, drawn at 3×/);
   const chart = chapter.match(/class="incident-panel__chart"[^>]*>/g) ?? [];
   assert.equal(chart.length, 2, 'the comparison needs both panels');
   for (const panel of chart) {

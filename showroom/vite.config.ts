@@ -47,6 +47,71 @@ interface Ledger {
   readonly price: string;
 }
 
+interface GateGroup {
+  readonly name: string;
+  readonly line: string;
+  readonly gates: readonly string[];
+}
+
+interface GateGroupDefinition {
+  readonly name: string;
+  readonly line: string;
+  readonly checks: readonly string[];
+}
+
+/**
+ * Coverage categories for the merge gate. The check names are the assignment;
+ * their order and the displayed counts still come from the parsed gate calls.
+ * Keeping this beside `readGates()` makes a new or renamed check fail the build
+ * instead of silently falling out of the public figure.
+ */
+const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
+  {
+    name: 'Boundaries',
+    line: 'The core cannot grow a UI framework.',
+    checks: ['Architecture', 'Device-sync GStreamer', 'Frontend thinness', 'GNOME idioms'],
+  },
+  {
+    name: 'Distribution',
+    line: 'It installs as a desktop app, not as a demo.',
+    checks: [
+      'Gettext catalogues',
+      'Runtime service install',
+      'AppStream',
+      'Flatpak manifest',
+      'Dependency audit',
+    ],
+  },
+  {
+    name: 'Reachable',
+    line: 'Every action works without a mouse.',
+    checks: ['Accessibility semantics', 'Input parity', 'Motion tokens'],
+  },
+  {
+    name: 'Traceable',
+    line: 'A rule without a test fails the build.',
+    checks: ['UX traceability', 'AI hygiene', 'Rule-owned display tests'],
+  },
+  {
+    name: 'Green means green',
+    line: 'Tests, lints, formatting, documented API.',
+    checks: [
+      'Project quality',
+      'Rust formatting',
+      'Rust lint',
+      'Rust documentation',
+      'Workspace tests',
+      'Linux platform tests',
+      'Runtime service bus tests',
+    ],
+  },
+  {
+    name: 'Toolchain hygiene',
+    line: 'The branch, the shell scripts, the worktrees.',
+    checks: ['Branch diff', 'Shell', 'Worktree GC', 'Worktree GC schedule', 'Script self-tests'],
+  },
+];
+
 /**
  * The gate names, in script order. One `gate "<name>"` call is one check; the
  * preparation steps above them are preconditions and carry no `gate` call, which
@@ -67,6 +132,34 @@ function readGates(): readonly string[] {
     );
   }
   return names;
+}
+
+function groupGates(gates: readonly string[]): readonly GateGroup[] {
+  const assigned = new Map<string, string>();
+
+  for (const group of GATE_GROUP_ASSIGNMENTS) {
+    for (const check of group.checks) {
+      if (!gates.includes(check)) {
+        throw new Error(`gate group "${group.name}" assigns missing check "${check}"`);
+      }
+      const previous = assigned.get(check);
+      if (previous !== undefined) {
+        throw new Error(`gate "${check}" is assigned to both "${previous}" and "${group.name}"`);
+      }
+      assigned.set(check, group.name);
+    }
+  }
+
+  const unassigned = gates.filter((gate) => !assigned.has(gate));
+  if (unassigned.length > 0) {
+    throw new Error(`merge checks have no coverage group: ${unassigned.join(', ')}`);
+  }
+
+  return GATE_GROUP_ASSIGNMENTS.map((group) => ({
+    name: group.name,
+    line: group.line,
+    gates: gates.filter((gate) => group.checks.includes(gate)),
+  }));
 }
 
 const DAY_MS = 86_400_000;
@@ -211,19 +304,14 @@ function readLedger(): Ledger {
 }
 
 /**
- * The 2026-08-14 incident, out of the record that decided it.
+ * The incident date, out of the record that decided it.
  *
- * CH.02 draws three header heights and names a date. None of them may be typed
- * beside the words: they describe something that happened once, so the page
- * quotes the record rather than counting the tree — and quoting means reading
- * the file, not copying out of it. Every expression here throws when it stops
- * matching, because a figure that silently loses a number still looks finished.
+ * The three heights are deliberately typed in the figure because the record is
+ * historical evidence, not a changing data source. The date alone is read here
+ * because it also happens to be a timeline boundary, and the timeline contract
+ * rightly rejects that date when a component copies it.
  */
-function readIncident(): {
-  readonly date: string;
-  readonly measured: readonly number[];
-  readonly floor: number;
-} {
+function readIncident(): { readonly date: string } {
   const text = readFileSync(INCIDENT_DOC, 'utf8');
 
   const date = text.match(/^# .*\((\d{4}-\d{2}-\d{2})\)\s*$/m)?.[1];
@@ -231,27 +319,7 @@ function readIncident(): {
     throw new Error(`found no incident date in the heading of ${INCIDENT_DOC}`);
   }
 
-  const samples = text.match(/header_samples=\[([0-9., ]+)\]/)?.[1];
-  if (samples === undefined) {
-    throw new Error(`found no header_samples in ${INCIDENT_DOC} — §1 or its wording moved`);
-  }
-  const measured = samples.split(',').map((entry) => Number(entry.trim()));
-  if (measured.length !== 2 || measured.some((value) => !Number.isFinite(value))) {
-    throw new Error(`header_samples in ${INCIDENT_DOC} is not two numbers: ${samples}`);
-  }
-
-  const floor = Number(text.match(/SECTION_HEADER_MIN_HEIGHT: i32 = (\d+)/)?.[1]);
-  if (!Number.isInteger(floor) || floor <= 0) {
-    throw new Error(`found no SECTION_HEADER_MIN_HEIGHT in ${INCIDENT_DOC}`);
-  }
-  if (measured.some((value) => value > floor)) {
-    throw new Error(
-      `${INCIDENT_DOC} reports a measured header taller than the ${floor}px floor — the figure ` +
-        'would draw a bar through its own rule',
-    );
-  }
-
-  return { date, measured, floor };
+  return { date };
 }
 
 /** `pub const CORAL: (u8, u8, u8) = (255, 111, 94);` — the axis, from its function. */
@@ -289,12 +357,22 @@ function readSpectralAxis(): { readonly coral: string; readonly teal: string } {
  */
 function derivedFacts(): Plugin {
   const resolved = new Map(
-    [MERGE_GATES, CODE_CENSUS, BUILD_TIMELINE, MEASUREMENTS, SPECTRAL_AXIS, INCIDENT].map(
-      (id) => [id, `\0${id}`],
-    ),
+    [MERGE_GATES, CODE_CENSUS, BUILD_TIMELINE, MEASUREMENTS, SPECTRAL_AXIS, INCIDENT].map((id) => [
+      id,
+      `\0${id}`,
+    ]),
   );
   const modules = new Map<string, () => string>([
-    [MERGE_GATES, () => `export const GATES = ${JSON.stringify(readGates())};\n`],
+    [
+      MERGE_GATES,
+      () => {
+        const gates = readGates();
+        return (
+          `export const GATES = ${JSON.stringify(gates)};\n` +
+          `export const GATE_GROUPS = ${JSON.stringify(groupGates(gates))};\n`
+        );
+      },
+    ],
     [CODE_CENSUS, () => `export const CENSUS = ${JSON.stringify(census(REPO_ROOT))};\n`],
     [BUILD_TIMELINE, () => `export const TIMELINE = ${JSON.stringify(readTimeline())};\n`],
     [MEASUREMENTS, () => `export const INDEX_REBUILD = ${JSON.stringify(readLedger())};\n`],

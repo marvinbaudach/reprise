@@ -66,7 +66,11 @@ async function citedPaths() {
 
   for (const file of files) {
     const source = await readFile(file, 'utf8');
-    for (const [, argument] of source.matchAll(/(?:permalink|treelink)\(\s*([^)]*?)\s*\)/g)) {
+    for (const match of source.matchAll(/(?:permalink|treelink)\(\s*([^)]*?)\s*\)/g)) {
+      const argument = match[1];
+      const before = source.slice(Math.max(0, match.index - 16), match.index);
+      if (before.endsWith('function ')) continue;
+      assert.ok(argument !== undefined);
       if (argument === '') continue;
       const literal = argument.match(/^'([^']*)'$/)?.[1];
       if (literal !== undefined) {

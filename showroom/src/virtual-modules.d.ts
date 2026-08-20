@@ -7,6 +7,16 @@
 declare module 'virtual:merge-gates' {
   /** The merge gate's checks, in the order `scripts/check-merge-readiness.sh` runs them. */
   export const GATES: readonly string[];
+
+  export interface GateGroup {
+    readonly name: string;
+    readonly line: string;
+    /** Checks assigned to this group, retained in script order. */
+    readonly gates: readonly string[];
+  }
+
+  /** Six exhaustive coverage groups, validated against `GATES` at build time. */
+  export const GATE_GROUPS: readonly GateGroup[];
 }
 
 declare module 'virtual:code-census' {
@@ -76,7 +86,5 @@ declare module 'virtual:spectral-axis' {
 declare module 'virtual:incident' {
   export const INCIDENT: {
     readonly date: string;
-    readonly measured: readonly number[];
-    readonly floor: number;
   };
 }

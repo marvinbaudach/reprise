@@ -89,21 +89,50 @@ test('show-7 the incident is quoted from the record, never recounted from the tr
   // comment's own words, character for character.
   const QUOTE =
     'A geometry assertion against unstyled widgets passes while the shipped button is a different size.';
-  assert.ok(style.includes(QUOTE.replace(/ /g, ' ')) || style.replace(/\s+/g, ' ').includes(QUOTE));
   assert.ok(
-    chapter.replace(/&#x27;|&quot;|[“”]/g, '').replace(/\s+/g, ' ').includes(QUOTE),
+    style
+      .replace(/^\s*\/\/\/ ?/gm, '')
+      .replace(/\s+/g, ' ')
+      .includes(QUOTE),
+  );
+  assert.ok(
+    chapter
+      .replace(/&#x27;|&quot;|[“”]/g, '')
+      .replace(/<!-- -->/g, '')
+      .replace(/\s+/g, ' ')
+      .includes(QUOTE),
     'CH.02 must quote the doc comment verbatim',
   );
 
   // Three heights, and all three are reported in §1 of the record. A figure
   // that grew a fourth number would be stating one, not quoting it.
-  const drawn = [...chapter.matchAll(/(\d+) px(?!\s*floor)/g)].map((match) => Number(match[1]));
+  const normalizedChapter = chapter.replace(/<!-- -->/g, '');
+  const drawn = [
+    ...normalizedChapter.matchAll(/<span class="data incident-panel__value">(\d+) px<\/span>/g),
+  ].map((match) => Number(match[1]));
+  assert.deepEqual(drawn, [20, 34, 36, 36], 'the two panels must carry exactly four bars');
   const heights = new Set(drawn);
-  assert.deepEqual([...heights].sort((a, b) => a - b), [20, 34, 36]);
+  assert.deepEqual(
+    [...heights].sort((a, b) => a - b),
+    [20, 34, 36],
+  );
   assert.ok(record.includes('header_samples=[20.0, 34.0]'), 'the record must report 20 and 34');
   assert.ok(
     record.includes('SECTION_HEADER_MIN_HEIGHT: i32 = 36'),
     'the record must report the 36px floor',
+  );
+
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.tsx'),
+    'utf8',
+  );
+  assert.match(source, /const FLOOR_PX = 36/);
+  assert.match(source, /\{ px: 20,/);
+  assert.match(source, /\{ px: 34,/);
+  assert.doesNotMatch(
+    source,
+    /INCIDENT\.(?:measured|floor)/,
+    'only the conflicting date may be derived from the incident record',
   );
 
   // Both links have to reach a real anchor, not the file's top.
@@ -140,6 +169,10 @@ test('show-8 a failed check blocks the readout and clearing it releases again', 
 
 test('show-9 reduced motion leaves the figure and the strip without travel', async () => {
   const css = await builtCss();
+  const sourceCss = await readFile(
+    join(showroomRoot, 'src', 'components', 'chapters', 'ChapterTwo.css'),
+    'utf8',
+  );
 
   // A measurement may not arrive by moving: a bar that grows into place is a
   // bar whose value the reader watched change. The figure keeps the opacity
@@ -151,6 +184,12 @@ test('show-9 reduced motion leaves the figure and the strip without travel', asy
   );
   assert.ok(guarded, 'a reduced-motion query must govern the gate strip');
   assert.match(guarded[0], /transition:none/);
+
+  const touch = sourceCss.match(
+    /@media \(hover: none\), \(max-width: 46rem\) \{[\s\S]*?\.gate-strip__tick \{[\s\S]*?\n {2}\}\n/,
+  )?.[0];
+  assert.ok(touch, 'a touch-width media query must widen the gate buttons');
+  assert.match(touch, /\.gate-strip__tick \{\s*width: 44px;/);
 });
 
 test('show-10 the gate count is nowhere a literal, not even in the meta description', async () => {
@@ -177,5 +216,33 @@ test('show-10 the gate count is nowhere a literal, not even in the meta descript
   assert.match(
     built,
     new RegExp(`<meta\\s+name="description"\\s+content="[^"]*decided by ${count} gates`),
+  );
+});
+
+test('show-18 the six gate groups partition every parsed check exactly once', async () => {
+  const chapter = await chapterTwo();
+  const names = await gateNames();
+  const cells = [...chapter.matchAll(/<article class="gate-group"[\s\S]*?<\/article>/g)].map(
+    (match) => match[0],
+  );
+
+  assert.equal(cells.length, 6, 'the coverage figure must have exactly six groups');
+
+  const assigned = [];
+  let counted = 0;
+  for (const cell of cells) {
+    const count = Number(cell.match(/data-gate-count="(\d+)"/)?.[1]);
+    const gates = cell.match(/data-gates="([^"]*)"/)?.[1]?.split('|') ?? [];
+    assert.ok(Number.isInteger(count), 'every group must expose its derived count');
+    assert.equal(count, gates.length, 'a group count must come from its assigned checks');
+    counted += count;
+    assigned.push(...gates);
+  }
+
+  assert.equal(counted, names.length, 'the six counts must sum to GATES.length');
+  assert.deepEqual(
+    [...assigned].sort(),
+    [...names].sort(),
+    'every parsed check must be assigned once, with no omissions or duplicates',
   );
 });

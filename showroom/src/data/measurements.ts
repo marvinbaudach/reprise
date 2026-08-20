@@ -183,3 +183,6 @@ export const INCIDENT_RECORD = 'docs/plans/queue-anchor-grill-followups.md';
 
 /** The doc comment CH.02 quotes, and the trap it named before it was sprung. */
 export const STYLE_SOURCE = 'crates/reprise-gnome/src/ui/style/mod.rs';
+
+/** The script whose parsed gate calls supply CH.02's strip and coverage groups. */
+export const MERGE_GATE_SOURCE = 'scripts/check-merge-readiness.sh';

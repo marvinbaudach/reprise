@@ -68,7 +68,6 @@
   flex-direction: column;
   gap: var(--gap-line);
   padding: 1.4rem;
-  border: 1px solid var(--surface-line-soft);
   border-radius: var(--radius-plate);
   background: var(--surface-raised);
 }
@@ -91,8 +90,6 @@
   --floor-line: oklch(62% 0.09 195);
   --floor-ink: var(--accent);
   --value-ink: var(--accent);
-
-  border-color: oklch(34% 0.04 195);
 }
 
 .incident-panel__head {
@@ -219,8 +216,12 @@
 
 /* -------------------------------------------------------------- gate strip */
 
-.gate-strip {
+.gate-figure {
   margin: var(--gap-line) 0 0;
+  max-width: 52rem;
+}
+
+.gate-strip {
   display: flex;
   flex-direction: column;
   gap: var(--gap-line);
@@ -335,6 +336,71 @@
 
 .gate-strip[data-blocked="true"] .gate-strip__readout {
   color: var(--second);
+}
+
+.gate-figure__caption {
+  margin-top: var(--gap-line);
+  max-width: var(--measure);
+  color: var(--text-muted);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------ gate groups */
+
+.gate-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: var(--gap-line);
+  max-width: 48rem;
+  background: var(--surface-line-soft);
+}
+
+.gate-group {
+  min-width: 0;
+  padding: 1.25rem;
+  background: oklch(13.5% 0.02 205);
+}
+
+.gate-group__title {
+  display: flex;
+  gap: var(--gap-tight);
+  align-items: baseline;
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 0.92rem;
+  font-weight: 560;
+}
+
+.gate-group__count {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}
+
+.gate-group > p {
+  margin: var(--gap-hair) 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+@media (hover: none), (max-width: 46rem) {
+  .gate-strip__ticks {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+
+  .gate-strip__tick {
+    width: 44px;
+  }
+
+  .gate-groups {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
