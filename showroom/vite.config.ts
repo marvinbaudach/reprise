@@ -49,12 +49,14 @@ interface Ledger {
 
 interface GateGroup {
   readonly name: string;
+  readonly short: string;
   readonly line: string;
   readonly gates: readonly string[];
 }
 
 interface GateGroupDefinition {
   readonly name: string;
+  readonly short: string;
   readonly line: string;
   readonly checks: readonly string[];
 }
@@ -68,11 +70,13 @@ interface GateGroupDefinition {
 const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
   {
     name: 'Boundaries',
+    short: 'Boundaries',
     line: 'The core cannot grow a UI framework.',
     checks: ['Architecture', 'Device-sync GStreamer', 'Frontend thinness', 'GNOME idioms'],
   },
   {
     name: 'Distribution',
+    short: 'Distribution',
     line: 'It installs as a desktop app, not as a demo.',
     checks: [
       'Gettext catalogues',
@@ -84,16 +88,19 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
   },
   {
     name: 'Reachable',
+    short: 'Reachable',
     line: 'Every action works without a mouse.',
     checks: ['Accessibility semantics', 'Input parity', 'Motion tokens'],
   },
   {
     name: 'Traceable',
+    short: 'Traceable',
     line: 'A rule without a test fails the build.',
     checks: ['UX traceability', 'AI hygiene', 'Rule-owned display tests'],
   },
   {
     name: 'Green means green',
+    short: 'Green',
     line: 'Tests, lints, formatting, documented API.',
     checks: [
       'Project quality',
@@ -107,6 +114,7 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
   },
   {
     name: 'Toolchain hygiene',
+    short: 'Toolchain',
     line: 'The branch, the shell scripts, the worktrees.',
     checks: ['Branch diff', 'Shell', 'Worktree GC', 'Worktree GC schedule', 'Script self-tests'],
   },
@@ -179,6 +187,7 @@ export function groupGates(
 
   return definitions.map((group) => ({
     name: group.name,
+    short: group.short,
     line: group.line,
     gates: gates.filter((gate) => group.checks.includes(gate)),
   }));

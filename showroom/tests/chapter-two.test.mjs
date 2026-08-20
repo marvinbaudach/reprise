@@ -66,7 +66,7 @@ async function displaySources() {
   return files;
 }
 
-test('show-6 the gate strip carries one mark per gate call, named in script order', async () => {
+test('show-6 the gate strip clusters every gate once while preserving group order', async () => {
   const chapter = await chapterTwo();
   const names = await gateNames();
 
@@ -76,7 +76,25 @@ test('show-6 the gate strip carries one mark per gate call, named in script orde
     names.length,
     'every gate call in the script must reach the strip exactly once',
   );
-  assert.deepEqual(marks, names, 'the marks must follow the script, not an authored order');
+  assert.deepEqual(
+    [...marks].sort(),
+    [...names].sort(),
+    'the marks must be a permutation of the parsed gates, with no omission or duplicate',
+  );
+
+  const clusters = [...chapter.matchAll(/<div class="gate-cluster"[\s\S]*?<\/div>/g)].map(
+    (match) => match[0],
+  );
+  assert.equal(clusters.length, 6, 'the pipeline must expose one mark cluster per gate group');
+  for (const cluster of clusters) {
+    const clustered = [...cluster.matchAll(/data-gate="([^"]*)"/g)].map((match) => match[1]);
+    const positions = clustered.map((name) => names.indexOf(name));
+    assert.deepEqual(
+      positions,
+      [...positions].sort((left, right) => left - right),
+      'the marks inside a group must retain script order',
+    );
+  }
 
   // The wall of visible labels is gone — a name is what a mark announces, not
   // what it prints. Reading them off the surface meant nothing to anyone
@@ -252,7 +270,7 @@ test('show-9 reduced motion leaves the figure and the strip without travel', asy
     /@media \(hover: none\), \(max-width: 46rem\) \{[\s\S]*?\.gate-strip__tick \{[\s\S]*?\n {2}\}\n/,
   )?.[0];
   assert.ok(touch, 'a touch-width media query must widen the gate buttons');
-  assert.match(touch, /\.gate-strip__tick \{\s*width: 44px;/);
+  assert.match(touch, /\.gate-strip__tick \{\s*min-width: 44px;/);
 });
 
 test('show-10 the gate count is nowhere a literal, not even in the meta description', async () => {
@@ -324,9 +342,13 @@ test('show-21 chapter two figures fill the frame without stretching the measured
     );
   }
 
-  const rail = cssRule(css, '.gate-strip__rail');
-  assert.match(rail, /\bflex:\s*1 1 26px\s*;/, 'the rail must consume the desktop row slack');
-  assert.match(rail, /\bmin-width:\s*26px\s*;/, 'the rail must retain its authored minimum');
+  assert.doesNotMatch(css, /\.gate-strip__rail\s*\{/, 'the empty gate rail must be gone');
+  const flexibleNodes = [...css.matchAll(/(?:^|\n)(\.pipeline__node[^\n{]*)\s*\{([^}]*)\}/gm)]
+    .filter(([, , body]) => /\bflex:\s*1 1/.test(body))
+    .map(([, selector, body]) => ({ selector: selector.trim(), body }));
+  assert.equal(flexibleNodes.length, 1, 'only one pipeline node may consume row slack');
+  assert.equal(flexibleNodes[0]?.selector, '.pipeline__node--gates');
+  assert.match(flexibleNodes[0]?.body ?? '', /\bflex:\s*1 1 200px\s*;/);
 
   const chart = cssRule(css, '.incident-panel__chart');
   assert.match(chart, /\bwidth:\s*min\(100%, 17\.75rem\)\s*;/);

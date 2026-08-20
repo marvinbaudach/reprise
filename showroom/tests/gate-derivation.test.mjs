@@ -21,8 +21,13 @@ gate "Double quote" -- true
 });
 
 test('show-20 gate grouping distinguishes local duplicates from cross-group conflicts', () => {
+  assert.deepEqual(
+    groupGates(['A'], [{ name: 'First', short: 'One', line: 'one', checks: ['A'] }]),
+    [{ name: 'First', short: 'One', line: 'one', gates: ['A'] }],
+    'the short pipeline label must survive derivation',
+  );
   assert.throws(
-    () => groupGates(['A'], [{ name: 'First', line: 'one', checks: ['A', 'A'] }]),
+    () => groupGates(['A'], [{ name: 'First', short: 'One', line: 'one', checks: ['A', 'A'] }]),
     /listed more than once in group "First"/,
   );
   assert.throws(
@@ -30,8 +35,8 @@ test('show-20 gate grouping distinguishes local duplicates from cross-group conf
       groupGates(
         ['A'],
         [
-          { name: 'First', line: 'one', checks: ['A'] },
-          { name: 'Second', line: 'two', checks: ['A'] },
+          { name: 'First', short: 'One', line: 'one', checks: ['A'] },
+          { name: 'Second', short: 'Two', line: 'two', checks: ['A'] },
         ],
       ),
     /assigned to both "First" and "Second"/,

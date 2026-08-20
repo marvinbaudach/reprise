@@ -150,38 +150,76 @@ function GateStrip() {
 
   return (
     <div className="gate-strip" data-blocked={status.blocked ? 'true' : 'false'}>
-      <div className="gate-strip__row">
-        <p className="gate-strip__end">one change</p>
-
-        <div className="gate-strip__ticks">
-          {GATES.map((name, index) => (
-            <button
-              key={name}
-              type="button"
-              className="gate-strip__tick"
-              aria-label={`${String(index + 1).padStart(2, '0')} · ${name}`}
-              aria-pressed={failed.has(name)}
-              data-gate={name}
-              data-broken={failed.has(name) ? 'true' : 'false'}
-              onClick={() => setFailed((current) => toggle(current, name))}
-              onMouseEnter={(event) => {
-                pointerTarget.current = event.currentTarget;
-                setPointerPeek(index);
-              }}
-              onMouseLeave={() => {
-                pointerTarget.current = null;
-                setPointerPeek(-1);
-              }}
-              onFocus={() => setFocusPeek(index)}
-              onBlur={() => setFocusPeek(-1)}
-            >
-              <span />
-            </button>
-          ))}
+      <div className="pipeline">
+        <div className="pipeline__node">
+          <span className="pipeline__kicker">Source</span>
+          <strong>AI agent</strong>
+          <span className="pipeline__detail">one change</span>
         </div>
 
-        <span className="gate-strip__rail" aria-hidden="true" />
-        <p className="gate-strip__verdict">{status.blocked ? 'blocked' : 'merge'}</p>
+        <span className="pipeline__link" aria-hidden="true" />
+
+        <div className="pipeline__node pipeline__node--gates">
+          <span className="pipeline__kicker">Gates · {GATES.length}</span>
+          <div className="gate-clusters">
+            {GATE_GROUPS.map((group) => (
+              <div key={group.name} className="gate-cluster" data-gate-cluster={group.short}>
+                <div className="gate-cluster__marks">
+                  {group.gates.map((name) => {
+                    const index = GATES.indexOf(name);
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        className="gate-strip__tick"
+                        aria-label={`${String(index + 1).padStart(2, '0')} · ${name}`}
+                        aria-pressed={failed.has(name)}
+                        data-gate={name}
+                        data-broken={failed.has(name) ? 'true' : 'false'}
+                        onClick={() => setFailed((current) => toggle(current, name))}
+                        onMouseEnter={(event) => {
+                          pointerTarget.current = event.currentTarget;
+                          setPointerPeek(index);
+                        }}
+                        onMouseLeave={() => {
+                          pointerTarget.current = null;
+                          setPointerPeek(-1);
+                        }}
+                        onFocus={() => setFocusPeek(index)}
+                        onBlur={() => setFocusPeek(-1)}
+                      >
+                        <span />
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="gate-cluster__label">{group.short}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <span className="pipeline__link" aria-hidden="true" />
+
+        <div className="pipeline__node pipeline__node--mutations">
+          <span className="pipeline__kicker">Mutations</span>
+          <span className="pipeline__mutations" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="pipeline__detail">3 must turn red</span>
+        </div>
+
+        <span className="pipeline__link pipeline__link--merge" aria-hidden="true" />
+
+        <div className="pipeline__node pipeline__node--verdict">
+          <span className="pipeline__kicker">{status.blocked ? 'Blocked' : 'Merged'}</span>
+          <strong>main</strong>
+          <span className="pipeline__detail">
+            {status.blocked ? 'no partial merge' : 'all green'}
+          </span>
+        </div>
       </div>
 
       <p className="gate-strip__readout" role="status" data-tone={display.tone}>
