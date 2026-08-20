@@ -123,6 +123,7 @@ test('the design footer carries provenance availability and the exact contact tr
   assert.match(footer, /index-rebuild\.md/);
   assert.match(footer, /src="\/reprise\/brand\/reprise-mark\.svg"/);
   assert.match(footer, /Availability/);
+  assert.match(footer, /<section id="availability" class="availability"/);
   assert.match(footer, /Open to work\./);
   assert.match(footer, /github\.com\/marvinbaudach ↗/);
   assert.match(footer, /GPL-3\.0-or-later · active alpha/);

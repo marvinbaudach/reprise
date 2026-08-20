@@ -53,6 +53,46 @@ test('the design hero opens with two screenshot buttons', async () => {
   assert.match(css, /@keyframes rp-cue/);
 });
 
+test('the header and hero offer one in-page route to availability', async () => {
+  const [html, chromeCss] = await Promise.all([
+    readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8'),
+    readFile(join(showroomRoot, 'src', 'components', 'chrome', 'chrome.css'), 'utf8'),
+  ]);
+  const hero = html.match(/<section[^>]+data-showcase="design-hero"[\s\S]+?<\/section>/)?.[0];
+  const header = html.match(/<header[^>]+class="site-header"[\s\S]+?<\/header>/)?.[0];
+  assert.ok(hero);
+  assert.ok(header);
+
+  assert.match(
+    header,
+    /site-header__source[\s\S]*site-header__split[\s\S]*class="site-header__hire" href="#availability">Work with me<\/a>/,
+  );
+  const hire = header.match(/<a class="site-header__hire"[^>]*>/)?.[0];
+  assert.ok(hire);
+  assert.doesNotMatch(hire, /data-navlink/);
+
+  const normalizedHero = hero.replace(/<!-- -->/g, '').replace(/\s+/g, ' ');
+  const cue = normalizedHero.indexOf('data-showcase="scroll-cue"');
+  const offer = normalizedHero.indexOf('class="hero__offer"');
+  assert.ok(cue > -1 && offer > cue, 'the offer must follow the scroll cue without lifting it');
+  for (const copy of [
+    'Available · Q4',
+    'Five weeks, one developer, agents under gate control.',
+    'The same method, your codebase ↓',
+  ]) {
+    assert.ok(normalizedHero.includes(copy), `the hero offer must carry "${copy}"`);
+  }
+  assert.match(normalizedHero, /class="hero__offer-link" href="#availability"/);
+  assert.doesNotMatch(html, /mailto:/);
+
+  const mobile = chromeCss.slice(
+    chromeCss.indexOf('@media (max-width: 46rem)'),
+    chromeCss.indexOf('@media (max-width: 26.5rem)'),
+  );
+  assert.match(mobile, /\.site-header__source,\s*\.site-header__split\s*\{[^}]*display: none;/);
+  assert.match(mobile, /\.site-header__hire\s*\{[^}]*padding: 9px 14px;/);
+});
+
 test('the reveal pass never hides what it has already shown', async () => {
   const source = await readFile(join(showroomRoot, 'src', 'lib', 'reveal.ts'), 'utf8');
 

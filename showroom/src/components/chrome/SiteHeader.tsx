@@ -34,6 +34,10 @@ export function SiteHeader() {
         <a className="site-header__source" href="https://github.com/marvinbaudach/reprise">
           Source ↗
         </a>
+        <span className="site-header__split" aria-hidden="true" />
+        <a className="site-header__hire" href="#availability">
+          Work with me
+        </a>
       </nav>
     </header>
   );
