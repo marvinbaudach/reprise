@@ -350,6 +350,9 @@ pub(super) fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         });
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
+    shared
+        .selection_anchor
+        .reconcile_after_replace(&shared.model);
     apply_current_sort(shared);
     shared.cached_items.set(total);
     apply_empty_state(
@@ -692,6 +695,9 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
     shared
         .model
         .replace(sort_rows_for_key(rows, key, direction, release_type_label));
+    shared
+        .selection_anchor
+        .reconcile_after_replace(&shared.model);
 }
 
 fn apply_current_sort(shared: &Shared) {

@@ -61,15 +61,19 @@ pub(super) struct ReleasesModel {
 impl ReleasesModel {
     pub(super) fn new() -> Self {
         let store = gio::ListStore::new::<ReleaseObject>();
-        let selection = gtk4::MultiSelection::new(Some(store.clone()));
+        let selection = glib::Object::builder::<gtk4::MultiSelection>()
+            .property("model", &store)
+            .build();
         Self { store, selection }
     }
 
     pub(super) fn replace(&self, rows: Vec<HistoryEntry>) {
+        let selected_mbids = self.selected_mbids();
         self.store.remove_all();
         for row in rows {
             self.store.append(&ReleaseObject::new(row));
         }
+        self.select_mbids(&selected_mbids);
     }
 
     pub(super) fn store(&self) -> &gio::ListStore {
@@ -90,14 +94,8 @@ impl ReleasesModel {
     }
 
     pub(super) fn selected_mbids(&self) -> Vec<String> {
-        let bitset = self.selection.selection();
-        let Some((mut iter, first)) = gtk4::BitsetIter::init_first(&bitset) else {
-            return Vec::new();
-        };
-        let mut positions = vec![first];
-        positions.extend(iter.by_ref());
-        positions
-            .into_iter()
+        (0..self.store.n_items())
+            .filter(|position| self.selection.is_selected(*position))
             .filter_map(|position| self.store.item(position).and_downcast::<ReleaseObject>())
             .map(|object| object.entry().release_group_mbid)
             .collect()
@@ -139,9 +137,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
     fn release_model_replaces_the_bounded_history_snapshot() {
-        gtk4::init().unwrap();
         let model = ReleasesModel::new();
         model.replace(vec![entry("one"), entry("two")]);
         assert_eq!(model.store().n_items(), 2);
@@ -158,10 +154,19 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
     fn release_model_uses_single_selection_for_one_primary_action() {
-        gtk4::init().unwrap();
         let model = ReleasesModel::new();
         assert_eq!(model.selection().model().unwrap(), model.store().clone());
+    }
+
+    #[test]
+    fn replacing_rows_restores_exactly_the_selected_mbids_that_survive() {
+        let model = ReleasesModel::new();
+        model.replace(vec![entry("one"), entry("two"), entry("three")]);
+        model.select_mbids(&["one".to_owned(), "two".to_owned(), "three".to_owned()]);
+
+        model.replace(vec![entry("three"), entry("one"), entry("four")]);
+
+        assert_eq!(model.selected_mbids(), ["three", "one"]);
     }
 }

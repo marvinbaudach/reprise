@@ -11,6 +11,24 @@ use crate::ui::table_selection::{AnchorState, Anchored, SelectionOp};
 #[derive(Default)]
 pub(super) struct ReleasesAnchor(RefCell<AnchorState<String>>);
 
+impl ReleasesAnchor {
+    pub(super) fn reconcile_after_replace(&self, model: &super::releases_model::ReleasesModel) {
+        let state = { self.0.borrow().clone() };
+        let remap = |held: Option<Anchored<String>>| {
+            held.and_then(|held| {
+                model.position_of(&held.id).map(|position| Anchored {
+                    position,
+                    id: held.id,
+                })
+            })
+        };
+        *self.0.borrow_mut() = AnchorState {
+            anchor: remap(state.anchor),
+            cursor: remap(state.cursor),
+        };
+    }
+}
+
 fn anchored_at(shared: &Shared, position: u32) -> Option<Anchored<String>> {
     shared
         .model
