@@ -162,13 +162,6 @@ fn dispatch_navigation(shared: &Shared, intent: NavigationIntent) {
     }
 }
 
-#[cfg(test)]
-pub(super) fn activate_for_test(shared: &Rc<Shared>, action: &str) {
-    let _ = shared
-        .column_view
-        .activate_action(&format!("{}.{}", releases_menu::ACTION_GROUP, action), None);
-}
-
 fn present_keyboard_popover(column_view: &gtk4::ColumnView, popover: &gtk4::PopoverMenu) {
     popover.set_parent(column_view);
     popover.set_has_arrow(false);
