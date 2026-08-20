@@ -2,7 +2,7 @@
 slug: chapter-two-one-incident
 worktree: /home/marvin/Projects/reprise-ch02-incident
 branch: feature/chapter-two-one-incident
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-08-20
 ---
