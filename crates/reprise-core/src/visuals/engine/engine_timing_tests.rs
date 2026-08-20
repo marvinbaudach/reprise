@@ -6,7 +6,10 @@ fn paused_live_engine() -> VisualEngine {
     let bars = std::array::from_fn(|index| 0.2 + index as f32 * 0.7 / 63.0);
     let mut engine = VisualEngine::new();
     engine.set_playing(true);
-    engine.ingest(&SpectrumFrame::from_cava_bars(bars));
+    engine.ingest((
+        &SpectrumFrame::from_cava_bars(bars),
+        Duration::from_micros(16_667),
+    ));
     engine.set_has_track(true);
     engine.set_playing(false);
     engine.snap_to_static();

@@ -3861,7 +3861,9 @@ STYLE-1).
   old impulses are not carried over into newer CAVA frames. A loaded,
   paused scene follows AC-27: only its display projection breathes, while
   the last CAVA values remain intact and the peak caps keep their normal
-  independent decay.
+  independent decay. Peak-cap decay continues while the Visual view is not
+  visible, so resuming its tick loop never has accumulated cap decay to catch
+  up.
   The glow layer behind the columns is never derived from the CAVA
   bands. Auto-sensitivity keeps re-normalizing those, so a quiet sung
   passage climbs to the same band values as a drop and the glow would
