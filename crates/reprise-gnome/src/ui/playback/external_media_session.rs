@@ -15,6 +15,7 @@ use super::external_media_state::{
     episode_artwork_urls, ExternalMedia, ExternalPlaybackState, ExternalSession, NeighbourContext,
     PodcastOrigin, PodcastPhase, PodcastSession, ResumePolicy,
 };
+use super::external_media_toast::resume_position;
 
 type RestoredResumeRequest = (ExternalMedia, Option<NeighbourContext>, PodcastOrigin);
 
@@ -36,7 +37,7 @@ fn restored_session(
             NeighbourContext::for_manual_queue(QueueItem::Episode(episode.id), manual_pending),
         ),
     };
-    let position_ms = episode.position_ms.max(0);
+    let position_ms = resume_position(episode).max(0);
     let (art_url, fallback_art_url) = episode_artwork_urls(episode);
     Some(PodcastSession {
         media: media_from_episode(episode),
@@ -189,7 +190,7 @@ impl PlayerController {
 mod tests {
     use super::*;
     use reprise_core::library::session::SessionEpisodeOrigin;
-    use reprise_core::podcasts::PodcastKind;
+    use reprise_core::podcasts::{resume_rules, PodcastKind};
 
     fn episode() -> EpisodeRow {
         EpisodeRow {
@@ -230,7 +231,9 @@ mod tests {
             session.phase,
             super::super::external_media_state::PodcastPhase::Paused
         );
-        assert_eq!(session.position_ms, 22_000);
+        assert_eq!(session.position_ms, 0);
+        assert_eq!(session.last_persisted_ms, 0);
+        assert_eq!(session.resume, ResumePolicy::new(0));
         assert_eq!(session.media_category.as_deref(), Some("Music"));
         assert_eq!(
             session.art_url.as_deref(),
@@ -245,6 +248,29 @@ mod tests {
         let snapshot = state.snapshot().unwrap();
         assert!(snapshot.restored);
         assert_eq!(snapshot.podcast_phase, Some(PodcastPhase::Paused));
+    }
+
+    #[test]
+    fn restored_resume_state_uses_the_same_rss_duration_scope_as_playback() {
+        let saved = SessionEpisode {
+            episode_id: 7,
+            origin: SessionEpisodeOrigin::Direct,
+            neighbour_episode_ids: vec![7],
+        };
+        let mut row = episode();
+        row.kind = PodcastKind::Rss;
+        row.duration_secs = Some(resume_rules::MIN_RESUME_DURATION_SECS - 1);
+
+        let short = restored_session(&saved, &row, &[]).unwrap();
+        assert_eq!(short.position_ms, 0);
+        assert_eq!(short.last_persisted_ms, 0);
+        assert_eq!(short.resume, ResumePolicy::new(0));
+
+        row.duration_secs = Some(resume_rules::MIN_RESUME_DURATION_SECS);
+        let long = restored_session(&saved, &row, &[]).unwrap();
+        assert_eq!(long.position_ms, 22_000);
+        assert_eq!(long.last_persisted_ms, 22_000);
+        assert_eq!(long.resume, ResumePolicy::new(22_000));
     }
 
     #[test]
