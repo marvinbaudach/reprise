@@ -1,8 +1,10 @@
 package de.reprise.spike
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -83,8 +85,8 @@ class SettingsContentTest {
         compose.onNodeWithText("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             .assertIsDisplayed()
         compose.onNodeWithText(BuildConfig.REPRISE_CORE_VERSION).assertIsDisplayed()
-        compose.onNodeWithText(BuildConfig.REPRISE_MOBILE_LICENSE).assertIsDisplayed()
-        compose.onNodeWithText(BuildConfig.REPRISE_CORE_LICENSE).assertIsDisplayed()
+        assertEquals(BuildConfig.REPRISE_MOBILE_LICENSE, BuildConfig.REPRISE_CORE_LICENSE)
+        compose.onAllNodesWithText(BuildConfig.REPRISE_MOBILE_LICENSE).assertCountEquals(2)
     }
 
     @Test

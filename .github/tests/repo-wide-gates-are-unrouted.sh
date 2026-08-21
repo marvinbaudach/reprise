@@ -25,6 +25,7 @@ fail() {
 
 readonly REPO_WIDE_GATES=(
     scripts/check-architecture.sh
+    scripts/check-flatpak-cargo-sources.sh
 )
 
 # The unrouted job. `base-contracts` runs whenever the change is not

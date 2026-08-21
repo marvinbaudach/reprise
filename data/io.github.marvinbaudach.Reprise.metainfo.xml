@@ -111,6 +111,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.43" date="2026-08-21" type="stable">
+      <description>
+        <p>Adds podcasts, YouTube and radio sources, concert and release discovery, device sync, library repair, tag editing, lyrics, listening statistics, richer artwork and Now Playing visuals, plus CLI and MCP access.</p>
+        <p xml:lang="de">Fügt Podcasts, YouTube- und Radioquellen, Konzert- und Veröffentlichungsübersichten, Gerätesynchronisierung, Sammlungsreparatur, Tag-Bearbeitung, Liedtexte, Hörstatistiken, umfangreichere Cover und Wiedergabevisualisierungen sowie CLI- und MCP-Zugriff hinzu.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-07-25" type="stable">
       <description>
         <p>Improves Now Playing panel sizing and playback-marker stability during sorting.</p>

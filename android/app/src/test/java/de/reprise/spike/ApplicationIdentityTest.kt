@@ -31,8 +31,8 @@ class ApplicationIdentityTest {
         val application = RuntimeEnvironment.getApplication()
         val packageInfo = application.packageManager.getPackageInfo(application.packageName, 0)
 
-        assertEquals("org.reprise", application.packageName)
-        assertEquals("org.reprise", BuildConfig.APPLICATION_ID)
+        assertEquals("io.github.marvinbaudach.reprise", BuildConfig.APPLICATION_ID)
+        assertEquals(BuildConfig.APPLICATION_ID, application.packageName)
         assertEquals(BuildConfig.VERSION_NAME, packageInfo.versionName)
     }
 }

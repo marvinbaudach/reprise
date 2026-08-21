@@ -52,6 +52,8 @@ require_executable scripts/check-motion-tokens.sh
 require_executable scripts/check-android-theme.sh
 require_executable scripts/check-merge-readiness.sh
 require_executable scripts/check-project-quality.sh
+require_executable scripts/check-flatpak-cargo-sources.sh
+require_executable scripts/check-release-metadata.sh
 require_executable scripts/install-git-hooks.sh
 require_executable scripts/performance-baseline.sh
 require_executable scripts/performance-compare.sh
@@ -70,6 +72,7 @@ require_executable scripts/tests/input-parity.sh
 require_executable scripts/tests/android-theme.sh
 require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
+require_executable .github/tests/flatpak-cargo-sources.sh
 require_executable scripts/tests/project-quality.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
@@ -78,6 +81,8 @@ require_executable scripts/tests/worktree-gc-schedule.sh
 require_executable scripts/tests/architecture-size-limits.sh
 require_executable scripts/tests/cua-explore.sh
 require_executable scripts/tests/check-android-suite.sh
+require_executable .github/tests/release-metadata.sh
+require_executable .github/tests/release-workflow.sh
 require_executable scripts/reprise-worktree-gc.sh
 require_executable scripts/close-worktree.sh
 require_executable scripts/install-worktree-gc-timer.sh
@@ -108,6 +113,10 @@ require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
+require_pattern '^scripts/check-flatpak-cargo-sources\.sh$' scripts/check-release.sh
+require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
+require_pattern 'scripts/check-release-metadata\.sh --gate' .github/workflows/ci.yml
+require_pattern 'scripts/check-flatpak-cargo-sources\.sh' .github/workflows/ci.yml
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
 reject_pattern 'scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
@@ -157,6 +166,23 @@ require_pattern '^## Known harness constraints' TESTING.md
 require_pattern 'must run the entire discovered list' RELEASING.md
 require_pattern '1 passed' RELEASING.md
 require_pattern 'zero tests' RELEASING.md
+require_pattern 'keytool -genkeypair' docs/releasing-android.md
+require_pattern 'upload-key-sha256\.txt' docs/releasing-android.md
+require_pattern 'ANDROID_KEYSTORE_BASE64' docs/releasing-android.md
+require_pattern 'ANDROID_KEYSTORE_PASSWORD' docs/releasing-android.md
+require_pattern 'ANDROID_KEY_ALIAS' docs/releasing-android.md
+require_pattern 'ANDROID_KEY_PASSWORD' docs/releasing-android.md
+require_pattern 'android/keystore\.properties' docs/releasing-android.md
+require_pattern 'cannot update' docs/releasing-android.md
+require_pattern '^## Automated GitHub release channel' RELEASING.md
+require_pattern 'push to `main`' RELEASING.md
+require_pattern 'exact commit SHA' RELEASING.md
+require_pattern 'Reprise-<desktop-version>\.flatpak' RELEASING.md
+require_pattern 'Reprise-Android-<android-version>\.apk' RELEASING.md
+require_pattern 'must exist before promotion' RELEASING.md
+require_pattern 'docs/releasing-android\.md' RELEASING.md
+require_pattern 'self-hosted Flatpak repository' RELEASING.md
+require_pattern 'Showroom' RELEASING.md
 
 scripts/tests/cua-e2e.sh
 scripts/tests/motion-tokens.sh
@@ -169,6 +195,7 @@ scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
 scripts/tests/android-theme.sh
 scripts/tests/github-flow.sh
+.github/tests/flatpak-cargo-sources.sh
 scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
 scripts/tests/worktree-gc.sh

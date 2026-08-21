@@ -20,7 +20,8 @@
 # keeps what it has — a hand-made release bump is not something a landing run
 # gets to undo.
 #
-# Desktop writes `Cargo.toml` plus inherited workspace packages in `Cargo.lock`.
+# Desktop writes `Cargo.toml`, inherited workspace packages in `Cargo.lock`,
+# and Meson's project version in `meson.build`.
 # Android writes its independent literal `versionName` plus its monotonic
 # integer `versionCode`; the installer refuses a newer APK when that code does
 # not advance. The explicit `set` mode remains the deliberate way to align both
@@ -32,12 +33,14 @@ cd "$root"
 
 cargo_toml=Cargo.toml
 cargo_lock=Cargo.lock
+meson_build=meson.build
 gradle=android/app/build.gradle.kts
 
 die() { printf 'bump-version.sh: %s\n' "$*" >&2; exit 2; }
 usage() { sed -n '3,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ -f "$cargo_toml" ] || die "no Cargo.toml at $root"
+[ -f "$meson_build" ] || die "no $meson_build — the desktop version lives in more places than this script knows"
 [ -f "$gradle" ]     || die "no $gradle — the version lives in more places than this script knows"
 
 mode=${1:-}
@@ -171,6 +174,26 @@ print(f"desktop {old} -> {target}", file=sys.stderr)
 PY
 }
 
+write_meson() {
+  local target=$1
+  python3 - "$meson_build" "$target" <<'PY'
+import pathlib
+import re
+import sys
+
+meson_build, target = sys.argv[1:3]
+meson_path = pathlib.Path(meson_build)
+meson = meson_path.read_text(encoding="utf-8")
+version_pattern = r"^(\s*version:\s*)'([^']+)'"
+found = re.search(version_pattern, meson, re.M)
+if not found:
+    sys.exit(f"{meson_build} has no project version")
+meson = re.sub(version_pattern, lambda match: f"{match.group(1)}'{target}'",
+               meson, count=1, flags=re.M)
+meson_path.write_text(meson, encoding="utf-8")
+PY
+}
+
 write_android() {
   local target=$1 target_code=$2
   python3 - "$gradle" "$target" "$target_code" <<'PY'
@@ -201,6 +224,7 @@ PY
 
 write_everywhere() {
   write_desktop "$1"
+  write_meson "$1"
   write_android "$1" "$2"
 }
 
@@ -235,7 +259,7 @@ case "$mode" in
         [ -n "$path" ] || continue
         touched=1
         case "$path" in
-          Cargo.toml|Cargo.lock|android/app/build.gradle.kts) ;;
+          Cargo.toml|Cargo.lock|meson.build|android/app/build.gradle.kts) ;;
           *) generated_bump= ;;
         esac
       done < <(git show --name-only --pretty=format: HEAD)
@@ -291,6 +315,7 @@ case "$mode" in
       if [ "$current" != "$desktop_target" ]; then
         write_desktop "$desktop_target"
       fi
+      write_meson "$desktop_target"
       summary+=("desktop $desktop_target")
     fi
 
