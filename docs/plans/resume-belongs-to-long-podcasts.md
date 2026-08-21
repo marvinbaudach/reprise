@@ -2,7 +2,7 @@
 slug: resume-belongs-to-long-podcasts
 worktree: /home/marvin/Projects/reprise-resume-belongs-to-long-podcasts
 branch: feature/resume-belongs-to-long-podcasts
-phase: shipped
+phase: reviewed
 codex_session:
 created: 2026-08-21
 ---
@@ -71,12 +71,6 @@ E2.
 This leave-time completion path does not show a next-episode offer. The offer
 and persistent player-bar action remain exclusive to natural stream completion.
 
-### E5: Pausing is not leaving
-
-Pause must checkpoint an eligible resume position but must never mark an
-episode Played. Stop, source switch, queue hand-off, another episode starting,
-and quit are leave paths and run the completion decision.
-
 ### E4: Rows update live, but only when their chip changes
 
 The player announces an eligible persisted position on the existing five-second
@@ -100,6 +94,12 @@ The comparison uses a display key of `Option<Option<u8>>` instead:
 The row rebuilds when that complete key differs and remains untouched when the
 key is equal. A 45-minute episode therefore causes one New-to-Resume transition
 plus at most 99 percentage changes, rather than 540 five-second rebuilds.
+
+### E5: Pausing is not leaving
+
+Pause must checkpoint an eligible resume position but must never mark an
+episode Played. Stop, source switch, queue hand-off, another episode starting,
+and quit are leave paths and run the completion decision.
 
 ## Consequences
 
