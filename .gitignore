@@ -62,6 +62,9 @@ android/build/
 android/app/build/
 android/app/src/main/jniLibs/
 android/app/src/main/java/uniffi/
+android/keystore.properties
+*.jks
+*.keystore
 
 # A Gradle home inside the worktree. The sandboxed Codex runs cannot write to
 # `~/.gradle`, so they are pointed here instead — a gigabyte of downloaded

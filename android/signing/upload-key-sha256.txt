@@ -1,0 +1,4 @@
+# Replace this placeholder with the upload certificate's SHA-256 fingerprint
+# before the first release. Use uppercase hexadecimal byte pairs separated by
+# colons. The release job compares the signed APK certificate with this file.
+PLACEHOLDER
