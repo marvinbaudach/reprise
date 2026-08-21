@@ -32,27 +32,56 @@ export function ChapterFive() {
             <span>What the title index cost, and what it bought</span>
           </header>
           <div className="ledger-card__body">
-            <table className="ledger">
+            {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+            <table className="ledger" role="table">
               <caption>
                 Measured over 100&apos;000 tracks, before and after the index rebuild. Quoted from{' '}
                 <a href={permalink(PERFORMANCE_RECORD)}>the record</a>, which carries the commit,
                 the date and the method behind every row.
               </caption>
-              <thead>
-                <tr>
-                  <th scope="col">What</th>
-                  <th scope="col">Before</th>
-                  <th scope="col">After</th>
-                  <th scope="col">Delta</th>
+              {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+              <thead role="rowgroup">
+                {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                <tr role="row">
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    What
+                  </th>
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    Before
+                  </th>
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    After
+                  </th>
+                  {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                  <th scope="col" role="columnheader">
+                    Delta
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+              <tbody role="rowgroup">
                 {PERFORMANCE.map((row) => (
-                  <tr key={row.what}>
-                    <th scope="row">{row.what}</th>
-                    <td className="ledger__before">{row.before}</td>
-                    <td className="ledger__after">{row.after}</td>
-                    <td className="ledger__delta">{row.delta}</td>
+                  // biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver.
+                  <tr key={row.what} role="row">
+                    {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                    <th scope="row" role="rowheader">
+                      {row.what}
+                    </th>
+                    {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                    <td className="ledger__before" role="cell" data-label="Before">
+                      {row.before}
+                    </td>
+                    {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                    <td className="ledger__after" role="cell" data-label="After">
+                      {row.after}
+                    </td>
+                    {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
+                    <td className="ledger__delta" role="cell" data-label="Delta">
+                      {row.delta}
+                    </td>
                   </tr>
                 ))}
               </tbody>

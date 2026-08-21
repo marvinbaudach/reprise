@@ -226,35 +226,115 @@
   gap: var(--gap-line);
 }
 
-.gate-strip__row {
+.pipeline {
   display: flex;
   align-items: center;
   gap: var(--gap-line);
   flex-wrap: wrap;
 }
 
-.gate-strip__end {
-  margin: 0;
+.pipeline__node {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-hair);
+  min-width: 108px;
+  padding: var(--gap-line);
+  border: 1px solid var(--surface-line);
+  border-radius: var(--radius-sharp);
+  background: var(--surface-raised);
+}
+
+.pipeline__node--gates {
+  flex: 1 1 200px;
+  min-width: 195px;
+}
+
+.pipeline__node--verdict {
+  min-width: 169px;
+}
+
+.pipeline__kicker,
+.pipeline__detail {
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.1em;
+}
+
+.pipeline__kicker {
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.gate-strip__ticks {
+.pipeline__node > strong {
+  color: var(--text-strong);
+  font-size: 0.92rem;
+  font-weight: 560;
+}
+
+.pipeline__link {
+  --pipeline-shift-x: 6px;
+  --pipeline-shift-y: 0;
+
+  flex: 0 0 clamp(26px, 3vw, 34px);
+  width: clamp(26px, 3vw, 34px);
+  height: 1px;
+  background: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 6px);
+  animation: pipeline-flow var(--duration-slow) ease infinite;
+}
+
+.pipeline__mutations {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-hair);
+  height: 30px;
+}
+
+.pipeline__mutations > i {
+  width: 3px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--second);
+}
+
+.gate-clusters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-tight);
+}
+
+.gate-cluster {
+  display: flex;
+  flex: 1 1 60px;
+  flex-direction: column;
+  gap: var(--gap-hair);
+  min-width: 60px;
+}
+
+.gate-cluster__marks {
   display: flex;
   align-items: center;
 }
 
+.gate-cluster__label {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /*
- * The mark is 3px wide; the button around it is 11px and 44px tall so the hit
- * area clears the pointer target minimum without the strip growing to match.
+ * The mark is 3px wide; the button around it shares its cluster's width and is
+ * 44px tall so the hit area clears the pointer target minimum.
  */
 .gate-strip__tick {
   display: grid;
+  flex: 1 1 0;
   place-items: center;
-  width: 11px;
+  min-width: 0;
   height: 44px;
   margin: 0;
   padding: 0;
@@ -291,36 +371,20 @@
   border-radius: 2px;
 }
 
-.gate-strip__rail {
-  flex: 1 1 26px;
-  min-width: 26px;
-  height: 1px;
-  background: var(--accent);
-  transition: background var(--duration-normal) ease;
-}
-
-.gate-strip__verdict {
-  margin: 0;
-  padding: 0.35rem 0.7rem;
-  border: 1px solid oklch(38% 0.05 195);
-  border-radius: var(--radius-sharp);
+.pipeline__node--verdict .pipeline__kicker {
   color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  transition:
-    color var(--duration-normal) ease,
-    border-color var(--duration-normal) ease;
 }
 
-.gate-strip[data-blocked="true"] .gate-strip__rail {
-  background: var(--surface-line);
+.gate-strip[data-blocked="true"] .pipeline__link--merge {
+  background: repeating-linear-gradient(to right, var(--second) 0 6px, transparent 6px 10px);
+  animation: none;
 }
 
-.gate-strip[data-blocked="true"] .gate-strip__verdict {
-  border-color: oklch(40% 0.09 30);
+.gate-strip[data-blocked="true"] .pipeline__node--verdict {
+  border-color: var(--second);
+}
+
+.gate-strip[data-blocked="true"] .pipeline__node--verdict .pipeline__kicker {
   color: var(--second);
 }
 
@@ -388,17 +452,45 @@
 }
 
 @media (hover: none), (max-width: 46rem) {
-  .gate-strip__ticks {
-    flex-basis: 100%;
-    flex-wrap: wrap;
-  }
-
   .gate-strip__tick {
-    width: 44px;
+    min-width: 44px;
   }
 
   .gate-groups {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 46rem) {
+  .pipeline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pipeline__node--verdict {
+    min-width: 0;
+  }
+
+  .pipeline__link {
+    --pipeline-shift-x: 0;
+    --pipeline-shift-y: 6px;
+
+    flex-basis: 24px;
+    width: 100%;
+    max-width: 1px;
+    height: 24px;
+    margin-inline: auto;
+    background: repeating-linear-gradient(180deg, var(--accent) 0 2px, transparent 2px 6px);
+  }
+
+  .gate-strip[data-blocked="true"] .pipeline__link--merge {
+    background: repeating-linear-gradient(180deg, var(--second) 0 6px, transparent 6px 10px);
+  }
+}
+
+@keyframes pipeline-flow {
+  to {
+    background-position: var(--pipeline-shift-x) var(--pipeline-shift-y);
   }
 }
 
@@ -409,8 +501,8 @@
    * value instead of travelling to it.
    */
   .gate-strip__tick > span,
-  .gate-strip__rail,
-  .gate-strip__verdict {
+  .pipeline__link {
+    animation: none;
     transition: none;
   }
 }

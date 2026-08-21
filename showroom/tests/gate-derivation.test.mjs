@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 import { groupGates, parseGateNames } from '../vite.config.ts';
@@ -20,9 +21,24 @@ gate "Double quote" -- true
   );
 });
 
-test('show-20 gate grouping distinguishes local duplicates from cross-group conflicts', () => {
+test('show-20 gate grouping distinguishes local duplicates from cross-group conflicts', async () => {
+  assert.deepEqual(
+    groupGates(['A'], [{ name: 'First', short: 'One', line: 'one', checks: ['A'] }]),
+    [{ name: 'First', short: 'One', line: 'one', gates: ['A'] }],
+    'the short pipeline label must survive derivation',
+  );
+
+  const gateScript = new URL('../../scripts/check-merge-readiness.sh', import.meta.url);
+  const gateSource = await readFile(gateScript, 'utf8');
+  const productionGroups = groupGates(parseGateNames(gateSource, gateScript.pathname));
+  assert.deepEqual(
+    productionGroups.map((group) => group.short),
+    ['Bounds', 'Install', 'Reachable', 'Traceable', 'Green', 'Toolchain'],
+    'the six compact pipeline labels must remain readable at the measured desktop widths',
+  );
+
   assert.throws(
-    () => groupGates(['A'], [{ name: 'First', line: 'one', checks: ['A', 'A'] }]),
+    () => groupGates(['A'], [{ name: 'First', short: 'One', line: 'one', checks: ['A', 'A'] }]),
     /listed more than once in group "First"/,
   );
   assert.throws(
@@ -30,8 +46,8 @@ test('show-20 gate grouping distinguishes local duplicates from cross-group conf
       groupGates(
         ['A'],
         [
-          { name: 'First', line: 'one', checks: ['A'] },
-          { name: 'Second', line: 'two', checks: ['A'] },
+          { name: 'First', short: 'One', line: 'one', checks: ['A'] },
+          { name: 'Second', short: 'Two', line: 'two', checks: ['A'] },
         ],
       ),
     /assigned to both "First" and "Second"/,

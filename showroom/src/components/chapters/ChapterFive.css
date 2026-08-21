@@ -153,3 +153,65 @@
   color: oklch(74% 0.009 269);
   text-wrap: pretty;
 }
+
+@media (max-width: 34rem) {
+  .ledger,
+  .ledger tbody,
+  .ledger tr,
+  .ledger th,
+  .ledger td {
+    display: block;
+  }
+
+  .ledger thead {
+    position: absolute;
+    display: block;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .ledger caption {
+    font-size: 0.62rem;
+  }
+
+  .ledger tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 12px 13px;
+    border: 1px solid var(--surface-line-soft);
+    border-left: 2px solid color-mix(in oklab, var(--accent) 46%, transparent);
+    border-radius: 8px;
+    background: var(--surface-raised);
+  }
+
+  .ledger tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .ledger tbody th {
+    grid-column: 1 / -1;
+    padding: 0 0 8px;
+    border: 0;
+  }
+
+  .ledger td,
+  .ledger td:last-child {
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .ledger td::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-muted);
+    font-size: 0.56rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    content: attr(data-label);
+  }
+}

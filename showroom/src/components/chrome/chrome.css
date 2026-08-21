@@ -40,8 +40,10 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   color: var(--text-strong);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .site-header__mark {
@@ -79,15 +81,20 @@
   font-size: 0.68rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .site-header__nav a {
-  color: oklch(70% 0.011 269);
   text-decoration: none;
+}
+
+.site-header__nav a:not(.site-header__hire) {
+  color: oklch(70% 0.011 269);
   transition: color 300ms ease;
 }
 
-.site-header__nav a:hover,
+.site-header__nav a:not(.site-header__hire):hover,
 .site-header__nav a[data-current="true"] {
   color: var(--brand-teal);
 }
@@ -96,10 +103,60 @@
   color: var(--text-body);
 }
 
+.site-header__split {
+  width: 1px;
+  height: 18px;
+  background: var(--surface-line);
+}
+
+.site-header__hire {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border: 1px solid color-mix(in oklab, var(--accent) 52%, transparent);
+  border-radius: var(--radius-sharp);
+  color: var(--text-strong);
+  transition:
+    border-color var(--duration-fast),
+    background-color var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.site-header__hire::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  content: "";
+}
+
+.site-header__hire:hover {
+  border-color: var(--accent);
+  background-color: color-mix(in oklab, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+
 /* Below the nav's own breakpoint the chapter list is the first thing to go: the
    progress line and the top-of-page link still say where the reader is. */
 @media (max-width: 46rem) {
   .site-header__nav a[data-navlink] {
+    display: none;
+  }
+
+  .site-header__source,
+  .site-header__split {
+    display: none;
+  }
+
+  .site-header__hire {
+    padding: 9px 14px;
+  }
+}
+
+@media (max-width: 26.5rem) {
+  .site-header__state {
     display: none;
   }
 }
