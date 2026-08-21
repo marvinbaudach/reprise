@@ -204,8 +204,6 @@ pub struct RefreshSummary {
     pub failures: Vec<RefreshFailure>,
     pub episodes_inserted: usize,
     pub episodes_updated: usize,
-    pub downloads_completed: usize,
-    pub downloads_failed: usize,
 }
 
 impl RefreshSummary {
@@ -329,6 +327,9 @@ fn refresh_to_root_with_download_progress(
     now: i64,
     request: RefreshRequest,
     download_root: &Path,
+    // The always-download-episodes UI strand retires this callback together
+    // with both progress-named refresh wrappers after moving their GNOME
+    // callers; this Core review round must preserve those signatures.
     _on_download: &mut dyn FnMut(i64, DownloadState),
 ) -> Result<RefreshSummary, PipelineError> {
     let config = super::config::load_in(conn)?;

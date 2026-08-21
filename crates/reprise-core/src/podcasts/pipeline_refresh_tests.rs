@@ -510,10 +510,8 @@ fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
     super::super::downloads::prepare_destination(&existing).unwrap();
     std::fs::write(&existing, b"orphan").unwrap();
 
-    let summary =
-        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
-    assert_eq!(summary.downloads_completed, 0);
     assert!(feed.downloads.borrow().is_empty());
     assert_eq!(
         super::super::query::episodes_for_subscription(&conn, id).unwrap()[0]
