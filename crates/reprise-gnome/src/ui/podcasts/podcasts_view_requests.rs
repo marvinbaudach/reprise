@@ -9,6 +9,33 @@ use super::*;
 
 struct RefreshFeedbackGuard(std::rc::Weak<PodcastsView>);
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct FillRequestState {
+    running: bool,
+    pending: bool,
+}
+
+impl FillRequestState {
+    fn request(&mut self) -> bool {
+        if self.running {
+            self.pending = true;
+            return false;
+        }
+        self.running = true;
+        true
+    }
+
+    fn complete(&mut self) -> bool {
+        self.running = false;
+        std::mem::take(&mut self.pending)
+    }
+
+    fn cancel(&mut self) {
+        self.running = false;
+        self.pending = false;
+    }
+}
+
 impl Drop for RefreshFeedbackGuard {
     fn drop(&mut self) {
         if let Some(view) = self.0.upgrade() {
@@ -107,9 +134,13 @@ impl PodcastsView {
     }
 
     fn request_fill_downloads(self: &Rc<Self>) -> bool {
-        if self.fill_in_flight.replace(true) {
+        let mut fill_request = self.fill_request.get();
+        if !fill_request.request() {
+            self.fill_request.set(fill_request);
+            tracing::debug!("podcast download fill-up request deferred while one is running");
             return false;
         }
+        self.fill_request.set(fill_request);
         let operation = PodcastsOperation::FillDownloads;
         let generation = request_generation(self.generation.get(), operation);
         let (response, receiver) = podcasts_response_channel();
@@ -118,7 +149,9 @@ impl PodcastsView {
             operation,
             response,
         }) {
-            self.fill_in_flight.set(false);
+            let mut fill_request = self.fill_request.get();
+            fill_request.cancel();
+            self.fill_request.set(fill_request);
             return false;
         }
         let weak = Rc::downgrade(self);
@@ -132,7 +165,6 @@ impl PodcastsView {
                         view.set_download_state(episode_id, &state);
                     }
                     Ok(PodcastsWorkerResult::Filled(summary)) => {
-                        view.fill_in_flight.set(false);
                         view.refresh();
                         (view.callbacks.on_sidebar_refresh)();
                         tracing::debug!(
@@ -147,11 +179,19 @@ impl PodcastsView {
                         | PodcastsWorkerResult::LoadedMore { .. },
                     ) => {}
                     Err(error) => {
-                        view.fill_in_flight.set(false);
                         tracing::warn!(%error, "podcast download fill-up failed");
                         break;
                     }
                 }
+            }
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            let mut fill_request = view.fill_request.get();
+            let replay = fill_request.complete();
+            view.fill_request.set(fill_request);
+            if replay {
+                view.request_fill_downloads();
             }
         });
         true
@@ -289,5 +329,20 @@ impl PodcastsView {
             }
         });
         true
+    }
+}
+
+#[cfg(test)]
+mod fill_request_tests {
+    use super::FillRequestState;
+
+    #[test]
+    fn a_fill_requested_while_running_is_replayed_after_completion() {
+        let mut state = FillRequestState::default();
+
+        assert!(state.request());
+        assert!(!state.request());
+        assert!(state.complete());
+        assert!(state.request());
     }
 }
