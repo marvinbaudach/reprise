@@ -195,3 +195,56 @@ fn the_fill_up_and_the_cleanup_agree_on_the_newest_ten() {
         super::super::downloads::CleanupSummary::default()
     );
 }
+
+#[test]
+fn a_tombstoned_download_does_not_displace_a_live_episode_during_cleanup() {
+    let db = conn();
+    let root = tempfile::tempdir().unwrap();
+    let (_, ids) = show_with_episodes(&db, root.path(), 11);
+
+    download_episode(
+        &db,
+        &FakeFeed::default(),
+        &FakeYoutube,
+        root.path(),
+        ids[0],
+        &mut |_| {},
+    )
+    .unwrap();
+    assert!(super::super::store::tombstone_episode(&db, ids[0], 2).unwrap());
+
+    let mut ignore = |_: i64, _: DownloadState| {};
+    let first_fill = fill_downloads(
+        &db,
+        &FakeFeed::default(),
+        &FakeYoutube,
+        root.path(),
+        &mut ignore,
+    )
+    .unwrap();
+    assert_eq!(first_fill.downloaded, 10);
+
+    let cleanup = super::super::downloads::enforce_cleanup(
+        &db,
+        root.path(),
+        super::super::config::CleanupPolicy::KeepLast5,
+        10,
+        0,
+    )
+    .unwrap();
+    assert_eq!(
+        cleanup,
+        super::super::downloads::CleanupSummary::default(),
+        "a tombstoned download must not consume a live episode's rank"
+    );
+
+    let second_fill = fill_downloads(
+        &db,
+        &FakeFeed::default(),
+        &FakeYoutube,
+        root.path(),
+        &mut ignore,
+    )
+    .unwrap();
+    assert_eq!(second_fill, FillSummary::default());
+}

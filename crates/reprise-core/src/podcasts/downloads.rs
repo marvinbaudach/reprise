@@ -347,10 +347,12 @@ pub enum CleanupError {
 /// (`cleanup_candidates`) and the fill-up
 /// (`fill_downloads::missing_episode_ids_in`).
 ///
-/// The two rank different populations on purpose — the cleanup ranks only
-/// downloaded episodes (see the P1 note in `cleanup_candidates`), the fill-up
-/// ranks all live ones — so they cannot share a query. What they must share is
-/// what "newest" means, or one starts fetching what the other just deleted.
+/// Both consumers rank only live subscriptions and live episodes. Within that
+/// shared population, cleanup ranks the downloaded subset (see the P1 note in
+/// `cleanup_candidates`) while the fill-up ranks every episode to find missing
+/// downloads. They therefore cannot share a query, but they must share both
+/// liveness and what "newest" means or one starts deleting what the other just
+/// fetched.
 ///
 /// Uses the table alias `e`; every consumer must alias `podcast_episodes` that
 /// way.
@@ -393,8 +395,11 @@ fn cleanup_candidates(
         // finding (P1): filtering it afterward let undownloaded episodes
         // consume rank positions, so "keep last N downloaded" could rank a
         // show's real downloads past N and delete every one of them even
-        // though far fewer than N were ever downloaded. Ranking must be
-        // computed over downloaded episodes only.
+        // though far fewer than N were ever downloaded. Tombstoned episodes
+        // must be excluded there too: the fill-up cannot select them, so one
+        // that retained a downloaded path would otherwise displace a live
+        // download and make fill and cleanup oscillate. Ranking is therefore
+        // computed over downloaded, live episodes only.
         CleanupPolicy::KeepLast5 => {
             let sql = format!(
                 "SELECT id, downloaded_path, keep_downloaded, episode_rank FROM (
@@ -406,6 +411,7 @@ fn cleanup_candidates(
                    FROM podcast_episodes e
                    JOIN podcast_subscriptions s ON s.id = e.subscription_id
                    WHERE s.removed_at IS NULL
+                     AND e.removed_at IS NULL
                      AND e.downloaded_path IS NOT NULL
                  )
                  ORDER BY id"
