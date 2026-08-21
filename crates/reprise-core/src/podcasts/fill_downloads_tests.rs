@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use super::super::download_state::DownloadState;
-use super::super::fill_downloads::{fill_downloads, missing_episode_ids_in, FillSummary};
+use super::super::fill_downloads::{
+    fill_downloads, missing_episode_ids_in, record_fill_outcome, FillSummary,
+};
 use super::tests::{add_subscription, conn, feed_response, FakeFeed, FakeYoutube};
 use super::*;
 
@@ -281,5 +283,26 @@ fn a_mid_batch_error_is_counted_and_later_episodes_are_still_downloaded() {
             .downloaded_path
             .is_some(),
         "the episode after the failed one must still be downloaded"
+    );
+}
+
+#[test]
+fn a_non_terminal_download_result_is_warned_instead_of_silently_dropped() {
+    let logs = crate::log_capture::CapturedLogs::default();
+    let mut summary = FillSummary::default();
+
+    logs.capture(|| {
+        record_fill_outcome(&mut summary, 42, Ok(DownloadState::Queued));
+    });
+
+    assert_eq!(summary, FillSummary::default());
+    let logged = logs.joined();
+    assert!(
+        logged.contains("podcast fill received a non-terminal download state"),
+        "missing non-terminal warning: {logged}"
+    );
+    assert!(
+        logged.contains("42"),
+        "warning dropped episode id: {logged}"
     );
 }

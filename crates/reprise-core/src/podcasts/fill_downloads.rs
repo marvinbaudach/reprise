@@ -21,6 +21,28 @@ pub struct FillSummary {
     pub failed: usize,
 }
 
+pub(crate) fn record_fill_outcome(
+    summary: &mut FillSummary,
+    episode_id: i64,
+    outcome: Result<DownloadState, PipelineError>,
+) {
+    match outcome {
+        Ok(DownloadState::Downloaded { .. }) => summary.downloaded += 1,
+        Ok(DownloadState::Failed { .. }) => summary.failed += 1,
+        // Another caller — the download button, or playback — already has
+        // this episode in flight. Not this run's job and not a failure.
+        Err(PipelineError::DownloadAlreadyRunning) => {}
+        Err(_) => summary.failed += 1,
+        Ok(state) => {
+            tracing::warn!(
+                episode_id,
+                ?state,
+                "podcast fill received a non-terminal download state"
+            );
+        }
+    }
+}
+
 /// The episodes that ought to be on disk and are not.
 ///
 /// Ranks over *all* live episodes, not only downloaded ones — the opposite of
@@ -106,15 +128,7 @@ pub fn fill_downloads(
             episode_id,
             &mut report,
         );
-        match outcome {
-            Ok(DownloadState::Downloaded { .. }) => summary.downloaded += 1,
-            Ok(DownloadState::Failed { .. }) => summary.failed += 1,
-            // Another caller — the download button, or playback — already has
-            // this episode in flight. Not this run's job and not a failure.
-            Err(PipelineError::DownloadAlreadyRunning) => {}
-            Err(_) => summary.failed += 1,
-            Ok(_) => {}
-        }
+        record_fill_outcome(&mut summary, episode_id, outcome);
     }
     Ok(summary)
 }
