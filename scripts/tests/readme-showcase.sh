@@ -29,7 +29,7 @@ reject_fixed() {
 
 [[ -f $english ]] || fail "$english must exist"
 [[ ! -e README.de.md ]] || fail "README.de.md must stay removed; the developer README is English only"
-(( $(wc -l < "$english") <= 200 )) || fail "$english must remain a concise developer entry point"
+(( $(wc -l < "$english") <= 215 )) || fail "$english must remain a concise developer entry point"
 [[ $(rg -c 'docs/assets/reprise-architecture\.svg' "$english") -eq 1 ]] ||
   fail "$english must contain exactly one architecture visual"
 reject_fixed '```mermaid' "$english"
@@ -59,6 +59,7 @@ done
 reject_fixed 'Future native frontends' "$architecture_visual"
 
 for value in \
+  '## Downloads' \
   '## Architecture' \
   '## Engineering contracts' \
   '## Contributing' \
@@ -70,6 +71,10 @@ for value in \
 done
 
 require_fixed 'Pick your entry point' "$english"
+[[ $(rg -c 'https://github\.com/marvinbaudach/reprise/releases/latest' "$english") -eq 2 ]] ||
+  fail "$english must link both downloadable applications to the latest release"
+require_fixed 'flatpak install --user ./Reprise-<desktop-version>.flatpak' "$english"
+require_fixed 'adb install -r ./Reprise-Android-<android-version>.apk' "$english"
 
 for crate in reprise-core reprise-platform-linux reprise-gnome; do
   require_fixed "$crate" "$english"
