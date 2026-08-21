@@ -25,9 +25,8 @@ test('ShotTile owns the still frame the loading sweep and the zoom cue', async (
     assert.match(html, new RegExp(`${attribute}=""`));
   }
 
-  // The picture wrap carries the zoom so the hero phone's visualizer canvas —
-  // a sibling of the image — travels with the screenshot instead of standing
-  // still on top of a growing one.
+  // The picture wrap keeps the hero phone's visualizer canvas — a sibling of
+  // the image — on the same geometry as the screenshot.
   assert.match(source, /className="shot-tile__picture"[\s\S]*?<ProductShot[\s\S]*?\{children\}/);
   assert.doesNotMatch(source, /requestAnimationFrame/);
   assert.match(css, /@keyframes rp-sweep/);

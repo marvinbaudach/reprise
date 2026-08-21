@@ -150,18 +150,18 @@ test('show-1 a plate keeps its box when it is pointed at or focused', async () =
     );
   }
 
-  // The zoom sits on the picture wrap, and reaches the page only as a transform.
+  // The picture wrap keeps the image and its overlays together without moving
+  // either one when the plate is pointed at or focused.
   const picture = all.find(({ selector }) => selector === '.shot-tile__picture');
   assert.ok(picture, '.shot-tile__picture must exist');
-  assert.match(picture.body, /transform:scale\(var\(--shot-zoom\)\)/);
-  for (const { selector, body } of all) {
-    for (const entry of declarations(body)) {
-      if (!entry.includes('var(--shot-zoom)')) continue;
-      assert.ok(
-        entry.startsWith('transform:'),
-        `${selector} consumes --shot-zoom outside a transform: ${entry}`,
-      );
-    }
+  assert.ok(
+    !propertyNames(picture.body).includes('transform'),
+    '.shot-tile__picture must not transform',
+  );
+  assert.doesNotMatch(css, /--shot-zoom/);
+  assert.doesNotMatch(css, /--plate-lift/);
+  for (const { selector, body } of pointerStates) {
+    assert.ok(!propertyNames(body).includes('transform'), `${selector} must not move the plate`);
   }
 });
 

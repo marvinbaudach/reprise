@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use reprise_core::artist_portrait::{load_cached_from, PortraitOutcome};
+use reprise_core::artist_portrait::{load_cached_from, verdict, PortraitOutcome};
 use reprise_core::cover::{self, CoverSource};
 use reprise_core::library::source::UnixLibrarySource;
 
@@ -27,6 +27,65 @@ impl MusicLibrary {
                 tracing::debug!(%error, "no artist portrait: image did not decode");
                 None
             }
+        }
+    }
+}
+
+#[uniffi::export]
+impl MusicLibrary {
+    pub fn artists_missing_portraits(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<String>, crate::LibraryError> {
+        let allowed = {
+            let reader = self.reader()?;
+            reprise_core::online_sources::network_allowed_or_off(
+                &reader,
+                &reprise_core::modules::ARTWORK_MODULE,
+            )
+        };
+        if !allowed {
+            return Ok(Vec::new());
+        }
+
+        let wanted = limit as usize;
+        if wanted == 0 {
+            return Ok(Vec::new());
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs() as i64);
+        let portrait_dir = self.portrait_dir();
+        let mut missing = Vec::new();
+        let mut offset = 0;
+        loop {
+            let window = {
+                let reader = self.reader()?;
+                reprise_core::queries::query_artists(
+                    &reader,
+                    "",
+                    reprise_core::queries::WindowRange {
+                        offset,
+                        limit: i64::MAX,
+                    },
+                )
+            }
+            .map_err(|error| crate::LibraryError::Query {
+                detail: error.to_string(),
+            })?;
+            let returned = window.rows.len();
+            for artist in window.rows {
+                if verdict(&portrait_dir, &artist.artist, now).needs_fetch() {
+                    missing.push(artist.artist);
+                    if missing.len() == wanted {
+                        return Ok(missing);
+                    }
+                }
+            }
+            if !window.has_more || returned == 0 {
+                return Ok(missing);
+            }
+            offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
         }
     }
 }
@@ -93,6 +152,33 @@ mod tests {
         reprise_core::online_sources::set_enabled(&writer, true).unwrap();
         reprise_core::modules::set_enabled(&writer, &reprise_core::modules::ARTWORK_MODULE, true)
             .unwrap();
+    }
+
+    fn scan_artists(directory: &Path, library: &MusicLibrary, names: &[&str]) {
+        let music = directory.join("music");
+        std::fs::create_dir(&music).unwrap();
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../android/app/src/main/assets/sine.flac");
+        for (index, name) in names.iter().enumerate() {
+            let track_number = u32::try_from(index).unwrap() + 1;
+            let path = music.join(format!("artist-{track_number}.flac"));
+            std::fs::copy(&fixture, &path).unwrap();
+            reprise_core::library::tag_edit::apply_patch_to_file(
+                &path,
+                &reprise_core::library::tag_edit::TagPatch {
+                    title: Some(format!("Track {track_number}")),
+                    artist: Some((*name).to_owned()),
+                    album: Some(format!("Album {track_number}")),
+                    album_artist: Some((*name).to_owned()),
+                    year: None,
+                    track_no: Some(Some(track_number)),
+                    genre: None,
+                },
+            )
+            .unwrap();
+        }
+        let writer = library.writer().unwrap();
+        reprise_core::library::scanner::scan_folder(&writer, &music).unwrap();
     }
 
     #[test]
@@ -407,5 +493,84 @@ mod tests {
             release_tx.send(()).unwrap();
             assert!(matches!(fetch.join().unwrap(), Ok(None)));
         });
+    }
+
+    #[test]
+    fn artists_missing_portraits_skips_those_already_cached() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            |_, _| panic!("listing missing portraits must not fetch"),
+        )
+        .unwrap();
+        scan_artists(
+            directory.path(),
+            &library,
+            &["Already Cached", "Needs Portrait"],
+        );
+        store_portrait_fixture_in(&library.portrait_dir(), "Already Cached");
+        open_gate(&library);
+
+        assert_eq!(
+            library.artists_missing_portraits(10).unwrap(),
+            vec!["Needs Portrait"]
+        );
+    }
+
+    #[test]
+    fn artists_missing_portraits_returns_nothing_when_the_switch_is_off() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            |_, _| panic!("a closed gate must not fetch"),
+        )
+        .unwrap();
+        scan_artists(directory.path(), &library, &["First", "Second"]);
+
+        assert!(library.artists_missing_portraits(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn artists_missing_portraits_respects_its_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            |_, _| panic!("listing missing portraits must not fetch"),
+        )
+        .unwrap();
+        scan_artists(directory.path(), &library, &["Alpha", "Beta", "Gamma"]);
+        open_gate(&library);
+
+        assert_eq!(
+            library.artists_missing_portraits(2).unwrap(),
+            vec!["Alpha", "Beta"]
+        );
+    }
+
+    #[test]
+    fn artists_missing_portraits_never_touches_the_network() {
+        let directory = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            move |_, _| {
+                counted.fetch_add(1, Ordering::Relaxed);
+                Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound)
+            },
+        )
+        .unwrap();
+        scan_artists(directory.path(), &library, &["Alpha", "Beta"]);
+        open_gate(&library);
+
+        assert_eq!(
+            library.artists_missing_portraits(10).unwrap(),
+            vec!["Alpha", "Beta"]
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
     }
 }

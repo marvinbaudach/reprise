@@ -10,7 +10,9 @@ use retry::{clear_retry, pending_retry, previous_attempt, set_retry, RetryKey};
 
 use crate::{db::Db, source_error::SourceErrorKind};
 
-use super::download_state::{DownloadProgress, DownloadState};
+use super::download_state::DownloadProgress;
+#[cfg(test)]
+use super::download_state::DownloadState;
 use super::feed::{ParsedEpisode, ParsedFeed};
 use super::http::Response;
 use super::refresh::{RefreshPolicy, RefreshRequest};
@@ -21,7 +23,6 @@ use super::{PodcastError, PodcastKind, SubscriptionRow};
 mod load_more;
 pub use load_more::load_more_youtube;
 
-const MAX_AUTO_DOWNLOADS_PER_SUBSCRIPTION: usize = 3;
 const OFFICIAL_YOUTUBE_LIMIT: usize = 15;
 
 pub trait FeedFetcher {
@@ -205,8 +206,6 @@ pub struct RefreshSummary {
     pub failures: Vec<RefreshFailure>,
     pub episodes_inserted: usize,
     pub episodes_updated: usize,
-    pub downloads_completed: usize,
-    pub downloads_failed: usize,
 }
 
 impl RefreshSummary {
@@ -232,14 +231,15 @@ pub enum PipelineError {
     Cleanup(#[from] super::downloads::CleanupError),
     #[error("podcast episode does not exist")]
     EpisodeNotFound,
+    #[error("a download for this episode is already running")]
+    DownloadAlreadyRunning,
 }
 
 #[path = "pipeline_download.rs"]
 mod download;
-pub use download::download_episode;
-use download::download_episode_in;
 #[cfg(test)]
 use download::remove_completed_download;
+pub use download::{download_episode, download_episode_waiting};
 
 pub fn refresh(
     db: &Db,
@@ -249,34 +249,13 @@ pub fn refresh(
     request: RefreshRequest,
 ) -> Result<RefreshSummary, PipelineError> {
     let conn = db.conn();
-    refresh_to_root_with_download_progress(
+    refresh_to_root_in(
         conn,
         feed_fetcher,
         youtube_fetcher,
         now,
         request,
         &super::downloads::default_download_root(),
-        &mut |_, _| {},
-    )
-}
-
-pub fn refresh_with_download_progress(
-    db: &Db,
-    feed_fetcher: &dyn FeedFetcher,
-    youtube_fetcher: &dyn YoutubeFetcher,
-    now: i64,
-    request: RefreshRequest,
-    on_download: &mut dyn FnMut(i64, DownloadState),
-) -> Result<RefreshSummary, PipelineError> {
-    let conn = db.conn();
-    refresh_to_root_with_download_progress(
-        conn,
-        feed_fetcher,
-        youtube_fetcher,
-        now,
-        request,
-        &super::downloads::default_download_root(),
-        on_download,
     )
 }
 
@@ -289,14 +268,13 @@ pub fn refresh_to_root(
     download_root: &Path,
 ) -> Result<RefreshSummary, PipelineError> {
     let conn = db.conn();
-    refresh_to_root_with_download_progress(
+    refresh_to_root_in(
         conn,
         feed_fetcher,
         youtube_fetcher,
         now,
         request,
         download_root,
-        &mut |_, _| {},
     )
 }
 
@@ -322,14 +300,13 @@ fn adopt_resolved_channel_url(
     Ok(())
 }
 
-fn refresh_to_root_with_download_progress(
+fn refresh_to_root_in(
     conn: &Connection,
     feed_fetcher: &dyn FeedFetcher,
     youtube_fetcher: &dyn YoutubeFetcher,
     now: i64,
     request: RefreshRequest,
     download_root: &Path,
-    on_download: &mut dyn FnMut(i64, DownloadState),
 ) -> Result<RefreshSummary, PipelineError> {
     let config = super::config::load_in(conn)?;
     let rss_allowed = super::config::source_network_allowed_in(conn, PodcastKind::Rss)?;
@@ -501,7 +478,6 @@ fn refresh_to_root_with_download_progress(
         } else {
             subscription.added_at
         };
-        let mut new_episode_ids = Vec::new();
         for episode in &feed.episodes {
             if baseline.contains(&episode.guid) {
                 continue;
@@ -513,7 +489,6 @@ fn refresh_to_root_with_download_progress(
             };
             if upsert.inserted {
                 summary.episodes_inserted += 1;
-                new_episode_ids.push(upsert.episode_id);
             } else {
                 summary.episodes_updated += 1;
             }
@@ -543,42 +518,6 @@ fn refresh_to_root_with_download_progress(
         )?;
         clear_retry(retry_key);
         summary.refreshed += 1;
-
-        if subscription.auto_download {
-            for episode_id in new_episode_ids
-                .into_iter()
-                .take(MAX_AUTO_DOWNLOADS_PER_SUBSCRIPTION)
-            {
-                let Some(episode) = super::store::episode_in(conn, episode_id)? else {
-                    continue;
-                };
-                if episode.downloaded_path.is_some() {
-                    // Already satisfied by `reclaim_download` above — no
-                    // network round trip, and (unlike a genuinely fresh
-                    // download) not counted toward this refresh's completed
-                    // total.
-                    continue;
-                }
-                let mut on_progress = |state: DownloadState| on_download(episode_id, state);
-                let outcome = download_episode_in(
-                    conn,
-                    feed_fetcher,
-                    youtube_fetcher,
-                    download_root,
-                    episode_id,
-                    &mut on_progress,
-                )?;
-                match outcome {
-                    DownloadState::Downloaded { .. } => summary.downloads_completed += 1,
-                    DownloadState::Failed { .. } => summary.downloads_failed += 1,
-                    // `download_episode` only ever returns a terminal state.
-                    DownloadState::NotDownloaded
-                    | DownloadState::Queued
-                    | DownloadState::Downloading { .. }
-                    | DownloadState::Missing => {}
-                }
-            }
-        }
     }
     super::downloads::enforce_cleanup_in(
         conn,
@@ -669,6 +608,14 @@ mod youtube_gate_tests;
 #[cfg(test)]
 #[path = "pipeline_refresh_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pipeline_download_tests.rs"]
+mod download_tests;
+
+#[cfg(test)]
+#[path = "fill_downloads_tests.rs"]
+mod fill_downloads_tests;
 
 #[cfg(test)]
 #[path = "pipeline_refresh_policy_tests.rs"]

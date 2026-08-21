@@ -49,16 +49,23 @@ fn style_11_the_concerts_view_renders_the_pinned_pattern() {
         "another test resolved the date format first; run this one with --exact"
     );
 
+    // The concerts view only queries `date_key >= today`, so the seeded event
+    // has to stay ahead of the real clock — a pinned calendar date renders
+    // nothing at all once that day passes, and the assert below would then
+    // blame the date pattern for an empty table.
+    let event_date = chrono::Local::now().date_naive() + chrono::Duration::days(30);
+    let date_key = event_date.format("%Y-%m-%d").to_string();
+    let expected_label = event_date.format("%d.%m.%Y").to_string();
     let concerts_db = Rc::new(crate::test_db::open().unwrap());
     crate::test_db::connection(&concerts_db)
         .execute(
             "INSERT INTO concert_events (
                id, artist_key, artist_name, starts_at, date_key, venue, city,
                country, provider, fetched_at, dedupe_key
-             ) VALUES (1, 'artist-id', 'Artist', '2026-10-17T19:00:00',
-                       '2026-10-17', 'Venue', 'Zurich', 'CH', 'fixture', 1,
+             ) VALUES (1, 'artist-id', 'Artist', ?1,
+                       ?2, 'Venue', 'Zurich', 'CH', 'fixture', 1,
                        'style-11-concert')",
-            [],
+            rusqlite::params![format!("{date_key}T19:00:00"), date_key],
         )
         .unwrap();
     let runtime = crate::ui::concerts::ConcertsRuntime::setup(&concerts_db);
@@ -79,8 +86,9 @@ fn style_11_the_concerts_view_renders_the_pinned_pattern() {
 
     let labels = descendant_labels(tables.upcast_ref());
     assert!(
-        labels.iter().any(|label| label.text() == "17.10.2026"),
-        "no rendered concert label used the pinned date; rendered labels were {:?}",
+        labels.iter().any(|label| label.text() == expected_label),
+        "no rendered concert label read {expected_label}, the pinned day-first \
+         pattern; rendered labels were {:?}",
         labels
             .iter()
             .map(|label| label.text().to_string())

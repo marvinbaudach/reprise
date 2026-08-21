@@ -51,7 +51,12 @@ export function SiteFooter() {
           <a href={permalink(PERFORMANCE_RECORD)}>Measurements</a>
         </div>
 
-        <section className="availability" data-reveal aria-labelledby="availability-heading">
+        <section
+          id="availability"
+          className="availability"
+          data-reveal
+          aria-labelledby="availability-heading"
+        >
           <div>
             <p className="availability__eyebrow">Availability</p>
             <h2 id="availability-heading">Open to work.</h2>

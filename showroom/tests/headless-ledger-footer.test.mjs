@@ -78,7 +78,11 @@ test('chapter five exposes the complete measured ledger and its price without a 
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(12\.5% 0\.018 24\)"/);
   assert.match(chapter, /Measured afterwards\. Price attached\./);
-  assert.match(chapter, /<table[^>]+class="ledger"/);
+  const table = chapter.match(/<table[^>]+class="ledger"[\s\S]+?<\/table>/)?.[0];
+  assert.ok(table);
+  assert.match(table, /<table[^>]+role="table"/);
+  assert.equal((table.match(/<(?:thead|tbody) role="rowgroup">/g) ?? []).length, 2);
+  assert.equal((table.match(/<th scope="col" role="columnheader">/g) ?? []).length, 4);
   assert.doesNotMatch(chapter, /<details|Folded away/);
   assert.doesNotMatch(chapter, / style=/);
   // The figures themselves are quoted from the record, so they are read from it
@@ -99,16 +103,37 @@ test('chapter five exposes the complete measured ledger and its price without a 
   for (const cells of rows) {
     for (const cell of cells) assert.match(chapter, shown(cell));
   }
-  assert.equal((chapter.match(/<tr>/g) ?? []).length, rows.length + 1);
+  const rowTags = table.match(/<tr[^>]*>/g) ?? [];
+  assert.equal(rowTags.length, rows.length + 1);
+  assert.ok(
+    rowTags.every((tag) => /role="row"/.test(tag)),
+    'every ledger row keeps its role',
+  );
+  assert.equal((table.match(/<th scope="row" role="rowheader">/g) ?? []).length, rows.length);
+  const cells = [...table.matchAll(/<td[^>]+role="cell"[^>]+data-label="([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  assert.deepEqual(
+    cells,
+    rows.flatMap(() => ['Before', 'After', 'Delta']),
+  );
   // The price rides along with the table, out of the same record.
   const price = record.split('\n## The price\n')[1]?.split('\n#')[0]?.trim();
   assert.ok(price, 'the record must carry a price paragraph');
   for (const fragment of price.split(' ').filter((word) => /\d/.test(word))) {
     assert.match(chapter, shown(fragment));
   }
+  assert.ok(
+    chapter.indexOf('class="ledger__price"') > chapter.indexOf('</table>'),
+    'the price must remain the final line after the complete ledger',
+  );
   assert.match(css, /\.chapter-five\{[^}]*padding:clamp\(4rem,3rem \+ 5vw,7rem\) 0/);
   assert.match(css, /\.ledger-card\{[^}]*border-radius:12px/);
   assert.match(authoredCss, /background: oklch\(17% 0\.016 269 \/ 0\.72\)/);
+  const mobile = authoredCss.slice(authoredCss.indexOf('@media (max-width: 34rem)'));
+  assert.match(mobile, /\.ledger tbody tr\s*\{[^}]*display: grid;/);
+  assert.match(mobile, /grid-template-columns: repeat\(3, 1fr\);/);
+  assert.match(mobile, /\.ledger td::before\s*\{[^}]*content: attr\(data-label\);/);
 });
 
 test('the design footer carries provenance availability and the exact contact treatment', async () => {
@@ -123,6 +148,7 @@ test('the design footer carries provenance availability and the exact contact tr
   assert.match(footer, /index-rebuild\.md/);
   assert.match(footer, /src="\/reprise\/brand\/reprise-mark\.svg"/);
   assert.match(footer, /Availability/);
+  assert.match(footer, /<section id="availability" class="availability"/);
   assert.match(footer, /Open to work\./);
   assert.match(footer, /github\.com\/marvinbaudach ↗/);
   assert.match(footer, /GPL-3\.0-or-later · active alpha/);

@@ -4,9 +4,9 @@ use super::{RefreshRequest as R, *};
 use crate::podcasts::store::{self, NewSubscription};
 
 #[derive(Default)]
-struct FakeFeed {
-    responses: RefCell<Vec<Result<Response, PodcastError>>>,
-    downloads: RefCell<Vec<String>>,
+pub(super) struct FakeFeed {
+    pub(super) responses: RefCell<Vec<Result<Response, PodcastError>>>,
+    pub(super) downloads: RefCell<Vec<String>>,
 }
 
 impl FeedFetcher for FakeFeed {
@@ -21,7 +21,7 @@ impl FeedFetcher for FakeFeed {
 }
 
 #[derive(Default)]
-struct FakeYoutube;
+pub(super) struct FakeYoutube;
 
 impl YoutubeFetcher for FakeYoutube {
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
@@ -80,7 +80,7 @@ impl FeedFetcher for PartialFailureFeed {
     }
 }
 
-fn conn() -> Db {
+pub(super) fn conn() -> Db {
     let conn = Db::open_in_memory().unwrap();
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
     // itself (see the dedicated `net_1a_*` tests below), so Podcasts
@@ -90,7 +90,7 @@ fn conn() -> Db {
     conn
 }
 
-fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
+pub(super) fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
     store::add_or_restore_in(
         conn,
         &NewSubscription {
@@ -106,7 +106,7 @@ fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
     .unwrap()
 }
 
-fn feed_response(title: &str, episode_count: usize, etag: Option<&str>) -> Response {
+pub(super) fn feed_response(title: &str, episode_count: usize, etag: Option<&str>) -> Response {
     let items = (0..episode_count)
         .map(|index| {
             format!(
@@ -341,65 +341,6 @@ fn net_3d_background_attempts_stop_after_the_shared_cap() {
     assert_eq!(stopped.attempted, 0);
 }
 
-#[test]
-fn auto_download_is_capped_at_three_new_episodes_per_run() {
-    let conn = conn();
-    let id = add_subscription(conn.conn(), "https://example.test/feed", true);
-    let feed = FakeFeed {
-        responses: RefCell::new(vec![Ok(feed_response("Show", 5, None))]),
-        ..FakeFeed::default()
-    };
-    let directory = tempfile::tempdir().unwrap();
-
-    let summary =
-        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
-
-    assert_eq!(summary.downloads_completed, 3);
-    assert_eq!(feed.downloads.borrow().len(), 3);
-    let downloaded = super::super::query::episodes_for_subscription(&conn, id)
-        .unwrap()
-        .into_iter()
-        .filter(|episode| episode.downloaded_path.is_some())
-        .count();
-    assert_eq!(downloaded, 3);
-}
-
-#[test]
-fn pod_7_auto_download_reports_episode_states_during_refresh() {
-    let conn = conn();
-    add_subscription(conn.conn(), "https://example.test/feed", true);
-    let feed = FakeFeed {
-        responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
-        ..FakeFeed::default()
-    };
-    let directory = tempfile::tempdir().unwrap();
-    let mut events = Vec::new();
-
-    refresh_to_root_with_download_progress(
-        conn.conn(),
-        &feed,
-        &FakeYoutube,
-        10,
-        R::force(),
-        directory.path(),
-        &mut |episode_id, state| events.push((episode_id, state)),
-    )
-    .unwrap();
-
-    assert!(matches!(events[0].1, DownloadState::Queued));
-    assert!(matches!(
-        events[1].1,
-        DownloadState::Downloading {
-            received_bytes: 0,
-            total_bytes: None,
-        }
-    ));
-    assert!(matches!(
-        events.last(),
-        Some((_, DownloadState::Downloaded { bytes: 5 }))
-    ));
-}
-
 /// Block H (MCP parity): `download_episode` is the function
 /// `music_manage_episodes`'s `download` action calls directly, outside a
 /// refresh pass. It must actually perform the download (not just report a
@@ -569,10 +510,8 @@ fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
     super::super::downloads::prepare_destination(&existing).unwrap();
     std::fs::write(&existing, b"orphan").unwrap();
 
-    let summary =
-        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
 
-    assert_eq!(summary.downloads_completed, 0);
     assert!(feed.downloads.borrow().is_empty());
     assert_eq!(
         super::super::query::episodes_for_subscription(&conn, id).unwrap()[0]
@@ -585,16 +524,29 @@ fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
 #[test]
 fn failed_download_does_not_leave_a_reclaimable_partial_file() {
     let conn = conn();
-    let id = add_subscription(conn.conn(), "https://example.test/feed", true);
-    let feed = PartialFailureFeed {
-        response: RefCell::new(Some(feed_response("Show", 1, None))),
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
+        ..FakeFeed::default()
     };
     let directory = tempfile::tempdir().unwrap();
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
+    let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
+    let failing_feed = PartialFailureFeed {
+        response: RefCell::new(None),
+    };
 
-    let summary =
-        refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
+    let state = download_episode(
+        &conn,
+        &failing_feed,
+        &FakeYoutube,
+        directory.path(),
+        episode_id,
+        &mut |_| {},
+    )
+    .unwrap();
 
-    assert_eq!(summary.downloads_failed, 1);
+    assert!(matches!(state, DownloadState::Failed { .. }));
     let episode = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].clone();
     assert!(episode.downloaded_path.is_none());
     assert!(super::super::downloads::reclaim_existing(

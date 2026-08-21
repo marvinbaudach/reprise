@@ -40,6 +40,16 @@ export function Hero({ reducedMotion }: HeroProps) {
             <span className="hero__scroll-line" aria-hidden="true" />
             <span>Scroll</span>
           </div>
+
+          <div className="hero__offer" data-reveal="">
+            <span className="hero__offer-state">Available · Q4</span>
+            <span className="hero__offer-copy">
+              Five weeks, one developer, agents under gate control.
+            </span>
+            <a className="hero__offer-link" href="#availability">
+              The same method, your codebase ↓
+            </a>
+          </div>
         </div>
 
         <HeroProduct />

@@ -14,14 +14,12 @@ use crate::podcasts::{
 };
 
 /// Downloads one specific episode by id, synchronously. This is the same
-/// body the auto-download branch of `refresh_to_root_with_download_progress`
-/// runs for newly discovered episodes of an `auto_download` subscription —
-/// factored out (Block H, MCP parity) so `music_manage_episodes`'s `download`
+/// executor the background fill-up, `music_manage_episodes`'s `download`
 /// action, and (`MTP-44`/`POD-7`) the GTK worker's manual and device-sync
-/// preparation downloads, all drive the exact same download path instead of
-/// a second one that could drift from it. Idempotent: an episode that
-/// already has a downloaded file is reported `Downloaded` immediately
-/// without a second network round trip.
+/// preparation downloads all drive, instead of maintaining paths that could
+/// drift from each other. Idempotent: an episode that already has a downloaded
+/// file is reported `Downloaded` immediately without a second network round
+/// trip.
 ///
 /// `NET-1a`: gated per the episode's own source kind, not a blanket check —
 /// a download is a network (RSS) or subprocess (yt-dlp) entry point in its
@@ -42,7 +40,40 @@ pub fn download_episode(
         download_root,
         episode_id,
         on_progress,
+        ExistingDownload::ReturnAlreadyRunning,
     )
+}
+
+/// Downloads one episode or waits for the active download of that episode.
+///
+/// This call is deliberately blocking: when another caller owns the download,
+/// it waits on the current thread until that run reports `Downloaded` or
+/// `Failed`. Frontends must therefore invoke it only from a worker thread,
+/// never from a UI or async-executor thread. Progress already reported by the
+/// active run is replayed through `on_progress` before live updates continue.
+pub fn download_episode_waiting(
+    db: &Db,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    download_root: &Path,
+    episode_id: i64,
+    on_progress: &mut dyn FnMut(DownloadState),
+) -> Result<DownloadState, PipelineError> {
+    download_episode_in(
+        db.conn(),
+        feed_fetcher,
+        youtube_fetcher,
+        download_root,
+        episode_id,
+        on_progress,
+        ExistingDownload::Wait,
+    )
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ExistingDownload {
+    ReturnAlreadyRunning,
+    Wait,
 }
 
 pub(super) fn download_episode_in(
@@ -52,12 +83,31 @@ pub(super) fn download_episode_in(
     download_root: &Path,
     episode_id: i64,
     on_progress: &mut dyn FnMut(DownloadState),
+    existing_download: ExistingDownload,
 ) -> Result<DownloadState, PipelineError> {
+    // Held for the rest of this call. A non-waiting caller can still learn
+    // that another run owns the `.part` file, while playback and other worker
+    // operations may explicitly wait for that run's shared terminal state.
+    let claim = match super::super::download_claims::claim(download_root, episode_id) {
+        super::super::download_claims::ClaimOutcome::Acquired(claim) => claim,
+        super::super::download_claims::ClaimOutcome::Running(waiter) => {
+            return match existing_download {
+                ExistingDownload::ReturnAlreadyRunning => {
+                    Err(PipelineError::DownloadAlreadyRunning)
+                }
+                ExistingDownload::Wait => Ok(waiter.wait(on_progress)),
+            };
+        }
+    };
+    let mut report = |state: DownloadState| {
+        claim.report(state.clone());
+        on_progress(state);
+    };
     let episode = store::episode_in(conn, episode_id)?.ok_or(PipelineError::EpisodeNotFound)?;
     if episode.downloaded_path.is_some() {
         let bytes = episode.downloaded_bytes.unwrap_or(0).max(0) as u64;
         let state = DownloadState::Downloaded { bytes };
-        on_progress(state.clone());
+        report(state.clone());
         return Ok(state);
     }
     let subscription = store::subscription_in(conn, episode.subscription_id)?
@@ -69,17 +119,17 @@ pub(super) fn download_episode_in(
         &episode.guid,
         extension,
     );
-    on_progress(DownloadState::Queued);
+    report(DownloadState::Queued);
     let mut state = DownloadState::Downloading {
         received_bytes: 0,
         total_bytes: None,
     };
-    on_progress(state.clone());
+    report(state.clone());
     if !config::source_network_allowed_in(conn, episode.kind)? {
         let state = DownloadState::Failed {
             message: "this source is disabled".to_owned(),
         };
-        on_progress(state.clone());
+        report(state.clone());
         return Ok(state);
     }
     let tag_set = episode_tags::EpisodeTagSet {
@@ -97,7 +147,7 @@ pub(super) fn download_episode_in(
         let mut report = |progress: DownloadProgress| {
             state =
                 download_state::downloading(&state, progress.received_bytes, progress.total_bytes);
-            on_progress(state.clone());
+            report(state.clone());
         };
         match subscription.kind {
             PodcastKind::Rss => {
@@ -135,7 +185,7 @@ pub(super) fn download_episode_in(
             &destination,
             bytes,
             media_category.as_deref(),
-            on_progress,
+            &mut report,
         ),
         Err(error) => {
             // POD-13: never let the raw provider error reach the UI or a
@@ -148,7 +198,7 @@ pub(super) fn download_episode_in(
             let state = DownloadState::Failed {
                 message: reason.to_owned(),
             };
-            on_progress(state.clone());
+            report(state.clone());
             Ok(state)
         }
     }

@@ -587,6 +587,41 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
     assert!(button.has_css_class("reprise-source-added"));
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_add_dialog_offers_an_automatic_fill_switch() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let on_added: OnAdded = Rc::new(|_| {});
+    append_preview(
+        &parent,
+        Preview {
+            kind: PodcastKind::Rss,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            count: 10,
+            url: "https://example.test/feed".into(),
+            guids: Vec::new(),
+        },
+        10,
+        true,
+        &conn,
+        &on_added,
+    );
+
+    let option_buttons = std::iter::successors(parent.first_child(), WidgetExt::next_sibling)
+        .filter_map(|child| child.downcast::<gtk4::CheckButton>().ok())
+        .collect::<Vec<_>>();
+    let automatic_fill_label = strings::text(strings::PODCAST_AUTO_DOWNLOAD);
+    let automatic_fill = option_buttons
+        .iter()
+        .find(|button| button.label().as_deref() == Some(automatic_fill_label.as_str()))
+        .expect("the preview must offer automatic filling for this subscription");
+    assert!(automatic_fill.is_active());
+}
+
 /// `SRC-19`: the chart path owns its empty sentence. Borrowing the search
 /// one would quote the chip's label back as though it were a typed term and
 /// then advise pasting a feed URL — advice for a search that missed, not for a
@@ -657,7 +692,7 @@ fn pod_13_preview_error_never_forwards_a_leaking_payload() {
             kind: reprise_core::podcasts::ytdlp::YtDlpFailureKind::Other,
             stderr: leaking.to_owned(),
         }),
-        "YouTube source could not be read with yt-dlp"
+        "YouTube request failed — check the application log"
     );
 }
 
@@ -669,19 +704,33 @@ fn disabling_initial_import_persists_the_previewed_guid_baseline() {
 }
 
 #[test]
-fn new_subscription_uses_the_configured_auto_download_default() {
-    let config = podcasts::config::PodcastConfig {
-        import_count: 25,
-        auto_download_default: true,
-        cleanup_policy: podcasts::config::CleanupPolicy::KeepAll,
-        youtube_import_count: 10,
-        youtube_hide_shorts_default: true,
-        youtube_browser: None,
-        ytdlp_path: None,
-        refresh_hours: 6,
-        latest_per_channel_default: 5,
-        keep_downloaded_default: 5,
-    };
+fn new_subscription_uses_the_selected_automatic_fill_choice() {
+    let conn = crate::test_db::open().unwrap();
+    let id = subscribe(
+        &conn,
+        &Candidate {
+            kind: PodcastKind::Rss,
+            title: "Show".into(),
+            subtitle: "Publisher".into(),
+            author: Some("Publisher".into()),
+            image_url: None,
+            url: "https://example.test/feed".into(),
+            identity_guids: Vec::new(),
+        },
+        true,
+        None,
+    )
+    .unwrap();
+    let subscription = podcasts::store::subscription(&conn, id).unwrap().unwrap();
+    assert!(subscription.auto_download);
+}
+
+#[test]
+fn new_subscription_discovery_inherits_the_configured_automatic_fill_default() {
+    let conn = crate::test_db::open().unwrap();
+    podcasts::config::set_auto_download_default(&conn, true).unwrap();
+    let config = podcasts::config::load(&conn).unwrap();
+
     assert!(configured_auto_download_default(Some(&config)));
     assert!(!configured_auto_download_default(None));
 }

@@ -161,6 +161,52 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
 }
 
 #[test]
+fn a_fill_downloads_request_does_not_cancel_a_running_refresh() {
+    let current = 7;
+    assert_eq!(
+        request_generation(current, PodcastsOperation::FillDownloads),
+        current
+    );
+}
+
+#[test]
+fn a_row_download_that_loses_to_playback_stays_in_progress() {
+    assert_eq!(
+        download_error_state(&podcasts::pipeline::PipelineError::DownloadAlreadyRunning),
+        Some(DownloadState::Downloading {
+            received_bytes: 0,
+            total_bytes: None,
+        })
+    );
+    assert_eq!(
+        download_error_state(&podcasts::pipeline::PipelineError::EpisodeNotFound),
+        None
+    );
+}
+
+#[test]
+fn both_podcast_views_share_one_catalogue_fill_slot() {
+    let conn = crate::test_db::open().unwrap();
+    let runtime = PodcastsRuntime::setup(&conn);
+    let rss_view_runtime = Rc::clone(&runtime);
+    let youtube_view_runtime = Rc::clone(&runtime);
+
+    assert!(rss_view_runtime.begin_fill_request());
+    assert!(!youtube_view_runtime.begin_fill_request());
+    assert!(rss_view_runtime.finish_fill_request());
+}
+
+#[test]
+fn a_fill_requested_while_running_is_replayed_after_completion() {
+    let mut state = FillRequestState::default();
+
+    assert!(state.request());
+    assert!(!state.request());
+    assert!(state.complete());
+    assert!(state.request());
+}
+
+#[test]
 fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publish() {
     let conn = crate::test_db::open().unwrap();
     let episode_id = episode(&conn);

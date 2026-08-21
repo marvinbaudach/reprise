@@ -89,6 +89,54 @@
   animation: rp-cue 2.6s ease-in-out infinite;
 }
 
+.hero__offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 14px 22px;
+  margin-top: 34px;
+  padding-top: 20px;
+  border-top: 1px solid var(--surface-line-soft);
+}
+
+.hero__offer-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hero__offer-state::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+}
+
+.hero__offer-copy {
+  color: var(--text-muted);
+}
+
+.hero__offer-link {
+  border-bottom: 1px solid var(--accent);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  text-decoration: none;
+  transition:
+    border-color var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.hero__offer-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 @keyframes rp-cue {
   0%,
   100% {

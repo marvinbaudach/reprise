@@ -63,6 +63,8 @@ internal interface LibrarySessionPort {
 
     fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String?
 
+    fun artistsMissingPortraits(limit: UInt): List<String>
+
     fun setFavourite(trackId: Long, favourite: Boolean)
 }
 
@@ -73,6 +75,7 @@ private data class ArtworkCacheKey(
 
 internal class LibrarySession(
     private val port: LibrarySessionPort,
+    private val startPortraitPrefetch: () -> Unit = {},
 ) {
     private val artworkPaths =
         object : LinkedHashMap<ArtworkCacheKey, String?>(64, 0.75f, true) {
@@ -96,7 +99,9 @@ internal class LibrarySession(
             return LibraryScreenState.TreeUnreadable
         }
         port.configureTree(treeUri)
-        return browseState(selectedTab = selectedTab)
+        val state = browseState(selectedTab = selectedTab)
+        startPortraitPrefetch()
+        return state
     }
 
     fun chooseTree(
@@ -239,7 +244,9 @@ internal class LibrarySession(
             artworkPaths.clear()
             artworkGeneration++
         }
-        return browseState()
+        val state = browseState()
+        startPortraitPrefetch()
+        return state
     }
 
     private fun browseState(

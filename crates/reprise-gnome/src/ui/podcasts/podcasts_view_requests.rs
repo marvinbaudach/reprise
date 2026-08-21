@@ -80,6 +80,7 @@ impl PodcastsView {
                             view.show_refresh_failures(&summary.failures);
                         }
                         (view.callbacks.on_sidebar_refresh)();
+                        view.request_fill_downloads();
                         break;
                     }
                     Ok(PodcastsWorkerResult::LoadedMore {
@@ -91,6 +92,7 @@ impl PodcastsView {
                         view.refresh();
                         break;
                     }
+                    Ok(PodcastsWorkerResult::Filled(_)) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
@@ -99,6 +101,63 @@ impl PodcastsView {
                         break;
                     }
                 }
+            }
+        });
+        true
+    }
+
+    fn request_fill_downloads(self: &Rc<Self>) -> bool {
+        if !self.runtime.begin_fill_request() {
+            tracing::debug!("podcast download fill-up request deferred while one is running");
+            return false;
+        }
+        let operation = PodcastsOperation::FillDownloads;
+        let generation = request_generation(self.generation.get(), operation);
+        let (response, receiver) = podcasts_response_channel();
+        if !self.runtime.request(PodcastsRequest {
+            generation,
+            operation,
+            response,
+        }) {
+            self.runtime.cancel_fill_request();
+            return false;
+        }
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            while let Ok(response) = receiver.recv().await {
+                let Some(view) = weak.upgrade() else {
+                    return;
+                };
+                match response.result {
+                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }) => {
+                        view.set_download_state(episode_id, &state);
+                    }
+                    Ok(PodcastsWorkerResult::Filled(summary)) => {
+                        view.refresh();
+                        (view.callbacks.on_sidebar_refresh)();
+                        tracing::debug!(
+                            downloaded = summary.downloaded,
+                            failed = summary.failed,
+                            "podcast download fill-up finished"
+                        );
+                        break;
+                    }
+                    Ok(
+                        PodcastsWorkerResult::Refreshed(_)
+                        | PodcastsWorkerResult::LoadedMore { .. },
+                    ) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "podcast download fill-up failed");
+                        break;
+                    }
+                }
+            }
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            let replay = view.runtime.finish_fill_request();
+            if replay {
+                view.request_fill_downloads();
             }
         });
         true
@@ -225,6 +284,7 @@ impl PodcastsView {
                         view.set_download_state(episode_id, &state);
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
+                    Ok(PodcastsWorkerResult::Filled(_)) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
