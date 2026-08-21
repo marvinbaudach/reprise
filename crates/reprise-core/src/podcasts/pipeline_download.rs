@@ -88,7 +88,7 @@ pub(super) fn download_episode_in(
     // Held for the rest of this call. A non-waiting caller can still learn
     // that another run owns the `.part` file, while playback and other worker
     // operations may explicitly wait for that run's shared terminal state.
-    let claim = match super::super::download_claims::claim(episode_id) {
+    let claim = match super::super::download_claims::claim(download_root, episode_id) {
         super::super::download_claims::ClaimOutcome::Acquired(claim) => claim,
         super::super::download_claims::ClaimOutcome::Running(waiter) => {
             return match existing_download {

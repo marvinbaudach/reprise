@@ -208,7 +208,7 @@ fn a_concurrent_download_of_the_same_episode_is_refused() {
     let episode_id =
         super::super::query::episodes_for_subscription(&db, subscription_id).unwrap()[0].id;
     let super::super::download_claims::ClaimOutcome::Acquired(held) =
-        super::super::download_claims::claim(episode_id)
+        super::super::download_claims::claim(root.path(), episode_id)
     else {
         panic!("claim must be acquired");
     };

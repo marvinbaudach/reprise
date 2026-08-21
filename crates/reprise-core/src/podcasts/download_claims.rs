@@ -8,8 +8,15 @@
 //! The guard lives here rather than in any one caller: a caller-side guard
 //! (the podcasts view's `download_states` map) can only see its own dispatches,
 //! and a second such map would be the same mistake twice.
+//!
+//! What is claimed is a file, not a number, so the key carries the download
+//! root as well as the episode id. An episode id alone is unique only within
+//! one library: the registry is process-wide, and two libraries — or, in the
+//! test binary, two tests holding their own temporary root — would otherwise
+//! collide on id 1 and be handed each other's terminal state.
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 use super::download_state::DownloadState;
@@ -51,8 +58,12 @@ impl InFlightDownload {
     }
 }
 
-fn in_flight() -> &'static Mutex<BTreeMap<i64, Arc<InFlightDownload>>> {
-    static IN_FLIGHT: OnceLock<Mutex<BTreeMap<i64, Arc<InFlightDownload>>>> = OnceLock::new();
+/// The download root the `.part` file lives under, plus the episode inside it.
+type DownloadKey = (PathBuf, i64);
+
+fn in_flight() -> &'static Mutex<BTreeMap<DownloadKey, Arc<InFlightDownload>>> {
+    static IN_FLIGHT: OnceLock<Mutex<BTreeMap<DownloadKey, Arc<InFlightDownload>>>> =
+        OnceLock::new();
     IN_FLIGHT.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
@@ -67,7 +78,7 @@ fn is_terminal(state: &DownloadState) -> bool {
 /// early return or a panic inside the download cannot leak it.
 #[derive(Debug)]
 pub(crate) struct DownloadClaim {
-    episode_id: i64,
+    key: DownloadKey,
     download: Arc<InFlightDownload>,
 }
 
@@ -87,10 +98,10 @@ impl Drop for DownloadClaim {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if guard
-            .get(&self.episode_id)
+            .get(&self.key)
             .is_some_and(|download| Arc::ptr_eq(download, &self.download))
         {
-            guard.remove(&self.episode_id);
+            guard.remove(&self.key);
         }
         drop(guard);
         self.download.abandon_if_running();
@@ -141,54 +152,75 @@ pub(crate) enum ClaimOutcome {
     Running(DownloadWaiter),
 }
 
-/// Claims `episode_id` for a download or returns a waiter for the active run.
-pub(crate) fn claim(episode_id: i64) -> ClaimOutcome {
+/// Claims `episode_id` under `download_root` for a download, or returns a
+/// waiter for the run that already owns it.
+pub(crate) fn claim(download_root: &Path, episode_id: i64) -> ClaimOutcome {
+    let key: DownloadKey = (download_root.to_path_buf(), episode_id);
     let mut guard = in_flight()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(download) = guard.get(&episode_id) {
+    if let Some(download) = guard.get(&key) {
         return ClaimOutcome::Running(DownloadWaiter {
             download: Arc::clone(download),
         });
     }
     let download = Arc::new(InFlightDownload::default());
-    guard.insert(episode_id, Arc::clone(&download));
-    ClaimOutcome::Acquired(DownloadClaim {
-        episode_id,
-        download,
-    })
+    guard.insert(key.clone(), Arc::clone(&download));
+    ClaimOutcome::Acquired(DownloadClaim { key, download })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn root(name: &str) -> PathBuf {
+        PathBuf::from("/downloads").join(name)
+    }
+
     #[test]
     fn a_second_claim_for_the_same_episode_is_refused() {
-        let ClaimOutcome::Acquired(first) = claim(4242) else {
+        let root = root("refused");
+        let ClaimOutcome::Acquired(first) = claim(&root, 4242) else {
             panic!("first claim must be acquired");
         };
-        assert!(matches!(claim(4242), ClaimOutcome::Running(_)));
+        assert!(matches!(claim(&root, 4242), ClaimOutcome::Running(_)));
         drop(first);
-        assert!(matches!(claim(4242), ClaimOutcome::Acquired(_)));
+        assert!(matches!(claim(&root, 4242), ClaimOutcome::Acquired(_)));
     }
 
     #[test]
     fn claims_for_different_episodes_coexist() {
-        let ClaimOutcome::Acquired(_one) = claim(4243) else {
+        let root = root("coexist");
+        let ClaimOutcome::Acquired(_one) = claim(&root, 4243) else {
             panic!("first claim must be acquired");
         };
-        let ClaimOutcome::Acquired(_two) = claim(4244) else {
+        let ClaimOutcome::Acquired(_two) = claim(&root, 4244) else {
             panic!("second claim must be acquired");
         };
     }
 
     #[test]
-    fn dropping_a_holder_wakes_its_waiter_with_a_failure() {
-        let ClaimOutcome::Acquired(held) = claim(4245) else {
+    fn the_same_episode_id_under_two_roots_is_two_claims() {
+        // The registry outlives any one library. Episode ids restart at 1 in
+        // every database, so a key of id alone hands the second library the
+        // first one's terminal state — which is what turned an unrelated
+        // podcast test red once two of them ran at the same time.
+        let ClaimOutcome::Acquired(_first) = claim(&root("library-a"), 1) else {
             panic!("first claim must be acquired");
         };
-        let ClaimOutcome::Running(waiter) = claim(4245) else {
+        assert!(matches!(
+            claim(&root("library-b"), 1),
+            ClaimOutcome::Acquired(_)
+        ));
+    }
+
+    #[test]
+    fn dropping_a_holder_wakes_its_waiter_with_a_failure() {
+        let root = root("dropping");
+        let ClaimOutcome::Acquired(held) = claim(&root, 4245) else {
+            panic!("first claim must be acquired");
+        };
+        let ClaimOutcome::Running(waiter) = claim(&root, 4245) else {
             panic!("second claim must wait");
         };
 
@@ -207,10 +239,11 @@ mod tests {
     fn a_panicking_holder_still_releases_the_claim() {
         // The claim must not survive a panicking download: `Drop` runs while
         // unwinding, a manual `release()` call would not.
-        let ClaimOutcome::Acquired(held) = claim(4246) else {
+        let root = root("panicking");
+        let ClaimOutcome::Acquired(held) = claim(&root, 4246) else {
             panic!("claim must be acquired");
         };
-        let ClaimOutcome::Running(waiter) = claim(4246) else {
+        let ClaimOutcome::Running(waiter) = claim(&root, 4246) else {
             panic!("second claim must wait");
         };
         let _ = std::panic::catch_unwind(move || {
@@ -221,6 +254,6 @@ mod tests {
             waiter.wait(&mut |_| {}),
             DownloadState::Failed { .. }
         ));
-        assert!(matches!(claim(4246), ClaimOutcome::Acquired(_)));
+        assert!(matches!(claim(&root, 4246), ClaimOutcome::Acquired(_)));
     }
 }
