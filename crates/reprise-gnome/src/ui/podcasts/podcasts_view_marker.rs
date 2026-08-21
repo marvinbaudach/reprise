@@ -228,15 +228,18 @@ impl PodcastsView {
     }
 
     pub(in crate::ui) fn update_position_state(&self, episode_id: i64, position_ms: i64) {
-        let (row, display_changed) = {
+        let updated = {
             let mut rows = self.rows.borrow_mut();
-            let Some(row) = rows.iter_mut().find(|row| row.id == episode_id) else {
-                self.youtube_detail
-                    .update_position_state(episode_id, position_ms);
-                return;
-            };
-            let display_changed = podcasts_presentation::update_resume_position(row, position_ms);
-            (row.clone(), display_changed)
+            rows.iter_mut().find(|row| row.id == episode_id).map(|row| {
+                let display_changed =
+                    podcasts_presentation::update_resume_position(row, position_ms);
+                (row.clone(), display_changed)
+            })
+        };
+        let Some((row, display_changed)) = updated else {
+            self.youtube_detail
+                .update_position_state(episode_id, position_ms);
+            return;
         };
         for group in self.groups.borrow_mut().iter_mut() {
             if let Some(row) = group.episodes.iter_mut().find(|row| row.id == episode_id) {
@@ -258,5 +261,32 @@ impl PodcastsView {
         if self.unavailable_episode.replace(episode_id) != episode_id {
             self.render();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn position_delegation_does_not_run_inside_the_rows_borrow_scope() {
+        let source = include_str!("podcasts_view_marker.rs");
+        let function = source
+            .split("pub(in crate::ui) fn update_position_state")
+            .nth(1)
+            .unwrap()
+            .split("pub(in crate::ui) fn set_unavailable_episode")
+            .next()
+            .unwrap();
+        let borrow_scope = function
+            .split("let mut rows = self.rows.borrow_mut();")
+            .nth(1)
+            .unwrap()
+            .split("\n        };")
+            .next()
+            .unwrap();
+
+        assert!(
+            !borrow_scope.contains("self.youtube_detail"),
+            "drop the rows borrow before delegating to the YouTube detail"
+        );
     }
 }
