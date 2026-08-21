@@ -237,9 +237,9 @@ pub enum PipelineError {
 
 #[path = "pipeline_download.rs"]
 mod download;
-pub use download::download_episode;
 #[cfg(test)]
 use download::remove_completed_download;
+pub use download::{download_episode, download_episode_waiting};
 
 pub fn refresh(
     db: &Db,
