@@ -1536,12 +1536,26 @@ der DB-Abfrage, nicht mit einem Screenshot.
 Episode abspielen. Erwartet: die Zeile nennt die Reparatur („update yt-dlp"),
 nicht mehr „YouTube source could not be read with yt-dlp".
 
-- [ ] **Step 5: Record the evidence**
+- [ ] **Step 5: Verify automatic-fill controls and inheritance**
 
-Die vier Ergebnisse als Abschnitt „Abnahme" an diese Plandatei anhängen, mit
-den tatsächlichen Zahlen und Abfragen. `phase:` im Frontmatter auf `verified`.
+Confirm that the Podcasts preference is the initial value for a new
+subscription, that changing the add-dialog choice persists the selected value,
+and that only subscriptions with the value enabled are filled.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Verify both in-flight download hand-offs**
+
+First let fill-up own an episode download and start playback of that episode;
+then let playback own another episode download and press its Download button.
+Neither losing caller may show a failure, and playback must start from the
+finished local file in the first direction.
+
+- [ ] **Step 7: Record the evidence**
+
+Record all six results in the “Abnahme” section with the actual numbers and
+queries. Only after the human run is complete may `phase:` in the frontmatter
+be changed to `verified`.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add docs/plans/always-download-episodes.md
@@ -1577,9 +1591,10 @@ acceptance_root=$(mktemp -d)
 mkdir -p "$acceptance_root/data/reprise" "$acceptance_root/cache"
 acceptance_db="$acceptance_root/data/reprise/reprise.db"
 sqlite3 "$HOME/.local/share/reprise/reprise.db" ".backup '$acceptance_db'"
-dbus-run-session -- env \
+dbus-run-session -- xvfb-run -a env \
   XDG_DATA_HOME="$acceptance_root/data" \
   XDG_CACHE_HOME="$acceptance_root/cache" \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
   cargo run -p reprise-gnome
 ```
 
@@ -1606,7 +1621,9 @@ WITH ranked AS (
          ) AS episode_rank
   FROM podcast_episodes e
   JOIN podcast_subscriptions s ON s.id = e.subscription_id
-  WHERE s.removed_at IS NULL AND e.removed_at IS NULL
+  WHERE s.removed_at IS NULL
+    AND s.auto_download = 1
+    AND e.removed_at IS NULL
 )
 SELECT id, title, episode_rank, keep_target
 FROM ranked
@@ -1682,12 +1699,70 @@ sqlite3 "$acceptance_db" \
   "SELECT id, title, downloaded_path
    FROM podcast_episodes
    WHERE id = $failure_episode_id AND downloaded_path IS NULL;"
-dbus-run-session -- env \
+dbus-run-session -- xvfb-run -a env \
   XDG_DATA_HOME="$acceptance_root/data" \
   XDG_CACHE_HOME="$acceptance_root/cache" \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
   REPRISE_YTDLP_BIN="$outdated_ytdlp" \
   cargo run -p reprise-gnome
 ```
 
 The episode row must instruct the user to update yt-dlp and must not show the
 old generic message. Record the visible text verbatim when closing this item.
+
+### 5. Automatic-fill preference inheritance
+
+- [ ] offen
+
+Use the isolated application from section 2 and two disposable subscriptions:
+
+1. Turn the Podcasts preference for filling new subscriptions off. Open the
+   first subscription's preview, confirm that its fill switch starts off, turn
+   it on, and subscribe.
+2. Turn the preference on. Open the second subscription's preview, confirm that
+   its fill switch starts on, turn it off, and subscribe.
+3. Query the stored choices (Bash):
+
+```bash
+sqlite3 "$acceptance_db" \
+  "SELECT feed_url, auto_download
+   FROM podcast_subscriptions
+   WHERE feed_url IN ('REPLACE_WITH_FIRST_URL', 'REPLACE_WITH_SECOND_URL')
+   ORDER BY feed_url;"
+```
+
+The first row must contain `1` and the second `0`. Refresh twice and wait for
+fill-up after each refresh. The enabled subscription must converge to its
+`keep_downloaded` target; the disabled subscription must acquire no file from
+fill-up. Record the two stored values and the downloaded-file counts.
+
+### 6. Concurrent download ownership
+
+- [ ] offen
+
+Use two undownloaded YouTube episodes in the isolated database and observe each
+sequence through the isolated X11 session:
+
+1. Start a refresh that makes fill-up download the first episode. While its row
+   is downloading, start playback of that same episode. Playback must remain in
+   its resolving state without the “already running” failure, then start from
+   the local file when fill-up finishes.
+2. Start playback of the second episode. While playback owns its download,
+   press the row's Download button. The row must remain in its downloading
+   state, must not show “Download failed”, and the Podcasts worker must remain
+   responsive to another lightweight request.
+
+After both sequences, query the two IDs (Bash):
+
+```bash
+first_episode_id=REPLACE_WITH_FIRST_EPISODE_ID
+second_episode_id=REPLACE_WITH_SECOND_EPISODE_ID
+sqlite3 "$acceptance_db" \
+  "SELECT id, downloaded_path, downloaded_bytes
+   FROM podcast_episodes
+   WHERE id IN ($first_episode_id, $second_episode_id)
+   ORDER BY id;"
+```
+
+Both rows must have a non-empty local path and a positive byte count. Record
+the absence of both failure messages and the final query output.
