@@ -2,7 +2,7 @@
 slug: always-download-episodes-core
 worktree: /home/marvin/Projects/reprise-always-download-episodes-core
 branch: feature/always-download-episodes-core
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
