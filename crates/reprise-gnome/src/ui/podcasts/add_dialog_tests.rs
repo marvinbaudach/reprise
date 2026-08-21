@@ -657,7 +657,7 @@ fn pod_13_preview_error_never_forwards_a_leaking_payload() {
             kind: reprise_core::podcasts::ytdlp::YtDlpFailureKind::Other,
             stderr: leaking.to_owned(),
         }),
-        "YouTube source could not be read with yt-dlp"
+        "YouTube request failed — check the application log"
     );
 }
 
