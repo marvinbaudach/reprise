@@ -383,17 +383,31 @@ fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
             );
         },
     );
-    // `download_episode` only returns `Err` for a lookup failure that
-    // happens before it ever reaches its own `on_progress` calls (episode or
-    // subscription gone) — every other outcome, including `NET-1a` and a
-    // transport failure, already arrived above as a terminal `DownloadState`
-    // via the closure. `Err` is reported the same way the "database
-    // unavailable" branch above already is: the podcasts page and the
-    // other download callers both treat a plain `Err(String)`
-    // response as terminal already.
+    // Losing the download claim is normal: another caller owns an active
+    // download, so keep the row in progress. Other errors remain terminal.
     if let Err(error) = result {
-        send_response(request, Err(error.to_string()));
+        if let Some(state) = download_error_state(&error) {
+            send_response(
+                request,
+                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
+            );
+        } else {
+            send_response(request, Err(error.to_string()));
+        }
     }
+}
+
+fn download_error_state(
+    error: &podcasts::pipeline::PipelineError,
+) -> Option<podcasts::download_state::DownloadState> {
+    matches!(
+        error,
+        podcasts::pipeline::PipelineError::DownloadAlreadyRunning
+    )
+    .then_some(podcasts::download_state::DownloadState::Downloading {
+        received_bytes: 0,
+        total_bytes: None,
+    })
 }
 
 #[cfg(test)]

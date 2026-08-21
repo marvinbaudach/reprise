@@ -3,10 +3,30 @@
 use std::rc::Rc;
 
 use reprise_core::podcasts::download_state::DownloadState;
+use reprise_core::podcasts::pipeline::{FeedFetcher, PipelineError, YoutubeFetcher};
+use reprise_core::{db::Db, podcasts};
 
 use crate::ui::player_controller::PlayerController;
 
 use super::external_media_state::{fetch_download_outcome, EpisodeSource, FetchOutcome};
+
+fn download_episode_for_playback(
+    db: &Db,
+    feed_fetcher: &dyn FeedFetcher,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    download_root: &std::path::Path,
+    episode_id: i64,
+    on_progress: &mut dyn FnMut(DownloadState),
+) -> Result<DownloadState, PipelineError> {
+    podcasts::pipeline::download_episode_waiting(
+        db,
+        feed_fetcher,
+        youtube_fetcher,
+        download_root,
+        episode_id,
+        on_progress,
+    )
+}
 
 impl PlayerController {
     /// Fetches the episode, then plays it from disk.
@@ -29,11 +49,11 @@ impl PlayerController {
                     config.ytdlp_path.as_deref(),
                     config.youtube_browser,
                 );
-                reprise_core::podcasts::pipeline::download_episode(
+                download_episode_for_playback(
                     &db,
-                    &reprise_core::podcasts::pipeline::HttpFeedFetcher,
+                    &podcasts::pipeline::HttpFeedFetcher,
                     &ytdlp,
-                    &reprise_core::podcasts::downloads::default_download_root(),
+                    &podcasts::downloads::default_download_root(),
                     episode_id,
                     &mut |state| publish(state),
                 )
@@ -103,3 +123,7 @@ impl PlayerController {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "external_media_fetch_tests.rs"]
+mod tests;

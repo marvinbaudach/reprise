@@ -170,6 +170,21 @@ fn a_fill_downloads_request_does_not_cancel_a_running_refresh() {
 }
 
 #[test]
+fn a_row_download_that_loses_to_playback_stays_in_progress() {
+    assert_eq!(
+        download_error_state(&podcasts::pipeline::PipelineError::DownloadAlreadyRunning),
+        Some(DownloadState::Downloading {
+            received_bytes: 0,
+            total_bytes: None,
+        })
+    );
+    assert_eq!(
+        download_error_state(&podcasts::pipeline::PipelineError::EpisodeNotFound),
+        None
+    );
+}
+
+#[test]
 fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publish() {
     let conn = crate::test_db::open().unwrap();
     let episode_id = episode(&conn);
