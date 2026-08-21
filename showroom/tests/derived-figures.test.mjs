@@ -129,7 +129,7 @@ test('show-13 the performance figures quote a record that carries their provenan
     assert.ok(row.method.length > 20, `${row.what} has no method worth the name`);
   }
   // One header row plus one row per measurement.
-  assert.equal((chapter.match(/<tr>/g) ?? []).length, rows.length + 1);
+  assert.equal((chapter.match(/<tr(?:\s[^>]*)?>/g) ?? []).length, rows.length + 1);
 
   for (const file of await displaySources()) {
     const source = await readFile(file, 'utf8');

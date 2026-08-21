@@ -10,6 +10,7 @@ declare module 'virtual:merge-gates' {
 
   export interface GateGroup {
     readonly name: string;
+    readonly short: string;
     readonly line: string;
     /** Checks assigned to this group, retained in script order. */
     readonly gates: readonly string[];

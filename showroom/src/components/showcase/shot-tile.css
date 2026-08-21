@@ -1,11 +1,14 @@
 .shot-tile {
   /*
    * Hover and :focus-visible cannot share a selector list — one lives inside a
-   * `(hover: hover)` query, the other must not. They set these four tokens
+   * `(hover: hover)` query, the other must not. They set these seven tokens
    * instead, so the state is written once and invoked twice.
    */
-  --plate-lift: 0px;
-  --shot-zoom: 1;
+  --edge: oklch(32% 0.018 269);
+  --edge-inner: transparent;
+  --glow: transparent;
+  --ambient: oklch(4% 0.02 269 / 0.95);
+  --ambient-geom: 0 40px 90px -50px;
   --cue-opacity: 0;
   --cue-rise: 5px;
 
@@ -15,33 +18,34 @@
   margin: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid oklch(32% 0.018 269);
+  border: 1px solid var(--edge);
   border-radius: 12px;
   background: oklch(17.5% 0.016 269);
-  box-shadow: 0 40px 90px -50px oklch(4% 0.02 269 / 0.95);
+  box-shadow:
+    inset 0 0 0 1px var(--edge-inner),
+    var(--ambient-geom) var(--ambient),
+    0 0 40px -12px var(--glow);
   cursor: zoom-in;
   text-align: left;
   color: inherit;
   font: inherit;
-  transform: translate3d(0, var(--plate-lift), 0);
   transition:
-    transform 620ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 620ms ease,
-    border-color 620ms ease;
+    box-shadow 420ms ease,
+    border-color 320ms ease;
 }
 
 .shot-tile--phone {
   min-width: 108px;
   border-color: oklch(34% 0.018 269);
   border-radius: 14px;
-  box-shadow: 0 30px 70px -34px oklch(3% 0.02 269 / 0.95);
+  --ambient-geom: 0 30px 70px -34px;
+  --ambient: oklch(3% 0.02 269 / 0.95);
 }
 
 /*
  * The wrap exists so the picture and everything laid over it — the hero phone's
- * visualizer canvas, a *sibling* of the image with percentage geometry — scale
- * as one. Zooming the <img> alone would leave the canvas behind and slide the
- * square out of the phone display.
+ * visualizer canvas, a *sibling* of the image with percentage geometry — keep
+ * one geometry. Neither layer scales, so the canvas stays in the phone display.
  *
  * `display: block` is mandatory: an inline wrap builds a line box with a
  * descender, the wrap ends up a few pixels taller than the image, and that
@@ -50,9 +54,6 @@
 .shot-tile__picture {
   position: relative;
   display: block;
-  transform-origin: center;
-  transform: scale(var(--shot-zoom));
-  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .shot-tile__picture > .product-shot {
@@ -134,26 +135,31 @@
  */
 @media (hover: hover) {
   .shot-tile:hover {
-    --plate-lift: -6px;
-    --shot-zoom: 1.045;
+    --edge: oklch(58% 0.09 195);
+    --edge-inner: oklch(74% 0.1 195 / 0.3);
+    --glow: oklch(80% 0.12 190 / 0.34);
+    --ambient-geom: 0 26px 54px -22px;
+    --ambient: oklch(2% 0.02 269 / 0.98);
     --cue-opacity: 1;
     --cue-rise: 0px;
-    border-color: oklch(46% 0.03 195);
-    box-shadow:
-      0 40px 90px -46px oklch(3% 0.02 269 / 0.98),
-      0 0 40px -18px oklch(80% 0.12 190 / 0.35);
   }
 }
 
 .shot-tile:focus-visible {
-  --plate-lift: -6px;
-  --shot-zoom: 1.045;
+  --edge: oklch(58% 0.09 195);
+  --edge-inner: oklch(74% 0.1 195 / 0.3);
+  --glow: oklch(80% 0.12 190 / 0.34);
+  --ambient-geom: 0 26px 54px -22px;
+  --ambient: oklch(2% 0.02 269 / 0.98);
   --cue-opacity: 1;
   --cue-rise: 0px;
-  border-color: oklch(46% 0.03 195);
-  box-shadow:
-    0 40px 90px -46px oklch(3% 0.02 269 / 0.98),
-    0 0 40px -18px oklch(80% 0.12 190 / 0.35);
+}
+
+@media (hover: none) {
+  .shot-tile {
+    --cue-opacity: 0.55;
+    --cue-rise: 0px;
+  }
 }
 
 .shot-tile__caption {
@@ -211,9 +217,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   /*
-   * One `transform: none` neutralises the lift, the picture zoom and the cue's
-   * rise at once. The cue's opacity stays bound to --cue-opacity and therefore
-   * appears at once instead of fading — the hint may be instant, it may not move.
+   * The selector list remains shared with the plate and picture so a future
+   * transform cannot escape this guard. Today only the cue rise needs it: the
+   * hint may be instant, it may not move.
    */
   .shot-tile,
   .shot-tile__picture,
