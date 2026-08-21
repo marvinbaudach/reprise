@@ -8,6 +8,22 @@ behind explicit contracts.
 
 > **Status:** active alpha. Reprise is not a public release yet.
 
+## Downloads
+
+Each [latest release](https://github.com/marvinbaudach/reprise/releases/latest)
+contains the GNOME Flatpak bundle, and the
+[same release](https://github.com/marvinbaudach/reprise/releases/latest)
+contains the universal Android APK.
+
+```sh
+flatpak install --user flathub org.gnome.Platform//50
+flatpak install --user ./Reprise-<desktop-version>.flatpak
+adb install -r ./Reprise-Android-<android-version>.apk
+```
+
+The desktop and Android version numbers are independent and are stated on the
+release page.
+
 ## Why Reprise
 
 - **Everything works locally.** Scanning large libraries, metadata, search,
