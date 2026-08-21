@@ -2,7 +2,7 @@
 slug: release-channel-flatpak-and-apk
 worktree: /home/marvin/Projects/reprise-release-channel-flatpak-and-apk
 branch: feature/release-channel-flatpak-and-apk
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-21
 ---
