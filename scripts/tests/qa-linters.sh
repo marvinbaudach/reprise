@@ -162,6 +162,14 @@ require_pattern '^## Known harness constraints' TESTING.md
 require_pattern 'must run the entire discovered list' RELEASING.md
 require_pattern '1 passed' RELEASING.md
 require_pattern 'zero tests' RELEASING.md
+require_pattern 'keytool -genkeypair' docs/releasing-android.md
+require_pattern 'upload-key-sha256\.txt' docs/releasing-android.md
+require_pattern 'ANDROID_KEYSTORE_BASE64' docs/releasing-android.md
+require_pattern 'ANDROID_KEYSTORE_PASSWORD' docs/releasing-android.md
+require_pattern 'ANDROID_KEY_ALIAS' docs/releasing-android.md
+require_pattern 'ANDROID_KEY_PASSWORD' docs/releasing-android.md
+require_pattern 'android/keystore\.properties' docs/releasing-android.md
+require_pattern 'cannot update' docs/releasing-android.md
 
 scripts/tests/cua-e2e.sh
 scripts/tests/motion-tokens.sh
