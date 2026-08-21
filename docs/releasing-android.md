@@ -6,21 +6,23 @@ first release.
 
 ## Create and back up the upload key
 
-Choose strong, distinct store and key passwords. In Fish, read them without
-putting either value into shell history:
+A PKCS12 keystore has exactly one password for both the keystore and its private
+key entry. Although `keytool -genkeypair` accepts `-keypass`, it discards a value
+that differs from `-storepass`, prints `Different store and key passwords not
+supported for PKCS12 KeyStores`, and still exits successfully. Choose one strong
+upload-key password and use that same value for both arguments. In Fish, read it
+once without putting the value into shell history:
 
 ```fish
-read --silent --prompt-str 'Keystore password: ' REPRISE_KEYSTORE_PASSWORD
-echo
-read --silent --prompt-str 'Key password: ' REPRISE_KEY_PASSWORD
+read --silent --prompt-str 'Upload-key password: ' REPRISE_UPLOAD_PASSWORD
 echo
 
 keytool -genkeypair \
   -keystore /secure/path/reprise-upload.jks \
   -storetype PKCS12 \
-  -storepass "$REPRISE_KEYSTORE_PASSWORD" \
+  -storepass "$REPRISE_UPLOAD_PASSWORD" \
   -alias reprise-upload \
-  -keypass "$REPRISE_KEY_PASSWORD" \
+  -keypass "$REPRISE_UPLOAD_PASSWORD" \
   -keyalg RSA \
   -keysize 4096 \
   -sigalg SHA256withRSA \
@@ -29,7 +31,7 @@ keytool -genkeypair \
 ```
 
 Adjust the distinguished name before creation if the publisher identity should
-be different. Put the `.jks` file and both passwords in a password manager, and
+be different. Put the `.jks` file and its password in a password manager, and
 put a second encrypted copy on offline storage. Do not keep the only copy on the
 development computer.
 
@@ -46,7 +48,7 @@ Print the certificate fingerprint with an English label:
 env LC_ALL=C keytool -list -v \
   -keystore /secure/path/reprise-upload.jks \
   -storetype PKCS12 \
-  -storepass "$REPRISE_KEYSTORE_PASSWORD" \
+  -storepass "$REPRISE_UPLOAD_PASSWORD" \
   -alias reprise-upload \
   | sed -n 's/^[[:space:]]*SHA256: //p'
 ```
@@ -59,19 +61,24 @@ different key still fails.
 
 ## Configure GitHub Actions secrets
 
-Set the four repository secrets from a trusted checkout. The first command
-streams the encoded key without writing another file; the other three commands
-prompt for their values:
+Set the four repository secrets from a trusted checkout. Gradle requires both
+password inputs even though PKCS12 uses only one password, so
+`ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD` must contain the same
+upload-key password. The commands below stream the encoded key and both password
+secrets without writing another file; only the alias command prompts for a
+value:
 
 ```fish
 base64 --wrap=0 /secure/path/reprise-upload.jks | gh secret set ANDROID_KEYSTORE_BASE64
-gh secret set ANDROID_KEYSTORE_PASSWORD
+printf '%s' "$REPRISE_UPLOAD_PASSWORD" | gh secret set ANDROID_KEYSTORE_PASSWORD
 gh secret set ANDROID_KEY_ALIAS
-gh secret set ANDROID_KEY_PASSWORD
+printf '%s' "$REPRISE_UPLOAD_PASSWORD" | gh secret set ANDROID_KEY_PASSWORD
 ```
 
-Enter `reprise-upload` for `ANDROID_KEY_ALIAS`. Never print a password or the
-base64 payload to a terminal, CI log, issue, or pull request.
+Enter `reprise-upload` for `ANDROID_KEY_ALIAS`. Both password secrets deliberately
+hold the same value; do not replace either one with a distinct password. Never
+print the password or base64 payload to a terminal, CI log, issue, or pull
+request.
 
 ## Build a signed universal APK locally
 
@@ -79,10 +86,13 @@ Create the ignored `android/keystore.properties` with an absolute key path:
 
 ```properties
 storeFile=/secure/path/reprise-upload.jks
-storePassword=replace-with-the-store-password
+storePassword=replace-with-the-upload-password
 keyAlias=reprise-upload
-keyPassword=replace-with-the-key-password
+keyPassword=replace-with-the-upload-password
 ```
+
+Keep both `storePassword` and `keyPassword`: Gradle requires both properties,
+but for this PKCS12 keystore they deliberately contain the same value.
 
 Restrict the file to the current user. It and all `*.jks`/`*.keystore` files are
 gitignored, but that is not a substitute for keeping the key outside the
