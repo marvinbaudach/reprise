@@ -113,7 +113,8 @@ jobs:
               echo "Quality gate succeeded for $REVISION" >> "$GITHUB_STEP_SUMMARY"
               ;;
             cancelled)
-              echo "Release skipped: Quality gate was cancelled because this promotion was superseded." >> "$GITHUB_STEP_SUMMARY"
+              echo "Release skipped: Quality gate was cancelled because this promotion " \
+                "was superseded." >> "$GITHUB_STEP_SUMMARY"
               exit 0
               ;;
             skipped)
@@ -260,11 +261,13 @@ jobs:
 
           if [[ -z $KEYSTORE_BASE64 || -z $KEYSTORE_PASSWORD || -z $KEY_ALIAS || -z $KEY_PASSWORD ]]; then
             if ((require_signing == 1)); then
-              echo "Release signing requires ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD" >&2
+              echo "Release signing requires ANDROID_KEYSTORE_BASE64, " \
+                "ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD" >&2
               exit 1
             fi
             echo "production=false" >> "$GITHUB_OUTPUT"
-            echo "Pull-request APK uses the local debug-signing fallback because upload-key secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
+            echo "Pull-request APK uses the local debug-signing fallback because upload-key " \
+              "secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
           else
             keystore="$RUNNER_TEMP/reprise-upload.keystore"
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
@@ -291,16 +294,22 @@ jobs:
           source_apk=android/app/build/outputs/apk/release/app-release.apk
           [[ -s $source_apk ]]
 
-          build_tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -1)
+          build_tools=$(
+            find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
+              sort -V |
+              tail -1
+          )
           apksigner="$ANDROID_HOME/build-tools/$build_tools/apksigner"
           aapt2="$ANDROID_HOME/build-tools/$build_tools/aapt2"
           signature=$($apksigner verify --print-certs "$source_apk")
           printf '%s\n' "$signature"
 
           if [[ $PRODUCTION_SIGNING == true ]]; then
-            expected=$(grep -E '^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){31}$' android/signing/upload-key-sha256.txt || true)
+            fingerprint_file=android/signing/upload-key-sha256.txt
+            expected=$(grep -E '^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){31}$' "$fingerprint_file" || true)
             if [[ -z $expected ]]; then
-              echo "android/signing/upload-key-sha256.txt still contains its placeholder; add the upload certificate SHA-256" >&2
+              echo "android/signing/upload-key-sha256.txt still contains its placeholder; " \
+                "add the upload certificate SHA-256" >&2
               exit 1
             fi
             actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$signature" | head -1)
@@ -324,7 +333,8 @@ jobs:
           cp "$source_apk" "$apk"
           sha256sum "$apk" > "$apk.sha256"
           echo "apk=$apk" >> "$GITHUB_OUTPUT"
-          echo "Built $apk ($(stat -c %s "$apk") bytes), versionCode $gradle_code." >> "$GITHUB_STEP_SUMMARY"
+          printf 'Built %s (%s bytes), versionCode %s.\n' \
+            "$apk" "$(stat -c %s "$apk")" "$gradle_code" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload universal APK
         uses: actions/upload-artifact@v6
@@ -411,9 +421,19 @@ jobs:
           print(f"flatpak install --user ./Reprise-{desktop}.flatpak")
           print("```")
           print()
-          print("The bundle does not self-update. A self-hosted Flatpak repository is the named follow-up.")
-          print("This Flatpak ships without stems separation because it does not include onnxruntime; AUR, COPR and local builds retain the feature.")
-          print(f"The Android app requires Android 8.0 or newer and is GPL-3.0-or-later like the rest of Reprise. Its release APK is `Reprise-Android-{android}.apk`.")
+          print(
+              "The bundle does not self-update. A self-hosted Flatpak repository is "
+              "the named follow-up."
+          )
+          print(
+              "This Flatpak ships without stems separation because it does not include "
+              "onnxruntime; AUR, COPR and local builds retain the feature."
+          )
+          print(
+              "The Android app requires Android 8.0 or newer and is "
+              "GPL-3.0-or-later like the rest of Reprise. Its release APK is "
+              f"`Reprise-Android-{android}.apk`."
+          )
           print()
           print(body)
           PY
