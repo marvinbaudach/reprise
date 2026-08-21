@@ -10,7 +10,9 @@ use retry::{clear_retry, pending_retry, previous_attempt, set_retry, RetryKey};
 
 use crate::{db::Db, source_error::SourceErrorKind};
 
-use super::download_state::{DownloadProgress, DownloadState};
+use super::download_state::DownloadProgress;
+#[cfg(test)]
+use super::download_state::DownloadState;
 use super::feed::{ParsedEpisode, ParsedFeed};
 use super::http::Response;
 use super::refresh::{RefreshPolicy, RefreshRequest};
@@ -247,34 +249,13 @@ pub fn refresh(
     request: RefreshRequest,
 ) -> Result<RefreshSummary, PipelineError> {
     let conn = db.conn();
-    refresh_to_root_with_download_progress(
+    refresh_to_root_in(
         conn,
         feed_fetcher,
         youtube_fetcher,
         now,
         request,
         &super::downloads::default_download_root(),
-        &mut |_, _| {},
-    )
-}
-
-pub fn refresh_with_download_progress(
-    db: &Db,
-    feed_fetcher: &dyn FeedFetcher,
-    youtube_fetcher: &dyn YoutubeFetcher,
-    now: i64,
-    request: RefreshRequest,
-    on_download: &mut dyn FnMut(i64, DownloadState),
-) -> Result<RefreshSummary, PipelineError> {
-    let conn = db.conn();
-    refresh_to_root_with_download_progress(
-        conn,
-        feed_fetcher,
-        youtube_fetcher,
-        now,
-        request,
-        &super::downloads::default_download_root(),
-        on_download,
     )
 }
 
@@ -287,14 +268,13 @@ pub fn refresh_to_root(
     download_root: &Path,
 ) -> Result<RefreshSummary, PipelineError> {
     let conn = db.conn();
-    refresh_to_root_with_download_progress(
+    refresh_to_root_in(
         conn,
         feed_fetcher,
         youtube_fetcher,
         now,
         request,
         download_root,
-        &mut |_, _| {},
     )
 }
 
@@ -320,17 +300,13 @@ fn adopt_resolved_channel_url(
     Ok(())
 }
 
-fn refresh_to_root_with_download_progress(
+fn refresh_to_root_in(
     conn: &Connection,
     feed_fetcher: &dyn FeedFetcher,
     youtube_fetcher: &dyn YoutubeFetcher,
     now: i64,
     request: RefreshRequest,
     download_root: &Path,
-    // The always-download-episodes UI strand retires this callback together
-    // with both progress-named refresh wrappers after moving their GNOME
-    // callers; this Core review round must preserve those signatures.
-    _on_download: &mut dyn FnMut(i64, DownloadState),
 ) -> Result<RefreshSummary, PipelineError> {
     let config = super::config::load_in(conn)?;
     let rss_allowed = super::config::source_network_allowed_in(conn, PodcastKind::Rss)?;
