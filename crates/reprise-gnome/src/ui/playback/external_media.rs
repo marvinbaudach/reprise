@@ -71,6 +71,13 @@ impl PlayerController {
             .push(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn add_on_episode_position(&self, callback: impl Fn(i64, i64) + 'static) {
+        self.external
+            .borrow_mut()
+            .episode_position_callbacks
+            .push(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn add_on_episode_download_state(
         &self,
         callback: impl Fn(i64, reprise_core::podcasts::download_state::DownloadState) + 'static,
@@ -88,6 +95,15 @@ impl PlayerController {
         let callbacks = self.external.borrow().episode_played_callbacks.clone();
         for callback in callbacks {
             callback(episode_id);
+        }
+    }
+
+    /// Announces a persisted resume position. Clone callbacks before invoking
+    /// them because source-view listeners may re-enter player state.
+    pub(in crate::ui) fn notify_episode_position(&self, episode_id: i64, position_ms: i64) {
+        let callbacks = self.external.borrow().episode_position_callbacks.clone();
+        for callback in callbacks {
+            callback(episode_id, position_ms);
         }
     }
 
@@ -455,7 +471,7 @@ impl PlayerController {
             PlaybackMode::Podcast | PlaybackMode::QueuedEpisode => {
                 match self.player.toggle_pause() {
                     Ok(PlaybackState::Paused) => {
-                        self.persist_external_position();
+                        self.checkpoint_external_position();
                         self.set_podcast_phase(PodcastPhase::Paused);
                         self.update_external_mpris(MprisPlaybackStatus::Paused);
                     }

@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use libadwaita as adw;
-use reprise_core::podcasts::EpisodeRow;
+use reprise_core::podcasts::{resume_rules, EpisodeRow};
 
 use crate::ui::player_controller::PlayerController;
 
@@ -46,8 +46,16 @@ pub(super) fn media_from_episode(episode: &EpisodeRow) -> ExternalMedia {
         title: episode.title.clone(),
         show: episode.show.clone(),
         source,
-        resume_ms: episode.position_ms,
+        resume_ms: resume_position(episode),
         duration_ms: episode.duration_secs.map(|seconds| seconds * 1_000),
+    }
+}
+
+pub(super) fn resume_position(episode: &EpisodeRow) -> i64 {
+    if resume_rules::keeps_resume(episode.kind, episode.duration_secs) {
+        episode.position_ms
+    } else {
+        0
     }
 }
 
@@ -84,9 +92,59 @@ mod tests {
             media_from_episode(&episode),
             ExternalMedia::Podcast {
                 source: EpisodeSource::File(path),
+                resume_ms: 0,
                 duration_ms: Some(60_000),
                 ..
             } if path == "/data/next.mp3"
+        ));
+    }
+
+    #[test]
+    fn resume_is_read_only_for_eligible_rss_episodes() {
+        let mut episode = EpisodeRow {
+            id: 7,
+            subscription_id: 2,
+            guid: "episode-7".into(),
+            title: "Next".into(),
+            show: "Show".into(),
+            show_image_url: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            audio_url: "https://example.test/next.mp3".into(),
+            page_url: None,
+            published_at: Some(20),
+            duration_secs: Some(resume_rules::MIN_RESUME_DURATION_SECS),
+            downloaded_path: None,
+            downloaded_bytes: None,
+            played_at: None,
+            position_ms: 45_000,
+            first_seen_at: 10,
+            is_new: false,
+            media_category: None,
+        };
+
+        assert!(matches!(
+            media_from_episode(&episode),
+            ExternalMedia::Podcast {
+                resume_ms: 45_000,
+                ..
+            }
+        ));
+
+        episode.kind = PodcastKind::Youtube;
+        assert!(matches!(
+            media_from_episode(&episode),
+            ExternalMedia::Podcast { resume_ms: 0, .. }
+        ));
+
+        episode.kind = PodcastKind::Rss;
+        episode.duration_secs = None;
+        assert!(matches!(
+            media_from_episode(&episode),
+            ExternalMedia::Podcast {
+                resume_ms: 45_000,
+                ..
+            }
         ));
     }
 }
