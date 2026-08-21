@@ -30,9 +30,16 @@ The full English release body comes from the matching dated section in
 `CHANGELOG.md`. Software centres use the matching bilingual `<release>` entry
 in `data/io.github.marvinbaudach.Reprise.metainfo.xml`. Both curated entries
 must exist before promotion; `scripts/check-release-metadata.sh` enforces them
-in the release gate. The generated GitHub header adds both app versions,
-installation requirements, the Flatpak update limitation, the missing stems
-backend in that bundle, Android's minimum version, and the shared licence.
+in the release gate. Promotion from `dev` to `main` does not raise a version;
+the released version is the workspace version that `dev` already carries,
+readable with `scripts/bump-version.sh current`. Because every merge into `dev`
+raises that number, finalise the curated text and renumber the `CHANGELOG.md`
+heading and metainfo `<release>` entry to the then-current version in `dev`,
+immediately before opening the promotion pull request. Otherwise
+`scripts/check-release-metadata.sh` refuses the release gate. The generated
+GitHub header adds both app versions, installation requirements, the Flatpak
+update limitation, the missing stems backend in that bundle, Android's minimum
+version, and the shared licence.
 
 Pull requests that touch release inputs run both build jobs and upload their
 artifacts, but never publish. Without upload-key secrets, that APK deliberately
