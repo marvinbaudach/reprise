@@ -123,12 +123,12 @@ PY
 
 write_desktop() {
   local target=$1
-  python3 - "$cargo_toml" "$cargo_lock" "$meson_build" "$target" <<'PY'
+  python3 - "$cargo_toml" "$cargo_lock" "$target" <<'PY'
 import re
 import sys
 import pathlib
 
-cargo_toml, cargo_lock, meson_build, target = sys.argv[1:5]
+cargo_toml, cargo_lock, target = sys.argv[1:4]
 
 # 1. The source of truth.
 path = pathlib.Path(cargo_toml)
@@ -170,7 +170,18 @@ if lock_path.exists():
     if missing:
         sys.exit(f"Cargo.lock still carries the old version for: {', '.join(missing)}")
 
-# 3. Meson's package metadata must describe the same desktop build.
+print(f"desktop {old} -> {target}", file=sys.stderr)
+PY
+}
+
+write_meson() {
+  local target=$1
+  python3 - "$meson_build" "$target" <<'PY'
+import pathlib
+import re
+import sys
+
+meson_build, target = sys.argv[1:3]
 meson_path = pathlib.Path(meson_build)
 meson = meson_path.read_text(encoding="utf-8")
 version_pattern = r"^(\s*version:\s*)'([^']+)'"
@@ -180,8 +191,6 @@ if not found:
 meson = re.sub(version_pattern, lambda match: f"{match.group(1)}'{target}'",
                meson, count=1, flags=re.M)
 meson_path.write_text(meson, encoding="utf-8")
-
-print(f"desktop {old} -> {target}", file=sys.stderr)
 PY
 }
 
@@ -215,6 +224,7 @@ PY
 
 write_everywhere() {
   write_desktop "$1"
+  write_meson "$1"
   write_android "$1" "$2"
 }
 
@@ -305,6 +315,7 @@ case "$mode" in
       if [ "$current" != "$desktop_target" ]; then
         write_desktop "$desktop_target"
       fi
+      write_meson "$desktop_target"
       summary+=("desktop $desktop_target")
     fi
 

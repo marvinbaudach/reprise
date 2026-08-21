@@ -26,12 +26,12 @@ PY
 
 require() {
     local pattern=$1 message=$2
-    rg --quiet --multiline "$pattern" "$workflow" || fail "$message"
+    rg --quiet --multiline -- "$pattern" "$workflow" || fail "$message"
 }
 
 reject() {
     local pattern=$1 message=$2
-    ! rg --quiet --multiline "$pattern" "$workflow" || fail "$message"
+    ! rg --quiet --multiline -- "$pattern" "$workflow" || fail "$message"
 }
 
 require '^on:\n  push:\n    branches: \[main\]' "main promotion push trigger is missing"
@@ -52,6 +52,9 @@ done
 require 'scripts/bump-version\.sh current' "desktop version must use the shared parser"
 require 'scripts/check-release-metadata\.sh' "gate must require full release metadata"
 require 'check-runs' "gate does not query check-runs for the exact SHA"
+require '-F per_page=100' "Quality gate polling must inspect up to 100 check runs"
+require 'check_status=\$\?' "Quality gate polling does not capture transient API failures"
+require 'if \(\(check_status != 0\)\); then' "Quality gate polling does not retry transient API failures"
 require 'git/ref/tags/' "gate does not use tag absence as the publish condition"
 
 [[ $(rg -c 'always\(\) &&' "$workflow") -eq 2 ]] || \
@@ -63,9 +66,20 @@ require 'flatpak build-bundle repo' "single-file Flatpak bundle is missing"
     fail "APK job must call scripts/android-build.sh exactly twice"
 require 'REPRISE_REQUIRE_RELEASE_SIGNING' "APK job does not control required signing explicitly"
 require 'ANDROID_KEYSTORE_BASE64' "APK job does not receive the upload keystore"
+# The workflow expression and shell variable must remain literal patterns here.
+# shellcheck disable=SC2016
+require 'if \[\[ \$GITHUB_EVENT_NAME == pull_request \|\| -z \$KEYSTORE_BASE64' \
+    "pull-request APKs must never use the production upload key"
+require 'Pull-request builds never use the production upload key' \
+    "pull-request signing summary does not explain the upload-key policy"
 require 'apksigner verify --print-certs' "APK signature verification is missing"
 require 'aapt2 dump badging' "APK version assertion is missing"
 [[ $(rg -c 'sha256sum' "$workflow") -ge 2 ]] || fail "both applications need SHA-256 files"
+# shellcheck disable=SC2016
+require 'EXPECTED_DESKTOP_VERSION: \$\{\{ needs\.gate\.outputs\.desktop_version \}\}' \
+    "Flatpak gate output must enter the shell through env"
+reject 'expected=\$\{\{ needs\.gate\.outputs\.desktop_version \}\}' \
+    "Flatpak gate output must not be spliced into shell source"
 
 create_line=$(rg -n 'gh release create' "$workflow" | cut -d: -f1)
 verify_line=$(rg -n 'gh release view.*--json assets' "$workflow" | cut -d: -f1)

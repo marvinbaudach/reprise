@@ -116,6 +116,27 @@ output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $(read_android_version "$fixture") == 2.4.6 ]] || fail "a desktop bump retry changed the Android version"
 [[ $(read_android_code "$fixture") == 41 ]] || fail "a desktop bump retry changed Android versionCode"
 
+fixture=$(new_fixture handmade-desktop-ahead)
+sed -i 's/version = "1.2.3"/version = "1.2.5"/' \
+    "$fixture/Cargo.toml" "$fixture/Cargo.lock"
+git -C "$fixture" add Cargo.toml Cargo.lock
+git -C "$fixture" commit --quiet --amend --no-edit
+base=$(git -C "$fixture" rev-parse HEAD)
+mkdir -p "$fixture/crates/reprise-gnome/src"
+printf 'fn desktop_change() {}\n' > "$fixture/crates/reprise-gnome/src/lib.rs"
+git -C "$fixture" add crates/reprise-gnome/src/lib.rs
+git -C "$fixture" commit --quiet -m 'fix(gnome): prepare desktop release'
+sed -i 's/version = "1.2.5"/version = "1.3.0"/' \
+    "$fixture/Cargo.toml" "$fixture/Cargo.lock"
+git -C "$fixture" add Cargo.toml Cargo.lock
+git -C "$fixture" commit --quiet -m 'chore: bump version to desktop 1.3.0'
+output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
+[[ $output == 'desktop 1.3.0' ]] || fail "hand-made desktop bump reported the wrong version: $output"
+[[ $(read_desktop_version "$fixture") == 1.3.0 ]] || fail "hand-made desktop bump was lowered"
+meson_version=$(read_meson_version "$fixture")
+[[ $meson_version == 1.3.0 ]] || \
+    fail "hand-made desktop bump left Meson at $meson_version instead of 1.3.0"
+
 fixture=$(new_fixture android-only)
 mkdir -p "$fixture/android/app/src/main"
 printf 'class AndroidChange\n' > "$fixture/android/app/src/main/AndroidChange.kt"

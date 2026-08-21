@@ -78,14 +78,25 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           deadline=$((SECONDS + 3600))
+          status=missing
           conclusion=
           while ((SECONDS < deadline)); do
+            set +e
             check=$(
               gh api \
+                --method GET \
+                -F per_page=100 \
                 -H "Accept: application/vnd.github+json" \
                 "repos/$REPOSITORY/commits/$REVISION/check-runs" \
                 --jq '[.check_runs[] | select(.name == "Quality gate")] | sort_by(.id) | last // {}'
             )
+            check_status=$?
+            set -e
+            if ((check_status != 0)); then
+              echo "Quality gate lookup failed; retrying in 20 seconds." >&2
+              sleep 20
+              continue
+            fi
             status=$(jq -r '.status // "missing"' <<< "$check")
             conclusion=$(jq -r '.conclusion // ""' <<< "$check")
 
@@ -179,10 +190,12 @@ jobs:
 
       - name: Create the single-file bundle
         id: bundle
+        env:
+          EXPECTED_DESKTOP_VERSION: ${{ needs.gate.outputs.desktop_version }}
         run: |
           set -euo pipefail
           version=$(scripts/bump-version.sh current)
-          expected=${{ needs.gate.outputs.desktop_version }}
+          expected=$EXPECTED_DESKTOP_VERSION
           if [[ -n $expected && $version != "$expected" ]]; then
             echo "Cargo.toml desktop version $version differs from gate output $expected" >&2
             exit 1
@@ -259,15 +272,16 @@ jobs:
           fi
           echo "require=$require_signing" >> "$GITHUB_OUTPUT"
 
-          if [[ -z $KEYSTORE_BASE64 || -z $KEYSTORE_PASSWORD || -z $KEY_ALIAS || -z $KEY_PASSWORD ]]; then
+          if [[ $GITHUB_EVENT_NAME == pull_request || -z $KEYSTORE_BASE64 || \
+            -z $KEYSTORE_PASSWORD || -z $KEY_ALIAS || -z $KEY_PASSWORD ]]; then
             if ((require_signing == 1)); then
               echo "Release signing requires ANDROID_KEYSTORE_BASE64, " \
                 "ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD" >&2
               exit 1
             fi
             echo "production=false" >> "$GITHUB_OUTPUT"
-            echo "Pull-request APK uses the local debug-signing fallback because upload-key " \
-              "secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
+            echo "Pull-request builds never use the production upload key; this APK uses " \
+              "the local debug-signing fallback." >> "$GITHUB_STEP_SUMMARY"
           else
             keystore="$RUNNER_TEMP/reprise-upload.keystore"
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
