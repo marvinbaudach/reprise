@@ -290,4 +290,49 @@ mod tests {
         assert!(source_views.contains("Rc::downgrade(&self.podcasts)"));
         assert!(source_views.contains("Rc::downgrade(&self.youtube)"));
     }
+
+    #[test]
+    fn persisted_episode_positions_reach_both_views_without_refreshing_the_sidebar() {
+        let position = include_str!("external_media_position.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let window = include_str!("../window/window.rs");
+        let source = include_str!("../window/source_views.rs");
+        let wiring = source
+            .split("fn wire_episode_position")
+            .nth(1)
+            .unwrap()
+            .split("fn set_toast_overlay")
+            .next()
+            .unwrap();
+
+        assert!(position.contains("self.notify_episode_position(episode_id, position_ms);"));
+        assert!(window.contains("source_views.wire_episode_position(player)"));
+        assert!(wiring.contains("player.add_on_episode_position(move |episode_id, position_ms|"));
+        assert_eq!(
+            wiring
+                .matches("update_position_state(episode_id, position_ms);")
+                .count(),
+            1
+        );
+        assert!(wiring.contains("Rc::downgrade(&self.podcasts)"));
+        assert!(wiring.contains("Rc::downgrade(&self.youtube)"));
+        assert!(!wiring.contains("sidebar.refresh"));
+    }
+
+    #[test]
+    fn both_episode_surfaces_use_the_sparse_display_key_update_decision() {
+        let marker = include_str!("../podcasts/podcasts_view_marker.rs");
+        let detail = include_str!("../podcasts/youtube_channel_detail_status.rs");
+
+        assert!(marker.contains("podcasts_presentation::update_resume_position(row, position_ms)"));
+        assert!(marker.contains("if display_changed"));
+        assert!(
+            marker.contains("self.groups.borrow_mut()"),
+            "a later full render must keep the patched position"
+        );
+        assert!(detail.contains("podcasts_presentation::update_resume_position(row, position_ms)"));
+        assert!(detail.contains("if display_changed"));
+    }
 }

@@ -17,7 +17,7 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn handle_external_position(&self, position_ms: i64, duration_ms: i64) {
-        let (episode_id, kind, persist, save_duration, duration_secs, retry_seek) = {
+        let (episode_id, kind, position_ms, persist, save_duration, duration_secs, retry_seek) = {
             let mut external = self.external.borrow_mut();
             let Some(ExternalSession::Podcast(session)) = external.session.as_mut() else {
                 return;
@@ -56,6 +56,7 @@ impl PlayerController {
             (
                 episode_id,
                 session.kind,
+                session.position_ms,
                 persist,
                 save_duration,
                 duration_secs,
@@ -63,8 +64,13 @@ impl PlayerController {
             )
         };
         if persist && resume_rules::keeps_resume(kind, duration_secs) {
-            let _ =
-                reprise_core::podcasts::store::save_position(&self.conn, episode_id, position_ms);
+            if let Err(error) =
+                reprise_core::podcasts::store::save_position(&self.conn, episode_id, position_ms)
+            {
+                tracing::warn!(%error, episode_id, "could not persist podcast position tick");
+            } else {
+                self.notify_episode_position(episode_id, position_ms);
+            }
         }
         if let Some(duration_ms) = save_duration {
             let _ = reprise_core::podcasts::store::save_duration(

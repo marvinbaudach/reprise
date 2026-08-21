@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::ui::podcasts::podcasts_playback::episode_mark_requires_render;
+use crate::ui::podcasts::podcasts_presentation;
 use crate::ui::podcasts::podcasts_reveal::{self, RevealRequest};
 use crate::ui::source_reveal::{self, LoadedItemChange, RevealPolicy};
 
@@ -224,6 +225,33 @@ impl PodcastsView {
         }
         self.youtube_detail
             .update_played_state(episode_id, played_at);
+    }
+
+    pub(in crate::ui) fn update_position_state(&self, episode_id: i64, position_ms: i64) {
+        let (row, display_changed) = {
+            let mut rows = self.rows.borrow_mut();
+            let Some(row) = rows.iter_mut().find(|row| row.id == episode_id) else {
+                self.youtube_detail
+                    .update_position_state(episode_id, position_ms);
+                return;
+            };
+            let display_changed = podcasts_presentation::update_resume_position(row, position_ms);
+            (row.clone(), display_changed)
+        };
+        for group in self.groups.borrow_mut().iter_mut() {
+            if let Some(row) = group.episodes.iter_mut().find(|row| row.id == episode_id) {
+                row.position_ms = position_ms;
+                break;
+            }
+        }
+        if display_changed {
+            let widgets = self.download_widgets.borrow().get(&episode_id).cloned();
+            if let Some(widgets) = widgets {
+                podcasts_groups::update_episode_status(&widgets, &row);
+            }
+        }
+        self.youtube_detail
+            .update_position_state(episode_id, position_ms);
     }
 
     pub(in crate::ui) fn set_unavailable_episode(&self, episode_id: Option<i64>) {
