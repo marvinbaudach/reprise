@@ -1,8 +1,57 @@
 # Releasing Reprise
 
-This checklist prepares Reprise 0.1.1 for distribution without publishing or
-modifying user data. The repository currently has no public remote, and this
-workflow must not push, tag, upload, or submit anything automatically.
+This checklist prepares a Reprise snapshot for distribution without modifying
+user data. Publishing is automated only by the guarded GitHub release channel
+described below; store submissions and other distribution channels remain
+separate maintainer actions.
+
+## Automated GitHub release channel
+
+A push to `main` starts `.github/workflows/release.yml`. For the normal weekly
+promotion, the gate waits for the `Quality gate` check on the exact commit SHA.
+Queued and in-progress checks are polled with a bounded timeout; only `success`
+continues. A cancelled check is reported as a superseded promotion, while a
+skipped or failed check is not green. Those decisions end the release run
+successfully without building, so the original CI result remains the single
+failure signal.
+
+The desktop workspace version determines the tag `v<desktop-version>`. If that
+tag already exists, the run is an idempotent no-op. Otherwise the Flatpak and
+Android jobs build in parallel, and publication happens only after both jobs
+succeed. The draft release is checked for four non-empty assets before it is
+published and marked latest:
+
+- `Reprise-<desktop-version>.flatpak`
+- `Reprise-<desktop-version>.flatpak.sha256`
+- `Reprise-Android-<android-version>.apk`
+- `Reprise-Android-<android-version>.apk.sha256`
+
+The full English release body comes from the matching dated section in
+`CHANGELOG.md`. Software centres use the matching bilingual `<release>` entry
+in `data/io.github.marvinbaudach.Reprise.metainfo.xml`. Both curated entries
+must exist before promotion; `scripts/check-release-metadata.sh` enforces them
+in the release gate. The generated GitHub header adds both app versions,
+installation requirements, the Flatpak update limitation, the missing stems
+backend in that bundle, Android's minimum version, and the shared licence.
+
+Pull requests that touch release inputs run both build jobs and upload their
+artifacts, but never publish. Without upload-key secrets, that APK deliberately
+uses the existing debug-signing fallback and identifies it in the run summary.
+Release-mode builds require the upload key and verify both its certificate
+fingerprint and the APK version metadata. The upload-key creation, backup,
+repository-secret, local signing, and inspection procedures are documented in
+[`docs/releasing-android.md`](docs/releasing-android.md).
+
+A manual dispatch defaults to `dry_run: true`. Use it on `main` after landing a
+release-channel change to exercise the real check-run and tag decisions without
+publishing. Do not set `dry_run: false` unless the curated text, upload-key
+fingerprint, CI evidence, and both release artifacts are ready.
+
+The named follow-up is a self-hosted Flatpak repository, which will provide a
+real update path. It is deferred because the existing GitHub Pages deployment
+serves the Showroom from the same publication surface; repository metadata and
+the Showroom deployment need a collision-free Pages layout first. Until then,
+the downloadable `.flatpak` bundle does not self-update.
 
 ## Automated release check
 
@@ -347,19 +396,10 @@ Record the OS, GNOME version, runtime branches, architecture, codec packages, an
 results for the release notes. Screenshots must be captured manually from a real,
 populated test library; do not fabricate them from headless output.
 
-## Public publication handoff
+## Other publication channels
 
-Two external prerequisites remain and cannot be inferred or manufactured:
-
-1. Publish the source through a maintainer-controlled public remote and create an
-   immutable 0.1.1 archive/tag with a verified SHA-256 checksum.
-2. Establish a verifiable project identity appropriate for the existing
-   `io.github.marvinbaudach.Reprise` application ID.
-
-The MusicBrainz `User-Agent` now uses the reachable maintainer profile as its contact
-URL; this no longer depends on a placeholder project page. After the prerequisites
-above exist, replace the local `type: dir` Flatpak source with the immutable
-archive, add the real homepage to AppStream, rerun every automated and manual check,
-and submit through the maintainer's chosen public forge/Flathub account. Creating
-the remote, tag, release, signatures, screenshots, or Flathub pull request is an
-explicit maintainer action and is outside this local no-push handoff.
+The GitHub release is not a Flathub, AUR, COPR, Play Store, or F-Droid
+publication. Those channels keep their own review and maintainer handoffs. The
+Flatpak manifest continues to use the repository checkout as its CI source; a
+future distribution manifest must use the immutable published source archive
+and its verified checksum instead.

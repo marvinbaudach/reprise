@@ -170,6 +170,15 @@ require_pattern 'ANDROID_KEY_ALIAS' docs/releasing-android.md
 require_pattern 'ANDROID_KEY_PASSWORD' docs/releasing-android.md
 require_pattern 'android/keystore\.properties' docs/releasing-android.md
 require_pattern 'cannot update' docs/releasing-android.md
+require_pattern '^## Automated GitHub release channel' RELEASING.md
+require_pattern 'push to `main`' RELEASING.md
+require_pattern 'exact commit SHA' RELEASING.md
+require_pattern 'Reprise-<desktop-version>\.flatpak' RELEASING.md
+require_pattern 'Reprise-Android-<android-version>\.apk' RELEASING.md
+require_pattern 'must exist before promotion' RELEASING.md
+require_pattern 'docs/releasing-android\.md' RELEASING.md
+require_pattern 'self-hosted Flatpak repository' RELEASING.md
+require_pattern 'Showroom' RELEASING.md
 
 scripts/tests/cua-e2e.sh
 scripts/tests/motion-tokens.sh
