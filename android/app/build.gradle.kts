@@ -21,14 +21,14 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "org.reprise"
+        applicationId = "io.github.marvinbaudach.reprise"
         minSdk = 26
         targetSdk = 37
         versionCode = 30
         versionName = "0.1.30"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
-        buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"All Rights Reserved\"")
+        buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"GPL-3.0-or-later\"")
         ndk {
             // The spike runs on the connected arm64 device and on the
             // x86_64 emulator (`pixel10xl_api37`). Both are kept because the
