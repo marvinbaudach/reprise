@@ -6,6 +6,105 @@ use super::youtube_test_support::*;
 use super::{RefreshRequest as R, *};
 use crate::podcasts::store::{self, NewSubscription};
 
+fn listed_playlist_with_duration() -> super::super::ytdlp::YtDlpPlaylist {
+    super::super::ytdlp::YtDlpPlaylist {
+        title: Some("Channel".into()),
+        channel: Some("Channel".into()),
+        source_url: Some("https://www.youtube.com/@channel".into()),
+        image_url: None,
+        entries: vec![super::super::ytdlp::YtDlpVideo {
+            id: "abc123".into(),
+            title: "Track".into(),
+            duration_secs: Some(225),
+            timestamp: Some(1_700_000_000),
+            upload_date: None,
+            image_url: None,
+        }],
+    }
+}
+
+#[test]
+fn a_listed_video_carries_its_duration_into_the_episode() {
+    let listing = super::super::youtube::project_playlist(listed_playlist_with_duration());
+
+    assert_eq!(listing.episodes[0].duration_secs, Some(225));
+}
+
+struct ListedYoutubeWithDuration;
+
+impl YoutubeFetcher for ListedYoutubeWithDuration {
+    fn list(&self, _: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
+        let listing = super::super::youtube::project_playlist(listed_playlist_with_duration());
+        Ok(project_youtube_feed(listing, limit))
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+struct ListingFallbackFeed;
+
+impl FeedFetcher for ListingFallbackFeed {
+    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
+        panic!("YouTube refresh must use the derived official feed URL")
+    }
+
+    fn fetch_url(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> Result<Response, PodcastError> {
+        Err(PodcastError::Transport(
+            "listing fallback fixture".to_owned(),
+        ))
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+#[test]
+fn a_refresh_persists_the_duration_without_any_resolve() {
+    let db = conn();
+    let subscription_id = store::add_or_restore(
+        &db,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            // A canonical channel URL skips identity resolution. The failing
+            // official-feed fixture then takes the normal yt-dlp listing
+            // fallback, without resolving audio for playback.
+            feed_url: "https://www.youtube.com/channel/UCduration".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+
+    refresh_to_root(
+        &db,
+        &ListingFallbackFeed,
+        &ListedYoutubeWithDuration,
+        10,
+        R::force(),
+        directory.path(),
+    )
+    .unwrap();
+
+    let episode = super::super::query::episodes_for_subscription(&db, subscription_id)
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("listed episode");
+    assert_eq!(episode.duration_secs, Some(225));
+}
+
 /// This path fetches a *channel* URL through yt-dlp, where `title` is the
 /// channel's own name — the useless "Videos" title belongs to the uploads RSS
 /// feed, which is a different path and is stripped by

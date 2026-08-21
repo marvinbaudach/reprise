@@ -90,8 +90,6 @@ pub struct PodcastRefreshResult {
     pub failed: usize,
     pub episodes_inserted: usize,
     pub episodes_updated: usize,
-    pub downloads_completed: usize,
-    pub downloads_failed: usize,
 }
 
 impl ManagePodcastsResult {
@@ -344,8 +342,6 @@ fn refresh_podcasts(
         failed: summary.failed,
         episodes_inserted: summary.episodes_inserted,
         episodes_updated: summary.episodes_updated,
-        downloads_completed: summary.downloads_completed,
-        downloads_failed: summary.downloads_failed,
     })
 }
 
