@@ -2,7 +2,7 @@
 slug: resume-belongs-to-long-podcasts
 worktree: /home/marvin/Projects/reprise-resume-belongs-to-long-podcasts
 branch: feature/resume-belongs-to-long-podcasts
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-21
 ---
