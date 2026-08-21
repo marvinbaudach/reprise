@@ -2,7 +2,7 @@
 slug: always-download-episodes-ui
 worktree: /home/marvin/Projects/reprise-always-download-episodes-ui
 branch: feature/always-download-episodes-ui
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-20
 ---
