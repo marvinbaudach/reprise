@@ -28,6 +28,18 @@ fn a_finished_fetch_without_a_file_fails_rather_than_playing_nothing() {
     assert!(matches!(outcome, FetchOutcome::Fail(_)));
 }
 
+#[test]
+fn a_database_error_after_download_is_reported_as_that_error() {
+    let outcome = fetch_download_outcome_from_store(
+        Ok(DownloadState::Downloaded { bytes: 123 }),
+        Err("database disk image is malformed".into()),
+    );
+    assert_eq!(
+        outcome,
+        FetchOutcome::Fail("database disk image is malformed".into())
+    );
+}
+
 fn podcast_session(
     neighbours: Option<NeighbourContext>,
     automatic_advance: Option<AutomaticAdvance>,

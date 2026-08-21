@@ -80,6 +80,16 @@ pub(super) fn fetch_download_outcome(
     fetch_outcome(result, downloaded_path)
 }
 
+pub(super) fn fetch_download_outcome_from_store(
+    result: Result<DownloadState, String>,
+    downloaded_path: Result<Option<String>, String>,
+) -> FetchOutcome {
+    match downloaded_path {
+        Ok(path) => fetch_download_outcome(result, path),
+        Err(message) => FetchOutcome::Fail(message),
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(in crate::ui) struct StreamTags {
     pub(in crate::ui) title: Option<String>,

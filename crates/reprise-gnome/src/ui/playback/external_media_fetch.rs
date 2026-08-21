@@ -8,7 +8,7 @@ use reprise_core::{db::Db, podcasts};
 
 use crate::ui::player_controller::PlayerController;
 
-use super::external_media_state::{fetch_download_outcome, EpisodeSource, FetchOutcome};
+use super::external_media_state::{fetch_download_outcome_from_store, EpisodeSource, FetchOutcome};
 
 fn download_episode_for_playback(
     db: &Db,
@@ -91,10 +91,12 @@ impl PlayerController {
                 return;
             }
             let path = reprise_core::podcasts::store::episode(&controller.conn, episode_id)
-                .ok()
-                .flatten()
-                .and_then(|episode| episode.downloaded_path);
-            match fetch_download_outcome(result, path) {
+                .map(|episode| episode.and_then(|episode| episode.downloaded_path))
+                .map_err(|error| {
+                    tracing::warn!(%error, episode_id, "could not read downloaded podcast episode");
+                    error.to_string()
+                });
+            match fetch_download_outcome_from_store(result, path) {
                 FetchOutcome::Play(path) => {
                     let _ = controller.start_podcast_source(
                         generation,
