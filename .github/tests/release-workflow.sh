@@ -13,6 +13,7 @@ fail() {
 
 python3 - "$workflow" <<'PY'
 import pathlib
+import re
 import sys
 import yaml
 
@@ -32,15 +33,41 @@ def named_step(job_name, step_name):
 flatpak_install = named_step("flatpak", "Install Flatpak tooling and GNOME 50 SDK")
 flatpak_install_run = flatpak_install.get("run", "")
 assert "set -euo pipefail" in flatpak_install_run, "Flatpak installation must fail closed"
-assert "for attempt in 1 2 3; do" in flatpak_install_run, (
-    "Flatpak runtime installation must make exactly three bounded attempts"
+assert "apt-get install --yes flatpak flatpak-builder ostree" in flatpak_install_run, (
+    "the runner must install the OSTree CLI before reporting its version"
 )
-assert flatpak_install_run.count("flatpak --user install") == 1, (
-    "only the Flatpak runtime installation command belongs in the retry loop"
+assert flatpak_install_run.count("flatpak --version") == 1, (
+    "Flatpak installation must report the Flatpak version once"
+)
+assert flatpak_install_run.count("ostree --version") == 1, (
+    "Flatpak installation must report the OSTree version once"
+)
+assert "for attempt in 1 2 3 4 5; do" in flatpak_install_run, (
+    "Flatpak runtime installation must make exactly five bounded attempts"
+)
+assert "retry_delays=(20 40 60 120)" in flatpak_install_run, (
+    "Flatpak retries must back off over a multi-minute window"
+)
+assert 'sleep "$delay"' in flatpak_install_run, (
+    "Flatpak retries must use the increasing backoff delay"
+)
+assert flatpak_install_run.count("--no-static-deltas") == 2, (
+    "both normal and diagnostic Flatpak pulls must avoid static-delta objects"
+)
+assert "static-delta object" in flatpak_install_run, (
+    "the plain-object pull must explain the mid-transfer mirror 404 mechanism"
+)
+assert len(re.findall(r"\bflatpak\b.*\binstall\b", flatpak_install_run)) == 2, (
+    "Flatpak installation needs one retried command and one final diagnostic command"
 )
 assert "--or-update" in flatpak_install_run, "Flatpak retries must resume partial installs"
-assert "sleep " in flatpak_install_run, "Flatpak install attempts need a pause between them"
-assert "exit 1" in flatpak_install_run, "three failed Flatpak install attempts must fail the job"
+assert "--ostree-verbose" in flatpak_install_run and " -v " in flatpak_install_run, (
+    "the post-exhaustion Flatpak command must expose the exact failing URL"
+)
+assert "exact failing URL" in flatpak_install_run, (
+    "the final diagnostic must explain why its noisy output is deferred"
+)
+assert "exit 1" in flatpak_install_run, "exhausted Flatpak installation must fail the job"
 
 flatpak_cleanup = named_step("flatpak", "Reclaim disk for the Flatpak build")
 flatpak_cleanup_run = flatpak_cleanup.get("run", "")

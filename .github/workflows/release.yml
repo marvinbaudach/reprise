@@ -179,21 +179,34 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes flatpak flatpak-builder
+          sudo apt-get install --yes flatpak flatpak-builder ostree
           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          for attempt in 1 2 3; do
-            if flatpak --user install --noninteractive --or-update flathub \
+          flatpak --version
+          ostree --version
+          retry_delays=(20 40 60 120)
+          for attempt in 1 2 3 4 5; do
+            # A Flathub edge mirror can resolve the ref but miss a static-delta object
+            # mid-transfer; fetch ordinary OSTree objects to avoid that 404 class.
+            if flatpak --user install --noninteractive --or-update --no-static-deltas flathub \
               org.gnome.Platform//50 \
               org.gnome.Sdk//50 \
               org.freedesktop.Sdk.Extension.rust-stable//25.08; then
               break
             fi
-            if ((attempt == 3)); then
-              echo "Flatpak runtime installation failed after three attempts." >&2
+            if ((attempt == 5)); then
+              echo "Flatpak runtime installation failed after five attempts." >&2
+              # Only after exhaustion, make the noisy pull expose the exact failing URL
+              # so the next fix can target a known object rather than another hypothesis.
+              flatpak --ostree-verbose -v --user install \
+                --noninteractive --or-update --no-static-deltas flathub \
+                org.gnome.Platform//50 \
+                org.gnome.Sdk//50 \
+                org.freedesktop.Sdk.Extension.rust-stable//25.08 || true
               exit 1
             fi
-            echo "Flatpak runtime installation attempt $attempt failed; retrying in 15 seconds." >&2
-            sleep 15
+            delay=${retry_delays[attempt - 1]}
+            echo "Flatpak runtime installation attempt $attempt failed; retrying in $delay seconds." >&2
+            sleep "$delay"
           done
 
       - name: Reclaim disk for the Flatpak build
