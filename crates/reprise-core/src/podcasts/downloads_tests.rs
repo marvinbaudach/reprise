@@ -11,14 +11,49 @@ fn conn() -> Db {
 }
 
 #[test]
-fn the_newest_first_ordering_puts_undated_episodes_last() {
-    // The ordering is shared by the cleanup and the fill-up. This pins its
-    // three tie-breakers so a change to either consumer cannot quietly
-    // redefine "newest" for the other.
+fn newest_first_ordering_handles_nulls_and_duplicate_timestamps() {
+    let db = conn();
+    let subscription_id = add_show(db.conn());
+    db.conn()
+        .execute(
+            "UPDATE podcast_subscriptions SET auto_download = 1 WHERE id = ?1",
+            [subscription_id],
+        )
+        .unwrap();
+    let insert = |guid: &str, published_at: Option<i64>, first_seen_at: i64| {
+        store::upsert_episode_in(
+            db.conn(),
+            subscription_id,
+            &ParsedEpisode {
+                guid: guid.to_owned(),
+                title: guid.to_owned(),
+                image_url: None,
+                audio_url: format!("https://example.test/{guid}.mp3"),
+                page_url: None,
+                published_at,
+                duration_secs: None,
+            },
+            first_seen_at,
+        )
+        .unwrap()
+        .unwrap()
+        .episode_id
+    };
+    let duplicate_older_seen = insert("duplicate-older-seen", Some(20), 100);
+    let duplicate_lower_id = insert("duplicate-lower-id", Some(20), 200);
+    let duplicate_higher_id = insert("duplicate-higher-id", Some(20), 200);
+    let older_publication = insert("older-publication", Some(10), 500);
+    let undated = insert("undated", None, 999);
+
     assert_eq!(
-        super::NEWEST_EPISODE_FIRST,
-        "e.published_at IS NULL, e.published_at DESC, \
-         e.first_seen_at DESC, e.id DESC"
+        super::super::fill_downloads::missing_episode_ids_in(db.conn(), 0).unwrap(),
+        vec![
+            duplicate_higher_id,
+            duplicate_lower_id,
+            duplicate_older_seen,
+            older_publication,
+            undated,
+        ]
     );
 }
 
