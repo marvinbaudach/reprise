@@ -5912,7 +5912,14 @@ listening statistics.
   leaves any episode with fewer than 60 seconds remaining or at least 97
   percent heard, it becomes Played and clears its position regardless of
   source, without offering the next episode. Natural stream completion keeps
-  the separate next-episode behavior in `POD-24`.
+  the separate next-episode behavior in `POD-24`. Covered by
+  `pod_1_status_matrix`,
+  `pod_1_rss_keeps_resume_only_from_ten_minutes_or_with_unknown_duration`,
+  `pod_1_youtube_never_keeps_resume_even_when_long_or_unknown`,
+  `pod_1_completion_tail_is_strictly_less_than_sixty_seconds`,
+  `pod_1_completion_percentage_includes_exactly_ninety_seven_percent`,
+  `pod_1_a_sub_minute_episode_uses_percentage_not_the_tail_rule`, and
+  `pod_1_completion_requires_a_known_positive_duration_and_position`.
 - **POD-2** [active] [core] — RSS is the data API:
   enclosure/guid/pubDate/itunes:duration; the GUID — or, failing that,
   the enclosure URL, and for YouTube the video ID — is the sole

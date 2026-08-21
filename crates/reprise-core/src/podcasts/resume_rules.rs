@@ -36,39 +36,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rss_keeps_resume_only_from_ten_minutes_or_with_unknown_duration() {
+    fn pod_1_rss_keeps_resume_only_from_ten_minutes_or_with_unknown_duration() {
         assert!(keeps_resume(PodcastKind::Rss, Some(600)));
         assert!(!keeps_resume(PodcastKind::Rss, Some(599)));
         assert!(keeps_resume(PodcastKind::Rss, None));
     }
 
     #[test]
-    fn youtube_never_keeps_resume_even_when_long_or_unknown() {
+    fn pod_1_youtube_never_keeps_resume_even_when_long_or_unknown() {
         assert!(!keeps_resume(PodcastKind::Youtube, Some(3_600)));
         assert!(!keeps_resume(PodcastKind::Youtube, None));
     }
 
     #[test]
-    fn completion_tail_is_strictly_less_than_sixty_seconds() {
+    fn pod_1_completion_tail_is_strictly_less_than_sixty_seconds() {
         assert!(!is_complete(940_000, Some(1_000)));
         assert!(is_complete(940_001, Some(1_000)));
         assert!(!is_complete(939_000, Some(1_000)));
     }
 
     #[test]
-    fn completion_percentage_includes_exactly_ninety_seven_percent() {
+    fn pod_1_completion_percentage_includes_exactly_ninety_seven_percent() {
         assert!(is_complete(3_492_000, Some(3_600)));
         assert!(!is_complete(3_488_400, Some(3_600)));
     }
 
     #[test]
-    fn a_sub_minute_episode_uses_percentage_not_the_tail_rule() {
+    fn pod_1_a_sub_minute_episode_uses_percentage_not_the_tail_rule() {
         assert!(!is_complete(1_000, Some(30)));
         assert!(is_complete(29_100, Some(30)));
     }
 
     #[test]
-    fn completion_requires_a_known_positive_duration_and_position() {
+    fn pod_1_completion_requires_a_known_positive_duration_and_position() {
         assert!(!is_complete(10_000, None));
         assert!(!is_complete(-1, Some(600)));
         assert!(!is_complete(0, Some(0)));
