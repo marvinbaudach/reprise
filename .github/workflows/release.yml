@@ -177,16 +177,54 @@ jobs:
 
       - name: Install Flatpak tooling and GNOME 50 SDK
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes flatpak flatpak-builder
           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install --noninteractive --or-update flathub \
-            org.gnome.Platform//50 \
-            org.gnome.Sdk//50 \
-            org.freedesktop.Sdk.Extension.rust-stable//25.08
+          for attempt in 1 2 3; do
+            if flatpak --user install --noninteractive --or-update flathub \
+              org.gnome.Platform//50 \
+              org.gnome.Sdk//50 \
+              org.freedesktop.Sdk.Extension.rust-stable//25.08; then
+              break
+            fi
+            if ((attempt == 3)); then
+              echo "Flatpak runtime installation failed after three attempts." >&2
+              exit 1
+            fi
+            echo "Flatpak runtime installation attempt $attempt failed; retrying in 15 seconds." >&2
+            sleep 15
+          done
+
+      - name: Reclaim disk for the Flatpak build
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          {
+            echo "### Flatpak disk headroom"
+            echo ""
+            echo "**After runner cleanup (Flatpak build baseline)**"
+            echo '```text'
+            df -h /
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build the Flatpak repository
-        run: flatpak-builder --repo=repo --force-clean build-dir io.github.marvinbaudach.Reprise.yml
+        run: |
+          set -euo pipefail
+          flatpak-builder --repo=repo --force-clean build-dir io.github.marvinbaudach.Reprise.yml
+          {
+            echo ""
+            echo "**After flatpak-builder (repository build complete)**"
+            echo '```text'
+            df -h /
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create the single-file bundle
         id: bundle
@@ -202,6 +240,13 @@ jobs:
           fi
           bundle="Reprise-$version.flatpak"
           flatpak build-bundle repo "$bundle" io.github.marvinbaudach.Reprise
+          {
+            echo ""
+            echo "**After flatpak build-bundle (single-file bundle complete)**"
+            echo '```text'
+            df -h /
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           sha256sum "$bundle" > "$bundle.sha256"
           echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"

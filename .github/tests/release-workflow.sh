@@ -29,10 +29,52 @@ def named_step(job_name, step_name):
             return step
     raise AssertionError(f"{job_name} job has no {step_name!r} step")
 
+flatpak_install = named_step("flatpak", "Install Flatpak tooling and GNOME 50 SDK")
+flatpak_install_run = flatpak_install.get("run", "")
+assert "set -euo pipefail" in flatpak_install_run, "Flatpak installation must fail closed"
+assert "for attempt in 1 2 3; do" in flatpak_install_run, (
+    "Flatpak runtime installation must make exactly three bounded attempts"
+)
+assert flatpak_install_run.count("flatpak --user install") == 1, (
+    "only the Flatpak runtime installation command belongs in the retry loop"
+)
+assert "--or-update" in flatpak_install_run, "Flatpak retries must resume partial installs"
+assert "sleep " in flatpak_install_run, "Flatpak install attempts need a pause between them"
+assert "exit 1" in flatpak_install_run, "three failed Flatpak install attempts must fail the job"
+
+flatpak_cleanup = named_step("flatpak", "Reclaim disk for the Flatpak build")
+flatpak_cleanup_run = flatpak_cleanup.get("run", "")
+for path in (
+    "/usr/local/lib/android",
+    "/usr/share/dotnet",
+    "/opt/ghc",
+    "/usr/local/.ghcup",
+    "/opt/hostedtoolcache/CodeQL",
+):
+    assert f"sudo rm -rf {path} || true" in flatpak_cleanup_run, (
+        f"Flatpak cleanup must tolerate an absent {path}"
+    )
+assert "docker image prune --all --force || true" in flatpak_cleanup_run, (
+    "Flatpak cleanup must discard preloaded Docker images without failing the job"
+)
+assert "After runner cleanup (Flatpak build baseline)" in flatpak_cleanup_run
+assert "df -h /" in flatpak_cleanup_run
+assert '>> "$GITHUB_STEP_SUMMARY"' in flatpak_cleanup_run
+
+flatpak_build = named_step("flatpak", "Build the Flatpak repository")
+flatpak_build_run = flatpak_build.get("run", "")
+assert "After flatpak-builder (repository build complete)" in flatpak_build_run
+assert "df -h /" in flatpak_build_run
+assert '>> "$GITHUB_STEP_SUMMARY"' in flatpak_build_run
+
 flatpak_bundle = named_step("flatpak", "Create the single-file bundle")
-assert 'echo "version=$version" >> "$GITHUB_OUTPUT"' in flatpak_bundle.get("run", ""), (
+flatpak_bundle_run = flatpak_bundle.get("run", "")
+assert 'echo "version=$version" >> "$GITHUB_OUTPUT"' in flatpak_bundle_run, (
     "Flatpak bundle step must expose its desktop version"
 )
+assert "After flatpak build-bundle (single-file bundle complete)" in flatpak_bundle_run
+assert "df -h /" in flatpak_bundle_run
+assert '>> "$GITHUB_STEP_SUMMARY"' in flatpak_bundle_run
 flatpak_upload = named_step("flatpak", "Upload Flatpak bundle")
 assert flatpak_upload.get("with", {}).get("name") == (
     "reprise-flatpak-${{ steps.bundle.outputs.version }}"
