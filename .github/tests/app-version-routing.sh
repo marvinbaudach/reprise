@@ -43,6 +43,12 @@ new_fixture() {
         'version = "1.2.3"' \
         > "$fixture/Cargo.lock"
     printf '%s\n' \
+        'project(' \
+        "  'reprise'," \
+        "  version: '1.2.3'," \
+        ')' \
+        > "$fixture/meson.build"
+    printf '%s\n' \
         'android {' \
         '    defaultConfig {' \
         '        versionCode = 41' \
@@ -64,6 +70,10 @@ read_desktop_version() {
     sed -n '/^\[workspace\.package\]$/,/^\[/s/^version = "\([^"]*\)"$/\1/p' "$1/Cargo.toml"
 }
 
+read_meson_version() {
+    sed -n "s/^[[:space:]]*version: '\([^']*\)'.*/\1/p" "$1/meson.build"
+}
+
 read_android_version() {
     sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"$/\1/p' "$1/android/app/build.gradle.kts"
 }
@@ -83,6 +93,7 @@ git -C "$fixture" commit --quiet -m 'docs: update site'
 output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $output == none ]] || fail "README and Showroom changes must report no app bump, got: $output"
 [[ $(read_desktop_version "$fixture") == 1.2.3 ]] || fail "README and Showroom changed the desktop version"
+[[ $(read_meson_version "$fixture") == 1.2.3 ]] || fail "README and Showroom changed the Meson version"
 [[ $(read_android_version "$fixture") == 2.4.6 ]] || fail "README and Showroom changed the Android version"
 [[ $(read_android_code "$fixture") == 41 ]] || fail "README and Showroom changed Android versionCode"
 
@@ -95,9 +106,10 @@ git -C "$fixture" commit --quiet -m 'fix(gnome): adjust desktop'
 output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $output == 'desktop 1.2.4' ]] || fail "desktop-only changes reported the wrong bump: $output"
 [[ $(read_desktop_version "$fixture") == 1.2.4 ]] || fail "desktop-only changes did not bump the desktop version"
+[[ $(read_meson_version "$fixture") == 1.2.4 ]] || fail "desktop-only changes did not bump the Meson version"
 [[ $(read_android_version "$fixture") == 2.4.6 ]] || fail "desktop-only changes changed the Android version"
 [[ $(read_android_code "$fixture") == 41 ]] || fail "desktop-only changes changed Android versionCode"
-git -C "$fixture" add Cargo.toml Cargo.lock
+git -C "$fixture" add Cargo.toml Cargo.lock meson.build
 git -C "$fixture" commit --quiet -m 'chore: bump version to desktop 1.2.4'
 output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $output == 'desktop 1.2.4' ]] || fail "a desktop bump retry changed its scope: $output"
@@ -113,6 +125,7 @@ git -C "$fixture" commit --quiet -m 'fix(android): adjust mobile'
 output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $output == 'android 2.4.7' ]] || fail "Android-only changes reported the wrong bump: $output"
 [[ $(read_desktop_version "$fixture") == 1.2.3 ]] || fail "Android-only changes changed the desktop version"
+[[ $(read_meson_version "$fixture") == 1.2.3 ]] || fail "Android-only changes changed the Meson version"
 [[ $(read_android_version "$fixture") == 2.4.7 ]] || fail "Android-only changes did not bump the Android version"
 [[ $(read_android_code "$fixture") == 42 ]] || fail "Android-only changes did not bump Android versionCode"
 
@@ -125,6 +138,7 @@ git -C "$fixture" commit --quiet -m 'fix(core): adjust shared behavior'
 output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $output == 'desktop 1.2.4, android 2.4.7' ]] || fail "Core changes reported the wrong bumps: $output"
 [[ $(read_desktop_version "$fixture") == 1.2.4 ]] || fail "Core changes did not bump the desktop version"
+[[ $(read_meson_version "$fixture") == 1.2.4 ]] || fail "Core changes did not bump the Meson version"
 [[ $(read_android_version "$fixture") == 2.4.7 ]] || fail "Core changes did not bump the Android version"
 [[ $(read_android_code "$fixture") == 42 ]] || fail "Core changes did not bump Android versionCode"
 
@@ -136,6 +150,7 @@ git -C "$fixture" commit --quiet -m 'ci: adjust tooling'
 output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $output == none ]] || fail "tooling-only changes must report no app bump, got: $output"
 [[ $(read_desktop_version "$fixture") == 1.2.3 ]] || fail "tooling-only changes changed the desktop version"
+[[ $(read_meson_version "$fixture") == 1.2.3 ]] || fail "tooling-only changes changed the Meson version"
 [[ $(read_android_version "$fixture") == 2.4.6 ]] || fail "tooling-only changes changed the Android version"
 [[ $(read_android_code "$fixture") == 41 ]] || fail "tooling-only changes changed Android versionCode"
 
@@ -148,6 +163,7 @@ git -C "$fixture" commit --quiet -m 'build(flatpak): adjust the desktop package'
 output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $output == 'desktop 1.2.4' ]] || fail "desktop packaging changes reported the wrong bump: $output"
 [[ $(read_desktop_version "$fixture") == 1.2.4 ]] || fail "desktop packaging changes did not bump the desktop version"
+[[ $(read_meson_version "$fixture") == 1.2.4 ]] || fail "desktop packaging changes did not bump the Meson version"
 [[ $(read_android_version "$fixture") == 2.4.6 ]] || fail "desktop packaging changes changed the Android version"
 [[ $(read_android_code "$fixture") == 41 ]] || fail "desktop packaging changes changed Android versionCode"
 
@@ -166,5 +182,13 @@ output=$(cd "$fixture" && ./scripts/bump-version.sh --base "$base")
 [[ $(read_desktop_version "$fixture") == 1.2.3 ]] || fail "the Android version migration changed the desktop version"
 [[ $(read_android_version "$fixture") == 1.2.4 ]] || fail "the Android version migration did not bump from the coupled base"
 [[ $(read_android_code "$fixture") == 42 ]] || fail "the Android version migration did not bump versionCode"
+
+fixture=$(new_fixture explicit-set)
+output=$(cd "$fixture" && ./scripts/bump-version.sh set 3.2.1)
+[[ $output == 3.2.1 ]] || fail "explicit set reported the wrong version: $output"
+[[ $(read_desktop_version "$fixture") == 3.2.1 ]] || fail "explicit set did not update the desktop version"
+[[ $(read_meson_version "$fixture") == 3.2.1 ]] || fail "explicit set did not update the Meson version"
+[[ $(read_android_version "$fixture") == 3.2.1 ]] || fail "explicit set did not update the Android version"
+[[ $(read_android_code "$fixture") == 42 ]] || fail "explicit set did not advance Android versionCode"
 
 echo "App version routing contracts passed"

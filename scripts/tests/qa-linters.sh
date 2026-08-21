@@ -52,6 +52,7 @@ require_executable scripts/check-motion-tokens.sh
 require_executable scripts/check-android-theme.sh
 require_executable scripts/check-merge-readiness.sh
 require_executable scripts/check-project-quality.sh
+require_executable scripts/check-release-metadata.sh
 require_executable scripts/install-git-hooks.sh
 require_executable scripts/performance-baseline.sh
 require_executable scripts/performance-compare.sh
@@ -78,6 +79,7 @@ require_executable scripts/tests/worktree-gc-schedule.sh
 require_executable scripts/tests/architecture-size-limits.sh
 require_executable scripts/tests/cua-explore.sh
 require_executable scripts/tests/check-android-suite.sh
+require_executable .github/tests/release-metadata.sh
 require_executable scripts/reprise-worktree-gc.sh
 require_executable scripts/close-worktree.sh
 require_executable scripts/install-worktree-gc-timer.sh
@@ -108,6 +110,8 @@ require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
+require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
+require_pattern 'scripts/check-release-metadata\.sh --gate' .github/workflows/ci.yml
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
 reject_pattern 'scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh

@@ -7,6 +7,8 @@ cd "$repo_root"
 tmp_root=$(mktemp -d)
 trap 'rm -rf "$tmp_root"' EXIT
 
+scripts/check-release-metadata.sh
+
 echo "== Rust gates =="
 scripts/tests/qa-linters.sh
 scripts/tests/msrv.sh
