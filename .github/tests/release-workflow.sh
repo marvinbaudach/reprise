@@ -155,6 +155,7 @@ require 'Pull-request builds never use the production upload key' \
 require 'apksigner verify --print-certs' "APK signature verification is missing"
 require 'aapt2 dump badging' "APK version assertion is missing"
 [[ $(rg -c 'sha256sum' "$workflow") -ge 2 ]] || fail "both applications need SHA-256 files"
+# The workflow expression must remain a literal pattern rather than expand in this shell.
 # shellcheck disable=SC2016
 require 'EXPECTED_DESKTOP_VERSION: \$\{\{ needs\.gate\.outputs\.desktop_version \}\}' \
     "Flatpak gate output must enter the shell through env"
