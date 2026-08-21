@@ -5775,11 +5775,12 @@ listening statistics.
   that relation. Both source kinds therefore start their episode title at the
   same x position and keep the same minimum row height. The second line drops
   absent date or duration values instead of leaving separators behind, and
-  carries at most one status chip outside that fact chain. Resume states
-  include the measured whole percentage when duration is known and fall back
-  to Resume without inventing one otherwise. The 110-pixel download-state
-  slot stays reserved on the right even when no size is known; selection occupies the
-  media overlay on the left. Covered by
+  carries at most one status chip outside that fact chain. Only RSS rows can
+  carry a Resume state; those states include the measured whole percentage
+  when duration is known and fall back to Resume without inventing one
+  otherwise. The 110-pixel download-state slot stays reserved on the right
+  even when no size is known; selection occupies the media overlay on the
+  left. Covered by
   `src_16_the_shared_row_geometry_is_one_set_of_constants`,
   `src_16_episode_media_starts_after_group_media_in_both_source_views`,
   `src_16_the_row_height_is_carried_by_the_shared_style`,
@@ -5902,10 +5903,16 @@ listening statistics.
   no query and therefore no marker.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
-  `position_ms > 0`, otherwise unstarted. The visible New pill is a
-  separate discovery fact (`first_seen_at > subscription.added_at`), not
-  another spelling of unplayed; an unstarted backlog episode therefore has
-  no status pill. An episode ending sets Played and clears the position.
+  `position_ms > 0`, otherwise unstarted. Resume positions belong only to RSS
+  episodes whose duration is at least `MIN_RESUME_DURATION_SECS`; an unknown
+  duration counts as long so a long episode without feed metadata does not
+  lose its place. The visible New pill is a separate discovery fact
+  (`first_seen_at > subscription.added_at`), not another spelling of unplayed;
+  an unstarted backlog episode therefore has no status pill. When the user
+  leaves any episode with fewer than 60 seconds remaining or at least 97
+  percent heard, it becomes Played and clears its position regardless of
+  source, without offering the next episode. Natural stream completion keeps
+  the separate next-episode behavior in `POD-24`.
 - **POD-2** [active] [core] — RSS is the data API:
   enclosure/guid/pubDate/itunes:duration; the GUID — or, failing that,
   the enclosure URL, and for YouTube the video ID — is the sole
@@ -6171,11 +6178,13 @@ listening statistics.
   original title remains unchanged — Reprise never invents a machine
   translation. Stored episode titles adopt an available localized title on the
   next source refresh.
-- **POD-24** [active] [core] [gtk] — Episodes start at the saved position; this is
-  persisted throttled as well as on pause, stop, switch, and quit. When a
-  directly started YouTube episode reaches its natural end and its frozen
-  POD-21 context has a next rendered episode, Reprise automatically starts that
-  exact no-wrap neighbour — the same target as the enabled Next transport.
+- **POD-24** [active] [core] [gtk] — RSS episodes start at the saved position;
+  their eligible position is persisted throttled as well as on pause, stop,
+  switch, and quit. YouTube episodes never start from or persist a Resume
+  position. When a directly started YouTube episode reaches its natural end
+  and its frozen POD-21 context has a next rendered episode, Reprise
+  automatically starts that exact no-wrap neighbour — the same target as the
+  enabled Next transport.
   RSS episodes and YouTube episodes without a next frozen neighbour keep the
   manual next-unplayed offer preserved from POD-4; QUE-12 excludes episodes
   from the manual queue. Podcast and YouTube sessions
