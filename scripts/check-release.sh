@@ -44,10 +44,10 @@ bash scripts/check-logo-artwork.sh --all
 echo "== Flatpak manifest and Cargo sources =="
 python3 -c 'import sys, yaml; data=yaml.safe_load(open(sys.argv[1], encoding="utf-8")); assert data["app-id"] == "io.github.marvinbaudach.Reprise"; assert data["runtime"] == "org.gnome.Platform"; assert data["runtime-version"] == "50"; assert data["sdk"] == "org.gnome.Sdk"' io.github.marvinbaudach.Reprise.yml
 jq empty flatpak/cargo-sources.json
+scripts/check-flatpak-cargo-sources.sh
 awk -F'"' '/^checksum = / { print $2 }' Cargo.lock | sort > "$tmp_root/lock-checksums"
 jq -r '.[] | select(.type == "archive") | .sha256' flatpak/cargo-sources.json | sort > "$tmp_root/source-checksums"
 cmp "$tmp_root/lock-checksums" "$tmp_root/source-checksums"
-test "$(rg -c '^checksum = ' Cargo.lock)" -eq "$(jq '[.[] | select(.type == "archive")] | length' flatpak/cargo-sources.json)"
 bash scripts/check-flatpak-device-permissions.sh io.github.marvinbaudach.Reprise.yml
 bash scripts/check-stem-runtime-packaging.sh
 bash scripts/check-stem-worker-isolation.sh

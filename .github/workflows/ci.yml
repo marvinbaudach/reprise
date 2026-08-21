@@ -74,6 +74,9 @@ jobs:
       - name: Verify maintained desktop version metadata
         run: scripts/check-release-metadata.sh --gate
 
+      - name: Verify Flatpak Cargo sources
+        run: scripts/check-flatpak-cargo-sources.sh
+
       - name: Set up Node Current
         uses: actions/setup-node@v7
         with:
