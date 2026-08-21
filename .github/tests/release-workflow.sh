@@ -22,6 +22,44 @@ with path.open(encoding="utf-8") as stream:
 assert isinstance(workflow, dict), "workflow root must be a mapping"
 jobs = workflow.get("jobs", {})
 assert set(jobs) == {"gate", "flatpak", "apk", "publish"}, jobs.keys()
+
+def named_step(job_name, step_name):
+    for step in jobs[job_name].get("steps", []):
+        if step.get("name") == step_name:
+            return step
+    raise AssertionError(f"{job_name} job has no {step_name!r} step")
+
+flatpak_bundle = named_step("flatpak", "Create the single-file bundle")
+assert 'echo "version=$version" >> "$GITHUB_OUTPUT"' in flatpak_bundle.get("run", ""), (
+    "Flatpak bundle step must expose its desktop version"
+)
+flatpak_upload = named_step("flatpak", "Upload Flatpak bundle")
+assert flatpak_upload.get("with", {}).get("name") == (
+    "reprise-flatpak-${{ steps.bundle.outputs.version }}"
+), "Flatpak upload artifact name must use the bundle step version"
+
+apk_package = named_step("apk", "Verify signature, certificate, and versions")
+assert 'echo "version=$gradle_version" >> "$GITHUB_OUTPUT"' in apk_package.get("run", ""), (
+    "APK package step must expose its Android version"
+)
+apk_upload = named_step("apk", "Upload universal APK")
+assert apk_upload.get("with", {}).get("name") == (
+    "reprise-apk-${{ steps.package.outputs.version }}"
+), "APK upload artifact name must use the package step version"
+
+publish = jobs["publish"]
+assert "gate" in publish.get("needs", []), "publish job must have gate outputs in scope"
+assert "github.event_name != 'pull_request'" in publish.get("if", ""), (
+    "publish job must stay disabled for pull requests"
+)
+flatpak_download = named_step("publish", "Download Flatpak bundle")
+assert flatpak_download.get("with", {}).get("name") == (
+    "reprise-flatpak-${{ needs.gate.outputs.desktop_version }}"
+), "Flatpak download artifact name must match the versioned upload"
+apk_download = named_step("publish", "Download universal APK")
+assert apk_download.get("with", {}).get("name") == (
+    "reprise-apk-${{ needs.gate.outputs.android_version }}"
+), "APK download artifact name must match the versioned upload"
 PY
 
 require() {

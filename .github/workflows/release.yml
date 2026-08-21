@@ -204,12 +204,13 @@ jobs:
           flatpak build-bundle repo "$bundle" io.github.marvinbaudach.Reprise
           sha256sum "$bundle" > "$bundle.sha256"
           echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Built $bundle ($(stat -c %s "$bundle") bytes)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Flatpak bundle
         uses: actions/upload-artifact@v6
         with:
-          name: reprise-flatpak
+          name: reprise-flatpak-${{ steps.bundle.outputs.version }}
           path: |
             ${{ steps.bundle.outputs.bundle }}
             ${{ steps.bundle.outputs.bundle }}.sha256
@@ -347,13 +348,14 @@ jobs:
           cp "$source_apk" "$apk"
           sha256sum "$apk" > "$apk.sha256"
           echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          echo "version=$gradle_version" >> "$GITHUB_OUTPUT"
           printf 'Built %s (%s bytes), versionCode %s.\n' \
             "$apk" "$(stat -c %s "$apk")" "$gradle_code" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload universal APK
         uses: actions/upload-artifact@v6
         with:
-          name: reprise-apk
+          name: reprise-apk-${{ steps.package.outputs.version }}
           path: |
             ${{ steps.package.outputs.apk }}
             ${{ steps.package.outputs.apk }}.sha256
@@ -393,13 +395,13 @@ jobs:
       - name: Download Flatpak bundle
         uses: actions/download-artifact@v7
         with:
-          name: reprise-flatpak
+          name: reprise-flatpak-${{ needs.gate.outputs.desktop_version }}
           path: dist
 
       - name: Download universal APK
         uses: actions/download-artifact@v7
         with:
-          name: reprise-apk
+          name: reprise-apk-${{ needs.gate.outputs.android_version }}
           path: dist
 
       - name: Generate release notes
