@@ -60,6 +60,8 @@ fn v78_clears_youtube_and_short_rss_resume_but_keeps_long_rss_position() {
     episode(&conn, 11, 1, Some(3_600), 1_200_000);
     episode(&conn, 12, 2, Some(599), 120_000);
     episode(&conn, 13, 2, Some(3_600), 600_000);
+    episode(&conn, 14, 2, None, 300_000);
+    episode(&conn, 15, 2, Some(600), 240_000);
     conn.pragma_update(None, "user_version", 77).unwrap();
 
     super::migrate_v78(&conn).unwrap();
@@ -70,6 +72,16 @@ fn v78_clears_youtube_and_short_rss_resume_but_keeps_long_rss_position() {
         position(&conn, 13),
         600_000,
         "long RSS is the control arm and must keep its position"
+    );
+    assert_eq!(
+        position(&conn, 14),
+        300_000,
+        "unknown duration counts as long and must keep its position"
+    );
+    assert_eq!(
+        position(&conn, 15),
+        240_000,
+        "the exact minimum duration must keep its position"
     );
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
