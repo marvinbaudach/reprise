@@ -1,4 +1,4 @@
-//! Keeping the newest N episodes of every subscription on disk.
+//! Keeping the newest N episodes of every auto-download subscription on disk.
 //!
 //! The mirror image of `downloads::cleanup_candidates`: that one deletes what
 //! ranks beyond N, this one fetches what is missing within N. Both read the
@@ -45,6 +45,10 @@ pub(crate) fn record_fill_outcome(
 
 /// The episodes that ought to be on disk and are not.
 ///
+/// Only live subscriptions whose `auto_download` switch is enabled enter the
+/// ranking. The switch is the subscription's explicit fill opt-out; cleanup
+/// remains independent and may still remove downloads beyond its keep count.
+///
 /// Ranks over *all* live episodes, not only downloaded ones — the opposite of
 /// the cleanup, and for the opposite reason: the job here is to find what is
 /// missing, so a missing episode must occupy its rank position.
@@ -67,6 +71,7 @@ pub(crate) fn missing_episode_ids_in(
            FROM podcast_episodes e
            JOIN podcast_subscriptions s ON s.id = e.subscription_id
            WHERE s.removed_at IS NULL
+             AND s.auto_download = 1
              AND e.removed_at IS NULL
          )
          ORDER BY episode_rank, id"

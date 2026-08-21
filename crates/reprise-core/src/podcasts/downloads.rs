@@ -347,12 +347,12 @@ pub enum CleanupError {
 /// (`cleanup_candidates`) and the fill-up
 /// (`fill_downloads::missing_episode_ids_in`).
 ///
-/// Both consumers rank only live subscriptions and live episodes. Within that
-/// shared population, cleanup ranks the downloaded subset (see the P1 note in
-/// `cleanup_candidates`) while the fill-up ranks every episode to find missing
-/// downloads. They therefore cannot share a query, but they must share both
-/// liveness and what "newest" means or one starts deleting what the other just
-/// fetched.
+/// Both consumers exclude tombstoned subscriptions and episodes. From there,
+/// cleanup ranks downloaded episodes for every live subscription (see the P1
+/// note in `cleanup_candidates`), while fill-up ranks every live episode only
+/// for subscriptions whose `auto_download` switch is enabled. They therefore
+/// cannot share a query, but they must share liveness and what "newest" means
+/// or one starts deleting what the other just fetched.
 ///
 /// Uses the table alias `e`; every consumer must alias `podcast_episodes` that
 /// way.

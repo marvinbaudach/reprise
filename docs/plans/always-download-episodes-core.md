@@ -1029,3 +1029,12 @@ git add crates/reprise-core/src/podcasts/youtube.rs \
         crates/reprise-core/src/podcasts/pipeline_youtube_projection_tests.rs
 git commit -m "feat: persist a youtube episode's duration at ingest"
 ```
+
+## Abweichungen vom Plan
+
+- Review finding R7 (2026-08-21) supersedes the design and Task 9 decision
+  that filling applies to every subscription. The per-subscription
+  `auto_download` flag remains meaningful: `false` opts that subscription out
+  of fill-up, while `true` lets fill-up maintain its `keep_downloaded` target.
+  Cleanup remains independent and still removes downloads beyond the keep
+  count when its cleanup policy applies.

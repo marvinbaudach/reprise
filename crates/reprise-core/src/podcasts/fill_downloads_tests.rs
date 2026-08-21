@@ -9,8 +9,8 @@ use super::*;
 
 /// One show with `count` episodes, newest first. Returns their ids in that
 /// order.
-fn show_with_episodes(db: &Db, root: &Path, count: usize) -> (i64, Vec<i64>) {
-    let subscription_id = add_subscription(db.conn(), "https://example.test/feed", false);
+fn show_with_episodes(db: &Db, root: &Path, count: usize, auto_download: bool) -> (i64, Vec<i64>) {
+    let subscription_id = add_subscription(db.conn(), "https://example.test/feed", auto_download);
     let feed = FakeFeed {
         responses: std::cell::RefCell::new(vec![Ok(feed_response("Show", count, None))]),
         ..FakeFeed::default()
@@ -37,7 +37,7 @@ fn mark_played(connection: &rusqlite::Connection, episode_id: i64) {
 fn the_fill_up_takes_the_newest_missing_episodes() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    let (_, ids) = show_with_episodes(&db, root.path(), 20);
+    let (_, ids) = show_with_episodes(&db, root.path(), 20, true);
     let missing = missing_episode_ids_in(db.conn(), 10).unwrap();
     assert_eq!(missing.len(), 10, "exactly the newest ten are missing");
     assert!(missing.contains(&ids[0]), "the newest is among them");
@@ -48,7 +48,7 @@ fn the_fill_up_takes_the_newest_missing_episodes() {
 fn the_fill_up_ignores_episodes_that_are_already_downloaded() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    let (_, ids) = show_with_episodes(&db, root.path(), 20);
+    let (_, ids) = show_with_episodes(&db, root.path(), 20, true);
     download_episode(
         &db,
         &FakeFeed::default(),
@@ -70,7 +70,7 @@ fn the_fill_up_skips_played_episodes_instead_of_sliding_past_them() {
     // cleanup ranks outside the newest ten — the two would then fight forever.
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    let (_, ids) = show_with_episodes(&db, root.path(), 20);
+    let (_, ids) = show_with_episodes(&db, root.path(), 20, true);
     mark_played(db.conn(), ids[0]);
     mark_played(db.conn(), ids[1]);
 
@@ -83,7 +83,7 @@ fn the_fill_up_skips_played_episodes_instead_of_sliding_past_them() {
 fn a_keep_of_zero_means_unlimited() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    show_with_episodes(&db, root.path(), 20);
+    show_with_episodes(&db, root.path(), 20, true);
     let missing = missing_episode_ids_in(db.conn(), 0).unwrap();
     assert_eq!(missing.len(), 20);
 }
@@ -92,7 +92,7 @@ fn a_keep_of_zero_means_unlimited() {
 fn the_fill_up_downloads_every_missing_episode_and_reports_each() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    show_with_episodes(&db, root.path(), 12);
+    show_with_episodes(&db, root.path(), 12, true);
     let mut seen: Vec<(i64, DownloadState)> = Vec::new();
 
     let summary = fill_downloads(
@@ -115,7 +115,7 @@ fn the_fill_up_downloads_every_missing_episode_and_reports_each() {
 fn a_second_fill_up_run_downloads_nothing() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    show_with_episodes(&db, root.path(), 12);
+    show_with_episodes(&db, root.path(), 12, true);
     let mut ignore = |_: i64, _: DownloadState| {};
 
     let first = fill_downloads(
@@ -143,7 +143,7 @@ fn a_second_fill_up_run_downloads_nothing() {
 fn the_fill_up_and_the_cleanup_agree_on_the_newest_ten() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    let (subscription_id, ids) = show_with_episodes(&db, root.path(), 12);
+    let (subscription_id, ids) = show_with_episodes(&db, root.path(), 12, true);
     let mut ignore = |_: i64, _: DownloadState| {};
 
     fill_downloads(
@@ -202,7 +202,7 @@ fn the_fill_up_and_the_cleanup_agree_on_the_newest_ten() {
 fn a_tombstoned_download_does_not_displace_a_live_episode_during_cleanup() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    let (_, ids) = show_with_episodes(&db, root.path(), 11);
+    let (_, ids) = show_with_episodes(&db, root.path(), 11, true);
 
     download_episode(
         &db,
@@ -255,7 +255,7 @@ fn a_tombstoned_download_does_not_displace_a_live_episode_during_cleanup() {
 fn a_mid_batch_error_is_counted_and_later_episodes_are_still_downloaded() {
     let db = conn();
     let root = tempfile::tempdir().unwrap();
-    let (_, ids) = show_with_episodes(&db, root.path(), 3);
+    let (_, ids) = show_with_episodes(&db, root.path(), 3, true);
     let removed = std::cell::Cell::new(false);
 
     let summary = fill_downloads(
@@ -305,4 +305,38 @@ fn a_non_terminal_download_result_is_warned_instead_of_silently_dropped() {
         logged.contains("42"),
         "warning dropped episode id: {logged}"
     );
+}
+
+#[test]
+fn the_fill_up_respects_each_subscriptions_auto_download_switch() {
+    let disabled_db = conn();
+    let disabled_root = tempfile::tempdir().unwrap();
+    show_with_episodes(&disabled_db, disabled_root.path(), 3, false);
+    let mut ignore = |_: i64, _: DownloadState| {};
+
+    let disabled = fill_downloads(
+        &disabled_db,
+        &FakeFeed::default(),
+        &FakeYoutube,
+        disabled_root.path(),
+        &mut ignore,
+    )
+    .unwrap();
+
+    assert_eq!(disabled, FillSummary::default());
+
+    let enabled_db = conn();
+    let enabled_root = tempfile::tempdir().unwrap();
+    show_with_episodes(&enabled_db, enabled_root.path(), 3, true);
+    let enabled = fill_downloads(
+        &enabled_db,
+        &FakeFeed::default(),
+        &FakeYoutube,
+        enabled_root.path(),
+        &mut ignore,
+    )
+    .unwrap();
+
+    assert_eq!(enabled.downloaded, 3);
+    assert_eq!(enabled.failed, 0);
 }
