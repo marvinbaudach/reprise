@@ -5935,13 +5935,14 @@ listening statistics.
   same show by date via toast and a persistent player-bar button, but
   never plays it automatically. Podcast sessions produce neither
   scrobbles nor `listen_events` nor play counts.
-- **POD-5** [active] [core] [gtk] — The newest N live, unplayed episodes of
-  every subscription are kept in the app's XDG data path under GUID-stable
-  paths, and episode playback always uses a local file. There is no per-source
-  or global auto-download switch: after each refresh the background fill-up
-  brings every subscription to its target and reports the normal POD-7 row
-  progress. Filling never deletes. Deletion still follows only the chosen
-  cleanup policy, whose N is a global default
+- **POD-5** [active] [core] [gtk] — Subscriptions with automatic filling
+  enabled keep their newest N live, unplayed episodes in the app's XDG data
+  path under GUID-stable paths, and episode playback always uses a local file.
+  The add dialog offers this per-subscription choice; its initial value comes
+  from the Podcasts preference for new subscriptions. After each refresh the
+  background fill-up brings only enabled subscriptions to their target and
+  reports the normal POD-7 row progress. Filling never deletes. Deletion still
+  follows only the chosen cleanup policy, whose N is a global default
   (`podcasts.keep_downloaded_default`, itself defaulting to 10) that
   any channel's own "Keep N downloaded" override replaces outright for that
   channel — never intersected with the default, never a silent minimum of

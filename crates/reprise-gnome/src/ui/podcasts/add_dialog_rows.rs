@@ -39,6 +39,7 @@ pub(super) fn append_candidate(
     query: Option<&str>,
     conn: &Rc<Db>,
     on_added: &OnAdded,
+    auto_download_default: bool,
 ) {
     let row = candidate_row(
         &candidate.title,
@@ -55,7 +56,7 @@ pub(super) fn append_candidate(
     let conn = conn.clone();
     let on_added = on_added.clone();
     button.connect_clicked(move |button| {
-        let result = subscribe(&conn, &candidate, None);
+        let result = subscribe(&conn, &candidate, auto_download_default, None);
         match result {
             Ok(_) => {
                 on_added(true);
@@ -81,6 +82,7 @@ pub(super) fn append_preview(
     parent: &gtk4::Box,
     preview: Preview,
     import_count: usize,
+    auto_download_default: bool,
     conn: &Rc<Db>,
     on_added: &OnAdded,
 ) {
@@ -99,6 +101,10 @@ pub(super) fn append_preview(
     let import = gtk4::CheckButton::with_label(&strings::podcast_import_latest_count(import_count));
     import.set_active(true);
     parent.append(&import);
+    let auto_download =
+        gtk4::CheckButton::with_label(&strings::text(strings::PODCAST_AUTO_DOWNLOAD));
+    auto_download.set_active(auto_download_default);
+    parent.append(&auto_download);
     let subscribe_button = gtk4::Button::with_label(&strings::text(strings::PODCAST_SUBSCRIBE));
     subscribe_button.add_css_class("suggested-action");
     let candidate = Candidate {
@@ -116,7 +122,12 @@ pub(super) fn append_preview(
     let parent_weak = parent.downgrade();
     subscribe_button.connect_clicked(move |button| {
         let baseline = baseline_for_import_choice(import.is_active(), &preview_guids);
-        let result = subscribe(&conn, &candidate, baseline.as_deref());
+        let result = subscribe(
+            &conn,
+            &candidate,
+            auto_download.is_active(),
+            baseline.as_deref(),
+        );
         match result {
             Ok(_) => {
                 on_added(import.is_active());

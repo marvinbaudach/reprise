@@ -27,9 +27,9 @@ use super::add_dialog_results::{
 use super::add_dialog_rows::{append_candidate, append_heading, append_preview, Preview};
 #[cfg(test)]
 use super::add_dialog_rows::{candidate_row, images_allowed};
-use super::add_dialog_subscription::subscribe_offline;
 #[cfg(test)]
 use super::add_dialog_subscription::{baseline_for_import_choice, subscribe};
+use super::add_dialog_subscription::{configured_auto_download_default, subscribe_offline};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AddDialogPhase {
@@ -362,6 +362,7 @@ pub(super) fn present(
 
 fn search(request_generation: u64, terms: String, country: String, context: &SearchContext<'_>) {
     let config = podcasts::config::load(context.conn).ok();
+    let auto_download_default = configured_auto_download_default(config.as_ref());
     // SRC-6: exactly one provider is queried — the one this dialog belongs to.
     let section = result_section();
     context.results.append(&section);
@@ -388,6 +389,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 context.on_added,
                 strings::text(strings::PODCAST_APPLE_RESULTS),
                 Some(query),
+                auto_download_default,
                 empty_status,
             );
         }
@@ -420,6 +422,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 context.on_added,
                 strings::text(strings::PODCAST_YOUTUBE_RESULTS),
                 Some(query),
+                auto_download_default,
                 empty_status,
             );
         }
@@ -427,6 +430,8 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
 }
 
 fn load_charts(request_generation: u64, country: String, context: &SearchContext<'_>) {
+    let config = podcasts::config::load(context.conn).ok();
+    let auto_download_default = configured_auto_download_default(config.as_ref());
     let section = result_section();
     context.results.append(&section);
     let heading = strings::podcast_charts_heading(&country);
@@ -448,6 +453,7 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
         context.on_added,
         heading,
         None,
+        auto_download_default,
         empty_status,
     );
 }
@@ -463,6 +469,7 @@ fn attach_candidates(
     on_added: &OnAdded,
     heading: String,
     query: Option<String>,
+    auto_download_default: bool,
     empty_status: String,
 ) {
     let generation = generation.clone();
@@ -495,7 +502,14 @@ fn attach_candidates(
                 }
                 append_heading(&results, &heading);
                 for candidate in rows {
-                    append_candidate(&results, candidate, query.as_deref(), &conn, &on_added);
+                    append_candidate(
+                        &results,
+                        candidate,
+                        query.as_deref(),
+                        &conn,
+                        &on_added,
+                        auto_download_default,
+                    );
                 }
             }
             Err(error) => status.set_text(&error),
@@ -530,6 +544,7 @@ fn preview(
         .map_or(podcasts::config::DEFAULT_IMPORT_COUNT, |value| {
             value.import_count
         });
+    let auto_download_default = configured_auto_download_default(config.as_ref());
     let ytdlp_path = config.as_ref().and_then(|value| value.ytdlp_path.clone());
     let youtube_browser = config.and_then(|value| value.youtube_browser);
     let task_url = url.to_owned();
@@ -616,7 +631,14 @@ fn preview(
                     return;
                 }
                 status.set_text("");
-                append_preview(&results, preview, import_count, &conn, &on_added);
+                append_preview(
+                    &results,
+                    preview,
+                    import_count,
+                    auto_download_default,
+                    &conn,
+                    &on_added,
+                );
             }
             Err(error) => status.set_text(&error),
         }

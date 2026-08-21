@@ -559,6 +559,7 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
         None,
         &conn,
         &on_added,
+        false,
     );
 
     // The heading is appended first, so the candidate row is the last child.
@@ -588,7 +589,7 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn the_add_dialog_no_longer_offers_an_auto_download_switch() {
+fn the_add_dialog_offers_an_automatic_fill_switch() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -605,20 +606,20 @@ fn the_add_dialog_no_longer_offers_an_auto_download_switch() {
             guids: Vec::new(),
         },
         10,
+        true,
         &conn,
         &on_added,
     );
 
-    let option_labels = std::iter::successors(parent.first_child(), WidgetExt::next_sibling)
+    let option_buttons = std::iter::successors(parent.first_child(), WidgetExt::next_sibling)
         .filter_map(|child| child.downcast::<gtk4::CheckButton>().ok())
-        .filter_map(|button| button.label())
         .collect::<Vec<_>>();
-    assert!(
-        !option_labels
-            .iter()
-            .any(|label| label.to_lowercase().contains("download")),
-        "a switch that changes nothing must not be shown: {option_labels:?}"
-    );
+    let automatic_fill_label = strings::text(strings::PODCAST_AUTO_DOWNLOAD);
+    let automatic_fill = option_buttons
+        .iter()
+        .find(|button| button.label().as_deref() == Some(automatic_fill_label.as_str()))
+        .expect("the preview must offer automatic filling for this subscription");
+    assert!(automatic_fill.is_active());
 }
 
 /// `SRC-19`: the chart path owns its empty sentence. Borrowing the search
@@ -703,7 +704,7 @@ fn disabling_initial_import_persists_the_previewed_guid_baseline() {
 }
 
 #[test]
-fn new_subscription_leaves_the_retired_auto_download_column_disabled() {
+fn new_subscription_uses_the_selected_automatic_fill_choice() {
     let conn = crate::test_db::open().unwrap();
     let id = subscribe(
         &conn,
@@ -716,9 +717,20 @@ fn new_subscription_leaves_the_retired_auto_download_column_disabled() {
             url: "https://example.test/feed".into(),
             identity_guids: Vec::new(),
         },
+        true,
         None,
     )
     .unwrap();
     let subscription = podcasts::store::subscription(&conn, id).unwrap().unwrap();
-    assert!(!subscription.auto_download);
+    assert!(subscription.auto_download);
+}
+
+#[test]
+fn new_subscription_discovery_inherits_the_configured_automatic_fill_default() {
+    let conn = crate::test_db::open().unwrap();
+    podcasts::config::set_auto_download_default(&conn, true).unwrap();
+    let config = podcasts::config::load(&conn).unwrap();
+
+    assert!(configured_auto_download_default(Some(&config)));
+    assert!(!configured_auto_download_default(None));
 }

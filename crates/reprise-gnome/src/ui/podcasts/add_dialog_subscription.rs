@@ -24,7 +24,10 @@ pub(super) fn subscribe_offline(
     status: &gtk4::Label,
     on_added: &OnAdded,
 ) {
-    let outcome = podcasts::offline_add::offline_subscribe(conn, kind, url, false);
+    let auto_download_default = podcasts::config::load(conn)
+        .ok()
+        .is_some_and(|config| config.auto_download_default);
+    let outcome = podcasts::offline_add::offline_subscribe(conn, kind, url, auto_download_default);
     match outcome {
         Ok(podcasts::offline_add::OfflineSubscribeOutcome::AlreadySubscribed) => {
             status.set_text(&strings::text(strings::PODCAST_ALREADY_SUBSCRIBED));
@@ -46,6 +49,7 @@ pub(super) fn subscribe_offline(
 pub(super) fn subscribe(
     conn: &Db,
     candidate: &Candidate,
+    auto_download: bool,
     future_only_baseline: Option<&[String]>,
 ) -> Result<i64, rusqlite::Error> {
     podcasts::store::add_or_restore_with_baseline(
@@ -65,11 +69,17 @@ pub(super) fn subscribe(
                 PodcastKind::Rss => candidate.image_url.clone(),
                 PodcastKind::Youtube => None,
             },
-            auto_download: false,
+            auto_download,
         },
         chrono::Utc::now().timestamp(),
         future_only_baseline,
     )
+}
+
+pub(super) fn configured_auto_download_default(
+    config: Option<&podcasts::config::PodcastConfig>,
+) -> bool {
+    config.is_some_and(|value| value.auto_download_default)
 }
 
 pub(super) fn baseline_for_import_choice(

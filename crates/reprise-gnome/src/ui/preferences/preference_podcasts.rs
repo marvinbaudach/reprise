@@ -111,6 +111,17 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
         });
     }
 
+    let auto_download = adw::SwitchRow::builder()
+        .title(strings::text(strings::PODCAST_PREFERENCES_AUTO_DOWNLOAD))
+        .active(config.auto_download_default)
+        .build();
+    {
+        let conn = conn.clone();
+        auto_download.connect_active_notify(move |row| {
+            save_or_warn(config::set_auto_download_default(&conn, row.is_active()));
+        });
+    }
+
     let cleanup_model = gtk4::StringList::new(&[
         &strings::text(strings::PODCAST_CLEANUP_KEEP_ALL),
         &strings::text(strings::PODCAST_CLEANUP_DELETE_PLAYED),
@@ -136,6 +147,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
             rows: vec![
                 import_all.clone().upcast(),
                 import_count.clone().upcast(),
+                auto_download.upcast(),
                 cleanup.upcast(),
             ],
             import_all,
@@ -187,10 +199,12 @@ mod tests {
     fn podcast_preference_values_round_trip_through_core_config() {
         let conn = crate::test_db::open().unwrap();
         config::set_import_count(&conn, 42).unwrap();
+        config::set_auto_download_default(&conn, true).unwrap();
         config::set_cleanup_policy(&conn, CleanupPolicy::KeepLast5).unwrap();
 
         let config = reprise_core::podcasts::config::load(&conn).unwrap();
         assert_eq!(config.import_count, 42);
+        assert!(config.auto_download_default);
         assert_eq!(
             config.cleanup_policy,
             reprise_core::podcasts::config::CleanupPolicy::KeepLast5
@@ -203,7 +217,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let rows = build(&conn, true);
-        assert_eq!(rows.inner.rows.len(), 3);
+        assert_eq!(rows.inner.rows.len(), 4);
     }
 
     #[test]

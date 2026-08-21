@@ -75,10 +75,9 @@ echter Fehler auf, melde ihn im Abschlussbericht, statt ihn hier zu reparieren.
 - `add_dialog_tests.rs:655` — `pod_13_preview_error_never_forwards_a_leaking_payload`
   erwartet die alte generische yt-dlp-Meldung und **schlägt fehl**, bis dieser
   Strang ihn auf die neue, reparaturspezifische Meldung zieht.
-- Tote Auto-Download-Bedienelemente: `preference_podcasts.rs:114`,
-  `add_dialog_rows.rs:42`, `add_dialog_subscription.rs:27` und die
-  Weiterreichung in `add_dialog.rs:365`. Der Kern liest das gespeicherte
-  Abo-Flag nicht mehr. Task 9 räumt genau das ab.
+- The Core review made `podcast_subscriptions.auto_download` the opt-in gate
+  for the fill-up. Task 9 therefore keeps the add-dialog choice and the default
+  for new subscriptions, with labels that describe filling to the keep count.
 
 ## Strang `ui` — `reprise-gnome`
 
@@ -474,70 +473,59 @@ git commit -m "feat: download a youtube episode before playing it"
 
 ---
 
-### Task 9: Die Schalter, die nichts mehr tun, verschwinden
+### Task 9: Restore the automatic-fill controls
 
 **Files:**
-- Modify: `crates/reprise-gnome/src/ui/podcasts/add_dialog.rs` (Auto-Download-Zeile)
+- Modify: `crates/reprise-gnome/src/ui/podcasts/add_dialog.rs` (automatic-fill row)
+- Modify: `crates/reprise-gnome/src/ui/podcasts/add_dialog_rows.rs`
 - Modify: `crates/reprise-gnome/src/ui/podcasts/add_dialog_subscription.rs:27-30`
 - Modify: `crates/reprise-gnome/src/ui/preferences/preference_podcasts.rs`
+- Modify: `crates/reprise-gnome/src/ui/strings_podcasts.rs`
 - Modify: `docs/ux-rules.md`
 - Test: `crates/reprise-gnome/src/ui/podcasts/add_dialog_tests.rs`
 
 **Interfaces:**
-- Consumes: nichts.
-- Produces: keine UI mehr für `auto_download` / `auto_download_default`.
+- Consumes: Core's `auto_download = 1` filter for catalogue fill-up.
+- Produces: a per-subscription choice and a persisted default inherited by new
+  subscriptions.
 
-Die Spalte `podcast_subscriptions.auto_download` **bleibt**; sie wird nur von
-niemandem mehr gelesen. Das Fallenlassen der Spalte ist laut Spec ausdrücklich
-außerhalb dieses Plans.
+`podcast_subscriptions.auto_download` is meaningful again. It does not start a
+download during refresh; it decides whether the post-refresh fill-up keeps that
+subscription at its configured `keep_downloaded` target.
 
-- [ ] **Step 1: Find every switch**
+- [ ] **Step 1: Write the failing tests**
 
-Run: `grep -rn "auto_download" crates/reprise-gnome/src --include='*.rs' | grep -v _tests`
-Expected: die Zeilen im Abo-Dialog und in den Einstellungen. Jede davon ist eine
-Bedienfläche, die nach diesem Plan nichts mehr bewirkt.
+Invert the absence regressions. The preview must expose an automatic-fill
+choice initialised from the configured default, and `subscribe` must persist
+the user's actual choice.
 
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 2: Verify red**
 
-In `add_dialog_tests.rs`:
+Run:
 
-```rust
-#[test]
-fn the_add_dialog_no_longer_offers_an_auto_download_switch() {
-    let rows = add_dialog_row_titles();
-    assert!(
-        !rows.iter().any(|title| title.contains("utomatisch")
-            || title.to_lowercase().contains("download")),
-        "a switch that changes nothing must not be shown: {rows:?}"
-    );
-}
+```bash
+cargo test -p reprise-gnome automatic_fill
+cargo test -p reprise-gnome new_subscription_uses_the_selected_automatic_fill_choice
 ```
 
-Die vorhandene Abfrage der Dialogzeilen benutzen:
-`grep -n "fn add_dialog_row_titles\|row_titles" crates/reprise-gnome/src/ui/podcasts/add_dialog_tests.rs`.
-Gibt es sie nicht, prüf stattdessen, dass die Konstruktionsfunktion des Dialogs
-keine `adw::SwitchRow` für Auto-Download mehr baut.
+Expected: FAIL while the controls and subscription parameter are absent.
 
-- [ ] **Step 3: Run test to verify it fails**
+- [ ] **Step 3: Restore the controls and inheritance**
 
-Run: `cargo test -p reprise-gnome the_add_dialog_no_longer_offers_an_auto_download_switch`
-Expected: FAIL
+Restore the add-preview check button and pass its selected value to
+`NewSubscription`. Discovery rows and offline adds inherit
+`auto_download_default`. Restore the Podcasts preference row and its persisted
+setter.
 
-- [ ] **Step 4: Remove the switches**
+- [ ] **Step 4: Use fill-up language**
 
-Die Zeile aus dem Abo-Dialog und aus den Podcast-Einstellungen entfernen, samt
-`configured_auto_download_default()` und dem Schreiben von
-`AUTO_DOWNLOAD_DEFAULT_KEY`. Neue Abos setzen die Spalte auf ihren
-Vorgabewert; nichts liest ihn.
+The labels must describe filling a subscription to its download limit. They
+must not claim that refresh itself downloads every newly discovered episode.
 
 - [ ] **Step 5: Update the UX rules**
 
-`docs/ux-rules.md` nach Auto-Download durchsuchen und die verwaiste Regel
-streichen oder auf die neue Regel umschreiben: „Die neuesten `keep_downloaded`
-Folgen jedes Abos liegen auf der Platte; Wiedergabe erfolgt immer lokal."
-
-Run: `grep -rn -i "auto.download\|automatisch herunterladen" docs/ux-rules.md`
-Expected: nach der Änderung keine Treffer, die den entfernten Schalter meinen.
+POD-5 records the per-subscription opt-in, the default inherited by new
+subscriptions, and the post-refresh fill-up semantics.
 
 - [ ] **Step 6: Run the full suite**
 
@@ -549,9 +537,21 @@ Expected: PASS
 ```bash
 git add crates/reprise-gnome/src/ui/podcasts/ \
         crates/reprise-gnome/src/ui/preferences/preference_podcasts.rs \
-        docs/ux-rules.md
-git commit -m "refactor: drop the auto-download switches the pipeline no longer reads"
+        crates/reprise-gnome/src/ui/strings_podcasts.rs \
+        docs/ux-rules.md docs/plans/always-download-episodes-ui.md
+git commit -m "fix: restore podcast fill controls"
 ```
+
+---
+
+## Abweichungen vom Plan
+
+The original Task 9 removed both controls because the then-current fill-up was
+described as unconditional. Core review commit `b12a0d1a7e` made the persisted
+per-subscription flag the fill-up gate, and the product decision for this review
+overruled that removal. The controls are restored with language describing
+post-refresh filling to the keep count, not the retired download-during-refresh
+behaviour.
 
 ---
 
