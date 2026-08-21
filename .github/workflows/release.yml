@@ -195,19 +195,129 @@ jobs:
             fi
             if ((attempt == 5)); then
               echo "Flatpak runtime installation failed after five attempts." >&2
-              # Only after exhaustion, make the noisy pull expose the exact failing URL
-              # so the next fix can target a known object rather than another hypothesis.
+              verbose_log="$RUNNER_TEMP/flatpak-runtime-install.log"
               flatpak --ostree-verbose -v --user install \
                 --noninteractive --or-update --no-static-deltas flathub \
                 org.gnome.Platform//50 \
                 org.gnome.Sdk//50 \
-                org.freedesktop.Sdk.Extension.rust-stable//25.08 || true
+                org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+                > "$verbose_log" 2>&1 || true
+
+              # Nothing in this best-effort diagnosis may replace the original failure.
+              set +e
+              started_objects="$RUNNER_TEMP/flatpak-started-objects.txt"
+              completed_objects="$RUNNER_TEMP/flatpak-completed-objects.txt"
+              sed -nE \
+                's/.*starting fetch of ([[:xdigit:]]{64}\.[[:alnum:]_-]+).*/\1/p' \
+                "$verbose_log" | sort -u > "$started_objects" || true
+              sed -nE \
+                's/.*fetch of ([[:xdigit:]]{64}\.[[:alnum:]_-]+) complete.*/\1/p' \
+                "$verbose_log" | sort -u > "$completed_objects" || true
+              mapfile -t incomplete_objects < <(
+                comm -23 "$started_objects" "$completed_objects" || true
+              )
+
+              report_diagnosis() {
+                printf '%s\n' "$1" >&2 || true
+                printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY" || true
+              }
+              probe_object_url() {
+                local url=$1 status
+                status=$(curl --silent --show-error --location --head --output /dev/null \
+                  --write-out '%{http_code}' "$url" 2>/dev/null) || status=000
+                [[ $status =~ ^[0-9]{3}$ ]] || status=000
+                printf '%s' "$status"
+              }
+
+              report_diagnosis "### Flatpak runtime install diagnosis"
+              report_diagnosis ""
+              report_diagnosis \
+                "Verbose evidence is stored in the flatpak-runtime-install-log artifact."
+              missing_objects=()
+              missing_urls=()
+              missing_statuses=()
+              for object in "${incomplete_objects[@]}"; do
+                object_hash=${object%%.*}
+                object_extension=${object#*.}
+                probe_extensions=("$object_extension")
+                # archive-z2 objects are served as .filez even though the verbose
+                # OSTree log spells them .file, so both extensions are worth probing.
+                # Commit objects use their logged .commit extension.
+                if [[ $object_extension == file ]]; then
+                  probe_extensions+=(filez)
+                fi
+
+                actual_url=
+                actual_status=000
+                for extension in "${probe_extensions[@]}"; do
+                  url="https://dl.flathub.org/repo/objects/${object_hash:0:2}/${object_hash:2}.$extension"
+                  status=$(probe_object_url "$url")
+                  report_diagnosis "- Object $object: $url -> HTTP $status"
+                  actual_url=$url
+                  actual_status=$status
+                done
+                if [[ $actual_status == 404 ]]; then
+                  missing_objects+=("$object")
+                  missing_urls+=("$actual_url")
+                  missing_statuses+=("$actual_status")
+                fi
+              done
+
+              runtime_ref=org.freedesktop.Sdk.Extension.rust-stable//25.08
+              runtime_commit=$(flatpak --user remote-info --show-commit \
+                flathub "$runtime_ref" 2>/dev/null || true)
+              commit_url=
+              commit_status=000
+              if [[ $runtime_commit =~ ^[[:xdigit:]]{64}$ ]]; then
+                commit_url="https://dl.flathub.org/repo/objects/${runtime_commit:0:2}/${runtime_commit:2}.commit"
+                commit_status=$(probe_object_url "$commit_url")
+                report_diagnosis \
+                  "- Ref commit $runtime_commit.commit: $commit_url -> HTTP $commit_status"
+              else
+                report_diagnosis \
+                  "- Ref commit probe unavailable: remote-info did not return a commit hash."
+              fi
+
+              if ((${#missing_objects[@]} == 0)); then
+                report_diagnosis \
+                  "Verdict: no started-but-incomplete object returned HTTP 404."
+              elif [[ $commit_status == 200 ]]; then
+                for index in "${!missing_objects[@]}"; do
+                  printf -v verdict '%s' \
+                    "Verdict: object ${missing_objects[index]} is unavailable at " \
+                    "${missing_urls[index]} (HTTP ${missing_statuses[index]}), " \
+                    "while ref commit $runtime_commit.commit is served at $commit_url " \
+                    "(HTTP $commit_status). " \
+                    "This is an incomplete publish on the Flathub side, " \
+                    "not a fault of this workflow or this runner; the job should simply " \
+                    "be re-run once Flathub republishes the ref."
+                  report_diagnosis "$verdict"
+                done
+              else
+                for index in "${!missing_objects[@]}"; do
+                  printf -v verdict '%s' \
+                    "Verdict: object ${missing_objects[index]} is unavailable at " \
+                    "${missing_urls[index]} (HTTP ${missing_statuses[index]}); the ref " \
+                    "commit probe returned HTTP $commit_status, so an incomplete " \
+                    "publish could not be confirmed."
+                  report_diagnosis "$verdict"
+                done
+              fi
               exit 1
             fi
             delay=${retry_delays[attempt - 1]}
             echo "Flatpak runtime installation attempt $attempt failed; retrying in $delay seconds." >&2
             sleep "$delay"
           done
+
+      - name: Upload Flatpak runtime install log
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: flatpak-runtime-install-log
+          path: ${{ runner.temp }}/flatpak-runtime-install.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Reclaim disk for the Flatpak build
         run: |

@@ -57,17 +57,83 @@ assert flatpak_install_run.count("--no-static-deltas") == 2, (
 assert "static-delta object" in flatpak_install_run, (
     "the plain-object pull must explain the mid-transfer mirror 404 mechanism"
 )
-assert len(re.findall(r"\bflatpak\b.*\binstall\b", flatpak_install_run)) == 2, (
+assert len(
+    re.findall(
+        r"^\s*(?:if )?flatpak\b.*\binstall\b",
+        flatpak_install_run,
+        flags=re.MULTILINE,
+    )
+) == 2, (
     "Flatpak installation needs one retried command and one final diagnostic command"
 )
 assert "--or-update" in flatpak_install_run, "Flatpak retries must resume partial installs"
 assert "--ostree-verbose" in flatpak_install_run and " -v " in flatpak_install_run, (
     "the post-exhaustion Flatpak command must expose the exact failing URL"
 )
-assert "exact failing URL" in flatpak_install_run, (
-    "the final diagnostic must explain why its noisy output is deferred"
+assert 'verbose_log="$RUNNER_TEMP/flatpak-runtime-install.log"' in flatpak_install_run, (
+    "the verbose Flatpak diagnostic must stay in the runner temporary directory"
+)
+assert '> "$verbose_log" 2>&1 || true' in flatpak_install_run, (
+    "the verbose pull must be captured without replacing the original failure"
+)
+assert "starting fetch of" in flatpak_install_run, (
+    "the diagnostic must collect objects whose fetch actually started"
+)
+assert "fetch of" in flatpak_install_run and "complete" in flatpak_install_run, (
+    "the diagnostic must collect objects whose fetch completed"
+)
+assert 'comm -23 "$started_objects" "$completed_objects"' in flatpak_install_run, (
+    "the diagnostic must report only started objects that never completed"
+)
+assert "queuing fetch of" not in flatpak_install_run, (
+    "queued objects are not evidence that their fetch started"
+)
+assert "https://dl.flathub.org/repo/objects/" in flatpak_install_run, (
+    "incomplete objects must be probed directly on Flathub"
+)
+assert "--head" in flatpak_install_run, (
+    "HTTP status probes must not download served Flatpak objects"
+)
+assert ") || status=000" in flatpak_install_run, (
+    "an HTTP probe failure must remain diagnostic rather than replacing the install failure"
+)
+assert "archive-z2" in flatpak_install_run and ".filez" in flatpak_install_run, (
+    "archive-z2 file objects must probe the served .filez form"
+)
+assert "probe_extensions+=(filez)" in flatpak_install_run, (
+    "logged .file objects must probe the archive-z2 .filez URL too"
+)
+assert "--show-commit" in flatpak_install_run and ".commit" in flatpak_install_run, (
+    "the diagnostic must compare object availability with the ref commit object"
+)
+assert '2>/dev/null || true)' in flatpak_install_run, (
+    "failure to resolve the ref commit must not replace the install failure"
+)
+assert '>> "$GITHUB_STEP_SUMMARY"' in flatpak_install_run and ">&2" in flatpak_install_run, (
+    "the verdict must reach both the step summary and stderr"
+)
+assert "incomplete publish on the Flathub side" in flatpak_install_run, (
+    "the verdict must name a served-commit/missing-object publish failure"
+)
+assert "not a fault of this workflow or this runner" in flatpak_install_run, (
+    "the verdict must rule out the workflow and runner"
+)
+assert "re-run once Flathub republishes the ref" in flatpak_install_run, (
+    "the verdict must give the operator the safe recovery action"
 )
 assert "exit 1" in flatpak_install_run, "exhausted Flatpak installation must fail the job"
+
+flatpak_diagnostic_upload = named_step("flatpak", "Upload Flatpak runtime install log")
+assert flatpak_diagnostic_upload.get("if") == "failure()", (
+    "the verbose runtime-install log must be uploaded only after failure"
+)
+assert flatpak_diagnostic_upload.get("uses") == "actions/upload-artifact@v6"
+assert flatpak_diagnostic_upload.get("with", {}).get("name") == (
+    "flatpak-runtime-install-log"
+), "the verbose runtime-install artifact name is part of the operator contract"
+assert flatpak_diagnostic_upload.get("with", {}).get("path") == (
+    "${{ runner.temp }}/flatpak-runtime-install.log"
+), "the uploaded diagnostic must be the runner-temporary verbose log"
 
 flatpak_cleanup = named_step("flatpak", "Reclaim disk for the Flatpak build")
 flatpak_cleanup_run = flatpak_cleanup.get("run", "")
