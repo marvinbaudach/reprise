@@ -343,6 +343,22 @@ pub enum CleanupError {
     OutsideDownloadRoot,
 }
 
+/// The one definition of "newest episode first", shared by the cleanup
+/// (`cleanup_candidates`) and the fill-up
+/// (`fill_downloads::missing_episode_ids_in`).
+///
+/// Both consumers exclude tombstoned subscriptions and episodes. From there,
+/// cleanup ranks downloaded episodes for every live subscription (see the P1
+/// note in `cleanup_candidates`), while fill-up ranks every live episode only
+/// for subscriptions whose `auto_download` switch is enabled. They therefore
+/// cannot share a query, but they must share liveness and what "newest" means
+/// or one starts deleting what the other just fetched.
+///
+/// Uses the table alias `e`; every consumer must alias `podcast_episodes` that
+/// way.
+pub(super) const NEWEST_EPISODE_FIRST: &str = "e.published_at IS NULL, e.published_at DESC, \
+     e.first_seen_at DESC, e.id DESC";
+
 fn cleanup_candidates(
     conn: &Connection,
     policy: CleanupPolicy,
@@ -379,24 +395,28 @@ fn cleanup_candidates(
         // finding (P1): filtering it afterward let undownloaded episodes
         // consume rank positions, so "keep last N downloaded" could rank a
         // show's real downloads past N and delete every one of them even
-        // though far fewer than N were ever downloaded. Ranking must be
-        // computed over downloaded episodes only.
+        // though far fewer than N were ever downloaded. Tombstoned episodes
+        // must be excluded there too: the fill-up cannot select them, so one
+        // that retained a downloaded path would otherwise displace a live
+        // download and make fill and cleanup oscillate. Ranking is therefore
+        // computed over downloaded, live episodes only.
         CleanupPolicy::KeepLast5 => {
-            let mut statement = conn.prepare(
+            let sql = format!(
                 "SELECT id, downloaded_path, keep_downloaded, episode_rank FROM (
                    SELECT e.id, e.downloaded_path, s.keep_downloaded,
                           ROW_NUMBER() OVER (
                             PARTITION BY e.subscription_id
-                            ORDER BY e.published_at IS NULL, e.published_at DESC,
-                                     e.first_seen_at DESC, e.id DESC
+                            ORDER BY {NEWEST_EPISODE_FIRST}
                           ) AS episode_rank
                    FROM podcast_episodes e
                    JOIN podcast_subscriptions s ON s.id = e.subscription_id
                    WHERE s.removed_at IS NULL
+                     AND e.removed_at IS NULL
                      AND e.downloaded_path IS NOT NULL
                  )
-                 ORDER BY id",
-            )?;
+                 ORDER BY id"
+            );
+            let mut statement = conn.prepare(&sql)?;
             let rows = statement.query_map([], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,

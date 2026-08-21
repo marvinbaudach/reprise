@@ -48,9 +48,12 @@ pub const DEFAULT_REFRESH_HOURS: i64 = 6;
 /// `MTP-36`: decided 2026-07-29 — a global default of 5.
 pub const DEFAULT_LATEST_PER_CHANNEL: usize = 5;
 /// `POD-5` / `O-5`: decided 2026-07-29 — `CleanupPolicy::KeepLast5` kept a
-/// hardcoded 5 per show; that hardcoded 5 becomes this global default, and
-/// "keep N" is just its generalization.
-pub const DEFAULT_KEEP_DOWNLOADED: usize = 5;
+/// hardcoded 5 per show; that hardcoded 5 became this global default, and
+/// "keep N" is its generalization. Raised to 10 on 2026-08-20 when the same
+/// number became the *fill* target as well: playback no longer streams, so
+/// "keep N" and "have N" are one setting. A larger default only ever means
+/// more on disk, never a deletion.
+pub const DEFAULT_KEEP_DOWNLOADED: usize = 10;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CleanupPolicy {
@@ -351,7 +354,14 @@ mod tests {
         assert_eq!(config.ytdlp_path, None);
         assert_eq!(config.refresh_hours, 6);
         assert_eq!(config.latest_per_channel_default, 5);
-        assert_eq!(config.keep_downloaded_default, 5);
+        assert_eq!(config.keep_downloaded_default, DEFAULT_KEEP_DOWNLOADED);
+    }
+
+    #[test]
+    fn the_keep_downloaded_default_is_ten() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let config = load(&db).unwrap();
+        assert_eq!(config.keep_downloaded_default, 10);
     }
 
     #[test]
