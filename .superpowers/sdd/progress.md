@@ -1881,3 +1881,4 @@ Review finding D4 and plan-status trap: complete (this commit, base 657047833f, 
 # Release channel: Flatpak bundle and signed APK
 
 Task 1: complete (this commit, base ce828544b3, synchronized Meson's desktop version with the live 0.1.42 Cargo workspace version and added the dated bilingual AppStream release summary derived from the post-0.1.1 git history while retaining both earlier releases; AppStream validation stayed green with exactly the existing accepted uppercase-component-ID informational item, and no full Flatpak or Android release build was started)
+Task 2: complete (this commit, base 2ececc93ff, added the curated English changelog with newest-first dated sections for 0.1.42, 0.1.1 and 0.1.0; the current entry groups the post-0.1.1 git history by desktop library, playback, online sources, Android, and tooling rather than dumping commit titles)
