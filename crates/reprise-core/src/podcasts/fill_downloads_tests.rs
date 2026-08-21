@@ -248,3 +248,38 @@ fn a_tombstoned_download_does_not_displace_a_live_episode_during_cleanup() {
     .unwrap();
     assert_eq!(second_fill, FillSummary::default());
 }
+
+#[test]
+fn a_mid_batch_error_is_counted_and_later_episodes_are_still_downloaded() {
+    let db = conn();
+    let root = tempfile::tempdir().unwrap();
+    let (_, ids) = show_with_episodes(&db, root.path(), 3);
+    let removed = std::cell::Cell::new(false);
+
+    let summary = fill_downloads(
+        &db,
+        &FakeFeed::default(),
+        &FakeYoutube,
+        root.path(),
+        &mut |episode_id, state| {
+            if episode_id == ids[0]
+                && matches!(state, DownloadState::Downloaded { .. })
+                && !removed.replace(true)
+            {
+                assert!(super::super::store::tombstone_episode(&db, ids[1], 2).unwrap());
+            }
+        },
+    )
+    .expect("one vanished episode must not abort the fill");
+
+    assert_eq!(summary.downloaded, 2);
+    assert_eq!(summary.failed, 1);
+    assert!(
+        super::super::store::episode(&db, ids[2])
+            .unwrap()
+            .unwrap()
+            .downloaded_path
+            .is_some(),
+        "the episode after the failed one must still be downloaded"
+    );
+}

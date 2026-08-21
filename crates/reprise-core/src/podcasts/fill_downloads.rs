@@ -81,6 +81,8 @@ pub(crate) fn missing_episode_ids_in(
 /// Runs to completion rather than under a per-run cap: a cap would leave the
 /// target unreached until the next refresh hours later, and the caller runs
 /// this off the refresh precisely so a long run costs nobody anything.
+/// Per-episode terminal failures and errors increment `FillSummary::failed`;
+/// only setup failures that prevent taking the batch snapshot abort the run.
 pub fn fill_downloads(
     db: &Db,
     feed_fetcher: &dyn FeedFetcher,
@@ -110,7 +112,7 @@ pub fn fill_downloads(
             // Another caller — the download button, or playback — already has
             // this episode in flight. Not this run's job and not a failure.
             Err(PipelineError::DownloadAlreadyRunning) => {}
-            Err(error) => return Err(error),
+            Err(_) => summary.failed += 1,
             Ok(_) => {}
         }
     }
