@@ -108,6 +108,33 @@ pub(in crate::ui) enum PodcastsWorkerResult {
 
 type OnEnabled = Rc<dyn Fn(bool)>;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct FillRequestState {
+    running: bool,
+    pending: bool,
+}
+
+impl FillRequestState {
+    fn request(&mut self) -> bool {
+        if self.running {
+            self.pending = true;
+            return false;
+        }
+        self.running = true;
+        true
+    }
+
+    fn complete(&mut self) -> bool {
+        self.running = false;
+        std::mem::take(&mut self.pending)
+    }
+
+    fn cancel(&mut self) {
+        self.running = false;
+        self.pending = false;
+    }
+}
+
 /// Issue #96 / `NET-1a`: `enabled` is true when *either* Podcasts (RSS) or
 /// YouTube is network-allowed (its own module AND the global online-sources
 /// gate) — "Podcasts off + YouTube on" must still dispatch work. Which
@@ -117,6 +144,7 @@ pub(in crate::ui) struct PodcastsRuntime {
     pub enabled: Rc<Cell<bool>>,
     worker: async_channel::Sender<PodcastsRequest>,
     subscribers: RefCell<Vec<OnEnabled>>,
+    fill_request: Cell<FillRequestState>,
 }
 
 fn any_source_dispatchable(conn: &Db) -> bool {
@@ -139,6 +167,7 @@ impl PodcastsRuntime {
             enabled: Rc::new(Cell::new(any_source_dispatchable(conn))),
             worker,
             subscribers: RefCell::new(Vec::new()),
+            fill_request: Cell::new(FillRequestState::default()),
         })
     }
 
@@ -199,6 +228,26 @@ impl PodcastsRuntime {
                 false
             }
         }
+    }
+
+    pub(in crate::ui) fn begin_fill_request(&self) -> bool {
+        let mut state = self.fill_request.get();
+        let begin = state.request();
+        self.fill_request.set(state);
+        begin
+    }
+
+    pub(in crate::ui) fn finish_fill_request(&self) -> bool {
+        let mut state = self.fill_request.get();
+        let replay = state.complete();
+        self.fill_request.set(state);
+        replay
+    }
+
+    pub(in crate::ui) fn cancel_fill_request(&self) {
+        let mut state = self.fill_request.get();
+        state.cancel();
+        self.fill_request.set(state);
     }
 
     pub(in crate::ui) fn automatic_refresh_allowed(

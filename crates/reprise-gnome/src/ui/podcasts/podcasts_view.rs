@@ -124,7 +124,6 @@ pub(in crate::ui) struct PodcastsView {
     /// requests can overlap; the oldest completion must not release the
     /// button while a newer request is still fetching.
     refresh_in_flight: Cell<usize>,
-    fill_request: Cell<requests::FillRequestState>,
     groups: RefCell<Vec<SourceGroup>>,
     rows: RefCell<Vec<EpisodeRow>>,
     expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
@@ -234,7 +233,6 @@ impl PodcastsView {
             refresh_stack,
             refresh_spinner,
             refresh_in_flight: Cell::new(0),
-            fill_request: Cell::new(requests::FillRequestState::default()),
             groups: RefCell::new(Vec::new()),
             rows: RefCell::new(Vec::new()),
             expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
