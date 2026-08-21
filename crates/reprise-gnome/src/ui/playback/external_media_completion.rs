@@ -205,24 +205,58 @@ mod tests {
     /// exactly "these two calls stay together".
     #[test]
     fn every_mark_played_announces_the_changed_sidebar_count() {
-        let source = include_str!("external_media_completion.rs")
+        let completion = include_str!("external_media_completion.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap();
-        let played = source.matches("store::mark_played(").count();
-        let announced = source
+        let position = include_str!("external_media_position.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let played = completion.matches("store::mark_played(").count()
+            + position.matches("store::mark_played(").count();
+        let announced = completion
             .matches("self.notify_episode_played(episode_id);")
-            .count();
+            .count()
+            + position
+                .matches("self.notify_episode_played(episode_id);")
+                .count();
 
         assert!(
-            played > 0,
-            "the completion paths must still mark episodes played"
+            position.contains("store::mark_played("),
+            "leaving near the end must mark the episode played"
         );
         assert_eq!(
             played, announced,
             "each of the {played} mark_played call(s) needs its own \
              notify_episode_played, found {announced}"
         );
+    }
+
+    #[test]
+    fn pausing_checkpoints_without_running_the_leaving_completion_decision() {
+        let source = include_str!("external_media.rs");
+        let pause = source
+            .split("fn toggle_external_pause")
+            .nth(1)
+            .unwrap()
+            .split("fn stop_external")
+            .next()
+            .unwrap();
+
+        assert!(pause.contains("self.checkpoint_external_position();"));
+        assert!(!pause.contains("self.persist_external_position();"));
+    }
+
+    #[test]
+    fn a_new_short_duration_clears_the_stale_resume_position() {
+        let source = include_str!("external_media_position.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+
+        assert!(source.contains("save_position(&self.conn, episode_id, 0)"));
+        assert!(source.contains("self.notify_episode_position(episode_id, 0);"));
     }
 
     #[test]
