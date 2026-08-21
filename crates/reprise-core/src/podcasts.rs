@@ -21,6 +21,7 @@ pub mod offline_add;
 pub mod pipeline;
 pub mod query;
 pub mod refresh;
+pub mod resume_rules;
 pub mod source_artwork;
 pub mod status;
 pub mod store;
