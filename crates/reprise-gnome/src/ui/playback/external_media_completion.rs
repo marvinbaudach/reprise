@@ -205,24 +205,58 @@ mod tests {
     /// exactly "these two calls stay together".
     #[test]
     fn every_mark_played_announces_the_changed_sidebar_count() {
-        let source = include_str!("external_media_completion.rs")
+        let completion = include_str!("external_media_completion.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap();
-        let played = source.matches("store::mark_played(").count();
-        let announced = source
+        let position = include_str!("external_media_position.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let played = completion.matches("store::mark_played(").count()
+            + position.matches("store::mark_played(").count();
+        let announced = completion
             .matches("self.notify_episode_played(episode_id);")
-            .count();
+            .count()
+            + position
+                .matches("self.notify_episode_played(episode_id);")
+                .count();
 
         assert!(
-            played > 0,
-            "the completion paths must still mark episodes played"
+            position.contains("store::mark_played("),
+            "leaving near the end must mark the episode played"
         );
         assert_eq!(
             played, announced,
             "each of the {played} mark_played call(s) needs its own \
              notify_episode_played, found {announced}"
         );
+    }
+
+    #[test]
+    fn pausing_checkpoints_without_running_the_leaving_completion_decision() {
+        let source = include_str!("external_media.rs");
+        let pause = source
+            .split("fn toggle_external_pause")
+            .nth(1)
+            .unwrap()
+            .split("fn stop_external")
+            .next()
+            .unwrap();
+
+        assert!(pause.contains("self.checkpoint_external_position();"));
+        assert!(!pause.contains("self.persist_external_position();"));
+    }
+
+    #[test]
+    fn a_new_short_duration_clears_the_stale_resume_position() {
+        let source = include_str!("external_media_position.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+
+        assert!(source.contains("save_position(&self.conn, episode_id, 0)"));
+        assert!(source.contains("self.notify_episode_position(episode_id, 0);"));
     }
 
     #[test]
@@ -255,5 +289,50 @@ mod tests {
         );
         assert!(source_views.contains("Rc::downgrade(&self.podcasts)"));
         assert!(source_views.contains("Rc::downgrade(&self.youtube)"));
+    }
+
+    #[test]
+    fn persisted_episode_positions_reach_both_views_without_refreshing_the_sidebar() {
+        let position = include_str!("external_media_position.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let window = include_str!("../window/window.rs");
+        let source = include_str!("../window/source_views.rs");
+        let wiring = source
+            .split("fn wire_episode_position")
+            .nth(1)
+            .unwrap()
+            .split("fn set_toast_overlay")
+            .next()
+            .unwrap();
+
+        assert!(position.contains("self.notify_episode_position(episode_id, position_ms);"));
+        assert!(window.contains("source_views.wire_episode_position(player)"));
+        assert!(wiring.contains("player.add_on_episode_position(move |episode_id, position_ms|"));
+        assert_eq!(
+            wiring
+                .matches("update_position_state(episode_id, position_ms);")
+                .count(),
+            1
+        );
+        assert!(wiring.contains("Rc::downgrade(&self.podcasts)"));
+        assert!(wiring.contains("Rc::downgrade(&self.youtube)"));
+        assert!(!wiring.contains("sidebar.refresh"));
+    }
+
+    #[test]
+    fn both_episode_surfaces_use_the_sparse_display_key_update_decision() {
+        let marker = include_str!("../podcasts/podcasts_view_marker.rs");
+        let detail = include_str!("../podcasts/youtube_channel_detail_status.rs");
+
+        assert!(marker.contains("podcasts_presentation::update_resume_position(row, position_ms)"));
+        assert!(marker.contains("if display_changed"));
+        assert!(
+            marker.contains("self.groups.borrow_mut()"),
+            "a later full render must keep the patched position"
+        );
+        assert!(detail.contains("podcasts_presentation::update_resume_position(row, position_ms)"));
+        assert!(detail.contains("if display_changed"));
     }
 }

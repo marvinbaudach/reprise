@@ -29,6 +29,9 @@ use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::playing_marker;
 use crate::ui::strings;
 
+#[path = "youtube_channel_detail_status.rs"]
+mod status;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct YoutubeChannelState {
     active_channel: Option<i64>,
@@ -375,26 +378,6 @@ impl YoutubeChannelDetail {
         let widgets = self.download_widgets.borrow().get(&mark.id).cloned();
         if let Some(widgets) = widgets {
             podcasts_groups::update_playback_state(&widgets, mark.playing);
-        }
-    }
-
-    pub(super) fn update_played_state(&self, episode_id: i64, played_at: i64) {
-        let row = {
-            let mut groups = self.groups.borrow_mut();
-            let Some(row) = groups
-                .iter_mut()
-                .flat_map(|group| group.group.episodes.iter_mut())
-                .find(|row| row.id == episode_id)
-            else {
-                return;
-            };
-            row.played_at = Some(played_at);
-            row.position_ms = 0;
-            row.clone()
-        };
-        let widgets = self.download_widgets.borrow().get(&episode_id).cloned();
-        if let Some(widgets) = widgets {
-            podcasts_groups::update_episode_status(&widgets, &row);
         }
     }
 

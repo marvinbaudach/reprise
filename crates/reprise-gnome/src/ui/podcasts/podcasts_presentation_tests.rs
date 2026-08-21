@@ -453,3 +453,26 @@ fn pod_9_filtered_children_keep_the_full_source_summary() {
     assert_eq!(rendered[0].summary.new_count, 1);
     assert_eq!(rendered[0].summary.latest_published_at, Some(20));
 }
+
+#[test]
+fn resume_position_patch_rerenders_only_for_a_changed_display_key() {
+    let mut episode = row(1, Some(10), PodcastKind::Rss);
+    episode.duration_secs = Some(2_700);
+
+    assert!(update_resume_position(&mut episode, 5_000));
+    assert_eq!(episode.position_ms, 5_000);
+
+    episode.position_ms = 60_000;
+
+    assert!(!update_resume_position(&mut episode, 65_000));
+    assert_eq!(episode.position_ms, 65_000);
+    assert!(update_resume_position(&mut episode, 90_000));
+    assert_eq!(episode.position_ms, 90_000);
+
+    episode.duration_secs = None;
+    episode.position_ms = 0;
+    assert!(update_resume_position(&mut episode, 120_000));
+    assert_eq!(episode.position_ms, 120_000);
+    assert!(!update_resume_position(&mut episode, 120_000));
+    assert_eq!(episode.position_ms, 120_000);
+}
