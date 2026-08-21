@@ -384,15 +384,34 @@ fn conc_2_location_availability_hides_distance_without_overwriting_user_choice()
     );
 }
 
+/// How far ahead a seeded event sits. The view only ever queries
+/// `date_key >= today`, so a fixture pinned to a calendar date silently
+/// stops producing rows on the day that date passes.
+const SEEDED_EVENT_DAYS_AHEAD: i64 = 7;
+
+fn seeded_event_date() -> String {
+    (chrono::Local::now().date_naive() + chrono::Duration::days(SEEDED_EVENT_DAYS_AHEAD))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
 fn insert_event(conn: &Db, id: i64, artist: &str) {
+    let date_key = seeded_event_date();
     crate::test_db::connection(conn)
         .execute(
             "INSERT INTO concert_events (
                id, artist_key, artist_name, starts_at, date_key, venue, city,
                country, provider, fetched_at, dedupe_key
-             ) VALUES (?1, ?2, ?3, '2026-08-20T19:00:00', '2026-08-20',
+             ) VALUES (?1, ?2, ?3, ?5, ?6,
                        'Venue', 'Zurich', 'CH', 'bandsintown', 1, ?4)",
-            rusqlite::params![id, format!("artist-{id}"), artist, format!("event-{id}")],
+            rusqlite::params![
+                id,
+                format!("artist-{id}"),
+                artist,
+                format!("event-{id}"),
+                format!("{date_key}T19:00:00"),
+                date_key
+            ],
         )
         .unwrap();
 }
