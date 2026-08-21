@@ -495,10 +495,29 @@ jobs:
                 "add the upload certificate SHA-256" >&2
               exit 1
             fi
-            actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$signature" | head -1)
+            # apksigner prints "Signer #1 certificate ..." only for a v1/JAR
+            # signature. minSdk 26 turns v1 off, so a correctly signed APK
+            # carries "V2 Signer: ..." and "V3 Signer: ..." lines instead and
+            # that pattern matched nothing at all. Accept every signer line, and
+            # treat "parsed nothing" as its own failure rather than letting an
+            # empty string lose the comparison and read as a key mismatch.
+            mapfile -t actual < <(
+              sed -n 's/^\(Signer #[0-9]* \|V[0-9]* Signer: \)certificate SHA-256 digest: //p' \
+                <<< "$signature" | tr 'A-F' 'a-f' | sort -u
+            )
+            if (( ${#actual[@]} == 0 )); then
+              echo "Could not read any certificate SHA-256 from apksigner output" >&2
+              exit 1
+            fi
+            if (( ${#actual[@]} > 1 )); then
+              echo "APK carries more than one signer certificate: ${actual[*]}" >&2
+              exit 1
+            fi
             expected=${expected//:/}
-            if [[ ${actual,,} != ${expected,,} ]]; then
+            if [[ ${actual[0]} != ${expected,,} ]]; then
               echo "APK certificate SHA-256 does not match android/signing/upload-key-sha256.txt" >&2
+              echo "  expected ${expected,,}" >&2
+              echo "  actual   ${actual[0]}" >&2
               exit 1
             fi
           fi
