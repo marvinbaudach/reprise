@@ -1,0 +1,453 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and verify both artifacts without publishing
+        required: true
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - flatpak/**
+      - android/**
+      - io.github.marvinbaudach.Reprise.yml
+      - meson.build
+      - Cargo.toml
+      - Cargo.lock
+      - CHANGELOG.md
+      - data/*.metainfo.xml
+      - scripts/android-build.sh
+      - scripts/bump-version.sh
+      - scripts/check-release-metadata.sh
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  gate:
+    name: Authorize release build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    outputs:
+      publish: ${{ steps.decision.outputs.publish }}
+      tag: ${{ steps.decision.outputs.tag }}
+      desktop_version: ${{ steps.decision.outputs.desktop_version }}
+      android_version: ${{ steps.decision.outputs.android_version }}
+      android_code: ${{ steps.decision.outputs.android_code }}
+    steps:
+      - name: Check out the promoted revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require curated release metadata
+        run: scripts/check-release-metadata.sh
+
+      - name: Wait for the exact Quality gate and check tag absence
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          desktop_version=$(scripts/bump-version.sh current)
+          android_version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"$/\1/p' android/app/build.gradle.kts)
+          android_code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9]*\)$/\1/p' android/app/build.gradle.kts)
+          tag="v$desktop_version"
+          [[ -n $android_version && -n $android_code ]]
+
+          {
+            echo "publish=false"
+            echo "tag=$tag"
+            echo "desktop_version=$desktop_version"
+            echo "android_version=$android_version"
+            echo "android_code=$android_code"
+          } >> "$GITHUB_OUTPUT"
+
+          deadline=$((SECONDS + 3600))
+          conclusion=
+          while ((SECONDS < deadline)); do
+            check=$(
+              gh api \
+                -H "Accept: application/vnd.github+json" \
+                "repos/$REPOSITORY/commits/$REVISION/check-runs" \
+                --jq '[.check_runs[] | select(.name == "Quality gate")] | sort_by(.id) | last // {}'
+            )
+            status=$(jq -r '.status // "missing"' <<< "$check")
+            conclusion=$(jq -r '.conclusion // ""' <<< "$check")
+
+            case "$status" in
+              queued|in_progress|missing)
+                sleep 20
+                ;;
+              completed)
+                break
+                ;;
+              *)
+                echo "Unexpected Quality gate status: $status" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          if [[ $status != completed ]]; then
+            echo "Quality gate did not complete within 60 minutes" >&2
+            exit 1
+          fi
+
+          case "$conclusion" in
+            success)
+              echo "Quality gate succeeded for $REVISION" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            cancelled)
+              echo "Release skipped: Quality gate was cancelled because this promotion was superseded." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+            skipped)
+              echo "Release skipped: Quality gate was skipped and is not green." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+            *)
+              echo "Release skipped: Quality gate concluded '$conclusion'." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+          esac
+
+          set +e
+          tag_response=$(gh api -i "repos/$REPOSITORY/git/ref/tags/$tag" 2>&1)
+          tag_status=$?
+          set -e
+          if ((tag_status == 0)); then
+            echo "Release skipped: tag $tag already exists." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ $tag_response != *"HTTP 404"* ]]; then
+            echo "Could not determine whether $tag exists: $tag_response" >&2
+            exit 1
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "Release build authorized for $REVISION."
+            echo ""
+            echo "- Desktop: $desktop_version ($tag)"
+            echo "- Android: $android_version (code $android_code)"
+            echo "- Tag: absent"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  flatpak:
+    name: Build Flatpak bundle
+    needs: gate
+    if: >-
+      always() &&
+      (github.event_name == 'pull_request' ||
+       (needs.gate.result == 'success' && needs.gate.outputs.publish == 'true'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Flatpak tooling and GNOME 50 SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes flatpak flatpak-builder
+          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install --noninteractive --or-update flathub \
+            org.gnome.Platform//50 \
+            org.gnome.Sdk//50 \
+            org.freedesktop.Sdk.Extension.rust-stable//25.08
+
+      - name: Build the Flatpak repository
+        run: flatpak-builder --repo=repo --force-clean build-dir io.github.marvinbaudach.Reprise.yml
+
+      - name: Create the single-file bundle
+        id: bundle
+        run: |
+          set -euo pipefail
+          version=$(scripts/bump-version.sh current)
+          expected=${{ needs.gate.outputs.desktop_version }}
+          if [[ -n $expected && $version != "$expected" ]]; then
+            echo "Cargo.toml desktop version $version differs from gate output $expected" >&2
+            exit 1
+          fi
+          bundle="Reprise-$version.flatpak"
+          flatpak build-bundle repo "$bundle" io.github.marvinbaudach.Reprise
+          sha256sum "$bundle" > "$bundle.sha256"
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+          echo "Built $bundle ($(stat -c %s "$bundle") bytes)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@v6
+        with:
+          name: reprise-flatpak
+          path: |
+            ${{ steps.bundle.outputs.bundle }}
+            ${{ steps.bundle.outputs.bundle }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  apk:
+    name: Build universal Android APK
+    needs: gate
+    if: >-
+      always() &&
+      (github.event_name == 'pull_request' ||
+       (needs.gate.result == 'success' && needs.gate.outputs.publish == 'true'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Add Android Rust targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android
+
+      - name: Cache Cargo downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: release-android-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            release-android-cargo-
+
+      - name: Build both native ABIs and generate bindings
+        run: |
+          export ANDROID_HOME="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?}}"
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:?}"
+          ANDROID_TARGET=aarch64-linux-android ANDROID_ABI=arm64-v8a ANDROID_API=26 scripts/android-build.sh
+          ANDROID_TARGET=x86_64-linux-android ANDROID_ABI=x86_64 ANDROID_API=26 scripts/android-build.sh
+
+      - name: Prepare release signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          require_signing=1
+          if [[ $GITHUB_EVENT_NAME == pull_request ]]; then
+            require_signing=0
+          fi
+          echo "require=$require_signing" >> "$GITHUB_OUTPUT"
+
+          if [[ -z $KEYSTORE_BASE64 || -z $KEYSTORE_PASSWORD || -z $KEY_ALIAS || -z $KEY_PASSWORD ]]; then
+            if ((require_signing == 1)); then
+              echo "Release signing requires ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD" >&2
+              exit 1
+            fi
+            echo "production=false" >> "$GITHUB_OUTPUT"
+            echo "Pull-request APK uses the local debug-signing fallback because upload-key secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
+          else
+            keystore="$RUNNER_TEMP/reprise-upload.keystore"
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
+            echo "REPRISE_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
+            echo "REPRISE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "REPRISE_KEYSTORE_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "REPRISE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "production=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assemble the minified release APK
+        env:
+          REPRISE_REQUIRE_RELEASE_SIGNING: ${{ steps.signing.outputs.require }}
+        run: android/gradlew -p android --no-daemon :app:assembleRelease
+
+      - name: Verify signature, certificate, and versions
+        id: package
+        env:
+          PRODUCTION_SIGNING: ${{ steps.signing.outputs.production }}
+          GATE_ANDROID_VERSION: ${{ needs.gate.outputs.android_version }}
+          GATE_ANDROID_CODE: ${{ needs.gate.outputs.android_code }}
+        run: |
+          set -euo pipefail
+          source_apk=android/app/build/outputs/apk/release/app-release.apk
+          [[ -s $source_apk ]]
+
+          build_tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -1)
+          apksigner="$ANDROID_HOME/build-tools/$build_tools/apksigner"
+          aapt2="$ANDROID_HOME/build-tools/$build_tools/aapt2"
+          signature=$($apksigner verify --print-certs "$source_apk")
+          printf '%s\n' "$signature"
+
+          if [[ $PRODUCTION_SIGNING == true ]]; then
+            expected=$(grep -E '^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){31}$' android/signing/upload-key-sha256.txt || true)
+            if [[ -z $expected ]]; then
+              echo "android/signing/upload-key-sha256.txt still contains its placeholder; add the upload certificate SHA-256" >&2
+              exit 1
+            fi
+            actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$signature" | head -1)
+            expected=${expected//:/}
+            if [[ ${actual,,} != ${expected,,} ]]; then
+              echo "APK certificate SHA-256 does not match android/signing/upload-key-sha256.txt" >&2
+              exit 1
+            fi
+          fi
+
+          badging=$($aapt2 dump badging "$source_apk")
+          printf '%s\n' "$badging"
+          gradle_version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"$/\1/p' android/app/build.gradle.kts)
+          gradle_code=$(sed -n 's/^[[:space:]]*versionCode = \([0-9]*\)$/\1/p' android/app/build.gradle.kts)
+          [[ -z $GATE_ANDROID_VERSION || $gradle_version == "$GATE_ANDROID_VERSION" ]]
+          [[ -z $GATE_ANDROID_CODE || $gradle_code == "$GATE_ANDROID_CODE" ]]
+          [[ $badging == *"versionCode='$gradle_code'"* ]]
+          [[ $badging == *"versionName='$gradle_version'"* ]]
+
+          apk="Reprise-Android-$gradle_version.apk"
+          cp "$source_apk" "$apk"
+          sha256sum "$apk" > "$apk.sha256"
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          echo "Built $apk ($(stat -c %s "$apk") bytes), versionCode $gradle_code." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: reprise-apk
+          path: |
+            ${{ steps.package.outputs.apk }}
+            ${{ steps.package.outputs.apk }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove decoded upload keystore
+        if: always()
+        run: |
+          if [[ -n ${REPRISE_KEYSTORE_PATH:-} && -f $REPRISE_KEYSTORE_PATH ]]; then
+            shred -u "$REPRISE_KEYSTORE_PATH" 2>/dev/null || rm -f "$REPRISE_KEYSTORE_PATH"
+          fi
+
+  publish:
+    name: Publish both release assets
+    needs: [gate, flatpak, apk]
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.gate.outputs.publish == 'true' &&
+      needs.flatpak.result == 'success' &&
+      needs.apk.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.dry_run == false)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.gate.outputs.tag }}
+      DESKTOP_VERSION: ${{ needs.gate.outputs.desktop_version }}
+      ANDROID_VERSION: ${{ needs.gate.outputs.android_version }}
+      ANDROID_CODE: ${{ needs.gate.outputs.android_code }}
+    steps:
+      - name: Check out release text
+        uses: actions/checkout@v7
+
+      - name: Download Flatpak bundle
+        uses: actions/download-artifact@v7
+        with:
+          name: reprise-flatpak
+          path: dist
+
+      - name: Download universal APK
+        uses: actions/download-artifact@v7
+        with:
+          name: reprise-apk
+          path: dist
+
+      - name: Generate release notes
+        run: |
+          python3 - "$DESKTOP_VERSION" "$ANDROID_VERSION" "$ANDROID_CODE" > release-notes.md <<'PY'
+          import pathlib
+          import sys
+
+          desktop, android, android_code = sys.argv[1:4]
+          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          heading = f"## [{desktop}] - "
+          start = next(
+              (index for index, line in enumerate(changelog.splitlines()) if line.startswith(heading)),
+              None,
+          )
+          if start is None:
+              raise SystemExit(f"CHANGELOG.md has no section for {desktop}")
+          lines = changelog.splitlines()
+          end = next(
+              (index for index in range(start + 1, len(lines)) if lines[index].startswith("## [")),
+              len(lines),
+          )
+          body = "\n".join(lines[start + 1:end]).strip()
+
+          print(f"# Reprise {desktop}")
+          print()
+          print(f"Desktop version: **{desktop}**. Android version: **{android}** (code {android_code}).")
+          print()
+          print("Install the GNOME 50 runtime and Flatpak bundle:")
+          print()
+          print("```sh")
+          print("flatpak install --user flathub org.gnome.Platform//50")
+          print(f"flatpak install --user ./Reprise-{desktop}.flatpak")
+          print("```")
+          print()
+          print("The bundle does not self-update. A self-hosted Flatpak repository is the named follow-up.")
+          print("This Flatpak ships without stems separation because it does not include onnxruntime; AUR, COPR and local builds retain the feature.")
+          print(f"The Android app requires Android 8.0 or newer and is GPL-3.0-or-later like the rest of Reprise. Its release APK is `Reprise-Android-{android}.apk`.")
+          print()
+          print(body)
+          PY
+
+      - name: Create draft release with all assets
+        run: |
+          gh release create "$TAG" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "Reprise $DESKTOP_VERSION" \
+            --notes-file release-notes.md \
+            dist/*.flatpak dist/*.flatpak.sha256 dist/*.apk dist/*.apk.sha256
+
+      - name: Verify every draft asset is present and non-empty
+        run: |
+          set -euo pipefail
+          release=$(gh release view "$TAG" --json assets,isDraft)
+          [[ $(jq -r '.isDraft' <<< "$release") == true ]]
+          for asset in \
+            "Reprise-$DESKTOP_VERSION.flatpak" \
+            "Reprise-$DESKTOP_VERSION.flatpak.sha256" \
+            "Reprise-Android-$ANDROID_VERSION.apk" \
+            "Reprise-Android-$ANDROID_VERSION.apk.sha256"
+          do
+            size=$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .size' <<< "$release")
+            [[ $size =~ ^[1-9][0-9]*$ ]] || {
+              echo "Draft asset $asset is missing or empty" >&2
+              exit 1
+            }
+          done
+
+      - name: Publish verified release
+        run: gh release edit "$TAG" --draft=false --latest
+
+      - name: Remove stale draft and any draft-created tag
+        if: failure()
+        run: gh release delete "$TAG" --yes --cleanup-tag || true

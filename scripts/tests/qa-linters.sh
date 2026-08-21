@@ -80,6 +80,7 @@ require_executable scripts/tests/architecture-size-limits.sh
 require_executable scripts/tests/cua-explore.sh
 require_executable scripts/tests/check-android-suite.sh
 require_executable .github/tests/release-metadata.sh
+require_executable .github/tests/release-workflow.sh
 require_executable scripts/reprise-worktree-gc.sh
 require_executable scripts/close-worktree.sh
 require_executable scripts/install-worktree-gc-timer.sh
