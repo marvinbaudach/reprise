@@ -387,6 +387,10 @@ type PlayNextCallback = Rc<dyn Fn(EpisodeRow)>;
 /// database-backed count and the source views' in-memory rows have changed.
 /// Playback alone never moves those values, but *finishing* an episode does.
 type EpisodePlayedCallback = Rc<dyn Fn(i64)>;
+/// Fires after an eligible resume position is persisted, or after a newly
+/// known short duration clears one that was saved while the duration was
+/// unknown.
+pub(super) type EpisodePositionCallback = Rc<dyn Fn(i64, i64)>;
 pub(super) type EpisodeDownloadCallback = Rc<dyn Fn(i64, DownloadState)>;
 
 #[derive(Default)]
@@ -401,6 +405,7 @@ pub(in crate::ui) struct ExternalPlaybackState {
     pub(super) changed_callbacks: Vec<ExternalChangedCallback>,
     pub(super) play_next_callbacks: Vec<PlayNextCallback>,
     pub(super) episode_played_callbacks: Vec<EpisodePlayedCallback>,
+    pub(super) episode_position_callbacks: Vec<EpisodePositionCallback>,
     pub(super) episode_download_callbacks: Vec<EpisodeDownloadCallback>,
 }
 

@@ -43,7 +43,7 @@ class ManifestPermissionsTest {
             Manifest.permission.INTERNET,
             Manifest.permission.ACCESS_NETWORK_STATE,
             Manifest.permission.WAKE_LOCK,
-            "org.reprise.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            "${BuildConfig.APPLICATION_ID}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
         )
     }
 }

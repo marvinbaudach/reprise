@@ -1,0 +1,6 @@
+# SHA-256 fingerprint of the upload certificate. The release job runs
+# `apksigner verify --print-certs` on the built APK and compares the signer
+# certificate with this value: a valid signature made with the wrong key still
+# verifies, and only this comparison catches that before publication.
+# Uppercase hexadecimal byte pairs separated by colons, one line.
+C1:54:30:7E:3E:8F:A6:A1:7B:2C:C0:00:A0:8F:03:D1:44:51:82:42:DE:5D:0F:62:28:91:08:3E:F0:90:D0:DA

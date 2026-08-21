@@ -31,6 +31,15 @@ impl SourceViews {
         });
     }
 
+    pub(in crate::ui) fn wire_episode_position(&self, player: &Rc<PlayerController>) {
+        let views = [Rc::downgrade(&self.podcasts), Rc::downgrade(&self.youtube)];
+        player.add_on_episode_position(move |episode_id, position_ms| {
+            for view in views.iter().filter_map(std::rc::Weak::upgrade) {
+                view.update_position_state(episode_id, position_ms);
+            }
+        });
+    }
+
     pub(in crate::ui) fn set_toast_overlay(&self, overlay: &libadwaita::ToastOverlay) {
         self.podcasts.set_toast_overlay(overlay);
         self.youtube.set_toast_overlay(overlay);

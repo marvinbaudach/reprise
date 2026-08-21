@@ -91,6 +91,22 @@ pub(super) struct RenderedSourceGroup {
     pub summary: SourceSummary,
 }
 
+fn resume_display_key(row: &EpisodeRow) -> Option<Option<u8>> {
+    (reprise_core::podcasts::status::derive(row.played_at, row.position_ms)
+        == EpisodeStatus::Resume)
+        .then(|| crate::ui::source_row::resume_percent(row.position_ms, row.duration_secs))
+}
+
+/// Applies a persisted resume position and reports whether its displayed
+/// New/Resume state or whole percentage changed. The row state always
+/// advances; callers use the boolean only to avoid rebuilding an identical
+/// chip.
+pub(super) fn update_resume_position(row: &mut EpisodeRow, position_ms: i64) -> bool {
+    let previous = resume_display_key(row);
+    row.position_ms = position_ms;
+    previous != resume_display_key(row)
+}
+
 /// `G2` (design 6a): the page-level header line above the grouped list
 /// ("4 shows · 41 episodes · 7 new").
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
