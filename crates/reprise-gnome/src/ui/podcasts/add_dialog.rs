@@ -28,7 +28,7 @@ use super::add_dialog_rows::{append_candidate, append_heading, append_preview, P
 #[cfg(test)]
 use super::add_dialog_rows::{candidate_row, images_allowed};
 #[cfg(test)]
-use super::add_dialog_subscription::baseline_for_import_choice;
+use super::add_dialog_subscription::{baseline_for_import_choice, subscribe};
 use super::add_dialog_subscription::{configured_auto_download_default, subscribe_offline};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

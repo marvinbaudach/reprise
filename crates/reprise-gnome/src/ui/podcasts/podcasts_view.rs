@@ -575,6 +575,7 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
                     Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
+                    Ok(PodcastsWorkerResult::Filled(_)) => {}
                     Err(error) => {
                         tracing::warn!(%error, episode_id, "podcast download failed");
                         view.set_download_state(
@@ -592,7 +593,7 @@ impl PodcastsView {
         true
     }
 
-    fn set_download_state(&self, episode_id: i64, state: &DownloadState) {
+    pub(in crate::ui) fn set_download_state(&self, episode_id: i64, state: &DownloadState) {
         self.download_states
             .borrow_mut()
             .insert(episode_id, state.clone());
