@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-21 07:26+0200\n"
+"POT-Creation-Date: 2026-08-22 15:53+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -4629,32 +4629,44 @@ msgid "Use credentials from your own Last.fm API application"
 msgstr "Usa credenciales de tu propia aplicación de la API de Last.fm"
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:70
+msgid "Last.fm application"
+msgstr "Aplicación de Last.fm"
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:72
+msgid ""
+"This build carries no Last.fm application key. Register one at https://"
+"www.last.fm/api/account/create."
+msgstr ""
+"Esta versión no incluye ninguna clave de API de Last.fm. Registra una "
+"aplicación en https://www.last.fm/api/account/create."
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:74
 msgid "Test connection"
 msgstr "Probar la conexión"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:71
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:75
 msgid "Test failed — try again later."
 msgstr "La prueba falló; inténtalo de nuevo más tarde."
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:75
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:79
 #, rust-format
 msgid "Connected as {user_name} ✓"
 msgstr "Conectado como {user_name} ✓"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:81
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:85
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:89
 #, rust-format
 msgid "Connected as {user_name}"
 msgstr "Conectado como {user_name}"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:94
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:98
 #, rust-format
 msgid "{n} submitted"
 msgid_plural "{n} submitted"
 msgstr[0] "{n} enviada"
 msgstr[1] "{n} enviadas"
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:104
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:108
 #, rust-format
 msgid "{n} queued"
 msgid_plural "{n} queued"
