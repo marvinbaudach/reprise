@@ -266,6 +266,48 @@ with a second, unrelated affordance.
 
 ## Result
 
-*(Codex fills this in: for each task the commands run, the counts, the mutation
-proofs with their red and green runs, and anything that could not be proven and
-why.)*
+### Task 1 — #254
+
+The TDD control first failed to compile because the target seam named by the
+test did not yet exist. The final test instead uses the fixture's independent
+target of `0.5` (20 leader plays versus 10 second-place plays) and requires both
+that bar and the second genre reveal fraction to be strictly between zero and
+their targets. The focused isolated-display command was:
+
+```bash
+XDG_RUNTIME_DIR="$runtime" dbus-run-session -- xvfb-run -a env \
+  XDG_DATA_HOME="$data" XDG_CACHE_HOME="$cache" XDG_CONFIG_HOME="$config" \
+  TMPDIR="$tmp" GIO_USE_VFS=local GTK_USE_PORTAL=0 GSK_RENDERER=cairo \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
+  cargo test -p reprise-gnome \
+  ui::stats::stats_view::entrance_tests::stats_19_period_switch_tweens_bars_without_restarting_static_content \
+  -- --ignored --exact --test-threads=1
+```
+
+With the production mutation
+`reveal.set_reveal_fraction(value as f32)` →
+`reveal.set_reveal_fraction(1.0)` in
+`HorizontalBarGroup::set_value`, the command was red with exactly 0 passed and
+1 failed at the intermediate-frame assertion. After reverting the mutation it
+was green with exactly 1 passed. Eight `yes` workers then kept all eight logical
+CPUs busy while the same test ran five consecutive times with fresh isolated
+roots and `--test-threads=1`; all five runs passed (5/5, exactly one test each).
+`cargo fmt --check` and strict workspace Clippy passed. The first isolated
+`cargo test --workspace` run had one unrelated GStreamer handoff timeout in
+`reprise-platform-linux`; its exact isolated rerun passed 1/1, and the complete
+workspace rerun then passed. `cargo audit` exited successfully with only the
+repository's accepted `RUSTSEC-2024-0436` warning for `paste`; its online yank
+check timed out and was reported by the tool without changing the successful
+exit status.
+
+### Task 2 — #250
+
+Pending.
+
+### Task 3 — #405
+
+Pending.
+
+### Task 4 — #406
+
+Pending.
