@@ -402,6 +402,11 @@ pub const COLUMN_YEAR: &str = N_!("Year");
 pub const COLUMN_ADDED: &str = N_!("Added");
 pub const COLUMN_LENGTH: &str = N_!("Length");
 pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
+pub const SORT: &str = N_!("Sort");
+pub const SORT_BY: &str = N_!("Sort by");
+pub const SORT_DIRECTION: &str = N_!("Direction");
+pub const SORT_ASCENDING: &str = N_!("Ascending");
+pub const SORT_DESCENDING: &str = N_!("Descending");
 // The Rating column's header reuses `RATING` below rather than having its
 // own `COLUMN_RATING` const — the column header and the `RatingWidget`
 // tooltip (src/ui/rating.rs) are the same word, so one const serves both.

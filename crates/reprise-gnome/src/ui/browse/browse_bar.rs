@@ -19,6 +19,7 @@ use super::browse_chooser::{
     browse_popup_min_height, build_chooser, chooser_row, load_values, wire_chooser, FACET_PAGE,
     VALUE_PAGE,
 };
+use super::browse_sort::BrowseSortControl;
 use crate::ui::filter_bar_layout::{self, CountPresentation, FilterBarLayout};
 use crate::ui::filter_bar_strings as filter_strings;
 use crate::ui::track_list::Shared;
@@ -54,6 +55,7 @@ pub struct BrowseBar {
     is_library: Cell<bool>,
     preference_visible: Cell<bool>,
     chips: gtk4::Box,
+    pub(in crate::ui) sort_control: BrowseSortControl,
     pub(super) add_filter: gtk4::MenuButton,
     chooser_stack: gtk4::Stack,
     pub(super) facet_list: gtk4::ListBox,
@@ -91,6 +93,8 @@ impl BrowseBar {
 
         let chips = filter_bar_layout::facet_row();
 
+        let sort_control = BrowseSortControl::new();
+
         let popover = gtk4::Popover::new();
         popover.add_css_class(POPOVER_CSS_CLASS);
         let (chooser_stack, facet_list, chooser_back, value_search, value_list) = build_chooser();
@@ -108,7 +112,10 @@ impl BrowseBar {
         add_filter.update_property(&[gtk4::accessible::Property::Label(&filter_strings::text(
             filter_strings::ADD_FILTER,
         ))]);
+        // a11y-semantics: role=button name=explicit-label state=has-popup action=activate
+        add_filter.set_focusable(true);
         let filter_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        filter_actions.append(sort_control.button());
         filter_actions.append(&add_filter);
         let result_label = filter_bar_layout::count_label();
         result_label.set_visible(false);
@@ -142,6 +149,7 @@ impl BrowseBar {
             is_library: Cell::new(true),
             preference_visible: Cell::new(true),
             chips,
+            sort_control,
             add_filter,
             chooser_stack,
             facet_list,
