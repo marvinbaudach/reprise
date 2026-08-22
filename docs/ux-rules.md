@@ -1189,7 +1189,11 @@ result.
   restores the exact previous configuration. The group collapses to its
   header, which never disappears, and offers "Show the N sources"; revealing
   it shows every source read-only. Connected services collapses the same way
-  and is labelled "Scrobbling · needs online sources".
+  and is labelled "Scrobbling · needs online sources". The header stands
+  exactly once: the master row carries the heading "Online content" and the
+  group above it carries no title of its own. The Plugins rows drop the
+  boxed-list card entirely — they run over the full width of the page on the
+  page ground, separated by hairlines only (`docs/plans/plugins-online-content-master-hierarchy.md`).
 - **SET-12** [replaced by SET-14] [gtk] — Replaces `SIM-8`, which stated the same thing
   inside a module that no longer exists: plugin provision badges are derived
   from the static registry, never from current enable state. A provision-kind
@@ -1211,10 +1215,17 @@ result.
   path; its origin parent and index are recorded before any matching control
   moves so clearing restores every control to its exact place. Activating the
   path closes search, opens that page and focuses the restored control.
-- **SET-14** [active] [gtk] — Every row on the Plugins page places its enable
+- **SET-14** [replaced by SET-14a] [gtk] — Every row on the Plugins page places its enable
   switch on the same right edge. A non-expandable switch row reserves the
   expander arrow's trailing slot even though the row does not open, so its
   switch stays aligned with the switch of a row that exposes child settings.
+- **SET-14a** [active] [gtk] — Replaces `SET-14`, which put the expander arrow
+  behind the switch: the visible chevron of an expandable row sits in a gutter
+  **left** of its title, and every Plugins row reserves that gutter — also the
+  rows that never open — so all row titles and the group headings share one
+  left edge. The trailing slot libadwaita's own arrow occupies stays reserved
+  but invisible, which is what keeps every enable switch on the same right
+  edge, unchanged from `SET-14`.
 - **SET-15** [active] [core] [gtk] — Location has one app-wide value and one
   Preferences owner. Its main page sits between Library and Plugins, owns City
   and Default radius, and names every reader under Used by: Concerts, Radio's
@@ -1227,6 +1238,20 @@ result.
   (`set_15_location_name_omits_the_separator_without_a_country`). Disabling
   Concerts or online sources never makes the stored location or radius
   unreadable and never suppresses the app-wide location-change announcement.
+
+- **SET-16** [active] [gtk] — The Layout page opens with one interactive
+  preview of the library window instead of static choice cards. Every region is
+  drawn in place and is itself the control: Player Bar (click moves it between
+  the top and bottom edge), Navigation Sidebar (left), Filter Bar (above the
+  track list), Details Sidebar (right) and Status Bar (below the track list) —
+  clicking a visible region hides it. A hidden region does not vanish: it
+  leaves a dashed placeholder with a "+" in its own place, which brings it
+  back. The sidebars' sides are not configurable — Navigation is always left,
+  Details always right. The switches under "Window Regions" show the same
+  state, and preview and switches write through one save path: whatever fails
+  to save keeps its previous value and raises the toast that names it, so the
+  two can never disagree. "Restore defaults" at the foot of the page returns
+  every layout value to its default.
 
 ## G. Feedback vocabulary
 

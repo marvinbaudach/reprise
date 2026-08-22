@@ -7,6 +7,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::modules::ModuleDescriptor;
 
+use super::preference_plugin_chrome as chrome;
 use super::{strings, PreferencesContext};
 
 pub(in crate::ui) const TARGET_CLASS: &str = "reprise-plugin-target";
@@ -112,13 +113,14 @@ pub(in crate::ui) fn css() -> String {
            background-color: alpha(@accent_bg_color, 0.22); \
            box-shadow: inset 3px 0 @accent_color; \
            transition: background-color {}ms {}, box-shadow {}ms {}; }} \
-         .{} {{ background-color: alpha(@card_bg_color, 0.55); }}",
+         .{} {{ background-color: alpha(@card_bg_color, 0.55); }} {}",
         super::preference_location::LOCATION_TARGET_CLASS,
         crate::ui::motion::MICRO_MS,
         crate::ui::motion::MICRO_CSS_EASING,
         crate::ui::motion::MICRO_MS,
         crate::ui::motion::MICRO_CSS_EASING,
         super::preference_concerts::LOCATION_REFERENCE_CLASS,
+        chrome::css(),
     )
 }
 
@@ -277,22 +279,30 @@ fn aligned_switch_row(title: &str, subtitle: &str, active: bool) -> adw::SwitchR
         .use_markup(false)
         .active(active)
         .build();
+    chrome::reserve_gutter(&row);
     row.add_suffix(&switch_alignment_placeholder());
     row
 }
 
 fn online_master_row(active: bool) -> adw::SwitchRow {
-    aligned_switch_row(
+    let row = aligned_switch_row(
         &strings::text(strings::PLUGIN_GROUP_ONLINE_CONTENT),
         &strings::text(strings::ONLINE_CONTENT_MASTER_DESCRIPTION),
         active,
-    )
+    );
+    // The master carries the heading now, so it may neither be truncated nor
+    // repeated by a group title above it: its description runs over the full
+    // width instead.
+    row.add_css_class(chrome::MASTER_ROW_CLASS);
+    row.set_title_lines(0);
+    row.set_subtitle_lines(0);
+    row
 }
 
 fn online_group_with_master(master: &adw::SwitchRow) -> adw::PreferencesGroup {
-    let group = adw::PreferencesGroup::builder()
-        .title(strings::text(strings::PLUGIN_GROUP_ONLINE_CONTENT))
-        .build();
+    // No group title: `SET-11` makes the master the group's header, and the
+    // heading must not stand twice.
+    let group = adw::PreferencesGroup::new();
     group.add(master);
     group
 }
@@ -331,6 +341,7 @@ fn settings_plugin_row(
         .show_enable_switch(true)
         .enable_expansion(active)
         .build();
+    chrome::attach_chevron(&row);
     let set_children_sensitive: Rc<dyn Fn(bool)> = match descriptor.id {
         "youtube" => {
             let rows = super::preference_youtube::build(&context.conn, active);
@@ -390,6 +401,7 @@ impl PreferencesContext {
             .title(strings::text(strings::PREFERENCES_PLUGINS))
             .icon_name("application-x-addon-symbolic")
             .build();
+        page.add_css_class(chrome::FLAT_ROWS_CLASS);
         let local_group = adw::PreferencesGroup::builder()
             .title(strings::text(strings::PLUGIN_GROUP_LOCAL))
             .build();
@@ -412,6 +424,7 @@ impl PreferencesContext {
             }
         }
         let online_disclosure = adw::ActionRow::builder().activatable(true).build();
+        chrome::reserve_gutter(&online_disclosure);
         online_disclosure.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
         online_group.add(&online_disclosure);
         let mut online_rows = Vec::with_capacity(ONLINE_PLUGIN_IDS.len());
@@ -431,12 +444,17 @@ impl PreferencesContext {
             .title(strings::text(strings::SCROBBLING_NEEDS_ONLINE_SOURCES))
             .activatable(true)
             .build();
+        chrome::reserve_gutter(&connected_disclosure);
         connected_disclosure.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
         connected_group.add(&connected_disclosure);
         let connected_rows = plugin_ids_for_group(PluginGroup::Connected)
             .iter()
             .map(|id| match *id {
-                "scrobbling" => super::preference_scrobbling::build(self).upcast::<gtk4::Widget>(),
+                "scrobbling" => {
+                    let row = super::preference_scrobbling::build(self);
+                    chrome::reserve_gutter(&row);
+                    row.upcast::<gtk4::Widget>()
+                }
                 id => panic!("connected capability {id} has no Plugins row builder"),
             })
             .collect::<Vec<_>>();
