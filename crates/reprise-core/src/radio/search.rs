@@ -301,10 +301,13 @@ mod tests {
         );
     }
 
-    /// `RAD-5`: "Metal in DE" needs both a tag and a country code in the
-    /// same request; radio-browser takes both as independent query
+    /// `RAD-5`: radio-browser takes tag and country code as independent query
     /// parameters on the same `/stations/search` endpoint already used by
-    /// [`search`] — no separate endpoint, no new consent surface.
+    /// [`search`] — no separate endpoint, no new consent surface. No caller
+    /// combines the two today: the library chip sends a tag alone and "Near
+    /// you" a country alone. This pins the encoding for the combined case
+    /// anyway, so a future caller inherits a URL contract instead of
+    /// inventing one.
     #[test]
     fn rad_5_criteria_url_encodes_tag_and_country_together() {
         assert_eq!(

@@ -459,9 +459,14 @@ mod tests {
         assert!(
             crate::ui::test_settle::settle_until(
                 crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
-                || card.image_loaded.get() == Some(true),
+                || {
+                    card.image_loaded.get() == Some(true) && requests.load(Ordering::SeqCst) >= 1
+                },
             ),
-            "timed out waiting for stats artwork"
+            "timed out waiting for album-cover fallback and portrait request \
+             (image_loaded={:?}, portrait requests={})",
+            card.image_loaded.get(),
+            requests.load(Ordering::SeqCst)
         );
 
         assert_eq!(requests.load(Ordering::SeqCst), 1);
@@ -521,9 +526,14 @@ mod tests {
         assert!(
             crate::ui::test_settle::settle_until(
                 crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
-                || card.image_loaded.get() == Some(false),
+                || {
+                    card.image_loaded.get() == Some(false) && requests.load(Ordering::SeqCst) >= 1
+                },
             ),
-            "timed out waiting for stats artwork"
+            "timed out waiting for initials fallback and portrait request \
+             (image_loaded={:?}, portrait requests={})",
+            card.image_loaded.get(),
+            requests.load(Ordering::SeqCst)
         );
 
         assert_eq!(requests.load(Ordering::SeqCst), 1);

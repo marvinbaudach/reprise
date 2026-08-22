@@ -326,6 +326,7 @@ pub fn build(
     super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
     if let Some(player) = &player {
         source_views.wire_episode_played(player, &sidebar);
+        source_views.wire_episode_position(player);
     }
     // The toast layer is attached after the player-bar shell exists so
     // notifications render above the complete library chrome.

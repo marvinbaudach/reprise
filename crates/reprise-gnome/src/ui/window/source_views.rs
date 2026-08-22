@@ -31,6 +31,15 @@ impl SourceViews {
         });
     }
 
+    pub(in crate::ui) fn wire_episode_position(&self, player: &Rc<PlayerController>) {
+        let views = [Rc::downgrade(&self.podcasts), Rc::downgrade(&self.youtube)];
+        player.add_on_episode_position(move |episode_id, position_ms| {
+            for view in views.iter().filter_map(std::rc::Weak::upgrade) {
+                view.update_position_state(episode_id, position_ms);
+            }
+        });
+    }
+
     pub(in crate::ui) fn set_toast_overlay(&self, overlay: &libadwaita::ToastOverlay) {
         self.podcasts.set_toast_overlay(overlay);
         self.youtube.set_toast_overlay(overlay);
@@ -146,8 +155,8 @@ pub(in crate::ui) fn install(
         });
     }
     if let Some(player) = player {
-        let podcasts = Rc::downgrade(&podcasts);
-        let youtube = Rc::downgrade(&youtube);
+        let podcasts_marker = Rc::downgrade(&podcasts);
+        let youtube_marker = Rc::downgrade(&youtube);
         player.add_on_external_changed(move |snapshot| {
             let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
             let restored = snapshot.as_ref().is_some_and(|snapshot| snapshot.restored);
@@ -160,11 +169,11 @@ pub(in crate::ui) fn install(
                     None
                 }
             });
-            if let Some(view) = podcasts.upgrade() {
+            if let Some(view) = podcasts_marker.upgrade() {
                 view.set_playing_episode(episode_mark, restored);
                 view.set_unavailable_episode(unavailable_episode);
             }
-            if let Some(view) = youtube.upgrade() {
+            if let Some(view) = youtube_marker.upgrade() {
                 view.set_playing_episode(episode_mark, restored);
                 view.set_unavailable_episode(unavailable_episode);
             }
@@ -176,6 +185,17 @@ pub(in crate::ui) fn install(
                 can_go_next = snapshot.as_ref().is_some_and(|snapshot| snapshot.can_go_next),
                 "external session changed"
             );
+        });
+
+        let podcasts = Rc::downgrade(&podcasts);
+        let youtube = Rc::downgrade(&youtube);
+        player.add_on_episode_download_state(move |episode_id, state| {
+            if let Some(view) = podcasts.upgrade() {
+                view.set_download_state(episode_id, &state);
+            }
+            if let Some(view) = youtube.upgrade() {
+                view.set_download_state(episode_id, &state);
+            }
         });
     }
     super::source_views_smoke::arm_episode_play(&youtube);

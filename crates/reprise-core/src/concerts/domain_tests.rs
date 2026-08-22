@@ -68,7 +68,7 @@ fn geocode_url_and_parser_are_tolerant_and_pure() {
     assert!(parse_geocode("{broken").is_err());
 }
 
-/// `RAD-5`: "Metal in DE" and "Near you" both need a country code, and the
+/// `RAD-5`: "Near you" needs a country code, and the
 /// only source Reprise is allowed to use is data already present in the
 /// forward-geocode response city search already makes — never a second,
 /// reverse-geocoding network call (`O-4`). Nominatim's `addressdetails=1`

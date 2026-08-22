@@ -26,6 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # `permalinks-resolve.test.mjs` answers "does this path exist at the
+          # commit the page pins?" from the local object database. The pin is an
+          # older commit, so a depth-1 checkout does not carry it and every
+          # permalink reads as a 404. The rest of CI already checks out in full.
+          fetch-depth: 0
 
       - name: Verify Pages action versions
         run: .github/tests/pages-action-versions.sh

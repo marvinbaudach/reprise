@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -74,11 +76,10 @@ class ArtistPortraitSurfaceTest {
     }
 
     @Test
-    fun anArtistWithoutAPortraitShowsTheAlbumCover() {
+    fun anArtistWithoutAPortraitShowsTheGeneratedAvatar() {
         val cachedCalls = AtomicInteger()
         val albumCalls = AtomicInteger()
-        val decoded = AtomicReference<String>()
-        val album = bitmap(Color.GREEN)
+        val fallbackCalls = AtomicInteger()
         val artwork = artwork(
             cachedPortrait = { _, _ ->
                 cachedCalls.incrementAndGet()
@@ -88,18 +89,19 @@ class ArtistPortraitSurfaceTest {
                 albumCalls.incrementAndGet()
                 "album"
             },
-            decode = { path ->
-                decoded.set(path)
-                if (path == "album") album else null
+            decode = { null },
+            fallback = { _, _, _ ->
+                fallbackCalls.incrementAndGet()
+                bitmap(Color.BLUE)
             },
         )
 
         showArtists(listOf(artist("Album Artist")), artwork)
 
-        compose.waitUntil { decoded.get() == "album" }
+        compose.waitUntil { cachedCalls.get() == 1 && fallbackCalls.get() > 0 }
         compose.onNodeWithTag("artist-avatar", useUnmergedTree = true).assertExists()
         assertEquals(1, cachedCalls.get())
-        assertEquals(1, albumCalls.get())
+        assertEquals(0, albumCalls.get())
     }
 
     @Test
@@ -126,9 +128,10 @@ class ArtistPortraitSurfaceTest {
 
         showArtists(listOf(artist("Generated Artist")), artwork)
 
-        compose.waitUntil { cachedCalls.get() == 1 && albumCalls.get() == 1 }
+        compose.waitUntil { cachedCalls.get() == 1 && fallbackCalls.get() > 0 }
         compose.onNodeWithTag("artist-avatar", useUnmergedTree = true).assertExists()
         assertTrue(fallbackCalls.get() > 0)
+        assertEquals(0, albumCalls.get())
     }
 
     @Test
@@ -158,9 +161,10 @@ class ArtistPortraitSurfaceTest {
     }
 
     @Test
-    fun aPortraitFetchedInDetailReplacesTheRowsCachedAlbumCover() {
+    fun aPortraitFetchedInDetailReplacesTheRowsAvatar() {
         val portraitAvailable = AtomicBoolean(false)
         val rowBitmapPath = AtomicReference<String>()
+        val albumCalls = AtomicInteger()
         val sharedCache = ArtworkCache()
         val artwork = artwork(
             cachedPortrait = { _, size ->
@@ -175,6 +179,7 @@ class ArtistPortraitSurfaceTest {
                 "portrait-detail"
             },
             albumCover = { _, size ->
+                albumCalls.incrementAndGet()
                 if (size == AndroidArtworkSize.LIST) {
                     "album-list"
                 } else {
@@ -185,17 +190,22 @@ class ArtistPortraitSurfaceTest {
                 if (path.endsWith("-list")) rowBitmapPath.set(path)
                 if (path.startsWith("portrait")) bitmap(Color.RED) else bitmap(Color.GREEN)
             },
+            fallback = { _, _, _ ->
+                rowBitmapPath.set("avatar-list")
+                bitmap(Color.BLUE)
+            },
             cache = sharedCache,
         )
 
         showArtistDetail(artistDetail("Arriving Portrait"), artwork, initiallyOpen = false)
-        compose.waitUntil { rowBitmapPath.get() == "album-list" }
+        compose.waitUntil { rowBitmapPath.get() == "avatar-list" }
         compose.onNodeWithText("Arriving Portrait").performClick()
         compose.waitUntil { portraitAvailable.get() }
         compose.onNodeWithContentDescription("Back to artists").performClick()
 
         compose.waitUntil { rowBitmapPath.get() == "portrait-list" }
         assertEquals("portrait-list", rowBitmapPath.get())
+        assertEquals(0, albumCalls.get())
     }
 
     @Test
@@ -246,11 +256,12 @@ class ArtistPortraitSurfaceTest {
     }
 
     @Test
-    fun aClosedSwitchLeavesTheDetailHeadOnTheAlbumCover() {
+    fun aClosedSwitchLeavesTheDetailHeadOnTheGeneratedAvatar() {
         val bridgeCalls = AtomicInteger()
         val networkCalls = AtomicInteger()
+        val albumCalls = AtomicInteger()
+        val fallbackCalls = AtomicInteger()
         val gateOpen = false
-        val decoded = AtomicReference<String>()
         val artwork = artwork(
             cachedPortrait = { _, _ -> null },
             fetchedPortrait = { _, _ ->
@@ -260,19 +271,82 @@ class ArtistPortraitSurfaceTest {
                 if (gateOpen) networkCalls.incrementAndGet()
                 null
             },
-            albumCover = { _, _ -> "album-cover" },
-            decode = { path ->
-                decoded.set(path)
-                bitmap(Color.GREEN)
+            albumCover = { _, _ ->
+                albumCalls.incrementAndGet()
+                "album-cover"
+            },
+            decode = { bitmap(Color.GREEN) },
+            fallback = { _, _, _ ->
+                fallbackCalls.incrementAndGet()
+                bitmap(Color.BLUE)
             },
         )
 
         showArtistDetail(artistDetail("Offline Artist"), artwork)
 
-        compose.waitUntil { decoded.get() == "album-cover" }
+        compose.waitUntil { bridgeCalls.get() == 1 && fallbackCalls.get() > 0 }
         compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true).assertExists()
         assertEquals(1, bridgeCalls.get())
         assertEquals(0, networkCalls.get())
+        assertEquals(0, albumCalls.get())
+    }
+
+    @Test
+    fun anArtistSurfaceNeverShowsATrackVisual() {
+        val representativeUri = "content://albums/shared"
+        val sharedCache = ArtworkCache()
+        val trackRequest = ArtworkRequest(
+            trackUri = representativeUri,
+            size = AndroidArtworkSize.LIST,
+            title = "Shared Album",
+            artist = "Shared Artist",
+            kind = ArtworkKind.TRACK,
+        )
+        sharedCache.putArtwork(
+            trackRequest,
+            ArtworkVisual(bitmap(Color.GREEN).asImageBitmap(), ambientColors = null),
+        )
+        val artistRequest = ArtworkRequest(
+            trackUri = representativeUri,
+            size = AndroidArtworkSize.LIST,
+            title = "Shared Artist",
+            artist = "Shared Artist",
+            kind = ArtworkKind.ARTIST,
+            artistName = "Shared Artist",
+        )
+        assertNull(sharedCache.seedArtwork(artistRequest))
+
+        val albumCalls = AtomicInteger()
+        val fallbackCalls = AtomicInteger()
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            albumCover = { _, _ ->
+                albumCalls.incrementAndGet()
+                "track-visual"
+            },
+            decode = { bitmap(Color.GREEN) },
+            fallback = { _, _, _ ->
+                fallbackCalls.incrementAndGet()
+                bitmap(Color.BLUE)
+            },
+            cache = sharedCache,
+        )
+
+        showArtists(
+            listOf(
+                LibraryArtist(
+                    name = "Shared Artist",
+                    trackCount = 7,
+                    albumCount = 2,
+                    representativeUri = representativeUri,
+                ),
+            ),
+            artwork,
+        )
+
+        compose.waitUntil { fallbackCalls.get() > 0 }
+        compose.onNodeWithTag("artist-avatar", useUnmergedTree = true).assertExists()
+        assertEquals(0, albumCalls.get())
     }
 
     @Test

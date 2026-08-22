@@ -20,6 +20,10 @@ pub(in crate::ui) enum PodcastsOperation {
     Download {
         episode_id: i64,
     },
+    /// Brings every subscription up to its `keep_downloaded` target after a
+    /// refresh, without making the refresh wait for a potentially large
+    /// first-run backlog.
+    FillDownloads,
 }
 
 pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsOperation) -> u64 {
@@ -30,7 +34,7 @@ pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsO
         // Neither is allowed to cancel a refresh/load-more already in
         // flight, and both are themselves allowed to keep running alongside
         // one — same non-cancelling treatment `Download` already has.
-        PodcastsOperation::Download { .. } => current,
+        PodcastsOperation::Download { .. } | PodcastsOperation::FillDownloads => current,
     }
 }
 
@@ -99,9 +103,37 @@ pub(in crate::ui) enum PodcastsWorkerResult {
         episode_id: i64,
         state: podcasts::download_state::DownloadState,
     },
+    Filled(podcasts::fill_downloads::FillSummary),
 }
 
 type OnEnabled = Rc<dyn Fn(bool)>;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct FillRequestState {
+    running: bool,
+    pending: bool,
+}
+
+impl FillRequestState {
+    fn request(&mut self) -> bool {
+        if self.running {
+            self.pending = true;
+            return false;
+        }
+        self.running = true;
+        true
+    }
+
+    fn complete(&mut self) -> bool {
+        self.running = false;
+        std::mem::take(&mut self.pending)
+    }
+
+    fn cancel(&mut self) {
+        self.running = false;
+        self.pending = false;
+    }
+}
 
 /// Issue #96 / `NET-1a`: `enabled` is true when *either* Podcasts (RSS) or
 /// YouTube is network-allowed (its own module AND the global online-sources
@@ -112,6 +144,7 @@ pub(in crate::ui) struct PodcastsRuntime {
     pub enabled: Rc<Cell<bool>>,
     worker: async_channel::Sender<PodcastsRequest>,
     subscribers: RefCell<Vec<OnEnabled>>,
+    fill_request: Cell<FillRequestState>,
 }
 
 fn any_source_dispatchable(conn: &Db) -> bool {
@@ -134,6 +167,7 @@ impl PodcastsRuntime {
             enabled: Rc::new(Cell::new(any_source_dispatchable(conn))),
             worker,
             subscribers: RefCell::new(Vec::new()),
+            fill_request: Cell::new(FillRequestState::default()),
         })
     }
 
@@ -196,6 +230,26 @@ impl PodcastsRuntime {
         }
     }
 
+    pub(in crate::ui) fn begin_fill_request(&self) -> bool {
+        let mut state = self.fill_request.get();
+        let begin = state.request();
+        self.fill_request.set(state);
+        begin
+    }
+
+    pub(in crate::ui) fn finish_fill_request(&self) -> bool {
+        let mut state = self.fill_request.get();
+        let replay = state.complete();
+        self.fill_request.set(state);
+        replay
+    }
+
+    pub(in crate::ui) fn cancel_fill_request(&self) {
+        let mut state = self.fill_request.get();
+        state.cancel();
+        self.fill_request.set(state);
+    }
+
     pub(in crate::ui) fn automatic_refresh_allowed(
         &self,
         subscription_count: usize,
@@ -254,18 +308,12 @@ fn process_request(
                 .and_then(|config| {
                     let ytdlp =
                         super::metadata_ytdlp(config.ytdlp_path.as_deref(), config.youtube_browser);
-                    podcasts::pipeline::refresh_with_download_progress(
+                    podcasts::pipeline::refresh(
                         conn,
                         &podcasts::pipeline::HttpFeedFetcher,
                         &ytdlp,
                         chrono::Utc::now().timestamp(),
                         podcasts::refresh::RefreshRequest { policy, kind },
-                        &mut |episode_id, state| {
-                            send_response(
-                                request,
-                                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
-                            );
-                        },
                     )
                     .map(PodcastsWorkerResult::Refreshed)
                     .map_err(|error| error.to_string())
@@ -299,13 +347,42 @@ fn process_request(
         PodcastsOperation::Download { episode_id } => {
             download_episode(conn, request, episode_id);
         }
+        PodcastsOperation::FillDownloads => {
+            let result = podcasts::config::load(conn)
+                .map_err(|error| error.to_string())
+                .and_then(|config| {
+                    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
+                        config.ytdlp_path.as_deref(),
+                        config.youtube_browser,
+                    );
+                    podcasts::fill_downloads::fill_downloads(
+                        conn,
+                        &podcasts::pipeline::HttpFeedFetcher,
+                        &ytdlp,
+                        &podcasts::downloads::default_download_root(),
+                        &mut |episode_id, state| {
+                            send_response(
+                                request,
+                                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
+                            );
+                        },
+                    )
+                    .map(PodcastsWorkerResult::Filled)
+                    .map_err(|error| error.to_string())
+                });
+            send_response(request, result);
+        }
     }
 }
 
 fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult, String>) {
     let terminal = match &result {
         Err(_)
-        | Ok(PodcastsWorkerResult::Refreshed(_) | PodcastsWorkerResult::LoadedMore { .. }) => true,
+        | Ok(
+            PodcastsWorkerResult::Refreshed(_)
+            | PodcastsWorkerResult::LoadedMore { .. }
+            | PodcastsWorkerResult::Filled(_),
+        ) => true,
         Ok(PodcastsWorkerResult::DownloadState { state, .. }) => matches!(
             state,
             podcasts::download_state::DownloadState::Downloaded { .. }
@@ -325,10 +402,10 @@ fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult,
 
 /// `POD-7`: the worker's only download executor is
 /// `reprise_core::podcasts::pipeline::download_episode` — the same body the
-/// refresh pipeline's auto-download branch and MCP's `music_manage_episodes`
-/// already call. There is no second episode lookup, `NET-1a` check, `.part`
-/// handling, or progress emission here; this just wires up the fetchers and
-/// forwards progress/terminal states onto the response channel.
+/// fill-up and MCP's `music_manage_episodes` already call. There is no second
+/// episode lookup, `NET-1a` check, `.part` handling, or progress emission
+/// here; this just wires up the fetchers and forwards progress/terminal states
+/// onto the response channel.
 fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
     let config = match podcasts::config::load(conn) {
         Ok(config) => config,
@@ -355,17 +432,31 @@ fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
             );
         },
     );
-    // `download_episode` only returns `Err` for a lookup failure that
-    // happens before it ever reaches its own `on_progress` calls (episode or
-    // subscription gone) — every other outcome, including `NET-1a` and a
-    // transport failure, already arrived above as a terminal `DownloadState`
-    // via the closure. `Err` is reported the same way the "database
-    // unavailable" branch above already is: the podcasts page and the
-    // other download callers both treat a plain `Err(String)`
-    // response as terminal already.
+    // Losing the download claim is normal: another caller owns an active
+    // download, so keep the row in progress. Other errors remain terminal.
     if let Err(error) = result {
-        send_response(request, Err(error.to_string()));
+        if let Some(state) = download_error_state(&error) {
+            send_response(
+                request,
+                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
+            );
+        } else {
+            send_response(request, Err(error.to_string()));
+        }
     }
+}
+
+fn download_error_state(
+    error: &podcasts::pipeline::PipelineError,
+) -> Option<podcasts::download_state::DownloadState> {
+    matches!(
+        error,
+        podcasts::pipeline::PipelineError::DownloadAlreadyRunning
+    )
+    .then_some(podcasts::download_state::DownloadState::Downloading {
+        received_bytes: 0,
+        total_bytes: None,
+    })
 }
 
 #[cfg(test)]

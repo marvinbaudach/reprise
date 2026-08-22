@@ -1,7 +1,8 @@
-//! Artist portraits are always fetched from Deezer, which receives each viewed artist name.
+//! Artist portraits are fetched from Deezer after a library scan or restore, which sends the
+//! library's artist names to Deezer.
 //! Blocking; call from a worker thread.
 
-pub(crate) mod cache;
+mod cache;
 pub(crate) mod deezer;
 mod placeholder;
 
@@ -9,6 +10,9 @@ mod placeholder;
 mod placeholder_measurement;
 #[cfg(test)]
 mod test_fixtures;
+
+pub(crate) use cache::{cache_dir, IMAGE_EXTS};
+pub use cache::{verdict, CacheVerdict};
 
 use std::path::{Path, PathBuf};
 
@@ -111,16 +115,11 @@ where
         return Ok(PortraitOutcome::NotFound);
     }
 
-    let cached_path = cache::portrait_path_in(dir, name);
-    if let Some(path) = cached_path.as_ref() {
-        if cache::is_fresh(cache::file_epoch_secs(path), now, true) {
-            return Ok(PortraitOutcome::Found(path.clone()));
-        }
-    }
-    let marker = cache::negative_marker_path(dir, name);
-    if marker.exists() && cache::is_fresh(cache::file_epoch_secs(&marker), now, false) {
-        return Ok(PortraitOutcome::NotFound);
-    }
+    let cached_path = match cache::verdict(dir, name, now) {
+        cache::CacheVerdict::FreshPortrait(path) => return Ok(PortraitOutcome::Found(path)),
+        cache::CacheVerdict::FreshNegative => return Ok(PortraitOutcome::NotFound),
+        cache::CacheVerdict::NeedsFetch { stale_portrait } => stale_portrait,
+    };
 
     let body = match search(&deezer::search_url(name)) {
         Ok(body) => body,

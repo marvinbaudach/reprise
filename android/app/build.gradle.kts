@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -14,6 +16,35 @@ fun workspacePackageValue(name: String): String = Regex("(?m)^$name = \"([^\"]+)
     ?.get(1)
     ?: error("Missing workspace.package $name")
 
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.isFile) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+
+fun releaseSigningValue(environmentName: String, propertyName: String): String? =
+    System.getenv(environmentName)?.takeIf(String::isNotBlank)
+        ?: keystoreProperties.getProperty(propertyName)?.takeIf(String::isNotBlank)
+
+val releaseSigningValues = linkedMapOf(
+    "REPRISE_KEYSTORE_PATH" to releaseSigningValue("REPRISE_KEYSTORE_PATH", "storeFile"),
+    "REPRISE_KEYSTORE_PASSWORD" to releaseSigningValue("REPRISE_KEYSTORE_PASSWORD", "storePassword"),
+    "REPRISE_KEYSTORE_ALIAS" to releaseSigningValue("REPRISE_KEYSTORE_ALIAS", "keyAlias"),
+    "REPRISE_KEY_PASSWORD" to releaseSigningValue("REPRISE_KEY_PASSWORD", "keyPassword"),
+)
+val missingReleaseSigningValues = releaseSigningValues.filterValues { it == null }.keys
+val hasAnyReleaseSigningValue = missingReleaseSigningValues.size < releaseSigningValues.size
+val hasReleaseSigningConfig = missingReleaseSigningValues.isEmpty()
+val requireReleaseSigning = System.getenv("REPRISE_REQUIRE_RELEASE_SIGNING") == "1"
+
+if ((requireReleaseSigning || hasAnyReleaseSigningValue) && !hasReleaseSigningConfig) {
+    error(
+        "Release signing is incomplete; provide ${missingReleaseSigningValues.joinToString()} " +
+            "through the REPRISE_KEYSTORE_* environment variables or android/keystore.properties",
+    )
+}
+
 android {
     namespace = "de.reprise.spike"
     // AndroidX 1.19 refuses anything below 37, so the spike compiles against
@@ -21,14 +52,14 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "org.reprise"
+        applicationId = "io.github.marvinbaudach.reprise"
         minSdk = 26
         targetSdk = 37
-        versionCode = 24
-        versionName = "0.1.24"
+        versionCode = 31
+        versionName = "0.1.31"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
-        buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"All Rights Reserved\"")
+        buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"GPL-3.0-or-later\"")
         ndk {
             // The spike runs on the connected arm64 device and on the
             // x86_64 emulator (`pixel10xl_api37`). Both are kept because the
@@ -40,17 +71,28 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            create("releaseUpload") {
+                storeFile = rootProject.file(requireNotNull(releaseSigningValues["REPRISE_KEYSTORE_PATH"]))
+                storePassword = requireNotNull(releaseSigningValues["REPRISE_KEYSTORE_PASSWORD"])
+                keyAlias = requireNotNull(releaseSigningValues["REPRISE_KEYSTORE_ALIAS"])
+                keyPassword = requireNotNull(releaseSigningValues["REPRISE_KEY_PASSWORD"])
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Signed with the debug key on purpose: the spike only needs a
-            // realistic *size*, not a distributable artifact.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (hasReleaseSigningConfig) "releaseUpload" else "debug",
+            )
         }
     }
 

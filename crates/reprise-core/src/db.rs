@@ -23,7 +23,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 77;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 78;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -527,7 +527,7 @@ CREATE INDEX idx_track_audio_analysis_status_retry
 /// passes unmodified.
 pub(crate) fn migrate_connection(conn: &Connection) -> Result<(), DbError> {
     let cover_cache = crate::cover_download::downloaded_dir();
-    let portrait_cache = crate::artist_portrait::cache::cache_dir();
+    let portrait_cache = crate::artist_portrait::cache_dir();
     migrate_with_cache_dirs(conn, &cover_cache, &portrait_cache)
 }
 
@@ -757,6 +757,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_concerts::migrate_v75(conn)?;
     crate::db_concerts::migrate_v76(conn)?;
     crate::db_podcast_channel_image::migrate_v77(conn)?;
+    crate::db_podcast_resume_scope::migrate_v78(conn)?;
     Ok(())
 }
 

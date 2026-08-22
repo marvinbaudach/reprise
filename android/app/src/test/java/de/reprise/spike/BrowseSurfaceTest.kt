@@ -639,6 +639,8 @@ private class RecordingBrowsePort(
 
     override fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? = null
 
+    override fun artistsMissingPortraits(limit: UInt): List<String> = emptyList()
+
     override fun setFavourite(trackId: Long, favourite: Boolean) {
         operations += "rating:$trackId:${if (favourite) 5 else 0}"
     }

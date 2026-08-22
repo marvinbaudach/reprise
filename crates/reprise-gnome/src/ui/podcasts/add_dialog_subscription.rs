@@ -76,15 +76,15 @@ pub(super) fn subscribe(
     )
 }
 
+pub(super) fn configured_auto_download_default(
+    config: Option<&podcasts::config::PodcastConfig>,
+) -> bool {
+    config.is_some_and(|value| value.auto_download_default)
+}
+
 pub(super) fn baseline_for_import_choice(
     import: bool,
     preview_guids: &[String],
 ) -> Option<Vec<String>> {
     (!import).then(|| preview_guids.to_vec())
-}
-
-pub(super) fn configured_auto_download_default(
-    config: Option<&podcasts::config::PodcastConfig>,
-) -> bool {
-    config.is_some_and(|value| value.auto_download_default)
 }

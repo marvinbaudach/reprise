@@ -163,9 +163,12 @@ internal class TrackArtwork(
         if (portrait != null && request.refreshesArtistPortrait()) {
             cache.invalidateArtistArtwork(request)
         }
-        val bitmap = portrait
-            ?: resolve(request.trackUri, request.size)?.let(decode)
-            ?: return generatedVisual(request, resolved = true)
+        val bitmap = portrait ?: if (request.kind == ArtworkKind.ARTIST) {
+            return generatedVisual(request, resolved = true)
+        } else {
+            resolve(request.trackUri, request.size)?.let(decode)
+                ?: return generatedVisual(request, resolved = true)
+        }
         return ArtworkVisual(
             image = bitmap.asImageBitmap(),
             ambientColors = if (request.size == AndroidArtworkSize.NOW_PLAYING) {

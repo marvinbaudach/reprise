@@ -25,7 +25,6 @@ pub(super) fn css() -> String {
         ".doctor-review-meta { padding: 12px 28px; background: color-mix(in srgb, var(--card-bg-color) 45%, var(--window-bg-color)); }",
         ".doctor-review-meta-heading { font-size: 18px; font-weight: 700; }",
         ".doctor-review-meta-hint { font-size: 13px; color: color-mix(in srgb, currentColor 45%, transparent); }",
-        ".doctor-review-stale { padding: 9px 28px; background: color-mix(in srgb, currentColor 5%, var(--window-bg-color)); border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); }",
         ".doctor-review-footer { padding: 14px 28px; background: color-mix(in srgb, var(--card-bg-color) 55%, var(--window-bg-color)); border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); }",
         ".doctor-review-footer-summary { font-size: 13.5px; color: color-mix(in srgb, currentColor 62%, transparent); }",
         ".doctor-review-apply { font-size: 14.5px; padding: 9px 18px; }",

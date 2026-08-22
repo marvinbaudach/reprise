@@ -7,10 +7,12 @@ use crate::source_error::{SourceError, SourceErrorKind};
 pub mod channel_window;
 pub mod config;
 pub mod discovery;
+mod download_claims;
 pub mod download_state;
 pub mod downloads;
 pub mod episode_tags;
 pub mod feed;
+pub mod fill_downloads;
 pub mod http;
 pub mod itunes;
 pub mod itunes_charts;
@@ -19,6 +21,7 @@ pub mod offline_add;
 pub mod pipeline;
 pub mod query;
 pub mod refresh;
+pub mod resume_rules;
 pub mod source_artwork;
 pub mod status;
 pub mod store;
@@ -30,6 +33,7 @@ pub mod ytdlp;
 mod ytdlp_download;
 pub mod ytdlp_search;
 
+pub use fill_downloads::{fill_downloads, FillSummary};
 pub use media_character::{character_from_category, MediaCharacter};
 
 #[cfg(test)]
@@ -194,12 +198,15 @@ impl PodcastError {
                     ..
                 },
             ) => YOUTUBE_BROWSER_RECOVERY_MESSAGE,
+            // Each kind owns its repair instruction in `ytdlp_failure.rs`;
+            // collapsing them here would discard the actionable reason a
+            // download, and therefore playback, failed.
             (
                 SourceErrorKind::Unreachable
                 | SourceErrorKind::RateLimited { .. }
                 | SourceErrorKind::HelperOutdated,
-                PodcastError::YtDlpFailure { .. },
-            ) => "YouTube source could not be read with yt-dlp",
+                PodcastError::YtDlpFailure { kind, .. },
+            ) => kind.user_message(),
             (SourceErrorKind::Unreachable, PodcastError::YtDlpTimeout) => {
                 "YouTube source timed out"
             }
@@ -353,6 +360,28 @@ mod tests {
             }
             .classify(),
             PodcastError::Disabled(String::new()).classify()
+        );
+    }
+
+    #[test]
+    fn a_ytdlp_failure_classifies_to_its_own_kind_message() {
+        let outdated = PodcastError::YtDlpFailure {
+            kind: ytdlp::YtDlpFailureKind::ExtractorOutdated,
+            stderr: "irrelevant".into(),
+        };
+        assert_eq!(
+            outdated.classify(),
+            "YouTube changed its response — update yt-dlp and try again"
+        );
+
+        let refused = PodcastError::YtDlpFailure {
+            kind: ytdlp::YtDlpFailureKind::AccessRefused,
+            stderr: "irrelevant".into(),
+        };
+        assert_ne!(
+            refused.classify(),
+            outdated.classify(),
+            "two kinds must not collapse onto one sentence"
         );
     }
 
