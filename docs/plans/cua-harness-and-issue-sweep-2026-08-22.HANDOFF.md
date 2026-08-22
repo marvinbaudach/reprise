@@ -162,6 +162,70 @@ beschrieben. Das Secret existiert seit 26.07. Ein Einzeiler in
 `inject-build-credentials.py` (`VARIABLES`) würde es mitnehmen; bewusst nicht
 getan, weil es das Concerts-Verhalten ohne Auftrag ändert.
 
+## Angefangen, nicht fertig: Last.fm-Einstellungen vereinfachen
+
+Ausgelöst durch die Frage des Owners, ob die Plugin-Einstellungen nach dem
+Bündeln einfacher werden können. **Ja — und der Code addiert heute, statt zu
+ersetzen.**
+
+`preference_lastfm.rs:138-164`: bei `bundled == true` kommen ein Hinweis („Sign
+in with your Last.fm account. No API key needed.") und ein **Sign-in**-Knopf
+dazu. Danach wird *außerhalb* des `if` **immer** `Advanced setup` angehängt —
+API key, Shared secret, Erklärtext und ein zweiter Knopf „Open browser", der
+bis zum Ausfüllen deaktiviert ist („Requires API key and shared secret").
+
+Ergebnis ab #624: **zwei nebeneinanderstehende Wege, die dasselbe tun.** Einer
+mit einem Klick, einer mit zwei Geheimnissen, die kaum noch jemand braucht.
+
+Die Datei ist mit 739 Zeilen die größte im Preferences-Ordner
+(`preference_listenbrainz.rs`: 709) — beide über der 400-Zeilen-Marke der
+Hausregeln. Eine Vereinfachung ist also auch Struktur-, nicht nur UI-Arbeit.
+
+**Owner-Antwort (22.08.):** Der BYO-Weg wird weiterhin gebraucht, aber nur für
+Builds ohne gebündelten Key — Flathub, AUR, COPR, Eigenbauten. Er darf also
+verschwinden, wo er unnötig ist, muss aber erreichbar bleiben, wo er der einzige
+Weg ist.
+
+### Die offene Frage, an der es hängt
+
+Der Owner fragte anschließend, ob man „die Features, die bei Flathub nicht
+laufen, deaktivieren" könne. Das steht in **Spannung** zur Antwort davor, und
+die Spannung ist nicht aufgelöst:
+
+Auf Flathub *laufen* Last.fm, Concerts und der AcoustID-Teil des Library
+Doctor — nur eben mit selbst eingetragenen Zugangsdaten. Sie zu deaktivieren
+würde funktionierende Wege entfernen. Das einzige Feature, das dort **wirklich**
+nicht laufen kann, ist die Stems-Trennung (onnxruntime nur als x86_64-Binary,
+Flathub verlangt Bauen aus Quellen) — und die degradiert bereits zur Laufzeit zu
+„feature unavailable", wie das Manifest in seinem Kopfkommentar beschreibt.
+
+Die echte Frage ist also nicht „welche Features abschalten", sondern **was die
+Oberfläche tun soll, wenn ein Build kein gebündeltes Credential hat**. Das ist
+vor dem Entwurf zu klären.
+
+### Ein Befund, der größer ist als Last.fm
+
+Es gibt **drei** Credential-Features mit `option_env!`, nicht eines:
+
+| Variable | Feature |
+|---|---|
+| `REPRISE_LASTFM_API_KEY` / `_SHARED_SECRET` | Scrobbling + Remote-Stats |
+| `REPRISE_TICKETMASTER_APIKEY` | Concerts |
+| `REPRISE_ACOUSTID_CLIENT_KEY` | Library Doctor, Fingerprinting |
+
+**Keines davon ist in irgendeiner Workflow-Datei verdrahtet** (gegengeprüft:
+0 Treffer in `.github/` für alle drei, ebenso für
+`REPRISE_BUNDLED_ORT_DYLIB`). Für Ticketmaster existiert das Secret seit
+26.07., für AcoustID existiert **gar kein** Secret. Bis #624 galt das auch für
+Last.fm.
+
+Heißt: **jeder je ausgelieferte Build fällt bei allen dreien zurück.** #624
+schließt nur die Last.fm-Lücke. Concerts und AcoustID stehen offen, und
+`scripts/inject-build-credentials.py` könnte sie über seine `VARIABLES`-Liste
+mitnehmen — bewusst nicht getan, weil das deren Verhalten ohne Auftrag ändert.
+
+Das gehört als eigenes Issue erfasst, bevor es wieder untergeht.
+
 ## Aufräumen (nicht gemacht, bewusst)
 
 **Wake-Locks:** `wake-lock release cua-sweep` und `wake-lock release
