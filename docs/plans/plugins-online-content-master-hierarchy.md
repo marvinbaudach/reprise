@@ -1,12 +1,12 @@
 ---
 slug: plugins-online-content-master-hierarchy
-worktree:
-branch:
-phase: todo
+worktree: /home/marvin/Projects/reprise-plugins-and-layout-preferences
+branch: feature/plugins-and-layout-preferences
+phase: shipped
 codex_session:
 created: 2026-08-16
 ---
-# TODO (Design): „Online content" muss sichtbar der Hauptschalter über allem darunter sein
+# „Online content" ist sichtbar der Hauptschalter über allem darunter
 
 **Design-Vorgabe des Nutzers, kein Plan.** Festgehalten am 16.08.2026, 08:09.
 Aussage: *„hier Online content ist der Schalter für alles darunter"* — mit
@@ -112,3 +112,41 @@ Modulliste.
 - Betroffene Tests beim Umbau prüfen: `preference_plugins_tests.rs`,
   `preferences_search_index.rs:149-181` (der Suchpfad lautet dort
   „Plugins › Online content" — hängt an Gruppentitel **und** Zeilentitel).
+
+## Umgesetzt am 22.08.2026
+
+Beide Entwürfe zusammen, wie im Plan verlangt — der zweite (Zeilen-Layout)
+gilt, der erste nur noch für die Hierarchie.
+
+- **Der Titel steht genau einmal.** `online_group_with_master` baut die Gruppe
+  ohne Titel; die Master-Zeile trägt „Online content" und bekommt die
+  CSS-Klasse `reprise-online-master`, die ihren Titel auf Überschriftsgewicht
+  hebt. Ihre Beschreibung läuft über die volle Breite
+  (`set_title_lines(0)`/`set_subtitle_lines(0)`).
+- **Keine Kartenfläche mehr.** `preference_plugin_chrome::css()` nimmt der
+  `.boxed-list` auf der Plugins-Seite Fläche, Rahmen, Schatten und Radius; die
+  Zeilen trennt nur noch eine Haarlinie.
+- **Chevron links in einer reservierten Rinne.** Jede Zeile bekommt die Rinne,
+  auch die ohne Chevron; die Gruppenüberschriften sind um dieselben 42px
+  eingerückt, damit sie mit den Zeilentiteln auf einer Kante sitzen. Der
+  eingebaute Pfeil von libadwaita bleibt als unsichtbarer Platzhalter hinter
+  dem Schalter stehen — genau das hält alle Schalter auf einer rechten Kante
+  (`SET-14a`).
+
+**Fallstrick:** der erste Versuch traf nichts, weil der Selektor
+`listbox.boxed-list` lautete. Eine `GtkListBox` rendert in GTK4 als Node
+`list`, nie `listbox` — die Klasse allein adressieren.
+
+## Die offenen Fragen sind beantwortet
+
+- **Modulliste:** Artwork bleibt zusammengelegt. Der Zeilen-Entwurf ist älter
+  als `ccb1c33ead` und zeigt nur das Layout, nicht die Module.
+- **Master aus:** bleibt wie gehabt — die Zeilen klappen hinter „Show the N
+  sources" ein (`apply_collapsed_group`), nur die Darstellung ändert sich.
+- **libadwaita-Umsetzung:** Variante (a) light — eine Gruppe ohne Titel, die
+  Unterordnung entsteht über Rinne, gemeinsame Kante und Haarlinien, nicht über
+  eine eigene Fläche.
+
+Beleg: `artifacts/plugins-online-content/plugins-flat-rows.png` (echte App,
+isolierte Xvfb-Sitzung), plus die Display-Tests in
+`preference_plugin_chrome.rs` und `preference_plugins_tests.rs`.

@@ -105,9 +105,10 @@ number of `FAIL:` lines in `run.log`.
      records one hard failure and skips every coordinate step in this flow.
      Otherwise it opens the real primary-menu item, then drives the redesigned
      vertical settings sidebar (a `.navigation-sidebar` list on the left) to
-     switch pages — exercising the Player Bar choice cards, visiting every
-     top-level page via its sidebar row, and proving all four Library Window
-     switches write the expected values to the scratch SQLite database.
+     switch pages — clicking regions in the Layout page's interactive window
+     preview (`SET-16`) and its Player Bar Position toggles, visiting every
+     top-level page via its sidebar row, and proving the Window Regions
+     controls write the expected values to the scratch SQLite database.
 5. Takes a final screenshot and checks it isn't blank/solid-color (pixel
    standard deviation above a threshold), then rejects any application log
    containing GTK/GLib criticals, a Rust panic, or a `RefCell` borrow failure.

@@ -137,6 +137,11 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) player: Option<Rc<PlayerController>>,
     pub(in crate::ui) syncing_effect_controls: Cell<bool>,
     pub(in crate::ui) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
+    // The Layout page's preview and switches point at each other through one
+    // request handler; the context owns the strong end so the handler can hold
+    // a weak one and the page's widgets are released with the dialog.
+    pub(in crate::ui) layout_controls:
+        RefCell<Option<std::rc::Rc<super::preference_layout::LayoutControls>>>,
     pub(in crate::ui) equalizer_surfaces: RefCell<Vec<gtk4::Widget>>,
     pub(in crate::ui) replaygain_mode: RefCell<Option<adw::ComboRow>>,
     pub(in crate::ui) listenbrainz: Rc<ScrobbleRuntime>,
@@ -207,6 +212,7 @@ impl PreferencesContext {
             player: player.cloned(),
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
+            layout_controls: RefCell::new(None),
             equalizer_surfaces: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
             listenbrainz: listenbrainz.clone(),
@@ -290,6 +296,7 @@ impl PreferencesContext {
             return;
         }
         self.equalizer_controls.borrow_mut().clear();
+        self.layout_controls.borrow_mut().take();
         self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
         self.plugin_rows.borrow_mut().clear();
