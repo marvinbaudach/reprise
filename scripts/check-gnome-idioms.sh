@@ -22,9 +22,11 @@ list_matches() {
 
 # FB-11 — every toast title is plain text. Direct construction silently keeps
 # libadwaita's markup default and can discard messages containing &, < or >.
+toast_construction_pattern='(^|[^[:alnum:]_])Toast::(new|builder)|(^|[^[:alnum:]_])Toast[[:space:]]+as[[:space:]]+[[:alnum:]_]+|(^|[^[:alnum:]_])Toast(::)?[[:space:]]*$'
 toast_construction=$({
-  grep -rnE --include='*.rs' '(^|[^[:alnum:]_])Toast::(new|builder)' "$ui" 2>/dev/null || true
-} | { grep -v "^$ui/ui/toasts\.rs:" || true; })
+  grep -rnE --include='*.rs' "$toast_construction_pattern" "$ui" 2>/dev/null || true
+} | { grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true; } \
+  | { grep -v "^$ui/ui/toasts\.rs:" || true; })
 [[ -z $toast_construction ]] || report_violation FB-11 \
   "direct toast construction leaves plain text in the default markup slot; use crate::ui::toasts::plain:
 $toast_construction"

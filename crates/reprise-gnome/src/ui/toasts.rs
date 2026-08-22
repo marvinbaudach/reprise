@@ -53,11 +53,20 @@ pub(super) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use gtk4::prelude::*;
 
-    fn rendered_label_texts(toast: libadwaita::Toast) -> Vec<String> {
+    #[derive(Clone, Copy)]
+    enum LabelSettle {
+        UntilText,
+        ObserveFor(Duration),
+    }
+
+    fn rendered_label_texts(
+        toast: libadwaita::Toast,
+        settle: LabelSettle,
+    ) -> (Vec<String>, Duration) {
         fn collect(widget: &gtk4::Widget, labels: &mut Vec<String>) {
             if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
                 let text = label.text();
@@ -81,12 +90,29 @@ mod tests {
             .build();
         window.present();
         overlay.add_toast(toast);
-        crate::ui::test_settle::settle_for(Duration::from_millis(100));
+
+        let started = Instant::now();
+        match settle {
+            LabelSettle::UntilText => {
+                crate::ui::test_settle::settle_until(
+                    crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                    || {
+                        let mut labels = Vec::new();
+                        collect(overlay.upcast_ref(), &mut labels);
+                        !labels.is_empty()
+                    },
+                );
+            }
+            LabelSettle::ObserveFor(duration) => {
+                crate::ui::test_settle::settle_for(duration);
+            }
+        }
+        let elapsed = started.elapsed();
 
         let mut labels = Vec::new();
         collect(overlay.upcast_ref(), &mut labels);
         window.close();
-        labels
+        (labels, elapsed)
     }
 
     #[test]
@@ -104,10 +130,18 @@ mod tests {
         libadwaita::init().expect("libadwaita must initialize under the display runner");
         let title = "Removed Library & Radio <Episode>";
 
-        assert_eq!(rendered_label_texts(super::plain(title)), [title]);
+        let (plain_labels, positive_wait) =
+            rendered_label_texts(super::plain(title), LabelSettle::UntilText);
+        assert_eq!(plain_labels, [title]);
 
         let markup_toast = super::plain(title);
         markup_toast.set_use_markup(true);
-        assert!(rendered_label_texts(markup_toast).is_empty());
+        // Presence has a success condition; absence does not, so the control gets a real
+        // observation window at least as long as the positive arm consumed instead of
+        // "passing" when a condition wait times out.
+        let absence_wait = positive_wait.max(Duration::from_millis(100));
+        let (markup_labels, _) =
+            rendered_label_texts(markup_toast, LabelSettle::ObserveFor(absence_wait));
+        assert!(markup_labels.is_empty());
     }
 }
