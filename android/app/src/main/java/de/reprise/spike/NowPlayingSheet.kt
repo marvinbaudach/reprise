@@ -3,6 +3,8 @@ package de.reprise.spike
 import android.util.Log
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -329,8 +331,17 @@ internal fun SpectralSeekSlider(
     trackId: Long,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
+    interactionSource: MutableInteractionSource? = null,
 ) {
     val seekTo = LocalPlaybackControls.current::seekTo
+    val sliderInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
+    LaunchedEffect(sliderInteractionSource, trackId) {
+        sliderInteractionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Cancel) {
+                surfaceState.releaseScrub(trackId)
+            }
+        }
+    }
     val position = surfaceState.seekPosition(trackId, playback.positionMs)
     LaunchedEffect(trackId, playback.positionMs) {
         surfaceState.acceptPlaybackSnapshot(trackId, playback.positionMs)
@@ -344,8 +355,11 @@ internal fun SpectralSeekSlider(
             value = displayed.toFloat(),
             onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
             onValueChangeFinished = {
-                seekTo(surfaceState.releaseScrub(trackId).positionMs)
+                surfaceState.releaseScrub(trackId)?.let { released ->
+                    seekTo(released.positionMs)
+                }
             },
+            interactionSource = sliderInteractionSource,
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
             track = { SpectralSeekTrack(trackId, displayed, durationMs) },

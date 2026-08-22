@@ -304,8 +304,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
         scrubPosition = seekPosition(trackId, positionMs).dragTo(positionMs)
     }
 
-    fun releaseScrub(trackId: Long): SeekPositionState {
-        val released = seekPosition(trackId, fallbackPositionMs = 0).release()
+    fun releaseScrub(trackId: Long): SeekPositionState? {
+        if (scrubTrackId != trackId) return null
+        val released = checkNotNull(scrubPosition).release()
         scrubTrackId = trackId
         scrubPosition = released
         return released
