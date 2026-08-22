@@ -2,7 +2,7 @@
 slug: android-saf-absence-misread-as-provider-failure
 worktree: /home/marvin/Projects/reprise-android-saf-absence-misread-as-provider-failure
 branch: feature/android-saf-absence-misread-as-provider-failure
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-22
 ---
