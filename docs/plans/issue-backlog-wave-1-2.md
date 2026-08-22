@@ -2,7 +2,7 @@
 slug: issue-backlog-wave-1-2
 worktree: /home/marvin/Projects/reprise-issue-backlog-wave-1-2
 branch: feature/issue-backlog-wave-1-2
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-22
 ---
