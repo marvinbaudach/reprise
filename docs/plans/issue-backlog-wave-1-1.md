@@ -365,4 +365,32 @@ GNOME 1965, Linux platform 158, Android FFI 170, and Reprise View 117.
 
 ### Task 4 — #406
 
-Pending.
+`connect_enter` now consumes its entry `x` coordinate and calls the same
+`star_at_x(x, widget.width())` mapping as `connect_motion`. With a 100-pixel
+fixture and stored rating 2, the displayless mapping test passed all five star
+bands, including the outline stars 3 through 5. The separate static wiring
+test requires both handlers to call that named mapping. Each focused command
+passed exactly 1 test:
+
+```bash
+cargo test -p reprise-gnome \
+  ui::track_list::rating::tests::entry_in_every_star_band_previews_that_star \
+  -- --exact --test-threads=1
+cargo test -p reprise-gnome \
+  ui::track_list::rating::tests::pointer_entry_and_motion_share_the_star_mapping \
+  -- --exact --test-threads=1
+```
+
+The explicit mutation restored `connect_enter`'s unconditional
+`preview.set(0)` and discarded `x`. The wiring test was red with exactly 0
+passed and 1 failed; reverting that mutation made it green with exactly 1
+passed. This strand proves the entry/motion mechanism, not the CUA sweep's
+pixel numbers; the mother plan owns that post-merge rerun. Under a real pointer
+gliding into the cell, `motion` normally follows `enter` within milliseconds
+and can hide the bad entry frame. The defect is therefore reliable for
+automation and fast pointer jumps, but is not guaranteed to be visible on
+every human hover. `cargo fmt --check`, strict workspace Clippy, and isolated
+`cargo test --workspace` passed; the principal crate counts were Core 2567,
+GNOME 1967, Linux platform 158, Android FFI 170, and Reprise View 117.
+`cargo audit` passed with only the accepted `RUSTSEC-2024-0436` warning for
+`paste`.

@@ -230,10 +230,11 @@ impl RatingWidget {
         let widget = self.downgrade();
         motion.connect_enter({
             let widget = widget.clone();
-            move |_, _, _| {
+            move |_, x, _| {
                 if let Some(widget) = widget.upgrade() {
                     widget.imp().hovered.set(true);
-                    widget.imp().preview.set(0);
+                    let preview = star_at_x(x, f64::from(widget.width()));
+                    widget.imp().preview.set(preview);
                     widget.refresh();
                 }
             }
@@ -476,6 +477,50 @@ mod tests {
         // Past the end clamps to the last star; unallocated width is 0.
         assert_eq!(star_at_x(500.0, 100.0), 5);
         assert_eq!(star_at_x(10.0, 0.0), 0);
+    }
+
+    #[test]
+    fn entry_in_every_star_band_previews_that_star() {
+        let width = 100.0;
+        let current_rating = 2;
+
+        for star in 1..=STAR_COUNT {
+            let band_center = (f64::from(star) - 0.5) * (width / f64::from(STAR_COUNT));
+            let preview = star_at_x(band_center, width);
+            let display = rating_display(current_rating, true, preview);
+
+            assert_eq!(preview, star);
+            assert_eq!(display.threshold, star);
+        }
+    }
+
+    #[test]
+    fn pointer_entry_and_motion_share_the_star_mapping() {
+        let source = include_str!("rating.rs");
+        let build_ui = source
+            .split_once("fn build_ui")
+            .expect("rating source contains build_ui")
+            .1
+            .split_once("fn build_star")
+            .expect("build_ui is followed by build_star")
+            .0;
+        let enter = build_ui
+            .split_once("motion.connect_enter")
+            .expect("rating wires pointer entry")
+            .1
+            .split_once("motion.connect_motion")
+            .expect("entry wiring is followed by motion wiring")
+            .0;
+        let motion = build_ui
+            .split_once("motion.connect_motion")
+            .expect("rating wires pointer motion")
+            .1
+            .split_once("motion.connect_leave")
+            .expect("motion wiring is followed by leave wiring")
+            .0;
+
+        assert!(enter.contains("star_at_x"));
+        assert!(motion.contains("star_at_x"));
     }
 
     #[test]
