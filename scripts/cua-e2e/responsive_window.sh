@@ -2,6 +2,10 @@
 
 # Two-axis main-window geometry and visual evidence. Sourced by run.sh.
 
+# run.sh assigns repo_root before sourcing this file; the fallback keeps the
+# reference resolvable for shellcheck and for anyone sourcing it standalone.
+repo_root=${repo_root:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
+
 assert_snapshot_fits_requested_size() {
   local snapshot_path=$1 max_width=$2 max_height=$3 label=$4
   local width height
