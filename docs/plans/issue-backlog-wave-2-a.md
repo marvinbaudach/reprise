@@ -150,4 +150,175 @@ may exist outside this strand's files.
 
 ## Result
 
-*(Codex fills this in.)*
+Implemented on 2026-08-22 against the planned `ada027270a` base.
+
+### Implementation
+
+`ListLayout::sectioned_inferred_from_observed_upper` now owns the one inverse
+calculation. It rejects zero rows, zero sections, non-finite `upper`, and an
+allocation more than 0.5 px shorter than the row bodies. A shortfall within
+that inherited epsilon becomes the old zero-height-header interpretation. Its
+doc comment records why the unsettled adoption path needs the inverse of
+`sectioned`.
+
+`ScrollAdoptionGeometry` now holds `Rc<ListLayout>` instead of the parallel
+`section_count`, `preceding_sections`, and `row_height` fields. The captured
+layout retains the real section starts and the geometry service's current
+header estimate only as a topology source. On every adjustment emission,
+`matches` derives a temporary observed layout from the live `upper` and asks
+that layout for `row_top(guard_position)`. The adjustment clamp and
+before-value rejection remain in `matches` unchanged.
+
+`SectionBands::starts` changed from `Vec<u32>` to `Rc<[u32]>`, without changing
+the semantics of `sectioned`, `row_top`, `headers_above`, `centered_value`, or
+`validate`. The handler allocates one `Rc<ListLayout>` when it is armed. Each
+signal emission performs no heap allocation: it increments and later
+decrements the non-atomic `Rc<[u32]>` count once while doing the scalar layout
+calculation. This retains the old live-`upper` behavior without cloning the
+section vector per signal.
+
+The direct `headers_above_in` call was redundant and is gone from
+`reload_anchor_scroll.rs`. The function remains in `list_geometry_layout.rs`
+for the layout and its other callers.
+
+The formerly independent `preceding_sections > section_count` state is now
+unrepresentable after successful construction because both values come from
+one section-start collection. `ScrollAdoptionGeometry::new` still rejects a
+mismatched expected section count, and the named regression proves that the
+same old malformed input decision remains rejection.
+
+### Original witness
+
+The test's assertions are byte-for-byte unchanged. Only construction changed
+mechanically because the geometry is now validated and contains an `Rc`.
+
+Before:
+
+```rust
+let geometry = ScrollAdoptionGeometry {
+    guard_position: 1_101,
+    row_count: 2_276,
+    section_count: 2,
+    preceding_sections: 2,
+    row_height: RowHeight::new(34.0).unwrap(),
+    before: 37_454.0,
+};
+```
+
+After:
+
+```rust
+let geometry = adoption_geometry(1_101, 2_276, 2, 2, 34.0, 37_454.0).unwrap();
+```
+
+Unchanged assertions:
+
+```rust
+assert!(geometry.matches(37_488.0, 0.0, 77_438.0, 249.0));
+assert!(!geometry.matches(37_454.0, 0.0, 77_438.0, 249.0));
+assert!(!geometry.matches(36_000.0, 0.0, 77_438.0, 249.0));
+```
+
+### TDD and equivalence evidence
+
+- The new constructor tests first failed to compile with six `E0599` errors
+  because `sectioned_inferred_from_observed_upper` did not exist. After the
+  constructor was added, both focused tests passed (`2 passed`).
+- Before production changed, the adoption filter passed `10/10`: the existing
+  witness, the concrete equivalence table, and eight guard tests. The table
+  includes a 2,276-row, two-section queue with a fractional 34.5 px row height.
+  Its concrete inputs, expected decisions, and assertion loop were retained
+  through the refactor; only fallible geometry construction gained a mechanical
+  `unwrap`.
+- After the refactor, the same adoption filter passed `10/10`. The constructor
+  filter independently passed `2/2`.
+- The guard tests cover zero rows, zero sections, more preceding than total
+  sections, an out-of-range guard row, every non-finite adjustment input,
+  `upper < lower`, negative `page_size`, and `upper` more than the inherited
+  epsilon below the row bodies. The equivalence table additionally preserves
+  the sub-epsilon zero-header decision and both adjustment-edge clamps.
+
+### Mutation proof
+
+The derived header height was temporarily forced to `0.0`.
+
+- Constructor filter: **RED**, `1 passed, 1 failed`.
+  `observed_upper_infers_the_header_height_inverse_of_sectioned` reported
+  `37984.5` instead of `38056.5`.
+- Adoption filter: **RED**, `8 passed, 2 failed`.
+  `adoption_accepts_only_the_value_explained_by_the_requested_guard_row` and
+  `adoption_match_decisions_are_pinned_across_concrete_inputs` both failed.
+- After restoring the formula: constructor **GREEN** at `2/2`; adoption
+  **GREEN** at `10/10`.
+
+The constructor is therefore load-bearing on the production adoption path.
+
+### Display evidence
+
+Each test ran alone under private D-Bus and Xvfb with fresh data, cache,
+configuration, runtime, and fixture roots, X11/Cairo, unset Wayland, disabled
+AT-SPI, and `REPRISE_AUDIO_SINK=fakesink`. `xvfb-orphan-gc --apply` ran after
+every display process.
+
+| Test | Before | After |
+| --- | --- | --- |
+| `nav_back_to_a_large_sectioned_queue_never_visits_the_top` | `1 passed`; samples `first=49381 min=49347 max=49381` | `1 passed`; samples `first=49381 min=49347 max=49381` |
+| `queue_anchor_names_the_row_at_the_viewport_top` | `1 passed` | `1 passed` |
+
+These tests verify the rendered restore outcome end to end, not the inverse
+arithmetic itself. They are therefore a weaker witness than the unchanged
+displayless equivalence table.
+
+### Final verification
+
+- Prescribed displayless GNOME suite with fresh XDG roots and fake audio:
+  `1988 passed, 0 failed, 778 ignored`; GNOME conformance integration tests:
+  `10 passed, 0 failed`.
+- An earlier diagnostic run put `TMPDIR` on the worktree filesystem and
+  reported `1983 passed, 5 failed, 778 ignored`; all five failures were the
+  simulated-MTP fixtures rejecting that nonstandard root as read-only. The
+  prescribed rerun above used their normal temporary filesystem and passed.
+- `cargo fmt --check`: passed.
+- `cargo clippy --all-targets -p reprise-gnome -- -D warnings`: passed.
+- `cargo clippy --all-targets --workspace -- -D warnings`: passed.
+- Isolated `cargo test --locked --workspace`: passed, including Core at
+  `2576 passed, 3 ignored`, GNOME at the counts above, Android FFI at
+  `172 passed`, Linux platform at `158 passed, 2 ignored`, and every remaining
+  workspace and documentation suite.
+- `cargo audit`: passed over 482 dependencies; the only finding was the
+  accepted `RUSTSEC-2024-0436` warning for `paste`.
+- Project Python, YAML, and Markdown source quality plus all three contract
+  tests passed with task-local writable uv cache/tool roots. The first attempt
+  stopped before linting because the managed session could not lock the
+  read-only default `~/.cache/uv`; the isolated rerun supplied the verdict.
+- Strict rustdoc, architecture, accessibility, input-parity, frontend-thinness,
+  UX-traceability, motion, AppStream, Flatpak, GNOME-idiom, AI-hygiene,
+  device-sync GStreamer, runtime-service-install, worktree-GC, and scheduled-
+  workflow gates passed. The private-D-Bus runtime-service inventory passed
+  `25/25`; the serial Linux-platform suite passed `158/158` with two ignored.
+- The clean-tree merge-readiness wrapper could not fetch because the managed
+  host rejects the permissions on
+  `/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf`. A live read confirmed
+  `origin/dev` remained `ada027270a`, was an ancestor of `HEAD`, and the
+  worktree was clean. The documented `--no-fetch` rerun passed branch-diff
+  validation and then stopped on unchanged
+  `scripts/cua-e2e/responsive_window.sh:72` (`SC2154`). Individual gates were
+  therefore run directly.
+- Two other individual aggregate checks expose unchanged baseline failures
+  outside this strand: gettext reports five missing Arabic messages, and the
+  QA-linter fixture `fresh-install-skip-before.json` has no `snapshot_id`.
+  This branch changes none of the reported files.
+- A broad `scripts/check-display-tests.sh --rule-named` follow-up completed its
+  test-worker processes repeatedly, but the managed PTY never returned the
+  helper's final balance sheet after it concatenated all per-test Cargo logs.
+  The wrappers were stopped only after process inspection showed no remaining
+  test, Xvfb, or reporting process. This broad result is therefore unproven and
+  is not reported as green. The two required end-to-end display tests above
+  have exact before/after pass evidence. Final Xvfb cleanup removed nine stale
+  locks and nine orphaned sockets.
+- Edited code sizes: `list_geometry_layout.rs` 525 lines and
+  `reload_anchor_scroll.rs` 799 lines, both below the 800-line limit.
+
+No Core file, user data, music file, live desktop, sibling-owned path, version
+metadata, remote branch, or issue state was changed. No `Fixes #444` claim was
+made.
