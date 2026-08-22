@@ -13,6 +13,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
@@ -28,10 +31,17 @@ open class ReprisePlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var playbackPort: Media3PlaybackPort? = null
     private var coreSession: AndroidPlaybackSession? = null
-    private var observer: ((AndroidPlaybackSnapshot) -> Unit)? = null
-    private var settingsObserver: (() -> Unit)? = null
-    private var sleepTimerObserver: ((SleepTimerUiState) -> Unit)? = null
-    private var latestPlaybackSnapshot: AndroidPlaybackSnapshot? = null
+    private val mutablePlaybackSnapshots = MutableStateFlow<AndroidPlaybackSnapshot?>(null)
+    internal val playbackSnapshots: StateFlow<AndroidPlaybackSnapshot?> =
+        mutablePlaybackSnapshots.asStateFlow()
+    private val mutableSettingsRevisions = MutableStateFlow(0L)
+    internal val settingsRevisions: StateFlow<Long> = mutableSettingsRevisions.asStateFlow()
+    private val mutableSleepTimerStates = MutableStateFlow(SleepTimerUiState())
+    internal val sleepTimerStates: StateFlow<SleepTimerUiState> =
+        mutableSleepTimerStates.asStateFlow()
+    private var compatibilityPlaybackObserver: ((AndroidPlaybackSnapshot) -> Unit)? = null
+    private var compatibilitySettingsObserver: (() -> Unit)? = null
+    private var compatibilitySleepTimerObserver: ((SleepTimerUiState) -> Unit)? = null
     private lateinit var sleepTimer: SleepTimerController
     private val localBinder = LocalBinder()
     private val livePcmSink = LivePcmBufferSink()
@@ -45,9 +55,9 @@ open class ReprisePlaybackService : MediaSessionService() {
      */
     internal val coreListener = object : AndroidPlaybackListener {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
-            latestPlaybackSnapshot = snapshot
+            mutablePlaybackSnapshots.value = snapshot
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
-            observer?.invoke(snapshot)
+            compatibilityPlaybackObserver?.invoke(snapshot)
             if (snapshot.hasRunOut()) {
                 // The queue is empty, so this service has nothing left to keep
                 // alive. `stopSelf` only ends a service nobody is bound to, so
@@ -99,15 +109,22 @@ open class ReprisePlaybackService : MediaSessionService() {
                 .buildUpon()
                 .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
                 .build()
-            Media3PlaybackPort(player) { settingsObserver?.invoke() }
+            Media3PlaybackPort(player) {
+                mutableSettingsRevisions.value += 1L
+                compatibilitySettingsObserver?.invoke()
+            }
         }
         playbackPort = port
         sleepTimer = SleepTimerController(
             handler = Handler(Looper.getMainLooper()),
             applyVolume = ::applySleepTimerVolume,
             pause = ::pauseForSleepTimer,
-            publish = { state -> sleepTimerObserver?.invoke(state) },
+            publish = { state ->
+                mutableSleepTimerStates.value = state
+                compatibilitySleepTimerObserver?.invoke(state)
+            },
         )
+        mutableSleepTimerStates.value = sleepTimer.state()
         val session = MediaSession.Builder(
             this,
             CoreControlledPlayer(player, mediaSessionCommands),
@@ -123,6 +140,7 @@ open class ReprisePlaybackService : MediaSessionService() {
         // its last client, which is exactly what a rotation is.
         addSession(session)
         coreSession = openCoreSession(port)
+        mutablePlaybackSnapshots.value = coreSession?.snapshot()
         publishListenReport()
     }
 
@@ -148,9 +166,9 @@ open class ReprisePlaybackService : MediaSessionService() {
     ): MediaSession? = mediaSession
 
     override fun onDestroy() {
-        observer = null
-        settingsObserver = null
-        sleepTimerObserver = null
+        compatibilityPlaybackObserver = null
+        compatibilitySettingsObserver = null
+        compatibilitySleepTimerObserver = null
         if (::sleepTimer.isInitialized) sleepTimer.close()
         coreSession?.close()
         coreSession = null
@@ -178,34 +196,34 @@ open class ReprisePlaybackService : MediaSessionService() {
         }
 
     internal fun attachObserver(observer: (AndroidPlaybackSnapshot) -> Unit) {
-        this.observer = observer
-        coreSession?.snapshot()?.let(observer)
+        compatibilityPlaybackObserver = observer
+        playbackSnapshots.value?.let(observer)
     }
 
     internal fun detachObserver() {
-        observer = null
+        compatibilityPlaybackObserver = null
     }
 
     internal fun attachSettingsObserver(observer: () -> Unit) {
-        settingsObserver = observer
+        compatibilitySettingsObserver = observer
         observer()
     }
 
     internal fun detachSettingsObserver() {
-        settingsObserver = null
+        compatibilitySettingsObserver = null
     }
 
     internal fun attachSleepTimerObserver(observer: (SleepTimerUiState) -> Unit) {
-        sleepTimerObserver = observer
-        observer(sleepTimer.state())
+        compatibilitySleepTimerObserver = observer
+        observer(sleepTimerStates.value)
     }
 
     internal fun detachSleepTimerObserver() {
-        sleepTimerObserver = null
+        compatibilitySleepTimerObserver = null
     }
 
     internal fun startSleepTimer(selection: SleepTimerSelection) {
-        sleepTimer.start(selection, latestPlaybackSnapshot)
+        sleepTimer.start(selection, playbackSnapshots.value)
     }
 
     internal fun cancelSleepTimer() {
@@ -219,13 +237,13 @@ open class ReprisePlaybackService : MediaSessionService() {
     }
 
     internal open fun pauseForSleepTimer() {
-        if (latestPlaybackSnapshot?.state == AndroidPlaybackState.PLAYING) {
+        if (playbackSnapshots.value?.state == AndroidPlaybackState.PLAYING) {
             coreSession?.togglePause()
         }
     }
 
     internal fun sleepTimerPlaybackPositionMs(): Long =
-        latestPlaybackSnapshot?.positionMs ?: 0L
+        playbackSnapshots.value?.positionMs ?: 0L
 
     internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
         coreSession().playTracks(
