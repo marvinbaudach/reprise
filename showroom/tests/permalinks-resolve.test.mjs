@@ -99,6 +99,44 @@ async function citedPaths() {
   return { paths: [...literals].sort(), unresolved: [...unresolved] };
 }
 
+/**
+ * Whether the pinned commit is reachable from the published branch.
+ *
+ * This exists because it was not. `a776f8a963` was rewritten out of the
+ * history; the commit survived in every local object store, so `show-17` kept
+ * passing on developer machines while every link on the page 404ed and a fresh
+ * CI clone could not resolve the commit at all. Path existence alone cannot see
+ * that — a dangling commit still carries its whole tree.
+ */
+test('show-22 the pinned commit is reachable from the published branch', async () => {
+  const commit = await pinnedCommit();
+
+  // `scripts/ci-quality.sh` already leans on this ref being there; a checkout
+  // without `fetch-depth: 0` is the one way it is not. Erroring beats skipping:
+  // a skip is the hole this test was written to close.
+  const branch = 'origin/main';
+  await assert.doesNotReject(
+    run('git', ['rev-parse', '--verify', `${branch}^{commit}`], { cwd: repoRoot }),
+    `${branch} is unavailable; checkout must use fetch-depth: 0`,
+  );
+
+  // Positive control: the same check against a commit no branch carries has to fail.
+  await assert.rejects(
+    run(
+      'git',
+      ['merge-base', '--is-ancestor', '0000000000000000000000000000000000000000', branch],
+      {
+        cwd: repoRoot,
+      },
+    ),
+  );
+
+  await assert.doesNotReject(
+    run('git', ['merge-base', '--is-ancestor', commit, branch], { cwd: repoRoot }),
+    `${commit} is not reachable from ${branch}, so every permalink on the page is a 404`,
+  );
+});
+
 test('show-17 every permalinked path exists at the commit the page pins', async () => {
   const commit = await pinnedCommit();
   const { paths, unresolved } = await citedPaths();
