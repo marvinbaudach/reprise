@@ -153,8 +153,8 @@ impl MusicLibrary {
             detail: "library handle poisoned by an earlier panic".to_owned(),
         })?;
         *tree = Some(ConfiguredTree {
-            uri: tree_uri.into(),
-            source: Arc::new(BridgedSource::new(source)),
+            uri: tree_uri.clone().into(),
+            source: Arc::new(BridgedSource::with_tree_root(source, tree_uri)),
         });
         Ok(())
     }

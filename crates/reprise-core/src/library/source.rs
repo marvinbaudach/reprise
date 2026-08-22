@@ -247,6 +247,18 @@ pub trait LibrarySource: Send + Sync {
     /// from cursor display names instead of interpreting opaque document URIs.
     fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf>;
 
+    /// The container `at` would sit in, as an address — never a source query,
+    /// and no statement that either `at` or the result exists.
+    ///
+    /// A path-backed source answers with [`Path::parent`]. A DocumentsProvider
+    /// source cannot: a tree document URI's parent is not its `Path` parent, so
+    /// it rebuilds the address from the document id it encoded itself, and
+    /// answers `None` whenever it cannot do so with certainty. Callers must
+    /// treat `None` as "no evidence", never as "no parent".
+    fn parent_of(&self, at: &Path) -> Option<PathBuf> {
+        at.parent().map(Path::to_path_buf)
+    }
+
     /// Opens `at` for reading without exposing the source's concrete storage
     /// handle. Failure is explicit: a source that cannot provide readable,
     /// seekable content must not compile with this contract unanswered.
