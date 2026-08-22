@@ -581,7 +581,7 @@ fn show_failure_toast(shared: &Rc<Shared>, updated: usize, failures: Vec<TagWrit
         tracing::warn!("toast overlay is gone; degrading to log-only for tag-edit failures");
         return;
     };
-    let toast = adw::Toast::new(&strings::tag_save_result_toast_with_failures(
+    let toast = crate::ui::toasts::plain(&strings::tag_save_result_toast_with_failures(
         updated,
         failures.len(),
     ));

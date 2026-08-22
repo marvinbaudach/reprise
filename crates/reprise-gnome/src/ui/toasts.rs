@@ -7,8 +7,15 @@ use libadwaita as adw;
 /// shorter than libadwaita's 5 s default so status blips get out of the way.
 const TOAST_TIMEOUT_S: u32 = 4;
 
-pub(super) fn show(overlay: &adw::ToastOverlay, text: &str) {
+/// Builds an FB-11 plain-text toast so markup characters cannot discard its message.
+pub(super) fn plain(text: &str) -> adw::Toast {
     let toast = adw::Toast::new(text);
+    toast.set_use_markup(false);
+    toast
+}
+
+pub(super) fn show(overlay: &adw::ToastOverlay, text: &str) {
+    let toast = plain(text);
     toast.set_timeout(TOAST_TIMEOUT_S);
     overlay.add_toast(toast);
 }
@@ -20,7 +27,7 @@ pub(super) fn show_with_action(
     timeout: u32,
     on_click: impl Fn() + 'static,
 ) -> adw::Toast {
-    let toast = adw::Toast::new(text);
+    let toast = plain(text);
     toast.set_button_label(Some(button));
     toast.set_timeout(timeout);
     toast.connect_button_clicked(move |_| on_click());
@@ -46,6 +53,42 @@ pub(super) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use gtk4::prelude::*;
+
+    fn rendered_label_texts(toast: libadwaita::Toast) -> Vec<String> {
+        fn collect(widget: &gtk4::Widget, labels: &mut Vec<String>) {
+            if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+                let text = label.text();
+                if !text.is_empty() {
+                    labels.push(text.to_string());
+                }
+            }
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                collect(&current, labels);
+                child = current.next_sibling();
+            }
+        }
+
+        let overlay = libadwaita::ToastOverlay::new();
+        overlay.set_child(Some(&gtk4::Box::new(gtk4::Orientation::Vertical, 0)));
+        let window = libadwaita::Window::builder()
+            .default_width(480)
+            .default_height(160)
+            .content(&overlay)
+            .build();
+        window.present();
+        overlay.add_toast(toast);
+        crate::ui::test_settle::settle_for(Duration::from_millis(100));
+
+        let mut labels = Vec::new();
+        collect(overlay.upcast_ref(), &mut labels);
+        window.close();
+        labels
+    }
+
     #[test]
     fn doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none() {
         assert_eq!(super::doctor_quiet_fix_toast(0), None);
@@ -53,5 +96,18 @@ mod tests {
             super::doctor_quiet_fix_toast(3).as_deref(),
             Some("3 tags fixed")
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fb_11_toast_plain_text_survives_markup_characters() {
+        libadwaita::init().expect("libadwaita must initialize under the display runner");
+        let title = "Removed Library & Radio <Episode>";
+
+        assert_eq!(rendered_label_texts(super::plain(title)), [title]);
+
+        let markup_toast = super::plain(title);
+        markup_toast.set_use_markup(true);
+        assert!(rendered_label_texts(markup_toast).is_empty());
     }
 }

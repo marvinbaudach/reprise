@@ -1404,6 +1404,14 @@ result.
   The list keeps its previous content until the replacement is ready — no
   blank list and no half-filled one. Reduced motion is obeyed through the
   central gate, and the state stays statically legible per FB-9.
+- **FB-11** [active] [gtk] — A toast always carries its message. Toast text is
+  plain text, never markup, and never passes through a markup parser: library
+  data such as video and episode titles, station names, filenames, error text
+  and URLs, as well as translations, may contain `&`, `<` or `>`. Discarded
+  toast text is a defect rather than a cosmetic flaw because it claims that an
+  action completed without naming the action, leaving any adjacent Undo
+  without a subject. The measured trigger was a YouTube title containing `&`
+  on 2026-08-23.
 
 ## H. File association & OS integration
 

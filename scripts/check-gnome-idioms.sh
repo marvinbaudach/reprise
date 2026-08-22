@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GP-2/GP-3/GP-4: gtk4-rs idioms in the GTK frontend.
+# GP-2/GP-3/GP-4/FB-11: gtk4-rs idioms in the GTK frontend.
 #
 # This gate greps. It is a tripwire, not a proof: it catches the shapes that
 # reviewers reject, and it reports counts so a rule can be switched to
@@ -19,6 +19,15 @@ list_matches() {
   { grep -rnE --include='*.rs' "$1" "$ui" 2>/dev/null || true; } \
     | { grep -vE '^\s*//' || true; } | sed -n '1,10p'
 }
+
+# FB-11 — every toast title is plain text. Direct construction silently keeps
+# libadwaita's markup default and can discard messages containing &, < or >.
+toast_construction=$({
+  grep -rnE --include='*.rs' '(^|[^[:alnum:]_])Toast::(new|builder)' "$ui" 2>/dev/null || true
+} | { grep -v "^$ui/ui/toasts\.rs:" || true; })
+[[ -z $toast_construction ]] || report_violation FB-11 \
+  "direct toast construction leaves plain text in the default markup slot; use crate::ui::toasts::plain:
+$toast_construction"
 
 # GP-2 — blocking calls that must not sit on the main loop.
 blocking='(std::thread::sleep|\.blocking_recv\(\)|\.blocking_send\(|block_on\()'
