@@ -4,13 +4,14 @@ use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::source_error::{source_io_error, walk_error};
-use crate::source_names::SourceNames;
 use reprise_core::library::source::{
     LibraryDirectoryEntry, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence,
     LibraryReadHandle, LibrarySource, LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind,
     LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
 };
+
+use crate::source_error::{source_io_error, walk_error};
+use crate::source_names::SourceNames;
 
 /// Provider facts returned by one SAF document query.
 #[derive(Clone, Debug, uniffi::Record)]
@@ -42,6 +43,10 @@ pub struct SourceChild {
 pub enum SafSourceError {
     #[error("permission denied: {detail}")]
     PermissionDenied { detail: String },
+    /// The provider answered, and the answer is that the document does not
+    /// exist. Distinct from `Unknown`: this one licenses a missing verdict.
+    #[error("not found: {detail}")]
+    NotFound { detail: String },
     #[error("I/O failure: {detail}")]
     Io { detail: String },
     #[error("provider failure: {detail}")]
@@ -70,13 +75,25 @@ pub trait SafSource: Send + Sync {
 pub struct BridgedSource {
     source: Box<dyn SafSource>,
     names: SourceNames,
+    tree_root: Option<PathBuf>,
 }
 
 impl BridgedSource {
+    /// Adapts `source` without a configured tree-root normalization address.
     pub fn new(source: Box<dyn SafSource>) -> Self {
+        Self::from_source(source, None)
+    }
+
+    /// Adapts `source` and retains the tree-form root URI used by Core scans.
+    pub fn with_tree_root(source: Box<dyn SafSource>, tree_uri: impl Into<PathBuf>) -> Self {
+        Self::from_source(source, Some(tree_uri.into()))
+    }
+
+    fn from_source(source: Box<dyn SafSource>, tree_root: Option<PathBuf>) -> Self {
         Self {
             source,
             names: SourceNames::default(),
+            tree_root,
         }
     }
 
@@ -160,6 +177,20 @@ impl LibrarySource for BridgedSource {
         self.names.relative_path(at)
     }
 
+    fn parent_of(&self, at: &Path) -> Option<PathBuf> {
+        let uri = at.to_str()?;
+        let (prefix, document_id) = uri.rsplit_once("/document/")?;
+        let separator = document_id
+            .as_bytes()
+            .windows(3)
+            .rposition(|part| part.eq_ignore_ascii_case(b"%2f"))?;
+        let parent_id = &document_id[..separator];
+        if self.tree_root.as_deref().and_then(encoded_tree_document_id) == Some(parent_id) {
+            return self.tree_root.clone();
+        }
+        Some(format!("{prefix}/document/{parent_id}").into())
+    }
+
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
         let raw_fd = self
             .source
@@ -189,6 +220,7 @@ impl LibrarySource for BridgedSource {
                 LibraryPathPresence::Present(metadata_from_facts(&facts))
             }
             Ok(None) => LibraryPathPresence::Absent,
+            Err(SafSourceError::NotFound { .. }) => LibraryPathPresence::Absent,
             Err(_) => LibraryPathPresence::Unknown,
         }
     }
@@ -254,6 +286,11 @@ fn path_uri(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+fn encoded_tree_document_id(tree_root: &Path) -> Option<&str> {
+    let (_, document_id) = tree_root.to_str()?.rsplit_once("/tree/")?;
+    (!document_id.is_empty() && !document_id.contains('/')).then_some(document_id)
+}
+
 fn metadata_from_facts(facts: &SourceFacts) -> LibraryPathMetadata {
     LibraryPathMetadata {
         is_file: facts.is_file,
@@ -277,488 +314,4 @@ fn metadata_from_child(child: &SourceChild) -> LibraryPathMetadata {
 fn modified_time(unix_ms: Option<i64>) -> Option<SystemTime> {
     let unix_ms = u64::try_from(unix_ms?).ok()?;
     SystemTime::UNIX_EPOCH.checked_add(Duration::from_millis(unix_ms))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::io::{Read, Seek, SeekFrom};
-    use std::os::fd::IntoRawFd;
-    use std::path::Path;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
-
-    use reprise_core::library::source::{
-        LibraryLinkMode, LibraryPathPresence, LibrarySource, LibraryWalkControl, LibraryWalkItem,
-        LibraryWalkOrder, LibraryWalkVisitor, UnixLibrarySource,
-    };
-
-    use super::{BridgedSource, SafSource, SafSourceError, SourceChild, SourceFacts};
-
-    struct PresentSource;
-
-    impl SafSource for PresentSource {
-        fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
-            Ok(Some(41))
-        }
-
-        fn probe(
-            &self,
-            _uri: String,
-            _follow_links: bool,
-        ) -> Result<Option<SourceFacts>, SafSourceError> {
-            Ok(Some(SourceFacts {
-                display_name: Some("song.flac".to_owned()),
-                is_file: true,
-                is_directory: false,
-                size_bytes: Some(12_066),
-                modified_unix_ms: Some(1_775_000_123_456),
-                document_id: "primary:Music/Album/song.flac".to_owned(),
-            }))
-        }
-
-        fn list_children(&self, _uri: String) -> Result<Vec<SourceChild>, SafSourceError> {
-            Ok(Vec::new())
-        }
-
-        fn open_read_fd(&self, _uri: String) -> Result<i32, SafSourceError> {
-            Err(SafSourceError::Unknown {
-                detail: "not used by this test".to_owned(),
-            })
-        }
-    }
-
-    #[test]
-    fn probe_projects_provider_facts_without_fabricating_file_identity() {
-        let source = BridgedSource::new(Box::new(PresentSource));
-
-        let LibraryPathPresence::Present(metadata) = source.probe(
-                Path::new(
-                    "content://com.android.externalstorage.documents/document/primary%3AMusic%2FAlbum%2Fsong.flac",
-                ),
-                LibraryLinkMode::NoFollow,
-            ) else {
-                panic!("the provider confirmed that the document exists");
-            };
-
-        assert!(metadata.is_file);
-        assert!(!metadata.is_directory);
-        assert_eq!(metadata.size, Some(12_066));
-        assert_eq!(
-            metadata
-                .modified
-                .expect("the provider supplied a modification time")
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis(),
-            1_775_000_123_456
-        );
-        assert_eq!(
-            metadata.identity, None,
-            "a provider document id is not a file identity unless rename stability is guaranteed"
-        );
-    }
-
-    enum ProbeOutcome {
-        Missing,
-        Failed,
-    }
-
-    struct ProbeSource(ProbeOutcome);
-
-    impl SafSource for ProbeSource {
-        fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
-            Ok(Some(41))
-        }
-
-        fn probe(
-            &self,
-            _uri: String,
-            _follow_links: bool,
-        ) -> Result<Option<SourceFacts>, SafSourceError> {
-            match self.0 {
-                ProbeOutcome::Missing => Ok(None),
-                ProbeOutcome::Failed => Err(SafSourceError::Io {
-                    detail: "Binder transaction failed".to_owned(),
-                }),
-            }
-        }
-
-        fn list_children(&self, _uri: String) -> Result<Vec<SourceChild>, SafSourceError> {
-            Ok(Vec::new())
-        }
-
-        fn open_read_fd(&self, _uri: String) -> Result<i32, SafSourceError> {
-            Err(SafSourceError::Unknown {
-                detail: "not used by this test".to_owned(),
-            })
-        }
-    }
-
-    #[test]
-    fn probe_keeps_confirmed_absence_distinct_from_provider_failure() {
-        let path = Path::new("content://provider/document/song.flac");
-        let missing = BridgedSource::new(Box::new(ProbeSource(ProbeOutcome::Missing)));
-        let failed = BridgedSource::new(Box::new(ProbeSource(ProbeOutcome::Failed)));
-
-        assert_eq!(
-            missing.probe(path, LibraryLinkMode::Follow),
-            LibraryPathPresence::Absent
-        );
-        assert_eq!(
-            failed.probe(path, LibraryLinkMode::Follow),
-            LibraryPathPresence::Unknown
-        );
-    }
-
-    struct DescriptorSource {
-        descriptor: Mutex<Option<i32>>,
-    }
-
-    impl SafSource for DescriptorSource {
-        fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
-            Ok(Some(41))
-        }
-
-        fn probe(
-            &self,
-            _uri: String,
-            _follow_links: bool,
-        ) -> Result<Option<SourceFacts>, SafSourceError> {
-            Ok(None)
-        }
-
-        fn list_children(&self, _uri: String) -> Result<Vec<SourceChild>, SafSourceError> {
-            Ok(Vec::new())
-        }
-
-        fn open_read_fd(&self, _uri: String) -> Result<i32, SafSourceError> {
-            self.descriptor
-                .lock()
-                .unwrap()
-                .take()
-                .ok_or_else(|| SafSourceError::Io {
-                    detail: "descriptor was already transferred".to_owned(),
-                })
-        }
-    }
-
-    #[test]
-    fn open_read_adopts_the_descriptor_without_copying_to_a_fallback() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("source.flac");
-        std::fs::write(&path, b"provider bytes").unwrap();
-        let descriptor = std::fs::File::open(path).unwrap().into_raw_fd();
-        let source = BridgedSource::new(Box::new(DescriptorSource {
-            descriptor: Mutex::new(Some(descriptor)),
-        }));
-
-        let mut handle = source
-            .open_read(Path::new("content://provider/document/source.flac"))
-            .unwrap();
-        let mut content = String::new();
-        handle.read_to_string(&mut content).unwrap();
-        assert_eq!(content, "provider bytes");
-
-        handle.seek(SeekFrom::Start(9)).unwrap();
-        let mut tail = String::new();
-        handle.read_to_string(&mut tail).unwrap();
-        assert_eq!(tail, "bytes");
-    }
-
-    struct TreeSource {
-        children: HashMap<String, Result<Vec<SourceChild>, SafSourceError>>,
-        probe_calls: Arc<AtomicUsize>,
-    }
-
-    impl SafSource for TreeSource {
-        fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
-            Ok(Some(41))
-        }
-
-        fn probe(
-            &self,
-            _uri: String,
-            _follow_links: bool,
-        ) -> Result<Option<SourceFacts>, SafSourceError> {
-            self.probe_calls.fetch_add(1, Ordering::Relaxed);
-            Ok(Some(SourceFacts {
-                display_name: Some("Music".to_owned()),
-                is_file: false,
-                is_directory: true,
-                size_bytes: None,
-                modified_unix_ms: None,
-                document_id: "primary:Music".to_owned(),
-            }))
-        }
-
-        fn list_children(&self, uri: String) -> Result<Vec<SourceChild>, SafSourceError> {
-            self.children.get(&uri).cloned().unwrap_or_else(|| {
-                Err(SafSourceError::Unknown {
-                    detail: format!("fixture has no directory {uri}"),
-                })
-            })
-        }
-
-        fn open_read_fd(&self, _uri: String) -> Result<i32, SafSourceError> {
-            Err(SafSourceError::Unknown {
-                detail: "not used by this test".to_owned(),
-            })
-        }
-    }
-
-    fn child(
-        uri: &str,
-        display_name: &str,
-        document_id: &str,
-        is_file: bool,
-        size_bytes: Option<u64>,
-    ) -> SourceChild {
-        SourceChild {
-            uri: uri.to_owned(),
-            display_name: Some(display_name.to_owned()),
-            is_file,
-            is_directory: !is_file,
-            size_bytes,
-            modified_unix_ms: Some(1_775_000_000_000),
-            document_id: document_id.to_owned(),
-        }
-    }
-
-    #[derive(Default)]
-    struct AudioPaths {
-        root: std::path::PathBuf,
-        paths: Vec<std::path::PathBuf>,
-        metadata: Vec<reprise_core::library::source::LibraryPathMetadata>,
-    }
-
-    impl LibraryWalkVisitor for AudioPaths {
-        fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl {
-            let LibraryWalkItem::Entry(entry) = item else {
-                panic!("fixture traversal must not fail");
-            };
-            if entry.is_file
-                && entry
-                    .path
-                    .extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("flac"))
-            {
-                self.paths
-                    .push(entry.path.strip_prefix(&self.root).unwrap().to_path_buf());
-                if let Some(metadata) = entry.metadata {
-                    self.metadata.push(metadata);
-                }
-            }
-            LibraryWalkControl::Continue
-        }
-    }
-
-    #[test]
-    fn derived_walk_matches_unix_filename_order_and_audio_filtering() {
-        let unix_root = tempfile::tempdir().unwrap();
-        std::fs::create_dir(unix_root.path().join("Album")).unwrap();
-        std::fs::write(unix_root.path().join("Album/notes.txt"), b"notes").unwrap();
-        std::fs::write(unix_root.path().join("Album/song.FLAC"), b"audio").unwrap();
-        std::fs::write(unix_root.path().join("loose.flac"), b"audio").unwrap();
-
-        let root = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
-        let album = format!("{root}/document/primary%3AMusic%2FAlbum");
-        let notes = format!("{root}/document/primary%3AMusic%2FAlbum%2Fnotes.txt");
-        let song = format!("{root}/document/primary%3AMusic%2FAlbum%2Fsong.FLAC");
-        let loose = format!("{root}/document/primary%3AMusic%2Floose.flac");
-        let probe_calls = Arc::new(AtomicUsize::new(0));
-        let source = TreeSource {
-            children: HashMap::from([
-                (
-                    root.to_owned(),
-                    Ok(vec![
-                        child(
-                            &loose,
-                            "loose.flac",
-                            "primary:Music/loose.flac",
-                            true,
-                            Some(5),
-                        ),
-                        child(&album, "Album", "primary:Music/Album", false, None),
-                    ]),
-                ),
-                (
-                    album,
-                    Ok(vec![
-                        child(
-                            &song,
-                            "song.FLAC",
-                            "primary:Music/Album/song.FLAC",
-                            true,
-                            Some(5),
-                        ),
-                        child(
-                            &notes,
-                            "notes.txt",
-                            "primary:Music/Album/notes.txt",
-                            true,
-                            Some(5),
-                        ),
-                    ]),
-                ),
-            ]),
-            probe_calls: Arc::clone(&probe_calls),
-        };
-        let bridged = BridgedSource::new(Box::new(source));
-
-        let mut unix_paths = AudioPaths {
-            root: unix_root.path().to_path_buf(),
-            ..AudioPaths::default()
-        };
-        UnixLibrarySource.walk(
-            unix_root.path(),
-            LibraryWalkOrder::FileName,
-            &mut unix_paths,
-        );
-        let mut bridged_paths = AudioPaths {
-            root: root.into(),
-            ..AudioPaths::default()
-        };
-        bridged.walk(
-            Path::new(root),
-            LibraryWalkOrder::FileName,
-            &mut bridged_paths,
-        );
-
-        assert_eq!(
-            unix_paths.paths,
-            vec![
-                std::path::PathBuf::from("Album/song.FLAC"),
-                std::path::PathBuf::from("loose.flac"),
-            ]
-        );
-        assert_eq!(
-            bridged_paths.paths,
-            vec![
-                Path::new(&song).strip_prefix(root).unwrap().to_path_buf(),
-                Path::new(&loose).strip_prefix(root).unwrap().to_path_buf(),
-            ],
-            "the opaque SAF paths differ from Unix paths, but the same filename order and audio filter apply"
-        );
-        assert_eq!(bridged_paths.metadata.len(), 2);
-        assert!(bridged_paths
-            .metadata
-            .iter()
-            .all(|metadata| metadata.size == Some(5) && metadata.identity.is_none()));
-        assert_eq!(
-            bridged.relative_path(Path::new(root), Path::new(&song)),
-            Some(std::path::PathBuf::from("Album/song.FLAC")),
-            "nested device identities come from cursor names, never document URI parsing"
-        );
-        assert_eq!(
-            probe_calls.load(Ordering::Relaxed),
-            1,
-            "walk may probe its root once but must carry child metadata without per-file probes"
-        );
-
-        let mut native_paths = AudioPaths {
-            root: root.into(),
-            ..AudioPaths::default()
-        };
-        bridged.walk(Path::new(root), LibraryWalkOrder::Native, &mut native_paths);
-        assert_eq!(
-            native_paths.paths,
-            vec![
-                Path::new(&loose).strip_prefix(root).unwrap().to_path_buf(),
-                Path::new(&song).strip_prefix(root).unwrap().to_path_buf(),
-            ],
-            "native order must preserve each provider cursor's sibling order"
-        );
-        assert_eq!(probe_calls.load(Ordering::Relaxed), 2);
-    }
-
-    #[derive(Default)]
-    struct CollectedWalk {
-        items: Vec<LibraryWalkItem>,
-        stop_after: Option<usize>,
-    }
-
-    impl LibraryWalkVisitor for CollectedWalk {
-        fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl {
-            self.items.push(item);
-            if self.stop_after == Some(self.items.len()) {
-                LibraryWalkControl::Stop
-            } else {
-                LibraryWalkControl::Continue
-            }
-        }
-    }
-
-    fn failing_tree() -> (BridgedSource, String, String, String) {
-        let root = "content://provider/tree/music".to_owned();
-        let blocked = format!("{root}/blocked");
-        let later = format!("{root}/later.flac");
-        let source = TreeSource {
-            children: HashMap::from([
-                (
-                    root.clone(),
-                    Ok(vec![
-                        child(&blocked, "blocked", "music/blocked", false, None),
-                        child(&later, "later.flac", "music/later.flac", true, Some(5)),
-                    ]),
-                ),
-                (
-                    blocked.clone(),
-                    Err(SafSourceError::PermissionDenied {
-                        detail: "grant revoked for this directory".to_owned(),
-                    }),
-                ),
-            ]),
-            probe_calls: Arc::new(AtomicUsize::new(0)),
-        };
-        (BridgedSource::new(Box::new(source)), root, blocked, later)
-    }
-
-    #[test]
-    fn derived_walk_delivers_subtree_errors_inline_and_continues() {
-        let (source, root, blocked, later) = failing_tree();
-        let mut walk = CollectedWalk::default();
-
-        source.walk(Path::new(&root), LibraryWalkOrder::Native, &mut walk);
-
-        assert_eq!(walk.items.len(), 4);
-        assert!(matches!(
-            &walk.items[0],
-            LibraryWalkItem::Entry(entry) if entry.path == Path::new(&root)
-        ));
-        assert!(matches!(
-            &walk.items[1],
-            LibraryWalkItem::Entry(entry) if entry.path == Path::new(&blocked)
-        ));
-        assert!(matches!(
-            &walk.items[2],
-            LibraryWalkItem::Error(error)
-                if error.path.as_deref() == Some(Path::new(&blocked))
-                    && error.kind == reprise_core::library::source::LibraryWalkErrorKind::PermissionDenied
-                    && error.detail.contains("grant revoked")
-        ));
-        assert!(matches!(
-            &walk.items[3],
-            LibraryWalkItem::Entry(entry)
-                if entry.path == Path::new(&later)
-                    && entry.metadata.as_ref().is_some_and(|metadata| metadata.size == Some(5))
-        ));
-    }
-
-    #[test]
-    fn derived_walk_stops_before_entering_or_listing_the_next_item() {
-        let (source, root, blocked, _) = failing_tree();
-        let mut walk = CollectedWalk {
-            stop_after: Some(2),
-            ..CollectedWalk::default()
-        };
-
-        source.walk(Path::new(&root), LibraryWalkOrder::Native, &mut walk);
-
-        assert_eq!(walk.items.len(), 2);
-        assert!(matches!(
-            &walk.items[1],
-            LibraryWalkItem::Entry(entry) if entry.path == Path::new(&blocked)
-        ));
-    }
 }

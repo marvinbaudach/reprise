@@ -292,7 +292,9 @@ fn scan_folder_inner(
 
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
-    let mut observed_audio_paths = HashSet::<PathBuf>::new();
+    let mut observed_paths = HashSet::<PathBuf>::new();
+    let mut dirs = HashSet::<PathBuf>::new();
+    let mut failed = HashSet::<PathBuf>::new();
     let mut mobile_sync = mobile_sync::MobileSyncDiscovery::default();
     let mut mount_cache = mount::MountPointCache::new(source);
     let tx = conn.unchecked_transaction()?;
@@ -302,13 +304,11 @@ fn scan_folder_inner(
             let entry = match item {
                 LibraryWalkItem::Entry(entry) => entry,
                 LibraryWalkItem::Error(error) => {
-                    // `error.path` is the DIRECTORY the source failed to enter,
-                    // never a file underneath it — those were never seen, so
-                    // inventing rows for them would be fiction.
-                    let err_path = error.path.as_ref().map_or_else(
-                        || root.to_string_lossy().to_string(),
-                        |p| p.to_string_lossy().to_string(),
-                    );
+                    // A walk error may name a directory or an unstatable child;
+                    // poison both it and its parent before recording the error.
+                    let failed_path = error.path.as_deref().unwrap_or(root);
+                    vanish::poison_walk_failure(source, &mut failed, failed_path);
+                    let err_path = failed_path.to_string_lossy().to_string();
                     let kind = match error.kind {
                         LibraryWalkErrorKind::PermissionDenied => ImportErrorKind::PermissionDenied,
                         LibraryWalkErrorKind::Io => ImportErrorKind::Io,
@@ -326,10 +326,13 @@ fn scan_folder_inner(
                 }
             };
             mobile_sync.observe(source, root, &entry);
+            let path = entry.path;
+            observed_paths.insert(path.clone());
             if !entry.is_file {
+                dirs.insert(path);
                 return Ok(());
             }
-            let path = entry.path.as_path();
+            let path = path.as_path();
             if !is_audio_file(path) {
                 return Ok(());
             }
@@ -338,7 +341,6 @@ fn scan_folder_inner(
             // goes on to be added/updated/skipped/errored below. See this
             // function's `## Root guard` doc section.
             audio_files_seen += 1;
-            observed_audio_paths.insert(path.to_path_buf());
             let path_str = path.to_string_lossy().to_string();
             // Compute identity before touching tags. An exclusion follows the
             // same file across a rename and must win over move detection.
@@ -647,6 +649,10 @@ fn scan_folder_inner(
     // `root_unavailable` used before this was split into two lists — so a
     // scan that actually found audio files never pays for the extra query.
     let candidates = vanish::present_candidates_under_root(&tx, root)?;
+    // A walk that saw no audio file at all is exactly the situation Android
+    // cannot distinguish from lost storage. An empty walk is a question, not
+    // proof: layer 3 stays silent and only a real source `Absent` still marks.
+    let evidence = vanish::evidence_after_walk(audio_files_seen, observed_paths, &dirs, &failed);
     let guard_evidence = if audio_files_seen == 0 {
         Some(vanish::guard_evidence_under_root(&tx, root)?)
     } else {
@@ -671,9 +677,10 @@ fn scan_folder_inner(
             root: root.to_path_buf(),
         }
     } else {
-        let reclassified = vanish::reclassify_missing_with(source, &tx, root, now_unix())?;
+        let reclassified =
+            vanish::reclassify_missing_with(source, &tx, root, evidence.as_ref(), now_unix())?;
         report.vanished =
-            vanish::mark_vanished_with(source, &tx, candidates, &observed_audio_paths)?;
+            vanish::mark_vanished_with(source, &tx, root, candidates, evidence.as_ref())?;
         // T0.3: one collective change-log row per scan that actually touched
         // the catalog (never per track, never for a no-op reconcile), inside
         // the same transaction as the walk so the event and the rows it

@@ -58,6 +58,7 @@ unused.db*
 # Rust signatures it is supposed to mirror.
 android/local.properties
 android/.gradle/
+android/.kotlin/
 android/build/
 android/app/build/
 android/app/src/main/jniLibs/
