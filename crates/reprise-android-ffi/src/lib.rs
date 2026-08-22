@@ -36,6 +36,8 @@ mod read_during_scan_tests;
 pub mod source;
 mod source_error;
 mod source_names;
+#[cfg(test)]
+mod source_tests;
 mod track_analysis;
 mod visualizer;
 #[cfg(test)]
