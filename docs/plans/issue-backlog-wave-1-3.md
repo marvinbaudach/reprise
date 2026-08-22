@@ -260,3 +260,16 @@ No live desktop or real user data was used. Xvfb exercises the real GTK
 adjustment and player-bar button-activation path; actual compositor rendering,
 focus appearance, and a physical pointer gesture remain manual visual checks by
 repository policy.
+
+### Review follow-up
+
+Applied on 2026-08-22: documented that the pre-swap row-height hint assumes the
+shared `ColumnView` row template is source-independent and that a missing or
+wrong hint falls back to the geometry cache; also justified the explicit
+collaborators at `route_to_place_with_viewport`'s Clippy allowance.
+
+Verification output:
+
+- `cargo fmt --check`: exit 0, no output.
+- `cargo clippy --all-targets -p reprise-gnome -- -D warnings`: exit 0;
+  `Checking reprise-gnome v0.1.47` and `Finished dev profile`.

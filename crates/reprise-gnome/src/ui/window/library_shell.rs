@@ -363,6 +363,8 @@ pub(in crate::ui) fn route_to_place_centering_anchor(
     );
 }
 
+// These window-owned collaborators stay explicit so this routing seam does not
+// create a second state holder.
 #[allow(clippy::too_many_arguments)]
 fn route_to_place_with_viewport(
     place: &NavPlace,

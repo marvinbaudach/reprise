@@ -177,6 +177,8 @@ pub(in crate::ui) fn restore_browser_place_with_viewport(
         return false;
     };
     let source = place.view_source();
+    // Every source shares this ColumnView's row template, so row height is
+    // source-independent; a missing or wrong hint falls back to the geometry cache.
     let centered_row_height = matches!(viewport, BrowserPlaceViewport::CenterAnchor)
         .then(|| {
             crate::ui::track_list::track_list_geometry::layout(
