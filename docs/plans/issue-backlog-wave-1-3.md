@@ -180,5 +180,83 @@ and implementing the preseed plan's tasks 1-3.
 
 ## Result
 
-*(Codex fills this in: the control-arm runs with their numbers, the fixed runs,
-the caller-by-caller viewport table from task 2, and anything left unproven.)*
+Implemented on 2026-08-22. `MetadataNavigator` now marks only a catalog
+`RevealTrack` route as `CenterAnchor`; the route and view-session layers carry
+that viewport through the existing reload, and `restore_reload_anchor` centres
+the named anchor. The one centring equation remains
+`ListLayout::centered_value`; `centered_anchor` converts that value to the
+nearest row edge GTK can reproduce, including section headers. Ordinary restore
+continues to use `PreserveAnchor`.
+
+### Control arm and fixed arm
+
+Every display run used a private D-Bus session and Xvfb with fresh
+`XDG_DATA_HOME` and `XDG_CACHE_HOME`, `GDK_BACKEND=x11`, an empty
+`WAYLAND_DISPLAY`, `GTK_A11Y=none`, and `REPRISE_AUDIO_SINK=fakesink`. Tests were
+run as separate processes because two GTK initializations in one Rust test
+process fail with `Attempted to initialize GTK from two different threads`.
+
+| Test | Unfixed control | Fixed arm |
+| --- | --- | --- |
+| `nav_10b_player_bar_title_centers_the_revealed_track` | **RED**: actual `6574`, arithmetic centre `4664`, tolerance `17` | **GREEN**: centred assertion passed |
+| `nav_10b_player_bar_title_centers_in_one_viewport_step` | **RED**: two non-zero landings, `view_state_restore=3920` then `gtk=6574` | **GREEN**: exactly one landing, `anchor.initial.scroll_to=4658`; arithmetic centre `4671`, tolerance `17` |
+| Existing `browse_14_the_now_playing_link_clears_the_search_and_lands_on_the_track` | Existing test expected the old top anchor | **GREEN** after strengthening it to require centring within half a row |
+
+The control moved and the recorder captured two steps, so neither acceptance
+arm is unproven.
+
+### Unchanged occasions
+
+The required existing display matrix passed before and after in individual
+processes: both `source_switch_centering_display_tests` cases, all six
+`search_viewport_display_tests` cases, and both `start_restore_tests` cases
+(`10/10` before, `10/10` after). Three focused ordinary-anchor controls also
+passed after the change: BROWSE-4's default place restore and both
+`track_list_reload_display_tests` TAG-1 reload cases.
+
+Caller audit:
+
+| Caller or caller group | Occasion | Viewport after this change |
+| --- | --- | --- |
+| `view_session::finish_track_source` reached from `route_to_place_centering_anchor` | Explicit catalog `RevealTrack`, including the player-bar title | `CenterAnchor` |
+| `library_shell::route_to_place` and `view_session::restore_browser_place` | Back, Forward, non-reveal metadata routing, and ordinary place restoration | `PreserveAnchor` |
+| `TrackList::finish_startup_load` and `start_restore_tests` | Restored startup place | `PreserveAnchor`; START-3's existing loaded-track centring remains its separate established occasion |
+| `TrackList::set_source` | Sidebar source switch | `PreserveAnchor`, followed by the existing NAV-19 source-switch centring path |
+| `track_list_filter_actions`, navigation-back tests, queue-section restore tests, and the BROWSE-4 default-restore control | Explicitly restoring a saved place | `PreserveAnchor` |
+| `tag_mutation_refresh`, `tag_edit_flow`, and both direct `reload_with_anchor` display controls | Tag-save or captured async reload | `PreserveAnchor` |
+| `delete_tracks` | Post-delete reload with a surviving/recomputed anchor | `PreserveAnchor` |
+| `reload_with_viewport` and its direct display fixtures | Search-clear, search-top, density/start, or ordinary model reload | The caller's existing viewport variant; none is changed to `CenterAnchor` |
+
+Thus every direct `reload_with_anchor` call remains offset-preserving, and every
+direct `restore_browser_place` call remains offset-preserving. The only new
+centred route is the explicit helper selected by `MetadataNavigator` for
+`RevealTrack`.
+
+### Verification
+
+- Displayless GNOME suite with fresh XDG roots and fake audio: `1961 passed`,
+  `768 ignored`; GNOME conformance integration tests: `10 passed`.
+- `cargo fmt --check`: passed.
+- `cargo clippy --all-targets --workspace -- -D warnings`: passed.
+- `cargo test --workspace`: passed.
+- `scripts/check-display-tests.sh --rule-named`: `545 passed`, `0 failed`;
+  the declared song-visualizer measurement helper was skipped as intended.
+- Private-bus runtime-service integration: `25 passed`, `0 failed`.
+- `cargo audit`: passed with only the repository-accepted
+  `RUSTSEC-2024-0436` warning for `paste 1.0.15`.
+- The project/showroom quality dispatcher and the individual architecture,
+  gettext, accessibility, input-parity, frontend-thinness, UX-traceability,
+  AppStream, Flatpak, GNOME-idiom, AI-hygiene, and motion-token checks passed.
+  The aggregate merge-readiness wrapper remains unavailable on the unchanged,
+  out-of-scope `scripts/cua-e2e/responsive_window.sh:72` ShellCheck SC2154
+  warning; `scripts/tests/qa-linters.sh` likewise stops on its unchanged
+  `fresh-install-skip-before.json` fixture with `snapshot carries no
+  snapshot_id`. Android quality setup cannot create the sandbox-external
+  `~/.gradle`; this strand changes no Android path.
+- `git diff --check`: passed; all substantially edited Rust files remain below
+  800 lines.
+
+No live desktop or real user data was used. Xvfb exercises the real GTK
+adjustment and player-bar button-activation path; actual compositor rendering,
+focus appearance, and a physical pointer gesture remain manual visual checks by
+repository policy.

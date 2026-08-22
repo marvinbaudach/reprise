@@ -23,6 +23,18 @@ enum RestorePath {
     Idle,
 }
 
+#[derive(Clone, Copy)]
+enum AnchorPlacement {
+    PreserveOffset,
+    Center,
+}
+
+#[derive(Clone, Copy)]
+struct RestoreAttempt {
+    path: RestorePath,
+    placement: AnchorPlacement,
+}
+
 impl RestorePath {
     const fn apply_probe(self) -> &'static str {
         match self {
@@ -58,6 +70,7 @@ struct ScrollRequest<'a> {
     captured_row_height: Option<RowHeight>,
     current_ids: &'a [i64],
     anchor_position: u32,
+    placement: AnchorPlacement,
 }
 
 #[derive(Clone, Copy)]
@@ -110,10 +123,52 @@ pub(super) fn schedule(
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
 ) {
+    schedule_with_placement(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        hold,
+        AnchorPlacement::PreserveOffset,
+    );
+}
+
+pub(super) fn schedule_centered(
+    shared: &Rc<Shared>,
+    anchor: Option<(i64, f64)>,
+    captured_row_height: Option<RowHeight>,
+    current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
+) {
+    schedule_with_placement(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        hold,
+        AnchorPlacement::Center,
+    );
+}
+
+fn schedule_with_placement(
+    shared: &Rc<Shared>,
+    anchor: Option<(i64, f64)>,
+    captured_row_height: Option<RowHeight>,
+    current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
+    placement: AnchorPlacement,
+) {
     if crate::ui::scroll_probe::restore_after_allocation_enabled()
         && !has_allocated_viewport(shared)
     {
-        arm_refinement(shared, anchor, captured_row_height, current_ids, hold);
+        arm_refinement(
+            shared,
+            anchor,
+            captured_row_height,
+            current_ids,
+            hold,
+            placement,
+        );
         return;
     }
     let Some(anchor_position) = reload_restore::prepaint_position(anchor, current_ids) else {
@@ -125,13 +180,37 @@ pub(super) fn schedule(
         captured_row_height,
         current_ids,
         hold,
-        RestorePath::Initial,
+        RestoreAttempt {
+            path: RestorePath::Initial,
+            placement,
+        },
     );
     if applied_layout.is_none() {
-        arm_refinement(shared, anchor, captured_row_height, current_ids, hold);
+        arm_refinement(
+            shared,
+            anchor,
+            captured_row_height,
+            current_ids,
+            hold,
+            placement,
+        );
         if !has_allocated_viewport(shared) {
             return;
         }
+    }
+
+    // A centered reveal can name the row edge GTK must adopt even while the
+    // live range is still settling. `apply` intentionally returns `None` in
+    // that case so no provisional pixel target becomes authoritative; the
+    // same provisional layout is nevertheless sufficient to choose the row
+    // whose realized edge will be nearest the arithmetic centre.
+    let centered_layout = (applied_layout.is_none()
+        && matches!(placement, AnchorPlacement::Center))
+    .then(|| super::track_list_geometry::layout(shared, captured_row_height, current_ids.len()))
+    .flatten();
+    let guard_layout = applied_layout.as_ref().or(centered_layout.as_ref());
+    if matches!(placement, AnchorPlacement::Center) && guard_layout.is_none() {
+        return;
     }
 
     scroll_to_anchor(
@@ -141,8 +220,9 @@ pub(super) fn schedule(
             captured_row_height,
             current_ids,
             anchor_position,
+            placement,
         },
-        applied_layout.as_ref(),
+        guard_layout,
         RestorePath::Initial,
         hold,
     );
@@ -161,20 +241,33 @@ fn scroll_to_anchor(
         .iter()
         .map(|section| section.start)
         .collect::<Vec<_>>();
-    // `Some` means the layout is settled; only then is its bottom-edge
-    // prepaint guard row valid.
+    // `Some` means the layout is settled. An offset-preserving restore asks
+    // GTK to keep the last visible row in view; a centered reveal instead
+    // gives GTK the row edge nearest the arithmetic centre, so its allocation
+    // replay reproduces the value already written by `apply`.
     let guard_position = if let Some(layout) = applied_layout {
         let page = shared
             .column_view
             .vadjustment()
             .map(|value| value.page_size());
-        page.and_then(|page| {
-            reload_restore::prepaint_guard_position(
+        page.and_then(|page| match request.placement {
+            AnchorPlacement::PreserveOffset => reload_restore::prepaint_guard_position(
                 request.anchor,
                 request.current_ids,
                 layout,
                 page,
-            )
+            ),
+            AnchorPlacement::Center => {
+                let position =
+                    reload_restore::prepaint_position(request.anchor, request.current_ids)?;
+                super::centered_scroll_restore::centered_anchor(
+                    layout,
+                    position,
+                    request.current_ids.len(),
+                    page,
+                )
+                .map(|(anchor, _)| anchor)
+            }
         })
         .unwrap_or(request.anchor_position)
     } else {
@@ -261,6 +354,7 @@ fn arm_refinement(
     captured_row_height: Option<RowHeight>,
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
+    placement: AnchorPlacement,
 ) {
     let Some(adjustment) = shared.column_view.vadjustment() else {
         return;
@@ -286,7 +380,10 @@ fn arm_refinement(
                 captured_row_height,
                 &allocated_ids,
                 allocated_hold.as_ref(),
-                RestorePath::PageSize,
+                RestoreAttempt {
+                    path: RestorePath::PageSize,
+                    placement,
+                },
             );
         });
         return;
@@ -316,7 +413,10 @@ fn arm_refinement(
             captured_row_height,
             &changed_ids,
             changed_hold.as_ref(),
-            RestorePath::ItemsChanged,
+            RestoreAttempt {
+                path: RestorePath::ItemsChanged,
+                placement,
+            },
         ) {
             changed_restored.set(true);
         }
@@ -341,7 +441,10 @@ fn arm_refinement(
             captured_row_height,
             &idle_ids,
             idle_hold.as_ref(),
-            RestorePath::Idle,
+            RestoreAttempt {
+                path: RestorePath::Idle,
+                placement,
+            },
         ) {
             restored.set(true);
         }
@@ -355,12 +458,19 @@ fn refine_once(
     captured_row_height: Option<RowHeight>,
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
-    path: RestorePath,
+    attempt: RestoreAttempt,
 ) -> bool {
     if !refinement_is_current(shared, generation) {
         return false;
     }
-    let Some(layout) = apply(shared, anchor, captured_row_height, current_ids, hold, path) else {
+    let Some(layout) = apply(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        hold,
+        attempt,
+    ) else {
         return false;
     };
     let Some(anchor_position) = reload_restore::prepaint_position(anchor, current_ids) else {
@@ -373,9 +483,10 @@ fn refine_once(
             captured_row_height,
             current_ids,
             anchor_position,
+            placement: attempt.placement,
         },
         Some(&layout),
-        path,
+        attempt.path,
         hold,
     );
     true
@@ -391,7 +502,7 @@ fn apply(
     captured_row_height: Option<RowHeight>,
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
-    path: RestorePath,
+    attempt: RestoreAttempt,
 ) -> Option<ListLayout> {
     let section_spans = shared
         .queue_sections
@@ -411,21 +522,27 @@ fn apply(
     let geometry = ListGeometry::for_view(&shared.column_view);
     let layout =
         super::track_list_geometry::layout(shared, captured_row_height, current_ids.len())?;
-    let target =
-        reload_restore::scroll_target(anchor, current_ids, &layout, adjustment.page_size())?;
+    let target = scroll_target(
+        anchor,
+        current_ids,
+        &layout,
+        adjustment.page_size(),
+        attempt.placement,
+    )?;
     if std::env::var_os("REPRISE_SCROLL_PROBE").is_some() {
         eprintln!(
             "SCROLLMODEL path={} anchor={anchor:?} position={:?} row_height={height:.1} \
              sections={:?} target={target:.1}",
-            path.apply_probe(),
+            attempt.path.apply_probe(),
             anchor.and_then(|(track_id, _)| current_ids.iter().position(|id| *id == track_id)),
             section_spans,
             height = layout.row_height().pixels(),
         );
     }
-    let provisional_sectioned_refinement = !matches!(path, RestorePath::Initial) && n_sections > 0;
+    let provisional_sectioned_refinement =
+        !matches!(attempt.path, RestorePath::Initial) && n_sections > 0;
     if !provisional_sectioned_refinement {
-        set_hold_target(hold, &adjustment, target, path);
+        set_hold_target(hold, &adjustment, target, attempt.path);
     }
     if !crate::ui::scroll_probe::preseed_suppressed() {
         geometry.configure(
@@ -446,7 +563,7 @@ fn apply(
         // Deferring this write until after the settled check makes an early
         // return leave the existing hold target alone; settled refinements
         // remain authoritative.
-        set_hold_target(hold, &adjustment, target, path);
+        set_hold_target(hold, &adjustment, target, attempt.path);
     }
     geometry.remember_if_settled(
         &shared.conn,
@@ -455,13 +572,37 @@ fn apply(
         current_ids.len(),
         n_sections,
     );
-    crate::ui::scroll_probe::probe(path.apply_probe(), &adjustment, target);
+    crate::ui::scroll_probe::probe(attempt.path.apply_probe(), &adjustment, target);
     debug_assert!(
         !crate::ui::list_geometry_changed::in_changed_emission(),
         "scroll anchor written from inside a changed emission"
     );
     adjustment.set_value(target);
     Some(layout)
+}
+
+fn scroll_target(
+    anchor: Option<(i64, f64)>,
+    current_ids: &[i64],
+    layout: &ListLayout,
+    page_size: f64,
+    placement: AnchorPlacement,
+) -> Option<f64> {
+    match placement {
+        AnchorPlacement::PreserveOffset => {
+            reload_restore::scroll_target(anchor, current_ids, layout, page_size)
+        }
+        AnchorPlacement::Center => {
+            let position = reload_restore::prepaint_position(anchor, current_ids)?;
+            super::centered_scroll_restore::centered_anchor(
+                layout,
+                position,
+                current_ids.len(),
+                page_size,
+            )
+            .map(|(_, target)| target)
+        }
+    }
 }
 
 fn set_hold_target(

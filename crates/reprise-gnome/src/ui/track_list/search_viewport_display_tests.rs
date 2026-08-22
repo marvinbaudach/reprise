@@ -353,9 +353,9 @@ fn search_16_clearing_without_a_play_returns_to_the_pre_search_place() {
 /// own allocation pass writing the old offset back, and it is a different bug
 /// from ours.
 #[derive(Debug)]
-struct ViewportStep {
-    writer: String,
-    value: f64,
+pub(super) struct ViewportStep {
+    pub(super) writer: String,
+    pub(super) value: f64,
 }
 
 /// Reduces a probe trail to the steps a user could see.
@@ -372,7 +372,9 @@ struct ViewportStep {
 /// `scroll_glide` documents the same flooring from the other side.
 const SUB_PIXEL: f64 = 1.0;
 
-fn viewport_steps(entries: Vec<crate::ui::scroll_probe::trail::Entry>) -> Vec<ViewportStep> {
+pub(super) fn viewport_steps(
+    entries: Vec<crate::ui::scroll_probe::trail::Entry>,
+) -> Vec<ViewportStep> {
     use crate::ui::scroll_probe::trail::Entry;
 
     let mut steps: Vec<ViewportStep> = Vec::new();
@@ -398,7 +400,7 @@ fn viewport_steps(entries: Vec<crate::ui::scroll_probe::trail::Entry>) -> Vec<Vi
 }
 
 /// Records every position the adjustment takes until the handler is dropped.
-fn record_viewport_steps(adjustment: &gtk4::Adjustment) -> gtk4::glib::SignalHandlerId {
+pub(super) fn record_viewport_steps(adjustment: &gtk4::Adjustment) -> gtk4::glib::SignalHandlerId {
     let handler = adjustment.connect_value_changed(|changed| {
         crate::ui::scroll_probe::trail::note_observed(changed.value());
     });

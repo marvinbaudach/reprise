@@ -76,6 +76,7 @@ const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_mi
 #[derive(Clone, Copy)]
 pub(in crate::ui) enum ReloadViewport {
     PreserveAnchor,
+    CenterAnchor,
     CenterPlayingTrack,
     CenterPlayingElsePreSearch,
     /// SEARCH-9: a new result set is read from its top.
@@ -243,6 +244,17 @@ fn restore_reload_anchor(
     }
     let current_ids = resolved_ids.unwrap_or_else(|| shared.current_view_ids());
     select_captured_ids(shared, captured, &current_ids);
+
+    if matches!(viewport, ReloadViewport::CenterAnchor) {
+        super::reload_anchor_scroll::schedule_centered(
+            shared,
+            captured.anchor,
+            captured.row_height,
+            &current_ids,
+            hold,
+        );
+        return;
+    }
 
     if matches!(
         viewport,
@@ -500,6 +512,7 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     let hold = matches!(
         viewport,
         ReloadViewport::PreserveAnchor
+            | ReloadViewport::CenterAnchor
             | ReloadViewport::RestorePreSearch
             | ReloadViewport::CenterPlayingElsePreSearch
     )
