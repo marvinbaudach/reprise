@@ -1374,6 +1374,36 @@ result.
   those views are next reworked: the failure notice then moves into chrome
   or a reserved line, and this paragraph goes with the last in-flow
   banner. No new surface may cite it.
+- **FB-10** [planned] [gtk] — <!-- REVIEW: rule proposal --> The track
+  browser says when its own reload will take longer than a moment, and it
+  never pretends to be working while it is frozen. This covers every reload
+  the browser triggers itself: typing into the search, clearing it, changing
+  the sort, switching the source. Measured on 2026-08-22 (release build,
+  loaded 8-CPU machine): on a 128-track profile every one of those reloads
+  finished under 23 ms, while on a 100,000-track profile a sort change
+  blocked the main thread for 437–671 ms and a cleared search expanding back
+  to the full list blocked it for 94–120 **seconds**. The counting SQL never
+  exceeded 2.4 ms in either profile, so the cost is the synchronous model and
+  list projection, not the query. Threshold: **250 ms** from the reload
+  starting to the replacement list being ready to paint — the empty interval
+  between the slowest measured narrowing search (75 ms) and the fastest
+  measured full-result sort (437 ms), about fifteen frames at 60 Hz. Three
+  obligations follow. (1) A reload that crosses the threshold shows one busy
+  state, placed by FB-9's order — the filter bar's existing trailing slot or
+  an overlay, never a new row and never a changed bar height. (2) It appears
+  only once the threshold has actually elapsed, so the fast path never
+  flashes it. (3) **A busy state that cannot repaint is prohibited.**
+  Painting a spinner and then blocking the main thread for the rest of the
+  reload satisfies the geometry and lies about the state; the reload must
+  yield often enough for the indicator to stay live and the window to stay
+  responsive, or it must not claim to be working at all. Cancel is offered
+  only where it genuinely cancels. Until a reload can yield, the honest
+  reading is that the long cases are defects, not merely unannounced waits.
+  The list keeps its previous content until the replacement is ready — no
+  blank list and no half-filled one. Reduced motion is obeyed through the
+  central gate, and the state stays statically legible per FB-9. What this
+  proposal asks the reviewer to decide: the threshold value, and whether the
+  reload must be made interruptible rather than only announced.
 
 ## H. File association & OS integration
 
