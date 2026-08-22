@@ -44,6 +44,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -61,6 +63,8 @@ import uniffi.reprise_android_ffi.standardEqualizerPresets
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
 private const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
+internal const val PLAYBACK_BIND_WATCHDOG_MS = 2_000L
+internal const val PLAYBACK_BIND_FAILURE_LOG = "Playback service bind did not connect"
 /** No scrim behind the system bars: the app's own ground is what shows through. */
 private const val TRANSPARENT_SYSTEM_BAR = 0
 class MainActivity : ComponentActivity() {
@@ -174,6 +178,7 @@ class MainActivity : ComponentActivity() {
     }
     private val boundService = MutableStateFlow<ReprisePlaybackService?>(null)
     private var playbackBound = false
+    private var playbackBindWatchdog: Job? = null
     private val playbackState = mutableStateOf(PlaybackUiState())
     internal val currentPlaybackState: PlaybackUiState
         get() = playbackState.value
@@ -184,6 +189,8 @@ class MainActivity : ComponentActivity() {
     private val playbackConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
+            playbackBindWatchdog?.cancel()
+            playbackBindWatchdog = null
             boundService.value = service
             visualSceneEngineFactory.value = service.visualSceneEngineFactory()
         }
@@ -450,10 +457,28 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        playbackBindWatchdog?.cancel()
         val intent = Intent(this, ReprisePlaybackService::class.java).apply {
             action = ReprisePlaybackService.LOCAL_BIND_ACTION
         }
         playbackBound = bindService(intent, playbackConnection, Context.BIND_AUTO_CREATE)
+        if (!playbackBound) {
+            Log.w(TAG, "$PLAYBACK_BIND_FAILURE_LOG: bindService returned false")
+            return
+        }
+        playbackBindWatchdog = lifecycleScope.launch {
+            delay(PLAYBACK_BIND_WATCHDOG_MS)
+            if (boundService.value != null || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                return@launch
+            }
+            Log.w(
+                TAG,
+                "$PLAYBACK_BIND_FAILURE_LOG within $PLAYBACK_BIND_WATCHDOG_MS ms; retrying once",
+            )
+            val retryAccepted = bindService(intent, playbackConnection, Context.BIND_AUTO_CREATE)
+            playbackBound = playbackBound || retryAccepted
+            playbackBindWatchdog = null
+        }
     }
 
     override fun onResume() {
@@ -465,6 +490,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        playbackBindWatchdog?.cancel()
+        playbackBindWatchdog = null
         boundService.value = null
         visualSceneEngineFactory.value = NativeVisualSceneEngineFactory
         if (playbackBound) {

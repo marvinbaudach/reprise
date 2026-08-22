@@ -4,6 +4,9 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Looper
+import android.util.Log
+import java.util.PriorityQueue
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +20,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowLog
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
@@ -103,6 +108,39 @@ class MainActivityPlaybackChannelTest {
         assertTrue(state.visualizerActive)
     }
 
+    @Test
+    @LooperMode(LooperMode.Mode.LEGACY)
+    fun aBindThatNeverConnectsIsRetriedAndLogged() {
+        val shadowApplication = shadowOf(application())
+        shadowOf(Looper.getMainLooper()).pause()
+        Robolectric.buildActivity(MainActivity::class.java)
+            .create()
+            .start()
+            .also(activities::add)
+        discardImmediateMainLooperWork()
+        shadowApplication.declareActionUnbindable(ReprisePlaybackService.LOCAL_BIND_ACTION)
+
+        shadowOf(Looper.getMainLooper()).idleFor(
+            PLAYBACK_BIND_WATCHDOG_MS + 1,
+            TimeUnit.MILLISECONDS,
+        )
+
+        assertEquals(2, shadowApplication.boundServiceConnections.size)
+        assertPlaybackBindFailureWasLogged()
+    }
+
+    @Test
+    fun aRefusedBindIsRecorded() {
+        shadowOf(application()).declareActionUnbindable(ReprisePlaybackService.LOCAL_BIND_ACTION)
+
+        Robolectric.buildActivity(MainActivity::class.java)
+            .create()
+            .start()
+            .also(activities::add)
+
+        assertPlaybackBindFailureWasLogged()
+    }
+
     private fun buildService(): PlaybackChannelService =
         Robolectric.buildService(PlaybackChannelService::class.java)
             .create()
@@ -133,6 +171,31 @@ class MainActivityPlaybackChannelTest {
 
     private fun idleMainLooper() {
         shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun assertPlaybackBindFailureWasLogged() {
+        assertTrue(
+            ShadowLog.getLogsForTag("RepriseScan").any { item ->
+                item.type == Log.WARN && item.msg.contains(PLAYBACK_BIND_FAILURE_LOG)
+            },
+        )
+    }
+
+    /** Leaves delayed work in place while withholding Robolectric's bind callback. */
+    @Suppress("UNCHECKED_CAST")
+    private fun discardImmediateMainLooperWork() {
+        val scheduler = shadowOf(Looper.getMainLooper()).scheduler
+        val runnablesField = scheduler.javaClass.getDeclaredField("runnables").apply {
+            isAccessible = true
+        }
+        val runnables = runnablesField.get(scheduler) as PriorityQueue<Any>
+        val immediate = runnables.filter { scheduled ->
+            val scheduledTime = scheduled.javaClass.getDeclaredField("scheduledTime").apply {
+                isAccessible = true
+            }.getLong(scheduled)
+            scheduledTime <= scheduler.currentTime
+        }
+        immediate.forEach(runnables::remove)
     }
 }
 
