@@ -72,17 +72,28 @@ pub(in crate::ui) fn status_text(status: &ConnectionStatus) -> String {
     }
 }
 
+struct LastFmSignIn {
+    button: gtk4::Button,
+    api_key: String,
+    shared_secret: String,
+}
+
 struct LastFmExpanderSurface {
     expander: adw::ExpanderRow,
     api_key: adw::PasswordEntryRow,
     shared_secret: adw::PasswordEntryRow,
-    sign_in: Option<gtk4::Button>,
+    sign_in: Option<LastFmSignIn>,
     open_browser: gtk4::Button,
     disconnect: gtk4::Button,
     test_connection: crate::ui::preference_dependencies::TestConnectionRow,
 }
 
-fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> LastFmExpanderSurface {
+fn build_lastfm_expander(
+    is_enabled: bool,
+    connected: bool,
+    status: &str,
+    bundled: Option<(&str, &str)>,
+) -> LastFmExpanderSurface {
     let description =
         crate::ui::preference_plugins::plugin_description(&reprise_core::modules::LASTFM_MODULE);
     let subtitle = if is_enabled {
@@ -90,8 +101,6 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     } else {
         description.clone()
     };
-    let bundled = has_bundled_credentials();
-
     let expander = adw::ExpanderRow::builder()
         .title(strings::text(strings::LASTFM))
         .subtitle(&subtitle)
@@ -117,11 +126,24 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         .activatable_widget(&open_browser)
         .build();
     browser_row.add_suffix(&open_browser);
+    let (credentials_title, credentials_description, credentials_expanded) = if bundled.is_some() {
+        (
+            strings::text(strings::LASTFM_ADVANCED_SETUP),
+            strings::text(strings::LASTFM_ADVANCED_SETUP_DESCRIPTION),
+            false,
+        )
+    } else {
+        (
+            strings::text(strings::LASTFM_OWN_APPLICATION),
+            strings::text(strings::LASTFM_OWN_APPLICATION_DESCRIPTION),
+            true,
+        )
+    };
     let credentials_section = adw::ExpanderRow::builder()
-        .title(strings::text(strings::LASTFM_ADVANCED_SETUP))
-        .subtitle(strings::text(strings::LASTFM_ADVANCED_SETUP_DESCRIPTION))
+        .title(credentials_title)
+        .subtitle(credentials_description)
         .show_enable_switch(false)
-        .expanded(false)
+        .expanded(credentials_expanded)
         .build();
     credentials_section.add_row(&api_key);
     credentials_section.add_row(&shared_secret);
@@ -132,10 +154,10 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     credentials_section.add_row(&hint);
     credentials_section.add_row(&browser_row);
 
-    let sign_in: Option<gtk4::Button>;
+    let sign_in: Option<LastFmSignIn>;
     let mut sens: Vec<gtk4::glib::WeakRef<gtk4::Widget>> = Vec::new();
 
-    if bundled {
+    if let Some((api_key, shared_secret)) = bundled {
         let hint = adw::ActionRow::builder()
             .subtitle(strings::text(strings::LASTFM_BUNDLED_HINT))
             .build();
@@ -156,7 +178,11 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         expander.add_row(&sign_in_row);
         sens.push(sign_in_row.upcast_ref::<gtk4::Widget>().downgrade());
 
-        sign_in = Some(btn);
+        sign_in = Some(LastFmSignIn {
+            button: btn,
+            api_key: api_key.to_string(),
+            shared_secret: shared_secret.to_string(),
+        });
     } else {
         sign_in = None;
     }
@@ -276,11 +302,6 @@ fn client_for(
     crate::ui::scrobbling::smoke::lastfm_client(&credentials.api_key, &credentials.shared_secret)
 }
 
-fn has_bundled_credentials() -> bool {
-    reprise_core::scrobbling::BUNDLED_API_KEY.is_some()
-        && reprise_core::scrobbling::BUNDLED_SHARED_SECRET.is_some()
-}
-
 fn disable_module(conn: &Rc<Db>, runtime: &ScrobbleRuntime) {
     if let Err(error) =
         reprise_core::modules::set_enabled(conn, &reprise_core::modules::LASTFM_MODULE, false)
@@ -297,7 +318,9 @@ impl PreferencesContext {
                 .unwrap_or(false);
         let connected = self.lastfm.is_active();
         let status = status_text(&self.lastfm.status());
-        let surface = build_lastfm_expander(is_enabled, connected, &status);
+        let bundled = reprise_core::scrobbling::BUNDLED_API_KEY
+            .zip(reprise_core::scrobbling::BUNDLED_SHARED_SECRET);
+        let surface = build_lastfm_expander(is_enabled, connected, &status, bundled);
         let description = crate::ui::preference_plugins::plugin_description(
             &reprise_core::modules::LASTFM_MODULE,
         );
@@ -343,18 +366,14 @@ impl PreferencesContext {
                 }
             });
 
-        if let Some(ref sign_in_btn) = surface.sign_in {
+        if let Some(ref sign_in) = surface.sign_in {
             let weak = Rc::downgrade(self);
             let exp = surface.expander.clone();
-            sign_in_btn.connect_clicked(move |_| {
+            let api_key = sign_in.api_key.clone();
+            let shared_secret = sign_in.shared_secret.clone();
+            sign_in.button.connect_clicked(move |_| {
                 if let Some(ctx) = weak.upgrade() {
-                    let key = reprise_core::scrobbling::BUNDLED_API_KEY
-                        .unwrap()
-                        .to_string();
-                    let sec = reprise_core::scrobbling::BUNDLED_SHARED_SECRET
-                        .unwrap()
-                        .to_string();
-                    ctx.request_lastfm_authorization(&exp, key, sec);
+                    ctx.request_lastfm_authorization(&exp, api_key.clone(), shared_secret.clone());
                 }
             });
         }
