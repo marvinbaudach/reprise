@@ -35,7 +35,6 @@ pub(in crate::ui) fn css() -> String {
 mod tests {
     use std::rc::Rc;
 
-    use gtk4::prelude::*;
     use libadwaita as adw;
 
     use super::*;

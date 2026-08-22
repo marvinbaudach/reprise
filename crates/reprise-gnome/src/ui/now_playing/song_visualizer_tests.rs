@@ -270,8 +270,10 @@ fn render_bass_pressure_moments_ppm() {
 
     let bytes = std::fs::read(&pcm_path).expect("readable raw PCM");
     let samples: Vec<f32> = bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|bytes| f32::from_le_bytes(*bytes))
         .collect();
 
     let mut cava =
@@ -345,8 +347,10 @@ fn dump_song_visualizer_stream() {
     std::fs::create_dir_all(&output_dir).expect("writable REPRISE_VIS_OUT");
     let bytes = std::fs::read(&pcm_path).expect("readable raw PCM");
     let samples: Vec<f32> = bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|bytes| f32::from_le_bytes(*bytes))
         .collect();
 
     let mut cava = CavaBarProcessor::new(CavaConfig::new(SAMPLE_RATE, SPECTRUM_BAND_COUNT))

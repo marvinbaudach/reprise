@@ -9,7 +9,6 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use gtk4::prelude::*;
 use reprise_core::browser::{BrowserPlace, LibraryScope, TrackCollection, TrackViewState};
 
 use super::*;

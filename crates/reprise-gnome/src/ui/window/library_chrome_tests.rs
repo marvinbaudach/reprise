@@ -1,8 +1,6 @@
 //! Tests for the library chrome surface. Split out of `library_chrome.rs`
 //! so that file stays under the 800-line gate.
 
-use libadwaita::prelude::*;
-
 use super::*;
 
 fn test_content() -> gtk4::Label {

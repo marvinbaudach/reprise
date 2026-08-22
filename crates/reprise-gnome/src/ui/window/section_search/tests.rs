@@ -1,6 +1,5 @@
 use std::cell::RefCell as StdRefCell;
 
-use libadwaita::prelude::*;
 use reprise_core::browser::navigation::{NavigationIntent, SidebarTarget};
 use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
 

@@ -1,7 +1,5 @@
 //! Reading one Reprise-owned file below a resolved device sync target.
 
-use gio::prelude::*;
-
 use super::*;
 
 impl DeviceStorage {

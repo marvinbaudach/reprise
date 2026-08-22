@@ -121,7 +121,6 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use gtk4::gio::prelude::*;
     use reprise_core::artist_news::LibraryPresence;
 
     use super::*;

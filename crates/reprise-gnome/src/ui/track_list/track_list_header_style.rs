@@ -152,7 +152,12 @@ mod tests {
             let stride = texture.width() as usize * 4;
             let mut pixels = vec![0; stride * texture.height() as usize];
             texture.download(&mut pixels, stride);
-            pixels.chunks_exact(4).filter(|pixel| pixel[3] != 0).count()
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|pixel| pixel[3] != 0)
+                .count()
         }
 
         fn settle_transitions() {

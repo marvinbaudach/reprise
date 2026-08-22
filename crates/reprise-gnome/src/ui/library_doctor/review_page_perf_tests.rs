@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
-use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::library_doctor::{DoctorField, DoctorReviewRowId, DoctorScan, DoctorValue};
 

@@ -3,7 +3,6 @@ use std::io::Write;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::view_source::ViewSource;
 

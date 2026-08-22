@@ -1,5 +1,10 @@
 //! Secure Last.fm credential storage in the system keyring.
 
+// The keyring error this module forwards is `oo7::Error`, which is 128 bytes
+// wide on its own — the size is not ours to shrink, and the alternative is
+// boxing an error type these callers match on directly.
+#![allow(clippy::result_large_err)]
+
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
