@@ -348,16 +348,19 @@ cargo test -p reprise-gnome \
   -- --exact --test-threads=1
 ```
 
-The strand did not edit or run `scripts/check-accessibility-semantics.sh`:
-that path is outside the strand's explicit write ownership, and the mother
-plan reserves the global accessibility gate for the post-merge cross-check.
-The owned rating module carries the equivalent narrow static contract so the
-wiring could still be mutation-proven without crossing that boundary. gtk4-rs
-0.11.4 has no accessible-property value getter, so this strand did not read
-the label back from a widget and did not assert the AT-SPI tree itself. The
-test proves that all five supplied names are distinct and the static contract
-proves that `build_star` supplies `Property::Label`; it does not claim runtime
-value readback. `cargo fmt --check`, strict workspace Clippy, and isolated
+The strand did not edit or directly run
+`scripts/check-accessibility-semantics.sh`: that path is outside the strand's
+explicit write ownership, and the mother plan reserves the meaningful
+whole-tree gate for the post-merge cross-check. The final architecture check
+invoked that script transitively and it passed on this branch; it does not
+replace the required combined run after strand 2 lands. The owned rating
+module carries the equivalent narrow static contract so the wiring could be
+mutation-proven without crossing the write boundary. gtk4-rs 0.11.4 has no
+accessible-property value getter, so this strand did not read the label back
+from a widget and did not assert the AT-SPI tree itself. The test proves that
+all five supplied names are distinct and the static contract proves that
+`build_star` supplies `Property::Label`; it does not claim runtime value
+readback. `cargo fmt --check`, strict workspace Clippy, and isolated
 `cargo test --workspace` passed; the principal crate counts were Core 2567,
 GNOME 1965, Linux platform 158, Android FFI 170, and Reprise View 117.
 `cargo audit` passed with only the accepted `RUSTSEC-2024-0436` warning for
@@ -394,3 +397,20 @@ every human hover. `cargo fmt --check`, strict workspace Clippy, and isolated
 GNOME 1967, Linux platform 158, Android FFI 170, and Reprise View 117.
 `cargo audit` passed with only the accepted `RUSTSEC-2024-0436` warning for
 `paste`.
+
+### Strand close-out
+
+The four-worker rule-named display inventory passed 543/543, with the one
+measurement tool correctly skipped. Strict Rust documentation passed, the
+Linux platform suite passed 158 tests with 2 intentional ignores, and the
+private-D-Bus runtime suite passed 25/25. The remaining non-Android readiness
+checks passed except for two pre-existing harness defects in untouched files:
+`scripts/check-shell.sh` reports SC2154 at
+`scripts/cua-e2e/responsive_window.sh:72`, and
+`scripts/tests/qa-linters.sh` reaches `scripts/tests/cua-e2e.sh`, whose old fake
+snapshots do not contain the `snapshot_id` required since `c84e99adc6f`.
+Project and Showroom quality passed after redirecting uv's read-only global
+caches to disposable roots. Android quality was not claimed: this GNOME-only
+strand has no generated UniFFI Kotlin bindings, and generating them would write
+outside strand ownership. The post-merge accessibility and CUA sweep checks
+remain assigned to the mother plan.
