@@ -5,6 +5,10 @@ Doku-Commit. Vorgänger: `docs/plans/pr-and-issue-sweep-2026-08-22.HANDOFF.md`.
 
 ## Das Einzige, was jetzt Aufmerksamkeit braucht
 
+**Zwei PRs warten auf den Merge: #623 und #624.** Beide sind reine Skript-/CI-
+Änderungen, `bump-version.sh` meldet für beide `no desktop or Android app
+changes`.
+
 **PR #623 ist `CLEAN` und wartet nur auf den Merge.** `Quality gate` grün, alle
 Rust-Stufen `skipping` (reine Skriptänderung, Route-Filter greift korrekt).
 
@@ -138,10 +142,25 @@ Nebeneffekt: flatpak-builder cached über das Manifest, Patchen invalidiert.
 öffentlichen Manifest, nicht aus unserem Workflow — dieser Kanal bleibt bei
 BYO, solange die Werte nicht öffentlich im Repo stehen.
 
-**Blockiert auf den Owner:** Anwendung registrieren, dann Secrets
-`REPRISE_LASTFM_API_KEY` und `REPRISE_LASTFM_SHARED_SECRET` anlegen. Danach
-Verdrahtung. Die Verdrahtung kann vorab gebaut werden — ohne Secret liefert
-`option_env!` `None`, der Build verhält sich wie heute.
+**Erledigt (22.08. nachmittags):** Der Owner hat die Anwendung registriert und
+beide Secrets angelegt (`gh secret list` bestätigt sie, 11:01/11:02 UTC). Die
+Verdrahtung liegt als **PR #624**:
+
+- `scripts/inject-build-credentials.py` patcht das ausgecheckte Manifest
+  unmittelbar vor `flatpak-builder`; das committete bleibt sauber.
+- `release.yml` reicht die Secrets nur an diesen einen Schritt.
+- `RELEASING.md` bekommt den Abschnitt „Bundled Last.fm credential".
+
+Drei Arme lokal geprüft: ohne Secrets bleibt das Manifest byte-identisch; mit
+Secrets (Werte mit `"` und `#`) parst es und beide Werte kommen exakt zurück;
+ohne Anker bricht es mit Exit 1 ab, statt still ein Release ohne Credential zu
+bauen.
+
+**Nicht angefasst, aber dieselbe Lücke:** `REPRISE_TICKETMASTER_APIKEY` ist
+ebenfalls in **keinem** Workflow verdrahtet — nur in `RELEASING.md`
+beschrieben. Das Secret existiert seit 26.07. Ein Einzeiler in
+`inject-build-credentials.py` (`VARIABLES`) würde es mitnehmen; bewusst nicht
+getan, weil es das Concerts-Verhalten ohne Auftrag ändert.
 
 ## Aufräumen (nicht gemacht, bewusst)
 
