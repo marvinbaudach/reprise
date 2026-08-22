@@ -5,7 +5,6 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -338,7 +337,7 @@ internal fun SpectralSeekSlider(
     val sliderInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
     LaunchedEffect(sliderInteractionSource, trackId) {
         sliderInteractionSource.interactions.collect { interaction ->
-            if (interaction is DragInteraction.Cancel || interaction is PressInteraction.Cancel) {
+            if (interaction is DragInteraction.Cancel) {
                 surfaceState.releaseScrub(trackId)
             }
         }
