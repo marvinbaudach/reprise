@@ -156,12 +156,20 @@ pub(in crate::ui) fn restore(
     saved: &SavedViewState,
     current_ids: &[i64],
 ) {
+    restore_selection_and_focus(shared, saved, current_ids);
+    restore_scroll_when_ready(shared, saved.anchor, current_ids.to_vec());
+}
+
+pub(in crate::ui) fn restore_selection_and_focus(
+    shared: &std::rc::Rc<Shared>,
+    saved: &SavedViewState,
+    current_ids: &[i64],
+) {
     let positions = positions_to_select(saved, current_ids);
     shared.selection.unselect_all();
     for position in positions {
         shared.selection.select_item(position, false);
     }
-    restore_scroll_when_ready(shared, saved.anchor, current_ids.to_vec());
     if matches!(saved.focus, TrackFocus::Track(_)) {
         let _ = shared.column_view.grab_focus();
     }

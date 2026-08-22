@@ -14,6 +14,20 @@ related: one-centering-path-for-jump-and-clear
 coded` stehen geblieben, weil die Messung (Tasks 1–2–5) ein Problem offenbart
 hat, das mit Tasks 3–4 als dort spezifiziert nicht lösbar ist.
 
+## Correction recorded 2026-08-22 — issue #620 is a different occasion
+
+The player-bar title reproduction from #620 was traced end to end. It reaches
+the anchor restore through `NavigationIntent::RevealTrack`; Core constructs its
+`TrackAnchor` with a `0.0` content offset, so the old target was exactly the
+revealed row's top edge. It is not an instance of the four-step fight measured
+for search clearing, and the edge snap discussed below has already been removed
+as recorded in `centered_scroll_restore.rs:9-36`.
+
+The #620 fix therefore carries an explicit centre-anchor viewport intent into
+the existing reload anchor writer. It does not implement Tasks 1–3 of this plan.
+Those tasks and this plan's `phase` remain open for the search-clearing
+occasion.
+
 ## Das Messproblem
 
 Die Control-Arm-Messung aus Task 2 der Vorgängerin registrierte einen **vierstufigen
@@ -34,8 +48,9 @@ Hold-Mechanik; das ist eine Anwendung des Hold auf den falschen Wert.
 
 Die Vorgängerin-Messung deckte zwei Root Causes auf:
 
-**(a) unser Edge-Snap** — `centered_scroll_restore.rs:55-59` schreibt den
-Rand-Wert vor den Zentrierversuchen.
+**(a) unser damaliger Edge-Snap** — `centered_scroll_restore.rs:9-36`
+dokumentiert seine Entfernung und den heute verwendeten reproduzierbaren
+Zeilenanker.
 
 **(b) GTKs eigene Allokation** — nach dem Modelltausch läuft GTKs Allokationsdurchlauf
 und schreibt den alten Adjustment-Offset (einen "remembered"-Wert der GTK-Seite) zurück.
@@ -53,7 +68,7 @@ und schreibt den alten Adjustment-Offset (einen "remembered"-Wert der GTK-Seite)
 **Die tatsächliche Lösung:** GTK muss nicht *danach* korrigiert werden. Er muss
 *zum Zeitpunkt seiner Schreiboperation* bereits auf dem richtigen Wert liegen —
 der Zentrierung, bevor GTK den alten offset zurückschreibt. Das ist exakt das,
-was der Ankerpfad macht (`reload_anchor_scroll.rs:52-80`):
+was der Ankerpfad macht (`reload_anchor_scroll.rs:511-568`):
 
 ```rust
 // 1. Preseed: den Zielwert in die Geometry eintragen
