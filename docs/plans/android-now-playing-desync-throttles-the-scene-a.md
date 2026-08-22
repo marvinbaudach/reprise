@@ -2,7 +2,7 @@
 slug: android-now-playing-desync-throttles-the-scene-a
 worktree: /home/marvin/Projects/reprise-android-now-playing-desync-throttles-the-scene-a
 branch: feature/android-now-playing-desync-throttles-the-scene-a
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-22
 ---
