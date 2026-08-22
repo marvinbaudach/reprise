@@ -508,6 +508,17 @@ if [[ ${3:-} != --socket || ${4:-} != "$CUA_DRIVER_SOCKET" ]]; then
 fi
 printf '%s\t%s\n' "$tool" "$payload" >>"$CUA_E2E_CALL_LOG"
 
+# An element_index only means something against the snapshot that produced it,
+# so every indexed action must quote that snapshot's id -- the most recent one,
+# because the helpers snapshot immediately before they act.
+assert_index_quotes_current_snapshot() {
+  local expected="snapshot-$(<"$CUA_E2E_SNAPSHOT_COUNT")"
+  if ! jq -e --arg id "$expected" '.snapshot_id == $id' <<<"$payload" >/dev/null; then
+    echo "indexed $tool did not quote $expected: $payload" >&2
+    exit 2
+  fi
+}
+
 case "$tool" in
   get_window_state)
     screenshot_path=$(jq -r '.screenshot_out_file' <<<"$payload")
@@ -518,6 +529,10 @@ case "$tool" in
     fi
     count=$((count + 1))
     printf '%s' "$count" >"$CUA_E2E_SNAPSHOT_COUNT"
+    # cua-driver >= 0.17 stamps every reply with the id an element_index is
+    # only valid against. The fake mints one per snapshot so the indexed
+    # actions below can insist on the id of the snapshot that produced them.
+    snapshot_id="snapshot-$count"
     case "$count" in
       1)
         label="Skip for Now"
@@ -540,8 +555,9 @@ case "$tool" in
         index=6
         ;;
       7|8|9|15|16)
-        jq -n --argjson focused "$([[ "$count" == 8 || "$count" == 9 || "$count" == 15 || "$count" == 16 ]] && echo true || echo false)" '{
+        jq -n --arg snapshot_id "$snapshot_id" --argjson focused "$([[ "$count" == 8 || "$count" == 9 || "$count" == 15 || "$count" == 16 ]] && echo true || echo false)" '{
           degraded: false,
+          snapshot_id: $snapshot_id,
           structuredContent: {
             elements: [
               {element_index: 9, role: "panel", label: "Library", parent_index: null, depth: 0},
@@ -555,8 +571,9 @@ case "$tool" in
         exit 0
         ;;
       10|11|12|13|14)
-        jq -n --argjson show_no_results "$([[ "$count" == 13 || "$count" == 14 ]] && echo true || echo false)" '{
+        jq -n --arg snapshot_id "$snapshot_id" --argjson show_no_results "$([[ "$count" == 13 || "$count" == 14 ]] && echo true || echo false)" '{
           degraded: false,
+          snapshot_id: $snapshot_id,
           structuredContent: {
             elements: ([
               {element_index: 9, role: "panel", label: "Library", parent_index: null, depth: 0},
@@ -571,8 +588,10 @@ case "$tool" in
         exit 0
         ;;
     esac
-    jq -n --arg label "$label" --argjson index "$index" '{
+    jq -n --arg label "$label" --arg snapshot_id "$snapshot_id" \
+      --argjson index "$index" '{
       degraded: false,
+      snapshot_id: $snapshot_id,
       structuredContent: {
         elements: [{element_index: $index, role: "button", label: $label,
           frame: {x: 10, y: 20, w: 100, h: 30}}]
@@ -582,9 +601,11 @@ case "$tool" in
     ;;
   click)
     if jq -e '.element_index == 2' <<<"$payload" >/dev/null; then
+      assert_index_quotes_current_snapshot
       jq -n '{effect: "suspected_noop", verified: false,
         escalation: {recommended: "px", reason: "test fallback"}}'
     elif jq -e '.element_index == 4' <<<"$payload" >/dev/null; then
+      assert_index_quotes_current_snapshot
       jq -n '{effect: "confirmed", verified: true}'
     elif jq -e '.x == 60 and .y == 35' <<<"$payload" >/dev/null; then
       jq -n '{effect: "unverifiable", verified: false}'
@@ -596,6 +617,7 @@ case "$tool" in
     ;;
   type_text)
     if jq -e '.element_index == 5 and .text == "nomatch"' <<<"$payload" >/dev/null; then
+      assert_index_quotes_current_snapshot
       jq -n '{effect: "confirmed", verified: true}'
     elif jq -e '(.element_index | not) and .text == "nomatch"
       and .delivery_mode == "foreground"' <<<"$payload" >/dev/null; then
@@ -608,6 +630,7 @@ case "$tool" in
     ;;
   press_key)
     if jq -e '.element_index == 10 and .key == "enter"' <<<"$payload" >/dev/null; then
+      assert_index_quotes_current_snapshot
       if jq -e '.delivery_mode == "foreground"' <<<"$payload" >/dev/null; then
         jq -n '{delivery_mode: "foreground", verified: false}'
       else
