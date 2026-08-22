@@ -53,7 +53,7 @@ assert_snapshot_content_stays_inside_window() {
 }
 
 assert_full_player_controls_are_reachable() {
-  local snapshot_path=$1
+  local snapshot_path=$1 atspi_dump
 
   for label in "Reveal playing album" "Playback position" "Volume"; do
     assert_snapshot_contains "$snapshot_path" "$label"
@@ -63,15 +63,18 @@ assert_full_player_controls_are_reachable() {
     echo "snapshot exposes neither Play nor Pause: $snapshot_path" >&2
     return 1
   fi
-  if ! jq -e '
-    [(.structuredContent.elements // .elements // [])[]
-      | select(
-          .role == "label"
-          and ((.label // "") | test("^[−-]?[0-9]+:[0-9]{2}$"))
-        )]
-    | length >= 2
-  ' "$snapshot_path" >/dev/null; then
-    echo "snapshot does not expose both player time labels: $snapshot_path" >&2
+  # The elapsed/remaining readouts are static text. cua-driver's walk reports
+  # only interactive and structural roles — measured on 0.21.0, `label` never
+  # appears in any snapshot and `get_window_state` has no switch to include it
+  # — so this claim cannot be decided from `$snapshot_path`. Read the a11y bus
+  # directly instead of quietly weakening what the scenario asserts.
+  atspi_dump="${snapshot_path%.json}-atspi.json"
+  if ! "$repo_root/scripts/cua-e2e/atspi_probe.py" \
+    --pid "$APP_PID" \
+    --dump "$atspi_dump" \
+    --name-matches '^[−-]?[0-9]+:[0-9]{2}$' \
+    --min-count 2; then
+    echo "app does not expose both player time labels to AT-SPI: $atspi_dump" >&2
     return 1
   fi
 }
@@ -199,15 +202,19 @@ run_responsive_window_scenario() {
   assert_snapshot_absent "$narrow_path" "Album"
   assert_snapshot_contains "$narrow_path" "Show columns"
 
-  # The private X11 AT-SPI bridge exposes every toast descendant at the
-  # window origin, so its otherwise preferred element-index click cannot
-  # target this action reliably. The window is exactly 720x760 here.
-  cua_click_window_point "$APP_PID" "$WINDOW_ID" 510 710 responsive-show-columns
+  # This used to click a hardcoded window point, on the theory that the
+  # collapsed toast frames (every descendant reports the window origin) ruled
+  # out the element-index route. Measured 2026-08-22: the point is still on
+  # the button, the click is delivered, and it activates nothing — neither the
+  # toast action nor the seek bar underneath (remaining time moved 1:51 -> 1:50,
+  # i.e. plain playback). The element route was refused for an unrelated reason
+  # back then (`snapshot_id_required`), so take it now that it is addressed.
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Show columns" responsive-show-columns
   reopened_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Album" responsive-columns-reopened)
   assert_snapshot_contains "$reopened_path" "Title"
   assert_snapshot_contains "$reopened_path" "Artist"
-  cua_click_window_point "$APP_PID" "$WINDOW_ID" 605 710 responsive-dismiss-columns-toast
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Dismiss" responsive-dismiss-columns-toast
   cua_wait_for_label_absent \
     "$APP_PID" "$WINDOW_ID" "Show columns" responsive-columns-toast-dismissed >/dev/null
 

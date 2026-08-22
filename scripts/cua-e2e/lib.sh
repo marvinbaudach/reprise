@@ -75,6 +75,20 @@ cua_snapshot() {
   printf '%s\n' "$json_path"
 }
 
+# cua-driver >= 0.17 refuses a bare `element_index` with `snapshot_id_required`:
+# an index only means something against the snapshot that produced it. Every
+# `get_window_state` reply carries the id at the top level.
+snapshot_id_of() {
+  local snapshot_path=$1 snapshot_id
+
+  snapshot_id=$(jq -r '.snapshot_id // empty' "$snapshot_path")
+  if [[ -z "$snapshot_id" ]]; then
+    echo "snapshot carries no snapshot_id: $snapshot_path" >&2
+    return 1
+  fi
+  printf '%s\n' "$snapshot_id"
+}
+
 element_index_for_label() {
   local snapshot_path=$1 label=$2
   local matches
@@ -151,7 +165,15 @@ cua_wait_for_label() {
   local pid=$1 window_id=$2 label=$3 stem=$4 snapshot_path
 
   for attempt in $(seq 1 24); do
-    snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt")
+    # A GTK4 app registers its AT-SPI bridge seconds after its X11 window
+    # (measured: window ~1.3s, usable tree ~2.8s), so the first snapshots come
+    # back degraded. `cua_snapshot` refuses those on purpose — they are not
+    # evidence — but under `set -e` that refusal used to abort the very poll
+    # written to wait them out. Keep refusing them; just keep polling.
+    if ! snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt"); then
+      sleep 0.25
+      continue
+    fi
     if assert_snapshot_contains "$snapshot_path" "$label" 2>/dev/null; then
       printf '%s\n' "$snapshot_path"
       return 0
@@ -166,7 +188,10 @@ cua_wait_for_label_absent() {
   local pid=$1 window_id=$2 label=$3 stem=$4 snapshot_path
 
   for attempt in $(seq 1 24); do
-    snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt")
+    if ! snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt"); then
+      sleep 0.25
+      continue
+    fi
     if assert_snapshot_absent "$snapshot_path" "$label" 2>/dev/null; then
       printf '%s\n' "$snapshot_path"
       return 0
@@ -356,18 +381,20 @@ assert_focus_returns_to() {
 # snapshotting before and after so the caller has evidence either way.
 cua_pointer_action_label() {
   local verb=$1 pid=$2 window_id=$3 label=$4 stem=$5
-  local before_path action_path ax_action_path index payload x y
+  local before_path action_path ax_action_path index snapshot_id payload x y
 
   before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
   index=$(element_index_for_label "$before_path" "$label")
+  snapshot_id=$(snapshot_id_of "$before_path") || return 1
   action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
   payload=$(jq -nc \
     --argjson pid "$pid" \
     --argjson window_id "$window_id" \
     --argjson element_index "$index" \
+    --arg snapshot_id "$snapshot_id" \
     --arg session "$CUA_E2E_SESSION" \
     '{pid: $pid, window_id: $window_id, element_index: $element_index,
-      session: $session}')
+      snapshot_id: $snapshot_id, session: $session}')
   if ! cua_driver "$verb" "$payload" >"$action_path"; then
     echo "CUA $verb command failed: $stem" >&2
     return 1
@@ -449,19 +476,21 @@ assert_type_text_landed() {
 
 cua_type_text_label() {
   local pid=$1 window_id=$2 label=$3 value=$4 stem=$5
-  local before_path action_path background_action_path index payload
+  local before_path action_path background_action_path index snapshot_id payload
 
   before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
   index=$(element_index_for_label "$before_path" "$label")
+  snapshot_id=$(snapshot_id_of "$before_path") || return 1
   action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
   payload=$(jq -nc \
     --argjson pid "$pid" \
     --argjson window_id "$window_id" \
     --argjson element_index "$index" \
+    --arg snapshot_id "$snapshot_id" \
     --arg text "$value" \
     --arg session "$CUA_E2E_SESSION" \
     '{pid: $pid, window_id: $window_id, element_index: $element_index,
-      text: $text, session: $session}')
+      snapshot_id: $snapshot_id, text: $text, session: $session}')
   if ! cua_driver type_text "$payload" >"$action_path"; then
     echo "CUA type_text command failed: $stem" >&2
     return 1
@@ -502,19 +531,21 @@ cua_type_text_window() {
 
 cua_press_key_label() {
   local pid=$1 window_id=$2 label=$3 key=$4 stem=$5
-  local before_path action_path background_action_path index payload
+  local before_path action_path background_action_path index snapshot_id payload
 
   before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
   index=$(element_index_for_label "$before_path" "$label")
+  snapshot_id=$(snapshot_id_of "$before_path") || return 1
   action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
   payload=$(jq -nc \
     --argjson pid "$pid" \
     --argjson window_id "$window_id" \
     --argjson element_index "$index" \
+    --arg snapshot_id "$snapshot_id" \
     --arg key "$key" \
     --arg session "$CUA_E2E_SESSION" \
     '{pid: $pid, window_id: $window_id, element_index: $element_index,
-      key: $key, session: $session}')
+      snapshot_id: $snapshot_id, key: $key, session: $session}')
   if ! cua_driver press_key "$payload" >"$action_path"; then
     echo "CUA press_key command failed: $stem" >&2
     return 1

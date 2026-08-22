@@ -100,7 +100,15 @@ wait_for_label() {
   local pid=$1 window_id=$2 label=$3 stem=$4 snapshot_path
 
   for attempt in $(seq 1 24); do
-    snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt")
+    # A GTK4 app registers its AT-SPI bridge seconds after its X11 window
+    # (measured: window ~1.3s, usable tree ~2.8s), so the first snapshots come
+    # back degraded. `cua_snapshot` refuses those on purpose — they are not
+    # evidence — but under `set -e` that refusal aborted the very poll written
+    # to wait them out. Keep refusing them; just keep polling.
+    if ! snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt"); then
+      sleep 0.25
+      continue
+    fi
     if assert_snapshot_contains "$snapshot_path" "$label" 2>/dev/null; then
       printf '%s\n' "$snapshot_path"
       return 0
@@ -115,7 +123,10 @@ wait_for_label_absent() {
   local pid=$1 window_id=$2 label=$3 stem=$4 snapshot_path
 
   for attempt in $(seq 1 24); do
-    snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt")
+    if ! snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt"); then
+      sleep 0.25
+      continue
+    fi
     if assert_snapshot_absent "$snapshot_path" "$label" 2>/dev/null; then
       printf '%s\n' "$snapshot_path"
       return 0

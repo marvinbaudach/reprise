@@ -171,7 +171,7 @@ assert_scrobbling_focus_widget() {
 
 cua_click_scrobbling_switch() {
   local pid=$1 window_id=$2 label=$3 stem=$4
-  local before_path index action_path payload
+  local before_path index snapshot_id action_path payload
 
   before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
   index=$(jq -r --arg label "$label" '
@@ -183,14 +183,16 @@ cua_click_scrobbling_switch() {
     echo "snapshot does not expose a switch labelled '$label'" >&2
     return 1
   fi
+  snapshot_id=$(snapshot_id_of "$before_path") || return 1
   action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
   payload=$(jq -nc \
     --argjson pid "$pid" \
     --argjson window_id "$window_id" \
     --argjson element_index "$index" \
+    --arg snapshot_id "$snapshot_id" \
     --arg session "$CUA_E2E_SESSION" \
     '{pid: $pid, window_id: $window_id, element_index: $element_index,
-      session: $session}')
+      snapshot_id: $snapshot_id, session: $session}')
   cua_driver click "$payload" >"$action_path"
   assert_action_landed "$action_path"
   cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null
