@@ -3249,8 +3249,20 @@ property is set and yet nothing happens.
   sort indicator: the indicator for its current primary column. Every other
   indicator is invisible while its width stays reserved, so headers do not
   jump. A header without a sort field carries no sorter and therefore does not
-  appear clickable; a sortable header orders its own column. **Test rule:**
+  appear clickable; a sortable header orders its own column. **Issue #404:**
+  sorting is also reachable without a pointer through a labelled control in
+  the browse bar. Its field and direction choices are labelled, keyboard
+  navigable, and expose the current choice as state. The browse-bar control
+  and the sortable column headers drive the same `ColumnView` sorter; neither
+  writes or owns a second sort state. **Test rule:**
   one rule-named display test per table, plus a measured filler test. Tests:
+  `style_13_browse_sort_and_header_click_converge_and_reload_once`
+  and `style_13_header_sort_is_marked_when_the_sort_popover_opens`
+  (`ui/track_list/track_list_sort.rs`),
+  `style_13_sort_choices_match_every_accepted_table_sort_field`,
+  `style_13_sort_choices_are_keyboard_radio_actions`, and
+  `style_13_sort_popover_closes_on_escape`
+  (`ui/browse/browse_bar_tests.rs`),
   `style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator`
   (`ui/table_columns/registry.rs`),
   `nr_39_the_column_editor_lists_status_and_link_and_hides_them` and

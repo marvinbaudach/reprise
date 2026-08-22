@@ -56,6 +56,27 @@ pub(in crate::ui) fn sort_by_column(
     crate::ui::table_columns::single_sort_indicator::sync_primary_sort_indicator(view);
 }
 
+/// Applies a sort-field choice through the same `ColumnView` sorter used by a
+/// header click. The sorter observer remains the only writer of `Shared::sort`
+/// and the only trigger for the resulting reload.
+pub(in crate::ui) fn sort_by_field(
+    view: &gtk4::ColumnView,
+    field: &str,
+    order: gtk4::SortType,
+) -> bool {
+    let columns = view.columns();
+    let Some(column) = (0..columns.n_items()).find_map(|index| {
+        columns
+            .item(index)
+            .and_downcast::<gtk4::ColumnViewColumn>()
+            .filter(|column| column.id().as_deref() == Some(field))
+    }) else {
+        return false;
+    };
+    sort_by_column(view, &column, order);
+    true
+}
+
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
 /// them back to a whitelisted sort field + direction, then reloads.
 pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
@@ -78,6 +99,7 @@ pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &R
         let shared = shared.clone();
         cv_sorter.connect_primary_sort_order_notify(move |s| on_sorter_changed(&shared, s));
     }
+    shared.browse_bar.sort_control.wire(column_view, shared);
 }
 
 fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
@@ -450,6 +472,123 @@ mod header_sort_display_tests {
             "a header sort owns the persisted sort state"
         );
         assert_eq!(reloads.get(), initial_reloads + 3);
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_13_browse_sort_and_header_click_converge_and_reload_once() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let reloads = Rc::new(Cell::new(0));
+        let track_list = TrackList::new(
+            Rc::new(crate::test_db::open().unwrap()),
+            Box::new(|_, _, _, _| {}),
+            {
+                let reloads = reloads.clone();
+                move |_, _, _, _| reloads.set(reloads.get() + 1)
+            },
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder().child(track_list.widget()).build();
+        window.present();
+
+        let title = column_for_field(&track_list.shared.column_view, "title");
+        let before_header = reloads.get();
+        sort_by_column(
+            &track_list.shared.column_view,
+            &title,
+            gtk4::SortType::Ascending,
+        );
+        let header_state = track_list.shared.sort.borrow().clone();
+        assert_eq!(reloads.get(), before_header + 1);
+
+        let artist = column_for_field(&track_list.shared.column_view, "artist");
+        sort_by_column(
+            &track_list.shared.column_view,
+            &artist,
+            gtk4::SortType::Ascending,
+        );
+        let before_menu = reloads.get();
+        assert!(track_list
+            .shared
+            .browse_bar
+            .sort_control
+            .activate_field("title"));
+        assert_eq!(*track_list.shared.sort.borrow(), header_state);
+        assert_eq!(
+            reloads.get(),
+            before_menu + 1,
+            "one menu choice reaches the shared sorter and reloads exactly once"
+        );
+
+        let before_direction = reloads.get();
+        assert!(track_list
+            .shared
+            .browse_bar
+            .sort_control
+            .activate_direction("desc"));
+        assert_eq!(
+            *track_list.shared.sort.borrow(),
+            SortState {
+                field: "title".into(),
+                dir: "desc".into(),
+            }
+        );
+        assert_eq!(
+            reloads.get(),
+            before_direction + 1,
+            "one direction choice reaches the shared sorter and reloads exactly once"
+        );
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_13_header_sort_is_marked_when_the_sort_popover_opens() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let track_list = TrackList::new(
+            Rc::new(crate::test_db::open().unwrap()),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder().child(track_list.widget()).build();
+        window.present();
+
+        let title = column_for_field(&track_list.shared.column_view, "title");
+        sort_by_column(
+            &track_list.shared.column_view,
+            &title,
+            gtk4::SortType::Descending,
+        );
+        track_list.shared.browse_bar.sort_control.button().popup();
+        let context = gtk4::glib::MainContext::default();
+        while context.pending() {
+            context.iteration(false);
+        }
+
+        let title_marked = track_list
+            .shared
+            .browse_bar
+            .sort_control
+            .field_choices()
+            .into_iter()
+            .find(|(field, _)| field == "title")
+            .is_some_and(|(_, choice)| choice.is_active());
+        assert!(title_marked, "the header-selected field is marked on open");
+        assert!(
+            track_list
+                .shared
+                .browse_bar
+                .sort_control
+                .direction_choices()[1]
+                .is_active(),
+            "the header-selected descending direction is marked on open"
+        );
         window.close();
     }
 
