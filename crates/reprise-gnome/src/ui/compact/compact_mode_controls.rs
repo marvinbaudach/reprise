@@ -185,7 +185,6 @@ pub(in crate::ui) fn install(
 #[cfg(test)]
 mod tests {
     use gtk4::gio;
-    use libadwaita::prelude::*;
     use reprise_core::library::settings::{CompactLayout, WindowViewMode};
 
     use super::*;

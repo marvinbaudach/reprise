@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use chrono::TimeZone;
-use gtk4::prelude::*;
 use reprise_core::device_sync::{
     DeviceSelection, DeviceSettings, DeviceStorageAccess, DeviceStorageProjection,
     DeviceStorageSnapshot, MirrorBlocker, Mp3Quality, SelectionSource, StorageComposition,

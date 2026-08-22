@@ -3,8 +3,6 @@
 //! of `waveform_seek.rs` to keep it under the 800-line file cap; the draw
 //! callback in `super::WaveformSeek` calls `draw`.
 
-use gtk4::prelude::*;
-
 use super::*;
 
 pub(super) fn draw(

@@ -110,9 +110,7 @@ fn subscribe_summary(
 
 #[cfg(test)]
 mod tests {
-    use gtk4::prelude::*;
     use libadwaita as adw;
-    use libadwaita::prelude::*;
 
     use super::*;
 

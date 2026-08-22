@@ -183,7 +183,6 @@ impl SourceErrorBanner {
 
 #[cfg(test)]
 mod tests {
-    use gtk4::prelude::*;
     use reprise_core::source_error::{source_failure_presentation, SourceErrorKind, SourceSurface};
 
     use super::*;

@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 
-use gtk4::prelude::*;
 use reprise_core::podcasts::feed::ParsedEpisode;
 use reprise_core::podcasts::store::{self, NewSubscription};
 

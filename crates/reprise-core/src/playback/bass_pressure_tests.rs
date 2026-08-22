@@ -177,8 +177,10 @@ fn probe_real_tracks() {
             continue;
         };
         let samples: Vec<f32> = bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect();
         let mut detector = BassPressureDetector::new(RATE);
         let (mut ks, mut ps, mut is, mut au) = (vec![], vec![], vec![], vec![]);

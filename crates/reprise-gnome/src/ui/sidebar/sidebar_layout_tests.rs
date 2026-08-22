@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::scanner::ScanProgress;

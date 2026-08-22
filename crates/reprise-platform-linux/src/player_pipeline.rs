@@ -335,8 +335,10 @@ pub(crate) fn attach_cava_sink(
                 let map = buffer.map_readable().map_err(|_| gst::FlowError::Error)?;
                 let pcm = map
                     .as_slice()
-                    .chunks_exact(size_of::<f32>())
-                    .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+                    .as_chunks::<{ size_of::<f32>() }>()
+                    .0
+                    .iter()
+                    .map(|bytes| f32::from_le_bytes(*bytes))
                     .collect::<Vec<_>>();
                 let bands: [f32; SPECTRUM_BAND_COUNT] = processor
                     .process(&pcm)

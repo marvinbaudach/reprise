@@ -464,7 +464,6 @@ pub(in crate::ui) fn build(
 
 #[cfg(test)]
 mod tests {
-    use libadwaita::prelude::*;
 
     use super::*;
 

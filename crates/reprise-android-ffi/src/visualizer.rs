@@ -113,8 +113,10 @@ impl LiveAudioState {
         self.mono_samples.reserve(frame_count);
         for frame in bytes.chunks_exact(frame_bytes) {
             let sum = frame
-                .chunks_exact(size_of::<i16>())
-                .map(|sample| i16::from_le_bytes([sample[0], sample[1]]) as f32)
+                .as_chunks::<{ size_of::<i16>() }>()
+                .0
+                .iter()
+                .map(|sample| i16::from_le_bytes(*sample) as f32)
                 .sum::<f32>();
             self.mono_samples
                 .push(sum / channel_count as f32 / 32_768.0);
