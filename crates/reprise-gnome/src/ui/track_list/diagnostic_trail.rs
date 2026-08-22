@@ -326,6 +326,26 @@ mod tests {
     }
 
     #[test]
+    fn production_reload_finishes_measurement_after_the_list_is_displayable() {
+        let source = include_str!("track_list_reload.rs");
+        let run_query = source
+            .split_once("fn run_query(")
+            .expect("the production reload seam must exist")
+            .1;
+        let empty_state = run_query
+            .find("apply_empty_state(")
+            .expect("the reload must project its empty state");
+        let finish = run_query
+            .find("reload_timer.finish(")
+            .expect("the production reload must finish its timing event");
+
+        assert!(
+            finish > empty_state,
+            "timing ended before the list was ready"
+        );
+    }
+
+    #[test]
     fn reload_cause_distinguishes_search_clear_sort_and_source_transitions() {
         use reprise_core::view_source::ViewSource;
 
