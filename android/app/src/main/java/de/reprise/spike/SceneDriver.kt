@@ -238,7 +238,6 @@ internal fun DriveScene(
         runtimeActive,
         animationsEnabled,
         visualizerActive,
-        playback.positionMs,
         frameSink,
     ) {
         if (!runtimeActive || !animationsEnabled) {

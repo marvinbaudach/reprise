@@ -119,6 +119,44 @@ class DriveSceneComposeTest {
         assertTrue("the cheap interval never released a frame", sink.deliveredFrames.get() > 0)
     }
 
+    @Test
+    fun aPositionTickDoesNotRestartTheFrameLoop() {
+        val controller = AmbientMotionController()
+        val frames = SpectrogramFrames(24, 20, ByteArray(24))
+        val state = SceneState(frames)
+        val sink = RecordingLiveAudioSink(liveAudio = false)
+        var playback by mutableStateOf(PlaybackUiState(state = AndroidPlaybackState.PLAYING))
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            DriveScene(
+                frames = frames,
+                state = state,
+                playback = playback,
+                controller = controller,
+                frameSink = sink,
+            )
+        }
+        resumeScene(controller)
+        compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS)
+        sink.reset()
+
+        compose.runOnIdle {
+            playback = PlaybackUiState(state = AndroidPlaybackState.PAUSED)
+        }
+        compose.mainClock.advanceTimeBy(1L)
+        assertTrue(sink.liveAudioChecks.get() > 0)
+        sink.reset()
+
+        compose.runOnIdle { playback = playback.copy(positionMs = 500) }
+        compose.mainClock.advanceTimeBy(1L)
+
+        assertEquals(
+            "the position tick restarted the frame loop",
+            0,
+            sink.liveAudioChecks.get(),
+        )
+    }
+
     private fun driveAfterPlaybackTransition(
         initial: PlaybackUiState,
         target: PlaybackUiState,
