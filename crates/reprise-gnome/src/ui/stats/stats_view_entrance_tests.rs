@@ -132,17 +132,12 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
         .position(|period| *period == StatsPeriod::AllTime)
         .unwrap() as u32;
     view.period_dropdown.set_selected(all_time);
-    // The tween starts on the first frame after the period switch, and a fixed
-    // wait budgets wall-clock time for that frame rather than waiting for it.
-    // Under parallel display-test workers forty milliseconds can pass without
-    // one, and the sample below was then still zero.
-    //
-    // Both samples are taken INSIDE the predicate, on the first frame that has
-    // started them. Reading them again after `settle_until` returned would
-    // reopen the race it closes: an unbounded number of frames can pass between
-    // the predicate going true and that second read, and on a loaded runner the
-    // tween is then already at its target, making the growth assertions below
-    // compare a finished value against itself.
+    // The fixture has 20 earlier plays and 10 current plays, so the second
+    // song bar's all-time target is independently known to be half the leader.
+    let target_value = 0.5;
+
+    // Capture only a genuinely intermediate frame. A completed tween is not
+    // evidence that animation occurred and must never satisfy this predicate.
     let growing = std::cell::Cell::new(None);
     assert!(
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
@@ -157,10 +152,12 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
                 .genres_section_data
                 .segment_reveals()
                 .get(1)
-                .map(gtk4::prelude::WidgetExt::width);
+                .map(crate::ui::motion_reveal::HorizontalReveal::reveal_fraction);
             match (bar, segment) {
-                (Some(value), Some(width)) if value > 0.0 && width > 0 => {
-                    growing.set(Some((value, width)));
+                (Some(value), Some(fraction))
+                    if value > 0.0 && value < target_value && fraction > 0.0 && fraction < 1.0 =>
+                {
+                    growing.set(Some((value, fraction)));
                     true
                 }
                 _ => false,
@@ -169,7 +166,7 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
         "the newly visible song bar and genre segment must start their period tweens"
     );
 
-    let (growing_value, growing_genre_width) = growing
+    let (growing_value, growing_genre_fraction) = growing
         .get()
         .expect("the settle predicate stores its sample");
     let final_copy = strings::stats_duration(
@@ -181,12 +178,12 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
             .total_ms,
     );
     assert!(
-        growing_value > 0.0,
-        "the newly visible song bar must have started its period tween"
+        growing_value > 0.0 && growing_value < target_value,
+        "the newly visible song bar must be between zero and its target"
     );
     assert!(
-        growing_genre_width > 0,
-        "the newly visible genre segment must have started its width tween"
+        growing_genre_fraction > 0.0 && growing_genre_fraction < 1.0,
+        "the newly visible genre segment reveal must be between zero and its target"
     );
     assert_eq!(
         view.render.hero.time.label(),
@@ -206,33 +203,17 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
         .get(1)
         .unwrap()
         .value();
-    let final_genre_width = view
+    let final_genre_fraction = view
         .render
         .genres_section_data
         .segment_reveals()
         .get(1)
         .unwrap()
-        .width();
-    // `STATS_TWEEN` runs for 250ms. A runner that is starved enough to skip a
-    // whole frame can therefore deliver the tween already finished on the very
-    // first frame that has it started, and no sampling strategy can catch an
-    // intermediate value that never became observable. Distinguishing "jumped
-    // straight to the target" from "we never got a frame while it ran" is not
-    // possible from here, so the growth claim is made only when a genuinely
-    // intermediate sample was observed; the end state is asserted either way.
+        .reveal_fraction();
     assert!(
-        growing_value <= final_value,
-        "the song bar must never overshoot its new target"
+        (final_value - target_value).abs() < f64::EPSILON,
+        "the song bar must finish at its new target"
     );
-    assert!(
-        growing_genre_width <= final_genre_width,
-        "the genre segment must never overshoot its new target"
-    );
-    if growing_value < final_value {
-        assert!(
-            growing_genre_width < final_genre_width,
-            "a tween caught mid-flight must move the genre segment too"
-        );
-    }
+    assert_eq!(final_genre_fraction, 1.0);
     window.close();
 }

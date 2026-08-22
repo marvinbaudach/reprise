@@ -152,9 +152,10 @@ activation, a second only on hand-off, which is what catches a mis-aimed
 click), and that the log stayed free of GTK/GLib criticals, panics and
 `RefCell` failures.
 
-`play-11-stop-repeat-all` engages Repeat All through the transport button
-rather than `REPRISE_SMOKE_REPEAT=all`, because that hook is silently
-overwritten by the session restore — see issue #250.
+`play-11-stop-repeat-all` still engages Repeat All through the transport button.
+`REPRISE_SMOKE_REPEAT=all` now holds after session restoration (issue #250),
+but changing this established E2E case back to the hook requires its own run and
+decision.
 
 The runner avoids AT-SPI because `cua-driver` 0.17.0 returns an empty walk for
 window scope on this host even though the registry exposes the app with the

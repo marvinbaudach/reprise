@@ -230,10 +230,11 @@ impl RatingWidget {
         let widget = self.downgrade();
         motion.connect_enter({
             let widget = widget.clone();
-            move |_, _, _| {
+            move |_, x, _| {
                 if let Some(widget) = widget.upgrade() {
                     widget.imp().hovered.set(true);
-                    widget.imp().preview.set(0);
+                    let preview = star_at_x(x, f64::from(widget.width()));
+                    widget.imp().preview.set(preview);
                     widget.refresh();
                 }
             }
@@ -274,7 +275,9 @@ impl RatingWidget {
         // available from that row's keyboard context menu via Edit Tags.
         button.set_focusable(false);
         button.set_valign(gtk4::Align::Center);
-        crate::ui::lazy_tooltip::install(&button, strings::rate_n_stars(star));
+        let name = strings::rate_n_stars(star);
+        crate::ui::lazy_tooltip::install(&button, name.clone());
+        button.update_property(&[gtk4::accessible::Property::Label(&name)]);
 
         let widget = self.downgrade();
         button.connect_clicked(move |_| {
@@ -477,6 +480,50 @@ mod tests {
     }
 
     #[test]
+    fn entry_in_every_star_band_previews_that_star() {
+        let width = 100.0;
+        let current_rating = 2;
+
+        for star in 1..=STAR_COUNT {
+            let band_center = (f64::from(star) - 0.5) * (width / f64::from(STAR_COUNT));
+            let preview = star_at_x(band_center, width);
+            let display = rating_display(current_rating, true, preview);
+
+            assert_eq!(preview, star);
+            assert_eq!(display.threshold, star);
+        }
+    }
+
+    #[test]
+    fn pointer_entry_and_motion_share_the_star_mapping() {
+        let source = include_str!("rating.rs");
+        let build_ui = source
+            .split_once("fn build_ui")
+            .expect("rating source contains build_ui")
+            .1
+            .split_once("fn build_star")
+            .expect("build_ui is followed by build_star")
+            .0;
+        let enter = build_ui
+            .split_once("motion.connect_enter")
+            .expect("rating wires pointer entry")
+            .1
+            .split_once("motion.connect_motion")
+            .expect("entry wiring is followed by motion wiring")
+            .0;
+        let motion = build_ui
+            .split_once("motion.connect_motion")
+            .expect("rating wires pointer motion")
+            .1
+            .split_once("motion.connect_leave")
+            .expect("motion wiring is followed by leave wiring")
+            .0;
+
+        assert!(enter.contains("star_at_x"));
+        assert!(motion.contains("star_at_x"));
+    }
+
+    #[test]
     fn click_sets_rating_to_star_value() {
         assert_eq!(next_rating(3, 0), 3);
         assert_eq!(next_rating(5, 2), 5);
@@ -504,6 +551,31 @@ mod tests {
         assert!(css.contains(".reprise-rating-filled { color: @reprise_accent_text_color; }"));
         assert!(css.contains(".reprise-rating-empty"));
         assert!(css.contains(".reprise-rating-dash"));
+    }
+
+    #[test]
+    fn rating_star_accessible_names_are_distinct() {
+        let names = (1..=STAR_COUNT)
+            .map(strings::rate_n_stars)
+            .collect::<Vec<_>>();
+        let distinct = names.iter().collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(distinct.len(), STAR_COUNT as usize);
+    }
+
+    #[test]
+    fn rating_star_wiring_sets_an_accessible_label() {
+        let source = include_str!("rating.rs");
+        let build_star = source
+            .split_once("fn build_star")
+            .expect("rating source contains build_star")
+            .1
+            .split_once("/// Applies the Rhythmbox")
+            .expect("build_star is followed by its activation handler")
+            .0;
+
+        assert!(build_star.contains("update_property"));
+        assert!(build_star.contains("Property::Label"));
     }
 
     /// Regression test for the `BorrowMutError` in the module doc comment: a

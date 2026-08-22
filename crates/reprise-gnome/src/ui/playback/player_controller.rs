@@ -497,7 +497,6 @@ impl PlayerController {
 
         player_controller_wiring::wire_bar_controls(&controller);
         player_controller_wiring::wire_compact_controls(&controller);
-        player_controller_wiring::arm_smoke_repeat(&controller);
         controller.sync_transport_enabled(false);
 
         let song_visuals_enabled = reprise_core::modules::is_enabled(
