@@ -90,6 +90,22 @@ class NowPlayingGesturesTest {
     }
 
     @Test
+    fun aCancelFromTheOutgoingTrackDoesNotMoveTheNewTracksHead() {
+        val surfaceState = MobileSurfaceViewModel()
+        val outgoingTrackId = 830L
+        val newTrackId = 831L
+        surfaceState.dragTo(outgoingTrackId, positionMs = 60_000)
+
+        surfaceState.releaseScrub(newTrackId)
+
+        val newHead = surfaceState.seekPosition(newTrackId, fallbackPositionMs = 40_000)
+        assertEquals(40_000L, newHead.positionMs)
+        val outgoingHead = surfaceState.seekPosition(outgoingTrackId, fallbackPositionMs = 0)
+        assertEquals(60_000L, outgoingHead.positionMs)
+        assertTrue(outgoingHead.isDragging)
+    }
+
+    @Test
     fun coverDragPastThresholdSkipsToTheNextTrack() {
         val controls = GestureRecordingControls()
         compose.setContent { testNowPlayingSheet(controls = controls) }

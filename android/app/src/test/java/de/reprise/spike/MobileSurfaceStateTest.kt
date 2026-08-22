@@ -285,7 +285,7 @@ class MobileSurfaceStateTest {
         assertEquals(96f, oldHeadPx, 0.001f)
         assertEquals(192f, newHeadPx, 0.001f)
 
-        val released = state.releaseScrub(trackId)
+        val released = checkNotNull(state.releaseScrub(trackId))
         assertEquals(48_000, released.positionMs)
         assertFalse(released.isDragging)
     }

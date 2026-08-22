@@ -356,7 +356,9 @@ internal fun SpectralSeekSlider(
             value = displayed.toFloat(),
             onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
             onValueChangeFinished = {
-                seekTo(surfaceState.releaseScrub(trackId).positionMs)
+                surfaceState.releaseScrub(trackId)?.let { released ->
+                    seekTo(released.positionMs)
+                }
             },
             interactionSource = sliderInteractionSource,
             valueRange = 0f..sliderMaximum,
