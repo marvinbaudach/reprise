@@ -59,8 +59,9 @@ class Media3PlaybackPortTest {
     fun aPausedPlayerProducesNoPositionEvents() {
         val fake = CallbackPlayer(
             playbackState = Player.STATE_READY,
-            playWhenReady = false,
-            isPlaying = false,
+            playWhenReady = true,
+            isPlaying = true,
+            currentPosition = 1_000,
         )
         val positions = mutableListOf<Long>()
         val port = Media3PlaybackPort(fake.player) {}
@@ -69,14 +70,20 @@ class Media3PlaybackPortTest {
                 if (event is AndroidPlayerEvent.Position) positions += event.positionMs
             }
         })
+        fake.listener.onIsPlayingChanged(true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(1_000L), positions)
 
+        fake.isPlaying = false
+        fake.playWhenReady = false
         fake.listener.onIsPlayingChanged(false)
+        fake.currentPosition = 2_000
         shadowOf(Looper.getMainLooper()).idleFor(
             TEST_POSITION_INTERVAL_MS * 3,
             TimeUnit.MILLISECONDS,
         )
 
-        assertTrue(positions.isEmpty())
+        assertEquals(listOf(1_000L), positions)
         port.release()
     }
 
