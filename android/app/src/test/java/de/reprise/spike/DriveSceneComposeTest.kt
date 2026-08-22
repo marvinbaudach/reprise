@@ -81,11 +81,11 @@ class DriveSceneComposeTest {
 
     @Test
     fun noStoredSpectrogramDoesNotThrottleWhenTheSinkIsListening() {
-        val sink = RecordingLiveAudioSink(liveAudio = false)
+        val sink = RecordingLiveAudioSink(liveAudio = true)
 
         driveAfterPlaybackTransition(
-            initial = PlaybackUiState(state = AndroidPlaybackState.PAUSED),
-            target = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+            initial = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+            target = PlaybackUiState(state = AndroidPlaybackState.PAUSED),
             frames = SpectrogramFrames(24, 20, ByteArray(0)),
             sink = sink,
         )
