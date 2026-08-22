@@ -4,9 +4,12 @@ import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import java.lang.reflect.Proxy
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidPlaybackState
@@ -17,6 +20,66 @@ import uniffi.reprise_android_ffi.PlaybackEventBridge
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class Media3PlaybackPortTest {
+    @Test
+    fun aMomentaryNotPlayingDoesNotStopPositionEventsForGood() {
+        val fake = CallbackPlayer(
+            playbackState = Player.STATE_READY,
+            playWhenReady = true,
+            isPlaying = true,
+            currentPosition = 1_000,
+        )
+        val positions = mutableListOf<Long>()
+        val port = Media3PlaybackPort(fake.player) {}
+        port.setEventBridge(object : PlaybackEventBridge(NoHandle) {
+            override fun emit(generation: ULong, event: AndroidPlayerEvent) {
+                if (event is AndroidPlayerEvent.Position) positions += event.positionMs
+            }
+        })
+        fake.listener.onIsPlayingChanged(true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        fake.isPlaying = false
+        shadowOf(Looper.getMainLooper()).idleFor(TEST_POSITION_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        fake.isPlaying = true
+        fake.currentPosition = 2_000
+        shadowOf(Looper.getMainLooper()).idleFor(
+            TEST_POSITION_INTERVAL_MS * 3,
+            TimeUnit.MILLISECONDS,
+        )
+
+        assertTrue(
+            "position events must resume without another listener callback: $positions",
+            positions.size > 1,
+        )
+        assertEquals(2_000L, positions.last())
+        port.release()
+    }
+
+    @Test
+    fun aPausedPlayerProducesNoPositionEvents() {
+        val fake = CallbackPlayer(
+            playbackState = Player.STATE_READY,
+            playWhenReady = false,
+            isPlaying = false,
+        )
+        val positions = mutableListOf<Long>()
+        val port = Media3PlaybackPort(fake.player) {}
+        port.setEventBridge(object : PlaybackEventBridge(NoHandle) {
+            override fun emit(generation: ULong, event: AndroidPlayerEvent) {
+                if (event is AndroidPlayerEvent.Position) positions += event.positionMs
+            }
+        })
+
+        fake.listener.onIsPlayingChanged(false)
+        shadowOf(Looper.getMainLooper()).idleFor(
+            TEST_POSITION_INTERVAL_MS * 3,
+            TimeUnit.MILLISECONDS,
+        )
+
+        assertTrue(positions.isEmpty())
+        port.release()
+    }
+
     @Test
     fun playIntentChangesWhileBufferingPublishBothPauseAndResumeStates() {
         val fake = CallbackPlayer(
@@ -72,6 +135,9 @@ class Media3PlaybackPortTest {
 private class CallbackPlayer(
     var playbackState: Int,
     var playWhenReady: Boolean,
+    var isPlaying: Boolean = false,
+    var currentPosition: Long = 0,
+    var duration: Long = 180_000,
 ) {
     lateinit var listener: Player.Listener
 
@@ -83,15 +149,19 @@ private class CallbackPlayer(
             "addListener" -> listener = arguments?.single() as Player.Listener
             "getApplicationLooper" -> Looper.getMainLooper()
             "getAudioSessionId" -> C.AUDIO_SESSION_ID_UNSET
-            "getIsPlaying" -> false
+            "isPlaying" -> isPlaying
             "getPlayWhenReady" -> playWhenReady
             "getPlaybackState" -> playbackState
+            "getCurrentPosition" -> currentPosition
+            "getDuration" -> duration
             "pause" -> playWhenReady = false
             "play" -> playWhenReady = true
             else -> callbackPlayerDefault(method.returnType)
         }
     } as Player
 }
+
+private const val TEST_POSITION_INTERVAL_MS = 500L
 
 private fun callbackPlayerDefault(type: Class<*>): Any? = when (type) {
     Boolean::class.javaPrimitiveType -> false

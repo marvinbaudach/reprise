@@ -41,16 +41,19 @@ internal class Media3PlaybackPort(
 
     private val positionTicker = object : Runnable {
         override fun run() {
-            if (!player.isPlaying) {
-                return
+            if (player.isPlaying) {
+                emit(
+                    AndroidPlayerEvent.Position(
+                        positionMs = player.currentPosition.coerceAtLeast(0),
+                        durationMs = player.duration.knownDuration(),
+                    ),
+                )
             }
-            emit(
-                AndroidPlayerEvent.Position(
-                    positionMs = player.currentPosition.coerceAtLeast(0),
-                    durationMs = player.duration.knownDuration(),
-                ),
-            )
-            handler.postDelayed(this, POSITION_INTERVAL_MS)
+            if (lastState == AndroidPlaybackState.PLAYING ||
+                lastState == AndroidPlaybackState.BUFFERING
+            ) {
+                handler.postDelayed(this, POSITION_INTERVAL_MS)
+            }
         }
     }
 
