@@ -141,6 +141,27 @@ class MainActivityPlaybackChannelTest {
         assertPlaybackBindFailureWasLogged()
     }
 
+    @Test
+    fun theUiStateSurvivesAnActivityRecreationWhilePlaying() {
+        val service = buildService()
+        val controller = launchBoundActivityController(service)
+        service.publish(activitySnapshot(trackId = 6, positionMs = 12_000))
+        idleMainLooper()
+        assertEquals(6L, controller.get().currentPlaybackState.currentTrackId)
+
+        controller.stop()
+        service.publish(activitySnapshot(trackId = 7, positionMs = 24_000))
+        RuntimeEnvironment.setQualifiers("w916dp-h412dp-land")
+        controller.recreate()
+        controller.start()
+        idleMainLooper()
+
+        val state = controller.get().currentPlaybackState
+        assertEquals(7L, state.currentTrackId)
+        assertEquals(24_000L, state.positionMs)
+        assertTrue(state.visualizerActive)
+    }
+
     private fun buildService(): PlaybackChannelService =
         Robolectric.buildService(PlaybackChannelService::class.java)
             .create()
