@@ -397,7 +397,10 @@ mod android_uri_tests {
             at.strip_prefix(root).ok().map(Path::to_path_buf)
         }
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
-            Err(std::io::Error::other("provider failure"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "provider confirmed absence",
+            ))
         }
         fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
             LibraryPathPresence::Unknown
@@ -745,8 +748,9 @@ mod android_uri_tests {
         let sidecar = root.path().join("gone.reprise-analysis");
         let logs = crate::log_capture::CapturedLogs::default();
 
-        let result = logs
-            .capture(|| read_analysis_sidecar(&UnixLibrarySource, 41, &sidecar.to_string_lossy()));
+        let result = logs.capture(|| {
+            read_analysis_sidecar(&WalkOnlyDeletedSource, 41, &sidecar.to_string_lossy())
+        });
 
         assert_eq!(result, None);
         assert_eq!(logs.joined(), "");

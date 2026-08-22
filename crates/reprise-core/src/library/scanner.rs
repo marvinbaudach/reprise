@@ -289,11 +289,12 @@ fn scan_folder_inner(
             root: root.to_path_buf(),
         });
     }
+
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
     let mut observed_paths = HashSet::<PathBuf>::new();
-    let mut observed_directories = HashSet::<PathBuf>::new();
-    let mut failed_directories = HashSet::<PathBuf>::new();
+    let mut dirs = HashSet::<PathBuf>::new();
+    let mut failed = HashSet::<PathBuf>::new();
     let mut mobile_sync = mobile_sync::MobileSyncDiscovery::default();
     let mut mount_cache = mount::MountPointCache::new(source);
     let tx = conn.unchecked_transaction()?;
@@ -306,7 +307,7 @@ fn scan_folder_inner(
                     // A walk error may name a directory or an unstatable child;
                     // poison both it and its parent before recording the error.
                     let failed_path = error.path.as_deref().unwrap_or(root);
-                    vanish::poison_walk_failure(source, &mut failed_directories, failed_path);
+                    vanish::poison_walk_failure(source, &mut failed, failed_path);
                     let err_path = failed_path.to_string_lossy().to_string();
                     let kind = match error.kind {
                         LibraryWalkErrorKind::PermissionDenied => ImportErrorKind::PermissionDenied,
@@ -325,12 +326,13 @@ fn scan_folder_inner(
                 }
             };
             mobile_sync.observe(source, root, &entry);
-            let path = entry.path.as_path();
-            observed_paths.insert(path.to_path_buf());
+            let path = entry.path;
+            observed_paths.insert(path.clone());
             if !entry.is_file {
-                observed_directories.insert(path.to_path_buf());
+                dirs.insert(path);
                 return Ok(());
             }
+            let path = path.as_path();
             if !is_audio_file(path) {
                 return Ok(());
             }
@@ -638,6 +640,7 @@ fn scan_folder_inner(
         .saturating_add(mobile_sync.apply_metadata(source, &tx)?);
     mobile_sync.register_analysis_sidecars(&tx)?;
     mobile_sync.register_device_paths(&tx)?;
+
     // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
     // outcome. The guard's own evidence, `guard_evidence` (the wider
     // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
@@ -649,12 +652,7 @@ fn scan_folder_inner(
     // A walk that saw no audio file at all is exactly the situation Android
     // cannot distinguish from lost storage. An empty walk is a question, not
     // proof: layer 3 stays silent and only a real source `Absent` still marks.
-    let evidence = vanish::evidence_after_walk(
-        audio_files_seen,
-        observed_paths,
-        &observed_directories,
-        &failed_directories,
-    );
+    let evidence = vanish::evidence_after_walk(audio_files_seen, observed_paths, &dirs, &failed);
     let guard_evidence = if audio_files_seen == 0 {
         Some(vanish::guard_evidence_under_root(&tx, root)?)
     } else {
@@ -663,6 +661,7 @@ fn scan_folder_inner(
     let root_unavailable = guard_evidence.as_ref().is_some_and(|evidence| {
         !evidence.is_empty() && !vanish::any_candidate_confirms_root_with(source, evidence, root)
     });
+
     let outcome = if root_unavailable {
         // Root-Guard case (b): see this function's `## Root guard` doc
         // section. The upserts the walk itself produced (normally none,
@@ -697,6 +696,7 @@ fn scan_folder_inner(
     tx.commit()?;
     Ok(outcome)
 }
+
 /// Whether a completed scan changed anything a consumer's view reflects — any
 /// catalog upsert/move/vanish/exclusion or an import-error row added or healed.
 /// A scan that only skipped unchanged files leaves every view identical and so
