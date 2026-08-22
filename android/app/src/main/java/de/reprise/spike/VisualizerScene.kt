@@ -1,7 +1,9 @@
 package de.reprise.spike
 
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -9,7 +11,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.runtime.staticCompositionLocalOf
+import de.reprise.spike.ui.theme.AmbientTrueBlack
 import de.reprise.spike.ui.theme.spectralColour
 import uniffi.reprise_android_ffi.AndroidVisualEngine
 
@@ -109,6 +113,29 @@ internal class NativeVisualSceneEngine(
     override fun scene(width: Float, height: Float): List<Float> = native.scene(width, height)
 
     override fun close() = native.close()
+}
+
+internal fun DrawScope.drawPlayedVisualizer(
+    buffer: List<Float>,
+    center: Offset,
+    side: Float,
+    radius: Float,
+    shadow: CoverShadowBitmap?,
+    opacity: Float = 1f,
+) {
+    val rect = playedCoverRect(center, side)
+    shadow?.let { drawCoverShadow(it, rect) }
+    if (opacity <= 0f) return
+    val safeOpacity = opacity.coerceIn(0f, 1f)
+    val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
+    clipPath(path) {
+        drawRect(
+            AmbientTrueBlack.copy(alpha = safeOpacity),
+            topLeft = rect.topLeft,
+            size = rect.size,
+        )
+        drawVisualizerScene(buffer = buffer, bounds = rect, opacity = safeOpacity)
+    }
 }
 
 /**

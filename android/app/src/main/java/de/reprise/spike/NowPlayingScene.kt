@@ -238,6 +238,8 @@ internal fun NowPlayingScene(
                         height = COVER_SIZE_DP.dp.toPx(),
                     ),
                     center = playedCenter,
+                    side = COVER_SIZE_DP.dp.toPx(),
+                    radius = COVER_RADIUS_DP.dp.toPx(),
                     shadow = null,
                     opacity = visualizerOpacity,
                 )
@@ -585,29 +587,6 @@ internal fun DrawScope.drawPlayedCover(
                 alpha = safeOpacity,
             )
         }
-    }
-}
-
-internal fun DrawScope.drawPlayedVisualizer(
-    buffer: List<Float>,
-    center: Offset,
-    shadow: CoverShadowBitmap?,
-    opacity: Float = 1f,
-) {
-    val side = COVER_SIZE_DP.dp.toPx()
-    val rect = playedCoverRect(center, side)
-    val radius = COVER_RADIUS_DP.dp.toPx()
-    shadow?.let { drawCoverShadow(it, rect) }
-    if (opacity <= 0f) return
-    val safeOpacity = opacity.coerceIn(0f, 1f)
-    val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
-    clipPath(path) {
-        drawRect(
-            AmbientTrueBlack.copy(alpha = safeOpacity),
-            topLeft = rect.topLeft,
-            size = rect.size,
-        )
-        drawVisualizerScene(buffer = buffer, bounds = rect, opacity = safeOpacity)
     }
 }
 
