@@ -6662,3 +6662,12 @@ rule here is phrased as something a stylesheet either states or does not.
 - **SHOW-21** [active] [web] — Chapter two's incident, merge and coverage
   figures reach the same column edge as their neighbours while the incident
   charts keep the measure, gaps and bar dimensions they report.
+- **SHOW-22** [active] [web] — Every permalink the showroom pins resolves for
+  a reader, not merely for the machine that wrote it. The pinned commit is
+  **reachable from the published branch**, not just present in some local
+  object store: a commit rewritten out of the history keeps its whole tree, so
+  a path-existence check still passes on a developer machine while every link
+  on the page 404s and a fresh CI clone cannot resolve it at all. Measured that
+  way in `a776f8a963`. The check errors rather than skips when the branch is
+  unavailable — a skip is the hole it was written to close — and it carries a
+  positive control against a commit no branch carries.
