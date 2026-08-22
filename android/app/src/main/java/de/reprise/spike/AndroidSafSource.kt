@@ -4,7 +4,6 @@ import android.content.ContentResolver
 import android.database.Cursor
 import android.net.Uri
 import android.provider.DocumentsContract
-import java.io.FileNotFoundException
 import java.io.IOException
 import uniffi.reprise_android_ffi.SafSource
 import uniffi.reprise_android_ffi.SafSourceException
@@ -22,19 +21,20 @@ internal class AndroidSafSource(
     override fun probe(uri: String, followLinks: Boolean): SourceFacts? {
         val documentUri = asDocumentUri(Uri.parse(uri))
         return try {
-            resolver.query(documentUri, METADATA_PROJECTION, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.sourceFacts() else null
-            } ?: throw SafSourceException.Unknown("The provider returned no metadata cursor")
-        } catch (_: FileNotFoundException) {
-            null
+            val cursor = resolver.query(documentUri, METADATA_PROJECTION, null, null, null)
+                ?: throw SafSourceException.Unknown("The provider returned no metadata cursor")
+            cursor.use {
+                if (!it.moveToFirst()) return null
+                it.sourceFacts()
+            }
         } catch (error: SecurityException) {
             throw SafSourceException.PermissionDenied(error.detail())
-        } catch (error: IOException) {
-            throw SafSourceException.Io(error.detail())
         } catch (error: SafSourceException) {
             throw error
+        } catch (error: IOException) {
+            if (error.confirmsAbsence()) null else throw SafSourceException.Io(error.detail())
         } catch (error: RuntimeException) {
-            throw SafSourceException.Unknown(error.detail())
+            if (error.confirmsAbsence()) null else throw SafSourceException.Unknown(error.detail())
         }
     }
 
@@ -47,6 +47,8 @@ internal class AndroidSafSource(
         }
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
 
+        // Absence classification deliberately does not apply here: turning a failed listing
+        // into an empty directory could mass-mark a whole subtree missing.
         return try {
             resolver.query(childrenUri, CHILD_PROJECTION, null, null, null)?.use { cursor ->
                 buildList {
@@ -71,11 +73,17 @@ internal class AndroidSafSource(
             ?: throw SafSourceException.Io("The provider returned no file descriptor")
     } catch (error: SecurityException) {
         throw SafSourceException.PermissionDenied(error.detail())
-    } catch (error: IOException) {
-        throw SafSourceException.Io(error.detail())
     } catch (error: SafSourceException) {
         throw error
+    } catch (error: IOException) {
+        if (error.confirmsAbsence()) {
+            throw SafSourceException.NotFound(error.detail())
+        }
+        throw SafSourceException.Io(error.detail())
     } catch (error: RuntimeException) {
+        if (error.confirmsAbsence()) {
+            throw SafSourceException.NotFound(error.detail())
+        }
         throw SafSourceException.Unknown(error.detail())
     }
 
