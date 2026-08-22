@@ -10,10 +10,9 @@ use gtk4::prelude::{AdjustmentExt, ScrollableExt};
 use super::{reload_restore, Shared};
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
-use crate::ui::list_geometry_layout::{headers_above_in, ListLayout};
+use crate::ui::list_geometry_layout::{ListLayout, CONTENT_HEIGHT_EPSILON};
 
 const SCROLL_TO_ADOPTION_WINDOW: Duration = Duration::from_millis(250);
-const SCROLL_ADOPTION_EPSILON: f64 = 0.5;
 
 #[derive(Clone, Copy)]
 enum RestorePath {
@@ -73,23 +72,40 @@ struct ScrollRequest<'a> {
     placement: AnchorPlacement,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ScrollAdoptionGeometry {
     guard_position: u32,
     row_count: usize,
-    section_count: usize,
-    preceding_sections: usize,
-    row_height: RowHeight,
+    layout: Rc<ListLayout>,
     before: f64,
 }
 
 impl ScrollAdoptionGeometry {
-    fn matches(self, candidate: f64, lower: f64, upper: f64, page_size: f64) -> bool {
-        if self.row_count == 0
-            || self.section_count == 0
-            || self.preceding_sections > self.section_count
-            || self.guard_position as usize >= self.row_count
-            || !candidate.is_finite()
+    fn new(
+        guard_position: u32,
+        row_count: usize,
+        expected_section_count: usize,
+        layout: Rc<ListLayout>,
+        before: f64,
+    ) -> Option<Self> {
+        if row_count == 0
+            || expected_section_count == 0
+            || layout.section_count() != expected_section_count
+            || layout.headers_above(guard_position) > expected_section_count
+            || guard_position as usize >= row_count
+        {
+            return None;
+        }
+        Some(Self {
+            guard_position,
+            row_count,
+            layout,
+            before,
+        })
+    }
+
+    fn matches(&self, candidate: f64, lower: f64, upper: f64, page_size: f64) -> bool {
+        if !candidate.is_finite()
             || !self.before.is_finite()
             || !lower.is_finite()
             || !upper.is_finite()
@@ -100,19 +116,17 @@ impl ScrollAdoptionGeometry {
             return false;
         }
 
-        let row_height = self.row_height.pixels();
-        let row_content_height = self.row_count as f64 * row_height;
-        let section_content_height = upper - row_content_height;
-        if section_content_height < -SCROLL_ADOPTION_EPSILON {
+        let Some(layout) = self
+            .layout
+            .infer_section_header_from_observed_upper(self.row_count, upper)
+        else {
             return false;
-        }
-        let section_height = section_content_height.max(0.0) / self.section_count as f64;
-        let guard_top = (self.guard_position as f64)
-            .mul_add(row_height, self.preceding_sections as f64 * section_height);
+        };
+        let guard_top = layout.row_top(self.guard_position);
         let requested = guard_top.clamp(lower, (upper - page_size).max(lower));
         let candidate_error = (candidate - requested).abs();
         let before_error = (self.before - requested).abs();
-        candidate_error <= SCROLL_ADOPTION_EPSILON && candidate_error < before_error
+        candidate_error <= CONTENT_HEIGHT_EPSILON && candidate_error < before_error
     }
 }
 
@@ -274,21 +288,27 @@ fn scroll_to_anchor(
         request.anchor_position
     };
     let section_count = section_starts.len();
-    let preceding_sections = headers_above_in(&section_starts, guard_position);
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
-    let adoption_geometry =
-        (applied_layout.is_none() && section_count > 0).then(|| ScrollAdoptionGeometry {
-            guard_position,
-            row_count: request.current_ids.len(),
-            section_count,
-            preceding_sections,
-            row_height: request.captured_row_height.unwrap_or_else(|| {
-                ListGeometry::for_view(&shared.column_view)
-                    .row_height(&shared.conn, &shared.list_geometry_cache)
-            }),
-            before: 0.0,
+    let adoption_geometry = if applied_layout.is_none() {
+        let row_height = request.captured_row_height.unwrap_or_else(|| {
+            ListGeometry::for_view(&shared.column_view)
+                .row_height(&shared.conn, &shared.list_geometry_cache)
         });
+        // Adoption re-infers the header height from `upper`; only row height
+        // and section starts survive into `matches`. A valid placeholder here
+        // preserves every topology guard without the discarded cache/DB read.
+        let layout = ListLayout::sectioned(row_height, row_height, section_starts);
+        ScrollAdoptionGeometry::new(
+            guard_position,
+            request.current_ids.len(),
+            section_count,
+            Rc::new(layout),
+            0.0,
+        )
+    } else {
+        None
+    };
     let adoption = shared.column_view.vadjustment().and_then(|adjustment| {
         crate::ui::scroll_probe::probe_scroll_to(path.scroll_probe(), &adjustment, guard_position);
         let before = adjustment.value();
@@ -621,16 +641,153 @@ fn set_hold_target(
 mod tests {
     use super::*;
 
+    fn adoption_geometry(
+        guard_position: u32,
+        row_count: usize,
+        section_count: usize,
+        preceding_sections: usize,
+        row_height: f64,
+        before: f64,
+    ) -> Option<ScrollAdoptionGeometry> {
+        let represented_sections = section_count.max(preceding_sections);
+        let mut starts = (0..preceding_sections)
+            .map(|index| u32::try_from(index).unwrap())
+            .collect::<Vec<_>>();
+        starts.extend((preceding_sections..represented_sections).map(|index| {
+            guard_position
+                .checked_add(1)
+                .and_then(|position| position.checked_add(u32::try_from(index).unwrap()))
+                .unwrap()
+        }));
+        let row_height = RowHeight::new(row_height).unwrap();
+        let layout = Rc::new(ListLayout::sectioned(row_height, row_height, starts));
+        ScrollAdoptionGeometry::new(guard_position, row_count, section_count, layout, before)
+    }
+
+    #[test]
+    fn adoption_match_decisions_are_pinned_across_concrete_inputs() {
+        struct Case {
+            name: &'static str,
+            geometry: ScrollAdoptionGeometry,
+            candidate: f64,
+            lower: f64,
+            upper: f64,
+            page_size: f64,
+            expected: bool,
+        }
+
+        let cases = [
+            Case {
+                name: "realistic sectioned queue with fractional rows",
+                geometry: adoption_geometry(1_101, 2_276, 2, 2, 34.5, 38_000.0).unwrap(),
+                candidate: 38_056.5,
+                lower: 0.0,
+                upper: 78_594.0,
+                page_size: 249.0,
+                expected: true,
+            },
+            Case {
+                name: "the previous value is not adopted",
+                geometry: adoption_geometry(1_101, 2_276, 2, 2, 34.5, 38_000.0).unwrap(),
+                candidate: 38_000.0,
+                lower: 0.0,
+                upper: 78_594.0,
+                page_size: 249.0,
+                expected: false,
+            },
+            Case {
+                name: "the lower adjustment edge clamps the request",
+                geometry: adoption_geometry(0, 10, 1, 1, 10.0, 5.0).unwrap(),
+                candidate: 20.0,
+                lower: 20.0,
+                upper: 110.0,
+                page_size: 20.0,
+                expected: true,
+            },
+            Case {
+                name: "the upper adjustment edge clamps the request",
+                geometry: adoption_geometry(9, 10, 1, 1, 10.0, 50.0).unwrap(),
+                candidate: 80.0,
+                lower: 0.0,
+                upper: 110.0,
+                page_size: 30.0,
+                expected: true,
+            },
+            Case {
+                name: "a sub-epsilon row shortfall keeps zero-height headers",
+                geometry: adoption_geometry(5, 10, 1, 1, 10.0, 40.0).unwrap(),
+                candidate: 50.0,
+                lower: 0.0,
+                upper: 99.75,
+                page_size: 10.0,
+                expected: true,
+            },
+        ];
+
+        for case in cases {
+            assert_eq!(
+                case.geometry
+                    .matches(case.candidate, case.lower, case.upper, case.page_size,),
+                case.expected,
+                "{}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn adoption_rejects_zero_rows() {
+        assert!(adoption_geometry(0, 0, 1, 1, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_zero_sections() {
+        assert!(adoption_geometry(0, 1, 0, 0, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_more_preceding_sections_than_total_sections() {
+        assert!(adoption_geometry(0, 1, 1, 2, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_a_guard_outside_the_rows() {
+        assert!(adoption_geometry(1, 1, 1, 1, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_each_non_finite_adjustment_input() {
+        let geometry = adoption_geometry(0, 1, 1, 1, 34.0, 0.0).unwrap();
+        assert!(!geometry.matches(f64::NAN, 0.0, 70.0, 0.0));
+        assert!(!geometry.matches(36.0, f64::NEG_INFINITY, 70.0, 0.0));
+        assert!(!geometry.matches(36.0, 0.0, f64::INFINITY, 0.0));
+        assert!(!geometry.matches(36.0, 0.0, 70.0, f64::NAN));
+
+        let non_finite_before = adoption_geometry(0, 1, 1, 1, 34.0, f64::INFINITY).unwrap();
+        assert!(!non_finite_before.matches(36.0, 0.0, 70.0, 0.0));
+    }
+
+    #[test]
+    fn adoption_rejects_an_upper_below_the_lower_bound() {
+        let geometry = adoption_geometry(0, 1, 1, 1, 34.0, 0.0).unwrap();
+        assert!(!geometry.matches(36.0, 71.0, 70.0, 0.0));
+    }
+
+    #[test]
+    fn adoption_rejects_a_negative_page_size() {
+        let geometry = adoption_geometry(0, 1, 1, 1, 34.0, 0.0).unwrap();
+        assert!(!geometry.matches(36.0, 0.0, 70.0, -1.0));
+    }
+
+    #[test]
+    fn adoption_rejects_an_upper_more_than_epsilon_shorter_than_the_rows() {
+        let geometry = adoption_geometry(5, 10, 1, 1, 10.0, 40.0).unwrap();
+        assert!(!geometry.matches(50.0, 0.0, 99.49, 10.0));
+    }
+
     #[test]
     fn adoption_accepts_only_the_value_explained_by_the_requested_guard_row() {
-        let geometry = ScrollAdoptionGeometry {
-            guard_position: 1_101,
-            row_count: 2_276,
-            section_count: 2,
-            preceding_sections: 2,
-            row_height: RowHeight::new(34.0).unwrap(),
-            before: 37_454.0,
-        };
+        let geometry = adoption_geometry(1_101, 2_276, 2, 2, 34.0, 37_454.0).unwrap();
 
         assert!(geometry.matches(37_488.0, 0.0, 77_438.0, 249.0));
         assert!(!geometry.matches(37_454.0, 0.0, 77_438.0, 249.0));
