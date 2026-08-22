@@ -6,7 +6,7 @@ macro_rules! N_ {
     };
 }
 
-use super::formatted;
+use super::{formatted, plural, text};
 
 pub const RELEASES: &str = N_!("Releases");
 pub const RELEASES_DATE: &str = N_!("Date");
@@ -35,6 +35,9 @@ pub const RELEASES_MISSING: &str = N_!("Missing");
 pub const RELEASES_NO_DATA_TITLE: &str = N_!("No discography data yet");
 pub const RELEASES_EMPTY_TITLE: &str = N_!("No missing releases");
 pub const RELEASES_HIDE: &str = N_!("Hide");
+pub const RELEASES_SHOW_AGAIN: &str = N_!("Show again");
+pub const RELEASES_GO_TO_ARTIST: &str = N_!("Go to artist");
+pub const RELEASES_GO_TO_ALBUM: &str = N_!("Go to album");
 pub const RELEASES_COULD_NOT_REFRESH: &str = N_!("Couldn't refresh new releases");
 pub const RELEASES_CACHED_FAILURE_DESCRIPTION: &str =
     N_!("Showing saved releases from {time}. Announcement links need a connection.");
@@ -81,6 +84,48 @@ pub fn release_track_count_line(local: i64, total: i64) -> String {
 
 pub fn releases_cached_failure_description(time: &str) -> String {
     formatted(RELEASES_CACHED_FAILURE_DESCRIPTION, &[("time", time)])
+}
+
+/// CTX-6: only the entry that removes rows from view carries the count.
+pub fn hide_releases_label(count: usize) -> String {
+    count_label(count, RELEASES_HIDE, N_!("Hide {count} releases"))
+}
+
+pub fn show_releases_again_label(count: usize) -> String {
+    count_label(
+        count,
+        RELEASES_SHOW_AGAIN,
+        N_!("Show {count} releases again"),
+    )
+}
+
+pub fn releases_hidden_toast(count: usize) -> String {
+    count_label(
+        count,
+        N_!("1 release hidden"),
+        N_!("{count} releases hidden"),
+    )
+}
+
+pub fn releases_restored_toast(count: usize) -> String {
+    count_label(
+        count,
+        N_!("1 release restored"),
+        N_!("{count} releases restored"),
+    )
+}
+
+fn count_label(count: usize, singular: &str, plural_message: &str) -> String {
+    if count <= 1 {
+        return text(singular);
+    }
+    let count_text = count.to_string();
+    plural(
+        singular,
+        plural_message,
+        count,
+        &[("count", count_text.as_str())],
+    )
 }
 
 #[cfg(test)]

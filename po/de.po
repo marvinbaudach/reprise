@@ -2535,6 +2535,7 @@ msgid "Open announcement"
 msgstr "Ankündigung öffnen"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:128
+#: crates/reprise-gnome/src/ui/strings_releases.rs:38
 msgid "Show again"
 msgstr "Erneut anzeigen"
 
@@ -3183,11 +3184,21 @@ msgstr "Noch keine Diskografiedaten"
 msgid "No missing releases"
 msgstr "Keine fehlenden Veröffentlichungen"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:38
+#: crates/reprise-gnome/src/ui/strings_releases.rs:39
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
+msgid "Go to artist"
+msgstr "Zum Interpreten"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:40
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
+msgid "Go to album"
+msgstr "Zum Album"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:41
 msgid "Couldn't refresh new releases"
 msgstr "Neuerscheinungen konnten nicht aktualisiert werden"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:40
+#: crates/reprise-gnome/src/ui/strings_releases.rs:43
 #, rust-format
 msgid ""
 "Showing saved releases from {time}. Announcement links need a connection."
@@ -3195,35 +3206,63 @@ msgstr ""
 "Es werden gespeicherte Veröffentlichungen von {time} angezeigt. Ankündigungs-"
 "Links brauchen eine Verbindung."
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:42
+#: crates/reprise-gnome/src/ui/strings_releases.rs:45
 msgid "There are no saved releases to show. Your library is unaffected."
 msgstr ""
 "Es sind keine gespeicherten Veröffentlichungen da, die gezeigt werden "
 "könnten. Deine Bibliothek ist unberührt."
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:43
+#: crates/reprise-gnome/src/ui/strings_releases.rs:46
 msgid "an earlier update"
 msgstr "einer früheren Aktualisierung"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:59
+#: crates/reprise-gnome/src/ui/strings_releases.rs:62
 #, rust-format
 msgid "{shown} of {total} gaps"
 msgstr "{shown} von {total} Lücken"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:65
+#: crates/reprise-gnome/src/ui/strings_releases.rs:68
 #, rust-format
 msgid "{total} gaps"
 msgstr "{total} Lücken"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:70
+#: crates/reprise-gnome/src/ui/strings_releases.rs:73
 #, rust-format
 msgid "Show all {total} gaps"
 msgstr "Alle {total} Lücken anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:77
+#: crates/reprise-gnome/src/ui/strings_releases.rs:80
 #, rust-format
 msgid "{local} of {total} tracks"
 msgstr "{local} von {total} Titeln"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:91
+#, rust-format
+msgid "Hide {count} releases"
+msgstr "{count} Veröffentlichungen ausblenden"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:98
+#, rust-format
+msgid "Show {count} releases again"
+msgstr "{count} Veröffentlichungen wieder anzeigen"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:105
+msgid "1 release hidden"
+msgstr "1 Veröffentlichung ausgeblendet"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:106
+#, rust-format
+msgid "{count} releases hidden"
+msgstr "{count} Veröffentlichungen ausgeblendet"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:113
+msgid "1 release restored"
+msgstr "1 Veröffentlichung wiederhergestellt"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:114
+#, rust-format
+msgid "{count} releases restored"
+msgstr "{count} Veröffentlichungen wiederhergestellt"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:11
 msgid "Podcasts"
@@ -5382,14 +5421,6 @@ msgstr "Zur Wiedergabeliste hinzufügen"
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:7
 msgid "Move to top"
 msgstr "Nach oben verschieben"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:8
-msgid "Go to album"
-msgstr "Zum Album"
-
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:9
-msgid "Go to artist"
-msgstr "Zum Interpreten"
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:13
 msgid "New playlist…"

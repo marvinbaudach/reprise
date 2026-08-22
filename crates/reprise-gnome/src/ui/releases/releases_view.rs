@@ -7,10 +7,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use chrono::Local;
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::artist_news::{self, ReleaseSortDirection};
 use reprise_core::artist_news_history::HistoryEntry;
+use reprise_core::browser::navigation::NavigationIntent;
 use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
 use reprise_core::source_error::{FailureAction, FailureSurface, SourceError, SourceErrorKind};
@@ -37,6 +39,7 @@ const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
 const FAILURE_PAGE: &str = "failure";
 type Callback = Rc<dyn Fn()>;
+type NavigateCallback = Rc<dyn Fn(NavigationIntent)>;
 #[cfg(test)]
 type FetchOverride = std::sync::Arc<
     dyn Fn(
@@ -47,15 +50,18 @@ type FetchOverride = std::sync::Arc<
         + Sync,
 >;
 
-struct Shared {
-    conn: Rc<Db>,
+pub(super) struct Shared {
+    pub(super) conn: Rc<Db>,
     database_path: PathBuf,
-    model: Rc<ReleasesModel>,
+    pub(super) model: Rc<ReleasesModel>,
+    pub(super) selection_anchor: super::releases_selection::ReleasesAnchor,
+    pub(super) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(super) on_navigate: RefCell<Option<NavigateCallback>>,
     filter_bar: Rc<ReleasesFilterBar>,
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     rows: RefCell<Vec<HistoryEntry>>,
     cached_items: Cell<usize>,
-    column_view: gtk4::ColumnView,
+    pub(super) column_view: gtk4::ColumnView,
     column_model: Rc<dyn crate::ui::table_columns::EditorModel>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
@@ -90,18 +96,21 @@ impl ReleasesView {
             .show_column_separators(false)
             .build();
         column_view.add_css_class("reprise-releases-table");
+        column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
         let shared_target = Rc::new(RefCell::new(None::<std::rc::Weak<Shared>>));
-        let visibility_target = shared_target.clone();
-        let on_set_hidden: releases_columns::OnSetHidden = Rc::new(move |mbid, hidden| {
-            let shared = visibility_target
-                .borrow()
-                .as_ref()
-                .and_then(std::rc::Weak::upgrade);
-            if let Some(shared) = shared {
-                set_hidden(&shared, &mbid, hidden);
-            }
-        });
+        let selection_target = shared_target.clone();
+        let on_wire_cell: super::releases_cell_surface::OnWireCell =
+            Rc::new(move |surface, item| {
+                let shared = selection_target
+                    .borrow()
+                    .as_ref()
+                    .and_then(std::rc::Weak::upgrade);
+                if let Some(shared) = shared {
+                    super::releases_selection::wire_cell(surface, item, &shared);
+                    super::releases_context_menu::wire_cell(surface, item, &shared);
+                }
+            });
         let launch_target = shared_target.clone();
         let on_open: releases_columns::OnOpenTarget = Rc::new(move |url| {
             let shared = launch_target
@@ -113,7 +122,7 @@ impl ReleasesView {
             }
         });
         let date_column =
-            releases_columns::append_columns(&column_view, &on_set_hidden, &on_open, &filter_bar);
+            releases_columns::append_columns(&column_view, &on_open, &filter_bar, &on_wire_cell);
         let column_registry = super::releases_column_layout::registry(&column_view, conn.clone());
         let column_model = super::releases_column_layout::model(&column_registry);
         crate::ui::table_columns::header_popover::install_header_popover(
@@ -165,6 +174,9 @@ impl ReleasesView {
             conn,
             database_path,
             model,
+            selection_anchor: super::releases_selection::ReleasesAnchor::default(),
+            toast_overlay: glib::WeakRef::new(),
+            on_navigate: RefCell::new(None),
             filter_bar: filter_bar.clone(),
             end_of_results,
             rows: RefCell::new(Vec::new()),
@@ -189,6 +201,8 @@ impl ReleasesView {
             fetch_override: RefCell::new(None),
         });
         shared_target.replace(Some(Rc::downgrade(&shared)));
+        super::releases_selection::wire(&column_view, &shared);
+        super::releases_context_menu::wire(&column_view, &shared);
         {
             let shared = Rc::downgrade(&shared);
             filter_bar.set_on_changed(move |_| {
@@ -277,6 +291,14 @@ impl ReleasesView {
         *self.shared.on_refreshed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
+        self.shared.toast_overlay.set(Some(overlay));
+    }
+
+    pub(in crate::ui) fn set_on_navigate(&self, callback: impl Fn(NavigationIntent) + 'static) {
+        *self.shared.on_navigate.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
         self.shared.connectivity.set(value);
         let previous = self.shared.fetch_failure.borrow().clone();
@@ -307,7 +329,7 @@ fn releases_matching(rows: Vec<HistoryEntry>, query: &str) -> Vec<HistoryEntry> 
         .collect()
 }
 
-fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
+pub(super) fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let filter = shared.filter_bar.filter();
     let query = shared.filter_bar.query();
@@ -329,6 +351,9 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         });
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
+    shared
+        .selection_anchor
+        .reconcile_after_replace(&shared.model);
     apply_current_sort(shared);
     shared.cached_items.set(total);
     apply_empty_state(
@@ -379,14 +404,7 @@ fn apply_empty_state(shared: &Shared, state: ReleasesEmptyState, total: usize) {
 }
 
 fn set_hidden(shared: &Rc<Shared>, mbid: &str, hidden: bool) {
-    if let Err(error) = artist_news::set_release_hidden(&shared.conn, mbid, hidden) {
-        tracing::warn!(%error, "could not change release visibility");
-        return;
-    }
-    if let Err(error) = render_cache(shared) {
-        tracing::warn!(%error, "could not reload Releases after visibility change");
-    }
-    notify_refreshed(shared);
+    super::releases_hide::set_hidden_batch(shared, vec![mbid.to_owned()], hidden);
 }
 
 fn activate_position(shared: &Rc<Shared>, position: u32) {
@@ -407,7 +425,7 @@ fn activate_position(shared: &Rc<Shared>, position: u32) {
     }
 }
 
-fn notify_refreshed(shared: &Shared) {
+pub(super) fn notify_refreshed(shared: &Shared) {
     if let Some(callback) = shared.on_refreshed.borrow().clone() {
         callback();
     }
@@ -678,6 +696,9 @@ fn apply_sort(shared: &Shared, sorter: &gtk4::ColumnViewSorter) {
     shared
         .model
         .replace(sort_rows_for_key(rows, key, direction, release_type_label));
+    shared
+        .selection_anchor
+        .reconcile_after_replace(&shared.model);
 }
 
 fn apply_current_sort(shared: &Shared) {

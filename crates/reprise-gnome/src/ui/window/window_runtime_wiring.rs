@@ -136,6 +136,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         radio_view,
         preferences,
     );
+    releases_view.set_toast_overlay(toast_overlay);
     super::startup_report::mark("source_connectivity::wire");
     artwork_permission_wiring::wire(
         preferences,

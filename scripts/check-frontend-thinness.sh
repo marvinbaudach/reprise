@@ -225,7 +225,6 @@ crates/reprise-gnome/src/ui/playing_links.rs:1
 crates/reprise-gnome/src/ui/podcasts/mod.rs:1
 crates/reprise-gnome/src/ui/radio/mod.rs:1
 crates/reprise-gnome/src/ui/releases/mod.rs:1
-crates/reprise-gnome/src/ui/releases/releases_columns.rs:1
 crates/reprise-gnome/src/ui/releases/releases_empty_state.rs:1
 crates/reprise-gnome/src/ui/releases/releases_model.rs:1
 crates/reprise-gnome/src/ui/releases/releases_presentation.rs:1
@@ -242,8 +241,8 @@ crates/reprise-gnome/src/ui/strings_radio.rs:1
 crates/reprise-gnome/src/ui/strings_releases.rs:1
 crates/reprise-gnome/src/ui/strings_sources.rs:1
 crates/reprise-gnome/src/ui/strings_tag_edit.rs:7
+crates/reprise-gnome/src/ui/table_selection/anchor.rs:2
 crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs:1
-crates/reprise-gnome/src/ui/track_list/track_list_selection_anchor.rs:2
 crates/reprise-gnome/src/ui/updates/release_cover.rs:1
 crates/reprise-mcp/tests/common/mod.rs:1
 ALLOWLIST

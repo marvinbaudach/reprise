@@ -270,7 +270,11 @@ result.
   exactly the clicked row instead of stretching from the start of the list. A
   range never moves the anchor; the next input starts from it again. The
   playing track remains passive: it receives neither selection nor keyboard
-  focus, and playback still moves nothing, preserving NAV-10b.
+  focus, and playback still moves nothing, preserving NAV-10b. This anchor
+  rule applies to every multi-selection table and lives in
+  `ui/table_selection`: the track list supplies the playing row as its
+  fallback, while tables without playback proceed directly to the third
+  branch.
 - **NAV-18** [active] [gtk] — **The sidebar marks the visible view, and the
   marked entry stays clickable.** Exactly the sidebar entry whose view is
   visible in the content area carries the marking — including Library Doctor
@@ -2561,10 +2565,10 @@ the panel).
 - **NR-39** [active] [gtk] — The Releases table's `Status` and `Link`
   columns are ordinary columns in the free band: hideable, movable, visible
   in the column editor, and visible by default. Only the `Cover` column stays
-  fixed. Hiding both removes the visible routes for hiding a release and for
-  opening its purchase link; the header popover restores either column. A
-  layout saved before this change keeps both columns visible, while a saved
-  layout that never mentioned them starts without them.
+  fixed. Hiding the `Link` column removes the visible route for opening a
+  release's purchase link; the header popover restores either column. A layout
+  saved before this change keeps both columns visible, while a saved layout
+  that never mentioned them starts without them.
   Test: `nr_39_the_column_editor_lists_status_and_link_and_hides_them`
   (`ui/releases/releases_view_tests.rs`).
 - **NR-21a** [active] [gtk] — replaces NR-21. A failed New Releases fetch
@@ -2596,6 +2600,23 @@ the panel).
   own, so the row keeps naming its source per NR-38.
   Test: `nr_39_the_feed_tags_only_the_exception`
   (`ui/updates/concerts_section.rs`, `#[cfg(test)]`).
+- **NR-40** [active] [gtk] — **Release rows select and answer like episode
+  rows.** A click selects the row alone, Ctrl-click toggles it, Shift-click
+  extends the selection from the anchor across the rendered order (NAV-17; the
+  releases table has no playing row, so a missing anchor means Shift-click
+  takes the clicked row alone). A secondary click on a row outside the
+  selection makes that row the selection before the menu opens. The same
+  selection-aware menu is reached by secondary click and by Menu/Shift+F10. It
+  offers exactly one primary entry — „Hide" for visible rows, „Show again" for
+  hidden ones, carrying the selection count per CTX-6 — plus, for a single
+  selected row, „Go to artist" and, only when the library holds tracks for it,
+  „Go to album". Hiding and restoring write one transaction for the whole
+  selection and raise a ten-second toast with „Undo"; undo restores exactly
+  that set and leaves it selected. Known limitation: with the status column's
+  hover button gone (NR-39), hiding has no touch affordance and no primary-click
+  route.
+  Test: `nr_40_release_menu_has_one_primary_action_and_single_row_navigation`
+  (`ui/releases/releases_menu.rs`).
 
 ## S. Surfaces & Geometry
 

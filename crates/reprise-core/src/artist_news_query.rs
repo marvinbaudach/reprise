@@ -403,23 +403,42 @@ pub fn set_release_hidden(
     hidden: bool,
 ) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    set_release_hidden_in(conn, release_group_mbid, hidden)
+    let transaction = conn.unchecked_transaction()?;
+    apply_release_hidden_in(&transaction, release_group_mbid, hidden)?;
+    transaction.commit()
 }
 
-pub(crate) fn set_release_hidden_in(
+pub fn set_releases_hidden(
+    db: &crate::db::Db,
+    release_group_mbids: &[String],
+    hidden: bool,
+) -> Result<(), rusqlite::Error> {
+    if release_group_mbids.is_empty() {
+        return Ok(());
+    }
+    let conn = db.conn();
+    let transaction = conn.unchecked_transaction()?;
+    for mbid in release_group_mbids {
+        apply_release_hidden_in(&transaction, mbid, hidden)?;
+    }
+    transaction.commit()
+}
+
+/// One row's visibility, without a transaction of its own. The caller owns
+/// the bracket -- `set_releases_hidden` opens exactly one for the whole batch,
+/// and nesting `unchecked_transaction()` inside it would fail outright.
+pub(crate) fn apply_release_hidden_in(
     conn: &Connection,
     release_group_mbid: &str,
     hidden: bool,
 ) -> Result<(), rusqlite::Error> {
     if !hidden {
-        let transaction = conn.unchecked_transaction()?;
-        for mbid in crate::deleted_releases::forget_deleted_release_memory(
-            &transaction,
-            release_group_mbid,
-        )? {
-            update_release_hidden_in(&transaction, &mbid, false)?;
+        for mbid in
+            crate::deleted_releases::forget_deleted_release_memory(conn, release_group_mbid)?
+        {
+            update_release_hidden_in(conn, &mbid, false)?;
         }
-        return transaction.commit();
+        return Ok(());
     }
     update_release_hidden_in(conn, release_group_mbid, true)
 }
@@ -434,7 +453,7 @@ pub(crate) fn update_release_hidden_in(
             SET hidden = ?1,
                 hidden_at = CASE WHEN ?1 = 1 THEN strftime('%s', 'now') ELSE NULL END,
                 hidden_by_deleted_memory = 0
-          WHERE release_group_mbid = ?2",
+          WHERE release_group_mbid = ?2 AND hidden != ?1",
         rusqlite::params![i64::from(hidden), release_group_mbid],
     )?;
     Ok(())

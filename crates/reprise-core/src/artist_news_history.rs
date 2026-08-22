@@ -309,16 +309,17 @@ fn is_protected_by_fetch_window(first_release_date: &str, window_start: NaiveDat
     }
 }
 
-/// Un-hides exactly one release. Reuses `set_release_hidden`'s `hidden = 0`
-/// path (which also nulls `hidden_at`) so there is a single place that
-/// defines what "un-hidden" means. The Releases full view calls this for
-/// its per-row "Show again" action.
+/// Un-hides exactly one release through the shared transaction-free row
+/// operation, which also clears `hidden_at`. The Releases full view calls this
+/// for its per-row "Show again" action.
 pub fn restore_release(
     db: &crate::db::Db,
     release_group_mbid: &str,
 ) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    crate::artist_news_query::set_release_hidden_in(conn, release_group_mbid, false)
+    let transaction = conn.unchecked_transaction()?;
+    crate::artist_news_query::apply_release_hidden_in(&transaction, release_group_mbid, false)?;
+    transaction.commit()
 }
 
 #[cfg(test)]
@@ -382,6 +383,79 @@ mod tests {
         assert!(one.hidden_at.is_none(), "restoring clears hidden_at too");
         assert!(two.hidden, "the other hidden entry is untouched");
         assert!(two.hidden_at.is_some());
+    }
+
+    #[test]
+    fn redundant_hide_preserves_the_original_hidden_at_timestamp() {
+        let db = migrated_conn();
+        insert_history_row(&db, "one", 1_000, "2026-01-01", "Album");
+        db.conn()
+            .execute(
+                "UPDATE new_releases SET hidden = 1, hidden_at = 123
+                  WHERE release_group_mbid = 'one'",
+                [],
+            )
+            .unwrap();
+
+        crate::artist_news::set_release_hidden(&db, "one", true).unwrap();
+
+        let hidden_at: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT hidden_at FROM new_releases WHERE release_group_mbid = 'one'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(hidden_at, Some(123));
+    }
+
+    #[test]
+    fn a_failed_restore_rolls_back_deleted_memory_and_release_visibility() {
+        let db = migrated_conn();
+        insert_history_row(&db, "one", 1_000, "2026-01-01", "Album");
+        db.conn()
+            .execute_batch(
+                "UPDATE new_releases
+                    SET hidden = 1,
+                        hidden_at = 123,
+                        hidden_by_deleted_memory = 1
+                  WHERE release_group_mbid = 'one';
+                 INSERT INTO deleted_releases (
+                    artist_key, title_key, scope, deleted_at
+                 ) VALUES ('artist', 'title', 'album', 100);
+                 CREATE TEMP TRIGGER reject_release_restore
+                 BEFORE UPDATE OF hidden ON new_releases
+                 WHEN OLD.release_group_mbid = 'one'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'reject release restore');
+                 END;",
+            )
+            .unwrap();
+
+        let result = restore_release(&db, "one");
+
+        assert!(result.is_err(), "the injected visibility write must fail");
+        let memory_count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM deleted_releases", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            memory_count, 1,
+            "the deleted-release memory must roll back with the failed restore"
+        );
+        let state: (bool, Option<i64>, bool) = db
+            .conn()
+            .query_row(
+                "SELECT hidden, hidden_at, hidden_by_deleted_memory
+                   FROM new_releases WHERE release_group_mbid = 'one'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(state, (true, Some(123), true));
     }
 
     #[test]

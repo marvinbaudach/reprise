@@ -74,8 +74,8 @@ pub(crate) use crate::artist_news_query::presence_for;
 /// callers keep using `artist_news::{StoredRelease, ...}`.
 pub use crate::artist_news_query::{
     delta_candidates, hidden_release_count, mark_releases_seen, query_artist_news,
-    query_artist_news_by_name, set_release_hidden, unseen_release_count, LibraryPresence,
-    StoredRelease,
+    query_artist_news_by_name, set_release_hidden, set_releases_hidden, unseen_release_count,
+    LibraryPresence, StoredRelease,
 };
 
 pub use crate::artist_news_scope::{
