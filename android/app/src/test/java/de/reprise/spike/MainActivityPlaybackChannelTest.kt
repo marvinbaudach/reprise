@@ -1,17 +1,22 @@
 package de.reprise.spike
 
+import android.app.Activity
 import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
+import android.os.Bundle
 import android.os.Looper
 import android.util.Log
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import java.util.PriorityQueue
 import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -30,6 +35,17 @@ import uniffi.reprise_android_ffi.AndroidRepeatMode
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class MainActivityPlaybackChannelTest {
+    private val recreationCompose = createAndroidComposeRule<MainActivity>()
+
+    @get:Rule
+    val recreationRule = TestRule { base, description ->
+        if (description.methodName == "theUiStateSurvivesAnActivityRecreationWhilePlaying") {
+            recreationCompose.apply(base, description)
+        } else {
+            base
+        }
+    }
+
     private val activities = mutableListOf<ActivityController<MainActivity>>()
     private val services = mutableListOf<ServiceController<PlaybackChannelService>>()
 
@@ -39,6 +55,7 @@ class MainActivityPlaybackChannelTest {
             runCatching { controller.pause().stop().destroy() }
         }
         services.forEach(ServiceController<PlaybackChannelService>::destroy)
+        (application() as? ConfigurationTestApplication)?.releaseService()
     }
 
     @Test
@@ -142,21 +159,30 @@ class MainActivityPlaybackChannelTest {
     }
 
     @Test
+    @Config(sdk = [36], application = ConfigurationTestApplication::class)
     fun theUiStateSurvivesAnActivityRecreationWhilePlaying() {
-        val service = buildService()
-        val controller = launchBoundActivityController(service)
+        val service = (application() as ConfigurationTestApplication).service
         service.publish(activitySnapshot(trackId = 6, positionMs = 12_000))
         idleMainLooper()
-        assertEquals(6L, controller.get().currentPlaybackState.currentTrackId)
+        recreationCompose.waitForIdle()
+        assertEquals(6L, recreationCompose.activity.currentPlaybackState.currentTrackId)
 
-        controller.stop()
-        service.publish(activitySnapshot(trackId = 7, positionMs = 24_000))
+        val publishOnStop = PublishPlaybackOnStop(
+            service,
+            activitySnapshot(trackId = 7, positionMs = 24_000),
+        )
+        application().registerActivityLifecycleCallbacks(publishOnStop)
         RuntimeEnvironment.setQualifiers("w916dp-h412dp-land")
-        controller.recreate()
-        controller.start()
+        try {
+            recreationCompose.activityRule.scenario.recreate()
+        } finally {
+            application().unregisterActivityLifecycleCallbacks(publishOnStop)
+        }
         idleMainLooper()
+        recreationCompose.waitForIdle()
 
-        val state = controller.get().currentPlaybackState
+        assertTrue(publishOnStop.published)
+        val state = recreationCompose.activity.currentPlaybackState
         assertEquals(7L, state.currentTrackId)
         assertEquals(24_000L, state.positionMs)
         assertTrue(state.visualizerActive)
@@ -226,6 +252,27 @@ private class PlaybackChannelService : ReprisePlaybackService() {
     fun publish(snapshot: AndroidPlaybackSnapshot) {
         coreListener.onPlaybackChanged(snapshot)
     }
+}
+
+private class PublishPlaybackOnStop(
+    private val service: ConfigurationTestPlaybackService,
+    private val snapshot: AndroidPlaybackSnapshot,
+) : Application.ActivityLifecycleCallbacks {
+    var published = false
+        private set
+
+    override fun onActivityStopped(activity: Activity) {
+        if (activity !is MainActivity || published) return
+        service.publish(snapshot)
+        published = true
+    }
+
+    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+    override fun onActivityStarted(activity: Activity) = Unit
+    override fun onActivityResumed(activity: Activity) = Unit
+    override fun onActivityPaused(activity: Activity) = Unit
+    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+    override fun onActivityDestroyed(activity: Activity) = Unit
 }
 
 private fun activitySnapshot(trackId: Long, positionMs: Long) = AndroidPlaybackSnapshot(
