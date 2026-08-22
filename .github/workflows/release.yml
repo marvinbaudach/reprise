@@ -338,8 +338,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build the Flatpak repository
+        env:
+          REPRISE_LASTFM_API_KEY: ${{ secrets.REPRISE_LASTFM_API_KEY }}
+          REPRISE_LASTFM_SHARED_SECRET: ${{ secrets.REPRISE_LASTFM_SHARED_SECRET }}
         run: |
           set -euo pipefail
+          # `option_env!` reads these at compile time, so they must be in the
+          # environment of the cargo run itself — which happens inside
+          # flatpak-builder's sandbox. flatpak-builder has no `--env`, so this
+          # job's environment cannot reach it; the manifest is the only
+          # channel. Patch the checked-out copy, never the committed one, and
+          # keep shell tracing off around it.
+          python3 scripts/inject-build-credentials.py io.github.marvinbaudach.Reprise.yml
           flatpak-builder --repo=repo --force-clean build-dir io.github.marvinbaudach.Reprise.yml
           {
             echo ""

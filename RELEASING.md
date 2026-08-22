@@ -197,6 +197,44 @@ network.
 scripts/check-lyrics-smoke.sh
 ```
 
+## Bundled Last.fm credential
+
+Last.fm scrobbling reaches its API through an application key and shared secret
+compiled in with `option_env!` (`crates/reprise-core/src/scrobbling/lastfm.rs`).
+Without them `LastFmClient::bundled()` yields `None` and every user has to
+register their own Last.fm application first. ListenBrainz needs nothing here —
+it authenticates with a per-user token kept in the system keyring.
+
+The Actions repository secrets are named exactly `REPRISE_LASTFM_API_KEY` and
+`REPRISE_LASTFM_SHARED_SECRET`.
+
+For a plain meson build, exporting them before the build is enough, exactly as
+for the Ticketmaster key below — meson passes its environment to Cargo.
+
+**The Flatpak build is different, and it is the part that fails quietly.** Cargo
+runs inside flatpak-builder's sandbox, and `flatpak-builder` has no `--env`
+option, so a variable exported in the CI job never reaches the compiler. The
+manifest's `build-options.env` is the only channel. `release.yml` therefore runs
+
+```sh
+python3 scripts/inject-build-credentials.py io.github.marvinbaudach.Reprise.yml
+```
+
+immediately before `flatpak-builder`, patching the checked-out manifest in
+place. The committed manifest stays clean. Absent variables are not an error —
+forks and pull requests have no secrets and must still build — but a missing
+anchor in the manifest **is** an error, so a manifest refactor cannot silently
+drop the credential from a release.
+
+Prefer `build-options.env` over `build-args`: a `--env=` argument is visible in
+the runner's process list. Do not echo the patched manifest into the log, and
+keep shell tracing off around that step. flatpak-builder keys its build cache on
+the manifest, so patching it invalidates that cache by design.
+
+A Flathub build gets none of this: Flathub builds from the public manifest
+rather than from this workflow, so that channel falls back to per-user
+credentials. See issue #622.
+
 ## Bundled Ticketmaster credential
 
 To bundle a Ticketmaster Discovery API key in a local release, inject it into
