@@ -98,6 +98,27 @@ class DriveSceneComposeTest {
     }
 
     @Test
+    fun liveAudioIsReadOncePerDeliveredSceneFrame() {
+        val sink = RecordingLiveAudioSink(liveAudio = true)
+
+        driveAfterPlaybackTransition(
+            initial = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+            target = PlaybackUiState(state = AndroidPlaybackState.PAUSED),
+            frames = SpectrogramFrames(24, 20, ByteArray(0)),
+            sink = sink,
+        )
+        sink.reset()
+        compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS * 10)
+
+        assertTrue("the scene loop delivered no frames", sink.deliveredFrames.get() > 0)
+        assertTrue(
+            "${sink.liveAudioChecks.get()} live-audio reads crossed " +
+                "for ${sink.deliveredFrames.get()} delivered frames",
+            sink.liveAudioChecks.get() <= sink.deliveredFrames.get() + 1,
+        )
+    }
+
+    @Test
     fun aGenuinelyPausedScreenStillTakesTheCheapInterval() {
         val frames = SpectrogramFrames(24, 20, ByteArray(24))
         val sink = RecordingLiveAudioSink(liveAudio = false)
