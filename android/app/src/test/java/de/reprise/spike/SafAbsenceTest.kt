@@ -38,10 +38,20 @@ class SafAbsenceTest {
     }
 
     @Test
-    fun securityWrappingFileNotFoundConfirmsAbsenceButCallSiteOrderingRetainsPermissionDenied() {
+    fun securityAnywhereInTheCauseChainDoesNotConfirmAbsence() {
         val error = SecurityException("grant revoked", FileNotFoundException("gone"))
 
-        assertTrue(error.confirmsAbsence())
+        assertFalse(error.confirmsAbsence())
+    }
+
+    @Test
+    fun runtimeWrappingSecurityWrappingFileNotFoundDoesNotConfirmAbsence() {
+        val error = RuntimeException(
+            "query failed",
+            SecurityException("grant revoked", FileNotFoundException("gone")),
+        )
+
+        assertFalse(error.confirmsAbsence())
     }
 
     @Test

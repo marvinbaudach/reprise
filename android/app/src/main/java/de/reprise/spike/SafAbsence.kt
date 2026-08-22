@@ -15,7 +15,8 @@ private const val MAX_CAUSE_DEPTH = 64
  * FileNotFoundException -- measured 2026-08-22 on a Pixel 10 Pro XL. So the
  * whole cause chain is inspected and the message text never is: that string
  * belongs to one provider on one Android version, and matching it is how this
- * bug comes back.
+ * bug comes back. Any SecurityException in the chain wins over a nested
+ * FileNotFoundException because permission denial is never proof of absence.
  */
 internal fun Throwable.confirmsAbsence(): Boolean {
     val visited = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
@@ -24,6 +25,7 @@ internal fun Throwable.confirmsAbsence(): Boolean {
     repeat(MAX_CAUSE_DEPTH) {
         val error = current ?: return false
         if (!visited.add(error)) return false
+        if (error is SecurityException) return false
         if (error is FileNotFoundException) return true
         current = error.cause
     }

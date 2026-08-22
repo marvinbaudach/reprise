@@ -3,6 +3,7 @@ package de.reprise.spike
 import android.content.ContentResolver
 import android.database.Cursor
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import java.io.IOException
 import uniffi.reprise_android_ffi.SafSource
@@ -13,6 +14,7 @@ import uniffi.reprise_android_ffi.SourceFacts
 internal class AndroidSafSource(
     private val resolver: ContentResolver,
     private val treeUri: Uri,
+    private val detachFd: (ParcelFileDescriptor) -> Int = { it.detachFd() },
 ) : SafSource {
     private val treeToken = stableTreeToken(treeUri)
 
@@ -69,7 +71,7 @@ internal class AndroidSafSource(
     }
 
     override fun openReadFd(uri: String): Int = try {
-        resolver.openFileDescriptor(Uri.parse(uri), "r")?.detachFd()
+        resolver.openFileDescriptor(Uri.parse(uri), "r")?.let(detachFd)
             ?: throw SafSourceException.Io("The provider returned no file descriptor")
     } catch (error: SecurityException) {
         throw SafSourceException.PermissionDenied(error.detail())
