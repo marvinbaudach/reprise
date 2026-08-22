@@ -343,6 +343,7 @@ jobs:
         env:
           REPRISE_LASTFM_API_KEY: ${{ secrets.REPRISE_LASTFM_API_KEY }}
           REPRISE_LASTFM_SHARED_SECRET: ${{ secrets.REPRISE_LASTFM_SHARED_SECRET }}
+          REPRISE_ACOUSTID_CLIENT_KEY: ${{ secrets.REPRISE_ACOUSTID_CLIENT_KEY }}
         run: |
           set -euo pipefail
           # `option_env!` reads these at compile time, so they must be in the
