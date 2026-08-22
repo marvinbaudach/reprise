@@ -67,6 +67,10 @@ pub const LASTFM_BUNDLED_HINT: &str = N_!("Sign in with your Last.fm account. No
 pub const LASTFM_ADVANCED_SETUP: &str = N_!("Advanced setup");
 pub const LASTFM_ADVANCED_SETUP_DESCRIPTION: &str =
     N_!("Use credentials from your own Last.fm API application");
+pub const LASTFM_OWN_APPLICATION: &str = N_!("Last.fm application");
+pub const LASTFM_OWN_APPLICATION_DESCRIPTION: &str = N_!(
+    "This build carries no Last.fm application key. Register one at https://www.last.fm/api/account/create."
+);
 pub const TEST_CONNECTION: &str = N_!("Test connection");
 pub const TEST_CONNECTION_FAILED: &str = N_!("Test failed — try again later.");
 

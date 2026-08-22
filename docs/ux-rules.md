@@ -1132,7 +1132,9 @@ result.
   time. Activation, account, status, errors and queue stay
   provider-specific. With bundled app credentials, Last.fm offers the
   normal browser login directly; custom API credentials sit collapsed
-  under "Advanced setup".
+  under "Advanced setup". Without bundled app credentials, the
+  application form is the primary path: it is expanded and is not
+  labelled "Advanced".
 - **SET-7** [replaced by SET-10] [gtk] — "New Releases" and "Concerts" are peer
   Preferences main pages in the vertical navigation. For these two
   features, the Plugins page keeps only the activation switches; scope,

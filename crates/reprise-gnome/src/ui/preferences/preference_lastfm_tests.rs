@@ -31,7 +31,7 @@ fn connected_status_includes_lastfm_queued_count() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn expander_row_has_enable_switch_credentials_and_action_buttons() {
     gtk4::init().unwrap();
-    let surface = build_lastfm_expander(false, false, "Not connected");
+    let surface = build_lastfm_expander(false, false, "Not connected", None);
     assert!(surface.expander.shows_enable_switch());
     assert!(!surface.expander.enables_expansion());
     assert!(surface.api_key.is::<adw::PasswordEntryRow>());
@@ -51,7 +51,7 @@ fn expander_row_has_enable_switch_credentials_and_action_buttons() {
     assert!(!surface.open_browser.is_sensitive());
 
     // When enabled + connected, body rows are sensitive and disconnect visible
-    let enabled_surface = build_lastfm_expander(true, true, "Connected as listener");
+    let enabled_surface = build_lastfm_expander(true, true, "Connected as listener", None);
     assert!(enabled_surface.expander.enables_expansion());
     assert!(enabled_surface.api_key.is_sensitive());
     assert!(enabled_surface
@@ -64,7 +64,7 @@ fn expander_row_has_enable_switch_credentials_and_action_buttons() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn set_6b_lastfm_application_credentials_are_hidden_in_advanced_setup() {
     gtk4::init().unwrap();
-    let surface = build_lastfm_expander(true, false, "Not connected");
+    let surface = build_lastfm_expander(true, false, "Not connected", Some(("k", "s")));
     let credentials_section = surface
         .api_key
         .ancestor(adw::ExpanderRow::static_type())
@@ -80,4 +80,62 @@ fn set_6b_lastfm_application_credentials_are_hidden_in_advanced_setup() {
     assert!(surface.api_key.is_ancestor(&credentials_section));
     assert!(surface.shared_secret.is_ancestor(&credentials_section));
     assert_ne!(credentials_section, surface.expander);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_6b_lastfm_sign_in_is_offered_with_bundled_credentials() {
+    gtk4::init().unwrap();
+    let surface = build_lastfm_expander(true, false, "Not connected", Some(("k", "s")));
+    let credentials_section = surface
+        .api_key
+        .ancestor(adw::ExpanderRow::static_type())
+        .and_downcast::<adw::ExpanderRow>()
+        .expect("API key must live in an advanced expander");
+
+    assert!(surface.sign_in.is_some());
+    assert!(!credentials_section.is_expanded());
+    assert_eq!(
+        credentials_section.title(),
+        strings::text(strings::LASTFM_ADVANCED_SETUP)
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_6b_lastfm_own_application_is_the_primary_path_without_bundled_credentials() {
+    gtk4::init().unwrap();
+    let surface = build_lastfm_expander(true, false, "Not connected", None);
+    let credentials_section = surface
+        .api_key
+        .ancestor(adw::ExpanderRow::static_type())
+        .and_downcast::<adw::ExpanderRow>()
+        .expect("API key must live in the application expander");
+
+    assert!(credentials_section.is_expanded());
+    assert_eq!(
+        credentials_section.title(),
+        strings::text(strings::LASTFM_OWN_APPLICATION)
+    );
+    assert_ne!(
+        credentials_section.title(),
+        strings::text(strings::LASTFM_ADVANCED_SETUP)
+    );
+    assert!(surface.sign_in.is_none());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lastfm_sign_in_carries_the_credentials_it_was_built_from() {
+    gtk4::init().unwrap();
+    let surface = build_lastfm_expander(true, false, "Not connected", Some(("k", "s")));
+    let sign_in = surface
+        .sign_in
+        .as_ref()
+        .expect("bundled credentials must offer sign in");
+
+    assert_eq!(
+        (sign_in.api_key.as_str(), sign_in.shared_secret.as_str()),
+        ("k", "s")
+    );
 }
