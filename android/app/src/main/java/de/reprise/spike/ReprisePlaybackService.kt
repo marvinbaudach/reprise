@@ -39,9 +39,6 @@ open class ReprisePlaybackService : MediaSessionService() {
     private val mutableSleepTimerStates = MutableStateFlow(SleepTimerUiState())
     internal val sleepTimerStates: StateFlow<SleepTimerUiState> =
         mutableSleepTimerStates.asStateFlow()
-    private var compatibilityPlaybackObserver: ((AndroidPlaybackSnapshot) -> Unit)? = null
-    private var compatibilitySettingsObserver: (() -> Unit)? = null
-    private var compatibilitySleepTimerObserver: ((SleepTimerUiState) -> Unit)? = null
     private lateinit var sleepTimer: SleepTimerController
     private val localBinder = LocalBinder()
     private val livePcmSink = LivePcmBufferSink()
@@ -57,7 +54,6 @@ open class ReprisePlaybackService : MediaSessionService() {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
-            compatibilityPlaybackObserver?.invoke(snapshot)
             if (snapshot.hasRunOut()) {
                 // The queue is empty, so this service has nothing left to keep
                 // alive. `stopSelf` only ends a service nobody is bound to, so
@@ -109,20 +105,14 @@ open class ReprisePlaybackService : MediaSessionService() {
                 .buildUpon()
                 .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
                 .build()
-            Media3PlaybackPort(player) {
-                mutableSettingsRevisions.value += 1L
-                compatibilitySettingsObserver?.invoke()
-            }
+            Media3PlaybackPort(player) { mutableSettingsRevisions.value += 1L }
         }
         playbackPort = port
         sleepTimer = SleepTimerController(
             handler = Handler(Looper.getMainLooper()),
             applyVolume = ::applySleepTimerVolume,
             pause = ::pauseForSleepTimer,
-            publish = { state ->
-                mutableSleepTimerStates.value = state
-                compatibilitySleepTimerObserver?.invoke(state)
-            },
+            publish = { state -> mutableSleepTimerStates.value = state },
         )
         mutableSleepTimerStates.value = sleepTimer.state()
         val session = MediaSession.Builder(
@@ -166,9 +156,6 @@ open class ReprisePlaybackService : MediaSessionService() {
     ): MediaSession? = mediaSession
 
     override fun onDestroy() {
-        compatibilityPlaybackObserver = null
-        compatibilitySettingsObserver = null
-        compatibilitySleepTimerObserver = null
         if (::sleepTimer.isInitialized) sleepTimer.close()
         coreSession?.close()
         coreSession = null
@@ -194,33 +181,6 @@ open class ReprisePlaybackService : MediaSessionService() {
             }
             LiveVisualSceneEngineLease(engine, livePcmSink)
         }
-
-    internal fun attachObserver(observer: (AndroidPlaybackSnapshot) -> Unit) {
-        compatibilityPlaybackObserver = observer
-        playbackSnapshots.value?.let(observer)
-    }
-
-    internal fun detachObserver() {
-        compatibilityPlaybackObserver = null
-    }
-
-    internal fun attachSettingsObserver(observer: () -> Unit) {
-        compatibilitySettingsObserver = observer
-        observer()
-    }
-
-    internal fun detachSettingsObserver() {
-        compatibilitySettingsObserver = null
-    }
-
-    internal fun attachSleepTimerObserver(observer: (SleepTimerUiState) -> Unit) {
-        compatibilitySleepTimerObserver = observer
-        observer(sleepTimerStates.value)
-    }
-
-    internal fun detachSleepTimerObserver() {
-        compatibilitySleepTimerObserver = null
-    }
 
     internal fun startSleepTimer(selection: SleepTimerSelection) {
         sleepTimer.start(selection, playbackSnapshots.value)
