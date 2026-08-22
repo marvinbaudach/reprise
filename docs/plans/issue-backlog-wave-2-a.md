@@ -322,3 +322,19 @@ displayless equivalence table.
 No Core file, user data, music file, live desktop, sibling-owned path, version
 metadata, remote branch, or issue state was changed. No `Fixes #444` claim was
 made.
+
+### Review follow-up
+
+- Finding 1 uses one shared source: `CONTENT_HEIGHT_EPSILON` now governs both
+  observed-height inference and adoption matching. These operations form one
+  rounding-safety contract, so sharing the value prevents the final tolerance
+  from drifting below the inference floor.
+- Finding 2 avoids the discarded header lookup. Adoption now constructs its
+  topology directly from the already-known row height and section starts; the
+  placeholder header height is never observed because `matches` re-infers it
+  from `upper`, while all existing layout guards remain unchanged.
+- Verification: `cargo fmt --check` passed;
+  `cargo clippy --all-targets -p reprise-gnome -- -D warnings` passed; and
+  `cargo test -p reprise-gnome -- list_geometry_layout adoption_ observed_upper`
+  passed 27 tests with 0 failures. Both pinning tests passed with unchanged
+  assertions.

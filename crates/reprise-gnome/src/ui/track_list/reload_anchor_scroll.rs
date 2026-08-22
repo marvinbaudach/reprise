@@ -10,10 +10,9 @@ use gtk4::prelude::{AdjustmentExt, ScrollableExt};
 use super::{reload_restore, Shared};
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
-use crate::ui::list_geometry_layout::ListLayout;
+use crate::ui::list_geometry_layout::{ListLayout, CONTENT_HEIGHT_EPSILON};
 
 const SCROLL_TO_ADOPTION_WINDOW: Duration = Duration::from_millis(250);
-const SCROLL_ADOPTION_EPSILON: f64 = 0.5;
 
 #[derive(Clone, Copy)]
 enum RestorePath {
@@ -127,7 +126,7 @@ impl ScrollAdoptionGeometry {
         let requested = guard_top.clamp(lower, (upper - page_size).max(lower));
         let candidate_error = (candidate - requested).abs();
         let before_error = (self.before - requested).abs();
-        candidate_error <= SCROLL_ADOPTION_EPSILON && candidate_error < before_error
+        candidate_error <= CONTENT_HEIGHT_EPSILON && candidate_error < before_error
     }
 }
 
@@ -296,12 +295,10 @@ fn scroll_to_anchor(
             ListGeometry::for_view(&shared.column_view)
                 .row_height(&shared.conn, &shared.list_geometry_cache)
         });
-        let layout = ListGeometry::for_view(&shared.column_view).layout(
-            &shared.conn,
-            &shared.list_geometry_cache,
-            row_height,
-            section_starts,
-        );
+        // Adoption re-infers the header height from `upper`; only row height
+        // and section starts survive into `matches`. A valid placeholder here
+        // preserves every topology guard without the discarded cache/DB read.
+        let layout = ListLayout::sectioned(row_height, row_height, section_starts);
         ScrollAdoptionGeometry::new(
             guard_position,
             request.current_ids.len(),

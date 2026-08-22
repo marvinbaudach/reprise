@@ -2,7 +2,11 @@ use std::rc::Rc;
 
 use crate::ui::list_geometry::{self, RowHeight};
 
-const CONTENT_HEIGHT_EPSILON: f64 = 0.5;
+/// One tolerance owns both observed-height inference and scroll adoption.
+/// `row_top` rounds the inferred components separately, unlike the former
+/// fused calculation, so the final match tolerance must never drift below the
+/// inference floor that absorbs that ULP-scale difference.
+pub(in crate::ui) const CONTENT_HEIGHT_EPSILON: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::ui) enum LayoutValidation {
