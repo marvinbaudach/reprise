@@ -274,7 +274,9 @@ impl RatingWidget {
         // available from that row's keyboard context menu via Edit Tags.
         button.set_focusable(false);
         button.set_valign(gtk4::Align::Center);
-        crate::ui::lazy_tooltip::install(&button, strings::rate_n_stars(star));
+        let name = strings::rate_n_stars(star);
+        crate::ui::lazy_tooltip::install(&button, name.clone());
+        button.update_property(&[gtk4::accessible::Property::Label(&name)]);
 
         let widget = self.downgrade();
         button.connect_clicked(move |_| {
@@ -504,6 +506,31 @@ mod tests {
         assert!(css.contains(".reprise-rating-filled { color: @reprise_accent_text_color; }"));
         assert!(css.contains(".reprise-rating-empty"));
         assert!(css.contains(".reprise-rating-dash"));
+    }
+
+    #[test]
+    fn rating_star_accessible_names_are_distinct() {
+        let names = (1..=STAR_COUNT)
+            .map(strings::rate_n_stars)
+            .collect::<Vec<_>>();
+        let distinct = names.iter().collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(distinct.len(), STAR_COUNT as usize);
+    }
+
+    #[test]
+    fn rating_star_wiring_sets_an_accessible_label() {
+        let source = include_str!("rating.rs");
+        let build_star = source
+            .split_once("fn build_star")
+            .expect("rating source contains build_star")
+            .1
+            .split_once("/// Applies the Rhythmbox")
+            .expect("build_star is followed by its activation handler")
+            .0;
+
+        assert!(build_star.contains("update_property"));
+        assert!(build_star.contains("Property::Label"));
     }
 
     /// Regression test for the `BorrowMutError` in the module doc comment: a

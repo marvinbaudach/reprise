@@ -335,7 +335,33 @@ accepted `RUSTSEC-2024-0436` warning for `paste`.
 
 ### Task 3 — #405
 
-Pending.
+Each star now computes `strings::rate_n_stars(star)` once, gives that same
+translated value to the lazy tooltip and `Property::Label`, and retains
+`set_focusable(false)`. The displayless distinctness test passed exactly 1
+test, and the narrow source-wiring contract passed exactly 1 test. Removing
+the `update_property` call made the latter red with exactly 0 passed and 1
+failed; restoring it made the same command green with exactly 1 passed:
+
+```bash
+cargo test -p reprise-gnome \
+  ui::track_list::rating::tests::rating_star_wiring_sets_an_accessible_label \
+  -- --exact --test-threads=1
+```
+
+The strand did not edit or run `scripts/check-accessibility-semantics.sh`:
+that path is outside the strand's explicit write ownership, and the mother
+plan reserves the global accessibility gate for the post-merge cross-check.
+The owned rating module carries the equivalent narrow static contract so the
+wiring could still be mutation-proven without crossing that boundary. gtk4-rs
+0.11.4 has no accessible-property value getter, so this strand did not read
+the label back from a widget and did not assert the AT-SPI tree itself. The
+test proves that all five supplied names are distinct and the static contract
+proves that `build_star` supplies `Property::Label`; it does not claim runtime
+value readback. `cargo fmt --check`, strict workspace Clippy, and isolated
+`cargo test --workspace` passed; the principal crate counts were Core 2567,
+GNOME 1965, Linux platform 158, Android FFI 170, and Reprise View 117.
+`cargo audit` passed with only the accepted `RUSTSEC-2024-0436` warning for
+`paste`.
 
 ### Task 4 — #406
 
