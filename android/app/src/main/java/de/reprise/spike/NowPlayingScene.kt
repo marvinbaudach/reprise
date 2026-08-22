@@ -120,7 +120,6 @@ internal fun NowPlayingScene(
     val motion = LocalAmbientMotionController.current
     val fallbackAccent = MaterialTheme.colorScheme.primary
     val visualEngine = rememberVisualSceneEngine(
-        enabled = visualizerOpacity > 0f,
         trackId = track.id,
         playback = playback,
         accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
@@ -231,7 +230,7 @@ internal fun NowPlayingScene(
                 shadow = coverShadow,
                 opacity = 1f - visualizerOpacity,
             )
-            if (visualEngine != null) {
+            if (visualEngine != null && visualizerOpacity > 0f) {
                 drawPlayedVisualizer(
                     buffer = visualEngine.scene(
                         width = COVER_SIZE_DP.dp.toPx(),
@@ -290,13 +289,12 @@ internal fun NowPlayingScene(
 
 @Composable
 private fun rememberVisualSceneEngine(
-    enabled: Boolean,
     trackId: Long,
     playback: PlaybackUiState,
     accent: Color,
 ): VisualSceneEngine? {
     val factory = LocalVisualSceneEngineFactory.current
-    val engine = remember(factory, enabled) { if (enabled) factory.create() else null }
+    val engine: VisualSceneEngine? = remember(factory) { factory.create() }
     DisposableEffect(engine) {
         onDispose { engine?.close() }
     }
