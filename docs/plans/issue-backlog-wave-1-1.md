@@ -302,7 +302,36 @@ exit status.
 
 ### Task 2 — #250
 
-Pending.
+`startup_repeat` is the pure startup decision: an armed `Repeat::All`
+override wins over `Off` or `One`, while no override preserves every snapshot
+mode. The focused displayless command
+`cargo test -p reprise-gnome smoke_repeat_override -- --test-threads=1`
+passed exactly 2 tests. The constructor no longer applies the hook;
+`restore_runtime` applies it exactly once, immediately after restoring the
+queue. The isolated-display end-state test constructs the real controller,
+restores a snapshot containing `Repeat::Off`, and reads `Repeat::All` from the
+controller's queue afterwards. It passed exactly 1 test with:
+
+```bash
+XDG_RUNTIME_DIR="$runtime" dbus-run-session -- xvfb-run -a env \
+  XDG_DATA_HOME="$data" XDG_CACHE_HOME="$cache" XDG_CONFIG_HOME="$config" \
+  TMPDIR="$tmp" GIO_USE_VFS=local GTK_USE_PORTAL=0 GSK_RENDERER=cairo \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
+  cargo test -p reprise-gnome \
+  ui::session_restore::tests::smoke_repeat_all_survives_constructor_then_session_restore \
+  -- --ignored --exact --test-threads=1
+```
+
+The explicit mutation deleted the sole post-restore
+`player_controller_wiring::arm_smoke_repeat(player)` call. The same command
+was red with exactly 0 passed and 1 failed, observing `Off` instead of `All`.
+Restoring the call made it green with exactly 1 passed. The CUA README now
+states that the hook holds after restore while deliberately retaining the
+transport-button workaround in the existing E2E case. `cargo fmt --check`,
+strict workspace Clippy, and the fully isolated `cargo test --workspace` gate
+passed; the principal crate counts were Core 2567, GNOME 1963, Linux platform
+158, Android FFI 170, and Reprise View 117. `cargo audit` passed with only the
+accepted `RUSTSEC-2024-0436` warning for `paste`.
 
 ### Task 3 — #405
 
