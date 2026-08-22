@@ -186,6 +186,8 @@ class MainActivity : ComponentActivity() {
     private val visualSceneEngineFactory = mutableStateOf<VisualSceneEngineFactory>(
         NativeVisualSceneEngineFactory,
     )
+    internal val currentVisualSceneEngineFactory: VisualSceneEngineFactory
+        get() = visualSceneEngineFactory.value
     private val playbackConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
@@ -197,7 +199,6 @@ class MainActivity : ComponentActivity() {
 
         override fun onServiceDisconnected(name: ComponentName) {
             boundService.value = null
-            visualSceneEngineFactory.value = NativeVisualSceneEngineFactory
         }
     }
 

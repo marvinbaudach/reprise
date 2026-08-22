@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -114,6 +115,7 @@ class MainActivityPlaybackChannelTest {
         val activity = launchBoundActivity(service)
         service.publish(activitySnapshot(trackId = 3, positionMs = 31_000))
         idleMainLooper()
+        val connectedFactory = activity.currentVisualSceneEngineFactory
 
         val connection = shadowOf(application()).boundServiceConnections.single()
         connection.onServiceDisconnected(playbackComponent())
@@ -123,6 +125,7 @@ class MainActivityPlaybackChannelTest {
         assertEquals(3L, state.currentTrackId)
         assertEquals(31_000L, state.positionMs)
         assertTrue(state.visualizerActive)
+        assertSame(connectedFactory, activity.currentVisualSceneEngineFactory)
     }
 
     @Test
