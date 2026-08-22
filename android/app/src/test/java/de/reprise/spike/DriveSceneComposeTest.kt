@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import java.util.concurrent.atomic.AtomicInteger
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -61,6 +62,119 @@ class DriveSceneComposeTest {
             "buffering delivered only ${deliveredFrames.get() - beforeBuffering} scene frames",
             deliveredFrames.get() - beforeBuffering >= 3,
         )
+    }
+
+    @Test
+    fun aStalePausedUiStateDoesNotThrottleWhileAudioIsFlowing() {
+        val sink = RecordingLiveAudioSink(liveAudio = true)
+
+        driveAfterPlaybackTransition(
+            initial = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+            target = PlaybackUiState(state = AndroidPlaybackState.PAUSED),
+            frames = SpectrogramFrames(24, 20, ByteArray(24)),
+            sink = sink,
+        )
+
+        assertTrue("the throttle never asked the audio sink", sink.liveAudioChecks.get() > 0)
+        assertTrue("live audio took the paused interval", sink.deliveredFrames.get() > 0)
+    }
+
+    @Test
+    fun noStoredSpectrogramDoesNotThrottleWhenTheSinkIsListening() {
+        val sink = RecordingLiveAudioSink(liveAudio = false)
+
+        driveAfterPlaybackTransition(
+            initial = PlaybackUiState(state = AndroidPlaybackState.PAUSED),
+            target = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+            frames = SpectrogramFrames(24, 20, ByteArray(0)),
+            sink = sink,
+        )
+
+        assertTrue("the throttle never asked the listening sink", sink.liveAudioChecks.get() > 0)
+        assertTrue(
+            "the absent spectrogram took the paused interval",
+            sink.deliveredFrames.get() > 0,
+        )
+    }
+
+    @Test
+    fun aGenuinelyPausedScreenStillTakesTheCheapInterval() {
+        val frames = SpectrogramFrames(24, 20, ByteArray(24))
+        val sink = RecordingLiveAudioSink(liveAudio = false)
+        driveAfterPlaybackTransition(
+            initial = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+            target = PlaybackUiState(state = AndroidPlaybackState.PAUSED),
+            frames = frames,
+            sink = sink,
+        )
+
+        assertTrue(
+            "the throttle never asked whether audio was live",
+            sink.liveAudioChecks.get() > 0,
+        )
+        assertEquals(0, sink.deliveredFrames.get())
+
+        compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS * 4)
+
+        assertTrue("the cheap interval never released a frame", sink.deliveredFrames.get() > 0)
+    }
+
+    private fun driveAfterPlaybackTransition(
+        initial: PlaybackUiState,
+        target: PlaybackUiState,
+        frames: SpectrogramFrames,
+        sink: RecordingLiveAudioSink,
+    ) {
+        val controller = AmbientMotionController()
+        val state = SceneState(frames)
+        var playback by mutableStateOf(initial)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            DriveScene(
+                frames = frames,
+                state = state,
+                playback = playback,
+                controller = controller,
+                frameSink = sink,
+            )
+        }
+        resumeScene(controller)
+        compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS)
+        sink.reset()
+        compose.runOnIdle { playback = target }
+
+        compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS * 2)
+    }
+
+    private fun resumeScene(controller: AmbientMotionController) {
+        compose.runOnIdle {
+            controller.runtimeChanged(
+                resumed = true,
+                screenInteractive = true,
+                animationsEnabled = true,
+            )
+        }
+    }
+}
+
+private class RecordingLiveAudioSink(
+    private val liveAudio: Boolean,
+) : SceneFrameSink {
+    val deliveredFrames = AtomicInteger()
+    val liveAudioChecks = AtomicInteger()
+
+    override fun hasLiveAudio(): Boolean {
+        liveAudioChecks.incrementAndGet()
+        return liveAudio
+    }
+
+    override fun onFrame(bands: FloatArray?) {
+        deliveredFrames.incrementAndGet()
+    }
+
+    fun reset() {
+        deliveredFrames.set(0)
+        liveAudioChecks.set(0)
     }
 }
 

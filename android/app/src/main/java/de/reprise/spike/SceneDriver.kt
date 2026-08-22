@@ -232,6 +232,7 @@ internal fun DriveScene(
     val runtimeActive = controller.sceneFramesAllowed
     val animationsEnabled = controller.sceneAnimationsEnabled
     val visualizerActive = playback.visualizerActive
+    val sink = frameSink
     LaunchedEffect(
         driver,
         runtimeActive,
@@ -245,7 +246,8 @@ internal fun DriveScene(
             return@LaunchedEffect
         }
         do {
-            if (!visualizerActive || frames.frameCount == 0 && frameSink == null) {
+            val audible = sink?.hasLiveAudio() == true
+            if (!(audible || visualizerActive) || frames.frameCount == 0 && frameSink == null) {
                 delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
             }
             withFrameNanos {
