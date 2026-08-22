@@ -2,7 +2,7 @@
 slug: lastfm-preferences-one-primary-path
 worktree: /home/marvin/Projects/reprise-lastfm-preferences-one-primary-path
 branch: feature/lastfm-preferences-one-primary-path
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-22
 ---
