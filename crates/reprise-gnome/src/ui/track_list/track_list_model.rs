@@ -33,6 +33,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -346,7 +347,7 @@ impl TrackListModel {
         sort_dir: &str,
         filter: &str,
         queue_items: &[QueueItem],
-    ) {
+    ) -> Duration {
         self.set_query_browsed(
             source,
             sort_field,
@@ -354,7 +355,7 @@ impl TrackListModel {
             filter,
             &BrowseFilter::default(),
             queue_items,
-        );
+        )
     }
 
     pub fn set_query_browsed(
@@ -365,7 +366,7 @@ impl TrackListModel {
         filter: &str,
         browse: &BrowseFilter,
         queue_items: &[QueueItem],
-    ) {
+    ) -> Duration {
         self.set_query_browsed_ai(
             source,
             sort_field,
@@ -374,7 +375,7 @@ impl TrackListModel {
             browse,
             queue_items,
             false,
-        );
+        )
     }
 
     /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
@@ -394,7 +395,7 @@ impl TrackListModel {
         browse: &BrowseFilter,
         queue_items: &[QueueItem],
         exclude_ai: bool,
-    ) {
+    ) -> Duration {
         self.set_query_browsed_ai_inner(
             source,
             sort_field,
@@ -404,7 +405,7 @@ impl TrackListModel {
             queue_items,
             exclude_ai,
             None,
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -418,7 +419,7 @@ impl TrackListModel {
         queue_items: &[QueueItem],
         exclude_ai: bool,
         change: ModelChange,
-    ) {
+    ) -> Duration {
         self.set_query_browsed_ai_inner(
             source,
             sort_field,
@@ -428,7 +429,7 @@ impl TrackListModel {
             queue_items,
             exclude_ai,
             Some(change),
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -442,13 +443,14 @@ impl TrackListModel {
         queue_items: &[QueueItem],
         exclude_ai: bool,
         requested_change: Option<ModelChange>,
-    ) {
+    ) -> Duration {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
             tracing::error!("TrackListModel::set_query: connection not set");
-            return;
+            return Duration::ZERO;
         };
+        let query_started = Instant::now();
         let new_total = if exclude_ai {
             let conn_ref = &conn;
             queries::query_track_count_browsed_ai(
@@ -490,6 +492,7 @@ impl TrackListModel {
                     |n| n.max(0) as u32,
                 )
         };
+        let query_elapsed = query_started.elapsed();
 
         {
             let mut state = self.imp().state.borrow_mut();
@@ -560,6 +563,17 @@ impl TrackListModel {
             });
             self.sections_changed(position, n_items);
         }
+        query_elapsed
+    }
+
+    pub(in crate::ui) fn query_signature(&self) -> (ViewSource, String, String, String) {
+        let state = self.imp().state.borrow();
+        (
+            state.source.clone(),
+            state.sort_field.clone(),
+            state.sort_dir.clone(),
+            state.filter.clone(),
+        )
     }
 
     /// How often the model has been repopulated. See `imp::TrackListModel::

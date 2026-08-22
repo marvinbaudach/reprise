@@ -114,6 +114,33 @@ fn source_snapshot(source: &RefCell<ViewSource>) -> ViewSource {
     source.borrow().clone()
 }
 
+pub(in crate::ui) fn reload_cause(
+    previous: Option<&(ViewSource, String, String, String)>,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+) -> super::diagnostic_trail::ReloadCause {
+    use super::diagnostic_trail::ReloadCause;
+
+    let Some(previous) = previous else {
+        return ReloadCause::Other;
+    };
+    if previous.0 != *source {
+        ReloadCause::SourceSwitch
+    } else if previous.3 != filter {
+        if filter.is_empty() {
+            ReloadCause::ClearedSearch
+        } else {
+            ReloadCause::TypedSearch
+        }
+    } else if previous.1 != sort_field || previous.2 != sort_dir {
+        ReloadCause::SortChange
+    } else {
+        ReloadCause::Other
+    }
+}
+
 /// The track ids currently selected, read directly off the selection bitset
 /// (bounded by however many rows the user actually selected — not by the
 /// library's total size).
@@ -545,6 +572,7 @@ fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
 fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
+    let reload_started = std::time::Instant::now();
     let n_sections = shared.queue_sections.borrow().len();
     if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
         ListGeometry::for_view(&shared.column_view).remember_if_settled(
@@ -558,6 +586,15 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
+    let previous_query = shared.model.query_signature();
+    let cause = reload_cause(
+        (shared.model.generation() != 0).then_some(&previous_query),
+        &source,
+        &sort.field,
+        &sort.dir,
+        &filter,
+    );
+    let reload_timer = super::diagnostic_trail::ReloadTimer::started_at(reload_started, cause);
     let browse = if matches!(
         source,
         ViewSource::Library
@@ -587,36 +624,38 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
         shared.queue_sections.borrow_mut().clear();
         None
     };
-    if let (Some(queue_model), Some(context_window)) = (&queue_model, queue_context_window) {
-        shared.model.set_queue_snapshot(
-            queue_model,
-            context_window,
-            super::queue_sections::section_ranges(&queue_model.sections),
-        );
-    } else {
-        shared.model.set_sections(Vec::new());
-        match model_change {
-            Some(change) => shared.model.set_query_browsed_ai_changed(
-                &source,
-                &sort.field,
-                &sort.dir,
-                &filter,
-                &browse,
-                &[],
-                exclude_ai,
-                change,
-            ),
-            None => shared.model.set_query_browsed_ai(
-                &source,
-                &sort.field,
-                &sort.dir,
-                &filter,
-                &browse,
-                &[],
-                exclude_ai,
-            ),
-        }
-    }
+    let query_elapsed =
+        if let (Some(queue_model), Some(context_window)) = (&queue_model, queue_context_window) {
+            shared.model.set_queue_snapshot(
+                queue_model,
+                context_window,
+                super::queue_sections::section_ranges(&queue_model.sections),
+            );
+            std::time::Duration::ZERO
+        } else {
+            shared.model.set_sections(Vec::new());
+            match model_change {
+                Some(change) => shared.model.set_query_browsed_ai_changed(
+                    &source,
+                    &sort.field,
+                    &sort.dir,
+                    &filter,
+                    &browse,
+                    &[],
+                    exclude_ai,
+                    change,
+                ),
+                None => shared.model.set_query_browsed_ai(
+                    &source,
+                    &sort.field,
+                    &sort.dir,
+                    &filter,
+                    &browse,
+                    &[],
+                    exclude_ai,
+                ),
+            }
+        };
 
     // Strictly AFTER the query swap: installing a header factory flips
     // GTK's has_sections, which runs gtk_list_item_manager_ensure_items
@@ -659,12 +698,13 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
             shared.library_root_unavailable.get(),
         ),
     );
-    shared
-        .diagnostic_trail
-        .record(super::diagnostic_trail::Event::Reload {
-            source: source.label(),
-            count,
-        });
+    let source_label = source.label();
+    reload_timer.finish(
+        &shared.diagnostic_trail,
+        &source_label,
+        count,
+        query_elapsed,
+    );
     shared
         .diagnostic_trail
         .record(super::diagnostic_trail::Event::StackPage {
