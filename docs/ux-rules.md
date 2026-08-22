@@ -1374,7 +1374,7 @@ result.
   those views are next reworked: the failure notice then moves into chrome
   or a reserved line, and this paragraph goes with the last in-flow
   banner. No new surface may cite it.
-- **FB-10** [planned] [gtk] — <!-- REVIEW: rule proposal --> The track
+- **FB-10** [planned] [gtk] — The track
   browser says when its own reload will take longer than a moment, and it
   never pretends to be working while it is frozen. This covers every reload
   the browser triggers itself: typing into the search, clearing it, changing
@@ -1397,13 +1397,13 @@ result.
   reload satisfies the geometry and lies about the state; the reload must
   yield often enough for the indicator to stay live and the window to stay
   responsive, or it must not claim to be working at all. Cancel is offered
-  only where it genuinely cancels. Until a reload can yield, the honest
-  reading is that the long cases are defects, not merely unannounced waits.
+  only where it genuinely cancels. Decided 2026-08-23: the reload **is** made
+  interruptible rather than only announced, and the 250 ms above is the
+  accepted threshold. The long cases are therefore defects and are tracked as
+  such, not as merely unannounced waits.
   The list keeps its previous content until the replacement is ready — no
   blank list and no half-filled one. Reduced motion is obeyed through the
-  central gate, and the state stays statically legible per FB-9. What this
-  proposal asks the reviewer to decide: the threshold value, and whether the
-  reload must be made interruptible rather than only announced.
+  central gate, and the state stays statically legible per FB-9.
 
 ## H. File association & OS integration
 
