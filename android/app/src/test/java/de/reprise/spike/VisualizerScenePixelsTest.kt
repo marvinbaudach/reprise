@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,10 +27,10 @@ class VisualizerScenePixelsTest {
     @Test
     fun barsAreVisibleUnderSignalAndTheSharedRestingScene() {
         val signal = render(
-            flatRect(x = 12f, y = 16f, width = 14f, height = 64f),
+            flatScene(flatRect(x = 12f, y = 16f, width = 14f, height = 64f)),
         )
         val resting = render(
-            flatRect(x = 42f, y = 68f, width = 14f, height = 12f),
+            flatScene(flatRect(x = 42f, y = 68f, width = 14f, height = 12f)),
         )
 
         assertTrue(signal.litPixels() > 700)
@@ -37,26 +39,22 @@ class VisualizerScenePixelsTest {
 
     @Test
     fun noSceneBufferDrawsNothing() {
-        assertEquals(0, render(emptyList()).litPixels())
+        assertEquals(0, render(byteArrayOf()).litPixels())
     }
 
     @Test
     fun everyFlatGeometryKindUsesTheDocumentedRecordLayout() {
-        val scene = buildList {
-            addAll(flatRect(x = 5f, y = 5f, width = 15f, height = 15f))
-            addAll(
-                listOf(
-                    1f, 0f, 1f, 0f, 1f, 2f, 0.6f, 3f,
-                    30f, 10f, 45f, 25f, 60f, 10f,
-                ),
-            )
-            addAll(
-                listOf(
-                    2f, 0f, 0f, 1f, 0.8f, 0f, 0f, 3f,
-                    80f, 25f, 14f,
-                ),
-            )
-        }
+        val scene = flatScene(
+            flatRect(x = 5f, y = 5f, width = 15f, height = 15f),
+            floatArrayOf(
+                1f, 0f, 1f, 0f, 1f, 2f, 0.6f, 3f,
+                30f, 10f, 45f, 25f, 60f, 10f,
+            ),
+            floatArrayOf(
+                2f, 0f, 0f, 1f, 0.8f, 0f, 0f, 3f,
+                80f, 25f, 14f,
+            ),
+        )
 
         val bitmap = render(scene)
 
@@ -65,7 +63,20 @@ class VisualizerScenePixelsTest {
         assertTrue(Color.blue(bitmap.getPixel(80, 25)) > 80)
     }
 
-    private fun render(scene: List<Float>): Bitmap {
+    @Test
+    fun aTruncatedBufferFailsClosed() {
+        val complete = flatScene(flatRect(x = 12f, y = 16f, width = 14f, height = 64f))
+        val hostilePointCount = flatScene(
+            floatArrayOf(
+                1f, 1f, 1f, 1f, 1f, 2f, 0f, 1_000_001f,
+            ),
+        )
+
+        assertEquals(0, render(complete.copyOf(complete.size - 1)).litPixels())
+        assertEquals(0, render(hostilePointCount).litPixels())
+    }
+
+    private fun render(scene: ByteArray): Bitmap {
         val bitmap = Bitmap.createBitmap(SIDE, SIDE, Bitmap.Config.ARGB_8888)
         CanvasDrawScope().draw(
             density = Density(1f),
@@ -88,10 +99,20 @@ class VisualizerScenePixelsTest {
         return pixels.count { Color.red(it) + Color.green(it) + Color.blue(it) > 30 }
     }
 
-    private fun flatRect(x: Float, y: Float, width: Float, height: Float): List<Float> = listOf(
+    private fun flatRect(x: Float, y: Float, width: Float, height: Float): FloatArray = floatArrayOf(
         0f, 1f, 0.2f, 0.8f, 1f, 0f, 0f, 4f,
         x, y, width, height,
     )
+
+    private fun flatScene(vararg records: FloatArray): ByteArray {
+        val values = records.sumOf(FloatArray::size)
+        return ByteBuffer.allocate(values * Float.SIZE_BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .apply {
+                records.forEach { record -> record.forEach(::putFloat) }
+            }
+            .array()
+    }
 
     private companion object {
         const val SIDE = 100

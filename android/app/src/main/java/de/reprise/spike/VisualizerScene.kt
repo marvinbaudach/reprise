@@ -1,20 +1,28 @@
 package de.reprise.spike
 
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import android.util.Log
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.staticCompositionLocalOf
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import de.reprise.spike.ui.theme.spectralColour
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import uniffi.reprise_android_ffi.AndroidVisualEngine
 
 internal interface VisualSceneEngine : AutoCloseable {
@@ -25,7 +33,12 @@ internal interface VisualSceneEngine : AutoCloseable {
     fun hasLiveAudio(): Boolean = false
     fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
     fun tick()
-    fun scene(width: Float, height: Float): List<Float>
+    // This list seam keeps Strand-B test engines compatible; real callers must use sceneBytes(),
+    // so the default throws instead of turning an accidental production call into an empty frame.
+    fun scene(width: Float, height: Float): List<Float> = throw UnsupportedOperationException(
+        "VisualSceneEngine.scene() is a test seam; use sceneBytes()",
+    )
+    fun sceneBytes(width: Float, height: Float): ByteArray = scene(width, height).toFloatBytes()
 }
 
 internal data class VisualBassPressure(
@@ -63,6 +76,8 @@ internal object NativeVisualSceneEngineFactory : VisualSceneEngineFactory {
 internal class NativeVisualSceneEngine(
     private val native: AndroidVisualEngine,
 ) : VisualSceneEngine, LivePcmConsumer {
+    private var sceneCallsUntilCounterLog = 0
+
     override fun setAccent(red: Float, green: Float, blue: Float) =
         native.setAccent(red, green, blue)
 
@@ -110,13 +125,24 @@ internal class NativeVisualSceneEngine(
         native.tick()
     }
 
-    override fun scene(width: Float, height: Float): List<Float> = native.scene(width, height)
+    override fun sceneBytes(width: Float, height: Float): ByteArray =
+        native.scene(width, height).also { logDroppedAudioFrames() }
+
+    private fun logDroppedAudioFrames() {
+        if (sceneCallsUntilCounterLog > 0) {
+            sceneCallsUntilCounterLog -= 1
+            return
+        }
+        sceneCallsUntilCounterLog = COUNTER_LOG_EVERY_SCENE_CALLS - 1
+        val dropped = native.droppedAudioFrames()
+        Log.i(VISUAL_SCENE_LOG_TAG, "dropped_audio_frames=$dropped")
+    }
 
     override fun close() = native.close()
 }
 
 internal fun DrawScope.drawPlayedVisualizer(
-    buffer: List<Float>,
+    buffer: ByteArray,
     center: Offset,
     side: Float,
     radius: Float,
@@ -147,19 +173,26 @@ internal fun DrawScope.drawPlayedVisualizer(
  * and 2 is a three-scalar radial glow. Malformed records fail closed.
  */
 internal fun DrawScope.drawVisualizerScene(
-    buffer: List<Float>,
+    buffer: ByteArray,
     bounds: Rect,
     opacity: Float = 1f,
 ) {
     if (buffer.isEmpty() || bounds.isEmpty || opacity <= 0f) return
     val cursor = FlatSceneCursor(buffer)
+    val polylinePath = Path()
+    val radialGlowPainter = RADIAL_GLOW_PAINTER.get()
     clipRect(bounds.left, bounds.top, bounds.right, bounds.bottom) {
         while (cursor.hasRecord) {
             val header = cursor.header(opacity) ?: return@clipRect
             when (header.kind) {
                 RECT_KIND -> drawFlatRect(cursor, bounds, header)
-                POLYLINE_KIND -> drawFlatPolyline(cursor, bounds, header)
-                RADIAL_GLOW_KIND -> drawFlatRadialGlow(cursor, bounds, header)
+                POLYLINE_KIND -> drawFlatPolyline(cursor, bounds, header, polylinePath)
+                RADIAL_GLOW_KIND -> drawFlatRadialGlow(
+                    cursor,
+                    bounds,
+                    header,
+                    radialGlowPainter,
+                )
                 else -> return@clipRect
             }
         }
@@ -188,6 +221,7 @@ private fun DrawScope.drawFlatPolyline(
     cursor: FlatSceneCursor,
     bounds: Rect,
     header: FlatShapeHeader,
+    path: Path,
 ) {
     val scalarCount = header.pointCount.safePairCount() ?: return cursor.invalidate()
     if (!cursor.prepareGeometry(scalarCount)) return
@@ -196,16 +230,15 @@ private fun DrawScope.drawFlatPolyline(
         repeat(scalarCount) { cursor.next() }
         return
     }
-    val path = Path().apply {
-        moveTo(bounds.left + cursor.next(), bounds.top + cursor.next())
-        var point = 1
-        while (point < header.pointCount) {
-            lineTo(
-                bounds.left + cursor.next(),
-                bounds.top + cursor.next(),
-            )
-            point += 1
-        }
+    path.reset()
+    path.moveTo(bounds.left + cursor.next(), bounds.top + cursor.next())
+    var point = 1
+    while (point < header.pointCount) {
+        path.lineTo(
+            bounds.left + cursor.next(),
+            bounds.top + cursor.next(),
+        )
+        point += 1
     }
     if (header.glow > 0f) {
         drawPath(
@@ -221,21 +254,52 @@ private fun DrawScope.drawFlatRadialGlow(
     cursor: FlatSceneCursor,
     bounds: Rect,
     header: FlatShapeHeader,
+    painter: RadialGlowPainter,
 ) {
     if (header.pointCount != RADIAL_SCALAR_COUNT) return cursor.invalidate()
     if (!cursor.prepareGeometry(RADIAL_SCALAR_COUNT)) return
     val center = bounds.topLeft + Offset(cursor.next(), cursor.next())
     val radius = cursor.next()
     if (radius <= 0f) return
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(header.color, header.color.copy(alpha = 0f)),
-            center = center,
-            radius = radius,
-        ),
-        radius = radius,
-        center = center,
-    )
+    painter.draw(drawContext.canvas.nativeCanvas, center, radius, header.color)
+}
+
+private class RadialGlowPainter {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val matrix = Matrix()
+    // Insertion-order eviction is safe while bars is the only mode emitting radial glows: its RGB
+    // comes only from the bar index, for at most BAR_COUNT (currently 64) bit-identical keys. A future
+    // mode with continuously varying glow colours would make the eviction policy matter.
+    private val shaders = LinkedHashMap<Int, RadialGradient>()
+
+    fun draw(canvas: android.graphics.Canvas, center: Offset, radius: Float, color: Color) {
+        val argb = color.toArgb()
+        val rgb = argb and RGB_MASK
+        val shader = shaderFor(rgb)
+        matrix.setScale(radius, radius)
+        matrix.postTranslate(center.x, center.y)
+        shader.setLocalMatrix(matrix)
+        paint.shader = shader
+        paint.alpha = argb ushr ALPHA_SHIFT
+        canvas.drawCircle(center.x, center.y, radius, paint)
+    }
+
+    private fun shaderFor(rgb: Int): RadialGradient {
+        shaders[rgb]?.let { return it }
+        if (shaders.size == MAX_CACHED_GLOW_COLOURS) {
+            val oldest = shaders.entries.iterator()
+            oldest.next()
+            oldest.remove()
+        }
+        return RadialGradient(
+            0f,
+            0f,
+            1f,
+            rgb or OPAQUE_ALPHA,
+            rgb,
+            Shader.TileMode.CLAMP,
+        ).also { shaders[rgb] = it }
+    }
 }
 
 private data class FlatShapeHeader(
@@ -246,25 +310,28 @@ private data class FlatShapeHeader(
     val pointCount: Int,
 )
 
-private class FlatSceneCursor(private val values: List<Float>) {
+private class FlatSceneCursor(bytes: ByteArray) {
+    private val values = ByteBuffer.wrap(bytes)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .asFloatBuffer()
     private var index = 0
-    private var valid = true
+    private var valid = bytes.size % Float.SIZE_BYTES == 0
 
     val hasRecord: Boolean
-        get() = valid && index < values.size
+        get() = valid && index < values.limit()
 
     fun header(opacity: Float): FlatShapeHeader? {
         if (!hasFinite(HEADER_SCALAR_COUNT)) return invalidateWithNull()
-        val kind = values[index].toInt()
+        val kind = values.get(index).toInt()
         val color = spectralColour(
-            red = values[index + 1],
-            green = values[index + 2],
-            blue = values[index + 3],
-            alpha = values[index + 4].coerceIn(0f, 1f) * opacity.coerceIn(0f, 1f),
+            red = values.get(index + 1),
+            green = values.get(index + 2),
+            blue = values.get(index + 3),
+            alpha = values.get(index + 4).coerceIn(0f, 1f) * opacity.coerceIn(0f, 1f),
         )
-        val width = values[index + 5].coerceAtLeast(0f)
-        val glow = values[index + 6].coerceIn(0f, 1f)
-        val rawPointCount = values[index + 7]
+        val width = values.get(index + 5).coerceAtLeast(0f)
+        val glow = values.get(index + 6).coerceIn(0f, 1f)
+        val rawPointCount = values.get(index + 7)
         if (rawPointCount < 0f || rawPointCount > MAX_POINT_COUNT || rawPointCount % 1f != 0f) {
             return invalidateWithNull()
         }
@@ -278,21 +345,27 @@ private class FlatSceneCursor(private val values: List<Float>) {
         return false
     }
 
-    fun next(): Float = values[index++]
+    fun next(): Float = values.get(index++)
 
     fun invalidate() {
         valid = false
     }
 
     private fun hasFinite(count: Int): Boolean = count >= 0 &&
-        index <= values.size - count &&
-        (index until index + count).all { values[it].isFinite() }
+        index <= values.limit() - count &&
+        (index until index + count).all { values.get(it).isFinite() }
 
     private fun <T> invalidateWithNull(): T? {
         invalidate()
         return null
     }
 }
+
+private fun List<Float>.toFloatBytes(): ByteArray =
+    ByteBuffer.allocate(size * Float.SIZE_BYTES)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .apply { this@toFloatBytes.forEach(::putFloat) }
+        .array()
 
 private fun Int.safePairCount(): Int? = if (this <= MAX_POINT_COUNT_INT / 2) this * 2 else null
 
@@ -305,3 +378,12 @@ private const val RADIAL_SCALAR_COUNT = 3
 private const val GLOW_STROKE_MULTIPLIER = 3f
 private const val MAX_POINT_COUNT = 1_000_000f
 private const val MAX_POINT_COUNT_INT = 1_000_000
+private const val COUNTER_LOG_EVERY_SCENE_CALLS = 12
+private const val VISUAL_SCENE_LOG_TAG = "RepriseVisualScene"
+private const val MAX_CACHED_GLOW_COLOURS = 128
+private const val RGB_MASK = 0x00ffffff
+private const val OPAQUE_ALPHA = -0x1000000
+private const val ALPHA_SHIFT = 24
+// Intentionally process-lifetime per thread, not remember-scoped: reuse is the point. The painter
+// owns no bitmap or native buffer beyond its capped shader cache, so this lifetime is not a leak.
+private val RADIAL_GLOW_PAINTER = ThreadLocal.withInitial(::RadialGlowPainter)

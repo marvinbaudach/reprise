@@ -232,7 +232,7 @@ internal fun NowPlayingScene(
             )
             if (visualEngine != null && visualizerOpacity > 0f) {
                 drawPlayedVisualizer(
-                    buffer = visualEngine.scene(
+                    buffer = visualEngine.sceneBytes(
                         width = COVER_SIZE_DP.dp.toPx(),
                         height = COVER_SIZE_DP.dp.toPx(),
                     ),
