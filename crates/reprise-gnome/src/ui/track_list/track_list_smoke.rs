@@ -6,13 +6,15 @@
 //! each arm function is `pub(in crate::ui)` so `TrackList::new` can arm it as
 //! `track_list_smoke::…`.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 
-use crate::ui::track_list::{set_filter_and_reload, set_source_and_reload, Shared};
+use crate::ui::track_list::{reload, set_filter_and_reload, set_source_and_reload, Shared};
 use crate::ui::track_list_activation::activate_track;
+use crate::ui::track_list_sort::SortState;
 use reprise_core::view_source::ViewSource;
 
 /// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR` and
@@ -80,6 +82,141 @@ pub(in crate::ui) const SMOKE_SOURCE_ENV_VAR: &str = "REPRISE_SMOKE_SOURCE";
 ///  REPRISE_SMOKE_MENU_ACTION=remove-from-playlist REPRISE_SMOKE_QUIT=1
 ///  xvfb-run -a cargo run`.
 const SMOKE_SORT_COLUMN_ENV_VAR: &str = "REPRISE_SMOKE_SORT_COLUMN";
+
+/// Runs the three-transition production-shape reload oracle from #640. The
+/// hook is intentionally inert unless explicitly armed, and each transition
+/// waits for the `ColumnView`'s next frame before the state machine advances.
+pub(in crate::ui) const SMOKE_RELOAD_ORACLE_ENV_VAR: &str = "REPRISE_SMOKE_RELOAD_ORACLE";
+
+const ORACLE_FILTER: &str = "Artist 0000";
+
+#[derive(Clone, Copy)]
+enum OracleTransition {
+    SourceSwitch,
+    SortChange,
+    ClearedSearch,
+}
+
+impl OracleTransition {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SourceSwitch => "source-switch",
+            Self::SortChange => "sort-change",
+            Self::ClearedSearch => "cleared-search",
+        }
+    }
+}
+
+fn load_average() -> String {
+    std::fs::read_to_string("/proc/loadavg")
+        .ok()
+        .and_then(|contents| contents.split_whitespace().next().map(str::to_owned))
+        .unwrap_or_else(|| "missing".into())
+}
+
+fn latest_reload(shared: &Shared) -> String {
+    shared
+        .diagnostic_trail
+        .snapshot()
+        .into_iter()
+        .rev()
+        .find(|entry| entry.contains(" Reload "))
+        .unwrap_or_else(|| "missing".into())
+}
+
+fn print_oracle_transition(shared: &Shared, transition: OracleTransition) {
+    println!(
+        "REPRISE_RELOAD_ORACLE transition={} loadavg={} event={}",
+        transition.label(),
+        load_average(),
+        latest_reload(shared)
+    );
+}
+
+fn after_next_frame(shared: &Rc<Shared>, callback: impl FnOnce() + 'static) {
+    let callback = Rc::new(RefCell::new(Some(callback)));
+    shared.column_view.add_tick_callback(move |_, _| {
+        let callback = callback.borrow_mut().take();
+        if let Some(callback) = callback {
+            // Run after every callback already attached to this frame. In
+            // particular, `run_query`'s timing callback must record first.
+            glib::idle_add_local_once(callback);
+        }
+        glib::ControlFlow::Break
+    });
+    shared.column_view.queue_draw();
+}
+
+fn quit_oracle(shared: &Shared) {
+    let Some(window) = shared
+        .column_view
+        .root()
+        .and_then(|root| root.downcast::<gtk4::Window>().ok())
+    else {
+        tracing::error!("reload oracle could not find its application window");
+        return;
+    };
+    if let Some(application) = window.application() {
+        application.quit();
+    }
+}
+
+fn run_cleared_search_oracle(shared: &Rc<Shared>) {
+    set_filter_and_reload(shared, ORACLE_FILTER);
+    let after_narrow = Rc::clone(shared);
+    after_next_frame(shared, move || {
+        let narrowed_rows = after_narrow.model.n_items();
+        if narrowed_rows != 100 {
+            println!(
+                "REPRISE_RELOAD_ORACLE error=unexpected-filter-count rows={narrowed_rows} expected=100 loadavg={}",
+                load_average()
+            );
+            quit_oracle(&after_narrow);
+            return;
+        }
+        set_filter_and_reload(&after_narrow, "");
+        let after_clear = Rc::clone(&after_narrow);
+        after_next_frame(&after_narrow, move || {
+            print_oracle_transition(&after_clear, OracleTransition::ClearedSearch);
+            quit_oracle(&after_clear);
+        });
+    });
+}
+
+fn run_sort_oracle(shared: &Rc<Shared>) {
+    *shared.sort.borrow_mut() = SortState {
+        field: "title".into(),
+        dir: "asc".into(),
+    };
+    reload(shared);
+    let after_sort = Rc::clone(shared);
+    after_next_frame(shared, move || {
+        print_oracle_transition(&after_sort, OracleTransition::SortChange);
+        run_cleared_search_oracle(&after_sort);
+    });
+}
+
+/// Arms the production-binary reload oracle. It first leaves the Library so
+/// that the measured return is a genuine source switch, then chains all three
+/// transitions through real frame-clock ticks before quitting the application.
+pub(in crate::ui) fn arm_smoke_reload_oracle(shared: &Rc<Shared>) {
+    if std::env::var(SMOKE_RELOAD_ORACLE_ENV_VAR).is_err() {
+        return;
+    }
+    let shared = Rc::clone(shared);
+    glib::idle_add_local_once(move || {
+        set_source_and_reload(&shared, &ViewSource::Missing);
+        let return_to_library = Rc::clone(&shared);
+        after_next_frame(&shared, move || {
+            set_source_and_reload(&return_to_library, &ViewSource::Library);
+            let after_source = Rc::clone(&return_to_library);
+            after_next_frame(&return_to_library, move || {
+                print_oracle_transition(&after_source, OracleTransition::SourceSwitch);
+                run_sort_oracle(&after_source);
+            });
+        });
+    });
+}
 
 /// Arms the `REPRISE_SMOKE_ACTIVATE` hook (see `SMOKE_ACTIVATE_ENV_VAR`):
 /// one idle callback, deferred so it runs once the main loop is up rather
@@ -282,16 +419,5 @@ pub(in crate::ui) fn arm_smoke_sort_column(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detail_views_are_supported_smoke_sources() {
-        assert_eq!(parse_smoke_source("my_stats"), Some(ViewSource::MyStats));
-        assert_eq!(parse_smoke_source("concerts"), Some(ViewSource::Concerts));
-        assert_eq!(parse_smoke_source("releases"), Some(ViewSource::Releases));
-        assert_eq!(parse_smoke_source("podcasts"), Some(ViewSource::Podcasts));
-        assert_eq!(parse_smoke_source("youtube"), Some(ViewSource::Youtube));
-        assert_eq!(parse_smoke_source("radio"), Some(ViewSource::Radio));
-    }
-}
+#[path = "track_list_smoke_tests.rs"]
+mod tests;

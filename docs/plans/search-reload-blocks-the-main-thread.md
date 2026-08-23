@@ -8,7 +8,7 @@ created: 2026-08-23
 ---
 # #640 — the cleared search blocks the main thread for 94–120 s
 
-Base `origin/dev` = `1a8cd1cac7`. Diagnoses and removes the pathology behind
+Base `origin/dev` = `890706293f`. Diagnoses and removes the pathology behind
 #640. It deliberately stops before FB-10's yield loop and before #411's
 indicator; both get their own plans, written from the numbers this one
 produces. See *Success criterion* for when each of those becomes writable.
@@ -476,3 +476,72 @@ cargo test -p reprise-gnome --bin reprise \
 
 It passed 1 test, failed 0 and ignored 0. Host load was not sampled because no
 performance threshold is read from this test.
+
+### Task 2 — production-model oracle
+
+The fixture was generated from the existing relative-to-now synthetic metadata
+generator. It contains 100,000 rows, including exactly 100 rows matching
+`Artist 0000`, at `/tmp/reprise-search-oracle.Z7SGIp`; this disposable path is
+not user data. The exact generator command was:
+
+```sh
+fixture_root=$(mktemp -d /tmp/reprise-search-oracle.XXXXXX)
+mkdir -p "$fixture_root/data/reprise" "$fixture_root/cache" "$fixture_root/config"
+cargo run -p reprise-core --release --example scalability_baseline -- \
+  --db "$fixture_root/data/reprise/reprise.db" --tracks 100000 --iterations 1
+```
+
+Host load was not sampled during generation because generation is setup, not a
+reload measurement. The production binary (`cfg(test)` off, including
+`gtk4::SectionModel` and `sections_changed`) was then run with this exact
+command (the first invocation also compiled the release binary):
+
+```sh
+timeout 300s dbus-run-session -- xvfb-run -a env \
+  XDG_DATA_HOME=/tmp/reprise-search-oracle.Z7SGIp/data \
+  XDG_CACHE_HOME=/tmp/reprise-search-oracle.Z7SGIp/cache \
+  XDG_CONFIG_HOME=/tmp/reprise-search-oracle.Z7SGIp/config \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
+  REPRISE_SMOKE_RELOAD_ORACLE=1 \
+  cargo run --release -p reprise-gnome --bin reprise
+```
+
+That production arm reported loadavg 3.78 for all three transitions:
+
+| Transition | Rows | Query | Work done | Next frame |
+| --- | ---: | ---: | ---: | ---: |
+| source switch | 100,000 | 1.679 ms | 49.398 ms | 53.600 ms |
+| sort change | 100,000 | 1.698 ms | 412.965 ms | 416.901 ms |
+| cleared search | 100,000 | 1.759 ms | 426.675 ms | 430.006 ms |
+
+The 94–120 s cleared-search result does **not** reproduce in the production
+model shape. The observed cleared-search result was 430.006 ms, roughly 220×
+to 279× smaller. The largest-to-smallest next-frame ratio in this run was
+8.02×, so this run already met Stage 1; sort and cleared search remained above
+the 250 ms Stage-2 threshold. The frame-clock stop is the next tick of the real
+`ColumnView`, not proof that physical pixels reached a monitor.
+
+The hook's production-path mutation replaced its call to
+`set_filter_and_reload(&shared, ORACLE_FILTER)` with `reload(&shared)`. The
+exact Bash validator command for both arms was:
+
+```sh
+oracle_output=$(timeout 60s dbus-run-session -- xvfb-run -a env \
+  XDG_DATA_HOME=/tmp/reprise-search-oracle.Z7SGIp/data \
+  XDG_CACHE_HOME=/tmp/reprise-search-oracle.Z7SGIp/cache \
+  XDG_CONFIG_HOME=/tmp/reprise-search-oracle.Z7SGIp/config \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= GTK_A11Y=none GSK_RENDERER=cairo \
+  REPRISE_AUDIO_SINK=fakesink REPRISE_SMOKE_RELOAD_ORACLE=1 \
+  REPRISE_LOG=error target/release/reprise 2>/tmp/reprise-task2-oracle.err)
+printf '%s\n' "$oracle_output"
+test "$(printf '%s\n' "$oracle_output" | \
+  rg -c '^REPRISE_RELOAD_ORACLE transition=')" -eq 3
+test "$(printf '%s\n' "$oracle_output" | \
+  rg -c '^REPRISE_RELOAD_ORACLE error=')" -eq 0
+```
+
+Red: 0 passed, 1 failed, 0 ignored (exit 1), with two transition lines followed
+by `error=unexpected-filter-count rows=100000 expected=100` at loadavg 2.39.
+The production mutation was reverted. Green: 1 passed, 0 failed, 0 ignored
+(exit 0), with all three transition lines and no error at loadavg 3.58; its
+source/sort/clear next-frame spans were 51.406/421.790/421.438 ms.
