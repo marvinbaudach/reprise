@@ -52,11 +52,12 @@ use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
 /// page size (`track_list.rs`'s former `WINDOW_LIMIT`), now used as the unit
 /// of lazy loading rather than the single page loaded in full every reload.
-const WINDOW_SIZE: u32 = 200;
+const WINDOW_SIZE: u32 = 500;
 
 /// Maximum number of windows kept in `ModelState::cache` at once. Bounds
 /// memory for a scroll session that has touched many parts of a huge
-/// library; 8 * `WINDOW_SIZE` = 1600 rows is comfortably enough to cover a
+/// library; 8 * `WINDOW_SIZE` = 4,000 rows is enough to bound a full-model
+/// replacement's sorted OFFSET queries while keeping memory finite for a
 /// user's visible scroll neighborhood without unbounded growth.
 const MAX_CACHED_WINDOWS: usize = 8;
 

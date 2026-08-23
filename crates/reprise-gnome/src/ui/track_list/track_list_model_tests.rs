@@ -426,21 +426,32 @@ fn set_query_clears_stale_cache_between_queries() {
 /// Regression test: all prior tests seeded <=3 rows, so every `track_at`
 /// call stayed inside window 0 and never exercised the window-boundary
 /// math (`window_start`/`offset_in_window`) for a second or later
-/// window. Seed >200 rows (WINDOW_SIZE) so position 200 falls in window
-/// 1 and position 449 falls in window 2, and check both land on the
+/// window. Seed more than two windows and check positions in windows
+/// 1 and 2 both land on the
 /// title the sort order predicts.
 #[test]
 fn track_at_spans_multiple_windows_in_sorted_order() {
-    const ROW_COUNT: u32 = 450;
+    const ROW_COUNT: u32 = WINDOW_SIZE * 2 + 50;
     let model = seeded_model_bulk(ROW_COUNT);
     model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
     assert_eq!(model.n_items(), ROW_COUNT);
 
     assert_eq!(model.track_at(0).unwrap().title, bulk_title(0));
-    assert_eq!(model.track_at(200).unwrap().title, bulk_title(200));
-    assert_eq!(model.track_at(449).unwrap().title, bulk_title(449));
+    assert_eq!(
+        model.track_at(WINDOW_SIZE).unwrap().title,
+        bulk_title(WINDOW_SIZE)
+    );
+    assert_eq!(
+        model.track_at(ROW_COUNT - 1).unwrap().title,
+        bulk_title(ROW_COUNT - 1)
+    );
 
     assert!(model.track_at(ROW_COUNT).is_none());
+}
+
+#[test]
+fn lazy_window_is_large_enough_to_bound_full_replacement_query_count() {
+    assert_eq!(WINDOW_SIZE, 500);
 }
 
 #[test]
@@ -480,13 +491,13 @@ fn set_cached_rating_on_an_uncached_window_is_a_no_op() {
 
 /// Regression test: eviction (`MAX_CACHED_WINDOWS` = 8, drop the
 /// lowest-indexed cached window) was never exercised because no test
-/// touched more than one window. Seed 1700 rows (9 windows) and touch
+/// touched more than one window. Seed 9 windows and touch
 /// one position per window in ascending order so the 9th touch forces
 /// an eviction; assert the cache holds exactly 8 windows, window 0 was
 /// evicted, and the just-loaded window 8 is present.
 #[test]
 fn track_at_evicts_lowest_window_past_cache_capacity() {
-    const ROW_COUNT: u32 = 1700;
+    const ROW_COUNT: u32 = WINDOW_SIZE * 9;
     const WINDOW_COUNT: u32 = 9;
     let model = seeded_model_bulk(ROW_COUNT);
     model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
@@ -502,7 +513,12 @@ fn track_at_evicts_lowest_window_past_cache_capacity() {
     let mut cached = model.cached_windows();
     cached.sort_unstable();
     assert_eq!(cached.len(), MAX_CACHED_WINDOWS);
-    assert_eq!(cached, vec![200, 400, 600, 800, 1000, 1200, 1400, 1600]);
+    assert_eq!(
+        cached,
+        (1..=8)
+            .map(|window| window * WINDOW_SIZE)
+            .collect::<Vec<_>>()
+    );
     assert!(!cached.contains(&0), "window 0 should have been evicted");
     assert!(
         cached.contains(&(8 * WINDOW_SIZE)),

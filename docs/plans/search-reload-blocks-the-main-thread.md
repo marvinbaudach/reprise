@@ -681,3 +681,121 @@ call counts. The cost is therefore not carried selection or scroll position.
 No production behavior had changed when this checkpoint was written. The
 measurements and harness in Tasks 1–4 were the only production additions, and
 they only observe or run when the explicit smoke variable is present.
+
+### Task 6 — bounded lazy windows
+
+The surgical fix increases the lazy SQL window from 200 to 500 rows. GTK still
+receives one synchronous, atomic full-range `items_changed` replacement, but
+its 100,205 `item()` calls can now share at most 201 window queries instead of
+502. The cache remains bounded at eight windows (4,000 rows). Selection,
+viewport, debounce and scroll code are unchanged. A trial that divided the
+single non-Queue section into 200-row sections left the production call counts
+and timings unchanged and was reverted. A 2,000-row window trial emitted GLib
+object-lifetime criticals and timed out; it too was reverted before choosing
+the conservative 500-row size.
+
+The production-path mutation changed `WINDOW_SIZE` back from 500 to 200. After
+each arm, `cargo build --release -p reprise-gnome --bin reprise` rebuilt the
+real binary. Both arms then used this exact Bash validator:
+
+```sh
+oracle_output=$(timeout 60s dbus-run-session -- xvfb-run -a env \
+  XDG_DATA_HOME=/tmp/reprise-search-oracle.Z7SGIp/data \
+  XDG_CACHE_HOME=/tmp/reprise-search-oracle.Z7SGIp/cache \
+  XDG_CONFIG_HOME=/tmp/reprise-search-oracle.Z7SGIp/config \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= GTK_A11Y=none GSK_RENDERER=cairo \
+  REPRISE_AUDIO_SINK=fakesink REPRISE_SMOKE_RELOAD_ORACLE=1 \
+  REPRISE_LOG=error target/release/reprise 2>/tmp/reprise-task6-oracle.err)
+printf '%s\n' "$oracle_output"
+window_calls=$(printf '%s\n' "$oracle_output" | \
+  rg '^REPRISE_RELOAD_ORACLE transition=cleared-search' | \
+  sed -E 's/.*window_calls=([0-9]+).*/\1/')
+test "$window_calls" -le 201
+```
+
+Red: 0 passed, 1 failed, 0 ignored (exit 1). The production control made 502
+cleared-search window calls at loadavg 7.75–8.08; source/sort/clear next-frame
+spans were 51.812/466.885/465.645 ms. The mutation was reverted. Green:
+1 passed, 0 failed, 0 ignored (exit 0). The fixed production binary made 201
+cleared-search window calls at loadavg 5.24; spans were
+39.909/266.033/263.722 ms. Task 7 supplies controlled five-sample timing arms;
+these differently loaded mutation arms prove production-path wiring only.
+
+The protected rule tests were not edited. Display-free commands and outcomes
+were:
+
+```sh
+cargo test -p reprise-gnome --bin reprise tag_1_
+cargo test -p reprise-gnome --bin reprise search_9_
+cargo test -p reprise-gnome --bin reprise nav_10b_
+```
+
+TAG-1 passed 14, failed 0 and ignored 8; SEARCH-9 passed 2, failed 0 and
+ignored 0; NAV-10b passed 8, failed 0 and ignored 9. The passing display-free
+tests, listed by name, were:
+
+- TAG-1: `tag_1_query_reload_keeps_the_scroll_anchor_from_editor_open`,
+  `tag_1_selection_after_save_is_written_tracks`,
+  `tag_1_non_sorting_save_keeps_the_original_scroll_anchor`,
+  `tag_1_sort_changing_save_reanchors_on_the_first_edited_track`,
+  `tag_1_anchors_on_the_first_track_that_can_actually_move`,
+  `tag_1_plain_library_rating_save_is_viewport_neutral_in_place`,
+  `tag_1_rating_dependent_views_and_tag_writes_still_requery`,
+  `tag_1_positions_for_ids_maps_surviving_ids_only`,
+  `tag_1_deleted_ids_drop_silently`,
+  `tag_1_prepaint_target_resolves_the_stable_anchor_before_offset_restore`,
+  `tag_1_reanchoring_on_an_edited_row_preserves_its_screen_offset`,
+  `tag_1_scroll_target_follows_anchor_row_after_resort`,
+  `tag_1_reanchoring_counts_a_header_between_the_two_rows`, and
+  `tag_1_scroll_target_none_when_anchor_gone`.
+- SEARCH-9: `search_9_debounce_is_the_only_wait` and
+  `search_9_filter_change_decides_viewport_by_the_new_query`.
+- NAV-10b: `nav_10b_one_marker_implementation_serves_every_list_surface`,
+  `nav_10b_every_list_surface_places_the_marker_the_same_way`,
+  `nav_10b_the_radio_marker_reapplies_without_rebuilding_the_model`,
+  `nav_10b_a_paused_radio_keeps_the_loaded_marker_but_freezes_its_motion`,
+  `nav_10b_a_foreign_write_ends_the_glide`,
+  `nav_10b_a_far_target_jumps_instead_of_gliding`,
+  `nav_10b_playback_scroll_policy_distinguishes_user_intent`, and
+  `nav_10b_reveal_follows_the_track_when_the_view_changes_underneath`.
+
+GTK cannot be initialized on a different test-worker thread in the same
+process, so every ignored display test used this exact one-test process shape,
+with each fully-qualified name substituted for `$test_name`:
+
+```sh
+dbus-run-session -- xvfb-run -a env XDG_DATA_HOME=$(mktemp -d) \
+  XDG_CACHE_HOME=$(mktemp -d) XDG_CONFIG_HOME=$(mktemp -d) \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= GTK_A11Y=none GSK_RENDERER=cairo \
+  REPRISE_AUDIO_SINK=fakesink cargo test -q -p reprise-gnome --bin reprise \
+  "$test_name" -- --ignored --exact
+```
+
+The display tests passed 18, failed 0 and ignored 0 in aggregate. Listed by
+name, these were:
+
+- TAG-1: `tag_1_focus_returning_to_the_table_after_a_save_keeps_the_viewport`,
+  `tag_1_restoring_dialog_focus_after_a_save_keeps_the_viewport`,
+  `tag_1_save_refresh_requeries_the_view_once`,
+  `tag_1_save_refresh_shows_the_written_tag_on_screen`,
+  `tag_1_tag_save_refresh_paints_no_frame_at_the_table_top`,
+  `tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort`,
+  `tag_1_query_reloading_metadata_save_keeps_the_live_viewport`, and
+  `tag_1_reload_with_a_deep_anchor_keeps_a_row_inside_the_viewport`.
+- SEARCH-9: `typed_search_reads_from_the_top_and_clearing_comes_back`.
+- NAV-10b: `nav_10b_a_reload_does_not_count_as_the_user_scrolling`,
+  `nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one`,
+  `nav_10b_a_user_scroll_during_the_glide_wins`,
+  `nav_10b_centering_lands_on_the_logical_pixel_nearest_the_target`,
+  `nav_10b_row_activation_marker_does_not_move_selection_or_viewport`,
+  `nav_10b_a_scan_reload_mid_glide_does_not_strand_the_follow`,
+  `nav_10b_glide_centres_a_queue_row_after_all_section_headers`,
+  `nav_10b_player_bar_title_centers_in_one_viewport_step`, and
+  `nav_10b_player_bar_title_centers_the_revealed_track`.
+
+Host load was not sampled for these correctness suites because no performance
+threshold is read from them. An initial six-test TAG-1 process produced
+1 pass/5 failures, and an initial eight-test retry produced 1 pass/7 failures,
+all solely because GTK rejected initialization from successive Cargo
+test-worker threads; neither failed run is reported as green, and the isolated
+exact-test invocations above are the accepted results.
