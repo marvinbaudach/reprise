@@ -832,3 +832,55 @@ Task 7's valid Stage-2 measurements. The execution handover is recorded in
 Whole-plan acceptance remains outstanding because Tasks 7 and 8 have not run,
 so the required two-arm threshold evidence and its downstream interpretation do
 not exist. The execution handover is recorded in `.pipeline-codex.md`.
+
+### A competing diagnosis for #640, measured and disproved
+
+A parallel session produced a second branch for this issue,
+`worktree-search-reload-blocks-the-main-thread`, complete through its own Tasks
+7–8. It names a different cause — a missing `COLLATE NOCASE` index on
+`tracks(title)` — and adds schema v79 `idx_tracks_title_nocase`. It was measured
+against this plan's production oracle on 2026-08-23 and does not hold.
+
+**1. The index it adds already exists.** `origin/dev` ships
+`idx_tracks_present_title_nocase ON tracks(title COLLATE NOCASE) WHERE
+missing_since IS NULL AND removed_at IS NULL` (`crates/reprise-core/src/db.rs:394`).
+That branch's cause statement — "there was no index on `title`" — reasons only
+about `idx_tracks_artist` and `idx_tracks_album` being binary and never sees the
+third, matching index.
+
+**2. The query plan does not change.** On the 100,000-row fixture, before and
+after creating the v79 index, `EXPLAIN QUERY PLAN` is identical:
+
+```
+QUERY PLAN
+`--SCAN tracks USING INDEX idx_tracks_present_title_nocase
+```
+
+SQLite keeps choosing the partial index; the unpartitioned one is never used.
+The `SCAN tracks` + `USE TEMP B-TREE FOR ORDER BY` plan that branch quotes as its
+evidence does not occur on a dev-schema database.
+
+**3. End to end it changes nothing.** Same binary (this plan's 500-row window),
+same fixture, arms interleaved with the order flipped each round, three samples
+per arm, host load 4.33–4.65 across the whole block:
+
+| arm | cleared-search median | window queries | window time | sort median |
+|---|---:|---:|---:|---:|
+| dev schema (7 indexes on `tracks`) | 272.387 ms | 201 | 195.208 ms | 270.138 ms |
+| dev + v79 (8 indexes on `tracks`) | 270.519 ms | 201 | 193.972 ms | 273.125 ms |
+
+1.868 ms apart on the cleared search, and 2.987 ms the *other* way on the sort.
+That is noise, not an effect.
+
+The exact command is `index-ab.sh`; it, the six raw oracle outputs, the
+`EXPLAIN` probe and the sample lines are retained in
+`~/.cache/reprise-640-evidence`. These are Stage-1-grade numbers by this plan's
+own policy — host load 4.5, not a quiet machine — which is sufficient for a
+comparison between two arms measured in the same block, and **not** sufficient
+to hold any of them against FB-10's 250 ms.
+
+Two consequences for the remaining work. The per-query cost is not reducible by
+indexing, so the ~195 ms that the 201 window queries spend is the residual Task 8
+has to reckon with. And because `WINDOW_SIZE` now sits at `MAX_WINDOW_LIMIT`,
+reducing the *number* of queries further is not available either without changing
+`reprise-core`.
