@@ -152,6 +152,8 @@ cargo run --locked --release --bin uniffi-bindgen -p reprise-android-ffi -- \
 
 rm -rf "$results_dir"
 start_time=$(date +%s)
+# The suite builds the host .so itself; JNA finds it through the system loader.
+export LD_LIBRARY_PATH="$repo_root/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 android/gradlew --project-dir android :app:testDebugUnitTest
 android/gradlew --project-dir android :app:assembleDebug
 
