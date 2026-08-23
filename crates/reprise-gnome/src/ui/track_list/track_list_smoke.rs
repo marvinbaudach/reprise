@@ -98,6 +98,29 @@ enum OracleTransition {
     ClearedSearch,
 }
 
+#[derive(Clone, Copy)]
+enum OracleCountGuard {
+    RestoredSearch,
+    SortChange,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum OracleFailure {
+    UnexpectedRestoredCount { rows: u32, expected: u32 },
+    UnexpectedSortCount { rows: u32, expected: u32 },
+    MissingMeasurement { transition: &'static str },
+    StaleTrailEntry { transition: &'static str },
+    IncompleteSamples { count: usize },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct OracleMeasurement {
+    reload_id: u64,
+    event: String,
+    breakdown: String,
+    next_frame_us: u128,
+}
+
 impl OracleTransition {
     fn label(self) -> &'static str {
         match self {
@@ -115,41 +138,128 @@ fn load_average() -> String {
         .unwrap_or_else(|| "missing".into())
 }
 
-fn latest_reload(shared: &Shared) -> String {
-    shared
-        .diagnostic_trail
-        .snapshot()
-        .into_iter()
+fn payload_u64(entry: &str, field: &str) -> Option<u64> {
+    entry
+        .split_whitespace()
+        .find_map(|part| part.strip_prefix(field)?.parse().ok())
+}
+
+fn newest_reload_id(entries: &[String]) -> Option<u64> {
+    entries
+        .iter()
         .rev()
         .find(|entry| entry.contains(" Reload "))
-        .unwrap_or_else(|| "missing".into())
+        .and_then(|entry| payload_u64(entry, "reload_id="))
 }
 
-fn latest_breakdown(shared: &Shared) -> String {
-    shared
-        .diagnostic_trail
-        .snapshot()
-        .into_iter()
+fn oracle_measurement(
+    entries: &[String],
+    transition: OracleTransition,
+    previous_reload_id: u64,
+) -> Result<OracleMeasurement, OracleFailure> {
+    let Some(event) = entries
+        .iter()
         .rev()
-        .find(|entry| entry.contains(" ReloadBreakdown "))
-        .unwrap_or_else(|| "missing".into())
+        .find(|entry| entry.contains(" Reload "))
+    else {
+        return Err(OracleFailure::StaleTrailEntry {
+            transition: transition.label(),
+        });
+    };
+    let Some(reload_id) = payload_u64(event, "reload_id=") else {
+        return Err(OracleFailure::MissingMeasurement {
+            transition: transition.label(),
+        });
+    };
+    if reload_id <= previous_reload_id {
+        return Err(OracleFailure::StaleTrailEntry {
+            transition: transition.label(),
+        });
+    }
+    let Some(next_frame_us) = payload_u64(event, "next_frame_us=").map(u128::from) else {
+        return Err(OracleFailure::MissingMeasurement {
+            transition: transition.label(),
+        });
+    };
+    let Some(breakdown) = entries.iter().rev().find(|entry| {
+        entry.contains(" ReloadBreakdown ") && payload_u64(entry, "reload_id=") == Some(reload_id)
+    }) else {
+        return Err(OracleFailure::MissingMeasurement {
+            transition: transition.label(),
+        });
+    };
+    Ok(OracleMeasurement {
+        reload_id,
+        event: event.clone(),
+        breakdown: breakdown.clone(),
+        next_frame_us,
+    })
 }
 
-fn reload_next_frame_us(shared: &Shared) -> Option<u128> {
-    latest_reload(shared)
-        .split_whitespace()
-        .find_map(|part| part.strip_prefix("next_frame_us=")?.parse::<u128>().ok())
-}
-
-fn print_oracle_transition(shared: &Shared, transition: OracleTransition) -> Option<u128> {
+fn print_oracle_transition(
+    shared: &Shared,
+    transition: OracleTransition,
+    previous_reload_id: u64,
+) -> Result<u128, OracleFailure> {
+    let entries = shared.diagnostic_trail.snapshot();
+    let measurement = oracle_measurement(&entries, transition, previous_reload_id)?;
     println!(
         "REPRISE_RELOAD_ORACLE transition={} loadavg={} event={} breakdown={}",
         transition.label(),
         load_average(),
-        latest_reload(shared),
-        latest_breakdown(shared)
+        measurement.event,
+        measurement.breakdown
     );
-    reload_next_frame_us(shared)
+    Ok(measurement.next_frame_us)
+}
+
+fn validate_oracle_count(
+    guard: OracleCountGuard,
+    rows: u32,
+    expected: u32,
+) -> Result<(), OracleFailure> {
+    if rows == expected {
+        return Ok(());
+    }
+    Err(match guard {
+        OracleCountGuard::RestoredSearch => {
+            OracleFailure::UnexpectedRestoredCount { rows, expected }
+        }
+        OracleCountGuard::SortChange => OracleFailure::UnexpectedSortCount { rows, expected },
+    })
+}
+
+fn complete_oracle_samples(samples: &[u128]) -> Result<f64, OracleFailure> {
+    if samples.len() != 3 {
+        return Err(OracleFailure::IncompleteSamples {
+            count: samples.len(),
+        });
+    }
+    Ok(oracle_ratio(samples).unwrap_or(f64::NAN))
+}
+
+fn oracle_failure_line(failure: &OracleFailure, loadavg: &str) -> String {
+    match failure {
+        OracleFailure::UnexpectedRestoredCount { rows, expected } => format!(
+            "REPRISE_RELOAD_ORACLE error=unexpected-restored-count rows={rows} expected={expected} loadavg={loadavg}"
+        ),
+        OracleFailure::UnexpectedSortCount { rows, expected } => format!(
+            "REPRISE_RELOAD_ORACLE error=unexpected-sort-count rows={rows} expected={expected}"
+        ),
+        OracleFailure::MissingMeasurement { transition } => format!(
+            "REPRISE_RELOAD_ORACLE error=missing-measurement transition={transition}"
+        ),
+        OracleFailure::StaleTrailEntry { transition } => format!(
+            "REPRISE_RELOAD_ORACLE error=stale-trail-entry transition={transition}"
+        ),
+        OracleFailure::IncompleteSamples { count } => {
+            format!("REPRISE_RELOAD_ORACLE error=incomplete-samples count={count}")
+        }
+    }
+}
+
+fn report_oracle_failure(failure: &OracleFailure) {
+    println!("{}", oracle_failure_line(failure, &load_average()));
 }
 
 fn parse_oracle_rows(value: &str) -> Result<usize, String> {
@@ -203,6 +313,7 @@ fn quit_oracle(shared: &Shared) {
 
 fn run_cleared_search_oracle(
     shared: &Rc<Shared>,
+    expected_full: u32,
     expected_filtered: u32,
     measurements: Rc<RefCell<Vec<u128>>>,
 ) {
@@ -218,18 +329,45 @@ fn run_cleared_search_oracle(
             quit_oracle(&after_narrow);
             return;
         }
+        let previous_reload_id =
+            newest_reload_id(&after_narrow.diagnostic_trail.snapshot()).unwrap_or_default();
         set_filter_and_reload(&after_narrow, "");
         let after_clear = Rc::clone(&after_narrow);
         after_next_frame(&after_narrow, move || {
-            if let Some(value) =
-                print_oracle_transition(&after_clear, OracleTransition::ClearedSearch)
-            {
-                measurements.borrow_mut().push(value);
+            if let Err(failure) = validate_oracle_count(
+                OracleCountGuard::RestoredSearch,
+                after_clear.model.n_items(),
+                expected_full,
+            ) {
+                report_oracle_failure(&failure);
+                quit_oracle(&after_clear);
+                return;
             }
+            let value = match print_oracle_transition(
+                &after_clear,
+                OracleTransition::ClearedSearch,
+                previous_reload_id,
+            ) {
+                Ok(value) => value,
+                Err(failure) => {
+                    report_oracle_failure(&failure);
+                    quit_oracle(&after_clear);
+                    return;
+                }
+            };
+            measurements.borrow_mut().push(value);
             let samples = measurements.borrow();
+            let ratio = match complete_oracle_samples(&samples) {
+                Ok(ratio) => ratio,
+                Err(failure) => {
+                    report_oracle_failure(&failure);
+                    quit_oracle(&after_clear);
+                    return;
+                }
+            };
             println!(
                 "REPRISE_RELOAD_ORACLE summary rows={} ratio={:.3} next_frame_us={samples:?} loadavg={}",
-                after_clear.model.n_items(), oracle_ratio(&samples).unwrap_or(f64::NAN), load_average()
+                after_clear.model.n_items(), ratio, load_average()
             );
             quit_oracle(&after_clear);
         });
@@ -238,9 +376,13 @@ fn run_cleared_search_oracle(
 
 fn run_sort_oracle(
     shared: &Rc<Shared>,
+    expected_full: u32,
     expected_filtered: u32,
     measurements: Rc<RefCell<Vec<u128>>>,
 ) {
+    let expected_before_sort = shared.model.n_items();
+    let previous_reload_id =
+        newest_reload_id(&shared.diagnostic_trail.snapshot()).unwrap_or_default();
     *shared.sort.borrow_mut() = SortState {
         field: "title".into(),
         dir: "asc".into(),
@@ -248,10 +390,29 @@ fn run_sort_oracle(
     reload(shared);
     let after_sort = Rc::clone(shared);
     after_next_frame(shared, move || {
-        if let Some(value) = print_oracle_transition(&after_sort, OracleTransition::SortChange) {
-            measurements.borrow_mut().push(value);
+        if let Err(failure) = validate_oracle_count(
+            OracleCountGuard::SortChange,
+            after_sort.model.n_items(),
+            expected_before_sort,
+        ) {
+            report_oracle_failure(&failure);
+            quit_oracle(&after_sort);
+            return;
         }
-        run_cleared_search_oracle(&after_sort, expected_filtered, measurements);
+        let value = match print_oracle_transition(
+            &after_sort,
+            OracleTransition::SortChange,
+            previous_reload_id,
+        ) {
+            Ok(value) => value,
+            Err(failure) => {
+                report_oracle_failure(&failure);
+                quit_oracle(&after_sort);
+                return;
+            }
+        };
+        measurements.borrow_mut().push(value);
+        run_cleared_search_oracle(&after_sort, expected_full, expected_filtered, measurements);
     });
 }
 
@@ -281,6 +442,9 @@ pub(in crate::ui) fn arm_smoke_reload_oracle(shared: &Rc<Shared>) {
         set_source_and_reload(&shared, &ViewSource::Missing);
         let return_to_library = Rc::clone(&shared);
         after_next_frame(&shared, move || {
+            let previous_reload_id =
+                newest_reload_id(&return_to_library.diagnostic_trail.snapshot())
+                    .unwrap_or_default();
             set_source_and_reload(&return_to_library, &ViewSource::Library);
             let after_source = Rc::clone(&return_to_library);
             after_next_frame(&return_to_library, move || {
@@ -292,12 +456,25 @@ pub(in crate::ui) fn arm_smoke_reload_oracle(shared: &Rc<Shared>) {
                     quit_oracle(&after_source);
                     return;
                 }
-                if let Some(value) =
-                    print_oracle_transition(&after_source, OracleTransition::SourceSwitch)
-                {
-                    measurements.borrow_mut().push(value);
-                }
-                run_sort_oracle(&after_source, expected_filtered, measurements);
+                let value = match print_oracle_transition(
+                    &after_source,
+                    OracleTransition::SourceSwitch,
+                    previous_reload_id,
+                ) {
+                    Ok(value) => value,
+                    Err(failure) => {
+                        report_oracle_failure(&failure);
+                        quit_oracle(&after_source);
+                        return;
+                    }
+                };
+                measurements.borrow_mut().push(value);
+                run_sort_oracle(
+                    &after_source,
+                    u32::try_from(oracle_rows).unwrap_or(u32::MAX),
+                    expected_filtered,
+                    measurements,
+                );
             });
         });
     });
