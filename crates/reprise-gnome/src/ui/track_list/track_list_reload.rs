@@ -42,6 +42,7 @@ use gtk4::prelude::*;
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::browse_filter_count;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
+use crate::ui::track_list::diagnostic_trail::{self, ReloadStep};
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
@@ -112,6 +113,33 @@ fn filter_change_viewport(
 
 fn source_snapshot(source: &RefCell<ViewSource>) -> ViewSource {
     source.borrow().clone()
+}
+
+pub(in crate::ui) fn reload_cause(
+    previous: Option<&(ViewSource, String, String, String)>,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+) -> super::diagnostic_trail::ReloadCause {
+    use super::diagnostic_trail::ReloadCause;
+
+    let Some(previous) = previous else {
+        return ReloadCause::Other;
+    };
+    if previous.0 != *source {
+        ReloadCause::SourceSwitch
+    } else if previous.3 != filter {
+        if filter.is_empty() {
+            ReloadCause::ClearedSearch
+        } else {
+            ReloadCause::TypedSearch
+        }
+    } else if previous.1 != sort_field || previous.2 != sort_dir {
+        ReloadCause::SortChange
+    } else {
+        ReloadCause::Other
+    }
 }
 
 /// The track ids currently selected, read directly off the selection bitset
@@ -545,19 +573,41 @@ fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
 fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
-    let n_sections = shared.queue_sections.borrow().len();
-    if let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view) {
-        ListGeometry::for_view(&shared.column_view).remember_if_settled(
-            &shared.conn,
-            &shared.list_geometry_cache,
-            adjustment.upper(),
-            shared.model.n_items() as usize,
-            n_sections,
-        );
-    }
+    let reload_measurement = diagnostic_trail::begin_reload_breakdown();
+    let old_total = shared.model.n_items();
+    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view);
+    let diagnostic_state = reload_measurement.map(|_| {
+        let (value, upper) = adjustment
+            .as_ref()
+            .map_or((0.0, 0.0), |value| (value.value(), value.upper()));
+        (shared.selection.selection().size(), value, upper)
+    });
+    diagnostic_trail::measure_reload_step(ReloadStep::Geometry, || {
+        let n_sections = shared.queue_sections.borrow().len();
+        if let Some(adjustment) = adjustment.as_ref() {
+            ListGeometry::for_view(&shared.column_view).remember_if_settled(
+                &shared.conn,
+                &shared.list_geometry_cache,
+                adjustment.upper(),
+                old_total as usize,
+                n_sections,
+            );
+        }
+    });
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
+    let reload_timer = reload_measurement.map(|(started, reload_id)| {
+        let previous_query = shared.model.query_signature();
+        let cause = reload_cause(
+            (shared.model.generation() != 0).then_some(&previous_query),
+            &source,
+            &sort.field,
+            &sort.dir,
+            &filter,
+        );
+        diagnostic_trail::ReloadTimer::started_at(started, cause, reload_id)
+    });
     let browse = if matches!(
         source,
         ViewSource::Library
@@ -587,36 +637,38 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
         shared.queue_sections.borrow_mut().clear();
         None
     };
-    if let (Some(queue_model), Some(context_window)) = (&queue_model, queue_context_window) {
-        shared.model.set_queue_snapshot(
-            queue_model,
-            context_window,
-            super::queue_sections::section_ranges(&queue_model.sections),
-        );
-    } else {
-        shared.model.set_sections(Vec::new());
-        match model_change {
-            Some(change) => shared.model.set_query_browsed_ai_changed(
-                &source,
-                &sort.field,
-                &sort.dir,
-                &filter,
-                &browse,
-                &[],
-                exclude_ai,
-                change,
-            ),
-            None => shared.model.set_query_browsed_ai(
-                &source,
-                &sort.field,
-                &sort.dir,
-                &filter,
-                &browse,
-                &[],
-                exclude_ai,
-            ),
-        }
-    }
+    let query_elapsed =
+        if let (Some(queue_model), Some(context_window)) = (&queue_model, queue_context_window) {
+            shared.model.set_queue_snapshot(
+                queue_model,
+                context_window,
+                super::queue_sections::section_ranges(&queue_model.sections),
+            );
+            None
+        } else {
+            shared.model.set_sections(Vec::new());
+            match model_change {
+                Some(change) => shared.model.set_query_browsed_ai_changed(
+                    &source,
+                    &sort.field,
+                    &sort.dir,
+                    &filter,
+                    &browse,
+                    &[],
+                    exclude_ai,
+                    change,
+                ),
+                None => shared.model.set_query_browsed_ai(
+                    &source,
+                    &sort.field,
+                    &sort.dir,
+                    &filter,
+                    &browse,
+                    &[],
+                    exclude_ai,
+                ),
+            }
+        };
 
     // Strictly AFTER the query swap: installing a header factory flips
     // GTK's has_sections, which runs gtk_list_item_manager_ensure_items
@@ -626,10 +678,12 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     // read the new (small) Queue ranges against the old (large) row count;
     // with the viewport scrolled past the ranges' end that aborted the app
     // on the `header->widget == NULL` assertion in gtklistitemmanager.c.
-    super::queue_sections::apply_queue_header_factory(shared, is_queue);
-    if is_queue {
-        super::track_list_geometry::schedule_section_measurement(shared);
-    }
+    diagnostic_trail::measure_reload_step(ReloadStep::QueueHeader, || {
+        super::queue_sections::apply_queue_header_factory(shared, is_queue);
+        if is_queue {
+            super::track_list_geometry::schedule_section_measurement(shared);
+        }
+    });
 
     // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_
     // view`, not `shared.model` (which `queries.rs` always resolves to an
@@ -640,52 +694,73 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
         ViewSource::Missing => shared.missing_files_view.refresh(),
         _ => shared.model.n_items() as usize,
     };
-    browse_filter_count::update(
-        &shared.browse_bar,
-        &shared.conn,
-        &source,
-        count,
-        &filter,
-        &browse,
-        exclude_ai,
-        &[],
-    );
-    apply_empty_state(
-        shared,
-        empty_state_for_availability(
-            count,
-            has_filter,
+    diagnostic_trail::measure_reload_step(ReloadStep::BrowseCount, || {
+        browse_filter_count::update(
+            &shared.browse_bar,
+            &shared.conn,
             &source,
-            shared.library_root_unavailable.get(),
-        ),
-    );
-    shared
-        .diagnostic_trail
-        .record(super::diagnostic_trail::Event::Reload {
-            source: source.label(),
             count,
+            &filter,
+            &browse,
+            exclude_ai,
+            &[],
+        );
+    });
+    diagnostic_trail::measure_reload_step(ReloadStep::EmptyState, || {
+        apply_empty_state(
+            shared,
+            empty_state_for_availability(
+                count,
+                has_filter,
+                &source,
+                shared.library_root_unavailable.get(),
+            ),
+        );
+    });
+    diagnostic_trail::measure_reload_step(ReloadStep::TrailLogging, || {
+        shared
+            .diagnostic_trail
+            .record(diagnostic_trail::Event::StackPage {
+                page: shared
+                    .stack
+                    .visible_child_name()
+                    .map_or_else(|| "none".into(), |page| page.to_string()),
+            });
+        crate::ui::startup_report::event("track_list_reload");
+        tracing::info!(count, field = %sort.field, dir = %sort.dir, filter = %filter,
+            ?browse, source = %source.label(), "query matched {count} tracks");
+    });
+    diagnostic_trail::measure_reload_step(ReloadStep::OnReload, || {
+        (shared.on_reload)(&source, count, &filter, &browse);
+    });
+    if let (Some((reload_started, reload_id)), Some(reload_timer), Some(diagnostic_state)) =
+        (reload_measurement, reload_timer, diagnostic_state)
+    {
+        let (selected, adjustment_value, adjustment_upper) = diagnostic_state;
+        diagnostic_trail::finish_reload_breakdown(
+            &shared.diagnostic_trail,
+            reload_id,
+            reload_started.elapsed(),
+            old_total,
+            count,
+            selected,
+            adjustment_value,
+            adjustment_upper,
+        );
+        let pending = RefCell::new(Some(reload_timer.work_done(
+            &source.label(),
+            count,
+            query_elapsed,
+        )));
+        let trail = Rc::clone(&shared.diagnostic_trail);
+        shared.column_view.add_tick_callback(move |_, _| {
+            if let Some(pending) = pending.borrow_mut().take() {
+                pending.next_frame(&trail);
+            }
+            gtk4::glib::ControlFlow::Break
         });
-    shared
-        .diagnostic_trail
-        .record(super::diagnostic_trail::Event::StackPage {
-            page: shared
-                .stack
-                .visible_child_name()
-                .map_or_else(|| "none".into(), |page| page.to_string()),
-        });
-
-    crate::ui::startup_report::event("track_list_reload");
-    tracing::info!(
-        count,
-        field = %sort.field,
-        dir = %sort.dir,
-        filter = %filter,
-        ?browse,
-        source = %source.label(),
-        "query matched {count} tracks"
-    );
-
-    (shared.on_reload)(&source, count, &filter, &browse);
+        shared.column_view.queue_draw();
+    }
 }
 
 #[cfg(test)]
