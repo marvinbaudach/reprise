@@ -19,6 +19,7 @@ Profile" und „Regeln für den Umsetzer" lesen** — die Pegel dort sind binden
 ```
 crates/reprise-core/src/equalizer.rs
 crates/reprise-android-ffi/src/playback_settings.rs
+crates/reprise-android-ffi/src/playback_settings_tests.rs
 docs/plans/equalizer-profiles-lead-the-surface-core.md
 ```
 
