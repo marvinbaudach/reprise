@@ -21,7 +21,9 @@ use crate::ui::lyrics_batch::LyricsBatch;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::podcasts::PodcastsRuntime;
-use crate::ui::preference_playback::build_equalizer_surface;
+use crate::ui::preferences::preference_equalizer::build_equalizer_controls;
+#[cfg(test)]
+use crate::ui::preferences::preference_equalizer::EqualizerControls;
 use crate::ui::scan_chrome::ScanChromeView;
 use crate::ui::scan_flow::ScanControls;
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
@@ -59,14 +61,23 @@ fn plugin_targets_for_deep_link(link: PluginDeepLink) -> &'static [&'static str]
     }
 }
 
-fn equalizer_preset(index: u32) -> [f64; 10] {
-    match index {
-        1 => EqualizerPreset::Rock,
-        2 => EqualizerPreset::Pop,
-        3 => EqualizerPreset::Bass,
-        _ => EqualizerPreset::Flat,
+pub(super) fn equalizer_preset(index: u32) -> Option<EqualizerPreset> {
+    EqualizerPreset::ALL.get(index as usize).copied()
+}
+
+pub(super) fn preset_label(preset: EqualizerPreset) -> &'static str {
+    match preset {
+        EqualizerPreset::Flat => strings::PRESET_FLAT,
+        EqualizerPreset::Rock => strings::PRESET_ROCK,
+        EqualizerPreset::Pop => strings::PRESET_POP,
+        EqualizerPreset::Bass => strings::PRESET_BASS,
+        EqualizerPreset::Classical => strings::PRESET_CLASSICAL,
+        EqualizerPreset::Jazz => strings::PRESET_JAZZ,
+        EqualizerPreset::Electronic => strings::PRESET_ELECTRONIC,
+        EqualizerPreset::Vocal => strings::PRESET_VOCAL,
+        EqualizerPreset::Headphones => strings::PRESET_HEADPHONES,
+        EqualizerPreset::LateNight => strings::PRESET_LATE_NIGHT,
     }
-    .ten_band_levels()
 }
 
 fn replay_gain_from_index(index: u32) -> ReplayGainMode {
@@ -436,7 +447,7 @@ impl PreferencesContext {
             reprise_core::library::settings::WindowDecorationMode::System,
         );
         let _ = settings::set_player_bar_position(conn, PlayerBarPosition::Top);
-        let _ = settings::set_equalizer_bands(conn, equalizer_preset(1));
+        let _ = settings::set_equalizer_bands(conn, equalizer_preset(1).unwrap().ten_band_levels());
         self.track_list.apply_list_density(ListDensity::Compact);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
@@ -519,61 +530,38 @@ impl PreferencesContext {
             .title(strings::text(strings::PREFERENCES_PLAYBACK))
             .icon_name("audio-speakers-symbolic")
             .build();
-        let equalizer = adw::PreferencesGroup::builder()
-            .title(strings::text(strings::EQUALIZER))
-            .build();
         let equalizer_enabled = {
             let conn = &self.conn;
             settings::get_equalizer_enabled(conn)
         };
-        let enabled = adw::SwitchRow::builder()
-            .title(strings::text(strings::ENABLE_EQUALIZER))
-            .active(equalizer_enabled)
-            .build();
         let weak = Rc::downgrade(self);
-        enabled.connect_active_notify(move |row| {
+        let on_enabled: Rc<dyn Fn(bool)> = Rc::new(move |active| {
             let Some(context) = weak.upgrade() else {
                 return;
             };
             if context.syncing_effect_controls.get() {
                 return;
             }
-            context.set_equalizer_enabled(row.is_active());
+            context.set_equalizer_enabled(active);
         });
-        self.equalizer_controls.borrow_mut().push(enabled.clone());
-        equalizer.add(&enabled);
-
-        let presets = gtk4::StringList::new(&[
-            &strings::text(strings::PRESET_FLAT),
-            &strings::text(strings::PRESET_ROCK),
-            &strings::text(strings::PRESET_POP),
-            &strings::text(strings::PRESET_BASS),
-        ]);
         let stored_bands = settings::get_equalizer_bands(&self.conn);
-        let selected = (0..4)
-            .find(|index| equalizer_preset(*index) == stored_bands)
-            .unwrap_or(gtk4::INVALID_LIST_POSITION);
-        let preset = adw::ComboRow::builder()
-            .title(strings::text(strings::EQUALIZER_PRESET))
-            .model(&presets)
-            .selected(selected)
-            .build();
-        equalizer.add(&preset);
-
-        let updating_preset = Rc::new(Cell::new(false));
         let weak = Rc::downgrade(self);
-        let preset_for_band = preset.clone();
-        let updating_for_band = updating_preset.clone();
-        let on_band_changed: Rc<dyn Fn(usize, f64)> = Rc::new(move |index, value| {
-            if updating_for_band.get() {
-                return;
+        let on_preset: Rc<dyn Fn([f64; 10]) -> bool> = Rc::new(move |bands| {
+            let Some(context) = weak.upgrade() else {
+                return false;
+            };
+            if let Err(error) = settings::set_equalizer_bands(&context.conn, bands) {
+                tracing::warn!(%error, "could not save equalizer preset");
+                return false;
             }
+            context.apply_audio_effects();
+            true
+        });
+        let weak = Rc::downgrade(self);
+        let on_band: Rc<dyn Fn(usize, f64)> = Rc::new(move |index, value| {
             let Some(context) = weak.upgrade() else {
                 return;
             };
-            updating_for_band.set(true);
-            preset_for_band.set_selected(gtk4::INVALID_LIST_POSITION);
-            updating_for_band.set(false);
             let mut bands = settings::get_equalizer_bands(&context.conn);
             bands[index] = value;
             if let Err(error) = settings::set_equalizer_bands(&context.conn, bands) {
@@ -582,36 +570,22 @@ impl PreferencesContext {
             }
             context.apply_audio_effects();
         });
-        let surface = build_equalizer_surface(stored_bands, equalizer_enabled, &on_band_changed);
-        let scales = surface.scales.clone();
+        let controls = build_equalizer_controls(
+            stored_bands,
+            equalizer_enabled,
+            on_enabled,
+            on_preset,
+            on_band,
+        );
+        self.equalizer_controls
+            .borrow_mut()
+            .push(controls.enabled.clone());
         self.equalizer_surfaces
             .borrow_mut()
-            .push(surface.root.clone().upcast());
-        equalizer.add(&surface.root);
+            .push(controls.root.clone().upcast());
+        let equalizer = controls.group;
         // (equalizer/replaygain are added to the page after Audio Transitions
         // below, so Transitions leads the Playback page — matching the mockup.)
-
-        let weak = Rc::downgrade(self);
-        let updating = updating_preset.clone();
-        preset.connect_selected_notify(move |row| {
-            if updating.get() || row.selected() > 3 {
-                return;
-            }
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let bands = equalizer_preset(row.selected());
-            if let Err(error) = settings::set_equalizer_bands(&context.conn, bands) {
-                tracing::warn!(%error, "could not save equalizer preset");
-                return;
-            }
-            updating.set(true);
-            for (scale, value) in scales.iter().zip(bands) {
-                scale.set_value(value);
-            }
-            updating.set(false);
-            context.apply_audio_effects();
-        });
         let replaygain = adw::PreferencesGroup::builder()
             .title(strings::text(strings::REPLAYGAIN))
             .build();

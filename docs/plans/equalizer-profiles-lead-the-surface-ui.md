@@ -178,3 +178,70 @@ bestehenden `PlaybackSettings`-Tests liegen — vorher `grep` auf
    - Equalizer-Schalter aus → der zugeklappte Aufklapper ist ausgegraut.
 5. Von Hand am Handy, mit Aufnahme: Profilauswahl steht vorn, Bandabschnitt ist
    zu, alle zehn Namen erscheinen, keiner ist leer oder doppelt.
+
+## Nachtrag vom 23.08.2026 — die Profilzeile ist keine `AdwComboRow` mehr
+
+**Gemessener Befund, der diesen Nachtrag auslöst.** `AdwComboRow` kann „kein
+Profil ausgewählt" nicht darstellen. Sie hält intern eine `GtkSingleSelection`
+mit `autoselect` und bietet weder `autoselect` noch `can-unselect` an; ein
+`set_selected(gtk4::INVALID_LIST_POSITION)` wird stillschweigend verworfen.
+Isoliert nachgewiesen an einer nackten `AdwComboRow` mit Dreier-Modell, ohne
+jeden App-Code:
+
+```text
+PROBE after set_selected(INVALID): 1
+assertion `left == right` failed: AdwComboRow refused to clear its selection
+```
+
+Damit ist der Aufruf in `preferences.rs` (heute im `on_band_changed`-Callback)
+seit jeher wirkungslos: eine von Hand verstellte Kurve wird gespeichert, aber
+die Zeile zeigt weiter das zuletzt gewählte Profil an. Das ist ein bestehender
+Fehler auf `dev`, kein neuer — Aufgabe 2.1 deckt ihn nur auf.
+
+**Entscheidung des Nutzers vom 23.08.2026:** Die Profilzeile wird ersetzt.
+
+- Statt `adw::ComboRow` eine `adw::ActionRow` mit Titel
+  `strings::EQUALIZER_PRESET`, deren Suffix ein `gtk4::MenuButton` mit einem
+  Popover ist.
+- Das Popover listet **genau die zehn Profile** aus
+  `EqualizerPreset::ALL.map(preset_label)` — nicht mehr und nicht weniger. Der
+  Custom-Zustand bekommt dort keinen Eintrag.
+- Das Label des `MenuButton` zeigt den Namen des passenden Profils, und
+  `strings::PRESET_CUSTOM` („Custom"), sobald die gespeicherte Kurve zu keinem
+  Profil passt. Das Label ist die einzige Stelle, an der „Custom" erscheint.
+- Damit ist Desktop und Android gleich gebaut: Android zeigt „Custom" heute
+  schon als Buttonbeschriftung über einem Menü, das nur echte Profile enthält.
+
+Was das an den Aufgaben ändert:
+
+- **2.1**: Der Wächter `row.selected() > 3` und der Abgleich `(0..4).find(…)`
+  entfallen ersatzlos — es gibt keine Auswahlposition mehr, nur noch eine
+  Aktion je Profil und eine Beschriftung. Die Ableitung aus
+  `EqualizerPreset::ALL` bleibt die Vorschrift; `preset_label` bleibt
+  erschöpfend. `strings.rs` bekommt zusätzlich `PRESET_CUSTOM` („Custom").
+- **2.1 Tests**: `the_preset_row_offers_every_shared_preset` prüft das Popover-
+  Modell statt des `ComboRow`-Modells (`ALL.len()` Einträge, Eintrag `n` trägt
+  `preset_label(ALL[n])`). `moving_a_band_clears_the_preset_selection` heißt
+  jetzt `moving_a_band_labels_the_row_custom` und prüft, dass die
+  Beschriftung nach einer Bandbewegung `strings::PRESET_CUSTOM` ist und die
+  Kurve gespeichert wurde. `choosing_a_new_preset_stores_its_bands` bleibt
+  unverändert in der Absicht, wählt das Profil jetzt über die Popover-Aktion.
+- **2.2**: unverändert — der Aufklapper steht weiterhin *hinter* der
+  Profilzeile.
+- **2.4**: Es sind **acht** neue Zeichenketten statt sieben — `PRESET_CUSTOM`
+  kommt dazu und wird in allen sieben Katalogen übersetzt.
+- **SET-17**: Der Regeltext ersetzt „Profilauswahl" durch die genaue Form und
+  hält den Custom-Zustand fest:
+
+  > **SET-17** [active] [gtk] — Der Equalizer wird über sein Profil bedient.
+  > Unter dem Enable-Schalter steht die Profilzeile: eine `AdwActionRow`, deren
+  > Menü genau die Profile aus `reprise_core::equalizer::EqualizerPreset::ALL`
+  > listet. Die zehn Bandregler liegen darunter in einem `AdwExpanderRow`, der
+  > zugeklappt startet. Eine von Hand verstellte Kurve bleibt gespeichert und
+  > beschriftet die Zeile mit „Custom" — sie wird nie zu einem Eintrag im Menü.
+  > Die Profilliste wird nirgends aufgezählt.
+
+Was der Nachtrag **nicht** ändert: die zehn Kurven, ihre Reihenfolge, die
+Android-Aufgabe 2.3 und die Abnahmepunkte. In Abnahmepunkt 4 tritt an die
+Stelle von „die Profilauswahl wird leer" die Formulierung „die Zeile ist mit
+Custom beschriftet".
