@@ -130,7 +130,7 @@ fn moving_a_band_labels_the_row_custom() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn the_bands_start_collapsed_behind_the_profile() {
+fn set_17_the_bands_start_collapsed_behind_the_profile() {
     gtk4::init().unwrap();
     let controls = equalizer_controls_for_test(Rc::new(Db::open_in_memory().unwrap()));
 

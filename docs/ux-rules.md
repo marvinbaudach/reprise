@@ -1253,6 +1253,14 @@ result.
   two can never disagree. "Restore defaults" at the foot of the page returns
   every layout value to its default.
 
+- **SET-17** [active] [gtk] — The equalizer is operated through its profile.
+  Below the enable switch, the profile row is an `AdwActionRow` whose menu
+  lists exactly the profiles from
+  `reprise_core::equalizer::EqualizerPreset::ALL`. The ten band controls sit
+  beneath it in an `AdwExpanderRow` that starts collapsed. A manually adjusted
+  curve remains stored and labels the row “Custom”; it never becomes a menu
+  entry. The profile list is not enumerated anywhere.
+
 ## G. Feedback vocabulary
 
 - **FB-1** [planned] [core] — Two-class toasts (pill, bottom-centered,
