@@ -25,10 +25,27 @@ pub enum EqualizerPreset {
     Rock,
     Pop,
     Bass,
+    Classical,
+    Jazz,
+    Electronic,
+    Vocal,
+    Headphones,
+    LateNight,
 }
 
 impl EqualizerPreset {
-    pub const ALL: [Self; 4] = [Self::Flat, Self::Rock, Self::Pop, Self::Bass];
+    pub const ALL: [Self; 10] = [
+        Self::Flat,
+        Self::Rock,
+        Self::Pop,
+        Self::Bass,
+        Self::Classical,
+        Self::Jazz,
+        Self::Electronic,
+        Self::Vocal,
+        Self::Headphones,
+        Self::LateNight,
+    ];
 
     pub const fn ten_band_levels(self) -> [f64; 10] {
         match self {
@@ -36,6 +53,12 @@ impl EqualizerPreset {
             Self::Rock => [4.0, 3.0, 2.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
             Self::Pop => [-1.0, 1.0, 3.0, 4.0, 2.0, 0.0, -1.0, -1.0, 1.0, 2.0],
             Self::Bass => [7.0, 6.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            Self::Classical => [2.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+            Self::Jazz => [3.0, 2.0, 1.0, 2.0, -1.0, -1.0, 0.0, 1.0, 2.0, 3.0],
+            Self::Electronic => [5.0, 4.0, 1.0, 0.0, -2.0, 1.0, 0.0, 1.0, 4.0, 5.0],
+            Self::Vocal => [-4.0, -3.0, -2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 1.0, 0.0],
+            Self::Headphones => [4.0, 3.0, 1.0, 0.0, -1.0, -1.0, 0.0, 2.0, 3.0, 2.0],
+            Self::LateNight => [-4.0, -3.0, -1.0, 1.0, 2.0, 3.0, 2.0, 1.0, -2.0, -4.0],
         }
     }
 
@@ -410,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn standard_presets_match_the_desktop_contract() {
+    fn standard_presets_keep_the_contract_order_and_levels() {
         assert_eq!(
             EqualizerPreset::ALL,
             [
@@ -418,6 +441,12 @@ mod tests {
                 EqualizerPreset::Rock,
                 EqualizerPreset::Pop,
                 EqualizerPreset::Bass,
+                EqualizerPreset::Classical,
+                EqualizerPreset::Jazz,
+                EqualizerPreset::Electronic,
+                EqualizerPreset::Vocal,
+                EqualizerPreset::Headphones,
+                EqualizerPreset::LateNight,
             ],
         );
         assert_eq!(EqualizerPreset::Flat.ten_band_levels(), [0.0; 10]);
@@ -433,11 +462,77 @@ mod tests {
             EqualizerPreset::Bass.ten_band_levels(),
             [7.0, 6.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         );
+        assert_eq!(
+            EqualizerPreset::Classical.ten_band_levels(),
+            [2.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+        );
+        assert_eq!(
+            EqualizerPreset::Jazz.ten_band_levels(),
+            [3.0, 2.0, 1.0, 2.0, -1.0, -1.0, 0.0, 1.0, 2.0, 3.0],
+        );
+        assert_eq!(
+            EqualizerPreset::Electronic.ten_band_levels(),
+            [5.0, 4.0, 1.0, 0.0, -2.0, 1.0, 0.0, 1.0, 4.0, 5.0],
+        );
+        assert_eq!(
+            EqualizerPreset::Vocal.ten_band_levels(),
+            [-4.0, -3.0, -2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 1.0, 0.0],
+        );
+        assert_eq!(
+            EqualizerPreset::Headphones.ten_band_levels(),
+            [4.0, 3.0, 1.0, 0.0, -1.0, -1.0, 0.0, 2.0, 3.0, 2.0],
+        );
+        assert_eq!(
+            EqualizerPreset::LateNight.ten_band_levels(),
+            [-4.0, -3.0, -1.0, 1.0, 2.0, 3.0, 2.0, 1.0, -2.0, -4.0],
+        );
+    }
 
+    #[test]
+    fn every_preset_stays_inside_the_gstreamer_gain_range() {
+        for preset in EqualizerPreset::ALL {
+            for level in preset.ten_band_levels() {
+                assert!(
+                    (GSTREAMER_MIN_GAIN_DB..=GSTREAMER_MAX_GAIN_DB).contains(&level),
+                    "{preset:?} has an out-of-range level: {level}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_preset_projects_back_to_its_own_levels() {
         for preset in EqualizerPreset::ALL {
             let curve = preset.curve();
             assert!(curve.is_gstreamer_ten_band());
-            assert_eq!(curve.project_to_gstreamer(), preset.ten_band_levels());
+            assert_eq!(
+                curve.project_to_gstreamer(),
+                preset.ten_band_levels(),
+                "{preset:?} changed during projection",
+            );
+        }
+    }
+
+    #[test]
+    fn only_flat_is_silent() {
+        let silent = EqualizerPreset::ALL
+            .into_iter()
+            .filter(|preset| preset.ten_band_levels().iter().all(|level| *level == 0.0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(silent, vec![EqualizerPreset::Flat]);
+    }
+
+    #[test]
+    fn presets_are_pairwise_distinct() {
+        for (index, preset) in EqualizerPreset::ALL.into_iter().enumerate() {
+            for other in EqualizerPreset::ALL.into_iter().skip(index + 1) {
+                assert_ne!(
+                    preset.ten_band_levels(),
+                    other.ten_band_levels(),
+                    "{preset:?} and {other:?} share the same levels",
+                );
+            }
         }
     }
 }
