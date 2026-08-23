@@ -2,7 +2,7 @@
 slug: search-reload-blocks-the-main-thread
 worktree: /home/marvin/Projects/reprise-search-reload-blocks-the-main-thread
 branch: feature/search-reload-blocks-the-main-thread
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-08-23
 ---
