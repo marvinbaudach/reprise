@@ -8,7 +8,17 @@ const DEFAULT_TRACK_COUNT: u32 = 10_000;
 pub(super) const MAX_TRACK_COUNT: u32 = 100_000;
 const SCROLL_SAMPLES: u32 = 12;
 const MAX_CACHED_WINDOW_BUDGET: usize = 8;
-const MAX_CACHED_TRACK_BUDGET: usize = 1_600;
+// An absolute row ceiling, deliberately not derived from `MAX_CACHED_WINDOWS *
+// WINDOW_SIZE`: derived, it would only restate the window assertion above and
+// could never fail. Stated, it forces every window-size change to be a
+// conscious memory decision.
+//
+// It was 1,600 while the lazy window held 200 rows. #647 took the window to 500
+// to halve the browser's self-triggered reload, which raises the same eight
+// windows to 4,000 rows. That trade — 2.5x the cached rows for ~40% off the
+// reload — is the one recorded in
+// docs/plans/search-reload-blocks-the-main-thread.md, Task 6.
+const MAX_CACHED_TRACK_BUDGET: usize = 4_000;
 
 fn configured_track_count() -> u32 {
     let count = std::env::var("REPRISE_PERF_TRACKS").map_or(DEFAULT_TRACK_COUNT, |value| {
