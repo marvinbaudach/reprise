@@ -109,18 +109,21 @@ fn an_unusable_curve_or_band_list_comes_back_as_an_error() {
 #[test]
 fn android_receives_the_standard_presets_in_desktop_order() {
     let presets = standard_equalizer_presets();
+    let expected_presets = EqualizerPreset::ALL
+        .into_iter()
+        .map(AndroidEqualizerPreset::from)
+        .collect::<Vec<_>>();
+    let expected_curves = EqualizerPreset::ALL
+        .into_iter()
+        .map(|preset| preset.ten_band_levels().to_vec())
+        .collect::<Vec<_>>();
 
     assert_eq!(
         presets
             .iter()
             .map(|definition| definition.preset)
             .collect::<Vec<_>>(),
-        vec![
-            AndroidEqualizerPreset::Flat,
-            AndroidEqualizerPreset::Rock,
-            AndroidEqualizerPreset::Pop,
-            AndroidEqualizerPreset::Bass,
-        ],
+        expected_presets,
     );
     assert_eq!(
         presets
@@ -133,12 +136,7 @@ fn android_receives_the_standard_presets_in_desktop_order() {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
-        vec![
-            vec![0.0; 10],
-            vec![4.0, 3.0, 2.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
-            vec![-1.0, 1.0, 3.0, 4.0, 2.0, 0.0, -1.0, -1.0, 1.0, 2.0],
-            vec![7.0, 6.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        ],
+        expected_curves,
     );
     assert!(presets.iter().all(|definition| {
         definition
@@ -147,4 +145,15 @@ fn android_receives_the_standard_presets_in_desktop_order() {
             .map(|point| point.frequency_hz)
             .eq(reprise_core::equalizer::GSTREAMER_EQUALIZER_CENTRES_HZ)
     }));
+}
+
+#[test]
+fn the_bridge_offers_every_shared_preset() {
+    let presets = standard_equalizer_presets();
+
+    assert_eq!(presets.len(), EqualizerPreset::ALL.len());
+    assert!(presets
+        .iter()
+        .zip(EqualizerPreset::ALL)
+        .all(|(definition, preset)| definition.preset == preset.into()));
 }
