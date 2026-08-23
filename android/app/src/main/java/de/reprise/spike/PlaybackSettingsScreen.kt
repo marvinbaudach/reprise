@@ -106,6 +106,7 @@ internal fun PlaybackSettingsScreen(
 ) {
     var confirmEdit by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
+    var bandsExpanded by rememberSaveable { mutableStateOf(false) }
     var bands by remember(state.equalizerBands, state.error) {
         mutableStateOf(state.equalizerBands)
     }
@@ -151,7 +152,27 @@ internal fun PlaybackSettingsScreen(
                     )
                 }
             }
-            if (bands.isEmpty()) {
+            item {
+                TextButton(
+                    onClick = { bandsExpanded = !bandsExpanded },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            contentDescription = if (bandsExpanded) {
+                                "Collapse manual equalizer bands"
+                            } else {
+                                "Expand manual equalizer bands"
+                            }
+                        },
+                ) {
+                    Text(
+                        "Adjust bands manually",
+                        modifier = Modifier.weight(1f),
+                    )
+                    MaterialSymbol(if (bandsExpanded) "expand_less" else "expand_more", "")
+                }
+            }
+            if (bandsExpanded && bands.isEmpty()) {
                 item {
                     Text(
                         when (state.equalizerBandsAbsence) {
@@ -164,7 +185,7 @@ internal fun PlaybackSettingsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-            } else {
+            } else if (bandsExpanded) {
                 itemsIndexed(bands) { index, band ->
                     EqualizerBandRow(
                         band = band,

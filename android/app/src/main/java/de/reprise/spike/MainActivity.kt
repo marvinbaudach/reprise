@@ -74,16 +74,7 @@ class MainActivity : ComponentActivity() {
         MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
     }
     private val library by libraryDelegate
-    private val equalizerPresets by lazy {
-        standardEqualizerPresets().map { definition ->
-            EqualizerPresetUi(
-                name = definition.preset.displayName(),
-                curve = definition.curve.map { point ->
-                    EqualizerCurvePoint(point.frequencyHz, point.gainDb)
-                },
-            )
-        }
-    }
+    private val equalizerPresets by lazy(::equalizerPresetUi)
     private val sessionPort by lazy {
         AndroidLibrarySessionPort(
             resolver = contentResolver,
@@ -762,11 +753,27 @@ class MainActivity : ComponentActivity() {
 
 }
 
-private fun AndroidEqualizerPreset.displayName(): String = when (this) {
+internal fun equalizerPresetUi(): List<EqualizerPresetUi> =
+    standardEqualizerPresets().map { definition ->
+        EqualizerPresetUi(
+            name = definition.preset.displayName(),
+            curve = definition.curve.map { point ->
+                EqualizerCurvePoint(point.frequencyHz, point.gainDb)
+            },
+        )
+    }
+
+internal fun AndroidEqualizerPreset.displayName(): String = when (this) {
     AndroidEqualizerPreset.FLAT -> "Flat"
     AndroidEqualizerPreset.ROCK -> "Rock"
     AndroidEqualizerPreset.POP -> "Pop"
     AndroidEqualizerPreset.BASS -> "Bass"
+    AndroidEqualizerPreset.CLASSICAL -> "Classical"
+    AndroidEqualizerPreset.JAZZ -> "Jazz"
+    AndroidEqualizerPreset.ELECTRONIC -> "Electronic"
+    AndroidEqualizerPreset.VOCAL -> "Vocal & Podcast"
+    AndroidEqualizerPreset.HEADPHONES -> "Headphones"
+    AndroidEqualizerPreset.LATE_NIGHT -> "Late Night"
 }
 
 internal class UiProgress(
