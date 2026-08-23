@@ -132,10 +132,7 @@ impl OracleTransition {
 }
 
 fn load_average() -> String {
-    std::fs::read_to_string("/proc/loadavg")
-        .ok()
-        .and_then(|contents| contents.split_whitespace().next().map(str::to_owned))
-        .unwrap_or_else(|| "missing".into())
+    reprise_core::perf_report::host_load_one_minute()
 }
 
 fn payload_u64(entry: &str, field: &str) -> Option<u64> {
