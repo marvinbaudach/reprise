@@ -1,6 +1,6 @@
 //! Allocation-light Android boundary for the shared song visualizer.
 //!
-//! A scene is flattened as one record per shape:
+//! A scene is flattened as little-endian `f32` bytes, one record per shape:
 //! `[kind, r, g, b, a, width, glow, point_count, geometry...]`.
 //! `kind` is `0` for a rectangle (`x, y, w, h`), `1` for a polyline
 //! (`x1, y1, ...`), and `2` for a radial glow (`cx, cy, radius`). The rectangle
@@ -404,7 +404,7 @@ impl AndroidVisualEngine {
     }
 
     /// Returns the scene in the flat format documented by this module.
-    pub fn scene(&self, width: f32, height: f32) -> Vec<f32> {
+    pub fn scene(&self, width: f32, height: f32) -> Vec<u8> {
         let state = self.lock();
         if !state.has_ingested
             || !width.is_finite()
@@ -579,7 +579,7 @@ fn finite_unit(value: f32) -> f32 {
     }
 }
 
-pub(crate) fn encode_scene(scene: &Scene) -> Vec<f32> {
+pub(crate) fn encode_scene(scene: &Scene) -> Vec<u8> {
     let geometry_len = scene
         .shapes
         .iter()
@@ -589,7 +589,8 @@ pub(crate) fn encode_scene(scene: &Scene) -> Vec<f32> {
             Geom::RadialGlow { .. } => 3,
         })
         .sum::<usize>();
-    let mut buffer = Vec::with_capacity(scene.shapes.len() * RECORD_PREFIX_LEN + geometry_len);
+    let scalar_count = scene.shapes.len() * RECORD_PREFIX_LEN + geometry_len;
+    let mut buffer = Vec::with_capacity(scalar_count * size_of::<f32>());
 
     for shape in &scene.shapes {
         let Fill::Solid(color) = &shape.fill;
@@ -598,7 +599,7 @@ pub(crate) fn encode_scene(scene: &Scene) -> Vec<f32> {
             Geom::Polyline { points, .. } => (POLYLINE_KIND, points.len()),
             Geom::RadialGlow { .. } => (RADIAL_GLOW_KIND, 3),
         };
-        buffer.extend_from_slice(&[
+        for value in [
             kind,
             color.r,
             color.g,
@@ -607,17 +608,32 @@ pub(crate) fn encode_scene(scene: &Scene) -> Vec<f32> {
             shape.width,
             shape.glow,
             point_count as f32,
-        ]);
+        ] {
+            push_float_bytes(&mut buffer, value);
+        }
         match &shape.geom {
-            Geom::Rect { x, y, w, h } => buffer.extend_from_slice(&[*x, *y, *w, *h]),
-            Geom::Polyline { points, .. } => {
-                for (x, y) in points {
-                    buffer.extend_from_slice(&[*x, *y]);
+            Geom::Rect { x, y, w, h } => {
+                for value in [*x, *y, *w, *h] {
+                    push_float_bytes(&mut buffer, value);
                 }
             }
-            Geom::RadialGlow { cx, cy, r } => buffer.extend_from_slice(&[*cx, *cy, *r]),
+            Geom::Polyline { points, .. } => {
+                for (x, y) in points {
+                    push_float_bytes(&mut buffer, *x);
+                    push_float_bytes(&mut buffer, *y);
+                }
+            }
+            Geom::RadialGlow { cx, cy, r } => {
+                for value in [*cx, *cy, *r] {
+                    push_float_bytes(&mut buffer, value);
+                }
+            }
         }
     }
 
     buffer
+}
+
+fn push_float_bytes(buffer: &mut Vec<u8>, value: f32) {
+    buffer.extend_from_slice(&value.to_le_bytes());
 }

@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import android.util.Log
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -15,6 +16,8 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.runtime.staticCompositionLocalOf
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import de.reprise.spike.ui.theme.spectralColour
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import uniffi.reprise_android_ffi.AndroidVisualEngine
 
 internal interface VisualSceneEngine : AutoCloseable {
@@ -25,7 +28,9 @@ internal interface VisualSceneEngine : AutoCloseable {
     fun hasLiveAudio(): Boolean = false
     fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
     fun tick()
-    fun scene(width: Float, height: Float): List<Float>
+    // Strand-B test engines still implement this list seam outside this strand's ownership.
+    fun scene(width: Float, height: Float): List<Float> = emptyList()
+    fun sceneBytes(width: Float, height: Float): ByteArray = scene(width, height).toFloatBytes()
 }
 
 internal data class VisualBassPressure(
@@ -63,6 +68,8 @@ internal object NativeVisualSceneEngineFactory : VisualSceneEngineFactory {
 internal class NativeVisualSceneEngine(
     private val native: AndroidVisualEngine,
 ) : VisualSceneEngine, LivePcmConsumer {
+    private var sceneCallsUntilCounterLog = 0
+
     override fun setAccent(red: Float, green: Float, blue: Float) =
         native.setAccent(red, green, blue)
 
@@ -110,13 +117,24 @@ internal class NativeVisualSceneEngine(
         native.tick()
     }
 
-    override fun scene(width: Float, height: Float): List<Float> = native.scene(width, height)
+    override fun sceneBytes(width: Float, height: Float): ByteArray =
+        native.scene(width, height).also { logDroppedAudioFrames() }
+
+    private fun logDroppedAudioFrames() {
+        if (sceneCallsUntilCounterLog > 0) {
+            sceneCallsUntilCounterLog -= 1
+            return
+        }
+        sceneCallsUntilCounterLog = COUNTER_LOG_EVERY_SCENE_CALLS - 1
+        val dropped = native.droppedAudioFrames()
+        Log.i(VISUAL_SCENE_LOG_TAG, "dropped_audio_frames=$dropped")
+    }
 
     override fun close() = native.close()
 }
 
 internal fun DrawScope.drawPlayedVisualizer(
-    buffer: List<Float>,
+    buffer: ByteArray,
     center: Offset,
     side: Float,
     radius: Float,
@@ -147,7 +165,7 @@ internal fun DrawScope.drawPlayedVisualizer(
  * and 2 is a three-scalar radial glow. Malformed records fail closed.
  */
 internal fun DrawScope.drawVisualizerScene(
-    buffer: List<Float>,
+    buffer: ByteArray,
     bounds: Rect,
     opacity: Float = 1f,
 ) {
@@ -246,25 +264,28 @@ private data class FlatShapeHeader(
     val pointCount: Int,
 )
 
-private class FlatSceneCursor(private val values: List<Float>) {
+private class FlatSceneCursor(bytes: ByteArray) {
+    private val values = ByteBuffer.wrap(bytes)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .asFloatBuffer()
     private var index = 0
-    private var valid = true
+    private var valid = bytes.size % Float.SIZE_BYTES == 0
 
     val hasRecord: Boolean
-        get() = valid && index < values.size
+        get() = valid && index < values.limit()
 
     fun header(opacity: Float): FlatShapeHeader? {
         if (!hasFinite(HEADER_SCALAR_COUNT)) return invalidateWithNull()
-        val kind = values[index].toInt()
+        val kind = values.get(index).toInt()
         val color = spectralColour(
-            red = values[index + 1],
-            green = values[index + 2],
-            blue = values[index + 3],
-            alpha = values[index + 4].coerceIn(0f, 1f) * opacity.coerceIn(0f, 1f),
+            red = values.get(index + 1),
+            green = values.get(index + 2),
+            blue = values.get(index + 3),
+            alpha = values.get(index + 4).coerceIn(0f, 1f) * opacity.coerceIn(0f, 1f),
         )
-        val width = values[index + 5].coerceAtLeast(0f)
-        val glow = values[index + 6].coerceIn(0f, 1f)
-        val rawPointCount = values[index + 7]
+        val width = values.get(index + 5).coerceAtLeast(0f)
+        val glow = values.get(index + 6).coerceIn(0f, 1f)
+        val rawPointCount = values.get(index + 7)
         if (rawPointCount < 0f || rawPointCount > MAX_POINT_COUNT || rawPointCount % 1f != 0f) {
             return invalidateWithNull()
         }
@@ -278,21 +299,27 @@ private class FlatSceneCursor(private val values: List<Float>) {
         return false
     }
 
-    fun next(): Float = values[index++]
+    fun next(): Float = values.get(index++)
 
     fun invalidate() {
         valid = false
     }
 
     private fun hasFinite(count: Int): Boolean = count >= 0 &&
-        index <= values.size - count &&
-        (index until index + count).all { values[it].isFinite() }
+        index <= values.limit() - count &&
+        (index until index + count).all { values.get(it).isFinite() }
 
     private fun <T> invalidateWithNull(): T? {
         invalidate()
         return null
     }
 }
+
+private fun List<Float>.toFloatBytes(): ByteArray =
+    ByteBuffer.allocate(size * Float.SIZE_BYTES)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .apply { this@toFloatBytes.forEach(::putFloat) }
+        .array()
 
 private fun Int.safePairCount(): Int? = if (this <= MAX_POINT_COUNT_INT / 2) this * 2 else null
 
@@ -305,3 +332,5 @@ private const val RADIAL_SCALAR_COUNT = 3
 private const val GLOW_STROKE_MULTIPLIER = 3f
 private const val MAX_POINT_COUNT = 1_000_000f
 private const val MAX_POINT_COUNT_INT = 1_000_000
+private const val COUNTER_LOG_EVERY_SCENE_CALLS = 12
+private const val VISUAL_SCENE_LOG_TAG = "RepriseVisualScene"
