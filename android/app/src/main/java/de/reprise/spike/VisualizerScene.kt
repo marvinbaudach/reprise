@@ -1,18 +1,23 @@
 package de.reprise.spike
 
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.util.Log
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.staticCompositionLocalOf
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import de.reprise.spike.ui.theme.spectralColour
@@ -171,13 +176,20 @@ internal fun DrawScope.drawVisualizerScene(
 ) {
     if (buffer.isEmpty() || bounds.isEmpty || opacity <= 0f) return
     val cursor = FlatSceneCursor(buffer)
+    val polylinePath = Path()
+    val radialGlowPainter = RADIAL_GLOW_PAINTER.get()
     clipRect(bounds.left, bounds.top, bounds.right, bounds.bottom) {
         while (cursor.hasRecord) {
             val header = cursor.header(opacity) ?: return@clipRect
             when (header.kind) {
                 RECT_KIND -> drawFlatRect(cursor, bounds, header)
-                POLYLINE_KIND -> drawFlatPolyline(cursor, bounds, header)
-                RADIAL_GLOW_KIND -> drawFlatRadialGlow(cursor, bounds, header)
+                POLYLINE_KIND -> drawFlatPolyline(cursor, bounds, header, polylinePath)
+                RADIAL_GLOW_KIND -> drawFlatRadialGlow(
+                    cursor,
+                    bounds,
+                    header,
+                    radialGlowPainter,
+                )
                 else -> return@clipRect
             }
         }
@@ -206,6 +218,7 @@ private fun DrawScope.drawFlatPolyline(
     cursor: FlatSceneCursor,
     bounds: Rect,
     header: FlatShapeHeader,
+    path: Path,
 ) {
     val scalarCount = header.pointCount.safePairCount() ?: return cursor.invalidate()
     if (!cursor.prepareGeometry(scalarCount)) return
@@ -214,16 +227,15 @@ private fun DrawScope.drawFlatPolyline(
         repeat(scalarCount) { cursor.next() }
         return
     }
-    val path = Path().apply {
-        moveTo(bounds.left + cursor.next(), bounds.top + cursor.next())
-        var point = 1
-        while (point < header.pointCount) {
-            lineTo(
-                bounds.left + cursor.next(),
-                bounds.top + cursor.next(),
-            )
-            point += 1
-        }
+    path.reset()
+    path.moveTo(bounds.left + cursor.next(), bounds.top + cursor.next())
+    var point = 1
+    while (point < header.pointCount) {
+        path.lineTo(
+            bounds.left + cursor.next(),
+            bounds.top + cursor.next(),
+        )
+        point += 1
     }
     if (header.glow > 0f) {
         drawPath(
@@ -239,21 +251,49 @@ private fun DrawScope.drawFlatRadialGlow(
     cursor: FlatSceneCursor,
     bounds: Rect,
     header: FlatShapeHeader,
+    painter: RadialGlowPainter,
 ) {
     if (header.pointCount != RADIAL_SCALAR_COUNT) return cursor.invalidate()
     if (!cursor.prepareGeometry(RADIAL_SCALAR_COUNT)) return
     val center = bounds.topLeft + Offset(cursor.next(), cursor.next())
     val radius = cursor.next()
     if (radius <= 0f) return
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(header.color, header.color.copy(alpha = 0f)),
-            center = center,
-            radius = radius,
-        ),
-        radius = radius,
-        center = center,
-    )
+    painter.draw(drawContext.canvas.nativeCanvas, center, radius, header.color)
+}
+
+private class RadialGlowPainter {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val matrix = Matrix()
+    private val shaders = LinkedHashMap<Int, RadialGradient>()
+
+    fun draw(canvas: android.graphics.Canvas, center: Offset, radius: Float, color: Color) {
+        val argb = color.toArgb()
+        val rgb = argb and RGB_MASK
+        val shader = shaderFor(rgb)
+        matrix.setScale(radius, radius)
+        matrix.postTranslate(center.x, center.y)
+        shader.setLocalMatrix(matrix)
+        paint.shader = shader
+        paint.alpha = argb ushr ALPHA_SHIFT
+        canvas.drawCircle(center.x, center.y, radius, paint)
+    }
+
+    private fun shaderFor(rgb: Int): RadialGradient {
+        shaders[rgb]?.let { return it }
+        if (shaders.size == MAX_CACHED_GLOW_COLOURS) {
+            val oldest = shaders.entries.iterator()
+            oldest.next()
+            oldest.remove()
+        }
+        return RadialGradient(
+            0f,
+            0f,
+            1f,
+            rgb or OPAQUE_ALPHA,
+            rgb,
+            Shader.TileMode.CLAMP,
+        ).also { shaders[rgb] = it }
+    }
 }
 
 private data class FlatShapeHeader(
@@ -334,3 +374,8 @@ private const val MAX_POINT_COUNT = 1_000_000f
 private const val MAX_POINT_COUNT_INT = 1_000_000
 private const val COUNTER_LOG_EVERY_SCENE_CALLS = 12
 private const val VISUAL_SCENE_LOG_TAG = "RepriseVisualScene"
+private const val MAX_CACHED_GLOW_COLOURS = 128
+private const val RGB_MASK = 0x00ffffff
+private const val OPAQUE_ALPHA = -0x1000000
+private const val ALPHA_SHIFT = 24
+private val RADIAL_GLOW_PAINTER = ThreadLocal.withInitial(::RadialGlowPainter)
