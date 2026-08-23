@@ -25,6 +25,36 @@ fn breakdown_lines(trail: &DiagnosticTrail) -> Vec<String> {
 }
 
 #[test]
+fn per_item_timing_reads_no_clock_until_reload_recording_is_armed() {
+    reset_recording_timestamp_reads();
+    let item = measure_item_call(|| 42);
+
+    assert_eq!(item, 42);
+    assert_eq!(recording_timestamp_reads(), 0);
+
+    arm_reload_recording();
+    reset_recording_timestamp_reads();
+    let item = measure_item_call(|| 84);
+
+    assert_eq!(item, 84);
+    assert_eq!(recording_timestamp_reads(), 2);
+}
+
+#[test]
+fn reload_breakdown_and_step_timing_are_opt_in() {
+    reset_recording_timestamp_reads();
+    assert!(begin_reload_breakdown().is_none());
+    assert_eq!(measure_reload_step(ReloadStep::Geometry, || 42), 42);
+    assert_eq!(recording_timestamp_reads(), 0);
+
+    arm_reload_recording();
+    assert!(begin_reload_breakdown().is_some());
+    reset_recording_timestamp_reads();
+    assert_eq!(measure_reload_step(ReloadStep::Geometry, || 84), 84);
+    assert_eq!(recording_timestamp_reads(), 2);
+}
+
+#[test]
 fn reload_measurement_records_work_query_and_later_frame_honestly() {
     let trail = DiagnosticTrail::default();
     let started = Instant::now();
@@ -73,7 +103,8 @@ fn queue_reload_measurement_distinguishes_no_query_from_zero_duration() {
 #[test]
 fn reload_breakdown_sums_inside_the_whole_and_resets_per_reload() {
     let trail = DiagnosticTrail::default();
-    let first = begin_reload_breakdown();
+    arm_reload_recording();
+    let (_, first) = begin_reload_breakdown().unwrap();
     record_reload_step(ReloadStep::Geometry, Duration::from_millis(2));
     record_reload_step(ReloadStep::ItemsChanged, Duration::from_millis(5));
     record_item_call(Duration::from_millis(3));
@@ -99,7 +130,7 @@ fn reload_breakdown_sums_inside_the_whole_and_resets_per_reload() {
     assert!(first_line.contains("item_calls=1"), "{first_line}");
     assert!(first_line.contains("window_calls=1"), "{first_line}");
 
-    let second = begin_reload_breakdown();
+    let (_, second) = begin_reload_breakdown().unwrap();
     finish_reload_breakdown(
         &trail,
         second,
@@ -127,6 +158,7 @@ fn production_reload_records_the_real_frame_rows_cause_and_optional_query() {
 
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
+    arm_reload_recording();
     let conn = crate::test_db::open().unwrap();
     crate::test_db::connection(&conn)
         .execute(

@@ -380,11 +380,41 @@ fn truncate_payload(payload: &str) -> String {
 
 thread_local! {
     static THREAD_TRAIL: Rc<DiagnosticTrail> = Rc::new(DiagnosticTrail::default());
+    static RELOAD_RECORDING_ARMED: Cell<bool> = const { Cell::new(false) };
     static ACTIVE_RELOAD: RefCell<Option<ActiveReloadBreakdown>> = const { RefCell::new(None) };
     static NEXT_RELOAD_ID: Cell<u64> = const { Cell::new(1) };
+    #[cfg(test)]
+    static RECORDING_TIMESTAMP_READS: Cell<u64> = const { Cell::new(0) };
 }
 
-pub(crate) fn begin_reload_breakdown() -> u64 {
+fn recording_now() -> Instant {
+    #[cfg(test)]
+    RECORDING_TIMESTAMP_READS.with(|reads| reads.set(reads.get().saturating_add(1)));
+    Instant::now()
+}
+
+#[cfg(test)]
+fn reset_recording_timestamp_reads() {
+    RECORDING_TIMESTAMP_READS.with(|reads| reads.set(0));
+}
+
+#[cfg(test)]
+fn recording_timestamp_reads() -> u64 {
+    RECORDING_TIMESTAMP_READS.with(Cell::get)
+}
+
+pub(crate) fn arm_reload_recording() {
+    RELOAD_RECORDING_ARMED.set(true);
+}
+
+pub(crate) fn reload_recording_armed() -> bool {
+    RELOAD_RECORDING_ARMED.get()
+}
+
+pub(crate) fn begin_reload_breakdown() -> Option<(Instant, u64)> {
+    if !reload_recording_armed() {
+        return None;
+    }
     let reload_id = NEXT_RELOAD_ID.with(|next| {
         let current = next.get();
         next.set(current.wrapping_add(1).max(1));
@@ -396,7 +426,7 @@ pub(crate) fn begin_reload_breakdown() -> u64 {
             ..ActiveReloadBreakdown::default()
         });
     });
-    reload_id
+    Some((recording_now(), reload_id))
 }
 
 pub(crate) fn record_reload_step(step: ReloadStep, elapsed: Duration) {
@@ -409,9 +439,36 @@ pub(crate) fn record_reload_step(step: ReloadStep, elapsed: Duration) {
 }
 
 pub(crate) fn measure_reload_step<T>(step: ReloadStep, operation: impl FnOnce() -> T) -> T {
-    let started = Instant::now();
+    measure_recorded(operation, |elapsed| record_reload_step(step, elapsed))
+}
+
+pub(crate) fn start_reload_step() -> Option<Instant> {
+    reload_recording_armed().then(recording_now)
+}
+
+pub(crate) fn finish_reload_step(step: ReloadStep, started: Option<Instant>) -> Option<Duration> {
+    started.map(|started| {
+        let elapsed = recording_now().duration_since(started);
+        record_reload_step(step, elapsed);
+        elapsed
+    })
+}
+
+pub(crate) fn measure_item_call<T>(operation: impl FnOnce() -> T) -> T {
+    measure_recorded(operation, record_item_call)
+}
+
+pub(crate) fn measure_window_query<T>(operation: impl FnOnce() -> T) -> T {
+    measure_recorded(operation, record_window_query)
+}
+
+fn measure_recorded<T>(operation: impl FnOnce() -> T, record: impl FnOnce(Duration)) -> T {
+    if !reload_recording_armed() {
+        return operation();
+    }
+    let started = recording_now();
     let result = operation();
-    record_reload_step(step, started.elapsed());
+    record(recording_now().duration_since(started));
     result
 }
 

@@ -573,14 +573,15 @@ fn run_query_if_requested(shared: &Rc<Shared>, model_change: Option<ModelChange>
 /// handling of its own — see `reload`'s and `set_source_and_reload`'s doc
 /// comments for who wraps this and why.
 fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
-    let reload_started = std::time::Instant::now();
-    let reload_id = diagnostic_trail::begin_reload_breakdown();
+    let reload_measurement = diagnostic_trail::begin_reload_breakdown();
     let old_total = shared.model.n_items();
-    let selected = shared.selection.selection().size();
     let adjustment = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view);
-    let (adjustment_value, adjustment_upper) = adjustment
-        .as_ref()
-        .map_or((0.0, 0.0), |value| (value.value(), value.upper()));
+    let diagnostic_state = reload_measurement.map(|_| {
+        let (value, upper) = adjustment
+            .as_ref()
+            .map_or((0.0, 0.0), |value| (value.value(), value.upper()));
+        (shared.selection.selection().size(), value, upper)
+    });
     diagnostic_trail::measure_reload_step(ReloadStep::Geometry, || {
         let n_sections = shared.queue_sections.borrow().len();
         if let Some(adjustment) = adjustment.as_ref() {
@@ -596,15 +597,17 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
-    let previous_query = shared.model.query_signature();
-    let cause = reload_cause(
-        (shared.model.generation() != 0).then_some(&previous_query),
-        &source,
-        &sort.field,
-        &sort.dir,
-        &filter,
-    );
-    let reload_timer = diagnostic_trail::ReloadTimer::started_at(reload_started, cause, reload_id);
+    let reload_timer = reload_measurement.map(|(started, reload_id)| {
+        let previous_query = shared.model.query_signature();
+        let cause = reload_cause(
+            (shared.model.generation() != 0).then_some(&previous_query),
+            &source,
+            &sort.field,
+            &sort.dir,
+            &filter,
+        );
+        diagnostic_trail::ReloadTimer::started_at(started, cause, reload_id)
+    });
     let browse = if matches!(
         source,
         ViewSource::Library
@@ -730,36 +733,34 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     diagnostic_trail::measure_reload_step(ReloadStep::OnReload, || {
         (shared.on_reload)(&source, count, &filter, &browse);
     });
-    diagnostic_trail::finish_reload_breakdown(
-        &shared.diagnostic_trail,
-        reload_id,
-        reload_started.elapsed(),
-        old_total,
-        count,
-        selected,
-        adjustment_value,
-        adjustment_upper,
-    );
-
-    let source_label = source.label();
-    let pending = RefCell::new(Some(reload_timer.work_done(
-        &source_label,
-        count,
-        query_elapsed,
-    )));
-    let trail = Rc::clone(&shared.diagnostic_trail);
-    // A completed synchronous reload is not yet visible. Stop the user-facing
-    // span on the ColumnView's next frame-clock tick, which can only run after
-    // this main-thread call returns to GTK. The separate work span preserves
-    // the cost of the synchronous bracket itself.
-    shared.column_view.add_tick_callback(move |_, _| {
-        let pending = pending.borrow_mut().take();
-        if let Some(pending) = pending {
-            pending.next_frame(&trail);
-        }
-        gtk4::glib::ControlFlow::Break
-    });
-    shared.column_view.queue_draw();
+    if let (Some((reload_started, reload_id)), Some(reload_timer), Some(diagnostic_state)) =
+        (reload_measurement, reload_timer, diagnostic_state)
+    {
+        let (selected, adjustment_value, adjustment_upper) = diagnostic_state;
+        diagnostic_trail::finish_reload_breakdown(
+            &shared.diagnostic_trail,
+            reload_id,
+            reload_started.elapsed(),
+            old_total,
+            count,
+            selected,
+            adjustment_value,
+            adjustment_upper,
+        );
+        let pending = RefCell::new(Some(reload_timer.work_done(
+            &source.label(),
+            count,
+            query_elapsed,
+        )));
+        let trail = Rc::clone(&shared.diagnostic_trail);
+        shared.column_view.add_tick_callback(move |_, _| {
+            if let Some(pending) = pending.borrow_mut().take() {
+                pending.next_frame(&trail);
+            }
+            gtk4::glib::ControlFlow::Break
+        });
+        shared.column_view.queue_draw();
+    }
 }
 
 #[cfg(test)]

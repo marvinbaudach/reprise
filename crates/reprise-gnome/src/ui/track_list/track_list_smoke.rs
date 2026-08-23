@@ -437,6 +437,7 @@ pub(in crate::ui) fn arm_smoke_reload_oracle(shared: &Rc<Shared>) {
                 return;
             }
         };
+        super::diagnostic_trail::arm_reload_recording();
         let expected_filtered = u32::try_from(oracle_rows.div_ceil(1_000)).unwrap_or(u32::MAX);
         let measurements = Rc::new(RefCell::new(Vec::with_capacity(3)));
         set_source_and_reload(&shared, &ViewSource::Missing);

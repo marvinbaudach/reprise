@@ -33,7 +33,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -175,13 +175,11 @@ mod imp {
         }
 
         fn item(&self, position: u32) -> Option<glib::Object> {
-            let started = Instant::now();
-            let item = self
-                .obj()
-                .queue_item_at(position)
-                .map(|item| glib::BoxedAnyObject::new(item).upcast());
-            diagnostic_trail::record_item_call(started.elapsed());
-            item
+            diagnostic_trail::measure_item_call(|| {
+                self.obj()
+                    .queue_item_at(position)
+                    .map(|item| glib::BoxedAnyObject::new(item).upcast())
+            })
         }
     }
 }
@@ -456,7 +454,7 @@ impl TrackListModel {
             tracing::error!("TrackListModel::set_query: connection not set");
             return Duration::ZERO;
         };
-        let query_started = Instant::now();
+        let query_started = diagnostic_trail::start_reload_step();
         let new_total = if exclude_ai {
             let conn_ref = &conn;
             queries::query_track_count_browsed_ai(
@@ -498,10 +496,10 @@ impl TrackListModel {
                     |n| n.max(0) as u32,
                 )
         };
-        let query_elapsed = query_started.elapsed();
-        diagnostic_trail::record_reload_step(ReloadStep::Query, query_elapsed);
+        let query_elapsed = diagnostic_trail::finish_reload_step(ReloadStep::Query, query_started)
+            .unwrap_or_default();
 
-        let state_started = Instant::now();
+        let state_started = diagnostic_trail::start_reload_step();
         {
             let mut state = self.imp().state.borrow_mut();
             state.source = source.clone();
@@ -516,7 +514,7 @@ impl TrackListModel {
             state.total = new_total;
             state.cache.clear();
         }
-        diagnostic_trail::record_reload_step(ReloadStep::StateSwap, state_started.elapsed());
+        diagnostic_trail::finish_reload_step(ReloadStep::StateSwap, state_started);
 
         tracing::debug!(
             total = new_total,
@@ -557,7 +555,7 @@ impl TrackListModel {
                 generation,
             });
         self.imp().generation.set(generation.wrapping_add(1));
-        let signal_started = Instant::now();
+        let signal_started = diagnostic_trail::start_reload_step();
         super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
             position: change.position,
             removed: change.removed,
@@ -573,7 +571,7 @@ impl TrackListModel {
             });
             self.sections_changed(position, n_items);
         }
-        diagnostic_trail::record_reload_step(ReloadStep::ItemsChanged, signal_started.elapsed());
+        diagnostic_trail::finish_reload_step(ReloadStep::ItemsChanged, signal_started);
         query_elapsed
     }
 
@@ -664,33 +662,33 @@ impl TrackListModel {
             (i64::from(window_start), queue_items)
         };
 
-        let window_started = Instant::now();
-        let rows = if source == ViewSource::Queue {
-            queries::query_queue_item_window(
-                &conn,
-                &queue_items,
-                query_offset,
-                i64::from(WINDOW_SIZE),
-            )
-        } else {
-            queries::query_track_window_browsed_ai(
-                &conn,
-                &source,
-                &sort_field,
-                &sort_dir,
-                &filter,
-                &browse,
-                query_offset,
-                i64::from(WINDOW_SIZE),
-                &queue_items,
-                exclude_ai,
-                // INST-10: the AI badge marks every AI-manipulated row, so the
-                // windowed query always projects the real `is_ai` column.
-                true,
-            )
-            .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
-        };
-        diagnostic_trail::record_window_query(window_started.elapsed());
+        let rows = diagnostic_trail::measure_window_query(|| {
+            if source == ViewSource::Queue {
+                queries::query_queue_item_window(
+                    &conn,
+                    &queue_items,
+                    query_offset,
+                    i64::from(WINDOW_SIZE),
+                )
+            } else {
+                queries::query_track_window_browsed_ai(
+                    &conn,
+                    &source,
+                    &sort_field,
+                    &sort_dir,
+                    &filter,
+                    &browse,
+                    query_offset,
+                    i64::from(WINDOW_SIZE),
+                    &queue_items,
+                    exclude_ai,
+                    // INST-10: the AI badge marks every AI-manipulated row, so the
+                    // windowed query always projects the real `is_ai` column.
+                    true,
+                )
+                .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
+            }
+        });
 
         let rows = match rows {
             Ok(rows) => rows,
