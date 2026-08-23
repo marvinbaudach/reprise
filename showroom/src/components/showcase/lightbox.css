@@ -7,7 +7,16 @@
   padding: clamp(0.75rem, 0.5rem + 1.5vw, 2rem);
   background: oklch(7% 0.012 269 / 0.94);
   backdrop-filter: blur(14px);
-  animation: rp-fade 260ms ease both;
+  animation: rp-fade 170ms ease both;
+}
+
+/* The ground darkens first, the dialog arrives just behind it. Fading both at
+   once left the page underneath legible through the header for a third of a
+   second — two full compositions on top of each other, which is what reads as
+   restless. */
+.lightbox__header,
+.lightbox__description {
+  animation: rp-fade 260ms 110ms ease both;
 }
 
 .lightbox__header {
@@ -65,12 +74,15 @@
 
 .lightbox__viewport {
   position: relative;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 0;
   overflow: hidden;
+  /* The frame fits itself into this box on both axes, so the box has to be
+     measurable from the inside — see .lightbox__frame. */
+  container-type: size;
 }
 
 .lightbox__backdrop {
@@ -86,10 +98,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The design had the image as a direct flex child; the keyboard zoom button
-     wraps it now. Without a resolved height here the frame's percentages have
-     nothing to resolve against and the picture is cropped, not fitted. */
-  height: 100%;
+  /* Hugs the picture, so the ground around it still closes the dialog. */
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 100%;
   margin: 0;
@@ -97,6 +108,10 @@
   border: 0;
   background: transparent;
   cursor: zoom-in;
+  /* The entry animation lives on the button, not on the frame: an animation
+     with `fill: both` keeps writing its final `transform: none` after it ends,
+     and that outranks the inline transform the zoom sets — the zoom was dead. */
+  animation: rp-lb-in 320ms 110ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* The frame keeps the picture's ratio, so the live plate can be placed on it in
@@ -104,13 +119,16 @@
 .lightbox__frame {
   position: relative;
   display: block;
-  height: 100%;
-  width: auto;
-  max-width: 100%;
-  max-height: 100%;
+  /* Fit into the viewport box on whichever axis binds first. `height: 100%`
+     with `width: auto` only fitted while the height was the binding side: on a
+     phone max-width clamped the width, the height stayed at 100%, and the
+     picture ended up as a narrow band inside a tall empty bordered box. */
+  width: min(100cqw, 100cqh * var(--lb-ratio, 1.6));
+  height: auto;
+  aspect-ratio: var(--lb-ratio, 1.6);
   transform-origin: center;
-  transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
-  animation: rp-lb-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
 .lightbox__image {
@@ -158,8 +176,21 @@
   }
 }
 
+/* A full-screen backdrop blur is a compositing pass per frame on a phone. Drop
+   it there — and close the ground fully, because translucency without the blur
+   leaves the page's own headlines legible straight through the dialog. */
+@media (max-width: 720px) {
+  .lightbox {
+    background: oklch(7% 0.012 269);
+    backdrop-filter: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lightbox,
+  .lightbox__header,
+  .lightbox__description,
+  .lightbox__zoom,
   .lightbox__frame {
     animation: none;
     transition: none;

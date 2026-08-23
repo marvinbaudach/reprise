@@ -69,23 +69,39 @@ test('Lightbox traps focus and restores its trigger around keyboard navigation a
   // still what runs — asserting the literal word would assert the minifier.
   const fade = css.match(/animation:[^;}]*rp-fade[^;}]*/)?.[0];
   assert.ok(fade, 'the backdrop must fade in through an animation shorthand');
-  for (const part of ['.26s', 'both']) {
+  for (const part of ['.17s', 'both']) {
     assert.ok(fade.includes(part), `the fade animation must carry ${part}`);
   }
-  const lightboxIn = css.match(/animation:[^;}]*rp-lb-in[^;}]*/)?.[0];
-  assert.ok(lightboxIn, 'the lightbox must open through an animation shorthand');
-  for (const part of ['.42s', 'cubic-bezier(.16,1,.3,1)', 'both']) {
-    assert.ok(lightboxIn.includes(part), `the lightbox animation must carry ${part}`);
+  // The ground closes first and the dialog's own text follows it, so the page
+  // underneath is never legible next to a half-drawn dialog.
+  const zoomIn = css.match(/\.lightbox__zoom\{[^}]*\}/)?.[0];
+  assert.ok(zoomIn, '.lightbox__zoom must exist in the built CSS');
+  for (const part of ['.32s', 'cubic-bezier(.16,1,.3,1)', '.11s', 'both', 'rp-lb-in']) {
+    assert.ok(zoomIn.includes(part), `the opening animation must carry ${part}`);
   }
   assert.match(css, /backdrop-filter:blur\(14px\)/);
-  // The zoom wrapper must stay a resolved box and the frame must keep the
-  // picture's ratio, or the picture is cropped and the plate sits off it.
-  assert.match(css, /\.lightbox__zoom\{[^}]*height:100%/);
+  // A phone drops the blur and closes the ground instead: the blur is a
+  // compositing pass per frame there, and translucency without it leaves the
+  // page's headlines readable straight through the dialog.
+  // Lightning CSS rewrites `max-width: 720px` to the range form.
+  assert.match(
+    css,
+    /@media \(width<=720px\)\{\.lightbox\{[^}]*backdrop-filter:none[^}]*background:oklch\(7% \.012 269\)\}/,
+  );
   const frame = css.match(/\.lightbox__frame\{[^}]*\}/)?.[0];
   assert.ok(frame, '.lightbox__frame must exist in the built CSS');
-  for (const declaration of ['height:100%', 'width:auto']) {
+  // The frame fits itself on whichever axis binds first. `height:100%` with
+  // `width:auto` only fitted while the height was the binding side: on a phone
+  // the width clamped, the height stayed at 100%, and the picture sat as a band
+  // inside a tall empty bordered box.
+  for (const declaration of ['width:min(100cqw, 100cqh * var(--lb-ratio', 'height:auto']) {
     assert.ok(frame.includes(declaration), `.lightbox__frame must carry ${declaration}`);
   }
+  assert.match(css, /\.lightbox__viewport\{[^}]*container-type:size/);
+  // The entry animation may not live on the frame: with `fill: both` it keeps
+  // writing its final `transform:none` after it ends, which outranks the inline
+  // transform the zoom sets and leaves the zoom dead.
+  assert.ok(!frame.includes('animation'), '.lightbox__frame must not carry an animation');
   assert.match(css, /\.lightbox__image\{[^}]*width:100%[^}]*height:100%/);
 });
 
@@ -109,7 +125,11 @@ test('the Lightbox inerts the page behind it and forgets its zoom with the pictu
 
   // The zoom belongs to one picture, not to a bare boolean.
   assert.match(source, /zoom\.index === activeIndex/);
-  assert.doesNotMatch(source, /zoomed: (true|false)/);
+  // ...and the origin outlives the zoom itself: dropping the state outright
+  // would snap the origin back to the centre while the picture is still
+  // travelling, swinging it across the viewport instead of letting it settle.
+  assert.match(source, /transformOrigin: frameZoom\?\.origin/);
+  assert.match(source, /setZoom\(\{ \.\.\.activeZoom, zoomed: false \}\)/);
 
   // Neither the closing backdrop nor any other tabindex="-1" node is a tab stop.
   assert.match(source, /className="lightbox__backdrop"[\s\S]*?tabIndex=\{-1\}/);
@@ -131,7 +151,7 @@ test('the full view carries the live plate for the capture that has one', async 
     source,
     /className="lightbox__frame"[\s\S]*?transform: activeZoom \? 'scale\(2\.1\)'/,
   );
-  assert.match(source, /aspectRatio: `\$\{capture\.width\} \/ \$\{capture\.height\}`/);
+  assert.match(source, /'--lb-ratio': capture\.width \/ capture\.height/);
   // Exactly one capture claims the plate today: the Android Now Playing scene.
   assert.equal((data.match(/visualizer: true/g) ?? []).length, 1);
   assert.match(data, /id: 'android-visualizer'[\s\S]{0,420}?visualizer: true/);

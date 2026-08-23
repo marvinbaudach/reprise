@@ -1,4 +1,10 @@
-import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   captureSrcSet,
@@ -21,6 +27,10 @@ interface LightboxProps {
 interface ZoomState {
   readonly index: number;
   readonly origin: string;
+  // Kept while the picture travels back to 1x: dropping the state outright
+  // would snap the origin to the centre mid-flight and swing the picture
+  // across the viewport instead of letting it settle where it grew from.
+  readonly zoomed: boolean;
 }
 
 export function Lightbox({
@@ -37,7 +47,8 @@ export function Lightbox({
   // Tied to the picture it was measured on, so the next arrow key cannot flash
   // the following screenshot at 2.1x around the previous one's origin.
   const [zoom, setZoom] = useState<ZoomState | null>(null);
-  const activeZoom = zoom && zoom.index === activeIndex ? zoom : null;
+  const frameZoom = zoom && zoom.index === activeIndex ? zoom : null;
+  const activeZoom = frameZoom?.zoomed ? frameZoom : null;
 
   useEffect(() => {
     // The dialog lives in a portal on <body>, so the page behind it can be made
@@ -103,13 +114,17 @@ export function Lightbox({
 
   const handleZoom = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (activeZoom) {
-      setZoom(null);
+      setZoom({ ...activeZoom, zoomed: false });
       return;
     }
     const bounds = event.currentTarget.getBoundingClientRect();
     const x = ((event.clientX - bounds.left) / bounds.width) * 100;
     const y = ((event.clientY - bounds.top) / bounds.height) * 100;
-    setZoom({ index: activeIndex, origin: `${x.toFixed(1)}% ${y.toFixed(1)}%` });
+    setZoom({
+      index: activeIndex,
+      origin: `${x.toFixed(1)}% ${y.toFixed(1)}%`,
+      zoomed: true,
+    });
   };
 
   const counter = `${String(activeIndex + 1).padStart(2, '0')} / ${String(captures.length).padStart(2, '0')}`;
@@ -164,11 +179,13 @@ export function Lightbox({
               picture in its own percentages and zoom along with it. */}
           <span
             className="lightbox__frame"
-            style={{
-              aspectRatio: `${capture.width} / ${capture.height}`,
-              transform: activeZoom ? 'scale(2.1)' : 'none',
-              transformOrigin: activeZoom?.origin ?? 'center',
-            }}
+            style={
+              {
+                '--lb-ratio': capture.width / capture.height,
+                transform: activeZoom ? 'scale(2.1)' : 'none',
+                transformOrigin: frameZoom?.origin ?? 'center',
+              } as CSSProperties
+            }
           >
             <img
               className="lightbox__image"
