@@ -449,15 +449,26 @@ fn rebuilding_chips_keeps_the_persistent_filter_button_in_its_slot() {
         crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
         &bar.add_filter
     ));
-    assert!(!bar.add_filter.is_focusable());
+    assert!(bar.add_filter.is_focusable());
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn browse_bar_has_no_parallel_sort_control() {
+fn style_13_sort_choices_are_keyboard_radio_actions() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let bar = test_bar();
+    let reloads = Rc::new(std::cell::Cell::new(0));
+    let track_list = crate::ui::track_list::TrackList::new(
+        Rc::new(crate::test_db::open().unwrap()),
+        Box::new(|_, _, _, _| {}),
+        {
+            let reloads = reloads.clone();
+            move |_, _, _, _| reloads.set(reloads.get() + 1)
+        },
+        crate::ui::track_list::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    let bar = &track_list.shared.browse_bar;
 
     let actions = bar
         .add_filter
@@ -466,11 +477,135 @@ fn browse_bar_has_no_parallel_sort_control() {
         .expect("the add-filter control stays in the browse-bar action box");
     assert_eq!(
         actions.observe_children().n_items(),
-        1,
-        "column headers are the only sort surface; the action box only contains Add filter"
+        2,
+        "Sort and Add filter are keyboard peers in the browse-bar action box"
     );
     assert_eq!(
         actions.first_child(),
+        Some(bar.sort_control.button().clone().upcast::<gtk4::Widget>())
+    );
+    assert_eq!(
+        actions.last_child(),
         Some(bar.add_filter.clone().upcast::<gtk4::Widget>())
+    );
+    assert!(bar.sort_control.button().is_focusable());
+    assert!(bar.add_filter.is_focusable());
+    assert_eq!(
+        bar.sort_control.button().accessible_role(),
+        gtk4::AccessibleRole::Button
+    );
+    assert!(gtk4::test_accessible_has_property(
+        bar.sort_control.button(),
+        gtk4::AccessibleProperty::Label
+    ));
+    assert_eq!(
+        bar.sort_control.button().height_request(),
+        bar.add_filter.height_request()
+    );
+    assert!(bar.sort_control.button().has_css_class("pill"));
+    assert!(bar.add_filter.has_css_class("pill"));
+    assert!(bar
+        .sort_control
+        .button()
+        .has_css_class(filter_bar_layout::ADD_FILTER_CSS_CLASS));
+    assert!(bar
+        .add_filter
+        .has_css_class(filter_bar_layout::ADD_FILTER_CSS_CLASS));
+
+    let field_choices = bar.sort_control.field_choices();
+    for (_, choice) in &field_choices {
+        assert_eq!(choice.accessible_role(), gtk4::AccessibleRole::Radio);
+        assert!(gtk4::test_accessible_has_property(
+            choice,
+            gtk4::AccessibleProperty::Label
+        ));
+        assert!(choice.activate(), "every sort field is activatable");
+        assert!(choice.is_active(), "activation exposes checked state");
+        assert!(gtk4::test_accessible_has_state(
+            choice,
+            gtk4::AccessibleState::Checked
+        ));
+        assert_eq!(
+            field_choices
+                .iter()
+                .filter(|(_, candidate)| candidate.is_active())
+                .count(),
+            1,
+            "field choices are one keyboard-navigable radio group"
+        );
+    }
+    let direction_choices = bar.sort_control.direction_choices();
+    for choice in &direction_choices {
+        assert_eq!(choice.accessible_role(), gtk4::AccessibleRole::Radio);
+        assert!(gtk4::test_accessible_has_property(
+            choice,
+            gtk4::AccessibleProperty::Label
+        ));
+        assert!(choice.activate(), "every sort direction is activatable");
+        assert!(choice.is_active(), "activation exposes checked state");
+        assert!(gtk4::test_accessible_has_state(
+            choice,
+            gtk4::AccessibleState::Checked
+        ));
+        assert_eq!(
+            direction_choices
+                .iter()
+                .filter(|candidate| candidate.is_active())
+                .count(),
+            1,
+            "direction choices are one keyboard-navigable radio group"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_13_sort_choices_match_every_accepted_table_sort_field() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let track_list = crate::ui::track_list::TrackList::new(
+        Rc::new(crate::test_db::open().unwrap()),
+        Box::new(|_, _, _, _| {}),
+        |_: &ViewSource, _: usize, _: &str, _: &BrowseFilter| {},
+        crate::ui::track_list::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    let expected = {
+        let columns = track_list.shared.column_view.columns();
+        (0..columns.n_items())
+            .filter_map(|index| {
+                columns
+                    .item(index)
+                    .and_downcast::<gtk4::ColumnViewColumn>()
+                    .and_then(|column| column.id())
+                    .filter(|field| {
+                        crate::ui::column_layout::ColumnId::from_sort_field(field).is_some()
+                    })
+                    .map(|field| field.to_string())
+            })
+            .collect::<Vec<_>>()
+    };
+    let actual = track_list
+        .shared
+        .browse_bar
+        .sort_control
+        .field_choices()
+        .into_iter()
+        .map(|(field, _)| field)
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_13_sort_popover_closes_on_escape() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = test_bar();
+
+    assert_eq!(
+        bar.sort_control.press_key(gtk4::gdk::Key::Escape),
+        gtk4::glib::Propagation::Stop
     );
 }

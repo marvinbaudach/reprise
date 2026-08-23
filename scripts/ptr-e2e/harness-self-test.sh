@@ -140,7 +140,7 @@ assert_equal 0 "$(grep -Ec 'preference_window|preferences_width|getwindowgeometr
 assert_equal 1 "$(grep -Fc 'preferences_dialog_rect' \
   <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
   "Preferences derives its hosted dialog rectangle from the main window"
-assert_equal 10 "$(grep -Fc 'click_preferences_dialog_relative' \
+assert_equal 11 "$(grep -Fc 'click_preferences_dialog_relative' \
   <<<"$PREFERENCES_FLOW_SOURCE" || true)" \
   "Preferences routes every retained page and control click through the dialog"
 assert_equal 2 "$(grep -Fc '18-preferences-appearance.png' \

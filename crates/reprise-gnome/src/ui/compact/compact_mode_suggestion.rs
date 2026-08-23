@@ -46,7 +46,7 @@ pub(in crate::ui) fn install(
         let Some(overlay) = overlay.upgrade() else {
             return;
         };
-        let toast = adw::Toast::new(&crate::ui::strings::text(
+        let toast = crate::ui::toasts::plain(&crate::ui::strings::text(
             crate::ui::strings::COMPACT_MODE_SUGGESTION,
         ));
         toast.set_button_label(Some(&crate::ui::strings::text(

@@ -28,13 +28,17 @@ export const BASELINE = {
    * volumes used to be counted here too; now they are counted at build time, so
    * this is a link target, not a provenance claim.
    *
-   * It has to be a commit that carries every path the page cites. The previous
-   * pin did not: it predated `index-rebuild.md`, `timeline.md` and
-   * `code-census.mjs`, so four links this page has been shipping resolved to a
-   * 404. `permalinks-resolve.test.mjs` now fails the build on that, which is
-   * the only reason this stays true.
+   * It has to be a commit that carries every path the page cites, and it has to
+   * be reachable from a published branch. Both have been wrong here. The first
+   * pin predated `index-rebuild.md`, `timeline.md` and `code-census.mjs`, so
+   * four links resolved to a 404. The second, `a776f8a963`, was rewritten out
+   * of the history: the commit stayed in local object stores, so the page kept
+   * building here while every link on it 404ed and CI could not resolve the
+   * commit at all. `e9ceec3645` is its rewritten twin — same tree, byte for
+   * byte — and it sits on `main`. `permalinks-resolve.test.mjs` fails the build
+   * on a missing path, which is the only reason this stays true.
    */
-  commit: 'a776f8a963',
+  commit: 'e9ceec3645',
   repository: 'https://github.com/marvinbaudach/reprise',
 } as const;
 

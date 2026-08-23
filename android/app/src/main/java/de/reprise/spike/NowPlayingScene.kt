@@ -120,7 +120,6 @@ internal fun NowPlayingScene(
     val motion = LocalAmbientMotionController.current
     val fallbackAccent = MaterialTheme.colorScheme.primary
     val visualEngine = rememberVisualSceneEngine(
-        enabled = visualizerOpacity > 0f,
         trackId = track.id,
         playback = playback,
         accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
@@ -231,13 +230,15 @@ internal fun NowPlayingScene(
                 shadow = coverShadow,
                 opacity = 1f - visualizerOpacity,
             )
-            if (visualEngine != null) {
+            if (visualEngine != null && visualizerOpacity > 0f) {
                 drawPlayedVisualizer(
-                    buffer = visualEngine.scene(
+                    buffer = visualEngine.sceneBytes(
                         width = COVER_SIZE_DP.dp.toPx(),
                         height = COVER_SIZE_DP.dp.toPx(),
                     ),
                     center = playedCenter,
+                    side = COVER_SIZE_DP.dp.toPx(),
+                    radius = COVER_RADIUS_DP.dp.toPx(),
                     shadow = null,
                     opacity = visualizerOpacity,
                 )
@@ -288,13 +289,12 @@ internal fun NowPlayingScene(
 
 @Composable
 private fun rememberVisualSceneEngine(
-    enabled: Boolean,
     trackId: Long,
     playback: PlaybackUiState,
     accent: Color,
 ): VisualSceneEngine? {
     val factory = LocalVisualSceneEngineFactory.current
-    val engine = remember(factory, enabled) { if (enabled) factory.create() else null }
+    val engine: VisualSceneEngine? = remember(factory) { factory.create() }
     DisposableEffect(engine) {
         onDispose { engine?.close() }
     }
@@ -585,29 +585,6 @@ internal fun DrawScope.drawPlayedCover(
                 alpha = safeOpacity,
             )
         }
-    }
-}
-
-internal fun DrawScope.drawPlayedVisualizer(
-    buffer: List<Float>,
-    center: Offset,
-    shadow: CoverShadowBitmap?,
-    opacity: Float = 1f,
-) {
-    val side = COVER_SIZE_DP.dp.toPx()
-    val rect = playedCoverRect(center, side)
-    val radius = COVER_RADIUS_DP.dp.toPx()
-    shadow?.let { drawCoverShadow(it, rect) }
-    if (opacity <= 0f) return
-    val safeOpacity = opacity.coerceIn(0f, 1f)
-    val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
-    clipPath(path) {
-        drawRect(
-            AmbientTrueBlack.copy(alpha = safeOpacity),
-            topLeft = rect.topLeft,
-            size = rect.size,
-        )
-        drawVisualizerScene(buffer = buffer, bounds = rect, opacity = safeOpacity)
     }
 }
 

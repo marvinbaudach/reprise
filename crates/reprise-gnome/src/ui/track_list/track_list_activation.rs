@@ -8,8 +8,6 @@
 
 use std::rc::Rc;
 
-use libadwaita as adw;
-
 use crate::ui::playback::queue_transport::QueueContextWindow;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
@@ -118,7 +116,7 @@ fn show_missing_activation(shared: &Rc<Shared>, notice: MissingActivationNotice)
         tracing::warn!(message = %notice.message, "toast overlay is gone; degrading to log-only");
         return;
     };
-    let toast = adw::Toast::new(&notice.message);
+    let toast = crate::ui::toasts::plain(&notice.message);
     toast.set_button_label(Some(&notice.button_label));
     let callback = shared.on_show_missing.borrow().clone();
     let target = notice.target;

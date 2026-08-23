@@ -24,6 +24,12 @@ const SMOKE_ENV: &str = "REPRISE_SMOKE_VIEW_SESSION";
 /// top of anything — raising it here raises the felt latency one-to-one.
 const SEARCH_DEBOUNCE_MS: u64 = 150;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui) enum BrowserPlaceViewport {
+    PreserveAnchor,
+    CenterAnchor,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TrackViewSnapshot {
     pub(super) source: ViewSource,
@@ -63,7 +69,13 @@ pub(super) fn restore(
         Ok(false) => {}
         Err(error) => tracing::error!(%error, "failed to record restored issue view as viewed"),
     }
-    finish_track_source(track_list, &source, None);
+    finish_track_source(
+        track_list,
+        &source,
+        None,
+        BrowserPlaceViewport::PreserveAnchor,
+        None,
+    );
     search_guard.set(false);
 }
 
@@ -153,10 +165,30 @@ pub(super) fn wire_search(
 }
 
 pub(super) fn restore_browser_place(track_list: &TrackList, place: &BrowserPlace) -> bool {
+    restore_browser_place_with_viewport(track_list, place, BrowserPlaceViewport::PreserveAnchor)
+}
+
+pub(in crate::ui) fn restore_browser_place_with_viewport(
+    track_list: &TrackList,
+    place: &BrowserPlace,
+    viewport: BrowserPlaceViewport,
+) -> bool {
     let BrowserPlace::Tracks(track_place) = place else {
         return false;
     };
     let source = place.view_source();
+    // Every source shares this ColumnView's row template, so row height is
+    // source-independent; a missing or wrong hint falls back to the geometry cache.
+    let centered_row_height = matches!(viewport, BrowserPlaceViewport::CenterAnchor)
+        .then(|| {
+            crate::ui::track_list::track_list_geometry::layout(
+                &track_list.shared,
+                None,
+                track_list.shared.model.n_items() as usize,
+            )
+            .map(|layout| layout.row_height())
+        })
+        .flatten();
     let saved =
         crate::ui::track_list::view_state_memory::SavedViewState::from_core(&track_place.state);
     prepare_track_view(
@@ -166,12 +198,29 @@ pub(super) fn restore_browser_place(track_list: &TrackList, place: &BrowserPlace
         &saved.sort.field,
         &saved.sort.dir,
     );
-    finish_track_source(track_list, &source, Some(&saved));
+    finish_track_source(
+        track_list,
+        &source,
+        Some(&saved),
+        viewport,
+        centered_row_height,
+    );
     if track_list.shared.startup_load.is_deferred() {
         return true;
     }
     let ids = track_list.shared.current_view_ids();
-    crate::ui::track_list::view_state_memory::restore(&track_list.shared, &saved, &ids);
+    match viewport {
+        BrowserPlaceViewport::PreserveAnchor => {
+            crate::ui::track_list::view_state_memory::restore(&track_list.shared, &saved, &ids);
+        }
+        BrowserPlaceViewport::CenterAnchor => {
+            crate::ui::track_list::view_state_memory::restore_selection_and_focus(
+                &track_list.shared,
+                &saved,
+                &ids,
+            );
+        }
+    }
     if let Some(callback) = track_list.shared.on_search_restored.borrow().as_ref() {
         callback(&saved.search);
     }
@@ -238,17 +287,34 @@ fn finish_track_source(
     track_list: &TrackList,
     source: &ViewSource,
     target: Option<&crate::ui::track_list::view_state_memory::SavedViewState>,
+    viewport: BrowserPlaceViewport,
+    centered_row_height: Option<crate::ui::list_geometry::RowHeight>,
 ) {
     *track_list.shared.source.borrow_mut() = source.clone();
     track_list.shared.browse_bar.set_source_context(source);
     match target.filter(|saved| saved.anchor.is_some()) {
-        Some(saved) => crate::ui::track_list::track_list_reload::reload_with_anchor(
-            &track_list.shared,
-            &crate::ui::track_list::reload_restore::capture(
+        Some(saved) => {
+            let captured = crate::ui::track_list::reload_restore::capture_with_row_height(
                 saved.selected_ids.clone(),
                 saved.anchor,
-            ),
-        ),
+                centered_row_height,
+            );
+            let viewport = match viewport {
+                BrowserPlaceViewport::PreserveAnchor => {
+                    crate::ui::track_list::track_list_reload::ReloadViewport::PreserveAnchor
+                }
+                BrowserPlaceViewport::CenterAnchor => {
+                    crate::ui::track_list::track_list_reload::ReloadViewport::CenterAnchor
+                }
+            };
+            crate::ui::track_list::track_list_reload::reload_with_anchor_and_viewport(
+                &track_list.shared,
+                &captured,
+                viewport,
+                None,
+                None,
+            );
+        }
         None => reload(&track_list.shared),
     }
 }

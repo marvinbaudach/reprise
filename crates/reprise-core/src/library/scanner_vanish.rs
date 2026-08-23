@@ -10,6 +10,81 @@
 use super::*;
 use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
 
+const MAX_ANCESTOR_CLIMB: usize = 64;
+
+/// What the walk proved about the shape of the tree, for the mark phase to
+/// reason about candidates the walk never delivered.
+pub(super) struct WalkEvidence {
+    /// Every path the walk delivered — proof of presence.
+    pub(super) observed: HashSet<PathBuf>,
+    /// Directories the walk entered and listed without error.
+    pub(super) listed_directories: HashSet<PathBuf>,
+}
+
+/// Builds safe mark-phase evidence only after a walk found at least one audio
+/// file. An empty Android walk is a question about storage, never proof that
+/// every previously known child disappeared.
+pub(super) fn evidence_after_walk(
+    audio_files_seen: u64,
+    observed: HashSet<PathBuf>,
+    observed_directories: &HashSet<PathBuf>,
+    failed_directories: &HashSet<PathBuf>,
+) -> Option<WalkEvidence> {
+    (audio_files_seen > 0).then(|| WalkEvidence {
+        observed,
+        listed_directories: observed_directories
+            .difference(failed_directories)
+            .cloned()
+            .collect(),
+    })
+}
+
+/// Distrusts both a failed walk item and its parent because an adapter may
+/// report either a directory-entry failure or an unstatable child at this seam.
+pub(super) fn poison_walk_failure(
+    source: &dyn LibrarySource,
+    failed_directories: &mut HashSet<PathBuf>,
+    failed_path: &Path,
+) {
+    failed_directories.insert(failed_path.to_path_buf());
+    if let Some(parent) = source.parent_of(failed_path) {
+        failed_directories.insert(parent);
+    }
+}
+
+/// Confirmed absence derived from the walk that just ran, for a candidate the
+/// walk never delivered.
+///
+/// Climbs from `path` toward `root` until it meets an ancestor directory the
+/// walk listed without error. The child of that directory on the way down is
+/// then decided by evidence: not in `observed` means the whole subtree from
+/// there down does not exist; an observed child leaves the result uncertain.
+/// Every uncertainty returns `false` and can never license a missing verdict.
+fn absence_confirmed_by_walk(
+    source: &dyn LibrarySource,
+    evidence: Option<&WalkEvidence>,
+    path: &Path,
+    root: &Path,
+) -> bool {
+    let Some(evidence) = evidence else {
+        return false;
+    };
+    let mut child = path.to_path_buf();
+    for _ in 0..MAX_ANCESTOR_CLIMB {
+        let Some(parent) = source.parent_of(&child) else {
+            return false;
+        };
+        if parent != root && !parent.starts_with(root) {
+            return false;
+        }
+        if evidence.listed_directories.contains(&parent) {
+            return !evidence.observed.contains(&child);
+        }
+        child = parent;
+    }
+    false
+}
+
 /// Shared row-fetch behind both [`present_candidates_under_root`] (the mark
 /// phase) and [`guard_evidence_under_root`] (the root guard's evidence
 /// check): every row under `root` matching `presence_clause`, paired with
@@ -157,20 +232,32 @@ pub(super) fn any_candidate_confirms_root_with(
 pub(super) fn mark_vanished_with(
     source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
+    root: &Path,
     candidates: Vec<(i64, String, Option<i64>)>,
-    observed_paths: &std::collections::HashSet<std::path::PathBuf>,
+    evidence: Option<&WalkEvidence>,
 ) -> Result<u32, ScanError> {
     let mut marked = 0u32;
     for (id, path_str, device) in candidates {
         let path = Path::new(&path_str);
-        if observed_paths.contains(path) {
+        if evidence.is_some_and(|evidence| evidence.observed.contains(path)) {
             continue;
         }
-        // This write needs confirmed absence. Present and Unknown both keep
-        // the row live; inability to reach a source is not a missing verdict.
-        if source.probe(path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
+        // This write needs confirmed absence. `Present` always keeps the row
+        // live. `Unknown` is not a verdict either, but the walk that just ran
+        // may hold the evidence the source itself could not produce.
+        let verdict = match source.probe(path, LibraryLinkMode::Follow) {
+            LibraryPathPresence::Absent => Some("probe"),
+            LibraryPathPresence::Present(_) => None,
+            LibraryPathPresence::Unknown
+                if absence_confirmed_by_walk(source, evidence, path, root) =>
+            {
+                Some("walk")
+            }
+            LibraryPathPresence::Unknown => None,
+        };
+        let Some(verdict) = verdict else {
             continue;
-        }
+        };
         let reason = source.reachability(path, device);
         // `mount_point` is only ever read back for `unmounted` rows (see
         // `queries::issues`' `query_unavailable_groups`, which binds the
@@ -192,6 +279,7 @@ pub(super) fn mark_vanished_with(
                 path = %path_str,
                 reason = reason.as_str(),
                 mount_point = ?mount_point,
+                verdict,
                 "scan: marked vanished track missing (mount currently absent)"
             );
         } else {
@@ -202,6 +290,7 @@ pub(super) fn mark_vanished_with(
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
+                verdict,
                 "scan: marked vanished track missing"
             );
         }
@@ -225,13 +314,19 @@ pub(super) fn reclassify_missing_with(
     source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
     root: &Path,
+    evidence: Option<&WalkEvidence>,
     now: i64,
 ) -> Result<u32, ScanError> {
     let candidates = reclassification_candidates_under_root(tx, root)?;
     let mut corrected = 0u32;
     for (id, path_str, device) in candidates {
         let path = Path::new(&path_str);
-        if source.probe(path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
+        let absent = match source.probe(path, LibraryLinkMode::Follow) {
+            LibraryPathPresence::Absent => true,
+            LibraryPathPresence::Present(_) => false,
+            LibraryPathPresence::Unknown => absence_confirmed_by_walk(source, evidence, path, root),
+        };
+        if !absent {
             continue;
         }
         if source.reachability(path, device) != MissingReason::Deleted {
@@ -271,12 +366,59 @@ fn rearm_auto_clean_if_armed(tx: &rusqlite::Transaction, now: i64) -> Result<(),
 #[cfg(test)]
 mod android_uri_tests {
     use super::*;
-    use crate::library::source_test_support::UnknownProbeSource;
+    use crate::device_sync::mobile_import::read_analysis_sidecar;
+    use crate::library::source::{
+        LibraryDirectoryEntry, LibraryReadHandle, LibrarySource, LibraryWalkOrder,
+        LibraryWalkVisitor, UnixLibrarySource,
+    };
+    use crate::library::source_test_support::{ExistingPathSource, UnknownProbeSource};
 
     const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
     const ESCAPED_TREE_URI: &str =
         "content://com.android.externalstorage.documents/tree/primary\\%3AMusic";
     const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac";
+
+    struct WalkOnlyDeletedSource;
+
+    impl LibrarySource for WalkOnlyDeletedSource {
+        fn residence_token(&self, _at: &Path) -> Option<i64> {
+            Some(41)
+        }
+        fn mount_point(&self, _at: &Path) -> Option<PathBuf> {
+            None
+        }
+        fn display_name(&self, _at: &Path) -> Option<String> {
+            None
+        }
+        fn container_name(&self, _at: &Path) -> Option<String> {
+            None
+        }
+        fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf> {
+            at.strip_prefix(root).ok().map(Path::to_path_buf)
+        }
+        fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "provider confirmed absence",
+            ))
+        }
+        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
+            LibraryPathPresence::Unknown
+        }
+        fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+            None
+        }
+        fn walk(
+            &self,
+            _root: &Path,
+            _order: LibraryWalkOrder,
+            _visitor: &mut dyn LibraryWalkVisitor,
+        ) {
+        }
+        fn reachability(&self, _at: &Path, _stored: Option<i64>) -> MissingReason {
+            MissingReason::Deleted
+        }
+    }
 
     #[test]
     fn android_a2_content_uri_path_operations_preserve_tree_membership_and_extension() {
@@ -333,8 +475,9 @@ mod android_uri_tests {
         let marked = mark_vanished_with(
             &UnknownProbeSource,
             &tx,
+            Path::new(TREE_URI),
             vec![(1, TRACK_URI.to_owned(), Some(41))],
-            &std::collections::HashSet::new(),
+            None,
         )
         .unwrap();
         let missing: (Option<i64>, Option<String>) = tx
@@ -347,5 +490,293 @@ mod android_uri_tests {
 
         assert_eq!(marked, 0);
         assert_eq!(missing, (None, None));
+    }
+
+    fn walk_evidence(observed: &[&str], listed: &[&str]) -> WalkEvidence {
+        WalkEvidence {
+            observed: observed.iter().map(std::path::PathBuf::from).collect(),
+            listed_directories: listed.iter().map(std::path::PathBuf::from).collect(),
+        }
+    }
+
+    #[test]
+    fn walk_evidence_confirms_absence_only_below_a_cleanly_listed_ancestor() {
+        let source = UnknownProbeSource;
+        let root = Path::new("/music");
+        let track = Path::new("/music/Album/gone.flac");
+
+        assert!(absence_confirmed_by_walk(
+            &source,
+            Some(&walk_evidence(&[], &["/music/Album"])),
+            track,
+            root,
+        ));
+        assert!(!absence_confirmed_by_walk(
+            &source,
+            Some(&walk_evidence(
+                &["/music/Album/gone.flac"],
+                &["/music/Album"]
+            )),
+            track,
+            root,
+        ));
+        assert!(!absence_confirmed_by_walk(
+            &source,
+            Some(&walk_evidence(&[], &[])),
+            track,
+            root,
+        ));
+        assert!(absence_confirmed_by_walk(
+            &source,
+            Some(&walk_evidence(&[], &["/music"])),
+            track,
+            root,
+        ));
+        assert!(!absence_confirmed_by_walk(
+            &source,
+            Some(&walk_evidence(&[], &["/music"])),
+            Path::new(""),
+            root,
+        ));
+        assert!(!absence_confirmed_by_walk(
+            &source,
+            Some(&walk_evidence(&[], &["/outside"])),
+            Path::new("/outside/gone.flac"),
+            root,
+        ));
+        assert!(!absence_confirmed_by_walk(&source, None, track, root));
+    }
+
+    fn mark_unknown_candidate(listed_parent: bool) -> (u32, Option<i64>, String) {
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        let root = Path::new("/music");
+        let track = "/music/Album/gone.flac";
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at) VALUES (1, ?1, 0)",
+            [track],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        let listed = listed_parent
+            .then_some("/music/Album")
+            .into_iter()
+            .collect::<Vec<_>>();
+        let evidence = walk_evidence(&[], &listed);
+
+        let logs = crate::log_capture::CapturedLogs::default();
+        let marked = logs
+            .capture(|| {
+                mark_vanished_with(
+                    &WalkOnlyDeletedSource,
+                    &tx,
+                    root,
+                    vec![(1, track.to_owned(), Some(41))],
+                    Some(&evidence),
+                )
+            })
+            .unwrap();
+        let missing_since = tx
+            .query_row("SELECT missing_since FROM tracks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        (marked, missing_since, logs.joined())
+    }
+
+    #[test]
+    fn unknown_probe_marks_only_with_a_listed_parent() {
+        let marked = mark_unknown_candidate(true);
+        assert!(matches!(marked, (1, Some(_), _)));
+        assert!(marked.2.contains("verdict=\"walk\""));
+        assert_eq!(mark_unknown_candidate(false), (0, None, String::new()));
+    }
+
+    #[test]
+    fn a_file_walk_error_poisons_its_parent_directory() {
+        let root = Path::new("/music");
+        let track = "/music/Album/gone.flac";
+        let mut failed = std::collections::HashSet::new();
+        poison_walk_failure(
+            &UnknownProbeSource,
+            &mut failed,
+            Path::new("/music/Album/unstattable.txt"),
+        );
+        let observed_directories = [root.to_path_buf(), Path::new("/music/Album").to_path_buf()]
+            .into_iter()
+            .collect();
+        let evidence = evidence_after_walk(
+            1,
+            [Path::new("/music/Album").to_path_buf()]
+                .into_iter()
+                .collect(),
+            &observed_directories,
+            &failed,
+        )
+        .expect("a walk that found audio may provide evidence");
+
+        assert!(!absence_confirmed_by_walk(
+            &UnknownProbeSource,
+            Some(&evidence),
+            Path::new(track),
+            root,
+        ));
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at) VALUES (1, ?1, 0)",
+            [track],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        let marked = mark_vanished_with(
+            &UnknownProbeSource,
+            &tx,
+            root,
+            vec![(1, track.to_owned(), None)],
+            Some(&evidence),
+        )
+        .unwrap();
+        assert_eq!(marked, 0);
+    }
+
+    #[test]
+    fn an_empty_walk_never_licenses_walk_based_marking() {
+        let observed_directories = [Path::new("/music").to_path_buf()].into_iter().collect();
+        let failed_directories = std::collections::HashSet::new();
+        let evidence = evidence_after_walk(
+            0,
+            [Path::new("/music").to_path_buf()].into_iter().collect(),
+            &observed_directories,
+            &failed_directories,
+        );
+
+        assert!(evidence.is_none());
+        assert_eq!(mark_unknown_candidate(false), (0, None, String::new()));
+    }
+
+    #[test]
+    fn present_probe_outranks_older_walk_evidence() {
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        let root = Path::new("/music");
+        let track = "/music/Album/present.flac";
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at) VALUES (1, ?1, 0)",
+            [track],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        let evidence = walk_evidence(&[], &["/music/Album"]);
+
+        let marked = mark_vanished_with(
+            &ExistingPathSource::FILE,
+            &tx,
+            root,
+            vec![(1, track.to_owned(), None)],
+            Some(&evidence),
+        )
+        .unwrap();
+
+        assert_eq!(marked, 0);
+    }
+
+    #[test]
+    fn absent_probe_marks_without_walk_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("gone.flac");
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (1, ?1, 0, ?2)",
+            rusqlite::params![
+                path.to_string_lossy(),
+                UnixLibrarySource.residence_token(&path)
+            ],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let logs = crate::log_capture::CapturedLogs::default();
+        let marked = logs
+            .capture(|| {
+                mark_vanished_with(
+                    &UnixLibrarySource,
+                    &tx,
+                    root.path(),
+                    vec![(
+                        1,
+                        path.to_string_lossy().into_owned(),
+                        UnixLibrarySource.residence_token(&path),
+                    )],
+                    None,
+                )
+            })
+            .unwrap();
+
+        assert_eq!(marked, 1);
+        assert!(logs.joined().contains("verdict=\"probe\""));
+    }
+
+    #[test]
+    fn walk_evidence_reclassifies_an_earlier_unknown_verdict() {
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        let root = Path::new("/music");
+        let track = "/music/Album/gone.flac";
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device, missing_since, missing_reason) \
+             VALUES (1, ?1, 0, 41, 1, 'unknown')",
+            [track],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        let evidence = walk_evidence(&[], &["/music/Album"]);
+
+        let corrected =
+            reclassify_missing_with(&WalkOnlyDeletedSource, &tx, root, Some(&evidence), 2).unwrap();
+        let reason: String = tx
+            .query_row(
+                "SELECT missing_reason FROM tracks WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(corrected, 1);
+        assert_eq!(reason, "deleted");
+    }
+
+    #[test]
+    fn missing_analysis_sidecar_is_quiet() {
+        let root = tempfile::tempdir().unwrap();
+        let sidecar = root.path().join("gone.reprise-analysis");
+        let logs = crate::log_capture::CapturedLogs::default();
+
+        let result = logs.capture(|| {
+            read_analysis_sidecar(&WalkOnlyDeletedSource, 41, &sidecar.to_string_lossy())
+        });
+
+        assert_eq!(result, None);
+        assert_eq!(logs.joined(), "");
+    }
+
+    #[test]
+    fn unreachable_source_with_an_empty_walk_still_reports_root_unavailable() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let root = Path::new("/music");
+        let track = "/music/Album/unknown.flac";
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, added_at, device) VALUES (1, ?1, 0, 99)",
+                [track],
+            )
+            .unwrap();
+
+        let outcome = scan_folder_with_source(&WalkOnlyDeletedSource, &db, root).unwrap();
+        let missing_since: Option<i64> = db
+            .conn()
+            .query_row("SELECT missing_since FROM tracks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        assert!(matches!(outcome, ScanOutcome::RootUnavailable { root: failed } if failed == root));
+        assert_eq!(missing_since, None);
     }
 }

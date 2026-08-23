@@ -27,7 +27,7 @@ impl RadioView {
 
 fn show_station_not_listed(shared: &Shared) {
     if let Some(overlay) = shared.toast_overlay.upgrade() {
-        overlay.add_toast(adw::Toast::new(&strings::text(
+        overlay.add_toast(crate::ui::toasts::plain(&strings::text(
             strings::STATION_NOT_IN_FAVORITES,
         )));
     }

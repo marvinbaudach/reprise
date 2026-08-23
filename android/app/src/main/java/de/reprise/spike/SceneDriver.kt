@@ -60,14 +60,14 @@ internal class SceneDriver(
     private var firstTickNanos: Long? = null
     private var lastFrameFraction = 0f
 
-    fun tick(): Boolean {
+    fun tick(sampledLiveAudio: Boolean? = null): Boolean {
         if (!framesAllowed()) {
             noteFramesWithheld()
             return false
         }
         val nowNanos = clock.nowNanos()
         val sink = frameSink
-        val liveAudio = sink?.hasLiveAudio() == true
+        val liveSink = sink?.takeIf { sampledLiveAudio ?: it.hasLiveAudio() }
         val before = state.revision
         val previousTick = lastTickNanos
         val elapsedSeconds = previousTick?.let { previous ->
@@ -76,8 +76,8 @@ internal class SceneDriver(
         if (previousTick != null) {
             state.advanceShimmerBy(elapsedSeconds)
         }
-        val outgoingBands = if (liveAudio) {
-            state.adoptLiveBassPressure(sink.bassPressure(), elapsedSeconds.toFloat())
+        val outgoingBands = if (liveSink != null) {
+            state.adoptLiveBassPressure(liveSink.bassPressure(), elapsedSeconds.toFloat())
             lastDrivenFrameIndex = null
             null
         } else {
@@ -89,8 +89,8 @@ internal class SceneDriver(
         lastTickNanos = nowNanos
         framesWithheld = false
         sink?.onFrame(outgoingBands)
-        if (sink != null && !liveAudio) frameSinkNeedsSnapshot = false
-        return state.revision != before || sink != null
+        if (sink != null && liveSink == null) frameSinkNeedsSnapshot = false
+        return state.revision != before
     }
 
     /** Reads the stored 20 Hz analysis only while decoded PCM is unavailable. */
@@ -232,12 +232,12 @@ internal fun DriveScene(
     val runtimeActive = controller.sceneFramesAllowed
     val animationsEnabled = controller.sceneAnimationsEnabled
     val visualizerActive = playback.visualizerActive
+    val sink = frameSink
     LaunchedEffect(
         driver,
         runtimeActive,
         animationsEnabled,
         visualizerActive,
-        playback.positionMs,
         frameSink,
     ) {
         if (!runtimeActive || !animationsEnabled) {
@@ -245,11 +245,12 @@ internal fun DriveScene(
             return@LaunchedEffect
         }
         do {
-            if (!visualizerActive || frames.frameCount == 0 && frameSink == null) {
+            val audible = sink?.hasLiveAudio() == true
+            if (!(audible || visualizerActive) || frames.frameCount == 0 && frameSink == null) {
                 delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
             }
             withFrameNanos {
-                if (driver.tick()) drawRevision += 1
+                if (driver.tick(audible)) drawRevision += 1
             }
         } while (animationsEnabled)
     }

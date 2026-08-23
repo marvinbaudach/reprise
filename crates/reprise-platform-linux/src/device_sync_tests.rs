@@ -3,7 +3,6 @@ use std::fs;
 use std::future::Future;
 use std::rc::Rc;
 
-use gio::prelude::*;
 use reprise_core::device_sync::{DeviceStorageAccess, StorageId, SyncTarget, DEFAULT_TARGET_PATH};
 use reprise_core::library::m3u::M3uEntry;
 use tempfile::TempDir;

@@ -10,10 +10,9 @@ use gtk4::prelude::{AdjustmentExt, ScrollableExt};
 use super::{reload_restore, Shared};
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
-use crate::ui::list_geometry_layout::{headers_above_in, ListLayout};
+use crate::ui::list_geometry_layout::{ListLayout, CONTENT_HEIGHT_EPSILON};
 
 const SCROLL_TO_ADOPTION_WINDOW: Duration = Duration::from_millis(250);
-const SCROLL_ADOPTION_EPSILON: f64 = 0.5;
 
 #[derive(Clone, Copy)]
 enum RestorePath {
@@ -21,6 +20,18 @@ enum RestorePath {
     PageSize,
     ItemsChanged,
     Idle,
+}
+
+#[derive(Clone, Copy)]
+enum AnchorPlacement {
+    PreserveOffset,
+    Center,
+}
+
+#[derive(Clone, Copy)]
+struct RestoreAttempt {
+    path: RestorePath,
+    placement: AnchorPlacement,
 }
 
 impl RestorePath {
@@ -58,25 +69,43 @@ struct ScrollRequest<'a> {
     captured_row_height: Option<RowHeight>,
     current_ids: &'a [i64],
     anchor_position: u32,
+    placement: AnchorPlacement,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ScrollAdoptionGeometry {
     guard_position: u32,
     row_count: usize,
-    section_count: usize,
-    preceding_sections: usize,
-    row_height: RowHeight,
+    layout: Rc<ListLayout>,
     before: f64,
 }
 
 impl ScrollAdoptionGeometry {
-    fn matches(self, candidate: f64, lower: f64, upper: f64, page_size: f64) -> bool {
-        if self.row_count == 0
-            || self.section_count == 0
-            || self.preceding_sections > self.section_count
-            || self.guard_position as usize >= self.row_count
-            || !candidate.is_finite()
+    fn new(
+        guard_position: u32,
+        row_count: usize,
+        expected_section_count: usize,
+        layout: Rc<ListLayout>,
+        before: f64,
+    ) -> Option<Self> {
+        if row_count == 0
+            || expected_section_count == 0
+            || layout.section_count() != expected_section_count
+            || layout.headers_above(guard_position) > expected_section_count
+            || guard_position as usize >= row_count
+        {
+            return None;
+        }
+        Some(Self {
+            guard_position,
+            row_count,
+            layout,
+            before,
+        })
+    }
+
+    fn matches(&self, candidate: f64, lower: f64, upper: f64, page_size: f64) -> bool {
+        if !candidate.is_finite()
             || !self.before.is_finite()
             || !lower.is_finite()
             || !upper.is_finite()
@@ -87,19 +116,17 @@ impl ScrollAdoptionGeometry {
             return false;
         }
 
-        let row_height = self.row_height.pixels();
-        let row_content_height = self.row_count as f64 * row_height;
-        let section_content_height = upper - row_content_height;
-        if section_content_height < -SCROLL_ADOPTION_EPSILON {
+        let Some(layout) = self
+            .layout
+            .infer_section_header_from_observed_upper(self.row_count, upper)
+        else {
             return false;
-        }
-        let section_height = section_content_height.max(0.0) / self.section_count as f64;
-        let guard_top = (self.guard_position as f64)
-            .mul_add(row_height, self.preceding_sections as f64 * section_height);
+        };
+        let guard_top = layout.row_top(self.guard_position);
         let requested = guard_top.clamp(lower, (upper - page_size).max(lower));
         let candidate_error = (candidate - requested).abs();
         let before_error = (self.before - requested).abs();
-        candidate_error <= SCROLL_ADOPTION_EPSILON && candidate_error < before_error
+        candidate_error <= CONTENT_HEIGHT_EPSILON && candidate_error < before_error
     }
 }
 
@@ -110,10 +137,52 @@ pub(super) fn schedule(
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
 ) {
+    schedule_with_placement(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        hold,
+        AnchorPlacement::PreserveOffset,
+    );
+}
+
+pub(super) fn schedule_centered(
+    shared: &Rc<Shared>,
+    anchor: Option<(i64, f64)>,
+    captured_row_height: Option<RowHeight>,
+    current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
+) {
+    schedule_with_placement(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        hold,
+        AnchorPlacement::Center,
+    );
+}
+
+fn schedule_with_placement(
+    shared: &Rc<Shared>,
+    anchor: Option<(i64, f64)>,
+    captured_row_height: Option<RowHeight>,
+    current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
+    placement: AnchorPlacement,
+) {
     if crate::ui::scroll_probe::restore_after_allocation_enabled()
         && !has_allocated_viewport(shared)
     {
-        arm_refinement(shared, anchor, captured_row_height, current_ids, hold);
+        arm_refinement(
+            shared,
+            anchor,
+            captured_row_height,
+            current_ids,
+            hold,
+            placement,
+        );
         return;
     }
     let Some(anchor_position) = reload_restore::prepaint_position(anchor, current_ids) else {
@@ -125,13 +194,37 @@ pub(super) fn schedule(
         captured_row_height,
         current_ids,
         hold,
-        RestorePath::Initial,
+        RestoreAttempt {
+            path: RestorePath::Initial,
+            placement,
+        },
     );
     if applied_layout.is_none() {
-        arm_refinement(shared, anchor, captured_row_height, current_ids, hold);
+        arm_refinement(
+            shared,
+            anchor,
+            captured_row_height,
+            current_ids,
+            hold,
+            placement,
+        );
         if !has_allocated_viewport(shared) {
             return;
         }
+    }
+
+    // A centered reveal can name the row edge GTK must adopt even while the
+    // live range is still settling. `apply` intentionally returns `None` in
+    // that case so no provisional pixel target becomes authoritative; the
+    // same provisional layout is nevertheless sufficient to choose the row
+    // whose realized edge will be nearest the arithmetic centre.
+    let centered_layout = (applied_layout.is_none()
+        && matches!(placement, AnchorPlacement::Center))
+    .then(|| super::track_list_geometry::layout(shared, captured_row_height, current_ids.len()))
+    .flatten();
+    let guard_layout = applied_layout.as_ref().or(centered_layout.as_ref());
+    if matches!(placement, AnchorPlacement::Center) && guard_layout.is_none() {
+        return;
     }
 
     scroll_to_anchor(
@@ -141,8 +234,9 @@ pub(super) fn schedule(
             captured_row_height,
             current_ids,
             anchor_position,
+            placement,
         },
-        applied_layout.as_ref(),
+        guard_layout,
         RestorePath::Initial,
         hold,
     );
@@ -161,41 +255,60 @@ fn scroll_to_anchor(
         .iter()
         .map(|section| section.start)
         .collect::<Vec<_>>();
-    // `Some` means the layout is settled; only then is its bottom-edge
-    // prepaint guard row valid.
+    // `Some` means the layout is settled. An offset-preserving restore asks
+    // GTK to keep the last visible row in view; a centered reveal instead
+    // gives GTK the row edge nearest the arithmetic centre, so its allocation
+    // replay reproduces the value already written by `apply`.
     let guard_position = if let Some(layout) = applied_layout {
         let page = shared
             .column_view
             .vadjustment()
             .map(|value| value.page_size());
-        page.and_then(|page| {
-            reload_restore::prepaint_guard_position(
+        page.and_then(|page| match request.placement {
+            AnchorPlacement::PreserveOffset => reload_restore::prepaint_guard_position(
                 request.anchor,
                 request.current_ids,
                 layout,
                 page,
-            )
+            ),
+            AnchorPlacement::Center => {
+                let position =
+                    reload_restore::prepaint_position(request.anchor, request.current_ids)?;
+                super::centered_scroll_restore::centered_anchor(
+                    layout,
+                    position,
+                    request.current_ids.len(),
+                    page,
+                )
+                .map(|(anchor, _)| anchor)
+            }
         })
         .unwrap_or(request.anchor_position)
     } else {
         request.anchor_position
     };
     let section_count = section_starts.len();
-    let preceding_sections = headers_above_in(&section_starts, guard_position);
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
-    let adoption_geometry =
-        (applied_layout.is_none() && section_count > 0).then(|| ScrollAdoptionGeometry {
-            guard_position,
-            row_count: request.current_ids.len(),
-            section_count,
-            preceding_sections,
-            row_height: request.captured_row_height.unwrap_or_else(|| {
-                ListGeometry::for_view(&shared.column_view)
-                    .row_height(&shared.conn, &shared.list_geometry_cache)
-            }),
-            before: 0.0,
+    let adoption_geometry = if applied_layout.is_none() {
+        let row_height = request.captured_row_height.unwrap_or_else(|| {
+            ListGeometry::for_view(&shared.column_view)
+                .row_height(&shared.conn, &shared.list_geometry_cache)
         });
+        // Adoption re-infers the header height from `upper`; only row height
+        // and section starts survive into `matches`. A valid placeholder here
+        // preserves every topology guard without the discarded cache/DB read.
+        let layout = ListLayout::sectioned(row_height, row_height, section_starts);
+        ScrollAdoptionGeometry::new(
+            guard_position,
+            request.current_ids.len(),
+            section_count,
+            Rc::new(layout),
+            0.0,
+        )
+    } else {
+        None
+    };
     let adoption = shared.column_view.vadjustment().and_then(|adjustment| {
         crate::ui::scroll_probe::probe_scroll_to(path.scroll_probe(), &adjustment, guard_position);
         let before = adjustment.value();
@@ -261,6 +374,7 @@ fn arm_refinement(
     captured_row_height: Option<RowHeight>,
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
+    placement: AnchorPlacement,
 ) {
     let Some(adjustment) = shared.column_view.vadjustment() else {
         return;
@@ -286,7 +400,10 @@ fn arm_refinement(
                 captured_row_height,
                 &allocated_ids,
                 allocated_hold.as_ref(),
-                RestorePath::PageSize,
+                RestoreAttempt {
+                    path: RestorePath::PageSize,
+                    placement,
+                },
             );
         });
         return;
@@ -316,7 +433,10 @@ fn arm_refinement(
             captured_row_height,
             &changed_ids,
             changed_hold.as_ref(),
-            RestorePath::ItemsChanged,
+            RestoreAttempt {
+                path: RestorePath::ItemsChanged,
+                placement,
+            },
         ) {
             changed_restored.set(true);
         }
@@ -341,7 +461,10 @@ fn arm_refinement(
             captured_row_height,
             &idle_ids,
             idle_hold.as_ref(),
-            RestorePath::Idle,
+            RestoreAttempt {
+                path: RestorePath::Idle,
+                placement,
+            },
         ) {
             restored.set(true);
         }
@@ -355,12 +478,19 @@ fn refine_once(
     captured_row_height: Option<RowHeight>,
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
-    path: RestorePath,
+    attempt: RestoreAttempt,
 ) -> bool {
     if !refinement_is_current(shared, generation) {
         return false;
     }
-    let Some(layout) = apply(shared, anchor, captured_row_height, current_ids, hold, path) else {
+    let Some(layout) = apply(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        hold,
+        attempt,
+    ) else {
         return false;
     };
     let Some(anchor_position) = reload_restore::prepaint_position(anchor, current_ids) else {
@@ -373,9 +503,10 @@ fn refine_once(
             captured_row_height,
             current_ids,
             anchor_position,
+            placement: attempt.placement,
         },
         Some(&layout),
-        path,
+        attempt.path,
         hold,
     );
     true
@@ -391,7 +522,7 @@ fn apply(
     captured_row_height: Option<RowHeight>,
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
-    path: RestorePath,
+    attempt: RestoreAttempt,
 ) -> Option<ListLayout> {
     let section_spans = shared
         .queue_sections
@@ -411,21 +542,27 @@ fn apply(
     let geometry = ListGeometry::for_view(&shared.column_view);
     let layout =
         super::track_list_geometry::layout(shared, captured_row_height, current_ids.len())?;
-    let target =
-        reload_restore::scroll_target(anchor, current_ids, &layout, adjustment.page_size())?;
+    let target = scroll_target(
+        anchor,
+        current_ids,
+        &layout,
+        adjustment.page_size(),
+        attempt.placement,
+    )?;
     if std::env::var_os("REPRISE_SCROLL_PROBE").is_some() {
         eprintln!(
             "SCROLLMODEL path={} anchor={anchor:?} position={:?} row_height={height:.1} \
              sections={:?} target={target:.1}",
-            path.apply_probe(),
+            attempt.path.apply_probe(),
             anchor.and_then(|(track_id, _)| current_ids.iter().position(|id| *id == track_id)),
             section_spans,
             height = layout.row_height().pixels(),
         );
     }
-    let provisional_sectioned_refinement = !matches!(path, RestorePath::Initial) && n_sections > 0;
+    let provisional_sectioned_refinement =
+        !matches!(attempt.path, RestorePath::Initial) && n_sections > 0;
     if !provisional_sectioned_refinement {
-        set_hold_target(hold, &adjustment, target, path);
+        set_hold_target(hold, &adjustment, target, attempt.path);
     }
     if !crate::ui::scroll_probe::preseed_suppressed() {
         geometry.configure(
@@ -446,7 +583,7 @@ fn apply(
         // Deferring this write until after the settled check makes an early
         // return leave the existing hold target alone; settled refinements
         // remain authoritative.
-        set_hold_target(hold, &adjustment, target, path);
+        set_hold_target(hold, &adjustment, target, attempt.path);
     }
     geometry.remember_if_settled(
         &shared.conn,
@@ -455,13 +592,37 @@ fn apply(
         current_ids.len(),
         n_sections,
     );
-    crate::ui::scroll_probe::probe(path.apply_probe(), &adjustment, target);
+    crate::ui::scroll_probe::probe(attempt.path.apply_probe(), &adjustment, target);
     debug_assert!(
         !crate::ui::list_geometry_changed::in_changed_emission(),
         "scroll anchor written from inside a changed emission"
     );
     adjustment.set_value(target);
     Some(layout)
+}
+
+fn scroll_target(
+    anchor: Option<(i64, f64)>,
+    current_ids: &[i64],
+    layout: &ListLayout,
+    page_size: f64,
+    placement: AnchorPlacement,
+) -> Option<f64> {
+    match placement {
+        AnchorPlacement::PreserveOffset => {
+            reload_restore::scroll_target(anchor, current_ids, layout, page_size)
+        }
+        AnchorPlacement::Center => {
+            let position = reload_restore::prepaint_position(anchor, current_ids)?;
+            super::centered_scroll_restore::centered_anchor(
+                layout,
+                position,
+                current_ids.len(),
+                page_size,
+            )
+            .map(|(_, target)| target)
+        }
+    }
 }
 
 fn set_hold_target(
@@ -480,16 +641,153 @@ fn set_hold_target(
 mod tests {
     use super::*;
 
+    fn adoption_geometry(
+        guard_position: u32,
+        row_count: usize,
+        section_count: usize,
+        preceding_sections: usize,
+        row_height: f64,
+        before: f64,
+    ) -> Option<ScrollAdoptionGeometry> {
+        let represented_sections = section_count.max(preceding_sections);
+        let mut starts = (0..preceding_sections)
+            .map(|index| u32::try_from(index).unwrap())
+            .collect::<Vec<_>>();
+        starts.extend((preceding_sections..represented_sections).map(|index| {
+            guard_position
+                .checked_add(1)
+                .and_then(|position| position.checked_add(u32::try_from(index).unwrap()))
+                .unwrap()
+        }));
+        let row_height = RowHeight::new(row_height).unwrap();
+        let layout = Rc::new(ListLayout::sectioned(row_height, row_height, starts));
+        ScrollAdoptionGeometry::new(guard_position, row_count, section_count, layout, before)
+    }
+
+    #[test]
+    fn adoption_match_decisions_are_pinned_across_concrete_inputs() {
+        struct Case {
+            name: &'static str,
+            geometry: ScrollAdoptionGeometry,
+            candidate: f64,
+            lower: f64,
+            upper: f64,
+            page_size: f64,
+            expected: bool,
+        }
+
+        let cases = [
+            Case {
+                name: "realistic sectioned queue with fractional rows",
+                geometry: adoption_geometry(1_101, 2_276, 2, 2, 34.5, 38_000.0).unwrap(),
+                candidate: 38_056.5,
+                lower: 0.0,
+                upper: 78_594.0,
+                page_size: 249.0,
+                expected: true,
+            },
+            Case {
+                name: "the previous value is not adopted",
+                geometry: adoption_geometry(1_101, 2_276, 2, 2, 34.5, 38_000.0).unwrap(),
+                candidate: 38_000.0,
+                lower: 0.0,
+                upper: 78_594.0,
+                page_size: 249.0,
+                expected: false,
+            },
+            Case {
+                name: "the lower adjustment edge clamps the request",
+                geometry: adoption_geometry(0, 10, 1, 1, 10.0, 5.0).unwrap(),
+                candidate: 20.0,
+                lower: 20.0,
+                upper: 110.0,
+                page_size: 20.0,
+                expected: true,
+            },
+            Case {
+                name: "the upper adjustment edge clamps the request",
+                geometry: adoption_geometry(9, 10, 1, 1, 10.0, 50.0).unwrap(),
+                candidate: 80.0,
+                lower: 0.0,
+                upper: 110.0,
+                page_size: 30.0,
+                expected: true,
+            },
+            Case {
+                name: "a sub-epsilon row shortfall keeps zero-height headers",
+                geometry: adoption_geometry(5, 10, 1, 1, 10.0, 40.0).unwrap(),
+                candidate: 50.0,
+                lower: 0.0,
+                upper: 99.75,
+                page_size: 10.0,
+                expected: true,
+            },
+        ];
+
+        for case in cases {
+            assert_eq!(
+                case.geometry
+                    .matches(case.candidate, case.lower, case.upper, case.page_size,),
+                case.expected,
+                "{}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn adoption_rejects_zero_rows() {
+        assert!(adoption_geometry(0, 0, 1, 1, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_zero_sections() {
+        assert!(adoption_geometry(0, 1, 0, 0, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_more_preceding_sections_than_total_sections() {
+        assert!(adoption_geometry(0, 1, 1, 2, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_a_guard_outside_the_rows() {
+        assert!(adoption_geometry(1, 1, 1, 1, 34.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn adoption_rejects_each_non_finite_adjustment_input() {
+        let geometry = adoption_geometry(0, 1, 1, 1, 34.0, 0.0).unwrap();
+        assert!(!geometry.matches(f64::NAN, 0.0, 70.0, 0.0));
+        assert!(!geometry.matches(36.0, f64::NEG_INFINITY, 70.0, 0.0));
+        assert!(!geometry.matches(36.0, 0.0, f64::INFINITY, 0.0));
+        assert!(!geometry.matches(36.0, 0.0, 70.0, f64::NAN));
+
+        let non_finite_before = adoption_geometry(0, 1, 1, 1, 34.0, f64::INFINITY).unwrap();
+        assert!(!non_finite_before.matches(36.0, 0.0, 70.0, 0.0));
+    }
+
+    #[test]
+    fn adoption_rejects_an_upper_below_the_lower_bound() {
+        let geometry = adoption_geometry(0, 1, 1, 1, 34.0, 0.0).unwrap();
+        assert!(!geometry.matches(36.0, 71.0, 70.0, 0.0));
+    }
+
+    #[test]
+    fn adoption_rejects_a_negative_page_size() {
+        let geometry = adoption_geometry(0, 1, 1, 1, 34.0, 0.0).unwrap();
+        assert!(!geometry.matches(36.0, 0.0, 70.0, -1.0));
+    }
+
+    #[test]
+    fn adoption_rejects_an_upper_more_than_epsilon_shorter_than_the_rows() {
+        let geometry = adoption_geometry(5, 10, 1, 1, 10.0, 40.0).unwrap();
+        assert!(!geometry.matches(50.0, 0.0, 99.49, 10.0));
+    }
+
     #[test]
     fn adoption_accepts_only_the_value_explained_by_the_requested_guard_row() {
-        let geometry = ScrollAdoptionGeometry {
-            guard_position: 1_101,
-            row_count: 2_276,
-            section_count: 2,
-            preceding_sections: 2,
-            row_height: RowHeight::new(34.0).unwrap(),
-            before: 37_454.0,
-        };
+        let geometry = adoption_geometry(1_101, 2_276, 2, 2, 34.0, 37_454.0).unwrap();
 
         assert!(geometry.matches(37_488.0, 0.0, 77_438.0, 249.0));
         assert!(!geometry.matches(37_454.0, 0.0, 77_438.0, 249.0));

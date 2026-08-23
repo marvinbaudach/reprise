@@ -12,8 +12,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use gtk4::prelude::*;
-
 use super::*;
 
 /// Past `track_list_reload::SCROLL_ADJUSTMENT_HOLD` plus a glide, so the

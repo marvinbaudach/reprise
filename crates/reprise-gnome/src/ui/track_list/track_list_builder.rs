@@ -23,7 +23,8 @@ use super::track_list_empty_state::build_status_page;
 use super::track_list_model::TrackListModel;
 use super::track_list_reload::{reload, reload_centering_playing_track};
 use super::track_list_smoke::{
-    arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
+    arm_smoke_activate, arm_smoke_filter, arm_smoke_reload_oracle, arm_smoke_sort_column,
+    arm_smoke_source,
 };
 use super::track_list_sort::{sort_by_column, wire_sort_clicks, SortState};
 use super::{
@@ -379,6 +380,7 @@ pub(in crate::ui) fn build(
     arm_smoke_filter(&shared);
     arm_smoke_source(&shared);
     arm_smoke_sort_column(&column_view, &title_column, &artist_column);
+    arm_smoke_reload_oracle(&shared);
     super::track_list_menu_smoke::arm_smoke_menu_action(&shared);
     super::tag_edit_flow::arm_smoke(&shared);
     super::delete_tracks::arm_smoke(&shared);

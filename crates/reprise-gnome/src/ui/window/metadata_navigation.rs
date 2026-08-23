@@ -142,15 +142,29 @@ impl MetadataNavigator {
         else {
             return;
         };
-        library_shell::route_to_place(
-            &place,
-            &sidebar,
-            &track_list,
-            library_shell::ContentPages::new(&self.content_navigation, &self.content_stack),
-            &self.source_title,
-            &self.active_content_focus,
-            reason,
-        );
+        let content_pages =
+            library_shell::ContentPages::new(&self.content_navigation, &self.content_stack);
+        if was_track_reveal {
+            library_shell::route_to_place_centering_anchor(
+                &place,
+                &sidebar,
+                &track_list,
+                content_pages,
+                &self.source_title,
+                &self.active_content_focus,
+                reason,
+            );
+        } else {
+            library_shell::route_to_place(
+                &place,
+                &sidebar,
+                &track_list,
+                content_pages,
+                &self.source_title,
+                &self.active_content_focus,
+                reason,
+            );
+        }
     }
 
     pub(in crate::ui) fn leave_scope(&self) {
@@ -581,22 +595,18 @@ mod tests {
         let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
             crate::ui::list_geometry::RowHeight::new(row_height).unwrap(),
         );
-        let expected = crate::ui::track_list::reload_restore::scroll_target(
-            Some((revealed_id, 0.0)),
-            &current_ids,
-            &layout,
-            adjustment.page_size(),
-        )
-        .unwrap();
-        assert!(
-            (adjustment.value() - expected).abs() <= row_height,
-            "the router reveal landed at {} instead of {expected}",
-            adjustment.value()
-        );
         let revealed_position = current_ids
             .iter()
             .position(|id| *id == revealed_id)
             .unwrap() as u32;
+        let expected = layout
+            .centered_value(revealed_position, current_ids.len(), adjustment.page_size())
+            .unwrap();
+        assert!(
+            (adjustment.value() - expected).abs() <= row_height / 2.0,
+            "the router reveal landed at {} instead of {expected}",
+            adjustment.value()
+        );
         assert!(track_list.shared.selection.is_selected(revealed_position));
         let back = history
             .go_back_from(track_list.browser_place())

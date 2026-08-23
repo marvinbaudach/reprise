@@ -217,8 +217,6 @@ impl PreferencesContext {
 mod tests {
     use std::rc::Rc;
 
-    use gtk4::prelude::*;
-
     use super::*;
 
     #[test]

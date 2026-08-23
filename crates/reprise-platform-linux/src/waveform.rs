@@ -231,8 +231,10 @@ fn push_sample(
         ));
     }
     let samples = bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
         .collect::<Vec<_>>();
     waveform.push(&samples)?;
     if let Some(spectrogram) = spectrogram {

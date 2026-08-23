@@ -117,6 +117,7 @@ mod style;
 mod swell;
 pub(crate) mod table_column_widths;
 mod table_columns;
+mod table_selection;
 mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]
@@ -182,9 +183,9 @@ pub(crate) use playlists::playlist_io;
 use playlists::{playlist_import_navigation, playlist_io_names};
 #[allow(unused_imports)]
 use preferences::{
-    preference_appearance, preference_choice_cards, preference_dependencies, preference_effects,
-    preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
-    preference_playback, preference_plugins, preference_rhythmbox, preference_visual_strings,
+    preference_appearance, preference_dependencies, preference_effects, preference_lastfm,
+    preference_layout, preference_library, preference_listenbrainz, preference_playback,
+    preference_plugins, preference_rhythmbox, preference_visual_strings,
     preference_window_decorations, preferences_window,
 };
 #[allow(unused_imports)]

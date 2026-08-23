@@ -177,8 +177,6 @@ pub const PREFERENCES_LAYOUT: &str = N_!("Layout");
 pub const PLAYER_BAR_POSITION: &str = N_!("Player Bar Position");
 pub const POSITION_BOTTOM: &str = N_!("Bottom");
 pub const POSITION_TOP: &str = N_!("Top");
-pub const SHOW_SIDEBAR: &str = N_!("Show Sidebar");
-pub const SHOW_STATUS_LINE: &str = N_!("Show Status Line");
 pub const LIST_DENSITY: &str = N_!("List Density");
 pub const DENSITY_COMFORTABLE: &str = N_!("Comfortable");
 pub const DENSITY_STANDARD: &str = N_!("Standard");
@@ -404,6 +402,11 @@ pub const COLUMN_YEAR: &str = N_!("Year");
 pub const COLUMN_ADDED: &str = N_!("Added");
 pub const COLUMN_LENGTH: &str = N_!("Length");
 pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
+pub const SORT: &str = N_!("Sort");
+pub const SORT_BY: &str = N_!("Sort by");
+pub const SORT_DIRECTION: &str = N_!("Direction");
+pub const SORT_ASCENDING: &str = N_!("Ascending");
+pub const SORT_DESCENDING: &str = N_!("Descending");
 // The Rating column's header reuses `RATING` below rather than having its
 // own `COLUMN_RATING` const — the column header and the `RatingWidget`
 // tooltip (src/ui/rating.rs) are the same word, so one const serves both.

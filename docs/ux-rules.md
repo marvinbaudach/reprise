@@ -270,7 +270,11 @@ result.
   exactly the clicked row instead of stretching from the start of the list. A
   range never moves the anchor; the next input starts from it again. The
   playing track remains passive: it receives neither selection nor keyboard
-  focus, and playback still moves nothing, preserving NAV-10b.
+  focus, and playback still moves nothing, preserving NAV-10b. This anchor
+  rule applies to every multi-selection table and lives in
+  `ui/table_selection`: the track list supplies the playing row as its
+  fallback, while tables without playback proceed directly to the third
+  branch.
 - **NAV-18** [active] [gtk] — **The sidebar marks the visible view, and the
   marked entry stays clickable.** Exactly the sidebar entry whose view is
   visible in the content area carries the marking — including Library Doctor
@@ -1128,7 +1132,9 @@ result.
   time. Activation, account, status, errors and queue stay
   provider-specific. With bundled app credentials, Last.fm offers the
   normal browser login directly; custom API credentials sit collapsed
-  under "Advanced setup".
+  under "Advanced setup". Without bundled app credentials, the
+  application form is the primary path: it is expanded and is not
+  labelled "Advanced".
 - **SET-7** [replaced by SET-10] [gtk] — "New Releases" and "Concerts" are peer
   Preferences main pages in the vertical navigation. For these two
   features, the Plugins page keeps only the activation switches; scope,
@@ -1183,7 +1189,11 @@ result.
   restores the exact previous configuration. The group collapses to its
   header, which never disappears, and offers "Show the N sources"; revealing
   it shows every source read-only. Connected services collapses the same way
-  and is labelled "Scrobbling · needs online sources".
+  and is labelled "Scrobbling · needs online sources". The header stands
+  exactly once: the master row carries the heading "Online content" and the
+  group above it carries no title of its own. The Plugins rows drop the
+  boxed-list card entirely — they run over the full width of the page on the
+  page ground, separated by hairlines only (`docs/plans/plugins-online-content-master-hierarchy.md`).
 - **SET-12** [replaced by SET-14] [gtk] — Replaces `SIM-8`, which stated the same thing
   inside a module that no longer exists: plugin provision badges are derived
   from the static registry, never from current enable state. A provision-kind
@@ -1205,10 +1215,17 @@ result.
   path; its origin parent and index are recorded before any matching control
   moves so clearing restores every control to its exact place. Activating the
   path closes search, opens that page and focuses the restored control.
-- **SET-14** [active] [gtk] — Every row on the Plugins page places its enable
+- **SET-14** [replaced by SET-14a] [gtk] — Every row on the Plugins page places its enable
   switch on the same right edge. A non-expandable switch row reserves the
   expander arrow's trailing slot even though the row does not open, so its
   switch stays aligned with the switch of a row that exposes child settings.
+- **SET-14a** [active] [gtk] — Replaces `SET-14`, which put the expander arrow
+  behind the switch: the visible chevron of an expandable row sits in a gutter
+  **left** of its title, and every Plugins row reserves that gutter — also the
+  rows that never open — so all row titles and the group headings share one
+  left edge. The trailing slot libadwaita's own arrow occupies stays reserved
+  but invisible, which is what keeps every enable switch on the same right
+  edge, unchanged from `SET-14`.
 - **SET-15** [active] [core] [gtk] — Location has one app-wide value and one
   Preferences owner. Its main page sits between Library and Plugins, owns City
   and Default radius, and names every reader under Used by: Concerts, Radio's
@@ -1221,6 +1238,20 @@ result.
   (`set_15_location_name_omits_the_separator_without_a_country`). Disabling
   Concerts or online sources never makes the stored location or radius
   unreadable and never suppresses the app-wide location-change announcement.
+
+- **SET-16** [active] [gtk] — The Layout page opens with one interactive
+  preview of the library window instead of static choice cards. Every region is
+  drawn in place and is itself the control: Player Bar (click moves it between
+  the top and bottom edge), Navigation Sidebar (left), Filter Bar (above the
+  track list), Details Sidebar (right) and Status Bar (below the track list) —
+  clicking a visible region hides it. A hidden region does not vanish: it
+  leaves a dashed placeholder with a "+" in its own place, which brings it
+  back. The sidebars' sides are not configurable — Navigation is always left,
+  Details always right. The switches under "Window Regions" show the same
+  state, and preview and switches write through one save path: whatever fails
+  to save keeps its previous value and raises the toast that names it, so the
+  two can never disagree. "Restore defaults" at the foot of the page returns
+  every layout value to its default.
 
 ## G. Feedback vocabulary
 
@@ -1343,6 +1374,44 @@ result.
   those views are next reworked: the failure notice then moves into chrome
   or a reserved line, and this paragraph goes with the last in-flow
   banner. No new surface may cite it.
+- **FB-10** [planned] [gtk] — The track
+  browser says when its own reload will take longer than a moment, and it
+  never pretends to be working while it is frozen. This covers every reload
+  the browser triggers itself: typing into the search, clearing it, changing
+  the sort, switching the source. Measured on 2026-08-22 (release build,
+  loaded 8-CPU machine): on a 128-track profile every one of those reloads
+  finished under 23 ms, while on a 100,000-track profile a sort change
+  blocked the main thread for 437–671 ms and a cleared search expanding back
+  to the full list blocked it for 94–120 **seconds**. The counting SQL never
+  exceeded 2.4 ms in either profile, so the cost is the synchronous model and
+  list projection, not the query. Threshold: **250 ms** from the reload
+  starting to the replacement list being ready to paint — the empty interval
+  between the slowest measured narrowing search (75 ms) and the fastest
+  measured full-result sort (437 ms), about fifteen frames at 60 Hz. Three
+  obligations follow. (1) A reload that crosses the threshold shows one busy
+  state, placed by FB-9's order — the filter bar's existing trailing slot or
+  an overlay, never a new row and never a changed bar height. (2) It appears
+  only once the threshold has actually elapsed, so the fast path never
+  flashes it. (3) **A busy state that cannot repaint is prohibited.**
+  Painting a spinner and then blocking the main thread for the rest of the
+  reload satisfies the geometry and lies about the state; the reload must
+  yield often enough for the indicator to stay live and the window to stay
+  responsive, or it must not claim to be working at all. Cancel is offered
+  only where it genuinely cancels. Decided 2026-08-23: the reload **is** made
+  interruptible rather than only announced, and the 250 ms above is the
+  accepted threshold. The long cases are therefore defects and are tracked as
+  such, not as merely unannounced waits.
+  The list keeps its previous content until the replacement is ready — no
+  blank list and no half-filled one. Reduced motion is obeyed through the
+  central gate, and the state stays statically legible per FB-9.
+- **FB-11** [active] [gtk] — A toast always carries its message. Toast text is
+  plain text, never markup, and never passes through a markup parser: library
+  data such as video and episode titles, station names, filenames, error text
+  and URLs, as well as translations, may contain `&`, `<` or `>`. Discarded
+  toast text is a defect rather than a cosmetic flaw because it claims that an
+  action completed without naming the action, leaving any adjacent Undo
+  without a subject. The measured trigger was a YouTube title containing `&`
+  on 2026-08-23.
 
 ## H. File association & OS integration
 
@@ -2561,10 +2630,10 @@ the panel).
 - **NR-39** [active] [gtk] — The Releases table's `Status` and `Link`
   columns are ordinary columns in the free band: hideable, movable, visible
   in the column editor, and visible by default. Only the `Cover` column stays
-  fixed. Hiding both removes the visible routes for hiding a release and for
-  opening its purchase link; the header popover restores either column. A
-  layout saved before this change keeps both columns visible, while a saved
-  layout that never mentioned them starts without them.
+  fixed. Hiding the `Link` column removes the visible route for opening a
+  release's purchase link; the header popover restores either column. A layout
+  saved before this change keeps both columns visible, while a saved layout
+  that never mentioned them starts without them.
   Test: `nr_39_the_column_editor_lists_status_and_link_and_hides_them`
   (`ui/releases/releases_view_tests.rs`).
 - **NR-21a** [active] [gtk] — replaces NR-21. A failed New Releases fetch
@@ -2596,6 +2665,23 @@ the panel).
   own, so the row keeps naming its source per NR-38.
   Test: `nr_39_the_feed_tags_only_the_exception`
   (`ui/updates/concerts_section.rs`, `#[cfg(test)]`).
+- **NR-40** [active] [gtk] — **Release rows select and answer like episode
+  rows.** A click selects the row alone, Ctrl-click toggles it, Shift-click
+  extends the selection from the anchor across the rendered order (NAV-17; the
+  releases table has no playing row, so a missing anchor means Shift-click
+  takes the clicked row alone). A secondary click on a row outside the
+  selection makes that row the selection before the menu opens. The same
+  selection-aware menu is reached by secondary click and by Menu/Shift+F10. It
+  offers exactly one primary entry — „Hide" for visible rows, „Show again" for
+  hidden ones, carrying the selection count per CTX-6 — plus, for a single
+  selected row, „Go to artist" and, only when the library holds tracks for it,
+  „Go to album". Hiding and restoring write one transaction for the whole
+  selection and raise a ten-second toast with „Undo"; undo restores exactly
+  that set and leaves it selected. Known limitation: with the status column's
+  hover button gone (NR-39), hiding has no touch affordance and no primary-click
+  route.
+  Test: `nr_40_release_menu_has_one_primary_action_and_single_row_navigation`
+  (`ui/releases/releases_menu.rs`).
 
 ## S. Surfaces & Geometry
 
@@ -3201,8 +3287,20 @@ property is set and yet nothing happens.
   sort indicator: the indicator for its current primary column. Every other
   indicator is invisible while its width stays reserved, so headers do not
   jump. A header without a sort field carries no sorter and therefore does not
-  appear clickable; a sortable header orders its own column. **Test rule:**
+  appear clickable; a sortable header orders its own column. **Issue #404:**
+  sorting is also reachable without a pointer through a labelled control in
+  the browse bar. Its field and direction choices are labelled, keyboard
+  navigable, and expose the current choice as state. The browse-bar control
+  and the sortable column headers drive the same `ColumnView` sorter; neither
+  writes or owns a second sort state. **Test rule:**
   one rule-named display test per table, plus a measured filler test. Tests:
+  `style_13_browse_sort_and_header_click_converge_and_reload_once`
+  and `style_13_header_sort_is_marked_when_the_sort_popover_opens`
+  (`ui/track_list/track_list_sort.rs`),
+  `style_13_sort_choices_match_every_accepted_table_sort_field`,
+  `style_13_sort_choices_are_keyboard_radio_actions`, and
+  `style_13_sort_popover_closes_on_escape`
+  (`ui/browse/browse_bar_tests.rs`),
   `style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator`
   (`ui/table_columns/registry.rs`),
   `nr_39_the_column_editor_lists_status_and_link_and_hides_them` and
@@ -6572,3 +6670,12 @@ rule here is phrased as something a stylesheet either states or does not.
 - **SHOW-21** [active] [web] — Chapter two's incident, merge and coverage
   figures reach the same column edge as their neighbours while the incident
   charts keep the measure, gaps and bar dimensions they report.
+- **SHOW-22** [active] [web] — Every permalink the showroom pins resolves for
+  a reader, not merely for the machine that wrote it. The pinned commit is
+  **reachable from the published branch**, not just present in some local
+  object store: a commit rewritten out of the history keeps its whole tree, so
+  a path-existence check still passes on a developer machine while every link
+  on the page 404s and a fresh CI clone cannot resolve it at all. Measured that
+  way in `a776f8a963`. The check errors rather than skips when the branch is
+  unavailable — a skip is the hole it was written to close — and it carries a
+  positive control against a commit no branch carries.

@@ -33,6 +33,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -46,15 +47,19 @@ use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 use super::track_list_model_change::ModelChange;
+use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
 /// page size (`track_list.rs`'s former `WINDOW_LIMIT`), now used as the unit
 /// of lazy loading rather than the single page loaded in full every reload.
-const WINDOW_SIZE: u32 = 200;
+const WINDOW_SIZE: u32 = 500;
+// A larger model window would be silently truncated and violate GListModel::item().
+const _: () = assert!(WINDOW_SIZE as i64 <= reprise_core::queries::MAX_WINDOW_LIMIT);
 
 /// Maximum number of windows kept in `ModelState::cache` at once. Bounds
 /// memory for a scroll session that has touched many parts of a huge
-/// library; 8 * `WINDOW_SIZE` = 1600 rows is comfortably enough to cover a
+/// library; 8 * `WINDOW_SIZE` = 4,000 rows is enough to bound a full-model
+/// replacement's sorted OFFSET queries while keeping memory finite for a
 /// user's visible scroll neighborhood without unbounded growth.
 const MAX_CACHED_WINDOWS: usize = 8;
 
@@ -172,9 +177,11 @@ mod imp {
         }
 
         fn item(&self, position: u32) -> Option<glib::Object> {
-            self.obj()
-                .queue_item_at(position)
-                .map(|item| glib::BoxedAnyObject::new(item).upcast())
+            diagnostic_trail::measure_item_call(|| {
+                self.obj()
+                    .queue_item_at(position)
+                    .map(|item| glib::BoxedAnyObject::new(item).upcast())
+            })
         }
     }
 }
@@ -346,7 +353,7 @@ impl TrackListModel {
         sort_dir: &str,
         filter: &str,
         queue_items: &[QueueItem],
-    ) {
+    ) -> Option<Duration> {
         self.set_query_browsed(
             source,
             sort_field,
@@ -354,7 +361,7 @@ impl TrackListModel {
             filter,
             &BrowseFilter::default(),
             queue_items,
-        );
+        )
     }
 
     pub fn set_query_browsed(
@@ -365,7 +372,7 @@ impl TrackListModel {
         filter: &str,
         browse: &BrowseFilter,
         queue_items: &[QueueItem],
-    ) {
+    ) -> Option<Duration> {
         self.set_query_browsed_ai(
             source,
             sort_field,
@@ -374,7 +381,7 @@ impl TrackListModel {
             browse,
             queue_items,
             false,
-        );
+        )
     }
 
     /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
@@ -394,7 +401,7 @@ impl TrackListModel {
         browse: &BrowseFilter,
         queue_items: &[QueueItem],
         exclude_ai: bool,
-    ) {
+    ) -> Option<Duration> {
         self.set_query_browsed_ai_inner(
             source,
             sort_field,
@@ -404,7 +411,7 @@ impl TrackListModel {
             queue_items,
             exclude_ai,
             None,
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -418,7 +425,7 @@ impl TrackListModel {
         queue_items: &[QueueItem],
         exclude_ai: bool,
         change: ModelChange,
-    ) {
+    ) -> Option<Duration> {
         self.set_query_browsed_ai_inner(
             source,
             sort_field,
@@ -428,7 +435,7 @@ impl TrackListModel {
             queue_items,
             exclude_ai,
             Some(change),
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -442,13 +449,14 @@ impl TrackListModel {
         queue_items: &[QueueItem],
         exclude_ai: bool,
         requested_change: Option<ModelChange>,
-    ) {
+    ) -> Option<Duration> {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
             tracing::error!("TrackListModel::set_query: connection not set");
-            return;
+            return None;
         };
+        let query_started = diagnostic_trail::start_reload_step();
         let new_total = if exclude_ai {
             let conn_ref = &conn;
             queries::query_track_count_browsed_ai(
@@ -490,7 +498,10 @@ impl TrackListModel {
                     |n| n.max(0) as u32,
                 )
         };
+        let query_elapsed = diagnostic_trail::finish_reload_step(ReloadStep::Query, query_started)
+            .unwrap_or_default();
 
+        let state_started = diagnostic_trail::start_reload_step();
         {
             let mut state = self.imp().state.borrow_mut();
             state.source = source.clone();
@@ -505,6 +516,7 @@ impl TrackListModel {
             state.total = new_total;
             state.cache.clear();
         }
+        diagnostic_trail::finish_reload_step(ReloadStep::StateSwap, state_started);
 
         tracing::debug!(
             total = new_total,
@@ -545,6 +557,7 @@ impl TrackListModel {
                 generation,
             });
         self.imp().generation.set(generation.wrapping_add(1));
+        let signal_started = diagnostic_trail::start_reload_step();
         super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
             position: change.position,
             removed: change.removed,
@@ -560,6 +573,18 @@ impl TrackListModel {
             });
             self.sections_changed(position, n_items);
         }
+        diagnostic_trail::finish_reload_step(ReloadStep::ItemsChanged, signal_started);
+        Some(query_elapsed)
+    }
+
+    pub(in crate::ui) fn query_signature(&self) -> (ViewSource, String, String, String) {
+        let state = self.imp().state.borrow();
+        (
+            state.source.clone(),
+            state.sort_field.clone(),
+            state.sort_dir.clone(),
+            state.filter.clone(),
+        )
     }
 
     /// How often the model has been repopulated. See `imp::TrackListModel::
@@ -639,31 +664,33 @@ impl TrackListModel {
             (i64::from(window_start), queue_items)
         };
 
-        let rows = if source == ViewSource::Queue {
-            queries::query_queue_item_window(
-                &conn,
-                &queue_items,
-                query_offset,
-                i64::from(WINDOW_SIZE),
-            )
-        } else {
-            queries::query_track_window_browsed_ai(
-                &conn,
-                &source,
-                &sort_field,
-                &sort_dir,
-                &filter,
-                &browse,
-                query_offset,
-                i64::from(WINDOW_SIZE),
-                &queue_items,
-                exclude_ai,
-                // INST-10: the AI badge marks every AI-manipulated row, so the
-                // windowed query always projects the real `is_ai` column.
-                true,
-            )
-            .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
-        };
+        let rows = diagnostic_trail::measure_window_query(|| {
+            if source == ViewSource::Queue {
+                queries::query_queue_item_window(
+                    &conn,
+                    &queue_items,
+                    query_offset,
+                    i64::from(WINDOW_SIZE),
+                )
+            } else {
+                queries::query_track_window_browsed_ai(
+                    &conn,
+                    &source,
+                    &sort_field,
+                    &sort_dir,
+                    &filter,
+                    &browse,
+                    query_offset,
+                    i64::from(WINDOW_SIZE),
+                    &queue_items,
+                    exclude_ai,
+                    // INST-10: the AI badge marks every AI-manipulated row, so the
+                    // windowed query always projects the real `is_ai` column.
+                    true,
+                )
+                .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
+            }
+        });
 
         let rows = match rows {
             Ok(rows) => rows,

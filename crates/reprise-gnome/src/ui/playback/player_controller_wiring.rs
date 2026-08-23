@@ -11,18 +11,15 @@
 //! - `cycle_repeat`: the pure Off→All→One→Off cycling `wire_bar_controls`'s
 //!   repeat-button closure uses.
 //! - `arm_smoke_repeat`: the `REPRISE_SMOKE_REPEAT=all` dev/verification
-//!   hook — `PlayerController::new`'s other post-construction call.
+//!   hook — called once after session restoration so persisted state cannot
+//!   overwrite it.
 //!
 //! Both public entry points take `&Rc<PlayerController>` (not `&self` — they
-//! aren't `impl PlayerController` methods) since they're only ever called
-//! once, from `PlayerController::new`, before that `Rc` has any other
-//! owner — free functions in a sibling module rather than inherent methods
-//! for the same reason `mpris_mirror.rs`'s `mpris_status_from_playback_state`
-//! is a free function: no `&self` is actually needed. `pub(in crate::ui)` (visible
-//! throughout `ui` and its descendants) so `player_controller.rs` can call
-//! them — same seam idiom as `mpris_mirror.rs`/`playback_faults.rs` use for
-//! the reverse direction (see `player_controller.rs`'s `## Queue borrow
-//! discipline` doc section).
+//! aren't `impl PlayerController` methods) because their callers own the
+//! controller's startup wiring. They remain free functions for the same reason
+//! `mpris_mirror.rs`'s `mpris_status_from_playback_state` is one: no inherent
+//! method is needed. `pub(in crate::ui)` keeps the two startup call sites able
+//! to reach them.
 
 use std::rc::Rc;
 
@@ -31,14 +28,18 @@ use reprise_core::queue::Repeat;
 
 /// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR`/`REPRISE_
 /// SMOKE_QUIT`/`REPRISE_SMOKE_ACTIVATE`): when set to `"all"`, forces
-/// `Repeat::All` right after the controller (and its queue) are built, so a
-/// headless E2E can observe auto-advance wrapping from the last track back
-/// to the first without a human toggling the repeat button.
+/// `Repeat::All` after the controller's session queue has been restored, so a
+/// headless E2E can observe auto-advance wrapping from the last track back to
+/// the first without a human toggling the repeat button.
 ///
 /// Usage: `REPRISE_SMOKE_REPEAT=all REPRISE_SCAN_DIR=… REPRISE_SMOKE_ACTIVATE=1
 ///  REPRISE_AUDIO_SINK=fakesink REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
 const SMOKE_REPEAT_ENV_VAR: &str = "REPRISE_SMOKE_REPEAT";
 const SMOKE_REPEAT_ALL_VALUE: &str = "all";
+
+fn startup_repeat(snapshot: Repeat, armed_override: Option<Repeat>) -> Repeat {
+    armed_override.unwrap_or(snapshot)
+}
 
 /// Wires the bar's user-input signals to player calls. Each closure holds a
 /// `Weak` controller reference: the bar is owned *by* the controller, so a
@@ -285,9 +286,9 @@ pub(in crate::ui) fn cycle_repeat(current: Repeat) -> Repeat {
 }
 
 /// Arms `REPRISE_SMOKE_REPEAT=all` (see the const's doc comment above):
-/// forces the queue into `Repeat::All` right after construction and syncs
-/// the bar's repeat indicator to match, so a headless E2E run can observe
-/// auto-advance wrapping from the last queued track back to the first.
+/// forces the restored queue into `Repeat::All` and syncs the bar's repeat
+/// indicator to match, so a headless E2E run can observe auto-advance wrapping
+/// from the last queued track back to the first.
 pub(in crate::ui) fn arm_smoke_repeat(controller: &Rc<PlayerController>) {
     let Ok(value) = std::env::var(SMOKE_REPEAT_ENV_VAR) else {
         return;
@@ -302,9 +303,11 @@ pub(in crate::ui) fn arm_smoke_repeat(controller: &Rc<PlayerController>) {
     tracing::info!(
         "{SMOKE_REPEAT_ENV_VAR}={SMOKE_REPEAT_ALL_VALUE} set: forcing Repeat::All for headless wrap-around E2E"
     );
-    controller.queue.borrow_mut().set_repeat(Repeat::All);
-    controller.sync_repeat_indicator(Repeat::All);
-    controller.update_mpris_repeat(Repeat::All);
+    let restored = controller.queue.borrow().repeat();
+    let repeat = startup_repeat(restored, Some(Repeat::All));
+    controller.queue.borrow_mut().set_repeat(repeat);
+    controller.sync_repeat_indicator(repeat);
+    controller.update_mpris_repeat(repeat);
 }
 
 #[cfg(test)]
@@ -316,5 +319,18 @@ mod tests {
         assert_eq!(cycle_repeat(Repeat::Off), Repeat::All);
         assert_eq!(cycle_repeat(Repeat::All), Repeat::One);
         assert_eq!(cycle_repeat(Repeat::One), Repeat::Off);
+    }
+
+    #[test]
+    fn smoke_repeat_override_outweighs_the_restored_snapshot() {
+        assert_eq!(startup_repeat(Repeat::Off, Some(Repeat::All)), Repeat::All);
+        assert_eq!(startup_repeat(Repeat::One, Some(Repeat::All)), Repeat::All);
+    }
+
+    #[test]
+    fn absent_smoke_repeat_override_preserves_the_restored_snapshot() {
+        for snapshot in [Repeat::Off, Repeat::All, Repeat::One] {
+            assert_eq!(startup_repeat(snapshot, None), snapshot);
+        }
     }
 }

@@ -667,7 +667,7 @@ fn remove_station(shared: &Rc<Shared>, id: i64) {
     shared
         .pending_toasts
         .set(shared.pending_toasts.get().saturating_add(1));
-    let toast = adw::Toast::new(&strings::radio_remove_named(&station.name));
+    let toast = crate::ui::toasts::plain(&strings::radio_remove_named(&station.name));
     toast.set_button_label(Some(&strings::text(strings::RADIO_UNDO)));
     toast.set_timeout(10);
     toast.set_priority(adw::ToastPriority::High);

@@ -27,7 +27,7 @@ click_preferences_dialog_relative() {
 }
 
 run_preferences_flow() {
-  start_flow "6: Preferences page sidebar, cards, and Library Window controls…"
+  start_flow "6: Preferences page sidebar, layout preview, and Window Regions controls…"
 
   # Compact layouts can replace the mapped surface. Always address the
   # currently active Library window before opening its primary menu.
@@ -105,42 +105,57 @@ run_preferences_flow() {
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/19-preferences-layout.png"
 
   # In-page controls live in the content area to the RIGHT of the sidebar.
-  # The Player Bar group shows two choice cards (Top | Bottom) side by side,
-  # near the top of the content region.
-  local CARD_TOP_X=345
-  local CARD_BOTTOM_X=598
-  local CARD_Y=190
-  click_preferences_dialog_relative "$dialog_rect" "$CARD_TOP_X" "$CARD_Y"
+  # `SET-16` replaced the two Player Bar choice cards with one interactive
+  # preview of the library window: the regions in it ARE the controls, and the
+  # switches below mirror them. Coordinates measured on 2026-08-22 from a
+  # maximized 1600x900 session against the authored 760x680 dialog.
+  #
+  # The preview's own regions come first — a click there has to reach the same
+  # save path a switch reaches, which is the whole point of the redesign.
+  local PREVIEW_X=480
+  local PREVIEW_PLAYER_BAR_Y=383
+  local PREVIEW_STATUS_BAR_Y=348
+  click_preferences_dialog_relative "$dialog_rect" "$PREVIEW_X" "$PREVIEW_PLAYER_BAR_Y"
   sleep 0.2
-  assert_db_value "player_bar_position" "top" "Top Player Bar card persisted"
-  click_preferences_dialog_relative "$dialog_rect" "$CARD_BOTTOM_X" "$CARD_Y"
-  sleep 0.2
-  assert_db_value "player_bar_position" "bottom" "Bottom Player Bar card persisted"
+  assert_db_value "player_bar_position" "top" "Preview player-bar region moved the bar to the top"
 
-  # The four Library Window switch rows stack below the cards; clicking a row
+  # The Player Bar Position toggles sit in the first row of "Window Regions".
+  local BAR_TOP_X=583
+  local BAR_BOTTOM_X=664
+  local BAR_Y=490
+  click_preferences_dialog_relative "$dialog_rect" "$BAR_TOP_X" "$BAR_Y"
+  sleep 0.2
+  assert_db_value "player_bar_position" "top" "Top Player Bar toggle persisted"
+  click_preferences_dialog_relative "$dialog_rect" "$BAR_BOTTOM_X" "$BAR_Y"
+  sleep 0.2
+  assert_db_value "player_bar_position" "bottom" "Bottom Player Bar toggle persisted"
+
+  # The four region switch rows stack below that toggle row; clicking a row
   # toggles its switch. Their trailing toggles sit near the content's right edge.
   local SWITCH_X=$((width - 90))
-  local SWITCH_SIDEBAR_Y=361
-  local SWITCH_FILTER_Y=416
-  local SWITCH_INFO_Y=471
-  local SWITCH_STATUS_Y=526
+  local SWITCH_SIDEBAR_Y=545
+  local SWITCH_FILTER_Y=600
+  local SWITCH_INFO_Y=654
   click_preferences_dialog_relative "$dialog_rect" "$SWITCH_X" "$SWITCH_SIDEBAR_Y"
   sleep 0.2
   assert_db_value "ui.sidebar_visible" "0" "Layout switch hid the sidebar"
   click_preferences_dialog_relative "$dialog_rect" "$SWITCH_X" "$SWITCH_FILTER_Y"
   sleep 0.2
   assert_db_value "ui.browse_visible" "0" "Layout switch hid the filter bar"
-  # Show Information Panel is the odd one out: it defaults to FALSE
+  # Details Sidebar is the odd one out: it defaults to FALSE
   # (reprise-core `get_info_panel_visible_in`), so this row starts off while its
   # three neighbours start on — `19-preferences-layout.png` shows it before any
   # click. The click therefore SHOWS the panel; demanding "0" would demand a
   # toggle that never had anything to hide.
   click_preferences_dialog_relative "$dialog_rect" "$SWITCH_X" "$SWITCH_INFO_Y"
   sleep 0.2
-  assert_db_value "ui.info_panel_visible" "1" "Layout switch showed the information panel"
-  click_preferences_dialog_relative "$dialog_rect" "$SWITCH_X" "$SWITCH_STATUS_Y"
+  assert_db_value "ui.info_panel_visible" "1" "Layout switch showed the details sidebar"
+  # The Status Bar row sits below the dialog's fold, so its region in the
+  # preview is the reachable control — and it proves the preview a second time,
+  # on a region that hides instead of moving.
+  click_preferences_dialog_relative "$dialog_rect" "$PREVIEW_X" "$PREVIEW_STATUS_BAR_Y"
   sleep 0.2
-  assert_db_value "ui.status_visible" "0" "Layout switch hid the status line"
+  assert_db_value "ui.status_visible" "0" "Preview status-bar region hid the status line"
 
   # Visit every remaining top-level page via its sidebar row. Their control
   # semantics have focused Rust/display coverage; this pointer flow proves each

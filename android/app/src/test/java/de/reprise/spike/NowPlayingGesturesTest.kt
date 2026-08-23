@@ -1,11 +1,19 @@
 package de.reprise.spike
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.Interaction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -20,6 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.flow.Flow
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidStoredVisualizer
@@ -30,6 +39,71 @@ import uniffi.reprise_android_ffi.AndroidVisualizerChoice
 class NowPlayingGesturesTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun aCancelledSeekGestureReturnsTheHeadToThePlaybackPosition() {
+        val playback = mutableStateOf(gesturePlayback())
+        val surfaceState = MobileSurfaceViewModel()
+        val interactions = RecordingSeekInteractionSource()
+        compose.setContent {
+            TestSeekSlider(playback.value, surfaceState, interactions)
+        }
+        val slider = compose.onNodeWithTag("now-playing-seek")
+        slider.performTouchInput {
+            down(Offset(width * 0.2f, centerY))
+            moveTo(Offset(width * 0.6f, centerY))
+        }
+        compose.waitForIdle()
+        assertTrue(slider.progress() > 50_000f)
+
+        compose.runOnUiThread {
+            interactions.cancelDrag()
+            playback.value = playback.value.copy(positionMs = 30_000)
+        }
+        compose.waitForIdle()
+
+        assertEquals(30_000f, slider.progress(), 0.5f)
+    }
+
+    @Test
+    fun aStillFingerKeepsTheHead() {
+        val playback = mutableStateOf(gesturePlayback())
+        val surfaceState = MobileSurfaceViewModel()
+        val interactions = RecordingSeekInteractionSource()
+        compose.setContent {
+            TestSeekSlider(playback.value, surfaceState, interactions)
+        }
+        val slider = compose.onNodeWithTag("now-playing-seek")
+        slider.performTouchInput {
+            down(Offset(width * 0.2f, centerY))
+            moveTo(Offset(width * 0.6f, centerY))
+        }
+        compose.waitForIdle()
+        val draggedPosition = slider.progress()
+
+        compose.runOnUiThread {
+            playback.value = playback.value.copy(positionMs = 30_000)
+        }
+        compose.waitForIdle()
+
+        assertEquals(draggedPosition, slider.progress(), 0.5f)
+    }
+
+    @Test
+    fun aCancelFromTheOutgoingTrackDoesNotMoveTheNewTracksHead() {
+        val surfaceState = MobileSurfaceViewModel()
+        val outgoingTrackId = 830L
+        val newTrackId = 831L
+        surfaceState.dragTo(outgoingTrackId, positionMs = 60_000)
+
+        surfaceState.releaseScrub(newTrackId)
+
+        val newHead = surfaceState.seekPosition(newTrackId, fallbackPositionMs = 40_000)
+        assertEquals(40_000L, newHead.positionMs)
+        val outgoingHead = surfaceState.seekPosition(outgoingTrackId, fallbackPositionMs = 0)
+        assertEquals(60_000L, outgoingHead.positionMs)
+        assertTrue(outgoingHead.isDragging)
+    }
 
     @Test
     fun coverDragPastThresholdSkipsToTheNextTrack() {
@@ -146,7 +220,8 @@ class NowPlayingGesturesTest {
         compose.waitForIdle()
 
         assertTrue(preference.writes.isEmpty())
-        assertEquals(0, engines.created)
+        assertEquals(1, engines.created)
+        assertEquals(0, engines.sceneCalls)
     }
 
     @Test
@@ -187,7 +262,8 @@ class NowPlayingGesturesTest {
 
         assertEquals(1, preference.reads)
         assertTrue(preference.writes.isEmpty())
-        assertEquals(0, engines.created)
+        assertEquals(1, engines.created)
+        assertEquals(0, engines.sceneCalls)
     }
 
     @Composable
@@ -215,6 +291,62 @@ class NowPlayingGesturesTest {
                 )
             }
         }
+    }
+
+    @Composable
+    private fun TestSeekSlider(
+        playback: PlaybackUiState,
+        surfaceState: MobileSurfaceViewModel,
+        interactionSource: MutableInteractionSource,
+    ) {
+        val theme = MobileThemeSelection(
+            palette = MobileTheme.NOCTURNE,
+            colorScheme = AndroidColorScheme.SYSTEM,
+            dynamicAvailable = false,
+        )
+        RepriseTheme(theme, darkPalette = true) {
+            CompositionLocalProvider(LocalPlaybackControls provides DisconnectedPlaybackControls) {
+                SpectralSeekSlider(
+                    trackId = gestureTrack().id,
+                    playback = playback,
+                    surfaceState = surfaceState,
+                    interactionSource = interactionSource,
+                )
+            }
+        }
+    }
+
+    private fun SemanticsNodeInteraction.progress(): Float =
+        fetchSemanticsNode().config
+            .getOrNull(SemanticsProperties.ProgressBarRangeInfo)
+            ?.current
+            ?: error("No progress semantics")
+}
+
+private class RecordingSeekInteractionSource : MutableInteractionSource {
+    private val delegate = MutableInteractionSource()
+    private var dragStart: DragInteraction.Start? = null
+
+    override val interactions: Flow<Interaction>
+        get() = delegate.interactions
+
+    override suspend fun emit(interaction: Interaction) {
+        remember(interaction)
+        delegate.emit(interaction)
+    }
+
+    override fun tryEmit(interaction: Interaction): Boolean {
+        remember(interaction)
+        return delegate.tryEmit(interaction)
+    }
+
+    fun cancelDrag() {
+        val start = checkNotNull(dragStart) { "the slider did not begin a drag" }
+        check(tryEmit(DragInteraction.Cancel(start))) { "the slider did not accept drag cancel" }
+    }
+
+    private fun remember(interaction: Interaction) {
+        if (interaction is DragInteraction.Start) dragStart = interaction
     }
 }
 
@@ -244,6 +376,8 @@ private class RecordingVisualizerPreference(
 private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
     var created = 0
         private set
+    var sceneCalls = 0
+        private set
 
     override fun create(): VisualSceneEngine {
         created += 1
@@ -253,7 +387,10 @@ private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
             override fun noteTrackChanged() = Unit
             override fun ingestBands(bands: FloatArray) = Unit
             override fun tick() = Unit
-            override fun scene(width: Float, height: Float): List<Float> = emptyList()
+            override fun scene(width: Float, height: Float): List<Float> {
+                sceneCalls += 1
+                return emptyList()
+            }
             override fun close() = Unit
         }
     }

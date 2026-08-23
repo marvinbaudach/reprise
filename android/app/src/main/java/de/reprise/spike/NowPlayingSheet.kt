@@ -3,6 +3,8 @@ package de.reprise.spike
 import android.util.Log
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +43,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -329,8 +333,17 @@ internal fun SpectralSeekSlider(
     trackId: Long,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
+    interactionSource: MutableInteractionSource? = null,
 ) {
     val seekTo = LocalPlaybackControls.current::seekTo
+    val sliderInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
+    LaunchedEffect(sliderInteractionSource, trackId) {
+        sliderInteractionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Cancel) {
+                surfaceState.releaseScrub(trackId)
+            }
+        }
+    }
     val position = surfaceState.seekPosition(trackId, playback.positionMs)
     LaunchedEffect(trackId, playback.positionMs) {
         surfaceState.acceptPlaybackSnapshot(trackId, playback.positionMs)
@@ -338,14 +351,19 @@ internal fun SpectralSeekSlider(
     val durationMs = playback.durationMs.coerceAtLeast(0)
     val sliderMaximum = durationMs.coerceAtLeast(1).toFloat()
     val displayed = position.positionMs.coerceIn(0, durationMs.coerceAtLeast(0))
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true },
+    ) {
         Slider(
             modifier = Modifier.testTag("now-playing-seek"),
             value = displayed.toFloat(),
             onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
             onValueChangeFinished = {
-                seekTo(surfaceState.releaseScrub(trackId).positionMs)
+                surfaceState.releaseScrub(trackId)?.let { released ->
+                    seekTo(released.positionMs)
+                }
             },
+            interactionSource = sliderInteractionSource,
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
             track = { SpectralSeekTrack(trackId, displayed, durationMs) },
@@ -356,6 +374,7 @@ internal fun SpectralSeekSlider(
         ) {
             Text(
                 text = formatDuration(displayed),
+                modifier = Modifier.testTag("now-playing-position"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )

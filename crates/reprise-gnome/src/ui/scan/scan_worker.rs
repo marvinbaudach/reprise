@@ -137,7 +137,7 @@ fn reconcile_outcome(
                 track_list.set_library_root_unavailable(None);
                 sidebar.refresh("scan completed");
                 if let Some(notice) = scan_failure_notices(result.failed).into_iter().next() {
-                    let toast = adw::Toast::new(&notice.title);
+                    let toast = crate::ui::toasts::plain(&notice.title);
                     toast.set_button_label(Some(&notice.action));
                     let target = notice.target;
                     let sidebar = sidebar.clone();

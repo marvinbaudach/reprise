@@ -60,8 +60,10 @@ fn main() {
             continue;
         };
         let samples: Vec<f32> = bytes
-            .chunks_exact(size_of::<f32>())
-            .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte PCM chunk")))
+            .as_chunks::<{ size_of::<f32>() }>()
+            .0
+            .iter()
+            .map(|bytes| f32::from_le_bytes(*bytes))
             .collect();
 
         let mut detector = BassPressureDetector::new(RATE);

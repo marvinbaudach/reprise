@@ -316,7 +316,7 @@ impl MinimalView {
         let message = strings::text(message);
         if self.transition.get().mode == WindowViewMode::Compact {
             if let Some(overlay) = &self.compact_root {
-                overlay.add_toast(adw::Toast::new(&message));
+                overlay.add_toast(crate::ui::toasts::plain(&message));
                 return;
             }
         }

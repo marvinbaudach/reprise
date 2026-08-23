@@ -12,6 +12,74 @@ use crate::visualizer::{
 };
 
 #[test]
+fn the_encoded_scene_is_little_endian_float_bytes() {
+    let scene = Scene {
+        shapes: vec![
+            Shape {
+                geom: Geom::Rect {
+                    x: 1.0,
+                    y: 2.0,
+                    w: 3.0,
+                    h: 4.0,
+                },
+                fill: Fill::Solid(Rgba {
+                    r: 1.0,
+                    g: 0.5,
+                    b: 0.25,
+                    a: 1.0,
+                }),
+                width: 2.0,
+                glow: 0.5,
+                dash: None,
+            },
+            Shape {
+                geom: Geom::RadialGlow {
+                    cx: 5.0,
+                    cy: 6.0,
+                    r: 7.0,
+                },
+                fill: Fill::Solid(Rgba {
+                    r: 0.0,
+                    g: 0.25,
+                    b: 1.0,
+                    a: 0.5,
+                }),
+                width: 0.0,
+                glow: 0.25,
+                dash: None,
+            },
+        ],
+    };
+    let expected = vec![
+        0x00, 0x00, 0x00, 0x00, // rectangle kind
+        0x00, 0x00, 0x80, 0x3f, // red = 1.0
+        0x00, 0x00, 0x00, 0x3f, // green = 0.5
+        0x00, 0x00, 0x80, 0x3e, // blue = 0.25
+        0x00, 0x00, 0x80, 0x3f, // alpha = 1.0
+        0x00, 0x00, 0x00, 0x40, // width = 2.0
+        0x00, 0x00, 0x00, 0x3f, // glow = 0.5
+        0x00, 0x00, 0x80, 0x40, // four geometry scalars
+        0x00, 0x00, 0x80, 0x3f, // x = 1.0
+        0x00, 0x00, 0x00, 0x40, // y = 2.0
+        0x00, 0x00, 0x40, 0x40, // width = 3.0
+        0x00, 0x00, 0x80, 0x40, // height = 4.0
+        0x00, 0x00, 0x00, 0x40, // radial-glow kind
+        0x00, 0x00, 0x00, 0x00, // red = 0.0
+        0x00, 0x00, 0x80, 0x3e, // green = 0.25
+        0x00, 0x00, 0x80, 0x3f, // blue = 1.0
+        0x00, 0x00, 0x00, 0x3f, // alpha = 0.5
+        0x00, 0x00, 0x00, 0x00, // width = 0.0
+        0x00, 0x00, 0x80, 0x3e, // glow = 0.25
+        0x00, 0x00, 0x40, 0x40, // three geometry scalars
+        0x00, 0x00, 0xa0, 0x40, // cx = 5.0
+        0x00, 0x00, 0xc0, 0x40, // cy = 6.0
+        0x00, 0x00, 0xe0, 0x40, // radius = 7.0
+    ];
+
+    assert_eq!(encode_scene(&scene), expected);
+}
+
+#[test]
 fn flat_scene_layout_round_trips_every_supported_geometry() {
     let scene = Scene {
         shapes: vec![
@@ -225,6 +293,8 @@ fn paused_scene_uses_elapsed_time_at_a_fifteen_hertz_redraw_rate() {
     let after_one_period = engine.scene(272.0, 272.0);
 
     assert_eq!(start.len(), after_one_period.len());
+    let start = decode_float_bytes(&start);
+    let after_one_period = decode_float_bytes(&after_one_period);
     let largest_error = start
         .iter()
         .zip(after_one_period)
@@ -257,6 +327,8 @@ fn paused_stored_analysis_keeps_the_existing_generic_fallback() {
     let stored_scene = stored.scene(272.0, 272.0);
     let generic_scene = generic.scene(272.0, 272.0);
     assert_eq!(stored_scene.len(), generic_scene.len());
+    let stored_scene = decode_float_bytes(&stored_scene);
+    let generic_scene = decode_float_bytes(&generic_scene);
     let largest_error = stored_scene
         .iter()
         .zip(&generic_scene)
@@ -391,6 +463,22 @@ fn ui_reads_do_not_wait_for_live_pcm_processing() {
     assert!(!read.expect("UI read waited for the PCM processor"));
 }
 
+#[test]
+fn a_band_frame_dropped_on_contention_is_counted() {
+    let engine = AndroidVisualEngine::new();
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 512);
+
+    assert_eq!(engine.dropped_audio_frames(), 0);
+    let accepted = engine.with_state_locked_for_testing(|| {
+        engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2)
+    });
+
+    assert!(!accepted);
+    assert_eq!(engine.dropped_audio_frames(), 1);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    assert_eq!(engine.dropped_audio_frames(), 1);
+}
+
 #[derive(Default)]
 struct FakeMonotonicClock {
     now_nanos: AtomicU64,
@@ -469,7 +557,16 @@ fn opposite_phase_stereo_pcm16(frame_count: usize) -> Vec<u8> {
     pcm
 }
 
-fn decode_scene(buffer: &[f32]) -> Scene {
+fn decode_float_bytes(buffer: &[u8]) -> Vec<f32> {
+    assert!(buffer.len().is_multiple_of(size_of::<f32>()));
+    buffer
+        .chunks_exact(size_of::<f32>())
+        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("one encoded float")))
+        .collect()
+}
+
+fn decode_scene(buffer: &[u8]) -> Scene {
+    let buffer = decode_float_bytes(buffer);
     let mut cursor = 0;
     let mut shapes = Vec::new();
     while cursor < buffer.len() {

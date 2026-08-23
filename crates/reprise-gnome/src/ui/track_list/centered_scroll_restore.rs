@@ -176,7 +176,7 @@ pub(super) fn write_centered(shared: &Shared, position: u32, n_rows: u32) -> Cen
 /// Choosing any other value costs a second, visible move: GTK re-applies its
 /// own anchor during the allocation pass that follows a model swap, so a value
 /// no anchor row explains is overwritten by one that does.
-fn centered_anchor(
+pub(super) fn centered_anchor(
     layout: &ListLayout,
     position: u32,
     n_rows: usize,
@@ -188,9 +188,8 @@ fn centered_anchor(
     if layout.content_height(n_rows) <= page_size {
         return None;
     }
+    let centre = layout.centered_value(position, n_rows, page_size)?;
     let max_scroll = layout.max_scroll(n_rows, page_size);
-    let centre = (layout.row_top(position) + layout.row_height().pixels() / 2.0 - page_size / 2.0)
-        .clamp(0.0, max_scroll);
     let (row, below_its_top) = layout.row_at(centre);
     let next = row + 1;
     let anchor = if (next as usize) < n_rows && layout.row_top(next) - centre < below_its_top {

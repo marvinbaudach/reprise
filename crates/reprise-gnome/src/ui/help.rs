@@ -146,7 +146,6 @@ pub(super) fn present(parent: &adw::ApplicationWindow) {
 
 #[cfg(test)]
 mod tests {
-    use gtk4::prelude::*;
 
     use super::*;
 

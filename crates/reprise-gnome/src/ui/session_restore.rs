@@ -69,6 +69,7 @@ pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &Ses
                 state.play_origin_place.clone(),
             ),
         );
+        crate::ui::playback::player_controller_wiring::arm_smoke_repeat(player);
     }
     if let Some(player) = player {
         let episode_restored = player.restore_session_episode(state.active_episode.as_ref());
@@ -349,7 +350,112 @@ fn close_should_proceed(_save_succeeded: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use reprise_core::playback::{
+        AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
+    };
+    use reprise_core::waveform::{RenderDataBackend, WaveformBackend, WaveformError};
+
     use super::*;
+    use crate::ui::playback::player_controller::PlayerControllerBackends;
+    use crate::ui::scrobble_runtime::ScrobbleRuntime;
+
+    struct TestPlayback;
+
+    impl PlaybackBackend for TestPlayback {
+        fn play(&self, _: &str) -> Result<(), PlaybackError> {
+            Ok(())
+        }
+
+        fn play_uri(&self, _: &str) -> Result<(), PlaybackError> {
+            Ok(())
+        }
+
+        fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
+            Ok(PlaybackState::Paused)
+        }
+
+        fn seek_to(&self, _: i64) -> Result<(), PlaybackError> {
+            Ok(())
+        }
+
+        fn set_volume(&self, _: f64) {}
+
+        fn set_audio_effects(&self, _: AudioEffects) -> Result<(), PlaybackError> {
+            Ok(())
+        }
+
+        fn stop(&self) -> Result<(), PlaybackError> {
+            Ok(())
+        }
+
+        fn set_next(&self, _: Option<&str>) {}
+
+        fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
+    }
+
+    struct TestWaveform;
+
+    impl WaveformBackend for TestWaveform {
+        fn extract_peaks(&self, _: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
+            Ok(vec![0; buckets])
+        }
+    }
+
+    impl RenderDataBackend for TestWaveform {}
+
+    fn controller(test_root: &Path) -> Rc<PlayerController> {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let app = libadwaita::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.SessionRepeatTest")
+            .build();
+        let (_event_sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
+        let listenbrainz = ScrobbleRuntime::new(
+            test_root.join("listenbrainz.db"),
+            reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
+            "ListenBrainz",
+        );
+        let lastfm = ScrobbleRuntime::new(
+            test_root.join("lastfm.db"),
+            reprise_core::scrobbling::ScrobbleProvider::LastFm,
+            "Last.fm",
+        );
+        PlayerController::new(
+            conn,
+            crate::ui::cover_download_worker::setup_for_test(),
+            listenbrainz,
+            lastfm,
+            PlayerControllerBackends {
+                playback: Box::new(TestPlayback),
+                playback_events,
+                media: reprise_core::media_integration::MediaIntegrationHandles::inert(),
+                waveform: Arc::new(TestWaveform),
+            },
+            &app,
+        )
+    }
+
+    struct SmokeRepeatGuard(Option<std::ffi::OsString>);
+
+    impl SmokeRepeatGuard {
+        fn arm() -> Self {
+            let previous = std::env::var_os("REPRISE_SMOKE_REPEAT");
+            std::env::set_var("REPRISE_SMOKE_REPEAT", "all");
+            Self(previous)
+        }
+    }
+
+    impl Drop for SmokeRepeatGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = self.0.take() {
+                std::env::set_var("REPRISE_SMOKE_REPEAT", previous);
+            } else {
+                std::env::remove_var("REPRISE_SMOKE_REPEAT");
+            }
+        }
+    }
 
     #[test]
     fn close_always_proceeds_even_when_session_save_fails() {
@@ -382,6 +488,30 @@ mod tests {
         assert_eq!(state.up_next.ids(), &[4, 5]);
         assert_eq!(state.queue.repeat, Repeat::Off);
         assert!(!state.queue.shuffled);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn smoke_repeat_all_survives_constructor_then_session_restore() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let _repeat = SmokeRepeatGuard::arm();
+        let test_root = tempfile::tempdir().unwrap();
+        let player = controller(test_root.path());
+        let state = SessionState {
+            queue: QueueSnapshot {
+                position: None,
+                ids: Vec::new(),
+                order: Vec::new(),
+                repeat: Repeat::Off,
+                shuffled: false,
+            },
+            ..SessionState::default()
+        };
+
+        restore_runtime(Some(&player), &state);
+
+        assert_eq!(player.session_queue_snapshot().repeat, Repeat::All);
     }
 
     #[test]

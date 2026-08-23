@@ -330,6 +330,52 @@ pub(in crate::ui) fn route_to_place(
     active_content_focus: &ActiveContentFocus,
     reason: &str,
 ) {
+    route_to_place_with_viewport(
+        place,
+        sidebar,
+        track_list,
+        content_pages,
+        source_title,
+        active_content_focus,
+        reason,
+        crate::ui::view_session::BrowserPlaceViewport::PreserveAnchor,
+    );
+}
+
+pub(in crate::ui) fn route_to_place_centering_anchor(
+    place: &NavPlace,
+    sidebar: &Rc<Sidebar>,
+    track_list: &Rc<TrackList>,
+    content_pages: ContentPages<'_>,
+    source_title: &adw::WindowTitle,
+    active_content_focus: &ActiveContentFocus,
+    reason: &str,
+) {
+    route_to_place_with_viewport(
+        place,
+        sidebar,
+        track_list,
+        content_pages,
+        source_title,
+        active_content_focus,
+        reason,
+        crate::ui::view_session::BrowserPlaceViewport::CenterAnchor,
+    );
+}
+
+// These window-owned collaborators stay explicit so this routing seam does not
+// create a second state holder.
+#[allow(clippy::too_many_arguments)]
+fn route_to_place_with_viewport(
+    place: &NavPlace,
+    sidebar: &Rc<Sidebar>,
+    track_list: &Rc<TrackList>,
+    content_pages: ContentPages<'_>,
+    source_title: &adw::WindowTitle,
+    active_content_focus: &ActiveContentFocus,
+    reason: &str,
+    viewport: crate::ui::view_session::BrowserPlaceViewport,
+) {
     tracing::debug!(
         source = %place.view_source().label(),
         reason,
@@ -340,14 +386,22 @@ pub(in crate::ui) fn route_to_place(
         ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
             sidebar.ensure_startup_build();
             content_pages.show("library");
-            let _ = track_list.restore_browser_place(place.browser_place());
+            let _ = crate::ui::view_session::restore_browser_place_with_viewport(
+                track_list,
+                place.browser_place(),
+                viewport,
+            );
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
             source_title.set_title(&scope_title(&source));
         }
         _ => {
             crate::ui::sidebar_session::prepare_history_reroute(&sidebar.shared, &source);
             sidebar.refresh_and_select(source, reason);
-            let _ = track_list.restore_browser_place(place.browser_place());
+            let _ = crate::ui::view_session::restore_browser_place_with_viewport(
+                track_list,
+                place.browser_place(),
+                viewport,
+            );
         }
     }
     // Keyboard flow: hand focus to the restored view (the Back/Forward twin
@@ -410,7 +464,6 @@ pub(in crate::ui) fn build(
 
 #[cfg(test)]
 mod tests {
-    use libadwaita::prelude::*;
 
     use super::*;
 

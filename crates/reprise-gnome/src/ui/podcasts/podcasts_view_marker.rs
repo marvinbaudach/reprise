@@ -110,7 +110,7 @@ impl PodcastsView {
 
     fn show_reveal_not_listed(&self) {
         if let Some(overlay) = self.toast_overlay.upgrade() {
-            overlay.add_toast(adw::Toast::new(&strings::text(
+            overlay.add_toast(crate::ui::toasts::plain(&strings::text(
                 strings::EPISODE_NOT_IN_SUBSCRIPTIONS,
             )));
         }

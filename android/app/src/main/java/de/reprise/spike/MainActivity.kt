@@ -38,9 +38,18 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
 import uniffi.reprise_android_ffi.AndroidEqualizerPreset
@@ -54,6 +63,8 @@ import uniffi.reprise_android_ffi.standardEqualizerPresets
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
 private const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
+internal const val PLAYBACK_BIND_WATCHDOG_MS = 2_000L
+internal const val PLAYBACK_BIND_FAILURE_LOG = "Playback service bind did not connect"
 /** No scrim behind the system bars: the app's own ground is what shows through. */
 private const val TRANSPARENT_SYSTEM_BAR = 0
 class MainActivity : ComponentActivity() {
@@ -152,7 +163,7 @@ class MainActivity : ComponentActivity() {
      */
     private val playbackControls = ActivityPlaybackControls(
         command = { action, operation -> runPlaybackCommand(action, command = operation) },
-        connectedService = { playbackService },
+        connectedService = { boundService.value },
         postToMain = { work -> runOnUiThread(work) },
         setFavouriteAction = ::setFavourite,
         trashAction = trashAction,
@@ -165,40 +176,29 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "Playback runs without a notification: the user said no")
         }
     }
-    private var playbackService: ReprisePlaybackService? = null
+    private val boundService = MutableStateFlow<ReprisePlaybackService?>(null)
     private var playbackBound = false
+    private var playbackBindWatchdog: Job? = null
     private val playbackState = mutableStateOf(PlaybackUiState())
+    internal val currentPlaybackState: PlaybackUiState
+        get() = playbackState.value
     private val playbackSettingsRevision = mutableStateOf(0L)
     private val visualSceneEngineFactory = mutableStateOf<VisualSceneEngineFactory>(
         NativeVisualSceneEngineFactory,
     )
+    internal val currentVisualSceneEngineFactory: VisualSceneEngineFactory
+        get() = visualSceneEngineFactory.value
     private val playbackConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
-            playbackService = service
+            playbackBindWatchdog?.cancel()
+            playbackBindWatchdog = null
+            boundService.value = service
             visualSceneEngineFactory.value = service.visualSceneEngineFactory()
-            service.attachObserver { snapshot ->
-                runOnUiThread {
-                    playbackState.value = snapshot.toUiState().copy(
-                        sleepTimer = playbackState.value.sleepTimer,
-                    )
-                }
-            }
-            service.attachSettingsObserver {
-                runOnUiThread {
-                    playbackSettingsRevision.value += 1L
-                }
-            }
-            service.attachSleepTimerObserver { timer ->
-                runOnUiThread { playbackState.value = playbackState.value.copy(sleepTimer = timer) }
-            }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
-            playbackService = null
-            visualSceneEngineFactory.value = NativeVisualSceneEngineFactory
-            playbackState.value = PlaybackUiState()
-            playbackSettingsRevision.value += 1L
+            boundService.value = null
         }
     }
 
@@ -211,6 +211,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
+        collectPlaybackServiceState()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             var onlineSourcesEnabled by remember {
@@ -304,6 +305,40 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                             )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun collectPlaybackServiceState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    boundService.flatMapLatest { service ->
+                        service?.playbackSnapshots ?: flowOf(null)
+                    }.collect { snapshot ->
+                        if (snapshot != null) {
+                            playbackState.value = snapshot.toUiState().copy(
+                                sleepTimer = playbackState.value.sleepTimer,
+                            )
+                        }
+                    }
+                }
+                launch {
+                    boundService.flatMapLatest { service ->
+                        service?.settingsRevisions ?: flowOf<Long?>(null)
+                    }.collect { revision ->
+                        if (revision != null) playbackSettingsRevision.value += 1L
+                    }
+                }
+                launch {
+                    boundService.flatMapLatest { service ->
+                        service?.sleepTimerStates ?: flowOf<SleepTimerUiState?>(null)
+                    }.collect { timer ->
+                        if (timer != null) {
+                            playbackState.value = playbackState.value.copy(sleepTimer = timer)
                         }
                     }
                 }
@@ -423,10 +458,28 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        playbackBindWatchdog?.cancel()
         val intent = Intent(this, ReprisePlaybackService::class.java).apply {
             action = ReprisePlaybackService.LOCAL_BIND_ACTION
         }
         playbackBound = bindService(intent, playbackConnection, Context.BIND_AUTO_CREATE)
+        if (!playbackBound) {
+            Log.w(TAG, "$PLAYBACK_BIND_FAILURE_LOG: bindService returned false")
+            return
+        }
+        playbackBindWatchdog = lifecycleScope.launch {
+            delay(PLAYBACK_BIND_WATCHDOG_MS)
+            if (boundService.value != null || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                return@launch
+            }
+            Log.w(
+                TAG,
+                "$PLAYBACK_BIND_FAILURE_LOG within $PLAYBACK_BIND_WATCHDOG_MS ms; retrying once",
+            )
+            val retryAccepted = bindService(intent, playbackConnection, Context.BIND_AUTO_CREATE)
+            playbackBound = playbackBound || retryAccepted
+            playbackBindWatchdog = null
+        }
     }
 
     override fun onResume() {
@@ -438,10 +491,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        playbackService?.detachObserver()
-        playbackService?.detachSettingsObserver()
-        playbackService?.detachSleepTimerObserver()
-        playbackService = null
+        playbackBindWatchdog?.cancel()
+        playbackBindWatchdog = null
+        boundService.value = null
         visualSceneEngineFactory.value = NativeVisualSceneEngineFactory
         if (playbackBound) {
             unbindService(playbackConnection)
@@ -643,7 +695,7 @@ class MainActivity : ComponentActivity() {
 
     private fun loadPlaybackSettings(): PlaybackSettingsUiState {
         val stored = library.playbackSettings()
-        val snapshot = playbackService?.equalizerSnapshot()
+        val snapshot = boundService.value?.equalizerSnapshot()
         val bands = snapshot?.bands.orEmpty().map { band ->
             EqualizerBandUi(
                 frequencyHz = band.frequencyHz,
@@ -672,7 +724,7 @@ class MainActivity : ComponentActivity() {
 
     private fun setEqualizerEnabled(enabled: Boolean): PlaybackSettingsUiState {
         library.setEqualizerEnabled(enabled)
-        playbackService?.reloadPlaybackSettings()
+        boundService.value?.reloadPlaybackSettings()
         return loadPlaybackSettings()
     }
 
@@ -682,13 +734,13 @@ class MainActivity : ComponentActivity() {
         library.replaceEqualizerCurve(
             points.map { point -> AndroidEqualizerPoint(point.frequencyHz, point.gainDb) },
         )
-        playbackService?.reloadPlaybackSettings()
+        boundService.value?.reloadPlaybackSettings()
         return loadPlaybackSettings()
     }
 
     private fun setGaplessEnabled(enabled: Boolean): PlaybackSettingsUiState {
         library.setGaplessEnabled(enabled)
-        playbackService?.reloadPlaybackSettings()
+        boundService.value?.reloadPlaybackSettings()
         return loadPlaybackSettings()
     }
 
@@ -699,7 +751,7 @@ class MainActivity : ComponentActivity() {
         },
         command: ReprisePlaybackService.() -> Unit,
     ) {
-        val service = playbackService
+        val service = boundService.value
         if (service == null) {
             reportError("Could not $action: playback is still connecting.")
             return

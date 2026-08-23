@@ -1,6 +1,12 @@
+use std::rc::Rc;
+
 use crate::ui::list_geometry::{self, RowHeight};
 
-const CONTENT_HEIGHT_EPSILON: f64 = 0.5;
+/// One tolerance owns both observed-height inference and scroll adoption.
+/// `row_top` rounds the inferred components separately, unlike the former
+/// fused calculation, so the final match tolerance must never drift below the
+/// inference floor that absorbs that ULP-scale difference.
+pub(in crate::ui) const CONTENT_HEIGHT_EPSILON: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::ui) enum LayoutValidation {
@@ -17,7 +23,7 @@ pub(in crate::ui) enum LayoutValidation {
 #[derive(Clone, Debug, PartialEq)]
 struct SectionBands {
     header_height: RowHeight,
-    starts: Vec<u32>,
+    starts: Rc<[u32]>,
 }
 
 /// Counts the section headers at or above `position`.
@@ -69,12 +75,63 @@ impl ListLayout {
     ) -> Self {
         let sections = (!starts.is_empty()).then_some(SectionBands {
             header_height,
-            starts,
+            starts: starts.into(),
         });
         Self {
             row_height,
             sections,
         }
+    }
+
+    /// Infers uniform section-header height from a live content `upper`.
+    ///
+    /// The scroll-adoption path reaches this only while no settled layout is
+    /// available, so it knows the row height and section starts but not a
+    /// trustworthy header height. This is the inverse of [`Self::sectioned`]:
+    /// it assigns the observed height left after all row bodies evenly across
+    /// the sections. A sub-epsilon shortfall retains the old zero-header
+    /// interpretation; inputs that cannot describe that layout are rejected.
+    pub(in crate::ui) fn sectioned_inferred_from_observed_upper(
+        row_height: RowHeight,
+        starts: Rc<[u32]>,
+        row_count: usize,
+        observed_upper: f64,
+    ) -> Option<Self> {
+        let section_count = starts.len();
+        if row_count == 0 || section_count == 0 || !observed_upper.is_finite() {
+            return None;
+        }
+
+        let row_content_height = row_count as f64 * row_height.pixels();
+        let section_content_height = observed_upper - row_content_height;
+        if section_content_height < -CONTENT_HEIGHT_EPSILON {
+            return None;
+        }
+        let header_height = section_content_height.max(0.0) / section_count as f64;
+        let Some(header_height) = RowHeight::new(header_height) else {
+            return Some(Self::rows_only(row_height));
+        };
+        Some(Self {
+            row_height,
+            sections: Some(SectionBands {
+                header_height,
+                starts,
+            }),
+        })
+    }
+
+    pub(in crate::ui) fn infer_section_header_from_observed_upper(
+        &self,
+        row_count: usize,
+        observed_upper: f64,
+    ) -> Option<Self> {
+        let starts = Rc::clone(&self.sections.as_ref()?.starts);
+        Self::sectioned_inferred_from_observed_upper(
+            self.row_height,
+            starts,
+            row_count,
+            observed_upper,
+        )
     }
 
     pub(in crate::ui) fn row_height(&self) -> RowHeight {
@@ -83,6 +140,12 @@ impl ListLayout {
 
     pub(in crate::ui) fn has_sections(&self) -> bool {
         self.sections.is_some()
+    }
+
+    pub(in crate::ui) fn section_count(&self) -> usize {
+        self.sections
+            .as_ref()
+            .map_or(0, |sections| sections.starts.len())
     }
 
     pub(in crate::ui) fn headers_above(&self, position: u32) -> usize {
@@ -382,6 +445,61 @@ mod tests {
         assert_eq!(sectioned.row_top(12), rows_only.row_top(12));
         assert_eq!(sectioned.content_height(100), rows_only.content_height(100));
         assert_eq!(sectioned.has_sections(), rows_only.has_sections());
+    }
+
+    #[test]
+    fn observed_upper_infers_the_header_height_inverse_of_sectioned() {
+        let layout = ListLayout::sectioned_inferred_from_observed_upper(
+            height(34.5),
+            vec![0, 1].into(),
+            2_276,
+            78_594.0,
+        )
+        .unwrap();
+
+        assert_eq!(layout.row_top(1_101), 38_056.5);
+        assert_eq!(layout.content_height(2_276), 78_594.0);
+    }
+
+    #[test]
+    fn observed_upper_rejects_degenerate_section_layouts() {
+        assert!(ListLayout::sectioned_inferred_from_observed_upper(
+            height(34.0),
+            vec![0].into(),
+            0,
+            36.0,
+        )
+        .is_none());
+        assert!(ListLayout::sectioned_inferred_from_observed_upper(
+            height(34.0),
+            Vec::<u32>::new().into(),
+            1,
+            34.0,
+        )
+        .is_none());
+        assert!(ListLayout::sectioned_inferred_from_observed_upper(
+            height(34.0),
+            vec![0].into(),
+            1,
+            f64::NAN,
+        )
+        .is_none());
+        assert!(ListLayout::sectioned_inferred_from_observed_upper(
+            height(10.0),
+            vec![0].into(),
+            10,
+            99.49,
+        )
+        .is_none());
+
+        let within_epsilon = ListLayout::sectioned_inferred_from_observed_upper(
+            height(10.0),
+            vec![0].into(),
+            10,
+            99.75,
+        )
+        .unwrap();
+        assert_eq!(within_epsilon.row_top(5), 50.0);
     }
 
     #[test]

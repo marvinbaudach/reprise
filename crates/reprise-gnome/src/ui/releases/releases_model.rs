@@ -4,6 +4,7 @@
 
 use std::cell::RefCell;
 
+use gtk4::prelude::*;
 use gtk4::{gio, glib};
 use reprise_core::artist_news_history::HistoryEntry;
 
@@ -54,35 +55,72 @@ impl ReleaseObject {
 
 pub(super) struct ReleasesModel {
     store: gio::ListStore,
-    selection: gtk4::SingleSelection,
+    selection: gtk4::MultiSelection,
 }
 
 impl ReleasesModel {
     pub(super) fn new() -> Self {
         let store = gio::ListStore::new::<ReleaseObject>();
-        let selection = gtk4::SingleSelection::new(Some(store.clone()));
+        let selection = glib::Object::builder::<gtk4::MultiSelection>()
+            .property("model", &store)
+            .build();
         Self { store, selection }
     }
 
     pub(super) fn replace(&self, rows: Vec<HistoryEntry>) {
+        let selected_mbids = self.selected_mbids();
         self.store.remove_all();
         for row in rows {
             self.store.append(&ReleaseObject::new(row));
         }
+        self.select_mbids(&selected_mbids);
     }
 
     pub(super) fn store(&self) -> &gio::ListStore {
         &self.store
     }
 
-    pub(super) fn selection(&self) -> &gtk4::SingleSelection {
+    pub(super) fn selection(&self) -> &gtk4::MultiSelection {
         &self.selection
+    }
+
+    pub(super) fn position_of(&self, mbid: &str) -> Option<u32> {
+        (0..self.store.n_items()).find(|position| {
+            self.store
+                .item(*position)
+                .and_downcast::<ReleaseObject>()
+                .is_some_and(|object| object.entry().release_group_mbid == mbid)
+        })
+    }
+
+    pub(super) fn selected_mbids(&self) -> Vec<String> {
+        (0..self.store.n_items())
+            .filter(|position| self.selection.is_selected(*position))
+            .filter_map(|position| self.store.item(position).and_downcast::<ReleaseObject>())
+            .map(|object| object.entry().release_group_mbid)
+            .collect()
+    }
+
+    pub(super) fn select_mbids(&self, mbids: &[String]) {
+        let selected = self.selection.selection().copy();
+        selected.remove_all();
+        for mbid in mbids {
+            if let Some(position) = self.position_of(mbid) {
+                selected.add(position);
+            }
+        }
+        let mask = self.selection.selection().copy();
+        mask.remove_all();
+        mask.add_range(0, self.store.n_items());
+        self.selection.set_selection(&selected, &mask);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use gtk4::gio::prelude::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use reprise_core::artist_news::LibraryPresence;
 
     use super::*;
@@ -106,9 +144,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
     fn release_model_replaces_the_bounded_history_snapshot() {
-        gtk4::init().unwrap();
         let model = ReleasesModel::new();
         model.replace(vec![entry("one"), entry("two")]);
         assert_eq!(model.store().n_items(), 2);
@@ -125,10 +161,44 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn release_model_uses_single_selection_for_one_primary_action() {
-        gtk4::init().unwrap();
+    fn release_model_binds_multi_selection_to_the_release_store() {
         let model = ReleasesModel::new();
         assert_eq!(model.selection().model().unwrap(), model.store().clone());
+    }
+
+    #[test]
+    fn replacing_rows_restores_exactly_the_selected_mbids_that_survive() {
+        let model = ReleasesModel::new();
+        model.replace(vec![entry("one"), entry("two"), entry("three")]);
+        model.select_mbids(&["one".to_owned(), "two".to_owned(), "three".to_owned()]);
+
+        model.replace(vec![entry("three"), entry("one"), entry("four")]);
+
+        assert_eq!(model.selected_mbids(), ["three", "one"]);
+    }
+
+    #[test]
+    fn restoring_multiple_mbids_never_emits_a_single_row_selection() {
+        let model = ReleasesModel::new();
+        model.replace(vec![entry("one"), entry("two"), entry("three")]);
+        let observed_sizes = Rc::new(RefCell::new(Vec::new()));
+        {
+            let observed_sizes = observed_sizes.clone();
+            model
+                .selection()
+                .connect_selection_changed(move |selection, _, _| {
+                    observed_sizes
+                        .borrow_mut()
+                        .push(selection.selection().size());
+                });
+        }
+
+        model.select_mbids(&["one".to_owned(), "two".to_owned(), "three".to_owned()]);
+
+        assert_eq!(
+            observed_sizes.borrow().as_slice(),
+            [3],
+            "restore must emit the complete selection once"
+        );
     }
 }

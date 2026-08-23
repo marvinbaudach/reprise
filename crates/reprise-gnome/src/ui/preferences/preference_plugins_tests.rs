@@ -251,8 +251,10 @@ fn set_11_online_content_starts_with_a_persistent_master_row() {
         &collapsed_group_state(CollapsiblePluginGroup::OnlineContent, false, false, 1),
     );
 
-    assert_eq!(group.title(), "Online content");
+    // The heading stands exactly once: on the master row, not above it.
+    assert!(group.title().is_empty());
     assert_eq!(master.title(), "Online content");
+    assert!(master.has_css_class(chrome::MASTER_ROW_CLASS));
     assert_eq!(
         master.subtitle().as_deref(),
         Some(strings::text(strings::ONLINE_CONTENT_MASTER_DESCRIPTION).as_str())
@@ -271,7 +273,7 @@ fn set_11_online_content_starts_with_a_persistent_master_row() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn set_14_plugin_switches_share_the_same_right_edge_across_row_types() {
+fn set_14a_plugin_switches_share_the_same_right_edge_across_row_types() {
     gtk4::init().unwrap();
     let group = adw::PreferencesGroup::new();
     let switch_row = aligned_switch_row("Artwork", "Artwork services", false);

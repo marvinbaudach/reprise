@@ -7,8 +7,8 @@ use chrono::NaiveDate;
 
 use crate::artist_news::{
     count_releases_view, delta_candidates, hidden_release_count, mark_releases_seen,
-    query_releases_view, set_release_hidden, unseen_release_count, ReleaseTypeSelection,
-    ReleasesFilter,
+    query_releases_view, set_release_hidden, set_releases_hidden, unseen_release_count,
+    ReleaseTypeSelection, ReleasesFilter,
 };
 use crate::artist_news_query::query_releases_in;
 use crate::library::settings::set_setting;
@@ -717,5 +717,66 @@ fn nr_27_the_per_artist_cap_bounds_news_not_the_catalog() {
         candidates.len(),
         20,
         "the popover's candidates stop at twenty"
+    );
+}
+
+#[test]
+fn hiding_a_batch_hides_exactly_the_named_releases_and_undo_restores_them() {
+    let conn = migrated_conn();
+    insert_release(&conn, "one", None);
+    insert_release(&conn, "two", None);
+    insert_release(&conn, "control", None);
+
+    let batch = vec!["one".to_owned(), "two".to_owned()];
+    set_releases_hidden(&conn, &batch, true).unwrap();
+
+    assert_eq!(
+        hidden_release_count(&conn).unwrap(),
+        2,
+        "both named releases are hidden, the control arm is not"
+    );
+
+    set_releases_hidden(&conn, &batch, false).unwrap();
+
+    assert_eq!(
+        hidden_release_count(&conn).unwrap(),
+        0,
+        "undo takes back exactly what the batch wrote"
+    );
+}
+
+#[test]
+fn an_empty_batch_writes_nothing() {
+    let conn = migrated_conn();
+    insert_release(&conn, "one", None);
+
+    set_releases_hidden(&conn, &[], true).unwrap();
+
+    assert_eq!(hidden_release_count(&conn).unwrap(), 0);
+}
+
+#[test]
+fn a_failed_batch_rolls_back_every_release_in_the_transaction() {
+    let conn = migrated_conn();
+    insert_release(&conn, "one", None);
+    insert_release(&conn, "two", None);
+    conn.conn()
+        .execute_batch(
+            "CREATE TEMP TRIGGER reject_second_release
+             BEFORE UPDATE OF hidden ON new_releases
+             WHEN OLD.release_group_mbid = 'two'
+             BEGIN
+               SELECT RAISE(ABORT, 'reject second release');
+             END;",
+        )
+        .unwrap();
+
+    let result = set_releases_hidden(&conn, &["one".to_owned(), "two".to_owned()], true);
+
+    assert!(result.is_err(), "the second write aborts the batch");
+    assert_eq!(
+        hidden_release_count(&conn).unwrap(),
+        0,
+        "the first write is rolled back with the failed second write"
     );
 }

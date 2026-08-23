@@ -1,7 +1,5 @@
 //! Source-menu contract tests kept separate from the near-limit menu module.
 
-use gtk4::prelude::*;
-
 use super::*;
 
 fn source(kind: PodcastKind) -> SourceGroup {

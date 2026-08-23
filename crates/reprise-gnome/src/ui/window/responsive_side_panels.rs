@@ -240,7 +240,7 @@ pub(in crate::ui) fn install(
             if let Some(previous) = active_toast.borrow_mut().take() {
                 previous.dismiss();
             }
-            let toast = adw::Toast::new(&crate::ui::strings::text(
+            let toast = crate::ui::toasts::plain(&crate::ui::strings::text(
                 crate::ui::strings::SIDE_PANELS_CLOSED,
             ));
             toast.set_button_label(Some(&crate::ui::strings::text(crate::ui::strings::UNDO)));

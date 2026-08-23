@@ -382,7 +382,7 @@ impl PodcastsView {
             self.commit_removed_episodes(&result.succeeded_ids, &episodes);
             return;
         };
-        let toast = adw::Toast::new(&batch_result_text(&result));
+        let toast = crate::ui::toasts::plain(&batch_result_text(&result));
         toast.set_button_label(Some(&strings::text(strings::PODCAST_UNDO)));
         toast.set_timeout(10);
         toast.set_priority(adw::ToastPriority::High);
@@ -457,7 +457,7 @@ impl PodcastsView {
         let Some(overlay) = self.toast_overlay.upgrade() else {
             return;
         };
-        overlay.add_toast(adw::Toast::new(message));
+        overlay.add_toast(crate::ui::toasts::plain(message));
     }
 
     pub(super) fn open_add_dialog(self: &Rc<Self>) {

@@ -5,7 +5,7 @@ use std::time::Instant;
 use super::*;
 
 const DEFAULT_TRACK_COUNT: u32 = 10_000;
-const MAX_TRACK_COUNT: u32 = 100_000;
+pub(super) const MAX_TRACK_COUNT: u32 = 100_000;
 const SCROLL_SAMPLES: u32 = 12;
 const MAX_CACHED_WINDOW_BUDGET: usize = 8;
 const MAX_CACHED_TRACK_BUDGET: usize = 1_600;

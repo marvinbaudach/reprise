@@ -49,6 +49,7 @@ pub(in crate::ui) struct ReloadAnchor {
 /// Pure constructor: bundles already-extracted primitives into a
 /// `ReloadAnchor`. See the module doc for why this doesn't take `Shared`/GTK
 /// types directly.
+#[cfg(test)]
 pub(in crate::ui) fn capture(selected_ids: Vec<i64>, anchor: Option<(i64, f64)>) -> ReloadAnchor {
     capture_with_row_height(selected_ids, anchor, None)
 }
