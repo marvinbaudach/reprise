@@ -27,8 +27,9 @@ class NowPlayingSceneEngineTest {
     fun theSceneEngineExistsWhileTheScreenIsUpWithTheCoverShowing() {
         val factory = RecordingSceneEngineFactory()
         val controller = AmbientMotionController()
+        val surfaceState = MobileSurfaceViewModel()
         compose.mainClock.autoAdvance = false
-        compose.setContent { coverScene(factory, controller) }
+        compose.setContent { CoverScene(factory, controller, surfaceState) }
         compose.runOnIdle {
             controller.runtimeChanged(
                 resumed = true,
@@ -46,8 +47,11 @@ class NowPlayingSceneEngineTest {
     @Test
     fun theCoverArmDoesNotBuildASceneItNeverDraws() {
         val factory = RecordingSceneEngineFactory()
+        val surfaceState = MobileSurfaceViewModel()
 
-        compose.setContent { coverScene(factory, AmbientMotionController()) }
+        compose.setContent {
+            CoverScene(factory, AmbientMotionController(), surfaceState)
+        }
         compose.waitForIdle()
         compose.onNodeWithTag("now-playing-scene").captureToImage()
 
@@ -55,9 +59,10 @@ class NowPlayingSceneEngineTest {
     }
 
     @Composable
-    private fun coverScene(
+    private fun CoverScene(
         factory: RecordingSceneEngineFactory,
         controller: AmbientMotionController,
+        surfaceState: MobileSurfaceViewModel,
     ) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
@@ -72,7 +77,7 @@ class NowPlayingSceneEngineTest {
                 NowPlayingScene(
                     track = sceneEngineTrack(),
                     playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
-                    surfaceState = MobileSurfaceViewModel(),
+                    surfaceState = surfaceState,
                     visualizerOpacity = 0f,
                 )
             }

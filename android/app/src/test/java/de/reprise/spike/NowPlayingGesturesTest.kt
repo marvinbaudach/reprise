@@ -46,7 +46,7 @@ class NowPlayingGesturesTest {
         val surfaceState = MobileSurfaceViewModel()
         val interactions = RecordingSeekInteractionSource()
         compose.setContent {
-            testSeekSlider(playback.value, surfaceState, interactions)
+            TestSeekSlider(playback.value, surfaceState, interactions)
         }
         val slider = compose.onNodeWithTag("now-playing-seek")
         slider.performTouchInput {
@@ -71,7 +71,7 @@ class NowPlayingGesturesTest {
         val surfaceState = MobileSurfaceViewModel()
         val interactions = RecordingSeekInteractionSource()
         compose.setContent {
-            testSeekSlider(playback.value, surfaceState, interactions)
+            TestSeekSlider(playback.value, surfaceState, interactions)
         }
         val slider = compose.onNodeWithTag("now-playing-seek")
         slider.performTouchInput {
@@ -294,7 +294,7 @@ class NowPlayingGesturesTest {
     }
 
     @Composable
-    private fun testSeekSlider(
+    private fun TestSeekSlider(
         playback: PlaybackUiState,
         surfaceState: MobileSurfaceViewModel,
         interactionSource: MutableInteractionSource,
