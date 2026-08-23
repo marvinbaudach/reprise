@@ -33,8 +33,11 @@ internal interface VisualSceneEngine : AutoCloseable {
     fun hasLiveAudio(): Boolean = false
     fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
     fun tick()
-    // Strand-B test engines still implement this list seam outside this strand's ownership.
-    fun scene(width: Float, height: Float): List<Float> = emptyList()
+    // This list seam keeps Strand-B test engines compatible; real callers must use sceneBytes(),
+    // so the default throws instead of turning an accidental production call into an empty frame.
+    fun scene(width: Float, height: Float): List<Float> = throw UnsupportedOperationException(
+        "VisualSceneEngine.scene() is a test seam; use sceneBytes()",
+    )
     fun sceneBytes(width: Float, height: Float): ByteArray = scene(width, height).toFloatBytes()
 }
 
@@ -264,6 +267,9 @@ private fun DrawScope.drawFlatRadialGlow(
 private class RadialGlowPainter {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val matrix = Matrix()
+    // Insertion-order eviction is safe while bars is the only mode emitting radial glows: its RGB
+    // comes only from the bar index, for at most BAR_COUNT (currently 64) bit-identical keys. A future
+    // mode with continuously varying glow colours would make the eviction policy matter.
     private val shaders = LinkedHashMap<Int, RadialGradient>()
 
     fun draw(canvas: android.graphics.Canvas, center: Offset, radius: Float, color: Color) {
@@ -378,4 +384,6 @@ private const val MAX_CACHED_GLOW_COLOURS = 128
 private const val RGB_MASK = 0x00ffffff
 private const val OPAQUE_ALPHA = -0x1000000
 private const val ALPHA_SHIFT = 24
+// Intentionally process-lifetime per thread, not remember-scoped: reuse is the point. The painter
+// owns no bitmap or native buffer beyond its capped shader cache, so this lifetime is not a leak.
 private val RADIAL_GLOW_PAINTER = ThreadLocal.withInitial(::RadialGlowPainter)
