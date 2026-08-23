@@ -90,7 +90,7 @@ internal class SceneDriver(
         framesWithheld = false
         sink?.onFrame(outgoingBands)
         if (sink != null && liveSink == null) frameSinkNeedsSnapshot = false
-        return state.revision != before || sink != null
+        return state.revision != before
     }
 
     /** Reads the stored 20 Hz analysis only while decoded PCM is unavailable. */

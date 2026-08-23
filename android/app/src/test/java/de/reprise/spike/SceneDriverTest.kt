@@ -226,6 +226,34 @@ class SceneDriverTest {
         assertEquals(500L, SceneDriver.measuredPositionIntervalMs)
     }
 
+    @Test
+    fun a_live_sink_reports_only_pressure_that_changed_the_scene() {
+        val frames = SpectrogramFrames(24, 20, ByteArray(0))
+        val state = SceneState(frames)
+        var pressure = VisualBassPressure.SILENT
+        val sink = object : SceneFrameSink {
+            override fun hasLiveAudio(): Boolean = true
+
+            override fun bassPressure(): VisualBassPressure = pressure
+
+            override fun onFrame(bands: FloatArray?) = Unit
+        }
+        val driver = SceneDriver(
+            frames = frames,
+            state = state,
+            clock = SceneClock { 0L },
+            positionSource = ScenePositionSource {
+                error("live audio must not read the stored playhead")
+            },
+            frameSink = sink,
+            framesAllowed = { true },
+        )
+
+        assertFalse(driver.tick())
+        pressure = pressure.copy(kick = 0.8f, pressure = 0.6f)
+        assertTrue(driver.tick())
+    }
+
 }
 
 private data class DriverFixture(
