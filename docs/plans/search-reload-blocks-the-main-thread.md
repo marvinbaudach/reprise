@@ -545,3 +545,110 @@ by `error=unexpected-filter-count rows=100000 expected=100` at loadavg 2.39.
 The production mutation was reverted. Green: 1 passed, 0 failed, 0 ignored
 (exit 0), with all three transition lines and no error at loadavg 3.58; its
 source/sort/clear next-frame spans were 51.406/421.790/421.438 ms.
+
+### Task 3 — bracket bisection
+
+The diagnostic assigns one `reload_id` to the coarse reload event and its
+breakdown. Top-level steps are geometry persistence, count query, state/cache
+swap, `items_changed` (including any required production-only section signal),
+queue-header work, browse count, empty state, trail/logging and `on_reload`.
+Nested counters separately report `ListModelImpl::item` and SQL window-query
+calls and cumulative time. The exact production command was:
+
+```sh
+timeout 60s dbus-run-session -- xvfb-run -a env \
+  XDG_DATA_HOME=/tmp/reprise-search-oracle.Z7SGIp/data \
+  XDG_CACHE_HOME=/tmp/reprise-search-oracle.Z7SGIp/cache \
+  XDG_CONFIG_HOME=/tmp/reprise-search-oracle.Z7SGIp/config \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= GTK_A11Y=none GSK_RENDERER=cairo \
+  REPRISE_AUDIO_SINK=fakesink REPRISE_SMOKE_RELOAD_ORACLE=1 \
+  REPRISE_LOG=error target/release/reprise 2>/tmp/reprise-task3.err | \
+  rg '^REPRISE_RELOAD_ORACLE transition='
+```
+
+All three rows came from this production arm at loadavg 6.29:
+
+| Transition | Whole work | `items_changed` | item calls/time | window calls/time |
+| --- | ---: | ---: | ---: | ---: |
+| source switch, 0→100k | 46.298 ms | 36.628 ms | 205 / 20.192 ms | 2 / 20.173 ms |
+| sort, 100k→100k | 419.914 ms | 411.022 ms | 100,205 / 356.648 ms | 502 / 346.009 ms |
+| clear, 100→100k | 416.184 ms | 407.981 ms | 100,205 / 356.889 ms | 502 / 345.285 ms |
+
+For cleared search, `items_changed` held 98.03% of the synchronous bracket;
+the nested window queries alone held 82.96% of the bracket. The selection count
+was 0 and adjustment value was 0.00 in every transition. Source/sort/clear
+adjustment uppers were respectively 132/4,500,000/4,500, but the two expensive
+arms had identical call counts despite those different carried ranges.
+
+The display-free breakdown/reset test command was:
+
+```sh
+cargo test -p reprise-gnome --bin reprise \
+  ui::track_list::diagnostic_trail::tests::reload_breakdown_sums_inside_the_whole_and_resets_per_reload \
+  -- --exact
+```
+
+It passed 1, failed 0 and ignored 0. Its first synthetic breakdown summed
+7.000 ms inside a 10.000 ms whole; the next reload reset both item and window
+counters to zero. Host load was not sampled because this is an arithmetic and
+reset correctness test, not a performance arm.
+
+For the production counter mutation, the call to `record_item_call` was removed
+from `ListModelImpl::item`. Both arms used:
+
+```sh
+dbus-run-session -- xvfb-run -a env XDG_DATA_HOME=$(mktemp -d) \
+  XDG_CACHE_HOME=$(mktemp -d) XDG_CONFIG_HOME=$(mktemp -d) \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= GTK_A11Y=none GSK_RENDERER=cairo \
+  REPRISE_AUDIO_SINK=fakesink cargo test -p reprise-gnome --bin reprise \
+  ui::track_list::diagnostic_trail::tests::production_reload_records_the_real_frame_rows_cause_and_optional_query \
+  -- --ignored --exact --nocapture
+```
+
+Red: 0 passed, 1 failed, 0 ignored; the real reload retained one window query
+but reported `item_calls=0`. The production mutation was reverted. Green:
+1 passed, 0 failed, 0 ignored. Host load was not sampled because this mutation
+checks wiring, not a threshold.
+
+### Task 4 — bounded reproduction
+
+The committed production hook accepts its expected row count through its one
+existing variable (`REPRISE_SMOKE_RELOAD_ORACLE=rows:<count>`), validates the
+loaded count and filtered count, runs the three transitions, prints their
+ratio, and exits. The harness combines it with the existing generated-metadata
+tool, then rewrites `added_at` from SQLite's current clock; no pinned date is
+present. The exact Bash command for the recorded full-size run was:
+
+```sh
+case_root=$(mktemp -d /tmp/reprise-reload-relative-now.XXXXXX)
+mkdir -p "$case_root/data/reprise" "$case_root/cache" "$case_root/config"
+case_started=$(date +%s%N)
+target/release/examples/scalability_baseline \
+  --db "$case_root/data/reprise/reprise.db" --tracks 100000 --iterations 1 \
+  >"$case_root/generator.json"
+sqlite3 "$case_root/data/reprise/reprise.db" \
+  "UPDATE tracks SET added_at = CAST(strftime('%s','now') AS INTEGER);"
+timeout 60s dbus-run-session -- xvfb-run -a env \
+  XDG_DATA_HOME="$case_root/data" XDG_CACHE_HOME="$case_root/cache" \
+  XDG_CONFIG_HOME="$case_root/config" GDK_BACKEND=x11 WAYLAND_DISPLAY= \
+  GTK_A11Y=none GSK_RENDERER=cairo REPRISE_AUDIO_SINK=fakesink \
+  REPRISE_SMOKE_RELOAD_ORACLE=rows:100000 REPRISE_LOG=error \
+  target/release/reprise 2>"$case_root/app.err" | \
+  rg '^REPRISE_RELOAD_ORACLE (transition=|summary )'
+case_ended=$(date +%s%N)
+printf 'REPRISE_RELOAD_ORACLE elapsed_ms=%s fixture=%s\n' \
+  "$(((case_ended-case_started)/1000000))" "$case_root"
+```
+
+It completed in 6.857 s at loadavg 5.98. Source/sort/clear next-frame spans
+were 62.569/438.878/451.384 ms, giving a 7.214× ratio. Exploratory runs of the
+same hook found ratios of 1.626× at 10k (loadavg 2.56) and 4.002× at 50k
+(loadavg 2.68); the 100k repeat was 8.530× (loadavg 2.54). The 1k arm is
+missing a clear result: its search setup unexpectedly remained at 1,000 rows,
+and the hook correctly stopped with an error instead of inventing a number.
+
+No tested size up to and including 100k reached the task's 10× "unmistakable
+asymmetry" threshold. Therefore there is no smaller qualifying reproduction;
+the full 100k fixture is retained. Even it completes far under one minute and,
+in the production model shape, confirms that the former multi-order pathology
+is absent rather than recreating it.

@@ -16,11 +16,19 @@ fn reload_lines(trail: &DiagnosticTrail) -> Vec<String> {
         .collect()
 }
 
+fn breakdown_lines(trail: &DiagnosticTrail) -> Vec<String> {
+    trail
+        .snapshot()
+        .into_iter()
+        .filter(|line| line.contains(" ReloadBreakdown "))
+        .collect()
+}
+
 #[test]
 fn reload_measurement_records_work_query_and_later_frame_honestly() {
     let trail = DiagnosticTrail::default();
     let started = Instant::now();
-    let pending = ReloadTimer::started_at(started, ReloadCause::TypedSearch).work_done_at(
+    let pending = ReloadTimer::started_at(started, ReloadCause::TypedSearch, 7).work_done_at(
         started + Duration::from_millis(17),
         "Library",
         42,
@@ -52,7 +60,7 @@ fn reload_measurement_records_work_query_and_later_frame_honestly() {
 fn queue_reload_measurement_distinguishes_no_query_from_zero_duration() {
     let trail = DiagnosticTrail::default();
     let started = Instant::now();
-    ReloadTimer::started_at(started, ReloadCause::SourceSwitch)
+    ReloadTimer::started_at(started, ReloadCause::SourceSwitch, 8)
         .work_done_at(started + Duration::from_millis(2), "Queue", 0, None)
         .next_frame_at(&trail, started + Duration::from_millis(5));
 
@@ -60,6 +68,56 @@ fn queue_reload_measurement_distinguishes_no_query_from_zero_duration() {
     assert!(line.contains("query_us=none"), "{line}");
     assert!(line.contains("work_done_us=2000"), "{line}");
     assert!(line.contains("next_frame_us=5000"), "{line}");
+}
+
+#[test]
+fn reload_breakdown_sums_inside_the_whole_and_resets_per_reload() {
+    let trail = DiagnosticTrail::default();
+    let first = begin_reload_breakdown();
+    record_reload_step(ReloadStep::Geometry, Duration::from_millis(2));
+    record_reload_step(ReloadStep::ItemsChanged, Duration::from_millis(5));
+    record_item_call(Duration::from_millis(3));
+    record_window_query(Duration::from_millis(1));
+    finish_reload_breakdown(
+        &trail,
+        first,
+        Duration::from_millis(10),
+        100,
+        100_000,
+        4,
+        25.0,
+        400.0,
+    );
+
+    let first_line = trail.snapshot().pop().unwrap();
+    assert!(
+        first_line.contains(&format!("reload_id={first}")),
+        "{first_line}"
+    );
+    assert!(first_line.contains("step_sum_us=7000"), "{first_line}");
+    assert!(first_line.contains("whole_us=10000"), "{first_line}");
+    assert!(first_line.contains("item_calls=1"), "{first_line}");
+    assert!(first_line.contains("window_calls=1"), "{first_line}");
+
+    let second = begin_reload_breakdown();
+    finish_reload_breakdown(
+        &trail,
+        second,
+        Duration::from_millis(1),
+        100_000,
+        100_000,
+        0,
+        0.0,
+        400.0,
+    );
+    let second_line = trail.snapshot().pop().unwrap();
+    assert!(
+        second_line.contains(&format!("reload_id={second}")),
+        "{second_line}"
+    );
+    assert!(second_line.contains("step_sum_us=0"), "{second_line}");
+    assert!(second_line.contains("item_calls=0"), "{second_line}");
+    assert!(second_line.contains("window_calls=0"), "{second_line}");
 }
 
 #[test]
@@ -113,6 +171,14 @@ fn production_reload_records_the_real_frame_rows_cause_and_optional_query() {
     assert!(
         payload_number(&library, "next_frame_us") >= payload_number(&library, "work_done_us"),
         "{library}"
+    );
+    let breakdown = breakdown_lines(&track_list.shared.diagnostic_trail)
+        .pop()
+        .unwrap();
+    assert!(payload_number(&breakdown, "item_calls") > 0, "{breakdown}");
+    assert!(
+        payload_number(&breakdown, "window_calls") > 0,
+        "{breakdown}"
     );
 
     let before_queue = reload_lines(&track_list.shared.diagnostic_trail).len();
@@ -291,6 +357,7 @@ fn trail_keeps_the_newest_64_entries_in_oldest_first_order() {
         trail.push(
             count,
             Event::Reload {
+                reload_id: 1,
                 cause: ReloadCause::Other,
                 source: "library".into(),
                 rows: count as usize,
@@ -342,8 +409,9 @@ fn trail_truncates_long_payloads_without_splitting_unicode() {
     trail.push(
         7,
         Event::Reload {
+            reload_id: 1,
             cause: ReloadCause::Other,
-            source: format!("{}\nsecond line", "ä".repeat(200)),
+            source: format!("{}\nsecond line", "ä".repeat(1_100)),
             rows: 1,
             query_us: Some(1),
             work_done_us: 2,

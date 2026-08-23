@@ -47,6 +47,7 @@ use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 use super::track_list_model_change::ModelChange;
+use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
 /// page size (`track_list.rs`'s former `WINDOW_LIMIT`), now used as the unit
@@ -173,9 +174,13 @@ mod imp {
         }
 
         fn item(&self, position: u32) -> Option<glib::Object> {
-            self.obj()
+            let started = Instant::now();
+            let item = self
+                .obj()
                 .queue_item_at(position)
-                .map(|item| glib::BoxedAnyObject::new(item).upcast())
+                .map(|item| glib::BoxedAnyObject::new(item).upcast());
+            diagnostic_trail::record_item_call(started.elapsed());
+            item
         }
     }
 }
@@ -493,7 +498,9 @@ impl TrackListModel {
                 )
         };
         let query_elapsed = query_started.elapsed();
+        diagnostic_trail::record_reload_step(ReloadStep::Query, query_elapsed);
 
+        let state_started = Instant::now();
         {
             let mut state = self.imp().state.borrow_mut();
             state.source = source.clone();
@@ -508,6 +515,7 @@ impl TrackListModel {
             state.total = new_total;
             state.cache.clear();
         }
+        diagnostic_trail::record_reload_step(ReloadStep::StateSwap, state_started.elapsed());
 
         tracing::debug!(
             total = new_total,
@@ -548,6 +556,7 @@ impl TrackListModel {
                 generation,
             });
         self.imp().generation.set(generation.wrapping_add(1));
+        let signal_started = Instant::now();
         super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
             position: change.position,
             removed: change.removed,
@@ -563,6 +572,7 @@ impl TrackListModel {
             });
             self.sections_changed(position, n_items);
         }
+        diagnostic_trail::record_reload_step(ReloadStep::ItemsChanged, signal_started.elapsed());
         query_elapsed
     }
 
@@ -653,6 +663,7 @@ impl TrackListModel {
             (i64::from(window_start), queue_items)
         };
 
+        let window_started = Instant::now();
         let rows = if source == ViewSource::Queue {
             queries::query_queue_item_window(
                 &conn,
@@ -678,6 +689,7 @@ impl TrackListModel {
             )
             .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
         };
+        diagnostic_trail::record_window_query(window_started.elapsed());
 
         let rows = match rows {
             Ok(rows) => rows,

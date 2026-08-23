@@ -89,6 +89,7 @@ const SMOKE_SORT_COLUMN_ENV_VAR: &str = "REPRISE_SMOKE_SORT_COLUMN";
 pub(in crate::ui) const SMOKE_RELOAD_ORACLE_ENV_VAR: &str = "REPRISE_SMOKE_RELOAD_ORACLE";
 
 const ORACLE_FILTER: &str = "Artist 0000";
+const MAX_ORACLE_SEED_ROWS: usize = 100_000;
 
 #[derive(Clone, Copy)]
 enum OracleTransition {
@@ -124,13 +125,52 @@ fn latest_reload(shared: &Shared) -> String {
         .unwrap_or_else(|| "missing".into())
 }
 
-fn print_oracle_transition(shared: &Shared, transition: OracleTransition) {
+fn latest_breakdown(shared: &Shared) -> String {
+    shared
+        .diagnostic_trail
+        .snapshot()
+        .into_iter()
+        .rev()
+        .find(|entry| entry.contains(" ReloadBreakdown "))
+        .unwrap_or_else(|| "missing".into())
+}
+
+fn reload_next_frame_us(shared: &Shared) -> Option<u128> {
+    latest_reload(shared)
+        .split_whitespace()
+        .find_map(|part| part.strip_prefix("next_frame_us=")?.parse::<u128>().ok())
+}
+
+fn print_oracle_transition(shared: &Shared, transition: OracleTransition) -> Option<u128> {
     println!(
-        "REPRISE_RELOAD_ORACLE transition={} loadavg={} event={}",
+        "REPRISE_RELOAD_ORACLE transition={} loadavg={} event={} breakdown={}",
         transition.label(),
         load_average(),
-        latest_reload(shared)
+        latest_reload(shared),
+        latest_breakdown(shared)
     );
+    reload_next_frame_us(shared)
+}
+
+fn parse_oracle_rows(value: &str) -> Result<usize, String> {
+    if value == "1" {
+        return Ok(MAX_ORACLE_SEED_ROWS);
+    }
+    let rows = value
+        .strip_prefix("rows:")
+        .ok_or_else(|| "expected 1 or rows:<count>".to_string())?
+        .parse::<usize>()
+        .map_err(|_| "seed row count is not an integer".to_string())?;
+    if !(1..=MAX_ORACLE_SEED_ROWS).contains(&rows) {
+        return Err(format!("seed row count must be 1..={MAX_ORACLE_SEED_ROWS}"));
+    }
+    Ok(rows)
+}
+
+fn oracle_ratio(samples: &[u128]) -> Option<f64> {
+    let minimum = *samples.iter().min()?;
+    let maximum = *samples.iter().max()?;
+    (minimum > 0).then_some(maximum as f64 / minimum as f64)
 }
 
 fn after_next_frame(shared: &Rc<Shared>, callback: impl FnOnce() + 'static) {
@@ -161,14 +201,18 @@ fn quit_oracle(shared: &Shared) {
     }
 }
 
-fn run_cleared_search_oracle(shared: &Rc<Shared>) {
+fn run_cleared_search_oracle(
+    shared: &Rc<Shared>,
+    expected_filtered: u32,
+    measurements: Rc<RefCell<Vec<u128>>>,
+) {
     set_filter_and_reload(shared, ORACLE_FILTER);
     let after_narrow = Rc::clone(shared);
     after_next_frame(shared, move || {
         let narrowed_rows = after_narrow.model.n_items();
-        if narrowed_rows != 100 {
+        if narrowed_rows != expected_filtered {
             println!(
-                "REPRISE_RELOAD_ORACLE error=unexpected-filter-count rows={narrowed_rows} expected=100 loadavg={}",
+                "REPRISE_RELOAD_ORACLE error=unexpected-filter-count rows={narrowed_rows} expected={expected_filtered} loadavg={}",
                 load_average()
             );
             quit_oracle(&after_narrow);
@@ -177,13 +221,26 @@ fn run_cleared_search_oracle(shared: &Rc<Shared>) {
         set_filter_and_reload(&after_narrow, "");
         let after_clear = Rc::clone(&after_narrow);
         after_next_frame(&after_narrow, move || {
-            print_oracle_transition(&after_clear, OracleTransition::ClearedSearch);
+            if let Some(value) =
+                print_oracle_transition(&after_clear, OracleTransition::ClearedSearch)
+            {
+                measurements.borrow_mut().push(value);
+            }
+            let samples = measurements.borrow();
+            println!(
+                "REPRISE_RELOAD_ORACLE summary rows={} ratio={:.3} next_frame_us={samples:?} loadavg={}",
+                after_clear.model.n_items(), oracle_ratio(&samples).unwrap_or(f64::NAN), load_average()
+            );
             quit_oracle(&after_clear);
         });
     });
 }
 
-fn run_sort_oracle(shared: &Rc<Shared>) {
+fn run_sort_oracle(
+    shared: &Rc<Shared>,
+    expected_filtered: u32,
+    measurements: Rc<RefCell<Vec<u128>>>,
+) {
     *shared.sort.borrow_mut() = SortState {
         field: "title".into(),
         dir: "asc".into(),
@@ -191,8 +248,10 @@ fn run_sort_oracle(shared: &Rc<Shared>) {
     reload(shared);
     let after_sort = Rc::clone(shared);
     after_next_frame(shared, move || {
-        print_oracle_transition(&after_sort, OracleTransition::SortChange);
-        run_cleared_search_oracle(&after_sort);
+        if let Some(value) = print_oracle_transition(&after_sort, OracleTransition::SortChange) {
+            measurements.borrow_mut().push(value);
+        }
+        run_cleared_search_oracle(&after_sort, expected_filtered, measurements);
     });
 }
 
@@ -200,19 +259,45 @@ fn run_sort_oracle(shared: &Rc<Shared>) {
 /// that the measured return is a genuine source switch, then chains all three
 /// transitions through real frame-clock ticks before quitting the application.
 pub(in crate::ui) fn arm_smoke_reload_oracle(shared: &Rc<Shared>) {
-    if std::env::var(SMOKE_RELOAD_ORACLE_ENV_VAR).is_err() {
+    let Ok(value) = std::env::var(SMOKE_RELOAD_ORACLE_ENV_VAR) else {
         return;
-    }
+    };
+    let oracle_rows = parse_oracle_rows(&value);
     let shared = Rc::clone(shared);
     glib::idle_add_local_once(move || {
+        let oracle_rows = match oracle_rows {
+            Ok(rows) => rows,
+            Err(error) => {
+                println!(
+                    "REPRISE_RELOAD_ORACLE error={error} loadavg={}",
+                    load_average()
+                );
+                quit_oracle(&shared);
+                return;
+            }
+        };
+        let expected_filtered = u32::try_from(oracle_rows.div_ceil(1_000)).unwrap_or(u32::MAX);
+        let measurements = Rc::new(RefCell::new(Vec::with_capacity(3)));
         set_source_and_reload(&shared, &ViewSource::Missing);
         let return_to_library = Rc::clone(&shared);
         after_next_frame(&shared, move || {
             set_source_and_reload(&return_to_library, &ViewSource::Library);
             let after_source = Rc::clone(&return_to_library);
             after_next_frame(&return_to_library, move || {
-                print_oracle_transition(&after_source, OracleTransition::SourceSwitch);
-                run_sort_oracle(&after_source);
+                if after_source.model.n_items() as usize != oracle_rows {
+                    println!(
+                        "REPRISE_RELOAD_ORACLE error=unexpected-library-count rows={} expected={oracle_rows} loadavg={}",
+                        after_source.model.n_items(), load_average()
+                    );
+                    quit_oracle(&after_source);
+                    return;
+                }
+                if let Some(value) =
+                    print_oracle_transition(&after_source, OracleTransition::SourceSwitch)
+                {
+                    measurements.borrow_mut().push(value);
+                }
+                run_sort_oracle(&after_source, expected_filtered, measurements);
             });
         });
     });

@@ -1,13 +1,14 @@
 //! Bounded, silent history of coarse track-list events.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 const CAPACITY: usize = 64;
-const PAYLOAD_LIMIT: usize = 120;
+const PAYLOAD_LIMIT: usize = 1024;
+const RELOAD_STEP_COUNT: usize = 9;
 static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,6 +35,7 @@ impl ReloadCause {
 pub(crate) struct ReloadTimer {
     started: Instant,
     cause: ReloadCause,
+    reload_id: u64,
 }
 
 pub(crate) struct PendingReloadMeasurement {
@@ -43,11 +45,40 @@ pub(crate) struct PendingReloadMeasurement {
     source: String,
     rows: usize,
     query_elapsed: Option<Duration>,
+    reload_id: u64,
+}
+
+#[derive(Clone, Copy)]
+#[repr(usize)]
+pub(crate) enum ReloadStep {
+    Geometry,
+    Query,
+    StateSwap,
+    ItemsChanged,
+    QueueHeader,
+    BrowseCount,
+    EmptyState,
+    TrailLogging,
+    OnReload,
+}
+
+#[derive(Default)]
+struct ActiveReloadBreakdown {
+    reload_id: u64,
+    steps_us: [u128; RELOAD_STEP_COUNT],
+    item_calls: u64,
+    item_us: u128,
+    window_calls: u64,
+    window_us: u128,
 }
 
 impl ReloadTimer {
-    pub(crate) fn started_at(started: Instant, cause: ReloadCause) -> Self {
-        Self { started, cause }
+    pub(crate) fn started_at(started: Instant, cause: ReloadCause, reload_id: u64) -> Self {
+        Self {
+            started,
+            cause,
+            reload_id,
+        }
     }
 
     pub(crate) fn work_done(
@@ -73,6 +104,7 @@ impl ReloadTimer {
             source: source.to_owned(),
             rows,
             query_elapsed,
+            reload_id: self.reload_id,
         }
     }
 }
@@ -93,6 +125,7 @@ impl PendingReloadMeasurement {
             query_us,
             work_done_us,
             next_frame_us,
+            reload_id: self.reload_id,
         });
         tracing::debug!(
             cause = self.cause.label(),
@@ -101,6 +134,7 @@ impl PendingReloadMeasurement {
             query_us,
             work_done_us,
             next_frame_us,
+            reload_id = self.reload_id,
             "track-list reload measured"
         );
     }
@@ -126,12 +160,28 @@ pub(crate) enum Event {
         n_items: u32,
     },
     Reload {
+        reload_id: u64,
         cause: ReloadCause,
         source: String,
         rows: usize,
         query_us: Option<u128>,
         work_done_us: u128,
         next_frame_us: u128,
+    },
+    ReloadBreakdown {
+        reload_id: u64,
+        steps_us: [u128; RELOAD_STEP_COUNT],
+        step_sum_us: u128,
+        whole_us: u128,
+        old_total: u32,
+        new_total: usize,
+        selected: u64,
+        adjustment_value: f64,
+        adjustment_upper: f64,
+        item_calls: u64,
+        item_us: u128,
+        window_calls: u64,
+        window_us: u128,
     },
     StackPage {
         page: String,
@@ -238,6 +288,7 @@ impl Event {
                 format!("position={position} n_items={n_items}"),
             ),
             Self::Reload {
+                reload_id,
                 cause,
                 source,
                 rows,
@@ -247,9 +298,31 @@ impl Event {
             } => (
                 "Reload",
                 format!(
-                    "cause={} rows={rows} query_us={} work_done_us={work_done_us} next_frame_us={next_frame_us} source={source}",
+                    "reload_id={reload_id} cause={} rows={rows} query_us={} work_done_us={work_done_us} next_frame_us={next_frame_us} source={source}",
                     cause.label(),
                     query_us.map_or_else(|| "none".into(), |value| value.to_string())
+                ),
+            ),
+            Self::ReloadBreakdown {
+                reload_id,
+                steps_us,
+                step_sum_us,
+                whole_us,
+                old_total,
+                new_total,
+                selected,
+                adjustment_value,
+                adjustment_upper,
+                item_calls,
+                item_us,
+                window_calls,
+                window_us,
+            } => (
+                "ReloadBreakdown",
+                format!(
+                    "reload_id={reload_id} geometry_us={} query_us={} state_swap_us={} items_changed_us={} queue_header_us={} browse_count_us={} empty_state_us={} trail_logging_us={} on_reload_us={} step_sum_us={step_sum_us} whole_us={whole_us} old_total={old_total} new_total={new_total} selected={selected} adjustment_value={adjustment_value:.2} adjustment_upper={adjustment_upper:.2} item_calls={item_calls} item_us={item_us} window_calls={window_calls} window_us={window_us}",
+                    steps_us[0], steps_us[1], steps_us[2], steps_us[3], steps_us[4],
+                    steps_us[5], steps_us[6], steps_us[7], steps_us[8]
                 ),
             ),
             Self::StackPage { page } => ("StackPage", format!("page={page}")),
@@ -307,6 +380,90 @@ fn truncate_payload(payload: &str) -> String {
 
 thread_local! {
     static THREAD_TRAIL: Rc<DiagnosticTrail> = Rc::new(DiagnosticTrail::default());
+    static ACTIVE_RELOAD: RefCell<Option<ActiveReloadBreakdown>> = const { RefCell::new(None) };
+    static NEXT_RELOAD_ID: Cell<u64> = const { Cell::new(1) };
+}
+
+pub(crate) fn begin_reload_breakdown() -> u64 {
+    let reload_id = NEXT_RELOAD_ID.with(|next| {
+        let current = next.get();
+        next.set(current.wrapping_add(1).max(1));
+        current
+    });
+    ACTIVE_RELOAD.with(|active| {
+        *active.borrow_mut() = Some(ActiveReloadBreakdown {
+            reload_id,
+            ..ActiveReloadBreakdown::default()
+        });
+    });
+    reload_id
+}
+
+pub(crate) fn record_reload_step(step: ReloadStep, elapsed: Duration) {
+    ACTIVE_RELOAD.with(|active| {
+        if let Some(active) = active.borrow_mut().as_mut() {
+            active.steps_us[step as usize] =
+                active.steps_us[step as usize].saturating_add(elapsed.as_micros());
+        }
+    });
+}
+
+pub(crate) fn measure_reload_step<T>(step: ReloadStep, operation: impl FnOnce() -> T) -> T {
+    let started = Instant::now();
+    let result = operation();
+    record_reload_step(step, started.elapsed());
+    result
+}
+
+pub(crate) fn record_item_call(elapsed: Duration) {
+    ACTIVE_RELOAD.with(|active| {
+        if let Some(active) = active.borrow_mut().as_mut() {
+            active.item_calls = active.item_calls.saturating_add(1);
+            active.item_us = active.item_us.saturating_add(elapsed.as_micros());
+        }
+    });
+}
+
+pub(crate) fn record_window_query(elapsed: Duration) {
+    ACTIVE_RELOAD.with(|active| {
+        if let Some(active) = active.borrow_mut().as_mut() {
+            active.window_calls = active.window_calls.saturating_add(1);
+            active.window_us = active.window_us.saturating_add(elapsed.as_micros());
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finish_reload_breakdown(
+    trail: &DiagnosticTrail,
+    reload_id: u64,
+    whole: Duration,
+    old_total: u32,
+    new_total: usize,
+    selected: u64,
+    adjustment_value: f64,
+    adjustment_upper: f64,
+) {
+    let active = ACTIVE_RELOAD.with(|active| active.borrow_mut().take());
+    let Some(active) = active.filter(|active| active.reload_id == reload_id) else {
+        return;
+    };
+    let step_sum_us = active.steps_us.iter().copied().sum();
+    trail.record(Event::ReloadBreakdown {
+        reload_id,
+        steps_us: active.steps_us,
+        step_sum_us,
+        whole_us: whole.as_micros(),
+        old_total,
+        new_total,
+        selected,
+        adjustment_value,
+        adjustment_upper,
+        item_calls: active.item_calls,
+        item_us: active.item_us,
+        window_calls: active.window_calls,
+        window_us: active.window_us,
+    });
 }
 
 pub(crate) fn mark_process_start() {
