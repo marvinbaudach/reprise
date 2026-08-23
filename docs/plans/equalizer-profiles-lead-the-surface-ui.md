@@ -2,7 +2,7 @@
 slug: equalizer-profiles-lead-the-surface-ui
 worktree: /home/marvin/Projects/reprise-equalizer-profiles-lead-the-surface-ui
 branch: feature/equalizer-profiles-lead-the-surface-ui
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-23
 mother: docs/plans/equalizer-profiles-lead-the-surface.md
