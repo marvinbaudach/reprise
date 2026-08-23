@@ -652,3 +652,32 @@ asymmetry" threshold. Therefore there is no smaller qualifying reproduction;
 the full 100k fixture is retained. Even it completes far under one minute and,
 in the production model shape, confirms that the former multi-order pathology
 is absent rather than recreating it.
+
+### Task 5 — cause checkpoint
+
+**Cause, in one sentence:** the full-range production
+`TrackListModel::set_query_browsed_ai_inner` call to `self.items_changed` at
+`crates/reprise-gnome/src/ui/track_list/track_list_model.rs:565` makes GTK
+synchronously revalidate a single 100,000-row `SectionModel` section, holding
+407.981 ms of the 416.184 ms cleared-search bracket (**98.03%**) while it pulls
+all 100,000 positions through the lazy model.
+
+The nested evidence locates the mechanism, not merely its outer signal: clear
+and sort each made 100,205 `item()` calls and 502 SQL window calls. For clear,
+those window queries consumed 345.285 ms (82.96% of the whole); sort made the
+same number of calls and spent 346.009 ms in them. Source switch inserts into
+an empty old model (`old_total=0`), so GTK has no carried whole-model section to
+replace and asks only for the visible neighbourhood: 205 item calls and two
+windows. Sort replaces a nonempty 100k model and clear replaces a nonempty
+100-row model, so both enter the same whole-section revalidation path despite
+their different old cardinalities. This explains all three transitions.
+
+This confirms **H2**, the re-entrant window-query storm. H1 is refuted: every
+arm had zero selected rows and adjustment value 0.00, yet source switch stayed
+cheap while sort and clear were expensive; the two expensive arms also had
+different adjustment uppers (4,500,000 versus 4,500) but identical item/window
+call counts. The cost is therefore not carried selection or scroll position.
+
+No production behavior had changed when this checkpoint was written. The
+measurements and harness in Tasks 1–4 were the only production additions, and
+they only observe or run when the explicit smoke variable is present.
