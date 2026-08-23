@@ -36,44 +36,71 @@ pub(crate) struct ReloadTimer {
     cause: ReloadCause,
 }
 
+pub(crate) struct PendingReloadMeasurement {
+    started: Instant,
+    work_done: Instant,
+    cause: ReloadCause,
+    source: String,
+    rows: usize,
+    query_elapsed: Option<Duration>,
+}
+
 impl ReloadTimer {
     pub(crate) fn started_at(started: Instant, cause: ReloadCause) -> Self {
         Self { started, cause }
     }
 
-    pub(crate) fn finish(
+    pub(crate) fn work_done(
         self,
-        trail: &DiagnosticTrail,
         source: &str,
         rows: usize,
-        query_elapsed: Duration,
-    ) {
-        self.finish_at(trail, Instant::now(), source, rows, query_elapsed);
+        query_elapsed: Option<Duration>,
+    ) -> PendingReloadMeasurement {
+        self.work_done_at(Instant::now(), source, rows, query_elapsed)
     }
 
-    fn finish_at(
+    fn work_done_at(
         self,
-        trail: &DiagnosticTrail,
-        finished: Instant,
+        work_done: Instant,
         source: &str,
         rows: usize,
-        query_elapsed: Duration,
-    ) {
-        let query_us = query_elapsed.as_micros();
-        let displayable_us = finished.duration_since(self.started).as_micros();
-        trail.record(Event::Reload {
+        query_elapsed: Option<Duration>,
+    ) -> PendingReloadMeasurement {
+        PendingReloadMeasurement {
+            started: self.started,
+            work_done,
             cause: self.cause,
             source: source.to_owned(),
             rows,
+            query_elapsed,
+        }
+    }
+}
+
+impl PendingReloadMeasurement {
+    pub(crate) fn next_frame(self, trail: &DiagnosticTrail) {
+        self.next_frame_at(trail, Instant::now());
+    }
+
+    fn next_frame_at(self, trail: &DiagnosticTrail, next_frame: Instant) {
+        let query_us = self.query_elapsed.map(|elapsed| elapsed.as_micros());
+        let work_done_us = self.work_done.duration_since(self.started).as_micros();
+        let next_frame_us = next_frame.duration_since(self.started).as_micros();
+        trail.record(Event::Reload {
+            cause: self.cause,
+            source: self.source.clone(),
+            rows: self.rows,
             query_us,
-            displayable_us,
+            work_done_us,
+            next_frame_us,
         });
         tracing::debug!(
             cause = self.cause.label(),
-            source,
-            rows,
+            source = self.source,
+            rows = self.rows,
             query_us,
-            displayable_us,
+            work_done_us,
+            next_frame_us,
             "track-list reload measured"
         );
     }
@@ -102,8 +129,9 @@ pub(crate) enum Event {
         cause: ReloadCause,
         source: String,
         rows: usize,
-        query_us: u128,
-        displayable_us: u128,
+        query_us: Option<u128>,
+        work_done_us: u128,
+        next_frame_us: u128,
     },
     StackPage {
         page: String,
@@ -214,12 +242,14 @@ impl Event {
                 source,
                 rows,
                 query_us,
-                displayable_us,
+                work_done_us,
+                next_frame_us,
             } => (
                 "Reload",
                 format!(
-                    "cause={} rows={rows} query_us={query_us} displayable_us={displayable_us} source={source}",
-                    cause.label()
+                    "cause={} rows={rows} query_us={} work_done_us={work_done_us} next_frame_us={next_frame_us} source={source}",
+                    cause.label(),
+                    query_us.map_or_else(|| "none".into(), |value| value.to_string())
                 ),
             ),
             Self::StackPage { page } => ("StackPage", format!("page={page}")),
@@ -296,276 +326,5 @@ pub(crate) fn record(event: Event) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reload_measurement_records_cause_rows_and_monotonic_durations() {
-        let trail = DiagnosticTrail::default();
-        let started = Instant::now();
-        let timer = ReloadTimer::started_at(started, ReloadCause::TypedSearch);
-
-        timer.finish_at(
-            &trail,
-            started + std::time::Duration::from_millis(17),
-            "Library",
-            42,
-            std::time::Duration::from_millis(11),
-        );
-
-        let line = &trail.snapshot()[0];
-        assert!(line.contains("cause=typed-search"), "{line}");
-        assert!(line.contains("source=Library"), "{line}");
-        assert!(line.contains("rows=42"), "{line}");
-        assert!(line.contains("query_us=11000"), "{line}");
-        assert!(line.contains("displayable_us=17000"), "{line}");
-
-        let query_us = payload_number(line, "query_us");
-        let displayable_us = payload_number(line, "displayable_us");
-        assert!(displayable_us >= query_us);
-    }
-
-    #[test]
-    fn production_reload_finishes_measurement_after_the_list_is_displayable() {
-        let source = include_str!("track_list_reload.rs");
-        let run_query = source
-            .split_once("fn run_query(")
-            .expect("the production reload seam must exist")
-            .1;
-        let empty_state = run_query
-            .find("apply_empty_state(")
-            .expect("the reload must project its empty state");
-        let finish = run_query
-            .find("reload_timer.finish(")
-            .expect("the production reload must finish its timing event");
-
-        assert!(
-            finish > empty_state,
-            "timing ended before the list was ready"
-        );
-    }
-
-    #[test]
-    fn reload_cause_distinguishes_search_clear_sort_and_source_transitions() {
-        use reprise_core::view_source::ViewSource;
-
-        let baseline = (
-            ViewSource::Library,
-            "artist".to_string(),
-            "asc".to_string(),
-            String::new(),
-        );
-        assert_eq!(
-            super::super::track_list_reload::reload_cause(
-                Some(&baseline),
-                &ViewSource::Library,
-                "artist",
-                "asc",
-                "n"
-            ),
-            ReloadCause::TypedSearch
-        );
-        let mid_search = (
-            ViewSource::Library,
-            "artist".to_string(),
-            "asc".to_string(),
-            "n".to_string(),
-        );
-        assert_eq!(
-            super::super::track_list_reload::reload_cause(
-                Some(&mid_search),
-                &ViewSource::Library,
-                "artist",
-                "asc",
-                "ne"
-            ),
-            ReloadCause::TypedSearch
-        );
-        assert_eq!(
-            super::super::track_list_reload::reload_cause(
-                Some(&mid_search),
-                &ViewSource::Library,
-                "artist",
-                "asc",
-                ""
-            ),
-            ReloadCause::ClearedSearch
-        );
-        assert_eq!(
-            super::super::track_list_reload::reload_cause(
-                Some(&baseline),
-                &ViewSource::Library,
-                "title",
-                "asc",
-                ""
-            ),
-            ReloadCause::SortChange
-        );
-        assert_eq!(
-            super::super::track_list_reload::reload_cause(
-                Some(&baseline),
-                &ViewSource::Playlist(7),
-                "playlist_order",
-                "asc",
-                ""
-            ),
-            ReloadCause::SourceSwitch
-        );
-        assert_eq!(
-            super::super::track_list_reload::reload_cause(
-                None,
-                &ViewSource::Library,
-                "artist",
-                "asc",
-                ""
-            ),
-            ReloadCause::Other
-        );
-    }
-
-    fn payload_number(line: &str, field: &str) -> u128 {
-        line.split_whitespace()
-            .find_map(|part| part.strip_prefix(&format!("{field}=")))
-            .unwrap()
-            .parse()
-            .unwrap()
-    }
-
-    #[test]
-    #[ignore = "measurement: uses the generated database under the isolated XDG data root"]
-    fn measure_generated_library_reload_latency() {
-        use gtk4::prelude::*;
-
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let db_path = reprise_core::db::default_path();
-        let conn = reprise_core::db::Db::open_ready(&db_path).unwrap();
-        let track_list = super::super::TrackList::new(
-            Rc::new(conn),
-            Box::new(|_, _, _, _| {}),
-            |_, _, _, _| {},
-            super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup_for_test(),
-        );
-        let window = gtk4::Window::builder()
-            .default_width(1600)
-            .default_height(1000)
-            .child(track_list.widget())
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        for sample in 1..=5 {
-            super::super::track_list_reload::set_filter_and_reload(&track_list.shared, "N");
-            print_latest_reload(&track_list.shared, sample, "first-keystroke");
-
-            super::super::track_list_reload::set_filter_and_reload(&track_list.shared, "Ne");
-            print_latest_reload(&track_list.shared, sample, "mid-typing");
-
-            super::super::track_list_reload::set_filter_and_reload(&track_list.shared, "");
-            print_latest_reload(&track_list.shared, sample, "clear-search");
-
-            *track_list.shared.sort.borrow_mut() = crate::ui::track_list_sort::SortState {
-                field: "title".into(),
-                dir: "asc".into(),
-            };
-            super::super::track_list_reload::reload(&track_list.shared);
-            print_latest_reload(&track_list.shared, sample, "sort-change");
-
-            super::super::track_list_reload::set_source_and_reload(
-                &track_list.shared,
-                &reprise_core::view_source::ViewSource::Missing,
-            );
-            print_latest_reload(&track_list.shared, sample, "source-to-missing");
-            super::super::track_list_reload::set_source_and_reload(
-                &track_list.shared,
-                &reprise_core::view_source::ViewSource::Library,
-            );
-            print_latest_reload(&track_list.shared, sample, "source-to-library");
-        }
-        window.close();
-    }
-
-    fn print_latest_reload(shared: &super::super::Shared, sample: usize, case: &str) {
-        let line = shared
-            .diagnostic_trail
-            .snapshot()
-            .into_iter()
-            .rev()
-            .find(|line| line.contains(" Reload "))
-            .expect("a synchronous reload must append its timing event");
-        eprintln!("RELOAD_SAMPLE sample={sample} case={case} {line}");
-    }
-
-    #[test]
-    fn trail_keeps_the_newest_64_entries_in_oldest_first_order() {
-        let trail = DiagnosticTrail::default();
-        for count in 0..70 {
-            trail.push(
-                count,
-                Event::Reload {
-                    cause: ReloadCause::Other,
-                    source: "library".into(),
-                    rows: count as usize,
-                    query_us: 1,
-                    displayable_us: 2,
-                },
-            );
-        }
-
-        let lines = trail.snapshot();
-        assert_eq!(lines.len(), 64);
-        assert!(lines[0].contains("rows=6"), "{}", lines[0]);
-        assert!(lines[63].contains("rows=69"), "{}", lines[63]);
-    }
-
-    #[test]
-    fn trail_renders_elapsed_category_and_payload_on_one_line() {
-        let trail = DiagnosticTrail::default();
-        trail.push(
-            42,
-            Event::PlaybackState {
-                state: "playing".into(),
-            },
-        );
-
-        assert_eq!(trail.snapshot(), ["42ms PlaybackState state=playing"]);
-    }
-
-    #[test]
-    fn sections_changed_renders_its_exact_range() {
-        let trail = DiagnosticTrail::default();
-        trail.push(
-            9,
-            Event::SectionsChanged {
-                position: 3,
-                n_items: 12,
-            },
-        );
-        assert_eq!(
-            trail.snapshot(),
-            ["9ms SectionsChanged position=3 n_items=12"]
-        );
-    }
-
-    #[test]
-    fn trail_truncates_long_payloads_without_splitting_unicode() {
-        let trail = DiagnosticTrail::default();
-        trail.push(
-            7,
-            Event::Reload {
-                cause: ReloadCause::Other,
-                source: format!("{}\nsecond line", "ä".repeat(200)),
-                rows: 1,
-                query_us: 1,
-                displayable_us: 2,
-            },
-        );
-
-        let line = &trail.snapshot()[0];
-        let payload = line.splitn(3, ' ').nth(2).unwrap();
-        assert_eq!(payload.chars().count(), PAYLOAD_LIMIT);
-        assert!(payload.ends_with('…'));
-        assert_eq!(line.lines().count(), 1);
-    }
-}
+#[path = "diagnostic_trail_tests.rs"]
+mod tests;

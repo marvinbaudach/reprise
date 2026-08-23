@@ -631,10 +631,10 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
                 context_window,
                 super::queue_sections::section_ranges(&queue_model.sections),
             );
-            std::time::Duration::ZERO
+            None
         } else {
             shared.model.set_sections(Vec::new());
-            match model_change {
+            Some(match model_change {
                 Some(change) => shared.model.set_query_browsed_ai_changed(
                     &source,
                     &sort.field,
@@ -654,7 +654,7 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
                     &[],
                     exclude_ai,
                 ),
-            }
+            })
         };
 
     // Strictly AFTER the query swap: installing a header factory flips
@@ -698,13 +698,6 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
             shared.library_root_unavailable.get(),
         ),
     );
-    let source_label = source.label();
-    reload_timer.finish(
-        &shared.diagnostic_trail,
-        &source_label,
-        count,
-        query_elapsed,
-    );
     shared
         .diagnostic_trail
         .record(super::diagnostic_trail::Event::StackPage {
@@ -726,6 +719,26 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     );
 
     (shared.on_reload)(&source, count, &filter, &browse);
+
+    let source_label = source.label();
+    let pending = RefCell::new(Some(reload_timer.work_done(
+        &source_label,
+        count,
+        query_elapsed,
+    )));
+    let trail = Rc::clone(&shared.diagnostic_trail);
+    // A completed synchronous reload is not yet visible. Stop the user-facing
+    // span on the ColumnView's next frame-clock tick, which can only run after
+    // this main-thread call returns to GTK. The separate work span preserves
+    // the cost of the synchronous bracket itself.
+    shared.column_view.add_tick_callback(move |_, _| {
+        let pending = pending.borrow_mut().take();
+        if let Some(pending) = pending {
+            pending.next_frame(&trail);
+        }
+        gtk4::glib::ControlFlow::Break
+    });
+    shared.column_view.queue_draw();
 }
 
 #[cfg(test)]

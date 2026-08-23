@@ -430,4 +430,49 @@ plan by construction, not a deferred comparison.
 
 ## Result
 
-_(written by the code phase)_
+### Task 1 — truthful reload timing
+
+The diagnostic now records two honestly named spans: `work_done_us` ends when
+Reprise's synchronous reload work returns, while `next_frame_us` ends on the
+`ColumnView`'s next frame-clock tick. Their difference is the main-loop/frame
+handoff; neither field claims that pixels have reached physical display
+hardware. `query_us` is optional and renders as `none` when the Queue path did
+not run a count query.
+
+The runtime guard drives the real `TrackList` reload and observes the diagnostic
+event. Its command for every arm below was:
+
+```sh
+dbus-run-session -- xvfb-run -a env XDG_DATA_HOME=$(mktemp -d) \
+  XDG_CACHE_HOME=$(mktemp -d) XDG_CONFIG_HOME=$(mktemp -d) \
+  GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
+  cargo test -p reprise-gnome --bin reprise \
+  ui::track_list::diagnostic_trail::tests::production_reload_records_the_real_frame_rows_cause_and_optional_query \
+  -- --ignored --exact --nocapture
+```
+
+Host load was not sampled for these correctness-only mutation arms; it is
+therefore missing rather than inferred.
+
+- Next-frame stop mutation: production code recorded the event synchronously.
+  Red: 0 passed, 1 failed, 0 ignored. The failure saw two reload events before
+  the main loop could advance. The mutation was reverted. Green: 1 passed,
+  0 failed, 0 ignored.
+- Runtime-path mutation: production `run_query` reported `count + 1`. Red:
+  0 passed, 1 failed, 0 ignored; the observed Library event had `rows=2`
+  instead of the seeded one row. The mutation was reverted. Green: 1 passed,
+  0 failed, 0 ignored.
+- Optional-query mutation: production's Queue arm returned
+  `Some(Duration::ZERO)` instead of `None`. Red: 0 passed, 1 failed, 0 ignored;
+  the observed event rendered `query_us=0`. The mutation was reverted. Green:
+  1 passed, 0 failed, 0 ignored.
+
+The pure display-free timing arithmetic test command was:
+
+```sh
+cargo test -p reprise-gnome --bin reprise \
+  reload_measurement_records_work_query_and_later_frame_honestly -- --nocapture
+```
+
+It passed 1 test, failed 0 and ignored 0. Host load was not sampled because no
+performance threshold is read from this test.
