@@ -55,6 +55,14 @@ fn reload_breakdown_and_step_timing_are_opt_in() {
 }
 
 #[test]
+fn every_reload_step_has_one_bounded_breakdown_slot() {
+    assert_eq!(RELOAD_STEP_COUNT, ReloadStep::ALL.len());
+    for (expected, &step) in ReloadStep::ALL.iter().enumerate() {
+        assert_eq!(step.index(), expected);
+    }
+}
+
+#[test]
 fn reload_measurement_records_work_query_and_later_frame_honestly() {
     let trail = DiagnosticTrail::default();
     let started = Instant::now();

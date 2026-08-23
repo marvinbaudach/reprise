@@ -647,7 +647,7 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
             None
         } else {
             shared.model.set_sections(Vec::new());
-            Some(match model_change {
+            match model_change {
                 Some(change) => shared.model.set_query_browsed_ai_changed(
                     &source,
                     &sort.field,
@@ -667,7 +667,7 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
                     &[],
                     exclude_ai,
                 ),
-            })
+            }
         };
 
     // Strictly AFTER the query swap: installing a header factory flips

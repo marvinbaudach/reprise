@@ -451,7 +451,27 @@ fn track_at_spans_multiple_windows_in_sorted_order() {
 
 #[test]
 fn lazy_window_is_large_enough_to_bound_full_replacement_query_count() {
-    assert_eq!(WINDOW_SIZE, 500);
+    const GTK_FULL_REPLACEMENT_ITEM_OVERHEAD: u32 = 205;
+    const DOCUMENTED_MAX_WINDOW_QUERIES: u32 = 201;
+    let max_track_count = super::scalability_tests::MAX_TRACK_COUNT;
+
+    assert!(i64::from(WINDOW_SIZE) <= reprise_core::queries::MAX_WINDOW_LIMIT);
+    assert!(
+        max_track_count
+            .saturating_add(GTK_FULL_REPLACEMENT_ITEM_OVERHEAD)
+            .div_ceil(WINDOW_SIZE)
+            <= DOCUMENTED_MAX_WINDOW_QUERIES
+    );
+}
+
+#[test]
+fn a_query_without_a_connection_has_no_measured_duration() {
+    let model: TrackListModel = gtk4::glib::Object::new();
+
+    assert_eq!(
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]),
+        None
+    );
 }
 
 #[test]

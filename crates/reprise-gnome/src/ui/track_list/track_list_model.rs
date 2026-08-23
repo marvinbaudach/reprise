@@ -53,6 +53,8 @@ use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 /// page size (`track_list.rs`'s former `WINDOW_LIMIT`), now used as the unit
 /// of lazy loading rather than the single page loaded in full every reload.
 const WINDOW_SIZE: u32 = 500;
+// A larger model window would be silently truncated and violate GListModel::item().
+const _: () = assert!(WINDOW_SIZE as i64 <= reprise_core::queries::MAX_WINDOW_LIMIT);
 
 /// Maximum number of windows kept in `ModelState::cache` at once. Bounds
 /// memory for a scroll session that has touched many parts of a huge
@@ -351,7 +353,7 @@ impl TrackListModel {
         sort_dir: &str,
         filter: &str,
         queue_items: &[QueueItem],
-    ) -> Duration {
+    ) -> Option<Duration> {
         self.set_query_browsed(
             source,
             sort_field,
@@ -370,7 +372,7 @@ impl TrackListModel {
         filter: &str,
         browse: &BrowseFilter,
         queue_items: &[QueueItem],
-    ) -> Duration {
+    ) -> Option<Duration> {
         self.set_query_browsed_ai(
             source,
             sort_field,
@@ -399,7 +401,7 @@ impl TrackListModel {
         browse: &BrowseFilter,
         queue_items: &[QueueItem],
         exclude_ai: bool,
-    ) -> Duration {
+    ) -> Option<Duration> {
         self.set_query_browsed_ai_inner(
             source,
             sort_field,
@@ -423,7 +425,7 @@ impl TrackListModel {
         queue_items: &[QueueItem],
         exclude_ai: bool,
         change: ModelChange,
-    ) -> Duration {
+    ) -> Option<Duration> {
         self.set_query_browsed_ai_inner(
             source,
             sort_field,
@@ -447,12 +449,12 @@ impl TrackListModel {
         queue_items: &[QueueItem],
         exclude_ai: bool,
         requested_change: Option<ModelChange>,
-    ) -> Duration {
+    ) -> Option<Duration> {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
             tracing::error!("TrackListModel::set_query: connection not set");
-            return Duration::ZERO;
+            return None;
         };
         let query_started = diagnostic_trail::start_reload_step();
         let new_total = if exclude_ai {
@@ -572,7 +574,7 @@ impl TrackListModel {
             self.sections_changed(position, n_items);
         }
         diagnostic_trail::finish_reload_step(ReloadStep::ItemsChanged, signal_started);
-        query_elapsed
+        Some(query_elapsed)
     }
 
     pub(in crate::ui) fn query_signature(&self) -> (ViewSource, String, String, String) {

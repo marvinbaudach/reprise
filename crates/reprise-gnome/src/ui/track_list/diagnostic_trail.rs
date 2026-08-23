@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 const CAPACITY: usize = 64;
 const PAYLOAD_LIMIT: usize = 1024;
-const RELOAD_STEP_COUNT: usize = 9;
+const RELOAD_STEP_COUNT: usize = ReloadStep::ALL.len();
 static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,7 +49,6 @@ pub(crate) struct PendingReloadMeasurement {
 }
 
 #[derive(Clone, Copy)]
-#[repr(usize)]
 pub(crate) enum ReloadStep {
     Geometry,
     Query,
@@ -61,6 +60,42 @@ pub(crate) enum ReloadStep {
     TrailLogging,
     OnReload,
 }
+
+impl ReloadStep {
+    const ALL: &'static [Self] = &[
+        Self::Geometry,
+        Self::Query,
+        Self::StateSwap,
+        Self::ItemsChanged,
+        Self::QueueHeader,
+        Self::BrowseCount,
+        Self::EmptyState,
+        Self::TrailLogging,
+        Self::OnReload,
+    ];
+
+    const fn index(self) -> usize {
+        match self {
+            Self::Geometry => 0,
+            Self::Query => 1,
+            Self::StateSwap => 2,
+            Self::ItemsChanged => 3,
+            Self::QueueHeader => 4,
+            Self::BrowseCount => 5,
+            Self::EmptyState => 6,
+            Self::TrailLogging => 7,
+            Self::OnReload => 8,
+        }
+    }
+}
+
+const _: () = {
+    let mut index = 0;
+    while index < RELOAD_STEP_COUNT {
+        assert!(ReloadStep::ALL[index].index() == index);
+        index += 1;
+    }
+};
 
 #[derive(Default)]
 struct ActiveReloadBreakdown {
@@ -432,8 +467,8 @@ pub(crate) fn begin_reload_breakdown() -> Option<(Instant, u64)> {
 pub(crate) fn record_reload_step(step: ReloadStep, elapsed: Duration) {
     ACTIVE_RELOAD.with(|active| {
         if let Some(active) = active.borrow_mut().as_mut() {
-            active.steps_us[step as usize] =
-                active.steps_us[step as usize].saturating_add(elapsed.as_micros());
+            let index = step.index();
+            active.steps_us[index] = active.steps_us[index].saturating_add(elapsed.as_micros());
         }
     });
 }

@@ -199,7 +199,7 @@ use rusqlite::types::Value;
 /// page, regardless of what the caller requests. SQLite treats a negative
 /// `LIMIT` as "unlimited", so this also protects against a bad UI-side page
 /// size from turning into a full-table scan. Limits capped.
-const MAX_WINDOW_LIMIT: i64 = 500;
+pub const MAX_WINDOW_LIMIT: i64 = 500;
 
 /// Runs the windowed track query for `source`. `queue_ids` is only read for
 /// `ViewSource::Queue` (see the module doc's `Queue` section); every other
