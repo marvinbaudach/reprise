@@ -2,7 +2,7 @@
 slug: search-reload-blocks-the-main-thread
 worktree: /home/marvin/Projects/reprise-search-reload-blocks-the-main-thread
 branch: feature/search-reload-blocks-the-main-thread
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-23
 ---
@@ -48,7 +48,7 @@ Also established:
 #640's body says "the synchronous model rebuild and list projection", but that
 is the name of the bracket the instrument happened to draw, not a located cost.
 The bracket is exactly: `displayable_us` starts on entry to `run_query`
-(`track_list_reload.rs:534`) and stops after `apply_empty_state`. Inside it,
+(`track_list_reload.rs:575`) and stops after `apply_empty_state`. Inside it,
 every Reprise-side step has a cost that can be bounded by reading it:
 
 | Step in `run_query` | Static cost |
@@ -71,10 +71,10 @@ row list costs 94 s", and the difference decides what gets built.
 
 `TrackListModel` is split on `cfg(test)`:
 
-- `track_list_model.rs:182-191` — under `cfg(test)` the `glib::wrapper!`
+- `track_list_model.rs:189-198` — under `cfg(test)` the `glib::wrapper!`
   declares `@implements gio::ListModel` **only**; the production build also
   declares `gtk4::SectionModel`.
-- `track_list_model.rs:554` — the `sections_changed` emission after every query
+- `track_list_model.rs:567-574` — the `sections_changed` emission after every query
   swap is `#[cfg(not(test))]`.
 
 `GtkColumnView` decides from exactly that interface how its `GtkListItemManager`
@@ -95,12 +95,12 @@ It does not. Two further facts sharpen this:
 
 - The strand-B harness **never iterates the main loop between reloads**, so
   nothing deferred to `idle_add_local_once` or `timeout_add_seconds_local` — the
-  `end_of_results` refresh (`track_list_builder.rs:326`), the row-loss watchdog
-  (`row_loss_watchdog.rs:74`) — is part of any of these numbers. Task 2's harness
+  `end_of_results` refresh (`track_list_builder.rs:327-330`), the row-loss watchdog
+  (`row_loss_watchdog.rs:79`) — is part of any of these numbers. Task 2's harness
   does run the loop, which is one more reason to expect the numbers to move.
 - The cheap path is the only one that resets GTK's tracked state *before* the
   swap: `set_source_and_reload` calls `shared.selection.unselect_all()` and
-  `adjustment.set_value(0.0)` (`track_list_reload.rs:459-463`). The sort path and
+  `adjustment.set_value(0.0)` (`track_list_reload.rs:497-499`). The sort path and
   the cleared-search path do neither.
 
 That yields two falsifiable hypotheses. The point of tasks 3–4 is to kill at
@@ -132,6 +132,10 @@ reopened here. What this plan disputes is the *order*:
 3. If the pathology falls, the sort case (437–671 ms) may fall with it. The
    interruptibility work may then be far smaller than it looks today, and #411's
    indicator has a different shape.
+
+**Superseded premise:** Task 2 found that the production binary's cleared-search
+reload was about 430 ms, not 94 seconds. The two-minute-wait argument above is
+retained as plan history, but it is not a current premise; see Task 2's result.
 
 ## Success criterion
 
@@ -430,6 +434,16 @@ plan by construction, not a deferred comparison.
 
 ## Result
 
+**Measurement-policy limitation:** every recorded `loadavg` below, including
+the endpoints shown as a range, is a single-point sample rather than the required
+before/after pair, and no run records a `wake-lock`. These performance numbers
+are therefore Stage-1-grade only. In particular, Task 2's statement that sort
+and clear were above the 250 ms threshold is not valid Stage-2 threshold
+evidence and must not be used as such.
+
+Every file-and-line citation in this plan was re-grepped and re-verified against
+HEAD during the #640 review pass.
+
 ### Task 1 — truthful reload timing
 
 The diagnostic now records two honestly named spans: `work_done_us` ends when
@@ -657,7 +671,7 @@ is absent rather than recreating it.
 
 **Cause, in one sentence:** the full-range production
 `TrackListModel::set_query_browsed_ai_inner` call to `self.items_changed` at
-`crates/reprise-gnome/src/ui/track_list/track_list_model.rs:565` makes GTK
+`crates/reprise-gnome/src/ui/track_list/track_list_model.rs:566` makes GTK
 synchronously revalidate a single 100,000-row `SectionModel` section, holding
 407.981 ms of the 416.184 ms cleared-search bracket (**98.03%**) while it pulls
 all 100,000 positions through the lazy model.
@@ -799,3 +813,22 @@ threshold is read from them. An initial six-test TAG-1 process produced
 all solely because GTK rejected initialization from successive Cargo
 test-worker threads; neither failed run is reported as green, and the isolated
 exact-test invocations above are the accepted results.
+
+### Task 7 — not run
+
+The controlled five-sample fixed/control arms remain outstanding. They require
+a quiet host, a `wake-lock`, and before/after load samples for every run; this
+machine does not currently satisfy that measurement policy. The execution
+handover is recorded in `.pipeline-codex.md`.
+
+### Task 8 — not run
+
+The FB-10/#411 residual-cost handover remains outstanding because it depends on
+Task 7's valid Stage-2 measurements. The execution handover is recorded in
+`.pipeline-codex.md`.
+
+### Whole-plan acceptance — not run
+
+Whole-plan acceptance remains outstanding because Tasks 7 and 8 have not run,
+so the required two-arm threshold evidence and its downstream interpretation do
+not exist. The execution handover is recorded in `.pipeline-codex.md`.
