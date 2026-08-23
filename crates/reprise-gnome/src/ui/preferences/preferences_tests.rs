@@ -127,3 +127,27 @@ fn moving_a_band_labels_the_row_custom() {
         Some(strings::text(strings::PRESET_CUSTOM).as_str())
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_bands_start_collapsed_behind_the_profile() {
+    gtk4::init().unwrap();
+    let controls = equalizer_controls_for_test(Rc::new(Db::open_in_memory().unwrap()));
+
+    assert!(!controls.root.is_expanded());
+    assert_eq!(
+        controls.preset_row.next_sibling(),
+        Some(controls.root.clone().upcast())
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn disabling_the_equalizer_dims_the_collapsed_bands() {
+    gtk4::init().unwrap();
+    let controls = equalizer_controls_for_test(Rc::new(Db::open_in_memory().unwrap()));
+
+    controls.enabled.set_active(false);
+
+    assert!(!controls.root.is_sensitive());
+}

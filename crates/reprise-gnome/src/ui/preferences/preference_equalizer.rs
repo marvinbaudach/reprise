@@ -14,7 +14,7 @@ use super::surface::preset_label;
 pub(super) struct EqualizerControls {
     pub(super) group: adw::PreferencesGroup,
     pub(super) enabled: adw::SwitchRow,
-    pub(super) root: gtk4::Box,
+    pub(super) root: adw::ExpanderRow,
     #[cfg(test)]
     pub(super) preset_row: adw::ActionRow,
     #[cfg(test)]
@@ -37,7 +37,6 @@ pub(super) fn build_equalizer_controls(
         .title(strings::text(strings::ENABLE_EQUALIZER))
         .active(enabled)
         .build();
-    enabled_row.connect_active_notify(move |row| on_enabled(row.is_active()));
     group.add(&enabled_row);
 
     let preset_menu = gio::Menu::new();
@@ -75,7 +74,19 @@ pub(super) fn build_equalizer_controls(
     });
     let surface = build_equalizer_surface(stored_bands, enabled, &on_band_changed);
     let scales = surface.scales.clone();
-    group.add(&surface.root);
+    let bands = adw::ExpanderRow::builder()
+        .title(strings::text(strings::EQUALIZER_MANUAL))
+        .expanded(false)
+        .build();
+    bands.set_sensitive(enabled);
+    bands.add_row(&surface.root);
+    group.add(&bands);
+
+    let bands_for_enabled = bands.clone();
+    enabled_row.connect_active_notify(move |row| {
+        bands_for_enabled.set_sensitive(row.is_active());
+        on_enabled(row.is_active());
+    });
 
     let preset_actions = gio::SimpleActionGroup::new();
     for (index, preset) in EqualizerPreset::ALL.into_iter().enumerate() {
@@ -103,7 +114,7 @@ pub(super) fn build_equalizer_controls(
     EqualizerControls {
         group,
         enabled: enabled_row,
-        root: surface.root,
+        root: bands,
         #[cfg(test)]
         preset_row,
         #[cfg(test)]
