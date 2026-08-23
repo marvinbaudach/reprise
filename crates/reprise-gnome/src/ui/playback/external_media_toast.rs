@@ -18,7 +18,8 @@ impl PlayerController {
             );
             return;
         };
-        let toast = adw::Toast::new(&crate::ui::strings::podcast_play_next(&episode.title));
+        let toast =
+            crate::ui::toasts::plain(&crate::ui::strings::podcast_play_next(&episode.title));
         toast.set_button_label(Some(crate::ui::strings::PODCAST_PLAY));
         toast.set_timeout(10);
         toast.set_priority(adw::ToastPriority::High);

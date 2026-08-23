@@ -44,7 +44,9 @@ pub(in crate::ui) fn build_mode(
         compact,
         conn.clone(),
         initial,
-        Rc::new(move |message| toast_overlay.add_toast(adw::Toast::new(message))),
+        Rc::new(move |message| {
+            toast_overlay.add_toast(crate::ui::toasts::plain(message));
+        }),
     )
 }
 

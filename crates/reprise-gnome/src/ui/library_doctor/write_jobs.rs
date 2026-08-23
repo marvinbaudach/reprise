@@ -249,13 +249,13 @@ impl LibraryDoctorCoordinator {
             } else {
                 crate::ui::strings::doctor_tags_reverted(report.updated_tracks)
             };
-            let toast = adw::Toast::new(&title);
+            let toast = crate::ui::toasts::plain(&title);
             toast.set_priority(adw::ToastPriority::High);
             self.toast_overlay.add_toast(toast);
         }
         let failed = report.failed_tracks + report.conflict_tracks + report.unavailable_tracks;
         if failed > 0 {
-            let toast = adw::Toast::new(&crate::ui::strings::doctor_write_failures(
+            let toast = crate::ui::toasts::plain(&crate::ui::strings::doctor_write_failures(
                 report.updated_tracks,
                 failed,
             ));

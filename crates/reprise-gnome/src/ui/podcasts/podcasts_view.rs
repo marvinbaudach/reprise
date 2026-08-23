@@ -632,7 +632,8 @@ impl PodcastsView {
             }
             return;
         };
-        let toast = adw::Toast::new(&strings::podcast_unsubscribe_from(&subscription.title));
+        let toast =
+            crate::ui::toasts::plain(&strings::podcast_unsubscribe_from(&subscription.title));
         toast.set_button_label(Some(&strings::text(strings::PODCAST_UNDO)));
         toast.set_timeout(10);
         toast.set_priority(adw::ToastPriority::High);
@@ -701,7 +702,7 @@ impl PodcastsView {
             return;
         };
 
-        let toast = adw::Toast::new(&strings::podcast_removed_episode(&episode.title));
+        let toast = crate::ui::toasts::plain(&strings::podcast_removed_episode(&episode.title));
         toast.set_button_label(Some(&strings::text(strings::PODCAST_UNDO)));
         toast.set_timeout(10);
         toast.set_priority(adw::ToastPriority::High);
@@ -759,7 +760,7 @@ impl PodcastsView {
         let Some(overlay) = self.toast_overlay.upgrade() else {
             return;
         };
-        let toast = adw::Toast::new(&strings::podcast_downloads_kept(shows, paths.len()));
+        let toast = crate::ui::toasts::plain(&strings::podcast_downloads_kept(shows, paths.len()));
         toast.set_button_label(Some(&strings::text(strings::PODCAST_DELETE_FILES)));
         toast.set_priority(adw::ToastPriority::High);
         toast.connect_button_clicked(move |_| {

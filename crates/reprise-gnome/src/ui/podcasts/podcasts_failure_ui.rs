@@ -97,7 +97,7 @@ impl PodcastsView {
         tracing::warn!(%technical_error, "podcast action failed");
         let message = safe_action_error_message(technical_error);
         if let Some(overlay) = self.toast_overlay.upgrade() {
-            let toast = libadwaita::Toast::new(&message);
+            let toast = crate::ui::toasts::plain(&message);
             toast.set_priority(libadwaita::ToastPriority::High);
             overlay.add_toast(toast);
         }
@@ -105,7 +105,7 @@ impl PodcastsView {
 
     pub(in crate::ui::podcasts) fn show_queued_offline(&self) {
         if let Some(overlay) = self.toast_overlay.upgrade() {
-            overlay.add_toast(libadwaita::Toast::new(&strings::text(
+            overlay.add_toast(crate::ui::toasts::plain(&strings::text(
                 strings::PODCAST_QUEUED_OFFLINE,
             )));
         }

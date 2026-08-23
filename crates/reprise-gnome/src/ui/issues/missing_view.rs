@@ -552,7 +552,7 @@ fn tombstone_with_undo(shared: &Rc<Shared>, kind: &MissingGroupKind, ids: &[i64]
     shared
         .pending_undo_toasts
         .set(shared.pending_undo_toasts.get() + 1);
-    let toast = adw::Toast::new(&strings::missing_removed(changed));
+    let toast = crate::ui::toasts::plain(&strings::missing_removed(changed));
     toast.set_button_label(Some(&strings::issue_text(strings::MISSING_UNDO)));
     toast.set_timeout(10);
     toast.set_priority(adw::ToastPriority::High);
