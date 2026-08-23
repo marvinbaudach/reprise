@@ -391,6 +391,22 @@ fn ui_reads_do_not_wait_for_live_pcm_processing() {
     assert!(!read.expect("UI read waited for the PCM processor"));
 }
 
+#[test]
+fn a_band_frame_dropped_on_contention_is_counted() {
+    let engine = AndroidVisualEngine::new();
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 512);
+
+    assert_eq!(engine.dropped_audio_frames(), 0);
+    let accepted = engine.with_state_locked_for_testing(|| {
+        engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2)
+    });
+
+    assert!(!accepted);
+    assert_eq!(engine.dropped_audio_frames(), 1);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    assert_eq!(engine.dropped_audio_frames(), 1);
+}
+
 #[derive(Default)]
 struct FakeMonotonicClock {
     now_nanos: AtomicU64,

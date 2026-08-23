@@ -175,6 +175,7 @@ pub struct AndroidVisualEngine {
     state: Mutex<VisualState>,
     live_audio: Mutex<Option<LiveAudioState>>,
     stream_generation: AtomicU64,
+    dropped_audio_frames: AtomicU64,
     clock: Arc<dyn MonotonicClock>,
 }
 
@@ -297,6 +298,7 @@ impl AndroidVisualEngine {
         // Downmix, FFT and bass detection have their own audio-thread state.
         // Contention drops a frame rather than blocking Media3.
         let Some(mut live_audio_slot) = self.try_lock_live_audio() else {
+            self.count_dropped_audio_frame();
             return false;
         };
         let Some(live_audio) =
@@ -313,6 +315,7 @@ impl AndroidVisualEngine {
         }
         // Only the finished frame crosses into display-thread state.
         let Some(mut state) = self.try_lock() else {
+            self.count_dropped_audio_frame();
             return false;
         };
         if self.current_stream_generation() != stream_generation {
@@ -331,6 +334,11 @@ impl AndroidVisualEngine {
         state.last_live_audio_at = Some(now);
         state.live_pressure = pressure;
         true
+    }
+
+    /// Returns the cumulative count of live-audio frames dropped on lock contention.
+    pub fn dropped_audio_frames(&self) -> u64 {
+        self.dropped_audio_frames.load(Ordering::Relaxed)
     }
 
     /// Drops all CAVA and bass-detector history at a decoded-stream boundary.
@@ -494,6 +502,7 @@ impl AndroidVisualEngine {
             }),
             live_audio: Mutex::new(None),
             stream_generation: AtomicU64::new(0),
+            dropped_audio_frames: AtomicU64::new(0),
             clock,
         }
     }
@@ -525,6 +534,10 @@ impl AndroidVisualEngine {
             .wrapping_add(1)
     }
 
+    fn count_dropped_audio_frame(&self) {
+        self.dropped_audio_frames.fetch_add(1, Ordering::Relaxed);
+    }
+
     #[cfg(test)]
     pub(crate) fn live_bands_for_testing(&self) -> [f32; SPECTRUM_BAND_COUNT] {
         self.live_audio
@@ -540,6 +553,12 @@ impl AndroidVisualEngine {
             .live_audio
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        test()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_state_locked_for_testing<T>(&self, test: impl FnOnce() -> T) -> T {
+        let _state = self.lock();
         test()
     }
 }
