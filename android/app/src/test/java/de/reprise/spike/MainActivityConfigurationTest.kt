@@ -435,7 +435,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
         ) = deliver(null)
     }
     val ambientScheduleEvents = mutableListOf<Boolean>()
-    var animationsEnabled = true
+    var animationsEnabled = false
     var onlineSourcesEnabled = false
     var onlineSourcesWriteSucceeds = true
     val trackRatings = mutableMapOf<Long, Int>()

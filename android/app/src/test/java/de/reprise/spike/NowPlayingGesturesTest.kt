@@ -46,7 +46,7 @@ class NowPlayingGesturesTest {
         val surfaceState = MobileSurfaceViewModel()
         val interactions = RecordingSeekInteractionSource()
         compose.setContent {
-            testSeekSlider(playback.value, surfaceState, interactions)
+            TestSeekSlider(playback.value, surfaceState, interactions)
         }
         val slider = compose.onNodeWithTag("now-playing-seek")
         slider.performTouchInput {
@@ -71,7 +71,7 @@ class NowPlayingGesturesTest {
         val surfaceState = MobileSurfaceViewModel()
         val interactions = RecordingSeekInteractionSource()
         compose.setContent {
-            testSeekSlider(playback.value, surfaceState, interactions)
+            TestSeekSlider(playback.value, surfaceState, interactions)
         }
         val slider = compose.onNodeWithTag("now-playing-seek")
         slider.performTouchInput {
@@ -220,7 +220,8 @@ class NowPlayingGesturesTest {
         compose.waitForIdle()
 
         assertTrue(preference.writes.isEmpty())
-        assertEquals(0, engines.created)
+        assertEquals(1, engines.created)
+        assertEquals(0, engines.sceneCalls)
     }
 
     @Test
@@ -261,7 +262,8 @@ class NowPlayingGesturesTest {
 
         assertEquals(1, preference.reads)
         assertTrue(preference.writes.isEmpty())
-        assertEquals(0, engines.created)
+        assertEquals(1, engines.created)
+        assertEquals(0, engines.sceneCalls)
     }
 
     @Composable
@@ -292,7 +294,7 @@ class NowPlayingGesturesTest {
     }
 
     @Composable
-    private fun testSeekSlider(
+    private fun TestSeekSlider(
         playback: PlaybackUiState,
         surfaceState: MobileSurfaceViewModel,
         interactionSource: MutableInteractionSource,
@@ -374,6 +376,8 @@ private class RecordingVisualizerPreference(
 private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
     var created = 0
         private set
+    var sceneCalls = 0
+        private set
 
     override fun create(): VisualSceneEngine {
         created += 1
@@ -383,7 +387,10 @@ private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
             override fun noteTrackChanged() = Unit
             override fun ingestBands(bands: FloatArray) = Unit
             override fun tick() = Unit
-            override fun scene(width: Float, height: Float): List<Float> = emptyList()
+            override fun scene(width: Float, height: Float): List<Float> {
+                sceneCalls += 1
+                return emptyList()
+            }
             override fun close() = Unit
         }
     }

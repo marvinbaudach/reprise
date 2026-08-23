@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -349,7 +351,9 @@ internal fun SpectralSeekSlider(
     val durationMs = playback.durationMs.coerceAtLeast(0)
     val sliderMaximum = durationMs.coerceAtLeast(1).toFloat()
     val displayed = position.positionMs.coerceIn(0, durationMs.coerceAtLeast(0))
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true },
+    ) {
         Slider(
             modifier = Modifier.testTag("now-playing-seek"),
             value = displayed.toFloat(),
@@ -370,6 +374,7 @@ internal fun SpectralSeekSlider(
         ) {
             Text(
                 text = formatDuration(displayed),
+                modifier = Modifier.testTag("now-playing-position"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
