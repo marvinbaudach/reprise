@@ -2,7 +2,7 @@
 slug: releases-missing-cover-shows-the-band
 worktree: /home/marvin/Projects/reprise-releases-missing-cover-shows-the-band
 branch: feature/releases-missing-cover-shows-the-band
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-24
 ---
