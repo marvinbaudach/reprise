@@ -40,8 +40,24 @@ pub(in crate::ui) const PREVIEW_CONTENT_ALPHA: &str = "0.06";
 /// and track-row reordering.
 pub(in crate::ui) const DROP_INDICATOR_THICKNESS: &str = "2px";
 
-/// Track-row content minimum height.
-pub(in crate::ui) const ROW_MIN_HEIGHT: i32 = 36;
+/// Track-row content minimum height, and — the load-bearing part — the height
+/// `ListGeometry` *assumes* a row has before a settled frame has measured one.
+///
+/// It must stay at or below the height rows really render at. Measured on
+/// 2026-08-24 under the display harness: a track row is 34 px, and the cell
+/// children carrying `.reprise-track-cell` are 18 px inside it. Raised to 36 by
+/// #660 the assumption sat two pixels *above* the truth, and the centred reveal
+/// then had two writers disagreeing about the same row: the seed placed row 137
+/// at `137 * 36 = 4932` while GTK's own anchor placed it at `137 * 34 = 4658`,
+/// each overwriting the other. Eight display tests read that as a viewport that
+/// will not settle in one move.
+///
+/// The rule this token also feeds — `.reprise-track-cell { min-height }` in
+/// `track_list_row_interaction::css` — does not bind: set to 80 for one run the
+/// cells stayed 18 px and the list's `upper` stayed `200 * 34`. So the value
+/// here is the geometry floor and nothing else, which is why it goes back to
+/// what the default density used before #660 rather than to a taller row.
+pub(in crate::ui) const ROW_MIN_HEIGHT: i32 = 28;
 
 /// Queue section-header content minimum height.
 ///

@@ -25,6 +25,8 @@ mod rating_column;
 mod reload_anchor_scroll;
 pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
+#[cfg(test)]
+mod row_height_floor_display_tests;
 pub(crate) mod row_loss_watchdog;
 pub(crate) mod row_loss_watchdog_state;
 pub(in crate::ui) mod startup_load;
