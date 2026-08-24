@@ -20,7 +20,7 @@ longer fires) the row says so in its own words.
 | Finding | What | Before | After | Delta | Commit | Date | Method |
 |---|---|---|---|---|---|---|---|
 | A1 | Recompositions of the visible playing row over 20 position ticks | 21 | 1 | −95.2 % | `c8589bcc2f` | 2026-08-24 | `LibraryPositionRecompositionTest` counts compositions through `LibraryPerformanceObserver` while 20 position snapshots are published; mutation-probed in both directions |
-| A3 | Artwork cache hits when a screen of 11 list rows is scrolled away and back | see below | 11 hits, 0 misses | every row retained | `c8589bcc2f` | 2026-08-24 | `ArtworkCacheTest.every_original_screen_row_hits_when_scrolling_back`, same access trace replayed at the pre-change budget |
+| A3 | Artwork cache hits when a screen of 11 list rows is scrolled away and back | see below | 11 hits, 0 misses | every row retained | `c8589bcc2f` | 2026-08-24 | `ArtworkCacheTest.every_original_screen_row_hits_when_scrolling_back`; the before-value is derived from the pre-change capacity, not replayed — see below |
 | B1 | View constructors running before first paint | 5 (≈216 ms, **debug build**) | 0 | −216 ms of pre-paint work | `347703242a` | 2026-08-24 | `docs/measurements/content-stack-startup.md` — five cold runs, env-gated tracing spans |
 | B2 | Decodes for 15 tracks sharing one album cover | 0 hits, 15 misses, 15 textures | 14 hits, 1 miss, 1 texture | 14 decodes avoided | `347703242a` | 2026-08-24 | `docs/measurements/gnome-cover-cache.md` — hit/miss counters over a deterministic access trace |
 | B2 | Decodes scrolling a 500-row list down and back, 40-row viewport | 36 097 hits, 783 misses | 36 136 hits, 744 misses | 39 repeat decodes avoided, −5.0 % misses | `347703242a` | 2026-08-24 | the same trace file, LRU against the former FIFO |
@@ -95,7 +95,10 @@ this is the weakest provenance on the page.
 The pre-change cache had no hit/miss counters — they were added by this very
 change — so the "before" cannot be read off the old implementation directly. The
 capacity arithmetic above (23 entries through 12 shared slots) is what it rests
-on, together with a replay of the same access trace at the old budget.
+on, and it is the whole of it: no replay against the old implementation was
+made. The new cache keeps one LRU per surface, so it cannot reproduce the old
+sharing behaviour by lowering a budget either — a faithful replay would have to
+run the pre-change `ArtworkCache` itself.
 
 ## The two findings that did not ship
 
