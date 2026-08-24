@@ -2,11 +2,12 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use serde::Serialize;
 
 const REPORT_ENV: &str = "REPRISE_PERF_STARTUP_REPORT";
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 static REPORT_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
@@ -16,9 +17,16 @@ struct Phase {
     offset_ms: u64,
 }
 
+#[derive(Debug, Serialize)]
+struct Measurement {
+    measurement: &'static str,
+    duration_us: u64,
+}
+
 #[derive(Debug, Default)]
 struct StartupReport {
     phases: Vec<Phase>,
+    measurements: Vec<Measurement>,
     counters: BTreeMap<String, u64>,
 }
 
@@ -26,7 +34,36 @@ struct StartupReport {
 struct SerializableReport<'a> {
     schema_version: u32,
     phases: &'a [Phase],
+    measurements: &'a [Measurement],
     counters: &'a BTreeMap<String, u64>,
+}
+
+/// One env-gated startup measurement and its matching tracing span.
+///
+/// The normal path pays only the already-cached armed check. An armed report
+/// retains microsecond precision because the single-digit-millisecond views
+/// are precisely the ones B1 must distinguish from material deferral targets.
+pub(crate) struct MeasurementGuard {
+    measurement: &'static str,
+    started_at: Option<Instant>,
+    span: tracing::Span,
+}
+
+impl Drop for MeasurementGuard {
+    fn drop(&mut self) {
+        let Some(started_at) = self.started_at else {
+            return;
+        };
+        let duration_us = u64::try_from(started_at.elapsed().as_micros()).unwrap_or(u64::MAX);
+        REPORT.with_borrow_mut(|report| {
+            report.measurements.push(Measurement {
+                measurement: self.measurement,
+                duration_us,
+            });
+        });
+        let _entered = self.span.enter();
+        tracing::info!(duration_us, "startup measurement complete");
+    }
 }
 
 thread_local! {
@@ -74,6 +111,19 @@ pub(crate) fn mark(phase: &'static str) -> bool {
     true
 }
 
+pub(crate) fn measure(measurement: &'static str) -> MeasurementGuard {
+    let armed = is_armed();
+    MeasurementGuard {
+        measurement,
+        started_at: armed.then(Instant::now),
+        span: if armed {
+            tracing::info_span!("startup measurement", measurement)
+        } else {
+            tracing::Span::none()
+        },
+    }
+}
+
 fn record_phase(
     report: &mut StartupReport,
     phase: &'static str,
@@ -112,6 +162,7 @@ pub(crate) fn write_if_armed() {
         let serializable = SerializableReport {
             schema_version: SCHEMA_VERSION,
             phases: &report.phases,
+            measurements: &report.measurements,
             counters: &report.counters,
         };
         reprise_core::perf_report::write_new_json(&report_path, &serializable)
@@ -143,6 +194,7 @@ mod tests {
         crate::ui::track_list::diagnostic_trail::mark_process_start();
 
         mark("first");
+        drop(measure("view.stats.construct"));
         event("track_list_reload");
         event("track_list_reload");
         mark("second");
@@ -150,7 +202,7 @@ mod tests {
 
         let report: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(report["schema_version"], 1);
+        assert_eq!(report["schema_version"], 2);
         assert_eq!(report["phases"][0]["phase"], "first");
         assert_eq!(report["phases"][1]["phase"], "track_list_reload");
         assert_eq!(report["phases"][2]["phase"], "track_list_reload");
@@ -160,6 +212,11 @@ mod tests {
                 <= report["phases"][3]["offset_ms"].as_u64().unwrap()
         );
         assert_eq!(report["counters"]["track_list_reload"], 2);
+        assert_eq!(
+            report["measurements"][0]["measurement"],
+            "view.stats.construct"
+        );
+        assert!(report["measurements"][0]["duration_us"].is_u64());
     }
 
     #[test]
@@ -169,12 +226,14 @@ mod tests {
         arm(None);
 
         mark("ignored");
+        drop(measure("view.stats.construct"));
         event("track_list_reload");
         write_if_armed();
 
         assert!(!path.exists());
         REPORT.with_borrow(|report| {
             assert!(report.phases.is_empty());
+            assert!(report.measurements.is_empty());
             assert!(report.counters.is_empty());
         });
     }

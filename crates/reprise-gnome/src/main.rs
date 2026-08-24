@@ -256,6 +256,7 @@ fn main() -> glib::ExitCode {
     let activate_path = path.clone();
     let activate_handler = file_open_handler.clone();
     app.connect_activate(move |app| {
+        ui::startup_report::mark("activate");
         // A second `reprise` launch forwards `activate` here (see the
         // `is_remote()` check above for the secondary's side of this).
         // Without this guard, a forwarded activate would build a second

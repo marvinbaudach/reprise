@@ -125,26 +125,44 @@ pub(in crate::ui) fn install(
             }
         },
     );
-    let podcasts = crate::ui::podcasts::install(
-        conn.clone(),
-        podcasts_runtime.clone(),
-        callbacks.clone(),
-        reprise_core::podcasts::PodcastKind::Rss,
-    );
-    let youtube = crate::ui::podcasts::install(
-        conn.clone(),
-        podcasts_runtime.clone(),
-        callbacks,
-        reprise_core::podcasts::PodcastKind::Youtube,
-    );
-    let radio = Rc::new(crate::ui::radio::install(
-        conn.clone(),
-        player,
-        location_broadcast,
-    ));
-    content_stack.add_named(podcasts.root(), Some("podcasts"));
-    content_stack.add_named(youtube.root(), Some("youtube"));
-    content_stack.add_named(radio.root(), Some("radio"));
+    let podcasts = {
+        let _measurement = super::startup_report::measure("view.podcasts.construct");
+        crate::ui::podcasts::install(
+            conn.clone(),
+            podcasts_runtime.clone(),
+            callbacks.clone(),
+            reprise_core::podcasts::PodcastKind::Rss,
+        )
+    };
+    let youtube = {
+        let _measurement = super::startup_report::measure("view.youtube.construct");
+        crate::ui::podcasts::install(
+            conn.clone(),
+            podcasts_runtime.clone(),
+            callbacks,
+            reprise_core::podcasts::PodcastKind::Youtube,
+        )
+    };
+    let radio = {
+        let _measurement = super::startup_report::measure("view.radio.construct");
+        Rc::new(crate::ui::radio::install(
+            conn.clone(),
+            player,
+            location_broadcast,
+        ))
+    };
+    {
+        let _measurement = super::startup_report::measure("view.podcasts.add-named");
+        content_stack.add_named(podcasts.root(), Some("podcasts"));
+    }
+    {
+        let _measurement = super::startup_report::measure("view.youtube.add-named");
+        content_stack.add_named(youtube.root(), Some("youtube"));
+    }
+    {
+        let _measurement = super::startup_report::measure("view.radio.add-named");
+        content_stack.add_named(radio.root(), Some("radio"));
+    }
 
     {
         let sidebar = Rc::downgrade(sidebar);

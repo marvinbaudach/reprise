@@ -235,23 +235,42 @@ pub fn build(
     sidebar.append_relink_card(track_list.missing_relink_progress_widget());
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.
-    let track_content = track_content::build(track_list.widget(), status_bar.widget());
+    let track_content = {
+        let _measurement = super::startup_report::measure("view.library.construct");
+        track_content::build(track_list.widget(), status_bar.widget())
+    };
     // NAV-2: one history for every scoped route through the canonical list.
     let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
     // START-3 depends on this listener existing before `session_restore::restore_runtime`
     // in `window_runtime_wiring`, or its restored-track marker notification is lost.
     super::current_track_selection::wire(player.as_ref(), &track_list);
-    let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
-    stats_view.set_portrait_runtime(artist_portrait.clone());
-    stats_view.wire_year_selector(conn);
+    let stats_view = {
+        let _measurement = super::startup_report::measure("view.stats.construct");
+        let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
+        stats_view.set_portrait_runtime(artist_portrait.clone());
+        stats_view.wire_year_selector(conn);
+        stats_view
+    };
     super::startup_report::mark("stats");
     let content_stack = super::content_stack::build();
     // Size to the visible page in both axes: dedicated content pages must not
     // inherit the library's minimum size, nor vice versa.
-    content_stack.add_named(&track_content, Some("library"));
-    content_stack.add_named(stats_view.widget(), Some("stats"));
-    let library_doctor_navigation = adw::NavigationView::new();
-    content_stack.add_named(&library_doctor_navigation, Some("library-doctor"));
+    {
+        let _measurement = super::startup_report::measure("view.library.add-named");
+        content_stack.add_named(&track_content, Some("library"));
+    }
+    {
+        let _measurement = super::startup_report::measure("view.stats.add-named");
+        content_stack.add_named(stats_view.widget(), Some("stats"));
+    }
+    let library_doctor_navigation = {
+        let _measurement = super::startup_report::measure("view.library-doctor.construct");
+        adw::NavigationView::new()
+    };
+    {
+        let _measurement = super::startup_report::measure("view.library-doctor.add-named");
+        content_stack.add_named(&library_doctor_navigation, Some("library-doctor"));
+    }
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
@@ -301,20 +320,33 @@ pub fn build(
             );
         })
     };
-    let concerts_view = Rc::new(concerts::install(
-        conn.clone(),
-        &concerts_runtime,
-        &location_broadcast,
-    ));
-    concerts_view.set_artist_image(track_list.shared_cover_loader(), artist_portrait.clone());
+    let concerts_view = {
+        let _measurement = super::startup_report::measure("view.concerts.construct");
+        let view = Rc::new(concerts::install(
+            conn.clone(),
+            &concerts_runtime,
+            &location_broadcast,
+        ));
+        view.set_artist_image(track_list.shared_cover_loader(), artist_portrait.clone());
+        view
+    };
     super::startup_report::mark("concerts");
-    let releases_view = Rc::new(crate::ui::releases::install(
-        conn.clone(),
-        db_path.to_path_buf(),
-    ));
+    let releases_view = {
+        let _measurement = super::startup_report::measure("view.releases.construct");
+        Rc::new(crate::ui::releases::install(
+            conn.clone(),
+            db_path.to_path_buf(),
+        ))
+    };
     super::startup_report::mark("releases");
-    content_stack.add_named(concerts_view.root(), Some("concerts"));
-    content_stack.add_named(releases_view.root(), Some("releases"));
+    {
+        let _measurement = super::startup_report::measure("view.concerts.add-named");
+        content_stack.add_named(concerts_view.root(), Some("concerts"));
+    }
+    {
+        let _measurement = super::startup_report::measure("view.releases.add-named");
+        content_stack.add_named(releases_view.root(), Some("releases"));
+    }
     let source_views = super::source_views::install(
         conn,
         &podcasts_runtime,
