@@ -93,6 +93,7 @@ export function createSeekRenderer({
   let colours: string[] = [];
   let heights = new Float32Array(0);
   let played = new Uint8Array(0);
+  const context = canvas.getContext('2d');
 
   const prepare = (bars: number): PreparedTrack => {
     if (prepared?.bars === bars) return prepared;
@@ -107,7 +108,6 @@ export function createSeekRenderer({
   };
 
   const draw = (timestamp: number, still: boolean) => {
-    const context = canvas.getContext('2d');
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     if (!context || width === 0 || height === 0) return;

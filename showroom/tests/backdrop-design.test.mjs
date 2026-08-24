@@ -67,3 +67,30 @@ test('every fixed backdrop layer paints behind the content', async () => {
     );
   }
 });
+
+test('pointer parallax owns one motion-only frame and stays absent when motion is reduced', async () => {
+  const choreography = await readFile(
+    join(showroomRoot, 'src', 'hooks', 'usePageChoreography.ts'),
+    'utf8',
+  );
+
+  // Scroll remains one fused layout pass, including the scroll contribution to
+  // the oil position. Pointer movement gets a different frame that can do no
+  // page choreography beyond moving that layer.
+  assert.match(choreography, /scrollBias = progressed \* 2 - 1;\s*moveOil\(\);/);
+  assert.match(
+    choreography,
+    /const onPointerMove[\s\S]*?pointerFrame = requestAnimationFrame\(\(\) => \{\s*pointerFrame = null;\s*moveOil\(\);\s*\}\);/,
+  );
+  assert.doesNotMatch(
+    choreography.match(/const onPointerMove[\s\S]*?window\.addEventListener\('scroll'/)?.[0] ?? '',
+    /schedule\(\)/,
+  );
+
+  assert.match(
+    choreography,
+    /if \(!still\) window\.addEventListener\('pointermove', onPointerMove, \{ passive: true \}\);/,
+  );
+  assert.match(choreography, /if \(frame !== null\) cancelAnimationFrame\(frame\);/);
+  assert.match(choreography, /if \(pointerFrame !== null\) cancelAnimationFrame\(pointerFrame\);/);
+});
