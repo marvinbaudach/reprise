@@ -574,7 +574,7 @@ impl PreferencesContext {
             stored_bands,
             equalizer_enabled,
             on_enabled,
-            on_preset,
+            &on_preset,
             on_band,
         );
         self.equalizer_controls

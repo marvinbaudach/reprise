@@ -27,7 +27,7 @@ pub(super) fn build_equalizer_controls(
     stored_bands: [f64; 10],
     enabled: bool,
     on_enabled: Rc<dyn Fn(bool)>,
-    on_preset: Rc<dyn Fn([f64; 10]) -> bool>,
+    on_preset: &Rc<dyn Fn([f64; 10]) -> bool>,
     on_band: Rc<dyn Fn(usize, f64)>,
 ) -> EqualizerControls {
     let group = adw::PreferencesGroup::builder()
@@ -49,8 +49,9 @@ pub(super) fn build_equalizer_controls(
     let selected_label = EqualizerPreset::ALL
         .iter()
         .position(|preset| preset.ten_band_levels() == stored_bands)
-        .map(|index| preset_label(EqualizerPreset::ALL[index]))
-        .unwrap_or(strings::PRESET_CUSTOM);
+        .map_or(strings::PRESET_CUSTOM, |index| {
+            preset_label(EqualizerPreset::ALL[index])
+        });
     let preset_button = gtk4::MenuButton::builder()
         .label(strings::text(selected_label))
         .menu_model(&preset_menu)

@@ -61,7 +61,7 @@ fn equalizer_controls_for_test(conn: Rc<Db>) -> EqualizerControls {
         bands[index] = value;
         settings::set_equalizer_bands(&band_conn, bands).unwrap();
     });
-    build_equalizer_controls(bands, true, on_enabled, on_preset, on_band)
+    build_equalizer_controls(bands, true, on_enabled, &on_preset, on_band)
 }
 
 #[test]
