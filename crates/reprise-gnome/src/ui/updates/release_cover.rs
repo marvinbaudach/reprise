@@ -53,6 +53,8 @@ impl LazyReleaseCover {
     pub(in crate::ui) fn new_unbound(edge: i32) -> Self {
         let root = gtk4::Overlay::new();
         root.set_size_request(edge, edge);
+        root.set_halign(gtk4::Align::Center);
+        root.set_valign(gtk4::Align::Center);
         root.add_css_class("new-release-cover");
 
         let initials = gtk4::Label::new(None);
@@ -316,7 +318,10 @@ mod tests {
         None
     }
 
-    fn release_cover_in_column_view(artist: &str) -> (gtk4::Window, LazyReleaseCover) {
+    fn release_cover_in_column_view(
+        artist: &str,
+        tall_row_height: Option<i32>,
+    ) -> (gtk4::Window, LazyReleaseCover) {
         let model = gtk4::gio::ListStore::new::<gtk4::StringObject>();
         model.append(&gtk4::StringObject::new(artist));
         let selection = gtk4::NoSelection::new(Some(model));
@@ -345,6 +350,19 @@ mod tests {
         let column = gtk4::ColumnViewColumn::new(Some("Cover"), Some(factory));
         column.set_fixed_width(68);
         view.append_column(&column);
+        if let Some(height) = tall_row_height {
+            let height_factory = gtk4::SignalListItemFactory::new();
+            height_factory.connect_setup(move |_, object| {
+                let item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+                let label = gtk4::Label::new(Some("Tall row"));
+                label.set_size_request(80, height);
+                item.set_child(Some(&label));
+            });
+            view.append_column(&gtk4::ColumnViewColumn::new(
+                Some("Height"),
+                Some(height_factory),
+            ));
+        }
         let window = gtk4::Window::builder()
             .default_width(180)
             .default_height(120)
@@ -430,7 +448,7 @@ mod tests {
     }
 
     fn assert_rendered_ink_is_centered(artist: &str) -> RenderedTile {
-        let (window, cover) = release_cover_in_column_view(artist);
+        let (window, cover) = release_cover_in_column_view(artist, None);
         let tile = render_tile(&window, &cover);
         let (min_x, min_y, max_x, max_y) = tile.ink_bounds();
         let left = min_x;
@@ -498,6 +516,33 @@ mod tests {
             tile.rgba_at(4, tile.height - 5),
             "the muted placeholder must visibly carry its vertical gradient"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn release_placeholder_stays_square_and_centered_in_a_tall_row() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
+        let (window, cover) = release_cover_in_column_view("Mental Cruelty", Some(88));
+        let surface = cover
+            .root
+            .parent()
+            .expect("the source-cell surface owns the tile");
+        let bounds = cover
+            .root
+            .compute_bounds(&surface)
+            .expect("tile bounds inside the source-cell surface");
+
+        assert_eq!((bounds.width(), bounds.height()), (56.0, 56.0));
+        assert!(
+            (bounds.y() * 2.0 + bounds.height() - surface.height() as f32).abs() <= 1.0,
+            "tile is not vertically centered: y={:.1}, tile={:.1}, surface={}",
+            bounds.y(),
+            bounds.height(),
+            surface.height()
+        );
+        window.close();
     }
 
     #[test]
