@@ -66,3 +66,129 @@ pub const ARTWORK_CONSENT_MERGE_NOTICE_DISMISS: &str = N_!("Dismiss");
 /// requests, no downloads, nothing hidden", so the refusal has to be visible.
 pub const ONLINE_SOURCES_TURNED_OFF: &str =
     N_!("Online sources are turned off — enable them in Preferences");
+
+// --- Plugins page: the online-content master and the background-activity bar
+// (`docs/plans/plugins-online-content-master-hierarchy.md`, third draft). ---
+
+/// State badge next to the master title while the gate is on. The draft writes
+/// it as "5 of 5 plugins on"; the counts are filled in from the real module
+/// list, which is longer than the mock's.
+pub const ONLINE_CONTENT_PLUGINS_ON: &str = N_!("{on} of {total} plugins on");
+/// State badge while the gate is off.
+pub const ONLINE_CONTENT_PLUGINS_OFF: &str = N_!("all {total} plugins off");
+/// The hint below the children card while the gate is off. `{names}` lists the
+/// sidebar entries that disappear with it.
+pub const ONLINE_CONTENT_PAUSED_HINT: &str =
+    N_!("{count} plugins paused · no requests · {names} hidden from the sidebar");
+/// Joins the last two entries of a human-readable name list.
+pub const NAME_LIST_LAST_PAIR: &str = N_!("{first} and {second}");
+/// Joins every earlier pair of a human-readable name list.
+pub const NAME_LIST_SEPARATOR: &str = N_!("{first}, {second}");
+
+/// Section label of the dialog's footer bar.
+pub const BACKGROUND_ACTIVITY: &str = N_!("Background activity");
+/// Description column of the Artwork job.
+pub const BACKGROUND_JOB_ALBUM_COVERS: &str = N_!("Album covers · {done} of {total}");
+/// Description column of the Online Lyrics job.
+pub const BACKGROUND_JOB_MISSING_LYRICS: &str = N_!("Missing lyrics · {done} of {total}");
+/// Shown instead of job rows while the gate is off.
+pub const BACKGROUND_NO_ONLINE_JOBS: &str = N_!("No online jobs — Online content is off");
+/// Accessible name and tooltip of a row's cancel button.
+pub const BACKGROUND_JOB_CANCEL: &str = N_!("Cancel {job}");
+
+pub fn online_content_plugins_on(on: usize, total: usize) -> String {
+    formatted(
+        ONLINE_CONTENT_PLUGINS_ON,
+        &[("on", &on.to_string()), ("total", &total.to_string())],
+    )
+}
+
+pub fn online_content_plugins_off(total: usize) -> String {
+    formatted(ONLINE_CONTENT_PLUGINS_OFF, &[("total", &total.to_string())])
+}
+
+pub fn online_content_paused_hint(count: usize, names: &str) -> String {
+    formatted(
+        ONLINE_CONTENT_PAUSED_HINT,
+        &[("count", &count.to_string()), ("names", names)],
+    )
+}
+
+/// "A", "A and B", "A, B and C" — the grammar the paused hint reads in.
+pub fn joined_names(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [only] => only.clone(),
+        [rest @ .., last] => {
+            let head = rest
+                .iter()
+                .cloned()
+                .reduce(|left, right| {
+                    formatted(NAME_LIST_SEPARATOR, &[("first", &left), ("second", &right)])
+                })
+                .unwrap_or_default();
+            formatted(NAME_LIST_LAST_PAIR, &[("first", &head), ("second", last)])
+        }
+    }
+}
+
+pub fn background_job_album_covers(done: usize, total: usize) -> String {
+    formatted(
+        BACKGROUND_JOB_ALBUM_COVERS,
+        &[("done", &done.to_string()), ("total", &total.to_string())],
+    )
+}
+
+pub fn background_job_missing_lyrics(done: usize, total: usize) -> String {
+    formatted(
+        BACKGROUND_JOB_MISSING_LYRICS,
+        &[("done", &done.to_string()), ("total", &total.to_string())],
+    )
+}
+
+pub fn background_job_cancel(job: &str) -> String {
+    formatted(BACKGROUND_JOB_CANCEL, &[("job", job)])
+}
+
+#[cfg(test)]
+mod background_activity_tests {
+    use super::*;
+
+    #[test]
+    fn a_name_list_reads_as_a_sentence_at_every_length() {
+        let names = |items: &[&str]| {
+            joined_names(
+                &items
+                    .iter()
+                    .map(|item| (*item).to_owned())
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        assert_eq!(names(&[]), "");
+        assert_eq!(names(&["Concerts"]), "Concerts");
+        assert_eq!(names(&["Concerts", "YouTube"]), "Concerts and YouTube");
+        assert_eq!(
+            names(&["Concerts", "New Releases", "YouTube"]),
+            "Concerts, New Releases and YouTube"
+        );
+    }
+
+    #[test]
+    fn the_master_badge_names_both_sides_of_the_count() {
+        assert_eq!(online_content_plugins_on(5, 7), "5 of 7 plugins on");
+        assert_eq!(online_content_plugins_off(7), "all 7 plugins off");
+    }
+
+    #[test]
+    fn a_job_description_carries_its_own_counts() {
+        assert_eq!(
+            background_job_album_covers(1942, 2132),
+            "Album covers · 1942 of 2132"
+        );
+        assert_eq!(
+            background_job_missing_lyrics(261, 2132),
+            "Missing lyrics · 261 of 2132"
+        );
+    }
+}

@@ -20,7 +20,7 @@ fn set_13_one_escape_clears_and_closes_settings_search() {
     app.register(None::<&gio::Cancellable>).unwrap();
     let parent = adw::ApplicationWindow::new(&app);
     parent.present();
-    let shell = preferences_window::build(search_pages(), None, None);
+    let shell = preferences_window::build(search_pages(), None);
     shell.dialog.present(Some(&parent));
     settle_layout();
 
@@ -53,7 +53,7 @@ fn set_13_sidebar_counts_and_dims_without_changing_width() {
     parent.present();
     crate::ui::style::install();
 
-    let shell = preferences_window::build(search_pages(), None, None);
+    let shell = preferences_window::build(search_pages(), None);
     shell.dialog.present(Some(&parent));
     settle_layout();
     let width_before = shell.sidebar.width();
@@ -103,7 +103,7 @@ fn set_13_real_row_returns_to_its_exact_origin_when_search_clears() {
     crate::ui::style::install();
 
     let target = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
-    let shell = preferences_window::build(reparent_pages(&target), None, None);
+    let shell = preferences_window::build(reparent_pages(&target), None);
     shell.dialog.present(Some(&parent));
     settle_layout();
 
@@ -177,7 +177,7 @@ fn set_13_result_path_opens_its_page_and_closes_search() {
 
     let target = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
     let expander = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ExpanderRow>::new()));
-    let shell = preferences_window::build(path_pages(&target, &expander), None, None);
+    let shell = preferences_window::build(path_pages(&target, &expander), None);
     shell.dialog.present(Some(&parent));
     settle_layout();
     shell.search.reveal();
@@ -237,7 +237,7 @@ fn set_13_matching_reads_the_rows_current_subtitle() {
     crate::ui::style::install();
 
     let target = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
-    let shell = preferences_window::build(live_subtitle_pages(&target), None, None);
+    let shell = preferences_window::build(live_subtitle_pages(&target), None);
     shell.dialog.present(Some(&parent));
     settle_layout();
     shell.search.reveal();
@@ -288,7 +288,7 @@ fn set_13_sidebar_counts_only_results_that_can_be_rendered() {
 
     let live = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
     let detached = Rc::new(RefCell::new(gtk4::glib::WeakRef::<adw::ActionRow>::new()));
-    let shell = preferences_window::build(renderable_count_pages(&live, &detached), None, None);
+    let shell = preferences_window::build(renderable_count_pages(&live, &detached), None);
     shell.dialog.present(Some(&parent));
     settle_layout();
     shell.search.reveal();

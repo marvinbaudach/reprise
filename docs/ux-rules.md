@@ -944,14 +944,14 @@ result.
   #96), so each switch acts only on its own source — switching YouTube off
   leaves podcast episodes syncing untouched, and the reverse. The global "Use
   online sources" gate sits above both and empties the sync on its own, since
-  `SET-11` calls that state "a local player only" and a phone still filling
+  `SET-11a` calls that state "a local player only" and a phone still filling
   with feed downloads would not be one. This does **not** delete anything —
   and that clause is the load-bearing one. A switched-off source is not a
   source with nothing selected: with "Remove from phone when deleted or
   unsubscribed here" on, an empty desired set makes *every* resident file of
   that source a removal, so a gate that only emptied the candidate list would
   have turned switching YouTube off into "wipe YouTube off the phone on the
-  next sync". `SET-11`'s promise that subscriptions and favorites are *kept*
+  next sync". `SET-11a`'s promise that subscriptions and favorites are *kept*
   stands unchanged, switching the module back on restores exactly the previous
   sync, and `build_plan` returns an empty plan for a disabled source rather
   than a plan full of deletions. The ordinary `remove_deleted` cleanup for an
@@ -1182,7 +1182,7 @@ result.
   is the explicit exception: it is app state shared by multiple capabilities,
   not an optional capability, and therefore owns the main page specified by
   `SET-15`.
-- **SET-11** [active] [gtk] — The Online-content group's own header is the
+- **SET-11** [replaced by SET-11a] [gtk] — The Online-content group's own header is the
   master switch. Off is a kill switch, not a bulk toggle: no request of any
   kind runs, sidebar entries are hidden, and running downloads are cancelled,
   while every per-module key keeps its value so switching the master back on
@@ -1194,6 +1194,29 @@ result.
   group above it carries no title of its own. The Plugins rows drop the
   boxed-list card entirely — they run over the full width of the page on the
   page ground, separated by hairlines only (`docs/plans/plugins-online-content-master-hierarchy.md`).
+- **SET-11a** [active] [gtk] — Replaces `SET-11`. The kill-switch semantics are
+  unchanged: off means no request of any kind, hidden sidebar entries and
+  cancelled downloads, while every per-module key keeps its value, so the
+  master never overwrites a child and switching it back on restores the exact
+  previous configuration. What changes is rank and behaviour on screen.
+  "Online content" leaves the card list and becomes the bracket above it: it
+  stands free, with a larger title, a state badge that counts its children
+  ("N of M plugins on", "all M plugins off"), its description over the full
+  width, and a switch visibly larger than a child's. The whole row is
+  clickable. Its children sit in **one** card below, indented behind a slim
+  vertical rail — the indent and the rail say who obeys whom — separated by
+  hairlines, not by gaps. Off dims that card but keeps it readable and stops it
+  being operated; the rows never collapse behind a disclosure and never change
+  visibility, so toggling the master cannot move anything under the reader's
+  eyes, and a hint below the card names what is paused and which sidebar
+  entries went with it. Connected services still collapses behind
+  "Scrobbling · needs online sources". A plugin's own expanded settings sit
+  **inside** its row — one step further in, on a slightly lifted surface — not
+  as further cards at the level of the plugin rows. **No switch ever changes an
+  expansion state**: visibility and function are separate axes, a row opens
+  only through its chevron or its title area, and the remembered state survives
+  the master being switched off and on
+  (`docs/plans/plugins-online-content-master-hierarchy.md`).
 - **SET-12** [replaced by SET-14] [gtk] — Replaces `SIM-8`, which stated the same thing
   inside a module that no longer exists: plugin provision badges are derived
   from the static registry, never from current enable state. A provision-kind
@@ -1219,13 +1242,21 @@ result.
   switch on the same right edge. A non-expandable switch row reserves the
   expander arrow's trailing slot even though the row does not open, so its
   switch stays aligned with the switch of a row that exposes child settings.
-- **SET-14a** [active] [gtk] — Replaces `SET-14`, which put the expander arrow
+- **SET-14a** [replaced by SET-14b] [gtk] — Replaces `SET-14`, which put the expander arrow
   behind the switch: the visible chevron of an expandable row sits in a gutter
   **left** of its title, and every Plugins row reserves that gutter — also the
   rows that never open — so all row titles and the group headings share one
   left edge. The trailing slot libadwaita's own arrow occupies stays reserved
   but invisible, which is what keeps every enable switch on the same right
   edge, unchanged from `SET-14`.
+- **SET-14b** [active] [gtk] — Replaces `SET-14a`. The left gutter existed to
+  give row titles and group headings one left edge on a card-less page; with
+  `SET-11a` the card is back and the children are deliberately indented away
+  from the headings, so the gutter has nothing left to align. The chevron
+  returns to libadwaita's own trailing slot and is visible there. What survives
+  from `SET-14` is the alignment itself: a row that never opens reserves the
+  arrow's trailing width, so every enable switch on the page keeps the same
+  right edge.
 - **SET-15** [active] [core] [gtk] — Location has one app-wide value and one
   Preferences owner. Its main page sits between Library and Plugins, owns City
   and Default radius, and names every reader under Used by: Concerts, Radio's
@@ -1263,6 +1294,23 @@ result.
 
 ## G. Feedback vocabulary
 
+- **SET-18** [active] [gtk] — The Preferences dialog's head carries the page
+  title and the search, and nothing else: no toast, banner or progress is ever
+  hung into it or laid over it. Background work has one fixed place instead —
+  a bar at the foot of the dialog that does not scroll and does not move,
+  labelled "Background activity" with a count badge while anything runs. Every
+  running job gets **its own row, named after the plugin that started it**, in
+  a fixed column order (owner, description, bar, percent, cancel), all of them
+  visible at the same time; no job is unnamed and no two jobs share a display
+  slot. The percent column has a fixed width so a row cannot shift while it
+  counts, and the bar is a flat fill — no animation, no stripes, no pulsing.
+  The footer costs the dialog height, never width, and the fixed columns are
+  budgeted so the description states its count in full instead of truncating
+  to the plugin name it already sits next to.
+  A row's cancel stops that job and nothing else. While the online-content gate
+  is off the bar lists no rows and says so instead. The main window's own scan
+  card stays where it is, in its own layer under the dialog, and is never
+  reparented into it (`docs/plans/plugins-online-content-master-hierarchy.md`).
 - **FB-1** [planned] [core] — Two-class toasts (pill, bottom-centered,
   one line, max 1 action button, 4 s / 10 s with Undo; only for
   completed actions or events): Actionless event toasts replace one
@@ -2803,7 +2851,7 @@ property is set and yet nothing happens.
   fully network-free use remains possible. Switching off takes effect
   immediately and does not hide images already cached locally.
 - **NET-1a** [active] [core] [gtk] — Extends `NET-1` by a global gate
-  `online-sources-enabled` (Plugins, `SET-11`): an AND
+  `online-sources-enabled` (Plugins, `SET-11a`): an AND
   condition in front of **every** network fetch in the app, sitting on top of
   the respective module or source switch — cover downloads, artist portraits,
   New Releases, online lyrics **and** the three online sources YouTube,

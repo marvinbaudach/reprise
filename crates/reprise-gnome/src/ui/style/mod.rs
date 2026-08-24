@@ -123,6 +123,7 @@ fn app_css() -> String {
         super::player_bar_layout::css(),
         super::preference_layout::css(),
         super::preference_playback::css(),
+        super::preference_background_bar::css(),
         super::preference_plugins::css(),
         super::preferences_window::css(),
         super::rating::css(),

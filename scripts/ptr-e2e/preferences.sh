@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 
 PREFERENCES_DIALOG_WIDTH=760
-PREFERENCES_DIALOG_HEIGHT=680
+# Mirrors `preferences_window::PREFERENCES_CONTENT_HEIGHT`: 680 plus the
+# resting height of the background-activity bar (`SET-18`). Every relative Y
+# below is measured from the dialog's top edge, so they stay valid as long as
+# this tracks the authored size.
+PREFERENCES_DIALOG_HEIGHT=752
 
 preferences_dialog_rect() {
   local host_rect host_x host_y host_width host_height
