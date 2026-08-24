@@ -380,7 +380,7 @@ impl RadioView {
 /// Everything one external playback snapshot does to this view. Kept a free
 /// function rather than an inline closure so the tests can drive the exact
 /// path the controller drives.
-fn on_external_snapshot(
+pub(super) fn on_external_snapshot(
     shared: &Rc<Shared>,
     snapshot: Option<crate::ui::playback::external_media::ExternalPlaybackSnapshot>,
 ) {

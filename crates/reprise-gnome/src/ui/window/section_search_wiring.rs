@@ -16,21 +16,40 @@ use super::track_list::TrackList;
 
 pub(in crate::ui) struct SectionSearchViews<'a> {
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
-    pub(in crate::ui) podcasts_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
-    pub(in crate::ui) youtube_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
-    pub(in crate::ui) radio_view: &'a Rc<crate::ui::radio::RadioView>,
+    pub(in crate::ui) podcasts_view:
+        &'a super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) youtube_view:
+        &'a super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) radio_view:
+        &'a super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
-    pub(in crate::ui) concerts_view: &'a Rc<crate::ui::concerts::ConcertsView>,
+    pub(in crate::ui) concerts_view:
+        &'a super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     pub(in crate::ui) library_doctor: &'a Rc<crate::ui::library_doctor::LibraryDoctorLauncher>,
 }
 
 pub(in crate::ui) fn install(search: &Rc<SectionSearch>, views: &SectionSearchViews<'_>) {
     install_tracks(search, views.track_list);
-    install_podcasts(search, SearchScope::Podcasts, views.podcasts_view);
-    install_podcasts(search, SearchScope::Youtube, views.youtube_view);
-    install_radio(search, views.radio_view);
+    for (scope, page) in [
+        (SearchScope::Podcasts, views.podcasts_view),
+        (SearchScope::Youtube, views.youtube_view),
+    ] {
+        let search = search.clone();
+        page.on_materialized(move |view| install_podcasts(&search, scope, view));
+    }
+    {
+        let search = search.clone();
+        views
+            .radio_view
+            .on_materialized(move |view| install_radio(&search, view));
+    }
     install_releases(search, views.releases_view);
-    install_concerts(search, views.concerts_view);
+    {
+        let search = search.clone();
+        views
+            .concerts_view
+            .on_materialized(move |view| install_concerts(&search, view));
+    }
     install_library_doctor(search, views.library_doctor);
 }
 

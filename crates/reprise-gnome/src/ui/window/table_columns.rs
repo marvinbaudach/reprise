@@ -25,15 +25,15 @@ pub(super) fn active_table(
     content_stack: &gtk4::Stack,
     content_navigation: &libadwaita::NavigationView,
     track_list: &Rc<TrackList>,
-    concerts: &Rc<crate::ui::concerts::ConcertsView>,
+    concerts: &super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     releases: &Rc<crate::ui::releases::ReleasesView>,
-    radio: &Rc<crate::ui::radio::RadioView>,
+    radio: &super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
 ) -> Rc<crate::ui::primary_menu::ActiveTable> {
     let active = Rc::new(crate::ui::primary_menu::ActiveTable::default());
     let music = crate::ui::column_layout::model(track_list);
-    let concerts = concerts.column_model();
     let releases = releases.column_model();
-    let radio = radio.column_model();
+    let concerts = concerts.clone();
+    let radio = radio.clone();
     let update: Rc<dyn Fn()> = {
         let window = window.downgrade();
         let content_stack = content_stack.downgrade();
@@ -54,11 +54,18 @@ pub(super) fn active_table(
                 .and_then(|page| page.tag())
                 .as_deref()
                 == Some(super::now_playing_wiring::LIBRARY_CONTENT_TAG);
-            set_active(
-                &window,
-                &active,
-                model_for_state(&page, root_visible, &music, &concerts, &releases, &radio),
-            );
+            let model = if !root_visible {
+                None
+            } else {
+                match page.as_str() {
+                    "library" => Some(music.clone()),
+                    "concerts" => Some(concerts.materialize().column_model()),
+                    "releases" => Some(releases.clone()),
+                    "radio" => Some(radio.materialize().column_model()),
+                    _ => None,
+                }
+            };
+            set_active(&window, &active, model);
         })
     };
     {
@@ -73,6 +80,7 @@ pub(super) fn active_table(
     active
 }
 
+#[cfg(test)]
 fn model_for_state(
     page: &str,
     navigation_root_visible: bool,
@@ -87,6 +95,7 @@ fn model_for_state(
     model_for_page(page, music, concerts, releases, radio)
 }
 
+#[cfg(test)]
 fn model_for_page(
     page: &str,
     music: &Rc<dyn crate::ui::table_columns::EditorModel>,

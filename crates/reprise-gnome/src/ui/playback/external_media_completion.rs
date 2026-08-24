@@ -282,13 +282,13 @@ mod tests {
         assert!(source_views.contains("sidebar.refresh(\"episode played\")"));
         assert_eq!(
             source_views
-                .matches("update_played_state(episode_id);")
+                .matches("update_played_state(episode_id)")
                 .count(),
             1,
             "the Podcasts and YouTube views must both receive the completed ID"
         );
-        assert!(source_views.contains("Rc::downgrade(&self.podcasts)"));
-        assert!(source_views.contains("Rc::downgrade(&self.youtube)"));
+        assert!(source_views.contains("[self.podcasts.clone(), self.youtube.clone()]"));
+        assert!(source_views.contains("page.if_materialized"));
     }
 
     #[test]
@@ -312,12 +312,12 @@ mod tests {
         assert!(wiring.contains("player.add_on_episode_position(move |episode_id, position_ms|"));
         assert_eq!(
             wiring
-                .matches("update_position_state(episode_id, position_ms);")
+                .matches("update_position_state(episode_id, position_ms)")
                 .count(),
             1
         );
-        assert!(wiring.contains("Rc::downgrade(&self.podcasts)"));
-        assert!(wiring.contains("Rc::downgrade(&self.youtube)"));
+        assert!(wiring.contains("[self.podcasts.clone(), self.youtube.clone()]"));
+        assert!(wiring.contains("page.if_materialized"));
         assert!(!wiring.contains("sidebar.refresh"));
     }
 

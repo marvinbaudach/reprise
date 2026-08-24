@@ -12,8 +12,6 @@ use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::playback::source_item_identity::source_reveal_intent;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::playing_links::LinkSurface;
-use crate::ui::podcasts::PodcastsView;
-use crate::ui::radio::RadioView;
 
 use super::super::metadata_navigation::MetadataNavigator;
 
@@ -24,9 +22,9 @@ pub(super) fn install(
     player: Option<&Rc<PlayerController>>,
     info_panel: &Rc<NowPlayingPanel>,
     metadata_navigator: &MetadataNavigator,
-    podcasts_view: &Rc<PodcastsView>,
-    youtube_view: &Rc<PodcastsView>,
-    radio_view: &Rc<RadioView>,
+    podcasts_view: &super::super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    youtube_view: &super::super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    radio_view: &super::super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
 ) {
     metadata_navigator.set_on_source_reveal({
         let podcasts_view = podcasts_view.clone();
@@ -37,13 +35,17 @@ pub(super) fn install(
                 subscription_id,
                 episode_id,
                 kind: SourceKind::Podcasts,
-            } => podcasts_view.request_reveal(subscription_id, episode_id),
+            } => podcasts_view
+                .materialize()
+                .request_reveal(subscription_id, episode_id),
             SourceTarget::Episode {
                 subscription_id,
                 episode_id,
                 kind: SourceKind::Youtube,
-            } => youtube_view.request_reveal(subscription_id, episode_id),
-            SourceTarget::Station { .. } => radio_view.request_reveal_connected(),
+            } => youtube_view
+                .materialize()
+                .request_reveal(subscription_id, episode_id),
+            SourceTarget::Station { .. } => radio_view.materialize().request_reveal_connected(),
         }
     });
 

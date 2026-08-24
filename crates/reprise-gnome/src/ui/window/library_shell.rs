@@ -159,12 +159,12 @@ pub(in crate::ui) fn wire_source_routing(
     sidebar: &Rc<Sidebar>,
     nav_history: &Rc<crate::ui::nav_history::NavHistory>,
     track_list: &Rc<TrackList>,
-    stats_view: StatsView,
-    concerts_view: &Rc<crate::ui::concerts::ConcertsView>,
+    stats_view: &super::content_stack::DeferredPage<StatsView>,
+    concerts_view: &super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     releases_view: &Rc<crate::ui::releases::ReleasesView>,
-    podcasts_view: &Rc<crate::ui::podcasts::PodcastsView>,
-    youtube_view: &Rc<crate::ui::podcasts::PodcastsView>,
-    radio_view: &Rc<crate::ui::radio::RadioView>,
+    podcasts_view: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    youtube_view: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    radio_view: &super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     conn: &Rc<Db>,
     content_navigation: &adw::NavigationView,
     content_stack: &gtk4::Stack,
@@ -178,7 +178,7 @@ pub(in crate::ui) fn wire_source_routing(
     let content_navigation = content_navigation.clone();
     let content_stack = content_stack.clone();
     let source_title = source_title.clone();
-    let stats_view = Rc::new(stats_view);
+    let stats_view = stats_view.clone();
     let concerts_view = concerts_view.clone();
     let releases_view = releases_view.clone();
     let podcasts_view = podcasts_view.clone();
@@ -224,15 +224,16 @@ pub(in crate::ui) fn wire_source_routing(
                 &content_stack,
                 "stats",
             );
+            let stats_view = stats_view.materialize();
             stats_view.prepare_entrance();
             stats_view.refresh(&conn);
         } else if matches!(source, ViewSource::Concerts) {
-            concerts_view.refresh();
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
                 "concerts",
             );
+            concerts_view.materialize().refresh();
         } else if matches!(source, ViewSource::Releases) {
             releases_view.refresh();
             super::window_navigation::show_content_page(
@@ -241,28 +242,30 @@ pub(in crate::ui) fn wire_source_routing(
                 "releases",
             );
         } else if matches!(source, ViewSource::Podcasts) {
-            podcasts_view.refresh();
-            podcasts_view.request_tab_open_refresh();
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
                 "podcasts",
             );
+            let podcasts_view = podcasts_view.materialize();
+            podcasts_view.refresh();
+            podcasts_view.request_tab_open_refresh();
         } else if matches!(source, ViewSource::Youtube) {
-            youtube_view.refresh();
-            youtube_view.request_tab_open_refresh();
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
                 "youtube",
             );
+            let youtube_view = youtube_view.materialize();
+            youtube_view.refresh();
+            youtube_view.request_tab_open_refresh();
         } else if matches!(source, ViewSource::Radio) {
-            radio_view.refresh();
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
                 "radio",
             );
+            radio_view.materialize().refresh();
         } else {
             super::window_navigation::show_content_page(
                 &content_navigation,

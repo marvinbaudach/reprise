@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 
+use gtk4::prelude::*;
 use gtk4::{gio, glib};
 use reprise_core::concerts::ConcertRow;
 
@@ -63,10 +64,19 @@ impl ConcertsModel {
     }
 
     pub(super) fn replace(&self, rows: Vec<ConcertRow>) {
-        self.store.remove_all();
-        for row in rows {
-            self.store.append(&ConcertObject::new(row));
-        }
+        crate::ui::list_store_delta::replace(
+            &self.store,
+            rows,
+            |object| {
+                object
+                    .clone()
+                    .downcast::<ConcertObject>()
+                    .expect("concerts store contains only concert objects")
+                    .row()
+            },
+            |row| row.id,
+            |row| ConcertObject::new(row).upcast(),
+        );
     }
 
     pub(super) fn store(&self) -> &gio::ListStore {
@@ -80,7 +90,10 @@ impl ConcertsModel {
 
 #[cfg(test)]
 mod tests {
-    use gtk4::gio::prelude::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gtk4::prelude::*;
 
     use super::*;
 
@@ -143,5 +156,57 @@ mod tests {
         gtk4::init().unwrap();
         let model = ConcertsModel::new();
         assert_eq!(model.selection().model().unwrap(), model.store().clone());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn one_concert_change_emits_one_delta_and_an_identical_refresh_emits_nothing() {
+        gtk4::init().unwrap();
+        let model = ConcertsModel::new();
+        let original = vec![row(1), row(2), row(3)];
+        model.replace(original.clone());
+        model.selection().set_selected(2);
+        let retained = model.store().item(2).unwrap();
+        let changes = Rc::new(RefCell::new(Vec::new()));
+        {
+            let changes = changes.clone();
+            model
+                .store()
+                .connect_items_changed(move |_, at, removed, added| {
+                    changes.borrow_mut().push((at, removed, added));
+                });
+        }
+
+        let mut changed = original.clone();
+        changed[0].venue = "Updated venue".into();
+        model.replace(changed.clone());
+
+        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
+        assert_eq!(model.selection().selected(), 2);
+        assert_eq!(model.store().item(2).unwrap(), retained);
+
+        model.replace(changed);
+        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn concert_delta_keeps_selection_viewport_and_zero_binds_for_a_noop() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let model = ConcertsModel::new();
+        let rows = (0..100).map(row).collect::<Vec<_>>();
+        model.replace(rows.clone());
+        model.selection().set_selected(75);
+        let mut changed = rows;
+        changed[0].venue = "Updated venue".into();
+        let identical = changed.clone();
+
+        crate::ui::list_store_delta::display_test::assert_viewport_selection_and_noop_bind_count(
+            model.selection().clone().upcast(),
+            || model.replace(changed),
+            || model.replace(identical),
+            || model.selection().selected() == 75,
+        );
     }
 }
