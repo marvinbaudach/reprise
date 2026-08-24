@@ -75,6 +75,7 @@ class SettingsContentTest {
 
         assertEquals(standardEqualizerPresets().size, presets.size)
         assertTrue(presets.all { preset -> preset.name.isNotBlank() })
+        assertEquals(presets.size, presets.map { preset -> preset.name }.toSet().size)
     }
 
     @Test
