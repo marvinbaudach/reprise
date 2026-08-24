@@ -5478,16 +5478,21 @@ available. The player plays only finished files.
   Opening stamps the entire delta set of both sections. The header
   badge sums unseen entries across all active, fetch-ready feeds per
   the `badge_presentation` idiom.
-- **CONC-8** [active] [core] [gtk] — Apply or Enter on a credential row
+- **CONC-8** [replaced by CONC-9a] — Apply or Enter on a credential row
   checks the stored value exactly once, off-thread, via the shared
   Concerts limiter. Valid, rejected, and unverifiable appear inline;
   empty resets the state without a request. The check never writes
   credential values into logs or error messages.
-- **CONC-9** [active] [core] [gtk] — Ticketmaster credentials are
+- **CONC-9** [replaced by CONC-9a] — Ticketmaster credentials are
   neither visible nor editable in the UI. The core prefers a stored
   legacy value over the runtime environment and the embedded build
   value; empty values do not count. Bandsintown remains available as an
   optional credential row independently of this.
+- **CONC-9a** [active] [core] [gtk] — Concerts never asks the user for
+  credentials. Ticketmaster comes from its bundled build value. Bandsintown
+  uses a built-in public project identifier, with a stored legacy value and
+  then the runtime environment taking precedence in that order. No credential
+  value appears in the UI, logs, or error messages.
 - **CONC-10** [replaced by CONC-14] — Every Concerts row shares a common
   vertical center. The artist stands as a single-line group on the same
   baseline as date, location, venue, distance, and ticket; an optional

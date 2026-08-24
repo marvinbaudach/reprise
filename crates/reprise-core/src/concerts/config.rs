@@ -13,6 +13,8 @@ pub const FILTER_RADIUS_KEY: &str = "concerts.filter.radius_km";
 pub const FILTER_COUNTRY_KEY: &str = "concerts.filter.country";
 pub const FILTER_HORIZON_KEY: &str = "concerts.filter.horizon";
 pub const FILTER_INCLUDE_SIMILAR_KEY: &str = "concerts.filter.include_similar";
+// Bandsintown sends this public project identifier in every request; it is not a secret.
+pub const DEFAULT_BANDSINTOWN_APP_ID: &str = "io.github.marvinbaudach.Reprise";
 
 const BANDSINTOWN_ENV: &str = "REPRISE_BANDSINTOWN_APP_ID";
 const TICKETMASTER_ENV: &str = "REPRISE_TICKETMASTER_APIKEY";
@@ -69,7 +71,8 @@ pub(crate) fn credentials_with_env(
 ) -> Result<Credentials, rusqlite::Error> {
     Ok(Credentials {
         bandsintown_app_id: non_empty_setting(conn, BANDSINTOWN_APP_ID_KEY)?
-            .or_else(|| read_env(BANDSINTOWN_ENV).as_deref().and_then(non_empty)),
+            .or_else(|| read_env(BANDSINTOWN_ENV).as_deref().and_then(non_empty))
+            .or_else(|| non_empty(DEFAULT_BANDSINTOWN_APP_ID)),
         ticketmaster_api_key: non_empty_setting(conn, TICKETMASTER_API_KEY)?
             .or_else(|| read_env(TICKETMASTER_ENV).as_deref().and_then(non_empty))
             .or_else(|| bundled_ticketmaster_api_key.and_then(non_empty)),
