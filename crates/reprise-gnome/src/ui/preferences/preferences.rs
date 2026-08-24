@@ -153,6 +153,12 @@ pub(in crate::ui) struct PreferencesContext {
     // a weak one and the page's widgets are released with the dialog.
     pub(in crate::ui) layout_controls:
         RefCell<Option<std::rc::Rc<super::preference_layout::LayoutControls>>>,
+    // Owned here, not by the master switch that drives it: the section holds
+    // the widget whose callback has to reach the section.
+    pub(in crate::ui) online_section:
+        RefCell<Option<std::rc::Rc<super::preference_plugins::OnlineSection>>>,
+    pub(in crate::ui) background_bar:
+        RefCell<Option<super::preference_background_bar::BackgroundBar>>,
     pub(in crate::ui) equalizer_surfaces: RefCell<Vec<gtk4::Widget>>,
     pub(in crate::ui) replaygain_mode: RefCell<Option<adw::ComboRow>>,
     pub(in crate::ui) listenbrainz: Rc<ScrobbleRuntime>,
@@ -167,6 +173,7 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) podcasts: Rc<PodcastsRuntime>,
     pub(in crate::ui) cover_download: CoverDownloadRuntime,
     pub(in crate::ui) lyrics_batch: Rc<LyricsBatch>,
+    pub(in crate::ui) cover_batch: Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,
     pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
@@ -204,6 +211,7 @@ impl PreferencesContext {
         podcasts: &Rc<PodcastsRuntime>,
         cover_download: &CoverDownloadRuntime,
         lyrics_batch: &Rc<LyricsBatch>,
+        cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,
         artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
     ) -> Rc<Self> {
@@ -224,6 +232,8 @@ impl PreferencesContext {
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
             layout_controls: RefCell::new(None),
+            online_section: RefCell::new(None),
+            background_bar: RefCell::new(None),
             equalizer_surfaces: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
             listenbrainz: listenbrainz.clone(),
@@ -238,6 +248,7 @@ impl PreferencesContext {
             podcasts: podcasts.clone(),
             cover_download: cover_download.clone(),
             lyrics_batch: lyrics_batch.clone(),
+            cover_batch: cover_batch.clone(),
             artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
@@ -306,6 +317,8 @@ impl PreferencesContext {
         }
         self.equalizer_controls.borrow_mut().clear();
         self.layout_controls.borrow_mut().take();
+        self.online_section.borrow_mut().take();
+        self.background_bar.borrow_mut().take();
         self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
         self.plugin_rows.borrow_mut().clear();
@@ -330,14 +343,20 @@ impl PreferencesContext {
                 PageId::Plugins => context.plugins_page(),
             }
         });
+        // `SET-18`: nothing goes into the head any more. The library scan
+        // keeps its own presentation, but it is given a place in the footer
+        // instead of an overlay across the title; the plugin batches get one
+        // named row each next to it, so no two jobs share a slot.
         let foreground_scan_progress = ScanChromeView::new();
         self.scan_controls
             .attach_chrome_view(&foreground_scan_progress);
-        let shell = super::preferences_window::build(
-            page_factory,
-            Some(foreground_scan_progress.line_widget()),
-            Some(foreground_scan_progress.chip_widget()),
+        let background_bar = super::preference_background_bar::BackgroundBar::new();
+        background_bar.adopt_scan_chrome(
+            foreground_scan_progress.line_widget(),
+            foreground_scan_progress.chip_widget(),
         );
+        self.wire_background_bar(&background_bar);
+        let shell = super::preferences_window::build(page_factory, Some(background_bar.widget()));
         let preferences_sidebar = shell.sidebar.clone();
         foreground_scan_progress.set_on_activate(move || {
             let Some(index) = super::preferences_window::page_index_by_name("library") else {
@@ -351,6 +370,7 @@ impl PreferencesContext {
         let settings_search = shell.search.clone();
         shell.dialog.connect_closed(move |_| {
             let _keep_progress_alive_until_closed = &foreground_scan_progress;
+            let _keep_background_bar_alive_until_closed = &background_bar;
             settings_search.close();
         });
         self.preferences_dialog.borrow().set(Some(&shell.dialog));

@@ -1,4 +1,5 @@
 pub(in crate::ui) mod preference_appearance;
+pub(in crate::ui) mod preference_background_bar;
 pub(in crate::ui) mod preference_concerts;
 pub(in crate::ui) mod preference_dependencies;
 pub(in crate::ui) mod preference_effects;
@@ -11,6 +12,7 @@ pub(in crate::ui) mod preference_listenbrainz;
 pub(in crate::ui) mod preference_location;
 mod preference_module_state;
 pub(in crate::ui) mod preference_new_releases;
+pub(in crate::ui) mod preference_online_master;
 mod preference_online_module_effects;
 pub(in crate::ui) mod preference_playback;
 pub(in crate::ui) mod preference_plugin_chrome;

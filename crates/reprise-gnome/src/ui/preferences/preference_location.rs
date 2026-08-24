@@ -545,7 +545,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn set_11_location_requests_are_not_dispatched_while_online_sources_are_off() {
+    fn set_11a_location_requests_are_not_dispatched_while_online_sources_are_off() {
         let conn = crate::test_db::open().unwrap();
         reprise_core::online_sources::set_enabled(&conn, false).unwrap();
         let blocked = Cell::new(0);

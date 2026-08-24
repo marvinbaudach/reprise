@@ -184,9 +184,9 @@ pub(crate) use playlists::playlist_io;
 use playlists::{playlist_import_navigation, playlist_io_names};
 #[allow(unused_imports)]
 use preferences::{
-    preference_appearance, preference_dependencies, preference_effects, preference_lastfm,
-    preference_layout, preference_library, preference_listenbrainz, preference_playback,
-    preference_plugins, preference_rhythmbox, preference_visual_strings,
+    preference_appearance, preference_background_bar, preference_dependencies, preference_effects,
+    preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
+    preference_playback, preference_plugins, preference_rhythmbox, preference_visual_strings,
     preference_window_decorations, preferences_window,
 };
 #[allow(unused_imports)]
@@ -215,10 +215,10 @@ use tag_edit::{
 pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
 #[allow(unused_imports)]
 use track_list::{
-    column_header_dnd, column_layout_editor, column_widths, current_track_selection,
-    track_content, track_cover, track_list_builder, track_list_context_keys,
-    track_list_header_style, track_list_layout, track_list_queue_menu, track_list_reload,
-    track_list_rescan, track_list_row_interaction,
+    column_header_dnd, column_layout_editor, column_widths, current_track_selection, track_content,
+    track_cover, track_list_builder, track_list_context_keys, track_list_header_style,
+    track_list_layout, track_list_queue_menu, track_list_reload, track_list_rescan,
+    track_list_row_interaction,
 };
 #[allow(unused_imports)]
 pub(crate) use track_list::{

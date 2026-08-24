@@ -29,10 +29,7 @@ pub fn get_section_header_height(db: &crate::db::Db) -> Result<Option<f64>, SqlE
     get_height_in(db.conn(), SECTION_HEADER_HEIGHT_KEY)
 }
 
-pub fn set_section_header_height(
-    db: &crate::db::Db,
-    height: Option<f64>,
-) -> Result<(), SqlError> {
+pub fn set_section_header_height(db: &crate::db::Db, height: Option<f64>) -> Result<(), SqlError> {
     set_height_in(db.conn(), SECTION_HEADER_HEIGHT_KEY, height)
 }
 

@@ -448,6 +448,7 @@ pub fn build(
         &podcasts_runtime,
         &cover_download,
         &lyrics_batch,
+        &cover_batch,
         &artist_portrait,
         &decorations,
     );

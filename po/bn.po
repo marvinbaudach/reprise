@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-24 11:46+0200\n"
+"POT-Creation-Date: 2026-08-24 16:22+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Bengali\n"
@@ -2744,6 +2744,54 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:68
 msgid "Online sources are turned off — enable them in Preferences"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:76
+#, rust-format
+msgid "{on} of {total} plugins on"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:78
+#, rust-format
+msgid "all {total} plugins off"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:82
+#, rust-format
+msgid "{count} plugins paused · no requests · {names} hidden from the sidebar"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:84
+#, rust-format
+msgid "{first} and {second}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:86
+#, rust-format
+msgid "{first}, {second}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:89
+msgid "Background activity"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:91
+#, rust-format
+msgid "Album covers · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:93
+#, rust-format
+msgid "Missing lyrics · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:95
+msgid "No online jobs — Online content is off"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:97
+#, rust-format
+msgid "Cancel {job}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:11

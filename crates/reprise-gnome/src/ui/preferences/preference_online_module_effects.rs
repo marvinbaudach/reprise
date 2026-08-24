@@ -72,6 +72,7 @@ impl PreferencesContext {
             PermissionEffect::Stop => self.lyrics_batch.cancel(),
             PermissionEffect::None => {}
         }
+        self.refresh_background_bar_gate();
         self.sidebar.refresh(reason);
     }
 

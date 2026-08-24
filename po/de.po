@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-24 11:46+0200\n"
+"POT-Creation-Date: 2026-08-24 16:22+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -2859,6 +2859,56 @@ msgstr "Einstellungen für Bildmaterial prüfen"
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:68
 msgid "Online sources are turned off — enable them in Preferences"
 msgstr "Online-Quellen sind ausgeschaltet — in den Einstellungen aktivieren"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:76
+#, rust-format
+msgid "{on} of {total} plugins on"
+msgstr "{on} von {total} Plugins an"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:78
+#, rust-format
+msgid "all {total} plugins off"
+msgstr "alle {total} Plugins aus"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:82
+#, rust-format
+msgid "{count} plugins paused · no requests · {names} hidden from the sidebar"
+msgstr ""
+"{count} Plugins pausiert · keine Anfragen · {names} in der Seitenleiste "
+"ausgeblendet"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:84
+#, rust-format
+msgid "{first} and {second}"
+msgstr "{first} und {second}"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:86
+#, rust-format
+msgid "{first}, {second}"
+msgstr "{first}, {second}"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:89
+msgid "Background activity"
+msgstr "Hintergrundaktivität"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:91
+#, rust-format
+msgid "Album covers · {done} of {total}"
+msgstr "Albumcover · {done} von {total}"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:93
+#, rust-format
+msgid "Missing lyrics · {done} of {total}"
+msgstr "Fehlende Songtexte · {done} von {total}"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:95
+msgid "No online jobs — Online content is off"
+msgstr "Keine Online-Aufgaben — Online-Inhalte sind aus"
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:97
+#, rust-format
+msgid "Cancel {job}"
+msgstr "{job} abbrechen"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:11
 msgid "Concerts"
