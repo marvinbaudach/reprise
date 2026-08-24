@@ -37,7 +37,7 @@ class NowPlayingQueueTest {
             MaterialTheme {
                 CompositionLocalProvider(LocalPlaybackControls provides controls) {
                     NowPlayingQueuePage(
-                        playback,
+                        playback.libraryPlayback(),
                         MobileSurfaceViewModel(),
                         SurfaceLayout.STACKED,
                     )

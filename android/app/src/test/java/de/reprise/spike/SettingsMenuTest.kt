@@ -34,7 +34,7 @@ class SettingsMenuTest {
             RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
                     state = browse,
-                    playback = PlaybackUiState(),
+                    playback = PlaybackUiState().libraryPlayback(),
                     playbackSettingsRevision = 0,
                     chooseFolder = { folderChoices += 1 },
                     rescan = { rescans += 1 },

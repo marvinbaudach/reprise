@@ -73,6 +73,11 @@ plus their tests under `android/app/src/test/java/de/reprise/spike/`:
 `VisualizerSceneDriverTest.kt`, `NowPlayingSceneVerificationTest.kt`,
 `NowPlayingFrameRateTest.kt`, and anything new you add.
 
+Strand A leaves `PlaybackUiState.kt` with a second, position-free
+`LibraryPlayback` record for the whole library tree. That separation keeps the
+500 ms position tick out of the list; a later scene rebuild must not merge the
+two records back together.
+
 `NowPlayingScene.kt` is at 624 of its 800 allowed lines and task B-1 takes ~25
 out of it. Keep it that way: new code goes into a new file.
 

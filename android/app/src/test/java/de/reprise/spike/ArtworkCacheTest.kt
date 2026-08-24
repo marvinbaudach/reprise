@@ -20,6 +20,66 @@ import uniffi.reprise_android_ffi.AndroidFallbackCoverColours
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ArtworkCacheTest {
     @Test
+    fun artwork_reports_cache_hits_and_misses() {
+        val cache = ArtworkCache()
+        val request = request("counted")
+        val visual = visual(Color.RED)
+
+        assertNull(cache.artwork(request))
+        cache.putArtwork(request, visual)
+        assertSame(visual, cache.artwork(request))
+
+        assertEquals(ArtworkCacheStats(hits = 1, misses = 1), cache.artworkStats())
+    }
+
+    @Test
+    fun seed_artwork_counts_each_cross_size_fallback_as_a_hit() {
+        val cache = ArtworkCache()
+        val directVisual = visual(Color.RED)
+        val resolvedVisual = visual(Color.GREEN)
+        val generatedVisual = visual(Color.BLUE)
+
+        cache.putArtwork(request("direct", AndroidArtworkSize.LIST), directVisual)
+        cache.putGenerated(
+            request("resolved", AndroidArtworkSize.LIST),
+            resolvedVisual,
+            resolved = true,
+        )
+        cache.putGenerated(request("generated", AndroidArtworkSize.LIST), generatedVisual)
+
+        assertSame(directVisual, cache.seedArtwork(request("direct")))
+        assertSame(resolvedVisual, cache.seedArtwork(request("resolved")))
+        assertSame(generatedVisual, cache.seedArtwork(request("generated")))
+        assertEquals(ArtworkCacheStats(hits = 3, misses = 3), cache.artworkStats())
+    }
+
+    @Test
+    fun every_original_screen_row_hits_when_scrolling_back() {
+        val cache = ArtworkCache()
+        val visibleScreen = (0 until 11).map { request("row-$it", AndroidArtworkSize.LIST) }
+        val nextScreen = (11 until 22).map { request("row-$it", AndroidArtworkSize.LIST) }
+        val loaded = visual(Color.RED)
+
+        visibleScreen.forEach { cache.loadOnMiss(it, loaded) }
+        nextScreen.forEach { cache.loadOnMiss(it, loaded) }
+        cache.loadOnMiss(request("playing", AndroidArtworkSize.NOW_PLAYING), loaded)
+        val beforeScrollBack = cache.artworkStats()
+        visibleScreen.asReversed().forEach { cache.loadOnMiss(it, loaded) }
+        val afterScrollBack = cache.artworkStats()
+
+        assertEquals(
+            "every row from the original screen must remain cached",
+            visibleScreen.size.toLong(),
+            afterScrollBack.hits - beforeScrollBack.hits,
+        )
+        assertEquals(
+            "scrolling back to the original screen must not reload artwork",
+            0L,
+            afterScrollBack.misses - beforeScrollBack.misses,
+        )
+    }
+
+    @Test
     fun anArtistNamedLikeATrackUriDoesNotInheritItsCover() {
         val cache = ArtworkCache()
         val sharedIdentity = "content://tracks/also-an-artist"
@@ -40,8 +100,8 @@ class ArtworkCacheTest {
     }
 
     @Test
-    fun artwork_lru_evicts_the_oldest_entry_after_twelve_slots() {
-        val cache = ArtworkCache(artworkCapacity = 2, fogCapacity = 1)
+    fun artwork_size_lru_evicts_the_oldest_entry_after_its_budget() {
+        val cache = ArtworkCache(nowPlayingArtworkCapacity = 2, fogCapacity = 1)
         val first = request("first")
         val second = request("second")
         val third = request("third")
@@ -77,12 +137,19 @@ class ArtworkCacheTest {
         assertEquals(255, Color.alpha(top))
     }
 
-    private fun request(name: String) = ArtworkRequest(
+    private fun request(
+        name: String,
+        size: AndroidArtworkSize = AndroidArtworkSize.NOW_PLAYING,
+    ) = ArtworkRequest(
         trackUri = "content://tracks/$name",
-        size = AndroidArtworkSize.NOW_PLAYING,
+        size = size,
         title = name,
         artist = "Artist",
     )
+
+    private fun ArtworkCache.loadOnMiss(request: ArtworkRequest, visual: ArtworkVisual) {
+        if (artwork(request) == null) putArtwork(request, visual)
+    }
 
     private fun visual(colour: Int): ArtworkVisual {
         val bitmap = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { eraseColor(colour) }

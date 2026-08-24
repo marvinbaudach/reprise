@@ -6,6 +6,13 @@ import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private sealed interface ArtworkVisualCacheKey
 
+// A phone fits about 11 rows at the smallest 72 dp row height. Retaining the
+// current screen plus one screen of scroll, the prefetch window and headroom
+// needs about 27 entries; 32 leaves margin for taller or denser screens.
+private const val LIST_ARTWORK_CAPACITY = 32
+private const val NOW_PLAYING_ARTWORK_CAPACITY = 3
+private const val ARTIST_DETAIL_ARTWORK_CAPACITY = 1
+
 private data class TrackArtworkKey(
     val trackUri: String,
     val size: AndroidArtworkSize,
@@ -28,29 +35,67 @@ private class ArtworkIdentity(
     override fun hashCode(): Int = System.identityHashCode(image)
 }
 
+internal data class ArtworkCacheStats(
+    val hits: Long,
+    val misses: Long,
+)
+
 /** Small synchronized LRUs shared by the list, player and prefetch workers. */
 internal class ArtworkCache(
-    private val artworkCapacity: Int = 12,
+    private val listArtworkCapacity: Int = LIST_ARTWORK_CAPACITY,
+    private val nowPlayingArtworkCapacity: Int = NOW_PLAYING_ARTWORK_CAPACITY,
+    private val artistDetailArtworkCapacity: Int = ARTIST_DETAIL_ARTWORK_CAPACITY,
     private val fogCapacity: Int = 6,
 ) {
     init {
-        require(artworkCapacity > 0)
+        require(listArtworkCapacity > 0)
+        require(nowPlayingArtworkCapacity > 0)
+        require(artistDetailArtworkCapacity > 0)
         require(fogCapacity > 0)
     }
 
-    private val visuals = lruMap<ArtworkVisualCacheKey, ArtworkVisual>(artworkCapacity)
-    private val resolvedFallbacks = lruMap<TrackArtworkKey, GeneratedArtworkKey>(artworkCapacity)
+    private val visualShelves = mapOf(
+        AndroidArtworkSize.LIST to
+            lruMap<ArtworkVisualCacheKey, ArtworkVisual>(listArtworkCapacity),
+        AndroidArtworkSize.NOW_PLAYING to
+            lruMap<ArtworkVisualCacheKey, ArtworkVisual>(nowPlayingArtworkCapacity),
+        AndroidArtworkSize.ARTIST_DETAIL to
+            lruMap<ArtworkVisualCacheKey, ArtworkVisual>(artistDetailArtworkCapacity),
+    )
+    private val resolvedFallbackShelves = mapOf(
+        AndroidArtworkSize.LIST to
+            lruMap<TrackArtworkKey, GeneratedArtworkKey>(listArtworkCapacity),
+        AndroidArtworkSize.NOW_PLAYING to
+            lruMap<TrackArtworkKey, GeneratedArtworkKey>(nowPlayingArtworkCapacity),
+        AndroidArtworkSize.ARTIST_DETAIL to
+            lruMap<TrackArtworkKey, GeneratedArtworkKey>(artistDetailArtworkCapacity),
+    )
     private val fogs = lruMap<ArtworkIdentity, CoverFogBitmap>(fogCapacity)
+    private var artworkHits = 0L
+    private var artworkMisses = 0L
 
     @Synchronized
     fun artwork(request: ArtworkRequest): ArtworkVisual? {
         val sourceKey = request.trackKey()
-        visuals[sourceKey]?.let { return it }
-        val fallbackKey = resolvedFallbacks[sourceKey] ?: return null
-        return visuals[fallbackKey].also { visual ->
-            if (visual == null) resolvedFallbacks.remove(sourceKey)
+        val visuals = visuals(request.size)
+        val resolvedFallbacks = resolvedFallbacks(request.size)
+        visuals[sourceKey]?.let { visual ->
+            artworkHits += 1
+            return visual
         }
+        val fallbackKey = resolvedFallbacks[sourceKey]
+        val visual = fallbackKey?.let(visuals::get)
+        if (visual == null) {
+            artworkMisses += 1
+            if (fallbackKey != null) resolvedFallbacks.remove(sourceKey)
+        } else {
+            artworkHits += 1
+        }
+        return visual
     }
+
+    @Synchronized
+    fun artworkStats() = ArtworkCacheStats(hits = artworkHits, misses = artworkMisses)
 
     /**
      * Best immediate visual for a surface that will still resolve its own size.
@@ -60,47 +105,70 @@ internal class ArtworkCache(
     @Synchronized
     fun seedArtwork(request: ArtworkRequest): ArtworkVisual? {
         artwork(request)?.let { return it }
-        val sourceKey = visuals.keys
+        val sourceKey = visualShelves.values
+            .asSequence()
+            .flatMap { visuals -> visuals.keys.asSequence() }
             .filterIsInstance<TrackArtworkKey>()
             .lastOrNull { key -> key.matchesIdentity(request) }
-        sourceKey?.let { key -> visuals[key]?.let { return it } }
-        val fallbackKey = resolvedFallbacks.entries
+        sourceKey?.let { key ->
+            visuals(key.size)[key]?.let { visual ->
+                artworkHits += 1
+                return visual
+            }
+        }
+        val fallbackKey = resolvedFallbackShelves.values
+            .asSequence()
+            .flatMap { fallbacks -> fallbacks.entries.asSequence() }
             .lastOrNull { (key, _) -> key.matchesIdentity(request) }
             ?.value
-        fallbackKey?.let { key -> visuals[key]?.let { return it } }
-        val generatedKey = visuals.keys
+        fallbackKey?.let { key ->
+            visuals(key.size)[key]?.let { visual ->
+                artworkHits += 1
+                return visual
+            }
+        }
+        val generatedKey = visualShelves.values
+            .asSequence()
+            .flatMap { visuals -> visuals.keys.asSequence() }
             .filterIsInstance<GeneratedArtworkKey>()
             .lastOrNull { key -> key.matchesIdentity(request) }
-        return generatedKey?.let(visuals::get)
+        return generatedKey?.let { key -> visuals(key.size)[key] }.also { visual ->
+            if (visual != null) artworkHits += 1
+        }
     }
 
     @Synchronized
     fun putArtwork(request: ArtworkRequest, visual: ArtworkVisual) {
-        visuals[request.trackKey()] = visual
-        resolvedFallbacks.remove(request.trackKey())
+        visuals(request.size)[request.trackKey()] = visual
+        resolvedFallbacks(request.size).remove(request.trackKey())
     }
 
     @Synchronized
     fun invalidateArtistArtwork(request: ArtworkRequest) {
         if (request.kind != ArtworkKind.ARTIST) return
-        visuals.keys.removeAll { key ->
-            key is TrackArtworkKey &&
-                key.trackUri == request.trackUri &&
-                key.kind == ArtworkKind.ARTIST
+        visualShelves.values.forEach { visuals ->
+            visuals.keys.removeAll { key ->
+                key is TrackArtworkKey &&
+                    key.trackUri == request.trackUri &&
+                    key.kind == ArtworkKind.ARTIST
+            }
         }
-        resolvedFallbacks.keys.removeAll { key ->
-            key.trackUri == request.trackUri && key.kind == ArtworkKind.ARTIST
+        resolvedFallbackShelves.values.forEach { fallbacks ->
+            fallbacks.keys.removeAll { key ->
+                key.trackUri == request.trackUri && key.kind == ArtworkKind.ARTIST
+            }
         }
     }
 
     @Synchronized
-    fun generated(request: ArtworkRequest): ArtworkVisual? = visuals[request.generatedKey()]
+    fun generated(request: ArtworkRequest): ArtworkVisual? =
+        visuals(request.size)[request.generatedKey()]
 
     @Synchronized
     fun putGenerated(request: ArtworkRequest, visual: ArtworkVisual, resolved: Boolean = false) {
         val generatedKey = request.generatedKey()
-        visuals[generatedKey] = visual
-        if (resolved) resolvedFallbacks[request.trackKey()] = generatedKey
+        visuals(request.size)[generatedKey] = visual
+        if (resolved) resolvedFallbacks(request.size)[request.trackKey()] = generatedKey
     }
 
     @Synchronized
@@ -119,6 +187,11 @@ internal class ArtworkCache(
         size = size,
         kind = kind,
     )
+
+    private fun visuals(size: AndroidArtworkSize) = visualShelves.getValue(size)
+
+    private fun resolvedFallbacks(size: AndroidArtworkSize) =
+        resolvedFallbackShelves.getValue(size)
 
     private fun TrackArtworkKey.matchesIdentity(request: ArtworkRequest): Boolean =
         trackUri == request.trackUri && kind == request.kind

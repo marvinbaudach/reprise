@@ -46,4 +46,5 @@ internal data class MainActivitySurfaceDependencies(
     val setOnlineSourcesEnabled: (Boolean) -> Result<Unit> = { Result.success(Unit) },
     val animationsEnabled: () -> Boolean,
     val observeAmbientScheduling: (Boolean) -> Unit,
+    val libraryPerformanceObserver: LibraryPerformanceObserver = NoOpLibraryPerformanceObserver,
 )
