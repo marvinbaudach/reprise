@@ -1,31 +1,20 @@
 //! Test-only access to the composed Add Station dialog.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::radio_view::Shared;
-
-thread_local! {
-    static SHARED: RefCell<Option<Rc<Shared>>> = const { RefCell::new(None) };
-}
-
-pub(super) fn publish(shared: &Rc<Shared>) {
-    SHARED.with(|slot| slot.replace(Some(shared.clone())));
-}
-
-pub(in crate::ui) fn test_handle() -> RadioTestHandle {
-    RadioTestHandle {
-        shared: SHARED
-            .with(|slot| slot.borrow().clone())
-            .expect("the composed Radio view exists"),
-    }
-}
+use super::radio_view::{RadioView, Shared};
 
 pub(in crate::ui) struct RadioTestHandle {
     shared: Rc<Shared>,
 }
 
 impl RadioTestHandle {
+    pub(in crate::ui) fn new(view: &RadioView) -> Self {
+        Self {
+            shared: view.shared.clone(),
+        }
+    }
+
     pub(in crate::ui) fn open_near_you_location_preferences_for_test(&self) {
         let dialog = self
             .shared

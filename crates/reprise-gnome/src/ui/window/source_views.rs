@@ -1,16 +1,20 @@
-//! Composition helper for the Podcasts and Radio source views.
+//! Composition helper for the deferred Podcasts and Radio source views.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::prelude::*;
 use reprise_core::db::Db;
 
 use super::player_controller::PlayerController;
 use super::sidebar::Sidebar;
 
 pub(in crate::ui) struct SourceViews {
-    pub(in crate::ui) podcasts: Rc<crate::ui::podcasts::PodcastsView>,
-    pub(in crate::ui) youtube: Rc<crate::ui::podcasts::PodcastsView>,
-    pub(in crate::ui) radio: Rc<crate::ui::radio::RadioView>,
+    pub(in crate::ui) podcasts:
+        super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) youtube:
+        super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) radio: super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
 }
 
 impl SourceViews {
@@ -20,38 +24,49 @@ impl SourceViews {
         sidebar: &Rc<Sidebar>,
     ) {
         let sidebar = Rc::downgrade(sidebar);
-        let views = [Rc::downgrade(&self.podcasts), Rc::downgrade(&self.youtube)];
+        let views = [self.podcasts.clone(), self.youtube.clone()];
         player.add_on_episode_played(move |episode_id| {
             if let Some(sidebar) = sidebar.upgrade() {
                 sidebar.refresh("episode played");
             }
-            for view in views.iter().filter_map(std::rc::Weak::upgrade) {
-                view.update_played_state(episode_id);
+            for page in &views {
+                page.if_materialized(|view| view.update_played_state(episode_id));
             }
         });
     }
 
     pub(in crate::ui) fn wire_episode_position(&self, player: &Rc<PlayerController>) {
-        let views = [Rc::downgrade(&self.podcasts), Rc::downgrade(&self.youtube)];
+        let views = [self.podcasts.clone(), self.youtube.clone()];
         player.add_on_episode_position(move |episode_id, position_ms| {
-            for view in views.iter().filter_map(std::rc::Weak::upgrade) {
-                view.update_position_state(episode_id, position_ms);
+            for page in &views {
+                page.if_materialized(|view| view.update_position_state(episode_id, position_ms));
             }
         });
     }
 
     pub(in crate::ui) fn set_toast_overlay(&self, overlay: &libadwaita::ToastOverlay) {
-        self.podcasts.set_toast_overlay(overlay);
-        self.youtube.set_toast_overlay(overlay);
-        self.radio.set_toast_overlay(overlay);
+        for page in [&self.podcasts, &self.youtube] {
+            let overlay = overlay.downgrade();
+            page.on_materialized(move |view| {
+                if let Some(overlay) = overlay.upgrade() {
+                    view.set_toast_overlay(&overlay);
+                }
+            });
+        }
+        let overlay = overlay.downgrade();
+        self.radio.on_materialized(move |view| {
+            if let Some(overlay) = overlay.upgrade() {
+                view.set_toast_overlay(&overlay);
+            }
+        });
     }
 
     pub(in crate::ui) fn into_parts(
         self,
     ) -> (
-        Rc<crate::ui::podcasts::PodcastsView>,
-        Rc<crate::ui::podcasts::PodcastsView>,
-        Rc<crate::ui::radio::RadioView>,
+        super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+        super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+        super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     ) {
         (self.podcasts, self.youtube, self.radio)
     }
@@ -125,76 +140,79 @@ pub(in crate::ui) fn install(
             }
         },
     );
-    let podcasts = {
-        let _measurement = super::startup_report::measure("view.podcasts.construct");
-        crate::ui::podcasts::install(
-            conn.clone(),
-            podcasts_runtime.clone(),
-            callbacks.clone(),
-            reprise_core::podcasts::PodcastKind::Rss,
-        )
-    };
-    let youtube = {
-        let _measurement = super::startup_report::measure("view.youtube.construct");
-        crate::ui::podcasts::install(
-            conn.clone(),
-            podcasts_runtime.clone(),
-            callbacks,
-            reprise_core::podcasts::PodcastKind::Youtube,
-        )
-    };
-    let radio = {
-        let _measurement = super::startup_report::measure("view.radio.construct");
-        Rc::new(crate::ui::radio::install(
-            conn.clone(),
-            player,
-            location_broadcast,
-        ))
-    };
-    {
-        let _measurement = super::startup_report::measure("view.podcasts.add-named");
-        content_stack.add_named(podcasts.root(), Some("podcasts"));
-    }
-    {
-        let _measurement = super::startup_report::measure("view.youtube.add-named");
-        content_stack.add_named(youtube.root(), Some("youtube"));
-    }
-    {
-        let _measurement = super::startup_report::measure("view.radio.add-named");
-        content_stack.add_named(radio.root(), Some("radio"));
-    }
+    let podcasts = super::content_stack::DeferredPage::install(content_stack, "podcasts", {
+        let conn = conn.clone();
+        let podcasts_runtime = podcasts_runtime.clone();
+        let callbacks = callbacks.clone();
+        move || {
+            let _measurement = super::startup_report::measure("view.podcasts.construct");
+            let view = crate::ui::podcasts::install(
+                conn,
+                podcasts_runtime,
+                callbacks,
+                reprise_core::podcasts::PodcastKind::Rss,
+            );
+            let root = view.root().clone();
+            (view, root)
+        }
+    });
+    let youtube = super::content_stack::DeferredPage::install(content_stack, "youtube", {
+        let conn = conn.clone();
+        let podcasts_runtime = podcasts_runtime.clone();
+        move || {
+            let _measurement = super::startup_report::measure("view.youtube.construct");
+            let view = crate::ui::podcasts::install(
+                conn,
+                podcasts_runtime,
+                callbacks,
+                reprise_core::podcasts::PodcastKind::Youtube,
+            );
+            let root = view.root().clone();
+            (view, root)
+        }
+    });
+    let radio = super::content_stack::DeferredPage::install(content_stack, "radio", {
+        let conn = conn.clone();
+        let player = player.cloned();
+        let location_broadcast = location_broadcast.clone();
+        move || {
+            let _measurement = super::startup_report::measure("view.radio.construct");
+            let view = Rc::new(crate::ui::radio::install(
+                conn,
+                player.as_ref(),
+                &location_broadcast,
+            ));
+            let root = view.root().clone();
+            (view, root)
+        }
+    });
 
     {
         let sidebar = Rc::downgrade(sidebar);
-        radio.set_on_mutated(move || {
-            if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh("radio favorites changed");
-            }
+        radio.on_materialized(move |radio| {
+            radio.set_on_mutated(move || {
+                if let Some(sidebar) = sidebar.upgrade() {
+                    sidebar.refresh("radio favorites changed");
+                }
+            });
         });
     }
     if let Some(player) = player {
-        let podcasts_marker = Rc::downgrade(&podcasts);
-        let youtube_marker = Rc::downgrade(&youtube);
-        player.add_on_external_changed(move |snapshot| {
-            let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
-            let restored = snapshot.as_ref().is_some_and(|snapshot| snapshot.restored);
-            let unavailable_episode = snapshot.as_ref().and_then(|snapshot| {
-                if snapshot.podcast_phase
-                    == Some(crate::ui::playback::external_media::PodcastPhase::Failed)
-                {
-                    episode_mark.map(|mark| mark.id)
-                } else {
-                    None
-                }
+        let latest_snapshot = Rc::new(RefCell::new(None));
+        let podcasts_marker = podcasts.clone();
+        let youtube_marker = youtube.clone();
+        for page in [&podcasts, &youtube] {
+            let latest_snapshot = latest_snapshot.clone();
+            page.on_materialized(move |view| {
+                let snapshot = latest_snapshot.borrow().clone();
+                apply_episode_snapshot(view, snapshot.as_ref());
             });
-            if let Some(view) = podcasts_marker.upgrade() {
-                view.set_playing_episode(episode_mark, restored);
-                view.set_unavailable_episode(unavailable_episode);
-            }
-            if let Some(view) = youtube_marker.upgrade() {
-                view.set_playing_episode(episode_mark, restored);
-                view.set_unavailable_episode(unavailable_episode);
-            }
+        }
+        player.add_on_external_changed(move |snapshot| {
+            latest_snapshot.replace(snapshot.clone());
+            podcasts_marker.if_materialized(|view| apply_episode_snapshot(view, snapshot.as_ref()));
+            youtube_marker.if_materialized(|view| apply_episode_snapshot(view, snapshot.as_ref()));
+            let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
             tracing::debug!(
                 episode_id = ?episode_mark.map(|mark| mark.id),
                 phase = ?snapshot.as_ref().and_then(|snapshot| snapshot.podcast_phase),
@@ -205,15 +223,11 @@ pub(in crate::ui) fn install(
             );
         });
 
-        let podcasts = Rc::downgrade(&podcasts);
-        let youtube = Rc::downgrade(&youtube);
+        let podcasts = podcasts.clone();
+        let youtube = youtube.clone();
         player.add_on_episode_download_state(move |episode_id, state| {
-            if let Some(view) = podcasts.upgrade() {
-                view.set_download_state(episode_id, &state);
-            }
-            if let Some(view) = youtube.upgrade() {
-                view.set_download_state(episode_id, &state);
-            }
+            podcasts.if_materialized(|view| view.set_download_state(episode_id, &state));
+            youtube.if_materialized(|view| view.set_download_state(episode_id, &state));
         });
     }
     super::source_views_smoke::arm_episode_play(&youtube);
@@ -229,17 +243,34 @@ pub(in crate::ui) fn install(
     }
 }
 
+fn apply_episode_snapshot(
+    view: &crate::ui::podcasts::PodcastsView,
+    snapshot: Option<&crate::ui::playback::external_media::ExternalPlaybackSnapshot>,
+) {
+    let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot);
+    let restored = snapshot.is_some_and(|snapshot| snapshot.restored);
+    let unavailable_episode = snapshot.and_then(|snapshot| {
+        (snapshot.podcast_phase == Some(crate::ui::playback::external_media::PodcastPhase::Failed))
+            .then(|| episode_mark.map(|mark| mark.id))
+            .flatten()
+    });
+    view.set_playing_episode(episode_mark, restored);
+    view.set_unavailable_episode(unavailable_episode);
+}
+
 pub(in crate::ui) fn wire_update_sidebar_refresh(
-    concerts: &Rc<crate::ui::concerts::ConcertsView>,
+    concerts: &super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     releases: &Rc<crate::ui::releases::ReleasesView>,
     sidebar: &Rc<Sidebar>,
 ) {
     {
         let sidebar = Rc::downgrade(sidebar);
-        concerts.set_on_refreshed(move || {
-            if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh("concerts view refreshed");
-            }
+        concerts.on_materialized(move |concerts| {
+            concerts.set_on_refreshed(move || {
+                if let Some(sidebar) = sidebar.upgrade() {
+                    sidebar.refresh("concerts view refreshed");
+                }
+            });
         });
     }
     {

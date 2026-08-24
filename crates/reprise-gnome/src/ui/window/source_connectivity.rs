@@ -1,7 +1,8 @@
+use std::cell::Cell;
 use std::rc::{Rc, Weak};
 
 #[cfg(feature = "test-fixtures")]
-use std::{cell::Cell, time::Duration};
+use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::prelude::NetworkMonitorExt;
@@ -20,49 +21,61 @@ const TEST_CONNECTIVITY_FILE_ENV: &str = "REPRISE_TEST_CONNECTIVITY_FILE";
 
 #[derive(Clone)]
 struct ConnectivityTargets {
-    concerts: Weak<crate::ui::concerts::ConcertsView>,
+    state: Rc<Cell<Connectivity>>,
+    concerts: super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     releases: Weak<crate::ui::releases::ReleasesView>,
-    podcasts: Weak<crate::ui::podcasts::PodcastsView>,
-    youtube: Weak<crate::ui::podcasts::PodcastsView>,
-    radio: Weak<crate::ui::radio::RadioView>,
+    podcasts: super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    youtube: super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    radio: super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     preferences: Weak<crate::ui::preferences::PreferencesContext>,
 }
 
 impl ConnectivityTargets {
     fn new(
-        concerts: &Rc<crate::ui::concerts::ConcertsView>,
+        concerts: &super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
         releases: &Rc<crate::ui::releases::ReleasesView>,
-        podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
-        youtube: &Rc<crate::ui::podcasts::PodcastsView>,
-        radio: &Rc<crate::ui::radio::RadioView>,
+        podcasts: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+        youtube: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+        radio: &super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
         preferences: &Rc<crate::ui::preferences::PreferencesContext>,
     ) -> Self {
+        let state = Rc::new(Cell::new(Connectivity::Online));
+        for page in [podcasts, youtube] {
+            let state = state.clone();
+            page.on_materialized(move |view| view.set_connectivity(state.get()));
+        }
+        {
+            let state = state.clone();
+            concerts.on_materialized(move |view| view.set_connectivity(state.get()));
+        }
+        {
+            let state = state.clone();
+            radio.on_materialized(move |view| view.set_connectivity(state.get()));
+        }
         Self {
-            concerts: Rc::downgrade(concerts),
+            state,
+            concerts: concerts.clone(),
             releases: Rc::downgrade(releases),
-            podcasts: Rc::downgrade(podcasts),
-            youtube: Rc::downgrade(youtube),
-            radio: Rc::downgrade(radio),
+            podcasts: podcasts.clone(),
+            youtube: youtube.clone(),
+            radio: radio.clone(),
             preferences: Rc::downgrade(preferences),
         }
     }
 
     fn project(&self, connectivity: Connectivity) {
-        if let Some(view) = self.concerts.upgrade() {
-            view.set_connectivity(connectivity);
-        }
+        self.state.set(connectivity);
+        self.concerts
+            .if_materialized(|view| view.set_connectivity(connectivity));
         if let Some(view) = self.releases.upgrade() {
             view.set_connectivity(connectivity);
         }
-        if let Some(view) = self.podcasts.upgrade() {
-            view.set_connectivity(connectivity);
-        }
-        if let Some(view) = self.youtube.upgrade() {
-            view.set_connectivity(connectivity);
-        }
-        if let Some(view) = self.radio.upgrade() {
-            view.set_connectivity(connectivity);
-        }
+        self.podcasts
+            .if_materialized(|view| view.set_connectivity(connectivity));
+        self.youtube
+            .if_materialized(|view| view.set_connectivity(connectivity));
+        self.radio
+            .if_materialized(|view| view.set_connectivity(connectivity));
         if let Some(preferences) = self.preferences.upgrade() {
             preferences.set_connectivity(connectivity);
         }
@@ -111,11 +124,11 @@ fn wire_test_connectivity(targets: ConnectivityTargets) -> bool {
 /// between two refreshes, and it has no state to keep in sync — so pushing it
 /// would buy nothing.
 pub(super) fn wire(
-    concerts: &Rc<crate::ui::concerts::ConcertsView>,
+    concerts: &super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     releases: &Rc<crate::ui::releases::ReleasesView>,
-    podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
-    youtube: &Rc<crate::ui::podcasts::PodcastsView>,
-    radio: &Rc<crate::ui::radio::RadioView>,
+    podcasts: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    youtube: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    radio: &super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,
 ) {
     let targets =

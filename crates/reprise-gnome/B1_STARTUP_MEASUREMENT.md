@@ -29,3 +29,14 @@ measured view spans, so it is retained as the required same-environment total,
 not used to decide which views to defer. The per-view result is unambiguous:
 five constructors cost more than single-digit milliseconds; every
 `add_named` call and the other three constructors remain below that threshold.
+
+## After synchronous materialization
+
+B1.1 defers exactly those five indicted constructors. Five runs with the same
+benchmark snapshot and isolation produced activate-to-first-painted-frame
+times of 23,537, 15,919, 16,865, 13,803, and 24,055 ms: median 16,865 ms
+`[13,803-24,055]`. Against the B1.0 median this is 18,153 ms lower (51.8%).
+Host portal/dconf noise still dominates that wall-clock total, so the stronger
+causal evidence is inside the reports: all five contain Library, Library
+Doctor, and Releases measurements, while none contains a Stats, Concerts,
+Podcasts, YouTube, or Radio construction measurement before first paint.

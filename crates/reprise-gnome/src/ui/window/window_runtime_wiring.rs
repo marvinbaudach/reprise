@@ -32,11 +32,14 @@ use super::track_list::TrackList;
 
 #[path = "window_artwork_permission_wiring.rs"]
 mod artwork_permission_wiring;
+#[path = "window_deferred_source_wiring.rs"]
+mod deferred_source_wiring;
 #[path = "window_external_changes_wiring.rs"]
 mod external_changes_wiring;
 #[path = "window_playing_source_wiring.rs"]
 mod playing_source_wiring;
 
+#[derive(Clone, Copy)]
 pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) app: &'a adw::Application,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
@@ -52,12 +55,16 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
-    pub(in crate::ui) stats_view: StatsView,
-    pub(in crate::ui) concerts_view: &'a Rc<crate::ui::concerts::ConcertsView>,
+    pub(in crate::ui) stats_view: &'a super::content_stack::DeferredPage<StatsView>,
+    pub(in crate::ui) concerts_view:
+        &'a super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
-    pub(in crate::ui) podcasts_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
-    pub(in crate::ui) youtube_view: &'a Rc<crate::ui::podcasts::PodcastsView>,
-    pub(in crate::ui) radio_view: &'a Rc<crate::ui::radio::RadioView>,
+    pub(in crate::ui) podcasts_view:
+        &'a super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) youtube_view:
+        &'a super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+    pub(in crate::ui) radio_view:
+        &'a super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     pub(in crate::ui) podcasts_runtime: &'a Rc<crate::ui::podcasts::PodcastsRuntime>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) library_doctor_navigation: &'a adw::NavigationView,
@@ -128,20 +135,13 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         metadata_navigator,
     } = args;
 
-    super::source_connectivity::wire(
-        concerts_view,
-        releases_view,
-        podcasts_view,
-        youtube_view,
-        radio_view,
-        preferences,
-    );
-    releases_view.set_toast_overlay(toast_overlay);
-    super::startup_report::mark("source_connectivity::wire");
-    artwork_permission_wiring::wire(
+    deferred_source_wiring::install(
         preferences,
         cover_batch,
-        &stats_view,
+        toast_overlay,
+        stats_view,
+        concerts_view,
+        releases_view,
         podcasts_view,
         youtube_view,
         radio_view,
@@ -151,7 +151,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         let stats = stats_view.clone();
         let conn = conn.clone();
         Rc::new(move || {
-            stats.refresh(&conn);
+            stats.if_materialized(|view| view.refresh(&conn));
         }) as Rc<dyn Fn()>
     };
     let library_doctor = super::library_doctor::LibraryDoctorLauncher::new(
@@ -174,39 +174,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::startup_report::mark("LibraryDoctorLauncher::new");
     {
         let library_doctor = Rc::downgrade(&library_doctor);
-        stats_view.set_on_unify_spellings(move |ids| {
-            if let Some(library_doctor) = library_doctor.upgrade() {
-                library_doctor.open_for_selection(ids);
-            }
-        });
-    }
-
-    // `SRC-10` addendum (Block B2): the module-off empty state's "Enable in
-    // Preferences" button for Podcasts and YouTube — each page's own
-    // `PodcastsView` exists before `preferences` does, so this is wired
-    // post-construction rather than passed into `PodcastsCallbacks`.
-    for view in [podcasts_view, youtube_view] {
-        let preferences = Rc::downgrade(preferences);
-        view.set_on_open_preferences(move || {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_online_sources();
-            }
-        });
-    }
-    {
-        let preferences = Rc::downgrade(preferences);
-        youtube_view.set_on_open_youtube_preferences(move || {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(&["youtube"]);
-            }
-        });
-    }
-    {
-        let preferences = Rc::downgrade(preferences);
-        concerts_view.set_on_open_preferences(move || {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(&["concerts"]);
-            }
+        stats_view.on_materialized(move |stats| {
+            stats.set_on_unify_spellings(move |ids| {
+                if let Some(library_doctor) = library_doctor.upgrade() {
+                    library_doctor.open_for_selection(ids);
+                }
+            });
         });
     }
 
@@ -536,7 +509,19 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
     section_search.observe_doctor_review(library_doctor_navigation);
-    super::podcast_refresh_scheduler::arm(conn, db_path, podcasts_runtime, podcasts_view);
+    podcasts_view.on_materialized({
+        let conn = conn.clone();
+        let db_path = db_path.to_path_buf();
+        let podcasts_runtime = podcasts_runtime.clone();
+        move |podcasts_view| {
+            super::podcast_refresh_scheduler::arm(
+                &conn,
+                &db_path,
+                &podcasts_runtime,
+                podcasts_view,
+            );
+        }
+    });
 
     let track_list_weak = Rc::downgrade(track_list);
     sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {
@@ -726,10 +711,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // location setting in Preferences, the same deep-link shape
     // `present_rhythmbox_import` above already uses.
     let deep_link_preferences = Rc::downgrade(preferences);
-    radio_view.set_on_location_settings(move || {
-        if let Some(preferences) = deep_link_preferences.upgrade() {
-            preferences.present_location_settings();
-        }
+    radio_view.on_materialized(move |radio| {
+        radio.set_on_location_settings(move || {
+            if let Some(preferences) = deep_link_preferences.upgrade() {
+                preferences.present_location_settings();
+            }
+        });
     });
     active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
