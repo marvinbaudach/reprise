@@ -1,13 +1,23 @@
 ---
 slug: equalizer-profiles-lead-the-surface-core
-worktree: /home/marvin/Projects/reprise-equalizer-profiles-lead-the-surface-core
-branch: feature/equalizer-profiles-lead-the-surface-core
-phase: planned
+worktree:
+branch:
+phase: refactored
 codex_session:
 created: 2026-08-23
 mother: docs/plans/equalizer-profiles-lead-the-surface.md
 ---
 # Strang `core` — Zehn geteilte Profile
+
+> **Gelandet über den `ui`-PR, nicht über einen eigenen.** Das Gate zeigte,
+> dass dieser Strang allein nicht kompiliert: er erweitert das UniFFI-Enum von
+> vier auf zehn Varianten, während sein einziger Kotlin-Konsument
+> (`displayName()` in `MainActivity.kt`) dem Strang `ui` gehört —
+> `'when' expression must be exhaustive`. Die Dateimengen der beiden Stränge
+> sind sauber getrennt; die Abhängigkeit läuft über eine generierte Datei und
+> ist deshalb für die Disjunktheitsprüfung unsichtbar. Die vier Commits dieses
+> Strangs liegen wörtlich im `ui`-Branch und sind mit ihm gelandet; `branch:`
+> und `worktree:` sind leer, weil es beides nicht mehr gibt.
 
 Strang von [`equalizer-profiles-lead-the-surface.md`](equalizer-profiles-lead-the-surface.md).
 Der Mutterplan enthält den Beschluss, die Bestandsaufnahme, die Kurventabelle

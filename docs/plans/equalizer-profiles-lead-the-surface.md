@@ -6,7 +6,7 @@ phase: planned
 codex_session:
 created: 2026-08-23
 strands: core,ui
-merge_order: core,ui
+merge_order: ui
 ---
 # Der Equalizer wird über Profile bedient, nicht über zehn Regler
 
