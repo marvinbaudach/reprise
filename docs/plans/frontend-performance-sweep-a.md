@@ -2,7 +2,7 @@
 slug: frontend-performance-sweep-a
 worktree: /home/marvin/Projects/reprise-frontend-performance-sweep-a
 branch: feature/frontend-performance-sweep-a
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-24
 ---
