@@ -1,5 +1,7 @@
 use std::cell::Cell;
 
+use gtk4::prelude::*;
+
 /// Reprise's brand accent: the thick barline of the repeat-sign logo.
 ///
 /// Lifted at compile time out of `data/brand/palette.toml` by the crate's
@@ -61,6 +63,23 @@ pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
     }
 }
 
+pub(in crate::ui) fn is_dark() -> bool {
+    libadwaita::StyleManager::default().is_dark()
+}
+
+#[allow(deprecated)]
+pub(in crate::ui) fn window_background_rgb(widget: &impl IsA<gtk4::Widget>) -> [u8; 3] {
+    let color = widget
+        .style_context()
+        .lookup_color("window_bg_color")
+        .expect("the application theme defines window_bg_color");
+    [
+        (color.red() * 255.0).round() as u8,
+        (color.green() * 255.0).round() as u8,
+        (color.blue() * 255.0).round() as u8,
+    ]
+}
+
 /// The AA threshold every accent foreground must clear (CONTRAST-5).
 pub(in crate::ui::style) const ACCENT_TEXT_MINIMUM_RATIO: f64 = 4.5;
 
@@ -108,7 +127,11 @@ pub(in crate::ui::style) fn effective_accent_rgb(source: AccentSource) -> [u8; 3
 /// Unlike libadwaita's surface-oriented accent roles, this role is measured
 /// directly against the appearance's critical surface before it enters
 /// app-authored CSS.
-pub(super) fn accent_text_color(accent: [u8; 3], background: [u8; 3], is_dark: bool) -> String {
+pub(in crate::ui) fn accent_text_color(
+    accent: [u8; 3],
+    background: [u8; 3],
+    is_dark: bool,
+) -> String {
     rgb_hex(accent_text_rgb(accent, background, is_dark))
 }
 

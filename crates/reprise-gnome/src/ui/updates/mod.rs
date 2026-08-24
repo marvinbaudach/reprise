@@ -6,6 +6,7 @@ mod feed_snapshot;
 mod footer_state;
 pub(in crate::ui) mod popover;
 pub(in crate::ui) mod release_cover;
+mod release_cover_tile;
 pub(in crate::ui) mod release_row;
 mod shell;
 

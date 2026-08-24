@@ -7,6 +7,7 @@ use gtk4::prelude::*;
 use crate::ui::{artist_avatar, one_shot_task};
 
 const INITIALS_CLASS: &str = "reprise-release-cover-initials";
+const TILE_CLASS: &str = "reprise-release-cover-tile";
 const PICTURE_CLASS: &str = "reprise-release-cover-picture";
 const MBID_CLASS: &str = "reprise-release-cover-mbid";
 const ARTIST_CLASS: &str = "reprise-release-cover-artist";
@@ -14,6 +15,7 @@ const STARTED_CLASS: &str = "reprise-release-cover-started";
 
 pub(in crate::ui) struct LazyReleaseCover {
     root: gtk4::Overlay,
+    tile: gtk4::DrawingArea,
     initials: gtk4::Label,
     picture: gtk4::Picture,
     mbid: gtk4::Label,
@@ -53,27 +55,34 @@ impl LazyReleaseCover {
         root.set_size_request(edge, edge);
         root.add_css_class("new-release-cover");
 
-        let background = gtk4::DrawingArea::new();
-        background.set_content_width(edge);
-        background.set_content_height(edge);
-        background.set_draw_func(move |_, context, width, height| {
-            let accent = crate::ui::style::accent::accent_rgba();
-            context.set_source_rgb(
-                f64::from(accent.red()),
-                f64::from(accent.green()),
-                f64::from(accent.blue()),
-            );
-            context.rectangle(0.0, 0.0, f64::from(width), f64::from(height));
-            let _ = context.fill();
-        });
-        root.set_child(Some(&background));
-
         let initials = gtk4::Label::new(None);
-        initials.set_halign(gtk4::Align::Center);
-        initials.set_valign(gtk4::Align::Center);
-        initials.add_css_class("title-3");
+        initials.set_visible(false);
+        initials.set_can_target(false);
         initials.add_css_class(INITIALS_CLASS);
-        root.add_overlay(&initials);
+
+        let tile = gtk4::DrawingArea::new();
+        tile.set_content_width(edge);
+        tile.set_content_height(edge);
+        tile.add_css_class(TILE_CLASS);
+        let tile_initials = initials.clone();
+        tile.set_draw_func(move |area, context, width, height| {
+            let is_dark = crate::ui::style::accent::is_dark();
+            let foreground = area.color();
+            let surface = crate::ui::style::accent::window_background_rgb(area);
+            super::release_cover_tile::draw(
+                context,
+                &area.pango_context(),
+                f64::from(width),
+                f64::from(height),
+                &tile_initials.text(),
+                &super::release_cover_tile::Appearance {
+                    is_dark,
+                    foreground,
+                    surface,
+                },
+            );
+        });
+        root.set_child(Some(&tile));
 
         let picture = gtk4::Picture::new();
         picture.set_content_fit(gtk4::ContentFit::Cover);
@@ -82,27 +91,13 @@ impl LazyReleaseCover {
         picture.add_css_class(PICTURE_CLASS);
         root.add_overlay(&picture);
 
-        let hairline = gtk4::DrawingArea::new();
-        hairline.set_can_target(false);
-        hairline.set_draw_func(|_, context, width, height| {
-            context.set_source_rgba(1.0, 1.0, 1.0, 0.22);
-            context.set_line_width(1.0);
-            context.rectangle(
-                0.5,
-                0.5,
-                f64::from(width).max(1.0) - 1.0,
-                f64::from(height).max(1.0) - 1.0,
-            );
-            let _ = context.stroke();
-        });
-        root.add_overlay(&hairline);
-
-        // GTK owns these three invisible labels with the cell, so a wrapper
+        // GTK owns these four invisible labels with the cell, so a wrapper
         // reconstructed during bind reaches the same per-cell async state
         // without unsafe qdata or a second GObject subclass.
         let mbid = state_label(MBID_CLASS);
         let artist = state_label(ARTIST_CLASS);
         let started = state_label(STARTED_CLASS);
+        root.add_overlay(&initials);
         root.add_overlay(&mbid);
         root.add_overlay(&artist);
         root.add_overlay(&started);
@@ -110,6 +105,7 @@ impl LazyReleaseCover {
         wire_lazy_fetch(&root, &picture, &mbid, &started);
         Self {
             root,
+            tile,
             initials,
             picture,
             mbid,
@@ -121,6 +117,7 @@ impl LazyReleaseCover {
     pub(in crate::ui) fn from_widget(root: &gtk4::Overlay) -> Option<Self> {
         Some(Self {
             root: root.clone(),
+            tile: child_with_class(root, TILE_CLASS)?,
             initials: child_with_class(root, INITIALS_CLASS)?,
             picture: child_with_class(root, PICTURE_CLASS)?,
             mbid: child_with_class(root, MBID_CLASS)?,
@@ -134,6 +131,7 @@ impl LazyReleaseCover {
         self.artist.set_text("");
         self.started.set_text("");
         self.initials.set_text(&artist_avatar::initials(artist));
+        self.tile.queue_draw();
         self.picture.set_filename(None::<&std::path::Path>);
         self.picture.set_visible(false);
         if release_group_mbid.is_empty() {
@@ -165,6 +163,7 @@ impl LazyReleaseCover {
         self.artist.set_text(artist);
         self.started.set_text("");
         self.initials.set_text(&artist_avatar::initials(artist));
+        self.tile.queue_draw();
         self.picture.set_paintable(None::<&gtk4::gdk::Paintable>);
         self.picture.set_visible(false);
     }
@@ -317,9 +316,9 @@ mod tests {
         None
     }
 
-    fn release_cover_in_column_view() -> (gtk4::Window, LazyReleaseCover) {
+    fn release_cover_in_column_view(artist: &str) -> (gtk4::Window, LazyReleaseCover) {
         let model = gtk4::gio::ListStore::new::<gtk4::StringObject>();
-        model.append(&gtk4::StringObject::new("Mental Cruelty"));
+        model.append(&gtk4::StringObject::new(artist));
         let selection = gtk4::NoSelection::new(Some(model));
         let view = gtk4::ColumnView::new(Some(selection));
         view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
@@ -331,7 +330,8 @@ mod tests {
                 cover.widget(),
             )));
         });
-        factory.connect_bind(|_, object| {
+        let artist = artist.to_owned();
+        factory.connect_bind(move |_, object| {
             let item = object.downcast_ref::<gtk4::ListItem>().unwrap();
             let child = item.child().unwrap();
             let root = descendant_with_class(&child, "new-release-cover")
@@ -340,7 +340,7 @@ mod tests {
                 .unwrap();
             LazyReleaseCover::from_widget(&root)
                 .unwrap()
-                .set_release("11111111-1111-1111-1111-111111111111", "Mental Cruelty");
+                .set_release("11111111-1111-1111-1111-111111111111", &artist);
         });
         let column = gtk4::ColumnViewColumn::new(Some("Cover"), Some(factory));
         column.set_fixed_width(68);
@@ -357,6 +357,93 @@ mod tests {
             .downcast::<gtk4::Overlay>()
             .unwrap();
         (window, LazyReleaseCover::from_widget(&root).unwrap())
+    }
+
+    struct RenderedTile {
+        width: i32,
+        height: i32,
+        stride: usize,
+        pixels: Vec<u8>,
+    }
+
+    impl RenderedTile {
+        fn rgba_at(&self, x: i32, y: i32) -> [u8; 4] {
+            let offset = y as usize * self.stride + x as usize * 4;
+            self.pixels[offset..offset + 4]
+                .try_into()
+                .expect("one RGBA pixel")
+        }
+
+        fn ink_bounds(&self) -> (i32, i32, i32, i32) {
+            let mut bounds = (self.width, self.height, -1, -1);
+            for y in 3..self.height - 3 {
+                let left_ground = self.rgba_at(3, y);
+                let right_ground = self.rgba_at(self.width - 4, y);
+                for x in 4..self.width - 4 {
+                    let fraction = f64::from(x - 3) / f64::from(self.width - 7);
+                    let expected = std::array::from_fn::<_, 4, _>(|channel| {
+                        (f64::from(left_ground[channel]) * (1.0 - fraction)
+                            + f64::from(right_ground[channel]) * fraction)
+                            .round() as u8
+                    });
+                    let pixel = self.rgba_at(x, y);
+                    let distance: u16 = (0..3)
+                        .map(|channel| u16::from(pixel[channel].abs_diff(expected[channel])))
+                        .sum();
+                    if distance > 36 {
+                        bounds.0 = bounds.0.min(x);
+                        bounds.1 = bounds.1.min(y);
+                        bounds.2 = bounds.2.max(x);
+                        bounds.3 = bounds.3.max(y);
+                    }
+                }
+            }
+            assert!(
+                bounds.2 >= bounds.0,
+                "the rendered tile contains no glyph ink"
+            );
+            bounds
+        }
+    }
+
+    fn render_tile(window: &gtk4::Window, cover: &LazyReleaseCover) -> RenderedTile {
+        let width = cover.root.width();
+        let height = cover.root.height();
+        let paintable = gtk4::WidgetPaintable::new(Some(&cover.root));
+        let snapshot = gtk4::Snapshot::new();
+        paintable.snapshot(&snapshot, f64::from(width), f64::from(height));
+        let node = snapshot.to_node().expect("the release tile paints a node");
+        let renderer = window
+            .native()
+            .and_then(|native| native.renderer())
+            .expect("the presented window has a renderer");
+        let texture = renderer.render_texture(&node, None);
+        let stride = texture.width() as usize * 4;
+        let mut pixels = vec![0; stride * texture.height() as usize];
+        texture.download(&mut pixels, stride);
+        RenderedTile {
+            width: texture.width(),
+            height: texture.height(),
+            stride,
+            pixels,
+        }
+    }
+
+    fn assert_rendered_ink_is_centered(artist: &str) -> RenderedTile {
+        let (window, cover) = release_cover_in_column_view(artist);
+        let tile = render_tile(&window, &cover);
+        let (min_x, min_y, max_x, max_y) = tile.ink_bounds();
+        let left = min_x;
+        let right = tile.width - 1 - max_x;
+        let top = min_y;
+        let bottom = tile.height - 1 - max_y;
+        assert!(
+            (left - right).abs() <= 1 && (top - bottom).abs() <= 1,
+            "{artist:?} ink is not optically centered: left={left}, right={right}, \
+             top={top}, bottom={bottom}"
+        );
+        window.close();
+        tile
     }
 
     struct FetchObserverGuard;
@@ -404,27 +491,13 @@ mod tests {
             ),
             crate::ui::style::app_css_for_test(),
         ));
-        let (window, cover) = release_cover_in_column_view();
-        let background = cover.root.child().expect("cover background");
-        let background_bounds = background
-            .compute_bounds(&cover.root)
-            .expect("background bounds");
-        let label_bounds = cover
-            .initials
-            .compute_bounds(&cover.root)
-            .expect("initials-label bounds");
-        let (layout_x, _) = cover.initials.layout_offsets();
-        let (ink, _) = cover.initials.layout().pixel_extents();
-        let ink_left = label_bounds.x() + (layout_x + ink.x()) as f32;
-        let ink_right = ink_left + ink.width() as f32;
-        let left = ink_left - background_bounds.x();
-        let right = background_bounds.x() + background_bounds.width() - ink_right;
-
-        assert!(
-            (left - right).abs() <= 1.0,
-            "initials ink is not horizontally centered: left={left:.1}px, right={right:.1}px"
+        let tile = assert_rendered_ink_is_centered("Mental Cruelty");
+        assert_rendered_ink_is_centered("W");
+        assert_ne!(
+            tile.rgba_at(4, 4),
+            tile.rgba_at(4, tile.height - 5),
+            "the muted placeholder must visibly carry its vertical gradient"
         );
-        window.close();
     }
 
     #[test]
