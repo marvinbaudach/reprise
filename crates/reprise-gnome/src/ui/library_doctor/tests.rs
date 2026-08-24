@@ -95,9 +95,12 @@ fn doc_7c_entry_scope_defaults_to_library_and_suggests_filtered_view() {
 fn doc_7c_the_doctor_is_a_content_stack_child_not_a_content_nav_push() {
     let coordinator = include_str!("mod.rs");
     let navigation = include_str!("navigation.rs");
-    let window = include_str!("../window/window.rs");
+    // The composition root names the pages; `window_content_pages` is where
+    // each one is added to the stack. The guard follows the `add_named` call
+    // rather than the file it used to sit in.
+    let content_pages = include_str!("../window/window_content_pages.rs");
 
-    assert!(window.contains("Some(\"library-doctor\")"));
+    assert!(content_pages.contains("Some(\"library-doctor\")"));
     assert!(navigation.contains("content_stack::show_page"));
     assert!(coordinator.contains("self.navigation.show_root()"));
     assert!(!navigation.contains("content_navigation.push"));

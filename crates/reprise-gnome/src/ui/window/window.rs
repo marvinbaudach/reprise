@@ -29,7 +29,6 @@ use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
-use crate::ui::concerts;
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database handle; Core owns the connection and the UI
@@ -245,35 +244,14 @@ pub fn build(
     // in `window_runtime_wiring`, or its restored-track marker notification is lost.
     super::current_track_selection::wire(player.as_ref(), &track_list);
     let content_stack = super::content_stack::build();
-    {
-        let _measurement = super::startup_report::measure("view.library.add-named");
-        content_stack.add_named(&track_content, Some("library"));
-    }
-    content_stack.set_visible_child_name("library");
-    let stats_view = super::content_stack::DeferredPage::install(&content_stack, "stats", {
-        let cover_loader = track_list.shared_cover_loader();
-        let artist_portrait = artist_portrait.clone();
-        let conn = conn.clone();
-        move || {
-            let _measurement = super::startup_report::measure("view.stats.construct");
-            let view = Rc::new(super::stats_view::StatsView::new(cover_loader));
-            view.set_portrait_runtime(artist_portrait);
-            view.wire_year_selector(&conn);
-            let root = view.widget().clone();
-            (view, root.upcast())
-        }
-    });
-    super::startup_report::mark("stats");
-    // Size to the visible page in both axes: dedicated content pages must not
-    // inherit the library's minimum size, nor vice versa.
-    let library_doctor_navigation = {
-        let _measurement = super::startup_report::measure("view.library-doctor.construct");
-        adw::NavigationView::new()
-    };
-    {
-        let _measurement = super::startup_report::measure("view.library-doctor.add-named");
-        content_stack.add_named(&library_doctor_navigation, Some("library-doctor"));
-    }
+    let (stats_view, library_doctor_navigation) =
+        super::window_content_pages::install_library_pages(
+            &content_stack,
+            &track_content,
+            track_list.shared_cover_loader(),
+            artist_portrait.clone(),
+            conn,
+        );
     toolbar_view.set_content(Some(&content_stack));
 
     let active_content_focus =
@@ -322,37 +300,15 @@ pub fn build(
             );
         })
     };
-    let concerts_view = super::content_stack::DeferredPage::install(&content_stack, "concerts", {
-        let conn = conn.clone();
-        let concerts_runtime = concerts_runtime.clone();
-        let location_broadcast = location_broadcast.clone();
-        let cover_loader = track_list.shared_cover_loader();
-        let artist_portrait = artist_portrait.clone();
-        move || {
-            let _measurement = super::startup_report::measure("view.concerts.construct");
-            let view = Rc::new(concerts::install(
-                conn,
-                &concerts_runtime,
-                &location_broadcast,
-            ));
-            view.set_artist_image(cover_loader, artist_portrait);
-            let root = view.root().clone();
-            (view, root)
-        }
-    });
-    super::startup_report::mark("concerts");
-    let releases_view = {
-        let _measurement = super::startup_report::measure("view.releases.construct");
-        Rc::new(crate::ui::releases::install(
-            conn.clone(),
-            db_path.to_path_buf(),
-        ))
-    };
-    super::startup_report::mark("releases");
-    {
-        let _measurement = super::startup_report::measure("view.releases.add-named");
-        content_stack.add_named(releases_view.root(), Some("releases"));
-    }
+    let (concerts_view, releases_view) = super::window_content_pages::install_event_pages(
+        &content_stack,
+        conn,
+        db_path,
+        &concerts_runtime,
+        &location_broadcast,
+        track_list.shared_cover_loader(),
+        artist_portrait.clone(),
+    );
     let source_views = super::source_views::install(
         conn,
         &podcasts_runtime,
@@ -378,24 +334,7 @@ pub fn build(
             .bar
             .set_seek_colouring(settings::get_seek_colouring(conn));
     }
-    {
-        let overlay = toast_overlay.downgrade();
-        concerts_view.on_materialized(move |concerts| {
-            concerts.set_on_launch_error(move |error| {
-                if let Some(overlay) = overlay.upgrade() {
-                    crate::ui::toasts::show(&overlay, &error);
-                }
-            });
-        });
-    }
-    {
-        let overlay = toast_overlay.downgrade();
-        releases_view.set_on_launch_error(move |error| {
-            if let Some(overlay) = overlay.upgrade() {
-                crate::ui::toasts::show(&overlay, &error);
-            }
-        });
-    }
+    super::window_content_pages::wire_launch_errors(&toast_overlay, &concerts_view, &releases_view);
     super::window_action_wiring::wire(super::window_action_wiring::ActionWiring {
         conn,
         db_path,
