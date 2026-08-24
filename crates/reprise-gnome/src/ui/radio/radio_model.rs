@@ -87,7 +87,7 @@ impl RadioModel {
                     .expect("radio store contains only station objects")
                     .row()
             },
-            Clone::clone,
+            |row| row.id,
             |row| RadioObject::new(row).upcast(),
         );
     }
@@ -166,13 +166,15 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn one_station_change_emits_one_delta_and_an_identical_refresh_emits_nothing() {
+    fn one_station_metadata_change_is_replaced_separately_from_an_adjacent_insert() {
         gtk4::init().unwrap();
         let model = RadioModel::new();
         let original = vec![row(1), row(2), row(3)];
         model.replace(original.clone());
         model.selection().set_selected(2);
-        let retained = model.store().item(2).unwrap();
+        let retained_before = model.store().item(0).unwrap();
+        let replaced = model.store().item(1).unwrap();
+        let retained_after = model.store().item(2).unwrap();
         let changes = Rc::new(RefCell::new(Vec::new()));
         {
             let changes = changes.clone();
@@ -184,15 +186,19 @@ mod tests {
         }
 
         let mut changed = original.clone();
-        changed[0].name = "Updated station".into();
+        changed[1].votes = Some(42);
+        changed.insert(2, row(4));
         model.replace(changed.clone());
 
-        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
-        assert_eq!(model.selection().selected(), 2);
-        assert_eq!(model.store().item(2).unwrap(), retained);
+        assert_eq!(changes.borrow().as_slice(), [(1, 1, 1), (2, 0, 1)]);
+        assert_eq!(model.store().item(0).unwrap(), retained_before);
+        assert_ne!(model.store().item(1).unwrap(), replaced);
+        assert_eq!(model.store().item(3).unwrap(), retained_after);
+        assert_eq!(model.selection().selected(), 3);
+        assert_eq!(model.selection().selected_item().unwrap(), retained_after);
 
         model.replace(changed);
-        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
+        assert_eq!(changes.borrow().as_slice(), [(1, 1, 1), (2, 0, 1)]);
     }
 
     #[test]
