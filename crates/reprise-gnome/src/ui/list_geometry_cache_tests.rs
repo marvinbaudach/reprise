@@ -20,4 +20,3 @@ fn section_content_uses_the_weaker_of_row_and_header_sources() {
         (ContentHeight::Known(2_876.0), RowHeightSource::Assumed)
     );
 }
-

@@ -255,11 +255,7 @@ pub(in crate::ui) fn load_trusted_height(
     TrustedRowHeight::from_cache(cache.get()).unwrap_or(loaded)
 }
 
-fn load_row_height(
-    db: &reprise_core::db::Db,
-    cache: &Cell<f64>,
-    minimum: RowHeight,
-) -> RowHeight {
+fn load_row_height(db: &reprise_core::db::Db, cache: &Cell<f64>, minimum: RowHeight) -> RowHeight {
     load_trusted_height(cache, minimum, || {
         settings::get_row_height(db).unwrap_or_else(|error| {
             tracing::warn!(%error, "could not load persisted row height");

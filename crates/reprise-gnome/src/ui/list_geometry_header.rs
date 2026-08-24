@@ -21,10 +21,7 @@ pub(in crate::ui) fn measurement_from_widget_heights(
     RowMeasurement::from_widget_heights_at_least(heights, minimum_height())
 }
 
-pub(in crate::ui) fn load_height(
-    db: &reprise_core::db::Db,
-    cache: &Cell<f64>,
-) -> TrustedRowHeight {
+pub(in crate::ui) fn load_height(db: &reprise_core::db::Db, cache: &Cell<f64>) -> TrustedRowHeight {
     load_trusted_height(cache, minimum_height(), || {
         settings::get_section_header_height(db).unwrap_or_else(|error| {
             tracing::warn!(%error, "could not load persisted section-header height");
@@ -47,9 +44,11 @@ pub(in crate::ui) fn remember_settled_heights(
     row_height: RowHeight,
     header_height: RowHeight,
 ) {
-    if let Err(error) =
-        settings::set_row_and_section_header_heights(db, row_height.pixels(), header_height.pixels())
-    {
+    if let Err(error) = settings::set_row_and_section_header_heights(
+        db,
+        row_height.pixels(),
+        header_height.pixels(),
+    ) {
         tracing::warn!(%error, "could not persist settled list geometry");
     }
     remember_preferred_height(row_cache, TrustedRowHeight::measured(row_height));
@@ -83,7 +82,10 @@ mod tests {
             None
         );
         assert_eq!(load_height(&db, &cache), trusted);
-        assert_eq!(settings::get_section_header_height(&db).unwrap(), Some(36.0));
+        assert_eq!(
+            settings::get_section_header_height(&db).unwrap(),
+            Some(36.0)
+        );
     }
 
     #[test]
@@ -111,5 +113,4 @@ mod tests {
         assert_eq!(measured.source, RowHeightSource::Measured);
         assert_eq!(measured.height, RowHeight::new(38.0).unwrap());
     }
-
 }

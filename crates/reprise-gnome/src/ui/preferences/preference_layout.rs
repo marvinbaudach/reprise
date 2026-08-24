@@ -578,5 +578,4 @@ mod tests {
             assert_eq!(bar_position_from_index(index as u32), value);
         }
     }
-
 }
