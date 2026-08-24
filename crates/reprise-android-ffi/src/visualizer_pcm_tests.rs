@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use super::{
     live_processor_for_stream, AndroidVisualEngine, LiveAudioState, MonotonicClock,
+    TARGET_PCM_BUFFER_DURATION,
 };
 
 #[test]
@@ -95,16 +96,19 @@ fn tick_consumes_pcm_in_proportion_to_monotonic_elapsed_time() {
     let clock = Arc::new(PcmTestClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
-    let pcm = stereo_pcm(&vec![(8_192, -4_096); 4_800]);
+    let pcm = stereo_pcm(&vec![(8_192, -4_096); 12_000]);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
 
     clock.advance(Duration::from_millis(10));
     engine.tick();
-    assert_eq!(buffered_sample_count(&engine), 4_320);
+    assert_eq!(buffered_sample_count(&engine), 11_520);
+
+    let refill = stereo_pcm(&vec![(8_192, -4_096); 480]);
+    assert!(engine.ingest_pcm_i16(refill.clone(), refill.len() as u32, 48_000, 2));
 
     clock.advance(Duration::from_millis(20));
     engine.tick();
-    assert_eq!(buffered_sample_count(&engine), 3_360);
+    assert_eq!(buffered_sample_count(&engine), 11_040);
 }
 
 #[test]
@@ -112,14 +116,13 @@ fn every_tick_with_buffered_pcm_publishes_a_band_set() {
     let clock = Arc::new(PcmTestClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
-    let pcm = stereo_sine_pcm(2_000.0, 48_000, 1_440);
+    let pcm = stereo_sine_pcm(2_000.0, 48_000, 12_000);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
 
     let mut previous_bands = engine.live_bands_for_testing();
-    for expected_remaining in [960, 480, 0] {
+    for _ in 0..3 {
         clock.advance(Duration::from_millis(10));
         assert!(engine.tick(), "a newly published band set is a change");
-        assert_eq!(buffered_sample_count(&engine), expected_remaining);
         let bands = engine.live_bands_for_testing();
         assert_ne!(bands, previous_bands, "each PCM tick publishes fresh bars");
         previous_bands = bands;
@@ -141,6 +144,66 @@ fn tick_without_buffered_pcm_does_not_change_live_bands() {
     assert!(!engine.has_live_audio());
 }
 
+#[test]
+fn pcm_controller_reduces_sustained_overfill_within_the_ten_percent_cap() {
+    let mut live_audio = LiveAudioState::new(0, 48_000).expect("supported sample rate");
+    let nominal = 480;
+    live_audio.pcm_buffer.append(&vec![0.25; 16_800]);
+    let initial_fill = live_audio.pcm_buffer.samples.len();
+
+    for _ in 0..60 {
+        live_audio.pcm_buffer.append(&vec![0.25; nominal]);
+        let before = live_audio.pcm_buffer.samples.len();
+        assert!(live_audio.analyze_elapsed(Duration::from_millis(10)).is_some());
+        let consumed = before - live_audio.pcm_buffer.samples.len();
+        assert!((432..=528).contains(&consumed));
+    }
+
+    assert!(live_audio.pcm_buffer.samples.len() < initial_fill);
+}
+
+#[test]
+fn pcm_controller_hard_trims_above_twice_the_target() {
+    let mut live_audio = LiveAudioState::new(0, 48_000).expect("supported sample rate");
+    let target = samples_for_test_duration(TARGET_PCM_BUFFER_DURATION, 48_000);
+    live_audio.pcm_buffer.append(&vec![0.25; target * 2 + 1]);
+
+    assert!(live_audio.analyze_elapsed(Duration::from_millis(10)).is_none());
+
+    assert_eq!(live_audio.pcm_buffer.samples.len(), target);
+}
+
+#[test]
+fn pcm_controller_does_not_catch_up_through_underflow() {
+    let mut live_audio = LiveAudioState::new(0, 48_000).expect("supported sample rate");
+    live_audio.pcm_buffer.append(&vec![0.25; 100]);
+
+    assert!(live_audio.analyze_elapsed(Duration::from_millis(10)).is_some());
+    assert!(live_audio.pcm_buffer.samples.is_empty());
+    for _ in 0..10 {
+        assert!(live_audio.analyze_elapsed(Duration::from_millis(10)).is_none());
+    }
+
+    live_audio.pcm_buffer.append(&vec![0.25; 480]);
+    assert!(live_audio.analyze_elapsed(Duration::from_millis(10)).is_some());
+    assert_eq!(live_audio.pcm_buffer.samples.len(), 48);
+}
+
+#[test]
+fn pcm_controller_converges_to_target_under_constant_supply() {
+    let mut live_audio = LiveAudioState::new(0, 48_000).expect("supported sample rate");
+    let target = samples_for_test_duration(TARGET_PCM_BUFFER_DURATION, 48_000);
+    live_audio.pcm_buffer.append(&vec![0.25; target + 4_800]);
+
+    for _ in 0..300 {
+        live_audio.pcm_buffer.append(&vec![0.25; 480]);
+        assert!(live_audio.analyze_elapsed(Duration::from_millis(10)).is_some());
+    }
+    live_audio.pcm_buffer.append(&vec![0.25; 480]);
+
+    assert!(live_audio.pcm_buffer.samples.len().abs_diff(target) <= 16);
+}
+
 fn buffered_sample_count(engine: &AndroidVisualEngine) -> usize {
     engine
         .live_audio
@@ -148,6 +211,10 @@ fn buffered_sample_count(engine: &AndroidVisualEngine) -> usize {
         .expect("live audio lock")
         .as_ref()
         .map_or(0, |live_audio| live_audio.pcm_buffer.samples.len())
+}
+
+fn samples_for_test_duration(duration: Duration, sample_rate_hz: u32) -> usize {
+    (duration.as_secs_f64() * f64::from(sample_rate_hz)).round() as usize
 }
 
 #[derive(Default)]

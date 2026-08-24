@@ -28,6 +28,12 @@ const RADIAL_GLOW_KIND: f32 = 2.0;
 const RECORD_PREFIX_LEN: usize = 8;
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
 const LIVE_PCM_BUFFER_SECONDS: usize = 2;
+// This is the single tuning knob for the stable visual delay behind decoded PCM.
+const TARGET_PCM_BUFFER_DURATION: Duration = Duration::from_millis(250);
+// A 30-tick proportional horizon corrects clock drift without visible speed changes.
+const PCM_BUFFER_CONTROLLER_TAU_TICKS: f64 = 30.0;
+const MIN_PCM_CONSUMPTION_RATE: f64 = 0.9;
+const MAX_PCM_CONSUMPTION_RATE: f64 = 1.1;
 pub(crate) const LIVE_AUDIO_STALE_AFTER: Duration = Duration::from_millis(500);
 
 pub(crate) trait MonotonicClock: Send + Sync {
@@ -160,8 +166,27 @@ impl LiveAudioState {
     }
 
     fn analyze_elapsed(&mut self, elapsed: Duration) -> Option<(SpectrumFrame, BassPressure)> {
-        let requested_samples =
-            (elapsed.as_secs_f64() * f64::from(self.sample_rate_hz)).round() as usize;
+        let target_samples = samples_for_duration(TARGET_PCM_BUFFER_DURATION, self.sample_rate_hz);
+        let fill_samples = self.pcm_buffer.samples.len();
+        if fill_samples > target_samples.saturating_mul(2) {
+            self.pcm_buffer
+                .samples
+                .drain(..fill_samples - target_samples);
+            return None;
+        }
+
+        let nominal_samples = elapsed.as_secs_f64() * f64::from(self.sample_rate_hz);
+        if nominal_samples == 0.0 {
+            return None;
+        }
+        let correction =
+            (fill_samples as f64 - target_samples as f64) / PCM_BUFFER_CONTROLLER_TAU_TICKS;
+        let requested_samples = (nominal_samples + correction)
+            .clamp(
+                nominal_samples * MIN_PCM_CONSUMPTION_RATE,
+                nominal_samples * MAX_PCM_CONSUMPTION_RATE,
+            )
+            .round() as usize;
         let consumed_samples = requested_samples.min(self.pcm_buffer.samples.len());
         if consumed_samples == 0 {
             return None;
@@ -186,6 +211,10 @@ impl LiveAudioState {
         self.pcm_buffer.clear();
         self.bands.fill(0.0);
     }
+}
+
+fn samples_for_duration(duration: Duration, sample_rate_hz: u32) -> usize {
+    (duration.as_secs_f64() * f64::from(sample_rate_hz)).round() as usize
 }
 
 struct VisualState {
