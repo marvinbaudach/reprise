@@ -204,6 +204,77 @@ fn pcm_controller_converges_to_target_under_constant_supply() {
     assert!(live_audio.pcm_buffer.samples.len().abs_diff(target) <= 16);
 }
 
+#[test]
+fn pausing_freezes_pcm_consumption_and_retains_the_buffer() {
+    let clock = Arc::new(PcmTestClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm(80.0, 48_000, 12_000);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    let before_pause = buffered_sample_count(&engine);
+
+    engine.set_playing(false);
+    clock.advance(Duration::from_secs(1));
+    engine.tick();
+
+    assert_eq!(buffered_sample_count(&engine), before_pause);
+}
+
+#[test]
+fn pcm_resets_clear_track_seek_and_resume_history_samples() {
+    let engine = AndroidVisualEngine::new();
+    let pcm = stereo_pcm(&vec![(8_192, -4_096); 1_000]);
+
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    engine.note_track_changed();
+    assert_eq!(buffered_sample_count(&engine), 0);
+
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    engine.reset_audio_stream();
+    assert_eq!(buffered_sample_count(&engine), 0, "Media3 seek/flush reset");
+
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    engine.reset_audio_history();
+    assert_eq!(buffered_sample_count(&engine), 0, "resume-history reset");
+}
+
+#[test]
+fn pcm_underflow_keeps_the_last_bands_instead_of_injecting_silence() {
+    let clock = Arc::new(PcmTestClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm(2_000.0, 48_000, 480);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    clock.advance(Duration::from_millis(10));
+    engine.tick();
+    clock.advance(Duration::from_millis(10));
+    engine.tick();
+    assert_eq!(buffered_sample_count(&engine), 0);
+    let bands_before_underflow = engine.live_bands_for_testing();
+
+    clock.advance(Duration::from_millis(10));
+    engine.tick();
+
+    assert_eq!(engine.live_bands_for_testing(), bands_before_underflow);
+    assert!(bands_before_underflow.iter().any(|band| *band > 0.0));
+}
+
+#[test]
+fn live_audio_freshness_starts_when_tick_consumes_not_when_pcm_arrives() {
+    let clock = Arc::new(PcmTestClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playback_intended(true);
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm(80.0, 48_000, 12_000);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    clock.advance(super::LIVE_AUDIO_STALE_AFTER + Duration::from_millis(1));
+    assert!(engine.tick());
+
+    assert!(engine.has_live_audio());
+}
+
 fn buffered_sample_count(engine: &AndroidVisualEngine) -> usize {
     engine
         .live_audio

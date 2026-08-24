@@ -282,6 +282,9 @@ impl AndroidVisualEngine {
         let stream_generation = self.current_stream_generation();
         let now = self.clock.now();
         reconcile_stream_generation(&mut state, stream_generation, now);
+        if state.playing != playing {
+            state.last_visual_tick_at = now;
+        }
         state.playing = playing;
         expire_stale_live_audio(&mut state, now);
         let has_audio = state.has_analysis || state.has_live_audio;
@@ -466,14 +469,17 @@ impl AndroidVisualEngine {
         state.last_visual_tick_at = now;
         reconcile_stream_generation(&mut state, stream_generation, now);
 
-        let live_frame = live_audio_slot.as_mut().and_then(|live_audio| {
-            if live_audio.stream_generation != stream_generation {
-                live_audio.reset();
-                live_audio.stream_generation = stream_generation;
-                return None;
-            }
-            live_audio.analyze_elapsed(elapsed)
+        let live_frame = state.playing.then(|| {
+            live_audio_slot.as_mut().and_then(|live_audio| {
+                if live_audio.stream_generation != stream_generation {
+                    live_audio.reset();
+                    live_audio.stream_generation = stream_generation;
+                    return None;
+                }
+                live_audio.analyze_elapsed(elapsed)
+            })
         });
+        let live_frame = live_frame.flatten();
         let ingested_live_frame = if let Some((frame, pressure)) = live_frame {
             state.engine.set_retain_paused_live_shape(true);
             state.engine.set_has_track(true);
