@@ -9,7 +9,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::equalizer::EqualizerPreset;
-use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, ReplayGainMode};
+use reprise_core::library::settings::{self, PlayerBarPosition, ReplayGainMode};
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
@@ -264,10 +264,9 @@ impl PreferencesContext {
     }
 
     fn apply_initial(&self) {
-        let (density, sidebar_visible, browse_visible, info_visible, status_visible, decorations) = {
+        let (sidebar_visible, browse_visible, info_visible, status_visible, decorations) = {
             let conn = &self.conn;
             (
-                settings::get_list_density(conn),
                 settings::get_sidebar_visible(conn),
                 settings::get_browse_visible(conn),
                 settings::get_info_panel_visible(conn),
@@ -275,7 +274,6 @@ impl PreferencesContext {
                 settings::get_window_decoration_mode(conn),
             )
         };
-        self.track_list.apply_list_density(density);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
@@ -437,7 +435,6 @@ impl PreferencesContext {
 
     fn apply_smoke(&self) {
         let conn = &self.conn;
-        let _ = settings::set_list_density(conn, ListDensity::Compact);
         let _ = settings::set_sidebar_visible(conn, false);
         let _ = settings::set_browse_visible(conn, false);
         let _ = settings::set_info_panel_visible(conn, false);
@@ -453,7 +450,6 @@ impl PreferencesContext {
                 .unwrap_or(EqualizerPreset::Flat)
                 .ten_band_levels(),
         );
-        self.track_list.apply_list_density(ListDensity::Compact);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,

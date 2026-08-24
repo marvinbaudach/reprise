@@ -137,7 +137,8 @@ fn star_at_x(x: f64, width: f64) -> i32 {
 /// [`super::style`].
 pub(in crate::ui) fn css() -> String {
     format!(
-        ".{STAR_CSS_CLASS} {{ min-width: 16px; min-height: 24px; padding: 0; }}\n\
+        ".{STAR_CSS_CLASS} {{ min-width: 16px; min-height: 24px; \
+           padding: 0; border: 0; margin: 0; }}\n\
          .{FILLED_CSS_CLASS} {{ color: @reprise_accent_text_color; }}\n\
          .{EMPTY_CSS_CLASS} {{ color: alpha(@window_fg_color, 0.25); }}\n\
          .{DASH_CSS_CLASS} {{ color: alpha(@window_fg_color, 0.30); }}"

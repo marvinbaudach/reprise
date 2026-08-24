@@ -111,7 +111,7 @@ export const GALLERY_CAPTURES: readonly ProductCapture[] = [
     title: 'Layout controls',
     platform: 'GNOME',
     description:
-      'The desktop adapts without abandoning GNOME: player placement, panels and density.',
+      'The desktop adapts without abandoning GNOME: player placement, panels and columns.',
     alt: 'Reprise layout preferences shown over the listening statistics page',
     filename: 'gnome-layout-controls.webp',
     width: 2400,
