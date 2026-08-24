@@ -112,3 +112,29 @@ Strand A runs the Android JVM suite (JDK 21; the script sets `LD_LIBRARY_PATH`
 itself — setting it by hand invalidates the evidence). Strand B runs the Rust
 workspace tests plus the display-owned tests under Xvfb. Strand C runs the
 showroom's own suite. None of them can run the others' and none should try.
+
+## Outcome — both post-merge cross-checks are done
+
+**The full merge gate passed on the merged `dev`** at `345dbd350f`, run from a
+detached worktree with `MERGE_READINESS_BASE_REF=origin/dev`, through
+`heavy-run`, and *without* `MERGE_READINESS_SKIP_ANDROID_QUALITY`: this dev
+touches Android, so the Android source-quality stage had to run here and did.
+51 stages, `Merge-readiness checks passed against origin/dev`, exit 0, on
+2026-08-24. Inside it: 556 display tests with 0 failures (two entries skipped
+are measurement tools, not tests), the workspace and Linux-platform suites, the
+runtime bus tests, and a dependency audit with one allowed warning
+(`RUSTSEC-2024-0436`, `paste` unmaintained).
+
+An earlier attempt on the same tree died at 45 minutes with `EXIT=143` inside
+the display stage. That was an external `SIGTERM` — no test had failed, no OOM
+kill appears in the journal, and neither gate script carries a timeout; a
+parallel session stopped its own `check-display-tests.sh` three seconds earlier.
+A gate killed from outside proves nothing either way, which is why it was rerun
+rather than argued about.
+
+**`docs/measurements/frontend-performance-sweep.md` carries the rows**, one per
+shipped finding, plus a paragraph each for the two findings that did not ship
+and one for the hygiene item the plan exempted. Two of its claims were corrected
+after checking: A3 replaced *one shared 12-entry LRU*, not a 16-entry list
+cache, and its before-value is derived from that capacity — no replay against
+the old implementation was ever made.
