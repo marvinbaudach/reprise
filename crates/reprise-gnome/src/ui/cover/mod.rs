@@ -1,3 +1,4 @@
+mod cover_cache;
 pub(in crate::ui) mod cover_download_batch;
 pub(crate) mod cover_download_worker;
 pub(crate) mod cover_loader;
