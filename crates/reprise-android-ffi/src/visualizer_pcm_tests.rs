@@ -1,4 +1,10 @@
-use super::LiveAudioState;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use super::{
+    live_processor_for_stream, AndroidVisualEngine, LiveAudioState, MonotonicClock,
+};
 
 #[test]
 fn pcm_ring_overflow_discards_the_oldest_samples() {
@@ -33,4 +39,156 @@ fn pcm_ring_capacity_is_two_seconds_at_the_stream_sample_rate() {
 
     assert_eq!(forty_eight_k.pcm_buffer.capacity, 96_000);
     assert_eq!(forty_four_one_k.pcm_buffer.capacity, 88_200);
+}
+
+#[test]
+fn pcm_ingest_buffers_downmixed_samples_without_publishing_bands() {
+    let engine = AndroidVisualEngine::new();
+    engine.set_playing(true);
+    let pcm = stereo_pcm(&[(16_384, 0), (-16_384, 16_384)]);
+
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    {
+        let live_audio = engine.live_audio.lock().expect("live audio lock");
+        let live_audio = live_audio.as_ref().expect("PCM initialized the stream");
+        assert_eq!(
+            live_audio.pcm_buffer.samples.iter().copied().collect::<Vec<_>>(),
+            vec![0.25, 0.0]
+        );
+        assert!(live_audio.bands.iter().all(|band| *band == 0.0));
+    }
+    assert!(!engine.has_live_audio());
+    assert!(engine.scene(272.0, 272.0).is_empty());
+}
+
+#[test]
+fn pcm_ingest_rejects_samples_from_a_replaced_stream_generation() {
+    let mut live_audio = Some(LiveAudioState::new(3, 48_000).expect("supported sample rate"));
+    live_audio
+        .as_mut()
+        .expect("live audio state")
+        .pcm_buffer
+        .append(&[0.25, 0.5]);
+
+    let current = live_processor_for_stream(&mut live_audio, 4, 48_000)
+        .expect("same sample rate keeps a processor");
+
+    assert_eq!(current.stream_generation, 4);
+    assert!(current.pcm_buffer.samples.is_empty());
+}
+
+#[test]
+fn pcm_ingest_keeps_its_frame_validation_contract() {
+    let engine = AndroidVisualEngine::new();
+    let one_stereo_frame = stereo_pcm(&[(1, -1)]);
+
+    assert!(!engine.ingest_pcm_i16(Vec::new(), 0, 48_000, 2));
+    assert!(!engine.ingest_pcm_i16(one_stereo_frame.clone(), 5, 48_000, 2));
+    assert!(!engine.ingest_pcm_i16(one_stereo_frame.clone(), 3, 48_000, 2));
+    assert!(!engine.ingest_pcm_i16(one_stereo_frame.clone(), 4, 48_000, 0));
+    assert!(!engine.ingest_pcm_i16(one_stereo_frame, 4, 48_000, 33));
+}
+
+#[test]
+fn tick_consumes_pcm_in_proportion_to_monotonic_elapsed_time() {
+    let clock = Arc::new(PcmTestClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
+    let pcm = stereo_pcm(&vec![(8_192, -4_096); 4_800]);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    clock.advance(Duration::from_millis(10));
+    engine.tick();
+    assert_eq!(buffered_sample_count(&engine), 4_320);
+
+    clock.advance(Duration::from_millis(20));
+    engine.tick();
+    assert_eq!(buffered_sample_count(&engine), 3_360);
+}
+
+#[test]
+fn every_tick_with_buffered_pcm_publishes_a_band_set() {
+    let clock = Arc::new(PcmTestClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
+    let pcm = stereo_sine_pcm(2_000.0, 48_000, 1_440);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+
+    let mut previous_bands = engine.live_bands_for_testing();
+    for expected_remaining in [960, 480, 0] {
+        clock.advance(Duration::from_millis(10));
+        assert!(engine.tick(), "a newly published band set is a change");
+        assert_eq!(buffered_sample_count(&engine), expected_remaining);
+        let bands = engine.live_bands_for_testing();
+        assert_ne!(bands, previous_bands, "each PCM tick publishes fresh bars");
+        previous_bands = bands;
+    }
+
+    assert!(engine.has_live_audio());
+}
+
+#[test]
+fn tick_without_buffered_pcm_does_not_change_live_bands() {
+    let clock = Arc::new(PcmTestClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    let before = engine.live_bands_for_testing();
+
+    clock.advance(Duration::from_millis(10));
+    engine.tick();
+
+    assert_eq!(engine.live_bands_for_testing(), before);
+    assert!(!engine.has_live_audio());
+}
+
+fn buffered_sample_count(engine: &AndroidVisualEngine) -> usize {
+    engine
+        .live_audio
+        .lock()
+        .expect("live audio lock")
+        .as_ref()
+        .map_or(0, |live_audio| live_audio.pcm_buffer.samples.len())
+}
+
+#[derive(Default)]
+struct PcmTestClock {
+    now_nanos: AtomicU64,
+}
+
+impl PcmTestClock {
+    fn advance(&self, duration: Duration) {
+        self.now_nanos.fetch_add(
+            duration
+                .as_nanos()
+                .try_into()
+                .expect("test duration fits u64"),
+            Ordering::Relaxed,
+        );
+    }
+}
+
+impl MonotonicClock for PcmTestClock {
+    fn now(&self) -> Duration {
+        Duration::from_nanos(self.now_nanos.load(Ordering::Relaxed))
+    }
+}
+
+fn stereo_pcm(frames: &[(i16, i16)]) -> Vec<u8> {
+    frames
+        .iter()
+        .flat_map(|(left, right)| left.to_le_bytes().into_iter().chain(right.to_le_bytes()))
+        .collect()
+}
+
+fn stereo_sine_pcm(frequency_hz: f32, sample_rate_hz: u32, frame_count: usize) -> Vec<u8> {
+    let frames = (0..frame_count)
+        .map(|frame| {
+            let sample = (std::f32::consts::TAU * frequency_hz * frame as f32
+                / sample_rate_hz as f32)
+                .sin();
+            let sample = (sample * 20_000.0).round() as i16;
+            (sample, sample)
+        })
+        .collect::<Vec<_>>();
+    stereo_pcm(&frames)
 }

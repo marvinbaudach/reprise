@@ -168,12 +168,15 @@ fn an_empty_analysis_uses_the_shared_resting_scene_while_playback_runs() {
 
 #[test]
 fn live_pcm_produces_sixty_four_non_interpolated_cava_bands() {
-    let engine = AndroidVisualEngine::new();
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
 
     for chunk in 0..20 {
         let pcm = stereo_sine_pcm16(2_000.0, 48_000, chunk, 512);
         assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+        clock.advance(Duration::from_nanos(10_666_667));
+        engine.tick();
     }
 
     let bands = engine.live_bands_for_testing();
@@ -206,9 +209,11 @@ fn stereo_pcm_is_averaged_to_mono_instead_of_summed() {
 
 #[test]
 fn stream_and_track_changes_reset_cava_and_bass_history() {
-    let engine = AndroidVisualEngine::new();
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
-    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
     assert!(engine
         .live_bands_for_testing()
         .iter()
@@ -260,10 +265,11 @@ fn stream_generation_reset_starts_idle_fade_and_phase_at_zero_after_a_time_gap()
 
 #[test]
 fn paused_live_audio_reports_silence_without_forgetting_the_stream() {
-    let engine = AndroidVisualEngine::new();
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
-    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
 
     engine.set_playing(false);
 
@@ -347,7 +353,7 @@ fn live_pcm_staleness_pauses_while_playback_is_not_intended() {
     engine.set_playback_intended(true);
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
-    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
 
     engine.set_playback_intended(false);
     engine.set_playing(false);
@@ -362,7 +368,7 @@ fn live_pcm_staleness_expires_while_player_buffers_with_playback_intent() {
     engine.set_playback_intended(true);
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
-    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
 
     // The engine has no Buffering state of its own. This isolates the generic
     // 500 ms expiry while playback intent and visual evolution remain active;
@@ -394,7 +400,7 @@ fn resume_history_reset_preserves_live_scene_until_pcm_restarts_or_expires() {
     engine.set_playback_intended(true);
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
-    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
 
     engine.set_playback_intended(false);
     engine.set_playing(false);
@@ -424,7 +430,7 @@ fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
     engine.set_playback_intended(true);
     engine.set_playing(true);
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 8_192);
-    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
     assert!(engine.has_live_audio());
 
     clock.advance(LIVE_AUDIO_STALE_AFTER);
@@ -464,7 +470,7 @@ fn ui_reads_do_not_wait_for_live_pcm_processing() {
 }
 
 #[test]
-fn a_band_frame_dropped_on_contention_is_counted() {
+fn pcm_ingest_does_not_contend_on_display_state() {
     let engine = AndroidVisualEngine::new();
     let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 512);
 
@@ -473,10 +479,10 @@ fn a_band_frame_dropped_on_contention_is_counted() {
         engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2)
     });
 
-    assert!(!accepted);
-    assert_eq!(engine.dropped_audio_frames(), 1);
+    assert!(accepted);
+    assert_eq!(engine.dropped_audio_frames(), 0);
     assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
-    assert_eq!(engine.dropped_audio_frames(), 1);
+    assert_eq!(engine.dropped_audio_frames(), 0);
 }
 
 #[derive(Default)]
@@ -555,6 +561,20 @@ fn opposite_phase_stereo_pcm16(frame_count: usize) -> Vec<u8> {
         pcm.extend_from_slice(&left.saturating_neg().to_le_bytes());
     }
     pcm
+}
+
+fn ingest_one_live_block(
+    engine: &AndroidVisualEngine,
+    clock: &FakeMonotonicClock,
+    pcm: &[u8],
+    sample_rate_hz: u32,
+) {
+    assert!(engine.ingest_pcm_i16(pcm.to_vec(), pcm.len() as u32, sample_rate_hz, 2));
+    let frame_count = pcm.len() / (2 * size_of::<i16>());
+    clock.advance(Duration::from_secs_f64(
+        frame_count as f64 / f64::from(sample_rate_hz),
+    ));
+    assert!(engine.tick());
 }
 
 fn decode_float_bytes(buffer: &[u8]) -> Vec<f32> {
