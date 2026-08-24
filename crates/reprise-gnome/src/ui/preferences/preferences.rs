@@ -447,7 +447,12 @@ impl PreferencesContext {
             reprise_core::library::settings::WindowDecorationMode::System,
         );
         let _ = settings::set_player_bar_position(conn, PlayerBarPosition::Top);
-        let _ = settings::set_equalizer_bands(conn, equalizer_preset(1).unwrap().ten_band_levels());
+        let _ = settings::set_equalizer_bands(
+            conn,
+            equalizer_preset(1)
+                .unwrap_or(EqualizerPreset::Flat)
+                .ten_band_levels(),
+        );
         self.track_list.apply_list_density(ListDensity::Compact);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
