@@ -148,6 +148,10 @@ impl ArtistPortraitTiles {
         let root = tile.widget().clone();
         let portrait_key = portrait_key.to_owned();
 
+        // CoverLoader requires a generation pair, but recycled-cell
+        // correctness comes from the portrait_key/artist_key comparisons
+        // around every async boundary. This shared counter is deliberately
+        // never invalidated; it only satisfies the loader's signature.
         let token = self.generation.get();
         loader.load_image_into_picture(
             &sink,

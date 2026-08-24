@@ -12,7 +12,7 @@ const PICTURE_CLASS: &str = "reprise-release-cover-picture";
 const MBID_CLASS: &str = "reprise-release-cover-mbid";
 const ARTIST_CLASS: &str = "reprise-release-cover-artist";
 const STARTED_CLASS: &str = "reprise-release-cover-started";
-const PORTRAIT_CLASS: &str = "reprise-release-cover-portrait-started";
+const PORTRAIT_STARTED_CLASS: &str = "reprise-release-cover-portrait-started";
 const PORTRAIT_REQUEST_CLASS: &str = "reprise-release-cover-portrait-request";
 
 pub(in crate::ui) struct LazyReleaseCover {
@@ -103,7 +103,7 @@ impl LazyReleaseCover {
         let mbid = state_label(MBID_CLASS);
         let artist = state_label(ARTIST_CLASS);
         let started = state_label(STARTED_CLASS);
-        let portrait_started = state_label(PORTRAIT_CLASS);
+        let portrait_started = state_label(PORTRAIT_STARTED_CLASS);
         let portrait_request = state_label(PORTRAIT_REQUEST_CLASS);
         root.add_overlay(&initials);
         root.add_overlay(&mbid);
@@ -135,7 +135,7 @@ impl LazyReleaseCover {
             mbid: child_with_class(root, MBID_CLASS)?,
             artist: child_with_class(root, ARTIST_CLASS)?,
             started: child_with_class(root, STARTED_CLASS)?,
-            portrait_started: child_with_class(root, PORTRAIT_CLASS)?,
+            portrait_started: child_with_class(root, PORTRAIT_STARTED_CLASS)?,
             portrait_request: child_with_class(root, PORTRAIT_REQUEST_CLASS)?,
         })
     }
@@ -223,14 +223,6 @@ impl LazyReleaseCover {
 
     pub(in crate::ui) fn has_image(&self) -> bool {
         self.picture.is_visible()
-    }
-
-    pub(in crate::ui) fn started(&self) -> String {
-        self.started.text().to_string()
-    }
-
-    pub(in crate::ui) fn mark_started(&self, artist: &str) {
-        self.started.set_text(artist);
     }
 
     pub(in crate::ui) fn portrait_started(&self) -> String {

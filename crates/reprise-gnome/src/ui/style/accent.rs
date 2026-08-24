@@ -14,6 +14,10 @@ pub(in crate::ui) const APP_ACCENT: &str = env!("REPRISE_APP_ACCENT");
 /// contrast ratio is comfortably above the 4.5:1 AA requirement for text.
 const APP_ACCENT_FG: &str = "#04140f";
 
+/// Stable surface for a missing theme role. This is the default dark theme's
+/// window background, kept as bytes so fallback does not require GTK state.
+const FALLBACK_WINDOW_BACKGROUND_RGB: [u8; 3] = [0x16, 0x18, 0x1b];
+
 /// Settings key persisting the selected [`AccentSource`].
 pub(in crate::ui) const ACCENT_SOURCE_SETTING_KEY: &str = "ui.accent-source";
 
@@ -67,12 +71,22 @@ pub(in crate::ui) fn is_dark() -> bool {
     libadwaita::StyleManager::default().is_dark()
 }
 
-#[allow(deprecated)]
 pub(in crate::ui) fn window_background_rgb(widget: &impl IsA<gtk4::Widget>) -> [u8; 3] {
-    let color = widget
-        .style_context()
-        .lookup_color("window_bg_color")
-        .expect("the application theme defines window_bg_color");
+    if !gtk4::is_initialized_main_thread() {
+        return FALLBACK_WINDOW_BACKGROUND_RGB;
+    }
+
+    // `StyleContext::lookup_color` is deprecated since GTK 4.10, but this
+    // custom Cairo tile still has to resolve an app-defined named theme role.
+    #[allow(deprecated)]
+    let color = widget.style_context().lookup_color("window_bg_color");
+    window_background_rgb_from_color(color)
+}
+
+fn window_background_rgb_from_color(color: Option<gtk4::gdk::RGBA>) -> [u8; 3] {
+    let Some(color) = color else {
+        return FALLBACK_WINDOW_BACKGROUND_RGB;
+    };
     [
         (color.red() * 255.0).round() as u8,
         (color.green() * 255.0).round() as u8,
@@ -323,5 +337,15 @@ mod tests {
         set_current(previous);
 
         assert_eq!(accent.to_string(), "rgb(79,219,212)");
+    }
+
+    #[test]
+    fn missing_window_background_color_uses_the_default_surface() {
+        use super::super::color_math::parse_hex_rgb;
+        use super::super::theme::Theme;
+
+        let expected = parse_hex_rgb(Theme::DEFAULT.palette().window_bg)
+            .expect("the default window background is valid #RRGGBB");
+        assert_eq!(window_background_rgb_from_color(None), expected);
     }
 }
