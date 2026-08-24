@@ -312,7 +312,7 @@ jobs:
 
       - name: Upload Flatpak runtime install log
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-runtime-install-log
           path: ${{ runner.temp }}/flatpak-runtime-install.log
@@ -386,7 +386,7 @@ jobs:
           echo "Built $bundle ($(stat -c %s "$bundle") bytes)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Flatpak bundle
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: reprise-flatpak-${{ steps.bundle.outputs.version }}
           path: |
@@ -550,7 +550,7 @@ jobs:
             "$apk" "$(stat -c %s "$apk")" "$gradle_code" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload universal APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: reprise-apk-${{ steps.package.outputs.version }}
           path: |
