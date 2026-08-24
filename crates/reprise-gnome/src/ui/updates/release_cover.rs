@@ -74,7 +74,7 @@ impl LazyReleaseCover {
         tile.set_draw_func(move |area, context, width, height| {
             let is_dark = crate::ui::style::accent::is_dark();
             let foreground = area.color();
-            let surface = crate::ui::style::accent::window_background_rgb(area);
+            let surface = crate::ui::style::accent::window_background_rgb();
             super::release_cover_tile::draw(
                 context,
                 &area.pango_context(),

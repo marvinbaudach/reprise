@@ -1,7 +1,5 @@
 use std::cell::Cell;
 
-use gtk4::prelude::*;
-
 /// Reprise's brand accent: the thick barline of the repeat-sign logo.
 ///
 /// Lifted at compile time out of `data/brand/palette.toml` by the crate's
@@ -13,10 +11,6 @@ pub(in crate::ui) const APP_ACCENT: &str = env!("REPRISE_APP_ACCENT");
 /// Dark foreground for text and glyphs on [`APP_ACCENT`]. Its 11.16:1 WCAG
 /// contrast ratio is comfortably above the 4.5:1 AA requirement for text.
 const APP_ACCENT_FG: &str = "#04140f";
-
-/// Stable surface for a missing theme role. This is the default dark theme's
-/// window background, kept as bytes so fallback does not require GTK state.
-const FALLBACK_WINDOW_BACKGROUND_RGB: [u8; 3] = [0x16, 0x18, 0x1b];
 
 /// Settings key persisting the selected [`AccentSource`].
 pub(in crate::ui) const ACCENT_SOURCE_SETTING_KEY: &str = "ui.accent-source";
@@ -71,27 +65,25 @@ pub(in crate::ui) fn is_dark() -> bool {
     libadwaita::StyleManager::default().is_dark()
 }
 
-pub(in crate::ui) fn window_background_rgb(widget: &impl IsA<gtk4::Widget>) -> [u8; 3] {
+pub(in crate::ui) fn window_background_rgb() -> [u8; 3] {
+    use super::color_math::parse_hex_rgb;
+
     if !gtk4::is_initialized_main_thread() {
-        return FALLBACK_WINDOW_BACKGROUND_RGB;
+        return default_window_background_rgb();
     }
 
-    // `StyleContext::lookup_color` is deprecated since GTK 4.10, but this
-    // custom Cairo tile still has to resolve an app-defined named theme role.
-    #[allow(deprecated)]
-    let color = widget.style_context().lookup_color("window_bg_color");
-    window_background_rgb_from_color(color)
+    let theme = super::CURRENT_THEME.with(Cell::get);
+    let palette = if is_dark() {
+        theme.palette()
+    } else {
+        theme.light_palette()
+    };
+    parse_hex_rgb(palette.window_bg).unwrap_or_else(default_window_background_rgb)
 }
 
-fn window_background_rgb_from_color(color: Option<gtk4::gdk::RGBA>) -> [u8; 3] {
-    let Some(color) = color else {
-        return FALLBACK_WINDOW_BACKGROUND_RGB;
-    };
-    [
-        (color.red() * 255.0).round() as u8,
-        (color.green() * 255.0).round() as u8,
-        (color.blue() * 255.0).round() as u8,
-    ]
+fn default_window_background_rgb() -> [u8; 3] {
+    super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().window_bg)
+        .unwrap_or_default()
 }
 
 /// The AA threshold every accent foreground must clear (CONTRAST-5).
@@ -340,12 +332,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_window_background_color_uses_the_default_surface() {
+    fn uninitialized_gtk_uses_the_default_window_background() {
         use super::super::color_math::parse_hex_rgb;
         use super::super::theme::Theme;
 
         let expected = parse_hex_rgb(Theme::DEFAULT.palette().window_bg)
             .expect("the default window background is valid #RRGGBB");
-        assert_eq!(window_background_rgb_from_color(None), expected);
+        assert_eq!(window_background_rgb(), expected);
     }
 }
