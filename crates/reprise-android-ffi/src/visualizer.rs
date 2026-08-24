@@ -11,6 +11,7 @@
 //! not use either, so this boundary deliberately omits them rather than adding
 //! fields the phone would copy on every rendered frame.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
@@ -26,6 +27,7 @@ const POLYLINE_KIND: f32 = 1.0;
 const RADIAL_GLOW_KIND: f32 = 2.0;
 const RECORD_PREFIX_LEN: usize = 8;
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
+const LIVE_PCM_BUFFER_SECONDS: usize = 2;
 pub(crate) const LIVE_AUDIO_STALE_AFTER: Duration = Duration::from_millis(500);
 
 pub(crate) trait MonotonicClock: Send + Sync {
@@ -85,7 +87,44 @@ struct LiveAudioState {
     processor: CavaBarProcessor,
     pressure_detector: BassPressureDetector,
     mono_samples: Vec<f32>,
+    pcm_buffer: PcmRingBuffer,
     bands: [f32; SPECTRUM_BAND_COUNT],
+}
+
+struct PcmRingBuffer {
+    samples: VecDeque<f32>,
+    capacity: usize,
+}
+
+impl PcmRingBuffer {
+    fn new(sample_rate_hz: u32) -> Self {
+        let capacity = sample_rate_hz as usize * LIVE_PCM_BUFFER_SECONDS;
+        Self {
+            samples: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    fn append(&mut self, samples: &[f32]) {
+        if samples.len() >= self.capacity {
+            self.samples.clear();
+            self.samples
+                .extend(samples[samples.len() - self.capacity..].iter().copied());
+            return;
+        }
+
+        let overflow = self
+            .samples
+            .len()
+            .saturating_add(samples.len())
+            .saturating_sub(self.capacity);
+        self.samples.drain(..overflow);
+        self.samples.extend(samples.iter().copied());
+    }
+
+    fn clear(&mut self) {
+        self.samples.clear();
+    }
 }
 
 impl LiveAudioState {
@@ -98,6 +137,7 @@ impl LiveAudioState {
             processor,
             pressure_detector: BassPressureDetector::new(sample_rate_hz),
             mono_samples: Vec::new(),
+            pcm_buffer: PcmRingBuffer::new(sample_rate_hz),
             bands: [0.0; SPECTRUM_BAND_COUNT],
         })
     }
@@ -121,6 +161,7 @@ impl LiveAudioState {
             self.mono_samples
                 .push(sum / channel_count as f32 / 32_768.0);
         }
+        self.pcm_buffer.append(&self.mono_samples);
         self.processor
             .process_into(&self.mono_samples, &mut self.bands);
         let pressure = self.pressure_detector.observe(&self.mono_samples);
@@ -134,6 +175,7 @@ impl LiveAudioState {
         self.processor.reset();
         self.pressure_detector.reset();
         self.mono_samples.clear();
+        self.pcm_buffer.clear();
         self.bands.fill(0.0);
     }
 }
@@ -636,4 +678,9 @@ pub(crate) fn encode_scene(scene: &Scene) -> Vec<u8> {
 
 fn push_float_bytes(buffer: &mut Vec<u8>, value: f32) {
     buffer.extend_from_slice(&value.to_le_bytes());
+}
+
+#[cfg(test)]
+mod pcm_tests {
+    include!("visualizer_pcm_tests.rs");
 }
