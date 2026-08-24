@@ -17,6 +17,12 @@ pub enum AndroidEqualizerPreset {
     Rock,
     Pop,
     Bass,
+    Classical,
+    Jazz,
+    Electronic,
+    Vocal,
+    Headphones,
+    LateNight,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -80,6 +86,12 @@ impl From<EqualizerPreset> for AndroidEqualizerPreset {
             EqualizerPreset::Rock => Self::Rock,
             EqualizerPreset::Pop => Self::Pop,
             EqualizerPreset::Bass => Self::Bass,
+            EqualizerPreset::Classical => Self::Classical,
+            EqualizerPreset::Jazz => Self::Jazz,
+            EqualizerPreset::Electronic => Self::Electronic,
+            EqualizerPreset::Vocal => Self::Vocal,
+            EqualizerPreset::Headphones => Self::Headphones,
+            EqualizerPreset::LateNight => Self::LateNight,
         }
     }
 }

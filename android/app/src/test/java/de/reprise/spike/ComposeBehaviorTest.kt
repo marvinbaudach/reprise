@@ -537,6 +537,7 @@ class ComposeBehaviorTest {
         assertTrue(replacements.isEmpty())
         compose.onNodeWithText("Crossfade").assertDoesNotExist()
         compose.onNodeWithText("ReplayGain").assertDoesNotExist()
+        compose.onNodeWithText("Adjust bands manually").performClick()
         compose.onNodeWithText("Edit equalizer").performClick()
         compose.onNodeWithText(
             "Editing here replaces the saved equalizer curve with this device's bands.",
@@ -703,6 +704,9 @@ class ComposeBehaviorTest {
             }
         }
 
+        compose.onNodeWithText("This device provided no equalizer for what is playing.")
+            .assertDoesNotExist()
+        compose.onNodeWithText("Adjust bands manually").performClick()
         compose.onNodeWithText("This device provided no equalizer for what is playing.")
             .assertIsDisplayed()
         compose.onNodeWithText("Start playback to read this device's equalizer bands.")

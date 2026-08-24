@@ -2,6 +2,7 @@ pub(in crate::ui) mod preference_appearance;
 pub(in crate::ui) mod preference_concerts;
 pub(in crate::ui) mod preference_dependencies;
 pub(in crate::ui) mod preference_effects;
+mod preference_equalizer;
 pub(in crate::ui) mod preference_lastfm;
 pub(in crate::ui) mod preference_layout;
 pub(in crate::ui) mod preference_layout_preview;
