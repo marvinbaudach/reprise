@@ -18,7 +18,9 @@
 use std::path::PathBuf;
 
 use gtk4::gio;
-use gtk4::prelude::*;
+// Not `gtk4::prelude` as well: libadwaita re-exports it, and the newer rustc
+// the CI runner installs at job time reports the second import as unused while
+// the one on this machine does not.
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::scanner::ScanProgress;
