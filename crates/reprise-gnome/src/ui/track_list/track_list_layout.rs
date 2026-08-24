@@ -1,5 +1,3 @@
-use reprise_core::library::settings::ListDensity;
-
 use super::column_layout::{self, ColumnLayout};
 use super::TrackList;
 
@@ -33,15 +31,6 @@ pub(in crate::ui) fn build_track_content_stack() -> gtk4::Stack {
 impl TrackList {
     pub(in crate::ui) fn column_view_widget(&self) -> &gtk4::ColumnView {
         &self.shared.column_view
-    }
-
-    /// Projects a display density onto the table. The one entry point for it,
-    /// because the cached row height the scroll restore relies on describes
-    /// the *old* density from here on: nothing about the geometry looks wrong
-    /// afterwards, so only this event can invalidate it.
-    pub(in crate::ui) fn apply_list_density(&self, density: ListDensity) {
-        super::track_list_geometry::forget_row_height(&self.shared.list_geometry_cache);
-        super::list_density::apply(&self.shared.column_view, density);
     }
 
     pub(in crate::ui) fn current_column_layout(&self) -> ColumnLayout {

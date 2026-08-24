@@ -22,8 +22,8 @@
 //! One move therefore needs two things, and neither is sufficient alone:
 //!
 //! - **The range, before the value.** [`ListGeometry::configure`] seeds
-//!   `upper` from the row height this view already knows — persisted per
-//!   density, measured on an earlier settled frame — and writes the value in
+//!   `upper` from the row height this view already knows — persisted and
+//!   measured on an earlier settled frame — and writes the value in
 //!   the same call. Without it the target is clamped to the *old* list's
 //!   range (714 for a 21-row result set) and the write is simply lost. This is
 //!   what `reload_anchor_scroll::apply` does, and why a restore that lands on

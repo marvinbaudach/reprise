@@ -194,9 +194,8 @@ fn player_bar_position_falls_back_to_bottom_on_unknown_value() {
 }
 
 #[test]
-fn layout_preferences_default_to_standard_and_visible() {
+fn layout_preferences_default_to_visible() {
     let conn = migrated_conn();
-    assert_eq!(get_list_density(&conn), ListDensity::Standard);
     assert!(get_sidebar_visible(&conn));
     assert!(get_status_visible(&conn));
 }
@@ -238,10 +237,8 @@ fn unknown_window_decoration_mode_falls_back_to_client_side() {
 #[test]
 fn layout_preferences_round_trip() {
     let conn = migrated_conn();
-    set_list_density(&conn, ListDensity::Compact).unwrap();
     set_sidebar_visible(&conn, false).unwrap();
     set_status_visible(&conn, false).unwrap();
-    assert_eq!(get_list_density(&conn), ListDensity::Compact);
     assert!(!get_sidebar_visible(&conn));
     assert!(!get_status_visible(&conn));
 }
@@ -299,9 +296,7 @@ fn the_colour_legend_counts_three_showings_and_then_stops() {
 #[test]
 fn unknown_typed_preferences_fall_back_safely() {
     let conn = migrated_conn();
-    set_setting(&conn, LIST_DENSITY_KEY, "microscopic").unwrap();
     set_setting(&conn, REPLAY_GAIN_MODE_KEY, "loudest").unwrap();
-    assert_eq!(get_list_density(&conn), ListDensity::Standard);
     assert_eq!(get_replay_gain_mode(&conn), ReplayGainMode::Off);
 }
 

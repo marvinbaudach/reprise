@@ -93,8 +93,6 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use gtk4::prelude::*;
-
     use super::*;
 
     fn row(id: i64) -> ConcertRow {

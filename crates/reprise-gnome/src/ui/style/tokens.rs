@@ -1,6 +1,6 @@
 //! Tunable design values shared by the app-authored CSS sections.
 //!
-//! Every alpha, thickness, and density height that a design pass would want
+//! Every alpha, thickness, and row height that a design pass would want
 //! to adjust lives here; the structural selectors stay with the feature that
 //! owns the CSS classes (see [`super::app_css`]'s section list).
 
@@ -40,21 +40,8 @@ pub(in crate::ui) const PREVIEW_CONTENT_ALPHA: &str = "0.06";
 /// and track-row reordering.
 pub(in crate::ui) const DROP_INDICATOR_THICKNESS: &str = "2px";
 
-/// Track-row content minimum height for the Comfortable density.
-pub(in crate::ui) const ROW_MIN_HEIGHT_COMFORTABLE: i32 = 36;
-
-/// Track-row content minimum height for the Standard density.
-pub(in crate::ui) const ROW_MIN_HEIGHT_STANDARD: i32 = 28;
-
-/// Track-row content minimum height for the Compact density.
-///
-/// This is the floor the cell content imposes, not a freely chosen one: the
-/// rating stars and cover cannot shrink below it, so a smaller value would be
-/// silently ignored. It sat at 12 for a while and never bound, which made
-/// Compact 8px tighter than Standard while the token promised 16 — the density
-/// test then hardcoded a pixel delta matching neither. Going below this needs
-/// the cell content to shrink first.
-pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 20;
+/// Track-row content minimum height.
+pub(in crate::ui) const ROW_MIN_HEIGHT: i32 = 36;
 
 /// Queue section-header content minimum height.
 ///
@@ -64,9 +51,6 @@ pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 20;
 /// large system font may still require more space; geometry measurement must
 /// detect that instead of treating this token as truth.
 pub(in crate::ui) const SECTION_HEADER_MIN_HEIGHT: i32 = 36;
-
-/// Font size (px) applied to track-row text in the Compact density.
-pub(in crate::ui) const COMPACT_ROW_FONT_SIZE: i32 = 10;
 
 // --- Redesign interaction + surface vocabulary (see `super::interactions`) ---
 

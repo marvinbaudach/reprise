@@ -6,7 +6,7 @@ use super::{
     get_equalizer_bands_in, get_equalizer_curve_in, get_equalizer_enabled_in,
     get_gapless_enabled_in, get_info_panel_visible_in, get_last_scan_relinked_in,
     get_last_viewed_import_errors_in, get_last_viewed_missing_in, get_library_root_in,
-    get_list_density_in, get_missing_auto_clean_in, get_new_releases_fetch_completed_in,
+    get_missing_auto_clean_in, get_new_releases_fetch_completed_in,
     get_new_releases_last_completed_at_in, get_onboarding_completed_in,
     get_online_discovery_banner_completed_in, get_player_bar_position_in, get_replay_gain_mode_in,
     get_seek_colouring_in, get_seek_legend_seen_in, get_setting_in, get_sidebar_collapsed_in,
@@ -16,13 +16,13 @@ use super::{
     set_compact_layout_in, set_crossfade_seconds_in, set_equalizer_bands_in,
     set_equalizer_curve_in, set_equalizer_enabled_in, set_gapless_enabled_in,
     set_info_panel_visible_in, set_last_scan_relinked_in, set_last_viewed_import_errors_in,
-    set_last_viewed_missing_in, set_library_root_in, set_list_density_in,
+    set_last_viewed_missing_in, set_library_root_in,
     set_missing_auto_clean_in, set_new_releases_fetch_completed_in,
     set_new_releases_last_completed_at_in, set_onboarding_completed_in,
     set_online_discovery_banner_completed_in, set_player_bar_position_in, set_replay_gain_mode_in,
     set_seek_colouring_in, set_seek_legend_seen_in, set_setting_in, set_sidebar_collapsed_in,
     set_sidebar_visible_in, set_status_visible_in, set_window_decoration_mode_in,
-    set_window_view_mode_in, AutoCleanSetting, CompactLayout, ListDensity, PlayerBarPosition,
+    set_window_view_mode_in, AutoCleanSetting, CompactLayout, PlayerBarPosition,
     ReplayGainMode, SeekColouring, TrackTransition, WindowDecorationMode, WindowViewMode,
 };
 
@@ -186,16 +186,6 @@ pub fn get_seek_legend_seen(db: &Db) -> u32 {
 pub fn set_seek_legend_seen(db: &Db, count: u32) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     set_seek_legend_seen_in(conn, count)
-}
-
-pub fn get_list_density(db: &Db) -> ListDensity {
-    let conn = db.conn();
-    get_list_density_in(conn)
-}
-
-pub fn set_list_density(db: &Db, value: ListDensity) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
-    set_list_density_in(conn, value)
 }
 
 pub fn get_sidebar_visible(db: &Db) -> bool {
