@@ -69,10 +69,19 @@ impl ReleasesModel {
 
     pub(super) fn replace(&self, rows: Vec<HistoryEntry>) {
         let selected_mbids = self.selected_mbids();
-        self.store.remove_all();
-        for row in rows {
-            self.store.append(&ReleaseObject::new(row));
-        }
+        crate::ui::list_store_delta::replace(
+            &self.store,
+            rows,
+            |object| {
+                object
+                    .clone()
+                    .downcast::<ReleaseObject>()
+                    .expect("releases store contains only release objects")
+                    .entry()
+            },
+            |entry| entry.release_group_mbid.clone(),
+            |entry| ReleaseObject::new(entry).upcast(),
+        );
         self.select_mbids(&selected_mbids);
     }
 
@@ -199,6 +208,58 @@ mod tests {
             observed_sizes.borrow().as_slice(),
             [3],
             "restore must emit the complete selection once"
+        );
+    }
+
+    #[test]
+    fn one_release_change_emits_one_delta_and_an_identical_refresh_emits_nothing() {
+        let model = ReleasesModel::new();
+        let original = vec![entry("one"), entry("two"), entry("three")];
+        model.replace(original.clone());
+        model.select_mbids(&["three".to_owned()]);
+        let retained = model.store().item(2).unwrap();
+        let changes = Rc::new(RefCell::new(Vec::new()));
+        {
+            let changes = changes.clone();
+            model
+                .store()
+                .connect_items_changed(move |_, at, removed, added| {
+                    changes.borrow_mut().push((at, removed, added));
+                });
+        }
+
+        let mut changed = original.clone();
+        changed[0].title = "Updated release".into();
+        model.replace(changed.clone());
+
+        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
+        assert_eq!(model.selected_mbids(), ["three"]);
+        assert_eq!(model.store().item(2).unwrap(), retained);
+
+        model.replace(changed);
+        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn release_delta_keeps_selection_viewport_and_zero_binds_for_a_noop() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let model = ReleasesModel::new();
+        let rows = (0..100)
+            .map(|position| entry(&format!("release-{position}")))
+            .collect::<Vec<_>>();
+        model.replace(rows.clone());
+        model.select_mbids(&["release-75".into()]);
+        let mut changed = rows;
+        changed[0].title = "Updated release".into();
+        let identical = changed.clone();
+
+        crate::ui::list_store_delta::display_test::assert_viewport_selection_and_noop_bind_count(
+            model.selection().clone().upcast(),
+            || model.replace(changed),
+            || model.replace(identical),
+            || model.selected_mbids() == ["release-75"],
         );
     }
 }

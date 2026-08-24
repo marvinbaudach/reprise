@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use gtk4::prelude::*;
 use gtk4::{gio, glib};
 use reprise_core::podcasts::EpisodeRow;
 
@@ -63,10 +64,19 @@ impl PodcastsModel {
     }
 
     pub(super) fn replace(&self, rows: Vec<EpisodeRow>) {
-        self.store.remove_all();
-        for row in rows {
-            self.store.append(&PodcastEpisodeObject::new(row));
-        }
+        crate::ui::list_store_delta::replace(
+            &self.store,
+            rows,
+            |object| {
+                object
+                    .clone()
+                    .downcast::<PodcastEpisodeObject>()
+                    .expect("podcasts store contains only episode objects")
+                    .row()
+            },
+            |row| row.id,
+            |row| PodcastEpisodeObject::new(row).upcast(),
+        );
     }
 
     pub(super) fn store(&self) -> &gio::ListStore {
@@ -86,24 +96,23 @@ impl PodcastsModel {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use super::*;
-    use gtk4::gio::prelude::*;
     use reprise_core::podcasts::PodcastKind;
 
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn model_replaces_the_complete_episode_set() {
-        gtk4::init().unwrap();
-        let row = EpisodeRow {
-            id: 1,
+    fn row(id: i64) -> EpisodeRow {
+        EpisodeRow {
+            id,
             subscription_id: 1,
-            guid: "g".into(),
-            title: "Episode".into(),
+            guid: format!("guid-{id}"),
+            title: format!("Episode {id}"),
             show: "Show".into(),
             show_image_url: None,
             image_url: None,
             kind: PodcastKind::Rss,
-            audio_url: "https://example.test/e.mp3".into(),
+            audio_url: format!("https://example.test/{id}.mp3"),
             page_url: None,
             published_at: None,
             duration_secs: None,
@@ -114,9 +123,67 @@ mod tests {
             first_seen_at: 1,
             is_new: false,
             media_category: None,
-        };
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn model_replaces_the_complete_episode_set() {
+        gtk4::init().unwrap();
         let model = PodcastsModel::new();
-        model.replace(vec![row]);
+        model.replace(vec![row(1)]);
         assert_eq!(model.store().n_items(), 1);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn one_episode_change_emits_one_delta_and_an_identical_refresh_emits_nothing() {
+        gtk4::init().unwrap();
+        let model = PodcastsModel::new();
+        let original = vec![row(1), row(2), row(3)];
+        model.replace(original.clone());
+        model.selection().set_selected(2);
+        let retained = model.store().item(2).unwrap();
+        let changes = Rc::new(RefCell::new(Vec::new()));
+        {
+            let changes = changes.clone();
+            model
+                .store()
+                .connect_items_changed(move |_, at, removed, added| {
+                    changes.borrow_mut().push((at, removed, added));
+                });
+        }
+
+        let mut changed = original.clone();
+        changed[0].title = "Updated episode".into();
+        model.replace(changed.clone());
+
+        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
+        assert_eq!(model.selection().selected(), 2);
+        assert_eq!(model.store().item(2).unwrap(), retained);
+
+        model.replace(changed);
+        assert_eq!(changes.borrow().as_slice(), [(0, 1, 1)]);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn podcast_delta_keeps_selection_viewport_and_zero_binds_for_a_noop() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let model = PodcastsModel::new();
+        let rows = (0..100).map(row).collect::<Vec<_>>();
+        model.replace(rows.clone());
+        model.selection().set_selected(75);
+        let mut changed = rows;
+        changed[0].title = "Updated episode".into();
+        let identical = changed.clone();
+
+        crate::ui::list_store_delta::display_test::assert_viewport_selection_and_noop_bind_count(
+            model.selection().clone().upcast(),
+            || model.replace(changed),
+            || model.replace(identical),
+            || model.selection().selected() == 75,
+        );
     }
 }
