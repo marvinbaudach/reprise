@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-24 16:22+0200\n"
+"POT-Creation-Date: 2026-08-24 22:22+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -235,7 +235,7 @@ msgstr "Lautstärkeangleichung"
 #: crates/reprise-gnome/src/ui/strings.rs:206
 #: crates/reprise-gnome/src/ui/strings_issues.rs:50
 #: crates/reprise-gnome/src/ui/strings_notifications.rs:14
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:66
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:60
 msgid "Off"
 msgstr "Aus"
 
@@ -2446,29 +2446,29 @@ msgid "Hide"
 msgstr "Ausblenden"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:56
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:69
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:63
 #, rust-format
 msgid "Up to date — loaded at {time}"
 msgstr "Aktuell — geladen um {time}"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:57
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:70
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:64
 #, rust-format
 msgid "Up to date — checked {time}"
 msgstr "Aktuell — geprüft {time}"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:58
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:72
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:66
 msgid "Not loaded yet"
 msgstr "Noch nicht geladen"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:59
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:73
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:67
 msgid "Online sources are off"
 msgstr "Online-Quellen sind aus"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:60
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:74
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:68
 msgid "Reload"
 msgstr "Neu laden"
 
@@ -2598,7 +2598,7 @@ msgid "{date} · {city} · {venue}"
 msgstr "{date} · {city} · {venue}"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:160
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:139
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:133
 #, rust-format
 msgid "Opens {source}"
 msgstr "Öffnet {source}"
@@ -2927,7 +2927,7 @@ msgid "Date"
 msgstr "Datum"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:16
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:57
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
 msgid "City"
 msgstr "Stadt"
 
@@ -3008,7 +3008,7 @@ msgid "Library artists only"
 msgstr "Nur Interpreten der Musiksammlung"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:36
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:64
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:58
 msgid "Include similar artists"
 msgstr "Ähnliche Interpreten einbeziehen"
 
@@ -3062,127 +3062,103 @@ msgid "No ticket or event link available"
 msgstr "Kein Ticket- oder Veranstaltungslink verfügbar"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:50
-msgid "Bandsintown app_id"
-msgstr "Bandsintown-app_id"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
-msgid "Saved"
-msgstr "Gespeichert"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
-msgid "Checking key…"
-msgstr "Schlüssel wird geprüft …"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
-msgid "Key works"
-msgstr "Schlüssel funktioniert"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
-msgid "Key was rejected"
-msgstr "Schlüssel wurde abgelehnt"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
-msgid "Could not verify"
-msgstr "Überprüfung nicht möglich"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
 msgid "Location"
 msgstr "Standort"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:58
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
 msgid "Use current location"
 msgstr "Aktuellen Standort verwenden"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:59
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
 msgid "Clear location"
 msgstr "Standort löschen"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:60
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
 msgid "Current location"
 msgstr "Aktueller Standort"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:61
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
 msgid "Could not find that place"
 msgstr "Der Ort konnte nicht gefunden werden"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:62
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
 msgid "Default radius"
 msgstr "Standardradius"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:63
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:57
 msgid "Consider artists played in the last N days"
 msgstr "Berücksichtigt Interpreten, die in den letzten N Tagen gespielt wurden"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:65
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:59
 msgid "Similar artists per top artist"
 msgstr "Ähnliche Interpreten pro Top-Interpret"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:68
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:62
 msgid "Distance and the radius filter stay switched off until a city is known."
 msgstr "Entfernung und Radiusfilter bleiben aus, bis eine Stadt bekannt ist."
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:71
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:65
 msgid "Updating concerts …"
 msgstr "Konzerte werden aktualisiert …"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:75
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:69
 #, rust-format
 msgid "Update failed — showing saved concerts from {time}"
 msgstr "Aktualisierung fehlgeschlagen — gespeicherte Konzerte von {time}"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:76
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:70
 #, rust-format
 msgid "Offline — showing saved concerts from {time}"
 msgstr "Offline — gespeicherte Konzerte von {time}"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:92
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:86
 #, rust-format
 msgid "{shown} of {total} concerts"
 msgstr "{shown} von {total} Konzerten"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:98
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:92
 #, rust-format
 msgid "{total} concerts"
 msgstr "{total} Konzerte"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:103
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:97
 #, rust-format
 msgid "{city} · {radius} km"
 msgstr "{city} · {radius} km"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:116
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:110
 #, rust-format
 msgid "{city}, {country}"
 msgstr "{city}, {country}"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:124
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:118
 #, rust-format
 msgid "{radius} km · off"
 msgstr "{radius} km · aus"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:129
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:123
 #, rust-format
 msgid "No location set — showing all {total} concerts worldwide"
 msgstr "Kein Standort gesetzt — alle {total} Konzerte weltweit"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:135
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:129
 #, rust-format
 msgid "similar to {artist}"
 msgstr "ähnlich zu {artist}"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:169
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:163
 #, rust-format
 msgid "Show all {total} concerts"
 msgstr "Alle {total} Konzerte anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:184
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:178
 #, rust-format
 msgid "End of results — {hidden} concerts hidden by the {radius} km radius"
 msgstr ""
 "Ende der Ergebnisse — {hidden} Konzerte durch den Radius von {radius} km "
 "verborgen"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:191
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:185
 #, rust-format
 msgid ""
 "End of results — {hidden} concerts hidden by the {radius} km radius around "
@@ -3191,7 +3167,7 @@ msgstr ""
 "Ende der Ergebnisse — {hidden} Konzerte durch den Radius von {radius} km um "
 "{city} verborgen"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:200
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:194
 #, rust-format
 msgid "{radius} km"
 msgstr "{radius} km"
@@ -6250,6 +6226,24 @@ msgstr "Clientseitige Dekoration"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#~ msgid "Bandsintown app_id"
+#~ msgstr "Bandsintown-app_id"
+
+#~ msgid "Saved"
+#~ msgstr "Gespeichert"
+
+#~ msgid "Checking key…"
+#~ msgstr "Schlüssel wird geprüft …"
+
+#~ msgid "Key works"
+#~ msgstr "Schlüssel funktioniert"
+
+#~ msgid "Key was rejected"
+#~ msgstr "Schlüssel wurde abgelehnt"
+
+#~ msgid "Could not verify"
+#~ msgstr "Überprüfung nicht möglich"
 
 #~ msgid "List Density"
 #~ msgstr "Listendichte"

@@ -143,15 +143,8 @@ fn conc_2_geocode_url_uses_accept_language_http_syntax() {
 }
 
 #[test]
-fn config_defaults_are_bounded_and_stored_credentials_win() {
+fn config_defaults_are_bounded() {
     let conn = conn();
-    assert_eq!(
-        config::credentials_with_env(conn.conn(), |_| Some("environment".into()), None)
-            .unwrap()
-            .bandsintown_app_id
-            .as_deref(),
-        Some("environment")
-    );
     assert_eq!(config::window_days(&conn).unwrap(), 90);
     assert_eq!(config::similar_config(&conn).unwrap().count, 10);
     assert_eq!(
@@ -161,16 +154,31 @@ fn config_defaults_are_bounded_and_stored_credentials_win() {
     assert_eq!(crate::location::RADIUS_PRESETS_KM, [100, 250, 500, 1_000]);
     crate::library::settings::set_setting(&conn, "concerts.window_days", "999").unwrap();
     crate::library::settings::set_setting(&conn, "concerts.similar_count", "0").unwrap();
-    crate::library::settings::set_setting(&conn, "concerts.bandsintown_app_id", "stored").unwrap();
     assert_eq!(config::window_days(&conn).unwrap(), 365);
     assert_eq!(config::similar_config(&conn).unwrap().count, 1);
+}
+
+#[test]
+fn conc_9a_bandsintown_identifier_prefers_stored_then_environment_then_default() {
+    let conn = conn();
+
+    let credentials = config::credentials_with_env(conn.conn(), |_| None, None).unwrap();
     assert_eq!(
-        config::credentials_with_env(conn.conn(), |_| Some("environment".into()), None)
-            .unwrap()
-            .bandsintown_app_id
-            .as_deref(),
-        Some("stored")
+        credentials.bandsintown_app_id.as_deref(),
+        Some("io.github.marvinbaudach.Reprise")
     );
+
+    let credentials =
+        config::credentials_with_env(conn.conn(), |_| Some("environment".into()), None).unwrap();
+    assert_eq!(
+        credentials.bandsintown_app_id.as_deref(),
+        Some("environment")
+    );
+
+    crate::library::settings::set_setting(&conn, config::BANDSINTOWN_APP_ID_KEY, "stored").unwrap();
+    let credentials =
+        config::credentials_with_env(conn.conn(), |_| Some("environment".into()), None).unwrap();
+    assert_eq!(credentials.bandsintown_app_id.as_deref(), Some("stored"));
 }
 
 #[test]

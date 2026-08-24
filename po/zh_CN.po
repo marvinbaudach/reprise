@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-24 16:22+0200\n"
+"POT-Creation-Date: 2026-08-24 22:22+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Simplified Chinese\n"
@@ -236,7 +236,7 @@ msgstr "音量标准化"
 #: crates/reprise-gnome/src/ui/strings.rs:206
 #: crates/reprise-gnome/src/ui/strings_issues.rs:50
 #: crates/reprise-gnome/src/ui/strings_notifications.rs:14
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:66
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:60
 msgid "Off"
 msgstr "关闭"
 
@@ -2327,29 +2327,29 @@ msgid "Hide"
 msgstr "隐藏"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:56
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:69
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:63
 #, rust-format
 msgid "Up to date — loaded at {time}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:57
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:70
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:64
 #, rust-format
 msgid "Up to date — checked {time}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:58
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:72
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:66
 msgid "Not loaded yet"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:59
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:73
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:67
 msgid "Online sources are off"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:60
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:74
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:68
 msgid "Reload"
 msgstr ""
 
@@ -2478,7 +2478,7 @@ msgid "{date} · {city} · {venue}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:160
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:139
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:133
 #, rust-format
 msgid "Opens {source}"
 msgstr ""
@@ -2780,7 +2780,7 @@ msgid "Date"
 msgstr "日期"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:16
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:57
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
 msgid "City"
 msgstr "城市"
 
@@ -2859,7 +2859,7 @@ msgid "Library artists only"
 msgstr "仅媒体库中的艺人"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:36
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:64
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:58
 msgid "Include similar artists"
 msgstr "包含相似艺人"
 
@@ -2907,132 +2907,108 @@ msgid "No ticket or event link available"
 msgstr "暂无票务或活动链接"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:50
-msgid "Bandsintown app_id"
-msgstr "Bandsintown app_id"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
-msgid "Saved"
-msgstr "已保存"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
-msgid "Checking key…"
-msgstr "正在验证密钥…"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
-msgid "Key works"
-msgstr "密钥有效"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
-msgid "Key was rejected"
-msgstr "密钥被拒绝"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
-msgid "Could not verify"
-msgstr "无法验证"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
 msgid "Location"
 msgstr "位置"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:58
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
 msgid "Use current location"
 msgstr "使用当前位置"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:59
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
 msgid "Clear location"
 msgstr "清除位置"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:60
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
 msgid "Current location"
 msgstr "当前位置"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:61
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
 msgid "Could not find that place"
 msgstr "找不到该地点"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:62
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
 msgid "Default radius"
 msgstr "默认半径"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:63
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:57
 msgid "Consider artists played in the last N days"
 msgstr "考虑最近 N 天内播放过的艺人"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:65
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:59
 msgid "Similar artists per top artist"
 msgstr "每位热门艺人的相似艺人数量"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:68
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:62
 msgid "Distance and the radius filter stay switched off until a city is known."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:71
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:65
 msgid "Updating concerts …"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:75
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:69
 #, rust-format
 msgid "Update failed — showing saved concerts from {time}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:76
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:70
 #, rust-format
 msgid "Offline — showing saved concerts from {time}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:92
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:86
 #, rust-format
 msgid "{shown} of {total} concerts"
 msgstr "{shown}/{total} 场演唱会"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:98
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:92
 #, rust-format
 msgid "{total} concerts"
 msgstr "{total} 场演唱会"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:103
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:97
 #, rust-format
 msgid "{city} · {radius} km"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:116
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:110
 #, rust-format
 msgid "{city}, {country}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:124
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:118
 #, rust-format
 msgid "{radius} km · off"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:129
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:123
 #, rust-format
 msgid "No location set — showing all {total} concerts worldwide"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:135
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:129
 #, rust-format
 msgid "similar to {artist}"
 msgstr "与 {artist} 相似"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:169
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:163
 #, rust-format
 msgid "Show all {total} concerts"
 msgstr "显示全部 {total} 场演唱会"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:184
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:178
 #, rust-format
 msgid "End of results — {hidden} concerts hidden by the {radius} km radius"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:191
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:185
 #, rust-format
 msgid ""
 "End of results — {hidden} concerts hidden by the {radius} km radius around "
 "{city}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:200
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:194
 #, rust-format
 msgid "{radius} km"
 msgstr "{radius} 公里"
@@ -5960,6 +5936,24 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#~ msgid "Bandsintown app_id"
+#~ msgstr "Bandsintown app_id"
+
+#~ msgid "Saved"
+#~ msgstr "已保存"
+
+#~ msgid "Checking key…"
+#~ msgstr "正在验证密钥…"
+
+#~ msgid "Key works"
+#~ msgstr "密钥有效"
+
+#~ msgid "Key was rejected"
+#~ msgstr "密钥被拒绝"
+
+#~ msgid "Could not verify"
+#~ msgstr "无法验证"
 
 #~ msgid "List Density"
 #~ msgstr "列表密度"
