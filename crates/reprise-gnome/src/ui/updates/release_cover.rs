@@ -303,6 +303,62 @@ fn notify_test_fetch(release_group_mbid: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn descendant_with_class(widget: &gtk4::Widget, class: &str) -> Option<gtk4::Widget> {
+        if widget.has_css_class(class) {
+            return Some(widget.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if let Some(found) = descendant_with_class(&current, class) {
+                return Some(found);
+            }
+            child = current.next_sibling();
+        }
+        None
+    }
+
+    fn release_cover_in_column_view() -> (gtk4::Window, LazyReleaseCover) {
+        let model = gtk4::gio::ListStore::new::<gtk4::StringObject>();
+        model.append(&gtk4::StringObject::new("Mental Cruelty"));
+        let selection = gtk4::NoSelection::new(Some(model));
+        let view = gtk4::ColumnView::new(Some(selection));
+        view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
+        let factory = gtk4::SignalListItemFactory::new();
+        factory.connect_setup(|_, object| {
+            let item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+            let cover = LazyReleaseCover::new_unbound(56);
+            item.set_child(Some(&crate::ui::source_context_surface::wrap(
+                cover.widget(),
+            )));
+        });
+        factory.connect_bind(|_, object| {
+            let item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+            let child = item.child().unwrap();
+            let root = descendant_with_class(&child, "new-release-cover")
+                .unwrap()
+                .downcast::<gtk4::Overlay>()
+                .unwrap();
+            LazyReleaseCover::from_widget(&root)
+                .unwrap()
+                .set_release("11111111-1111-1111-1111-111111111111", "Mental Cruelty");
+        });
+        let column = gtk4::ColumnViewColumn::new(Some("Cover"), Some(factory));
+        column.set_fixed_width(68);
+        view.append_column(&column);
+        let window = gtk4::Window::builder()
+            .default_width(180)
+            .default_height(120)
+            .child(&view)
+            .build();
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+        let root = descendant_with_class(view.upcast_ref(), "new-release-cover")
+            .expect("the ColumnView realized its release-cover cell")
+            .downcast::<gtk4::Overlay>()
+            .unwrap();
+        (window, LazyReleaseCover::from_widget(&root).unwrap())
+    }
+
     struct FetchObserverGuard;
 
     impl Drop for FetchObserverGuard {
@@ -332,6 +388,43 @@ mod tests {
             !cover.shows_image(),
             "a rebound cell must clear its picture"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn release_placeholder_initials_are_centered_with_the_app_css() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&format!(
+            "{}\n{}",
+            crate::ui::style::theme::theme_css(
+                crate::ui::style::theme::Theme::DEFAULT,
+                false,
+                crate::ui::style::accent::AccentSource::App,
+            ),
+            crate::ui::style::app_css_for_test(),
+        ));
+        let (window, cover) = release_cover_in_column_view();
+        let background = cover.root.child().expect("cover background");
+        let background_bounds = background
+            .compute_bounds(&cover.root)
+            .expect("background bounds");
+        let label_bounds = cover
+            .initials
+            .compute_bounds(&cover.root)
+            .expect("initials-label bounds");
+        let (layout_x, _) = cover.initials.layout_offsets();
+        let (ink, _) = cover.initials.layout().pixel_extents();
+        let ink_left = label_bounds.x() + (layout_x + ink.x()) as f32;
+        let ink_right = ink_left + ink.width() as f32;
+        let left = ink_left - background_bounds.x();
+        let right = background_bounds.x() + background_bounds.width() - ink_right;
+
+        assert!(
+            (left - right).abs() <= 1.0,
+            "initials ink is not horizontally centered: left={left:.1}px, right={right:.1}px"
+        );
+        window.close();
     }
 
     #[test]

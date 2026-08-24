@@ -1911,3 +1911,7 @@ Task stats-23-portrait-request-oracle: complete (this commit, base 00d12a48a6, m
 # Android JVM host-library loading
 
 Task android-suite-native-library-path: complete (this commit, base 70cb45f720, prepended the freshly built host FFI library directory to the Gradle workers' LD_LIBRARY_PATH while preserving any existing value, so JNA can load the suite-owned shared object; the clean-environment control reproduced the NoClassDefFoundError before the change, then the self-contained Android gate passed 407 tests across 76 suites with failures=0 and errors=0 and assembled the debug APK; the merge-readiness and project-quality scripts do not duplicate this JVM invocation, and no Kotlin, test, Gradle, lint-baseline or workflow file changed)
+
+# Releases missing-cover portrait fallback
+
+Task 1: complete (this commit, base 345dbd350f, added the app-CSS, source-cell-wrapper and real-ColumnView display regression that measures the placeholder initials ink against its painted tile; the untouched widget tree passed within the required one-pixel horizontal tolerance, which confines the reported displacement to session font or scale behavior outside the reproducible CSS fixture and invokes the plan's stop-search rule)
