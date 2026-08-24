@@ -5,7 +5,6 @@ pub(in crate::ui) use reprise_view::column_widths;
 mod centered_scroll_restore;
 pub(in crate::ui) mod current_track_selection;
 pub(crate) mod diagnostic_trail;
-pub(in crate::ui) mod list_density;
 pub(in crate::ui) mod match_highlight;
 pub(in crate::ui) mod now_playing_marker;
 mod playlist_reorder_guard;

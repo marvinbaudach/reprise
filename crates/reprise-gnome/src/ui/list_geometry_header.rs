@@ -2,11 +2,10 @@
 
 use std::cell::Cell;
 
-use reprise_core::library::settings::{self, ListDensity};
+use reprise_core::library::settings;
 
 use crate::ui::list_geometry::{
-    invalidate_row_height, load_trusted_height, remember_preferred_height, RowHeight,
-    RowMeasurement, TrustedRowHeight,
+    load_trusted_height, remember_preferred_height, RowHeight, RowMeasurement, TrustedRowHeight,
 };
 
 fn minimum_height() -> RowHeight {
@@ -24,24 +23,14 @@ pub(in crate::ui) fn measurement_from_widget_heights(
 
 pub(in crate::ui) fn load_height(
     db: &reprise_core::db::Db,
-    density: ListDensity,
     cache: &Cell<f64>,
 ) -> TrustedRowHeight {
-    load_trusted_height(
-        cache,
-        minimum_height(),
-        || {
-            if let Err(error) = settings::set_section_header_height(db, density, None) {
-                tracing::warn!(%error, "could not discard invalidated section-header height");
-            }
-        },
-        || {
-            settings::get_section_header_height(db, density).unwrap_or_else(|error| {
-                tracing::warn!(%error, "could not load persisted section-header height");
-                None
-            })
-        },
-    )
+    load_trusted_height(cache, minimum_height(), || {
+        settings::get_section_header_height(db).unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not load persisted section-header height");
+            None
+        })
+    })
 }
 
 pub(in crate::ui) fn measured_height(measurement: RowMeasurement) -> Option<RowHeight> {
@@ -53,26 +42,18 @@ pub(in crate::ui) fn measured_height(measurement: RowMeasurement) -> Option<RowH
 
 pub(in crate::ui) fn remember_settled_heights(
     db: &reprise_core::db::Db,
-    density: ListDensity,
     row_cache: &Cell<f64>,
     header_cache: &Cell<f64>,
     row_height: RowHeight,
     header_height: RowHeight,
 ) {
-    if let Err(error) = settings::set_row_and_section_header_heights(
-        db,
-        density,
-        row_height.pixels(),
-        header_height.pixels(),
-    ) {
+    if let Err(error) =
+        settings::set_row_and_section_header_heights(db, row_height.pixels(), header_height.pixels())
+    {
         tracing::warn!(%error, "could not persist settled list geometry");
     }
     remember_preferred_height(row_cache, TrustedRowHeight::measured(row_height));
     remember_preferred_height(header_cache, TrustedRowHeight::measured(header_height));
-}
-
-pub(in crate::ui) fn invalidate_height(cache: &Cell<f64>) {
-    invalidate_row_height(cache);
 }
 
 #[cfg(test)]
@@ -93,19 +74,16 @@ mod tests {
     fn a_non_uniform_measurement_preserves_the_last_good_height() {
         let db = reprise_core::db::Db::open_in_memory().unwrap();
         let cache = Cell::new(0.0);
-        settings::set_section_header_height(&db, ListDensity::Standard, Some(36.0)).unwrap();
-        let trusted = load_height(&db, ListDensity::Standard, &cache);
+        settings::set_section_header_height(&db, Some(36.0)).unwrap();
+        let trusted = load_height(&db, &cache);
         assert_eq!(trusted.source, RowHeightSource::Measured);
 
         assert_eq!(
             measured_height(measurement_from_widget_heights([36, 40])),
             None
         );
-        assert_eq!(load_height(&db, ListDensity::Standard, &cache), trusted);
-        assert_eq!(
-            settings::get_section_header_height(&db, ListDensity::Standard).unwrap(),
-            Some(36.0)
-        );
+        assert_eq!(load_height(&db, &cache), trusted);
+        assert_eq!(settings::get_section_header_height(&db).unwrap(), Some(36.0));
     }
 
     #[test]
@@ -113,7 +91,7 @@ mod tests {
         let db = reprise_core::db::Db::open_in_memory().unwrap();
         let cache = Cell::new(0.0);
 
-        let cold = load_height(&db, ListDensity::Standard, &cache);
+        let cold = load_height(&db, &cache);
         assert_eq!(cold.source, RowHeightSource::Assumed);
         assert_eq!(cold.height, RowHeight::new(36.0).unwrap());
 
@@ -124,35 +102,14 @@ mod tests {
         let row_cache = Cell::new(0.0);
         remember_settled_heights(
             &db,
-            ListDensity::Standard,
             &row_cache,
             &cache,
             RowHeight::new(34.0).unwrap(),
             RowHeight::new(38.0).unwrap(),
         );
-        let measured = load_height(&db, ListDensity::Standard, &cache);
+        let measured = load_height(&db, &cache);
         assert_eq!(measured.source, RowHeightSource::Measured);
         assert_eq!(measured.height, RowHeight::new(38.0).unwrap());
     }
 
-    #[test]
-    fn invalidation_discards_the_persisted_height_on_the_next_load() {
-        let db = reprise_core::db::Db::open_in_memory().unwrap();
-        let cache = Cell::new(0.0);
-        settings::set_section_header_height(&db, ListDensity::Standard, Some(38.0)).unwrap();
-        assert_eq!(
-            load_height(&db, ListDensity::Standard, &cache).source,
-            RowHeightSource::Measured
-        );
-
-        invalidate_height(&cache);
-        let reloaded = load_height(&db, ListDensity::Standard, &cache);
-
-        assert_eq!(reloaded.source, RowHeightSource::Assumed);
-        assert_eq!(reloaded.height, RowHeight::new(36.0).unwrap());
-        assert_eq!(
-            settings::get_section_header_height(&db, ListDensity::Standard).unwrap(),
-            None
-        );
-    }
 }

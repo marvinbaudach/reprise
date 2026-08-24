@@ -2,8 +2,13 @@ use gtk4::prelude::*;
 
 const REORDER_TARGET_CSS_CLASS: &str = "reprise-reorder-target";
 
-/// Row drop-position indicator plus the now-playing row marker, installed
-/// app-wide by [`super::style`].
+/// Track-row height plus the drop-position indicator and now-playing row
+/// marker, installed app-wide by [`super::style`].
+///
+/// The row minimum is authored against `.reprise-track-cell` rather than
+/// projected onto live widgets: `GtkColumnView` creates its row/cell widgets
+/// privately while scrolling, and a plain class rule reaches the ones made
+/// later without any runtime walk.
 ///
 /// The `.now-playing*` class names are literals here to match the pattern
 /// this file already follows for `.reprise-track-cell` (see `expand_to_cell`)
@@ -11,9 +16,10 @@ const REORDER_TARGET_CSS_CLASS: &str = "reprise-reorder-target";
 /// The marker uses the effective `@accent_color`, shared with
 /// `@reprise_player_accent` across the equaliser, play button, and waveform.
 pub(in crate::ui) fn css() -> String {
-    use super::style::tokens::DROP_INDICATOR_THICKNESS;
+    use super::style::tokens::{DROP_INDICATOR_THICKNESS, ROW_MIN_HEIGHT};
     format!(
-        ".{REORDER_TARGET_CSS_CLASS}:drop(active) {{ \
+        ".reprise-track-cell {{ min-height: {ROW_MIN_HEIGHT}px; }}\n\
+         .{REORDER_TARGET_CSS_CLASS}:drop(active) {{ \
          box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}\n\
          .reprise-track-cell.now-playing {{ \
            background-color: alpha(@accent_color, 0.09); }}\n\
@@ -31,9 +37,9 @@ pub(in crate::ui) fn set_reorder_indicator(widget: &impl IsA<gtk4::Widget>, acti
     }
 }
 
-/// Marks and expands each app-owned cell child. The marker is the stable
-/// target for live density sizing; filling the cell also lets attached
-/// gestures work beyond the text or icon's natural-size pixels.
+/// Marks and expands each app-owned cell child. The marker is what the
+/// authored row height in [`css`] binds to; filling the cell also lets
+/// attached gestures work beyond the text or icon's natural-size pixels.
 pub(in crate::ui) fn expand_to_cell(widget: &impl IsA<gtk4::Widget>) {
     widget.add_css_class("reprise-track-cell");
     widget.set_hexpand(true);

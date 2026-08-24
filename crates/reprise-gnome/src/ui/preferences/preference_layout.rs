@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition};
+use reprise_core::library::settings::{self, PlayerBarPosition};
 
 use super::preference_layout_preview::{self, LayoutPreview, LayoutPreviewState};
 use super::preference_visual_strings as visual_strings;
@@ -241,22 +241,6 @@ fn visible_columns_subtitle(context: &PreferencesContext) -> String {
         .join(" · ")
 }
 
-fn density_from_index(index: u32) -> ListDensity {
-    match index {
-        0 => ListDensity::Comfortable,
-        2 => ListDensity::Compact,
-        _ => ListDensity::Standard,
-    }
-}
-
-fn density_index(value: ListDensity) -> u32 {
-    match value {
-        ListDensity::Comfortable => 0,
-        ListDensity::Standard => 1,
-        ListDensity::Compact => 2,
-    }
-}
-
 fn bar_position_from_index(index: u32) -> PlayerBarPosition {
     if index == 0 {
         PlayerBarPosition::Top
@@ -385,19 +369,6 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         })
         .collect::<Vec<_>>();
 
-    let density_value = {
-        let conn = &context.conn;
-        settings::get_list_density(conn)
-    };
-    let density = toggle_group(
-        &[
-            (&strings::text(strings::DENSITY_COMFORTABLE), None),
-            (&strings::text(strings::DENSITY_STANDARD), None),
-            (&strings::text(strings::DENSITY_COMPACT), None),
-        ],
-        density_index(density_value),
-    );
-    regions_group.add(&toggle_row(&strings::text(strings::LIST_DENSITY), &density));
     page.add(&regions_group);
 
     let controls = Rc::new(LayoutControls {
@@ -454,8 +425,6 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             });
         });
     }
-    wire_density(context, &density, &syncing);
-
     let columns_group = adw::PreferencesGroup::builder()
         .title(visual_strings::text(visual_strings::COLUMNS))
         .build();
@@ -481,53 +450,13 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .build();
     {
         let request = request.clone();
-        let density = density.clone();
         restore.connect_clicked(move |_| {
             request(LayoutPreviewState::defaults());
-            density.set_active(density_index(ListDensity::Standard));
         });
     }
     restore_group.add(&restore);
     page.add(&restore_group);
     page
-}
-
-fn wire_density(
-    context: &Rc<PreferencesContext>,
-    density: &adw::ToggleGroup,
-    syncing: &Rc<Cell<bool>>,
-) {
-    let committed = Rc::new(Cell::new(density.active()));
-    let weak = Rc::downgrade(context);
-    let syncing = syncing.clone();
-    density.connect_active_notify(move |group| {
-        let Some(context) = weak.upgrade() else {
-            return;
-        };
-        if syncing.get() {
-            return;
-        }
-        let value = density_from_index(group.active());
-        let saved = {
-            let conn = &context.conn;
-            settings::set_list_density(conn, value)
-        };
-        match saved {
-            Ok(()) => {
-                committed.set(group.active());
-                context.track_list.apply_list_density(value);
-            }
-            Err(error) => {
-                tracing::warn!(%error, "could not save list density");
-                syncing.set(true);
-                group.set_active(committed.get());
-                syncing.set(false);
-                context
-                    .track_list
-                    .toast(&visual_strings::text(visual_strings::DENSITY_SAVE_FAILED));
-            }
-        }
-    });
 }
 
 pub(in crate::ui) fn css() -> String {
@@ -650,18 +579,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn density_toggles_round_trip_every_typed_value() {
-        for (index, value) in [
-            ListDensity::Comfortable,
-            ListDensity::Standard,
-            ListDensity::Compact,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            assert_eq!(density_index(value), index as u32);
-            assert_eq!(density_from_index(index as u32), value);
-        }
-    }
 }

@@ -17,7 +17,6 @@ use gtk4::prelude::*;
 use super::now_playing_marker;
 pub(in crate::ui) use super::rating_column::append_rating_column;
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::list_density;
 use crate::ui::playing_marker;
 use crate::ui::strings;
 use crate::ui::track_cover::TrackCover;
@@ -302,7 +301,6 @@ pub(in crate::ui) fn append_column(
         // drop-target (reorder) — see `ui::track_list_dnd`'s doc comment.
         track_list_dnd::wire_row_dnd(&label, item, &shared);
         item.set_child(Some(&label));
-        list_density::inherit(&column_view_for_setup, &label);
     });
 
     factory.connect_bind(move |_, obj| {
@@ -379,7 +377,7 @@ pub(in crate::ui) fn append_column(
 }
 
 /// Builds the leading cover-art column (Task 6): each cell is a
-/// density-aware `TrackCover`, lazily fed off-thread by the shared
+/// `TrackCover`, lazily fed off-thread by the shared
 /// `CoverLoader` (Task 4)
 /// instead of rendering a `Track` field synchronously like `append_column`'s
 /// `gtk::Label` cells. `TrackList::new` calls this FIRST, before any other
@@ -445,7 +443,6 @@ pub(in crate::ui) fn append_cover_column(
                 },
             );
             item.set_child(Some(&cover));
-            list_density::inherit(&column_view, &cover);
         });
     }
 

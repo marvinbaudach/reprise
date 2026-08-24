@@ -18,7 +18,7 @@ use super::track_list_columns::{
     clear_missing_title, toggle_class, NOW_PLAYING_CLASS, NOW_PLAYING_TITLE_CLASS,
 };
 use super::{
-    list_density, queue_item_presentation, strings, track_list_context_menu, track_list_dnd,
+    queue_item_presentation, strings, track_list_context_menu, track_list_dnd,
     track_list_row_interaction, Shared,
 };
 use crate::ui::search_highlight;
@@ -71,7 +71,6 @@ pub(in crate::ui) fn append_title_column(
         super::track_list_selection_input::wire_cell_selection(&row, item, &shared);
         track_list_dnd::wire_row_dnd(&row, item, &shared);
         item.set_child(Some(&row));
-        list_density::inherit(&column_view_for_setup, &row);
     });
 
     let tooltip_states_for_bind = tooltip_states.clone();
