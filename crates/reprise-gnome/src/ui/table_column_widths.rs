@@ -25,6 +25,8 @@ use gtk4::prelude::*;
 
 /// A square release-cover or artist-portrait cell.
 pub(in crate::ui) const COVER: i32 = 56;
+/// The cover column includes Adwaita's six-pixel padding on both sides.
+pub(in crate::ui) const COVER_COLUMN: i32 = COVER + 12;
 /// A date cell — mirrors the library's Added column.
 pub(in crate::ui) const DATE: i32 = 160;
 /// Lower bound for the filler column — mirrors the library's Title column,

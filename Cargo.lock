@@ -2481,6 +2481,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "pangocairo"
+version = "0.22.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "738a2ef690f51487814ff7172e0417c8e4fa2d7567571e5eb299d38b47b543ab"
+dependencies = [
+ "cairo-rs",
+ "glib",
+ "pango",
+ "pangocairo-sys",
+]
+
+[[package]]
+name = "pangocairo-sys"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d95cb73468373b9e568abb1afbaf5b42fe6ab9128fc41b5f2adbf69451c3c77f"
+dependencies = [
+ "cairo-sys-rs",
+ "glib-sys",
+ "libc",
+ "pango-sys",
+ "system-deps",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2784,7 +2809,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reprise-android-ffi"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "reprise-core",
  "reprise-view",
@@ -2798,7 +2823,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-cli"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "chrono",
  "clap",
@@ -2813,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-core"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2842,7 +2867,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-gnome"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2852,6 +2877,7 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "oo7",
+ "pangocairo",
  "reprise-core",
  "reprise-platform-linux",
  "reprise-runtime-client",
@@ -2869,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-mcp"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "chrono",
  "reprise-core",
@@ -2888,7 +2914,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-platform-linux"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "async-channel",
  "gio",
@@ -2911,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-runtime"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "reprise-core",
  "reprise-runtime-protocol",
@@ -2922,7 +2948,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-runtime-client"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "async-channel",
  "reprise-runtime-protocol",
@@ -2932,7 +2958,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-runtime-protocol"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "serde",
  "serde_json",
@@ -2941,7 +2967,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-stems"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "dirs",
  "flacenc",
@@ -2957,7 +2983,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-view"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "reprise-core",
 ]

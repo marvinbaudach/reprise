@@ -61,6 +61,31 @@ pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
     }
 }
 
+pub(in crate::ui) fn is_dark() -> bool {
+    libadwaita::StyleManager::default().is_dark()
+}
+
+pub(in crate::ui) fn window_background_rgb() -> [u8; 3] {
+    use super::color_math::parse_hex_rgb;
+
+    if !gtk4::is_initialized_main_thread() {
+        return default_window_background_rgb();
+    }
+
+    let theme = super::CURRENT_THEME.with(Cell::get);
+    let palette = if is_dark() {
+        theme.palette()
+    } else {
+        theme.light_palette()
+    };
+    parse_hex_rgb(palette.window_bg).unwrap_or_else(default_window_background_rgb)
+}
+
+fn default_window_background_rgb() -> [u8; 3] {
+    super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().window_bg)
+        .unwrap_or_default()
+}
+
 /// The AA threshold every accent foreground must clear (CONTRAST-5).
 pub(in crate::ui::style) const ACCENT_TEXT_MINIMUM_RATIO: f64 = 4.5;
 
@@ -108,7 +133,11 @@ pub(in crate::ui::style) fn effective_accent_rgb(source: AccentSource) -> [u8; 3
 /// Unlike libadwaita's surface-oriented accent roles, this role is measured
 /// directly against the appearance's critical surface before it enters
 /// app-authored CSS.
-pub(super) fn accent_text_color(accent: [u8; 3], background: [u8; 3], is_dark: bool) -> String {
+pub(in crate::ui) fn accent_text_color(
+    accent: [u8; 3],
+    background: [u8; 3],
+    is_dark: bool,
+) -> String {
     rgb_hex(accent_text_rgb(accent, background, is_dark))
 }
 
@@ -300,5 +329,15 @@ mod tests {
         set_current(previous);
 
         assert_eq!(accent.to_string(), "rgb(79,219,212)");
+    }
+
+    #[test]
+    fn uninitialized_gtk_uses_the_default_window_background() {
+        use super::super::color_math::parse_hex_rgb;
+        use super::super::theme::Theme;
+
+        let expected = parse_hex_rgb(Theme::DEFAULT.palette().window_bg)
+            .expect("the default window background is valid #RRGGBB");
+        assert_eq!(window_background_rgb(), expected);
     }
 }

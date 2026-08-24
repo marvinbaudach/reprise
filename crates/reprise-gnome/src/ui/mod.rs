@@ -25,6 +25,7 @@ mod about;
 mod accessibility_semantics;
 mod adjustment_hold;
 mod artist_news;
+mod artist_portrait_tiles;
 mod artwork_consent_banner;
 mod browse;
 mod compact;
