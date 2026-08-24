@@ -372,14 +372,14 @@ fun currentRowKeepsItsTintWhileOnlyPlayingAnimatesTheFourBars() {
 
     assertEquals(
         TrackPlaybackPresentation(isCurrent = true, animateBars = true),
-        rows[1].playbackPresentation(playing),
+        rows[1].playbackPresentation(playing.libraryPlayback()),
     )
     assertEquals(
         TrackPlaybackPresentation(isCurrent = true, animateBars = false),
-        rows[1].playbackPresentation(paused),
+        rows[1].playbackPresentation(paused.libraryPlayback()),
     )
-    assertEquals(false, rows[0].playbackPresentation(playing).isCurrent)
-    assertTrue(rows[1].playbackPresentation(playing).animateBars)
+    assertEquals(false, rows[0].playbackPresentation(playing.libraryPlayback()).isCurrent)
+    assertTrue(rows[1].playbackPresentation(playing.libraryPlayback()).animateBars)
 }
 
 @Test

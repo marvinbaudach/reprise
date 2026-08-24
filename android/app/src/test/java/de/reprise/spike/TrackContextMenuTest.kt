@@ -46,7 +46,7 @@ class TrackContextMenuTest {
                         surfaceState = MobileSurfaceViewModel(),
                         listKey = LibraryListKey.TITLES,
                         tracks = LibraryWindow(total = 1, rows = listOf(track), hasMore = false),
-                        playback = PlaybackUiState(),
+                        playback = PlaybackUiState().libraryPlayback(),
                         lastRequestedOffset = null,
                         play = { playCount += 1 },
                         loadMore = {},
@@ -106,7 +106,7 @@ class TrackContextMenuTest {
                         albumResults = LibraryWindow(1, listOf(album), false),
                         searchText = "whole",
                         selectedArtist = null,
-                        playback = PlaybackUiState(),
+                        playback = PlaybackUiState().libraryPlayback(),
                         openArtist = {},
                         openAlbum = {},
                         closeArtist = {},
@@ -138,7 +138,7 @@ class TrackContextMenuTest {
             MaterialTheme {
                 CompositionLocalProvider(LocalPlaybackControls provides controls) {
                     NowPlayingQueuePage(
-                        PlaybackUiState(),
+                        PlaybackUiState().libraryPlayback(),
                         MobileSurfaceViewModel(),
                         SurfaceLayout.STACKED,
                     )
@@ -165,7 +165,7 @@ class TrackContextMenuTest {
             MaterialTheme {
                 CompositionLocalProvider(LocalPlaybackControls provides controls) {
                     NowPlayingQueuePage(
-                        PlaybackUiState(),
+                        PlaybackUiState().libraryPlayback(),
                         MobileSurfaceViewModel(),
                         SurfaceLayout.STACKED,
                     )
@@ -310,7 +310,7 @@ class TrackContextMenuTest {
                         surfaceState = MobileSurfaceViewModel(),
                         listKey = LibraryListKey.TITLES,
                         tracks = LibraryWindow(total = 1, rows = listOf(track), hasMore = false),
-                        playback = PlaybackUiState(),
+                        playback = PlaybackUiState().libraryPlayback(),
                         lastRequestedOffset = null,
                         play = {},
                         loadMore = {},

@@ -43,7 +43,7 @@ private const val DOCK_HEART_DP = 64
 @Composable
 internal fun DockModeSurface(
     track: LibraryTrack,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
     surfaceState: MobileSurfaceViewModel,
 ) {
     val visual = rememberTrackArtworkVisual(track.uri, AndroidArtworkSize.NOW_PLAYING)
@@ -136,7 +136,7 @@ internal fun DockModeWaitingSurface() {
 @Composable
 private fun DockTransport(
     track: LibraryTrack,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
     surfaceState: MobileSurfaceViewModel,
 ) {
     val controls = LocalPlaybackControls.current

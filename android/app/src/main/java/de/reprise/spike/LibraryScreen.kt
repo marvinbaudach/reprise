@@ -12,7 +12,9 @@ import androidx.compose.runtime.setValue
 @Composable
 internal fun LibraryScreen(
     initialState: LibraryScreenState,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
+    playbackProgress: () -> Float,
+    nowPlayingPlayback: () -> PlaybackUiState,
     playbackSettingsRevision: Long,
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
@@ -62,6 +64,8 @@ internal fun LibraryScreen(
         is LibraryScreenState.Browse -> BrowseScreen(
             state = current,
             playback = playback,
+            playbackProgress = playbackProgress,
+            nowPlayingPlayback = nowPlayingPlayback,
             playbackSettingsRevision = playbackSettingsRevision,
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,

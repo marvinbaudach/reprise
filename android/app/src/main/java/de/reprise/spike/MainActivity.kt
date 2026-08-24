@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -210,6 +211,9 @@ class MainActivity : ComponentActivity() {
             }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
+            val libraryPlayback by remember { derivedStateOf { playbackState.value.libraryPlayback() } }
+            val playbackProgress = remember { { playbackState.value.progressFraction } }
+            val nowPlayingPlayback = remember { { playbackState.value } }
             surfaceState.initializeSelectedTab(
                 surface.initialStoredDestination.toBrowseTab(),
                 surface.rememberBrowseTab,
@@ -248,10 +252,13 @@ class MainActivity : ComponentActivity() {
                             LocalAmbientMotionController provides ambientMotion,
                             LocalVisualizerPreference provides visualizerPreference,
                             LocalVisualSceneEngineFactory provides visualSceneEngineFactory.value,
+                            LocalLibraryPerformanceObserver provides surface.libraryPerformanceObserver,
                         ) {
                             LibraryScreen(
                                 initialState = surface.initialState,
-                                playback = playbackState.value,
+                                playback = libraryPlayback,
+                                playbackProgress = playbackProgress,
+                                nowPlayingPlayback = nowPlayingPlayback,
                                 playbackSettingsRevision = playbackSettingsRevision.value,
                                 surfaceLayout = surfaceLayout,
                                 surfaceState = surfaceState,

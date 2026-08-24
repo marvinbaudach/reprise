@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 /** The future-only page in the library's Queue destination. */
 @Composable
 internal fun NowPlayingQueuePage(
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
     surfaceState: MobileSurfaceViewModel,
     surfaceLayout: SurfaceLayout,
 ) {

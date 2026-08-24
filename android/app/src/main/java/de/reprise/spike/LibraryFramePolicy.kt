@@ -42,7 +42,7 @@ internal data class TrackPlaybackPresentation(
 )
 
 internal fun LibraryTrack.playbackPresentation(
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
 ): TrackPlaybackPresentation {
     val isCurrent = playback.currentTrackId == id
     return TrackPlaybackPresentation(

@@ -22,6 +22,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +54,7 @@ internal fun TrackRows(
     surfaceState: MobileSurfaceViewModel,
     listKey: LibraryListKey,
     tracks: LibraryWindow<LibraryTrack>,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
@@ -182,7 +183,7 @@ internal fun TrackListItem(
     content: TrackListContent,
     surfaceState: MobileSurfaceViewModel,
     metrics: LibraryFrameMetrics,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
     play: (Int) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
     subtitle: TrackRowSubtitle,
@@ -191,22 +192,29 @@ internal fun TrackListItem(
     rowCount: Int,
 ) {
     when (content) {
-        is TrackListContent.Row -> LibraryTrackRow(
-            track = content.track,
-            // The row a window was paged in with is a *copy* of the track, and
-            // hearting it in Now Playing does not rewrite that copy. The rating is
-            // therefore read from the one place all three surfaces read it —
-            // only for the rows on screen, never for the whole window.
-            surfaceState = surfaceState,
-            presentation = content.track.playbackPresentation(playback),
-            metrics = metrics,
-            subtitle = subtitle,
-            onFavouriteChanged = onFavouriteChanged,
-            queuePosition = content.index,
-            queueRowCount = rowCount,
-            queueActions = queueActions,
-            play = { play(content.index) },
-        )
+        is TrackListContent.Row -> {
+            val presentation = content.track.playbackPresentation(playback)
+            val performanceObserver = LocalLibraryPerformanceObserver.current
+            SideEffect {
+                performanceObserver.trackRowComposed(content.track.id, presentation)
+            }
+            LibraryTrackRow(
+                track = content.track,
+                // The row a window was paged in with is a *copy* of the track, and
+                // hearting it in Now Playing does not rewrite that copy. The rating is
+                // therefore read from the one place all three surfaces read it —
+                // only for the rows on screen, never for the whole window.
+                surfaceState = surfaceState,
+                presentation = presentation,
+                metrics = metrics,
+                subtitle = subtitle,
+                onFavouriteChanged = onFavouriteChanged,
+                queuePosition = content.index,
+                queueRowCount = rowCount,
+                queueActions = queueActions,
+                play = { play(content.index) },
+            )
+        }
         is TrackListContent.Continuation -> {
             LaunchedEffect(content.request.offset) { loadMore(content.request) }
             LoadingWindowRow()

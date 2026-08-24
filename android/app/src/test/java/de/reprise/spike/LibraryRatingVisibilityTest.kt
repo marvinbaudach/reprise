@@ -74,7 +74,7 @@ class LibraryRatingVisibilityTest {
                         rows = listOf(track.copy(rating = rating)),
                         hasMore = false,
                     ),
-                    playback = PlaybackUiState(),
+                    playback = PlaybackUiState().libraryPlayback(),
                     lastRequestedOffset = null,
                     play = {},
                     loadMore = {},
