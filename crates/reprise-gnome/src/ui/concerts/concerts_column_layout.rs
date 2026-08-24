@@ -49,7 +49,7 @@ fn label(key: ConcertColumn) -> String {
 
 fn width(key: ConcertColumn) -> i32 {
     match key {
-        ConcertColumn::Cover => widths::COVER,
+        ConcertColumn::Cover => widths::COVER_COLUMN,
         ConcertColumn::Date => widths::DATE,
         ConcertColumn::Artist => widths::TITLE_MIN,
         ConcertColumn::City => widths::LABEL,

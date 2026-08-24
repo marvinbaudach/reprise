@@ -12,6 +12,8 @@ const PICTURE_CLASS: &str = "reprise-release-cover-picture";
 const MBID_CLASS: &str = "reprise-release-cover-mbid";
 const ARTIST_CLASS: &str = "reprise-release-cover-artist";
 const STARTED_CLASS: &str = "reprise-release-cover-started";
+const PORTRAIT_CLASS: &str = "reprise-release-cover-portrait-started";
+const PORTRAIT_REQUEST_CLASS: &str = "reprise-release-cover-portrait-request";
 
 pub(in crate::ui) struct LazyReleaseCover {
     root: gtk4::Overlay,
@@ -21,6 +23,8 @@ pub(in crate::ui) struct LazyReleaseCover {
     mbid: gtk4::Label,
     artist: gtk4::Label,
     started: gtk4::Label,
+    portrait_started: gtk4::Label,
+    portrait_request: gtk4::Label,
 }
 
 impl LazyReleaseCover {
@@ -99,12 +103,16 @@ impl LazyReleaseCover {
         let mbid = state_label(MBID_CLASS);
         let artist = state_label(ARTIST_CLASS);
         let started = state_label(STARTED_CLASS);
+        let portrait_started = state_label(PORTRAIT_CLASS);
+        let portrait_request = state_label(PORTRAIT_REQUEST_CLASS);
         root.add_overlay(&initials);
         root.add_overlay(&mbid);
         root.add_overlay(&artist);
         root.add_overlay(&started);
+        root.add_overlay(&portrait_started);
+        root.add_overlay(&portrait_request);
 
-        wire_lazy_fetch(&root, &picture, &mbid, &started);
+        wire_lazy_fetch(&root, &picture, &mbid, &artist, &started, &portrait_request);
         Self {
             root,
             tile,
@@ -113,6 +121,8 @@ impl LazyReleaseCover {
             mbid,
             artist,
             started,
+            portrait_started,
+            portrait_request,
         }
     }
 
@@ -125,13 +135,17 @@ impl LazyReleaseCover {
             mbid: child_with_class(root, MBID_CLASS)?,
             artist: child_with_class(root, ARTIST_CLASS)?,
             started: child_with_class(root, STARTED_CLASS)?,
+            portrait_started: child_with_class(root, PORTRAIT_CLASS)?,
+            portrait_request: child_with_class(root, PORTRAIT_REQUEST_CLASS)?,
         })
     }
 
     pub(in crate::ui) fn set_release(&self, release_group_mbid: &str, artist: &str) {
         self.mbid.set_text(release_group_mbid);
-        self.artist.set_text("");
+        self.artist.set_text(artist);
         self.started.set_text("");
+        self.portrait_started.set_text("");
+        self.portrait_request.set_text("");
         self.initials.set_text(&artist_avatar::initials(artist));
         self.tile.queue_draw();
         self.picture.set_filename(None::<&std::path::Path>);
@@ -139,20 +153,32 @@ impl LazyReleaseCover {
         if release_group_mbid.is_empty() {
             return;
         }
-        if let Some(path) =
-            reprise_core::cover_download::release_group_cover_path(release_group_mbid)
-        {
-            self.picture.set_filename(Some(path));
-            self.picture.set_visible(true);
-            self.started.set_text(release_group_mbid);
-            return;
+        match cover_state(release_group_mbid) {
+            reprise_core::cover_download::CoverState::Cached(path) => {
+                self.picture.set_filename(Some(path));
+                self.picture.set_visible(true);
+                self.started.set_text(release_group_mbid);
+                return;
+            }
+            reprise_core::cover_download::CoverState::KnownMissing => {
+                self.started.set_text(release_group_mbid);
+                self.request_portrait();
+                return;
+            }
+            reprise_core::cover_download::CoverState::Unknown => {}
         }
         // Updates rows bind once before their first map, while ColumnView
         // cells can be rebound without an intervening unmap/map cycle.
         // Starting here only for an already-mapped widget serves the latter;
         // the map handler below remains the former's explicit trigger.
         if self.root.is_mapped() {
-            start_fetch(&self.picture, &self.mbid, &self.started);
+            start_fetch(
+                &self.picture,
+                &self.mbid,
+                &self.artist,
+                &self.started,
+                &self.portrait_request,
+            );
         }
     }
 
@@ -164,6 +190,8 @@ impl LazyReleaseCover {
         self.mbid.set_text("");
         self.artist.set_text(artist);
         self.started.set_text("");
+        self.portrait_started.set_text("");
+        self.portrait_request.set_text("");
         self.initials.set_text(&artist_avatar::initials(artist));
         self.tile.queue_draw();
         self.picture.set_paintable(None::<&gtk4::gdk::Paintable>);
@@ -174,9 +202,27 @@ impl LazyReleaseCover {
         self.artist.text().to_string()
     }
 
+    pub(in crate::ui) fn portrait_key(&self) -> String {
+        let mbid = self.mbid.text();
+        if mbid.is_empty() {
+            self.artist_key()
+        } else {
+            format!("{mbid}\u{1f}{}", self.artist.text())
+        }
+    }
+
+    pub(in crate::ui) fn portrait_is_requested(&self) -> bool {
+        (self.mbid.text().is_empty() && !self.artist.text().is_empty())
+            || !self.portrait_request.text().is_empty()
+    }
+
     pub(in crate::ui) fn show_paintable(&self, paintable: Option<&gtk4::gdk::Paintable>) {
         self.picture.set_paintable(paintable);
         self.picture.set_visible(paintable.is_some());
+    }
+
+    pub(in crate::ui) fn has_image(&self) -> bool {
+        self.picture.is_visible()
     }
 
     pub(in crate::ui) fn started(&self) -> String {
@@ -185,6 +231,43 @@ impl LazyReleaseCover {
 
     pub(in crate::ui) fn mark_started(&self, artist: &str) {
         self.started.set_text(artist);
+    }
+
+    pub(in crate::ui) fn portrait_started(&self) -> String {
+        self.portrait_started.text().to_string()
+    }
+
+    pub(in crate::ui) fn mark_portrait_started(&self, artist: &str) {
+        self.portrait_started.set_text(artist);
+    }
+
+    fn request_portrait(&self) {
+        self.portrait_request.set_text(&self.artist.text());
+    }
+
+    pub(in crate::ui) fn connect_artist_portrait_tiles(
+        &self,
+        image: std::rc::Rc<crate::ui::artist_portrait_tiles::ArtistPortraitTiles>,
+    ) {
+        let root = self.root.clone();
+        let notify_image = image.clone();
+        self.portrait_request
+            .connect_notify_local(Some("label"), move |request, _| {
+                if request.text().is_empty() {
+                    return;
+                }
+                if let Some(tile) = LazyReleaseCover::from_widget(&root) {
+                    notify_image.show(&tile);
+                }
+            });
+        self.root.connect_map(move |root| {
+            let Some(tile) = LazyReleaseCover::from_widget(root) else {
+                return;
+            };
+            if tile.portrait_is_requested() {
+                image.show(&tile);
+            }
+        });
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Overlay {
@@ -198,7 +281,12 @@ impl LazyReleaseCover {
 
     #[cfg(test)]
     pub(in crate::ui) fn shows_image(&self) -> bool {
-        self.picture.is_visible()
+        self.has_image()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn picture_source_path(&self) -> Option<std::path::PathBuf> {
+        self.picture.file().and_then(|file| file.path())
     }
 }
 
@@ -231,23 +319,41 @@ fn wire_lazy_fetch(
     root: &gtk4::Overlay,
     picture: &gtk4::Picture,
     mbid: &gtk4::Label,
+    artist: &gtk4::Label,
     started: &gtk4::Label,
+    portrait_request: &gtk4::Label,
 ) {
     let picture = picture.clone();
     let mbid = mbid.clone();
+    let artist = artist.clone();
     let started = started.clone();
+    let portrait_request = portrait_request.clone();
     root.connect_map(move |_| {
-        start_fetch(&picture, &mbid, &started);
+        start_fetch(&picture, &mbid, &artist, &started, &portrait_request);
     });
 }
 
-fn start_fetch(picture: &gtk4::Picture, mbid: &gtk4::Label, started: &gtk4::Label) {
+fn start_fetch(
+    picture: &gtk4::Picture,
+    mbid: &gtk4::Label,
+    artist: &gtk4::Label,
+    started: &gtk4::Label,
+    portrait_request: &gtk4::Label,
+) {
     let release_group_mbid = mbid.text().to_string();
     if release_group_mbid.is_empty() || started.text() == release_group_mbid {
         return;
     }
     started.set_text(&release_group_mbid);
-    if notify_test_fetch(&release_group_mbid) {
+    if let Some(result) = test_fetch(&release_group_mbid) {
+        apply_fetch_result(
+            picture,
+            mbid,
+            artist,
+            portrait_request,
+            &release_group_mbid,
+            result,
+        );
         return;
     }
     let fetch_mbid = release_group_mbid.clone();
@@ -258,46 +364,133 @@ fn start_fetch(picture: &gtk4::Picture, mbid: &gtk4::Label, started: &gtk4::Labe
     };
     let picture = picture.clone();
     let mbid = mbid.clone();
+    let artist = artist.clone();
+    let portrait_request = portrait_request.clone();
     gtk4::glib::spawn_future_local(async move {
-        if let Ok(reprise_core::cover_download::ReleaseGroupCover::Image(path)) =
-            receiver.recv().await
-        {
-            // A recycled cell may have been rebound while this fetch was in
-            // flight. Only the generation still naming this MBID may update
-            // the picture.
-            if mbid.text() == release_group_mbid {
-                picture.set_filename(Some(path));
-                picture.set_visible(true);
-            }
+        if let Ok(result) = receiver.recv().await {
+            apply_fetch_result(
+                &picture,
+                &mbid,
+                &artist,
+                &portrait_request,
+                &release_group_mbid,
+                result,
+            );
         }
     });
 }
 
+fn apply_fetch_result(
+    picture: &gtk4::Picture,
+    mbid: &gtk4::Label,
+    artist: &gtk4::Label,
+    portrait_request: &gtk4::Label,
+    release_group_mbid: &str,
+    result: reprise_core::cover_download::ReleaseGroupCover,
+) {
+    if mbid.text() != release_group_mbid {
+        return;
+    }
+    match result {
+        reprise_core::cover_download::ReleaseGroupCover::Image(path) => {
+            picture.set_filename(Some(path));
+            picture.set_visible(true);
+        }
+        reprise_core::cover_download::ReleaseGroupCover::Fallback => {
+            if !picture.is_visible() {
+                portrait_request.set_text(&artist.text());
+            }
+        }
+    }
+}
+
 #[cfg(not(test))]
-fn notify_test_fetch(_release_group_mbid: &str) -> bool {
-    false
+fn cover_state(release_group_mbid: &str) -> reprise_core::cover_download::CoverState {
+    reprise_core::cover_download::release_group_cover_state(release_group_mbid)
 }
 
 #[cfg(test)]
-type TestFetchObserver = std::rc::Rc<dyn Fn(&str)>;
+fn cover_state(release_group_mbid: &str) -> reprise_core::cover_download::CoverState {
+    TEST_COVER_STATE.with(|slot| {
+        slot.borrow().as_ref().map_or_else(
+            || reprise_core::cover_download::release_group_cover_state(release_group_mbid),
+            |resolver| resolver(release_group_mbid),
+        )
+    })
+}
+
+#[cfg(not(test))]
+fn test_fetch(
+    _release_group_mbid: &str,
+) -> Option<reprise_core::cover_download::ReleaseGroupCover> {
+    None
+}
+
+#[cfg(test)]
+type TestFetchResolver =
+    std::rc::Rc<dyn Fn(&str) -> reprise_core::cover_download::ReleaseGroupCover>;
+#[cfg(test)]
+type TestCoverStateResolver = std::rc::Rc<dyn Fn(&str) -> reprise_core::cover_download::CoverState>;
 
 #[cfg(test)]
 thread_local! {
-    static TEST_FETCH_OBSERVER: std::cell::RefCell<Option<TestFetchObserver>> =
+    static TEST_FETCH_OBSERVER: std::cell::RefCell<Option<TestFetchResolver>> =
+        std::cell::RefCell::new(None);
+    static TEST_COVER_STATE: std::cell::RefCell<Option<TestCoverStateResolver>> =
         std::cell::RefCell::new(None);
 }
 
 #[cfg(test)]
-fn notify_test_fetch(release_group_mbid: &str) -> bool {
+fn test_fetch(release_group_mbid: &str) -> Option<reprise_core::cover_download::ReleaseGroupCover> {
     TEST_FETCH_OBSERVER.with(|slot| {
         let observer = slot.borrow().clone();
-        if let Some(observer) = observer {
-            observer(release_group_mbid);
-            true
-        } else {
-            false
-        }
+        observer.map(|observer| observer(release_group_mbid))
     })
+}
+
+#[cfg(test)]
+pub(super) struct CoverOverrideGuard {
+    slot: OverrideSlot,
+}
+
+#[cfg(test)]
+enum OverrideSlot {
+    State,
+    Fetch,
+}
+
+#[cfg(test)]
+impl Drop for CoverOverrideGuard {
+    fn drop(&mut self) {
+        match self.slot {
+            OverrideSlot::State => TEST_COVER_STATE.with(|slot| {
+                slot.replace(None);
+            }),
+            OverrideSlot::Fetch => TEST_FETCH_OBSERVER.with(|slot| {
+                slot.replace(None);
+            }),
+        }
+    }
+}
+
+#[cfg(test)]
+pub(super) fn override_cover_state(
+    resolver: impl Fn(&str) -> reprise_core::cover_download::CoverState + 'static,
+) -> CoverOverrideGuard {
+    TEST_COVER_STATE.with(|slot| slot.replace(Some(std::rc::Rc::new(resolver))));
+    CoverOverrideGuard {
+        slot: OverrideSlot::State,
+    }
+}
+
+#[cfg(test)]
+pub(super) fn override_cover_fetch(
+    resolver: impl Fn(&str) -> reprise_core::cover_download::ReleaseGroupCover + 'static,
+) -> CoverOverrideGuard {
+    TEST_FETCH_OBSERVER.with(|slot| slot.replace(Some(std::rc::Rc::new(resolver))));
+    CoverOverrideGuard {
+        slot: OverrideSlot::Fetch,
+    }
 }
 
 #[cfg(test)]
@@ -348,7 +541,7 @@ mod tests {
                 .set_release("11111111-1111-1111-1111-111111111111", &artist);
         });
         let column = gtk4::ColumnViewColumn::new(Some("Cover"), Some(factory));
-        column.set_fixed_width(68);
+        column.set_fixed_width(crate::ui::table_column_widths::COVER_COLUMN);
         view.append_column(&column);
         if let Some(height) = tall_row_height {
             let height_factory = gtk4::SignalListItemFactory::new();
@@ -473,7 +666,12 @@ mod tests {
     }
 
     fn observe_fetches(observer: impl Fn(&str) + 'static) -> FetchObserverGuard {
-        TEST_FETCH_OBSERVER.with(|slot| slot.replace(Some(std::rc::Rc::new(observer))));
+        TEST_FETCH_OBSERVER.with(|slot| {
+            slot.replace(Some(std::rc::Rc::new(move |mbid| {
+                observer(mbid);
+                reprise_core::cover_download::ReleaseGroupCover::Fallback
+            })))
+        });
         FetchObserverGuard
     }
 
@@ -497,7 +695,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn release_placeholder_initials_are_centered_with_the_app_css() {
+    fn nr_2a_release_placeholder_initials_are_optically_centered() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         crate::ui::style::install_css_string_for_test(&format!(
@@ -520,7 +718,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn release_placeholder_stays_square_and_centered_in_a_tall_row() {
+    fn nr_2a_release_placeholder_stays_square_and_centered_in_a_tall_row() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());

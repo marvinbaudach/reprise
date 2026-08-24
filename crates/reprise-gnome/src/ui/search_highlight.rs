@@ -189,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_2_search_highlights_use_the_central_accent() {
+    fn nr_2a_search_highlights_use_the_central_accent() {
         let highlight = include_str!("search_highlight.rs");
         let release_cover = [
             include_str!("updates/release_cover.rs"),

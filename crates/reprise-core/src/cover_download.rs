@@ -58,6 +58,13 @@ pub enum ReleaseGroupCover {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoverState {
+    Cached(PathBuf),
+    KnownMissing,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoverFetchOutcome {
     Downloaded(PathBuf),
     NotFound,
@@ -148,6 +155,34 @@ pub fn release_group_cover_path(mbid: &str) -> Option<PathBuf> {
     downloaded_cover_path(&release_group_key(mbid))
 }
 
+pub fn release_group_cover_state(mbid: &str) -> CoverState {
+    release_group_cover_state_at(mbid, SystemTime::now())
+}
+
+fn release_group_cover_state_at(mbid: &str, now: SystemTime) -> CoverState {
+    let key = release_group_key(mbid);
+    let cached = downloaded_cover_path(&key);
+    let marker_modified = std::fs::metadata(negative_marker_path(&key))
+        .and_then(|metadata| metadata.modified())
+        .ok();
+    release_group_cover_state_from(cached, marker_modified, now)
+}
+
+fn release_group_cover_state_from(
+    cached: Option<PathBuf>,
+    marker_modified: Option<SystemTime>,
+    now: SystemTime,
+) -> CoverState {
+    if let Some(path) = cached {
+        return CoverState::Cached(path);
+    }
+    if negative_marker_blocks(marker_modified, now) {
+        CoverState::KnownMissing
+    } else {
+        CoverState::Unknown
+    }
+}
+
 pub fn fetch_release_group_cover(mbid: &str) -> ReleaseGroupCover {
     fetch_release_group_cover_with(mbid, &mut |url| http_get_bytes(url))
 }
@@ -157,14 +192,10 @@ where
     F: FnMut(&str) -> CaaFetchResult,
 {
     let key = release_group_key(mbid);
-    if let Some(path) = downloaded_cover_path(&key) {
-        return ReleaseGroupCover::Image(path);
-    }
-    let marker_modified = std::fs::metadata(negative_marker_path(&key))
-        .and_then(|metadata| metadata.modified())
-        .ok();
-    if negative_marker_blocks(marker_modified, SystemTime::now()) {
-        return ReleaseGroupCover::Fallback;
+    match release_group_cover_state(mbid) {
+        CoverState::Cached(path) => return ReleaseGroupCover::Image(path),
+        CoverState::KnownMissing => return ReleaseGroupCover::Fallback,
+        CoverState::Unknown => {}
     }
     match fetch(&caa_release_group_front_url(mbid)) {
         CaaFetchResult::Found(bytes, extension) => store_downloaded(&key, &bytes, extension)
@@ -630,7 +661,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_2_missing_cover_uses_fallback_tile() {
+    fn nr_2a_missing_cover_uses_fallback_tile() {
         let mbid = "99999999-9999-9999-9999-999999999999";
         let mut fetch = |_url: &str| CaaFetchResult::NotFound;
 
@@ -638,6 +669,30 @@ mod tests {
 
         assert_eq!(result, ReleaseGroupCover::Fallback);
         std::fs::remove_file(negative_marker_path(&release_group_key(mbid))).ok();
+    }
+
+    #[test]
+    fn release_group_cover_state_distinguishes_cached_known_missing_and_unknown() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000_000);
+        let cached_path = PathBuf::from("/isolated/release-cover.png");
+        assert_eq!(
+            release_group_cover_state_from(Some(cached_path.clone()), None, now),
+            CoverState::Cached(cached_path.clone())
+        );
+
+        let modified = now - Duration::from_secs(60);
+        assert_eq!(
+            release_group_cover_state_from(None, Some(modified), now),
+            CoverState::KnownMissing
+        );
+        assert_eq!(
+            release_group_cover_state_from(
+                None,
+                Some(modified),
+                modified + NEGATIVE_MARKER_MAX_AGE + Duration::from_secs(1),
+            ),
+            CoverState::Unknown
+        );
     }
 
     #[test]

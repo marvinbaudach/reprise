@@ -79,7 +79,10 @@ fn conc_17a_the_concerts_cover_column_is_pinned_id_less_and_unsorted() {
         cover.title().as_deref(),
         Some(crate::ui::strings::text(crate::ui::strings::COLUMN_COVER).as_str())
     );
-    assert_eq!(cover.fixed_width(), crate::ui::table_column_widths::COVER);
+    assert_eq!(
+        cover.fixed_width(),
+        crate::ui::table_column_widths::COVER_COLUMN
+    );
 }
 
 #[test]

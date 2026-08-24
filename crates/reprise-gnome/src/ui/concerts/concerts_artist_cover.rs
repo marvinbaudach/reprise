@@ -1,176 +1,19 @@
-//! Lazy artist portraits for recycled Concerts table cells.
+//! Concerts cover column over the shared artist-portrait tile chain.
 
-use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Arc;
+
+#[cfg(test)]
+use std::path::PathBuf;
 
 use gtk4::prelude::*;
-use gtk4::{gio, glib};
-use reprise_core::cover::ThumbnailSize;
 
 use super::concerts_model::ConcertObject;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
-use crate::ui::cover_loader::CoverLoader;
+pub(super) use crate::ui::artist_portrait_tiles::ArtistPortraitTiles as ConcertsArtistImage;
 use crate::ui::table_column_widths as widths;
 use crate::ui::updates::release_cover::LazyReleaseCover;
 
-type CachedPortraitResolver = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
-type CacheOnlyPortraitResolver = fn(&str) -> reprise_core::artist_portrait::PortraitOutcome;
-
-// This resolver has no NET-1a gate of its own. Pinning its function type and
-// identity to Core's cache-only entry point keeps production construction from
-// silently gaining network access; the test below compares identity only and
-// never invokes it against the real XDG cache.
-const PRODUCTION_CACHE_ONLY_RESOLVER: CacheOnlyPortraitResolver =
-    reprise_core::artist_portrait::load_cached;
-
-pub(super) struct ConcertsArtistImage {
-    portrait: RefCell<Option<Rc<ArtistPortraitRuntime>>>,
-    loader: RefCell<Option<Rc<CoverLoader>>>,
-    cached: CachedPortraitResolver,
-    generation: Rc<Cell<u64>>,
-}
-
-impl ConcertsArtistImage {
-    #[cfg(not(test))]
-    pub(super) fn new() -> Rc<Self> {
-        Self::with_resolver(|artist| match PRODUCTION_CACHE_ONLY_RESOLVER(artist) {
-            reprise_core::artist_portrait::PortraitOutcome::Found(path) => Some(path),
-            reprise_core::artist_portrait::PortraitOutcome::NotFound => None,
-        })
-    }
-
-    #[cfg(test)]
-    pub(super) fn for_test(
-        cached: impl Fn(&str) -> Option<PathBuf> + Send + Sync + 'static,
-    ) -> Rc<Self> {
-        Self::with_resolver(cached)
-    }
-
-    fn with_resolver(cached: impl Fn(&str) -> Option<PathBuf> + Send + Sync + 'static) -> Rc<Self> {
-        Rc::new(Self {
-            portrait: RefCell::new(None),
-            loader: RefCell::new(None),
-            cached: Arc::new(cached),
-            generation: Rc::new(Cell::new(0)),
-        })
-    }
-
-    pub(super) fn set_sources(&self, loader: Rc<CoverLoader>, portrait: Rc<ArtistPortraitRuntime>) {
-        *self.loader.borrow_mut() = Some(loader);
-        *self.portrait.borrow_mut() = Some(portrait);
-    }
-
-    pub(super) fn show(self: &Rc<Self>, tile: &LazyReleaseCover) {
-        let artist = tile.artist_key();
-        if artist.trim().is_empty() || tile.started() == artist {
-            return;
-        }
-        tile.mark_started(&artist);
-        let root = tile.widget().clone();
-        let this = self.clone();
-        glib::spawn_future_local(async move {
-            let lookup_artist = artist.clone();
-            let cached = this.cached.clone();
-            let found = gio::spawn_blocking(move || cached(&lookup_artist))
-                .await
-                .ok()
-                .flatten();
-            let Some(tile) = LazyReleaseCover::from_widget(&root) else {
-                return;
-            };
-            if tile.artist_key() != artist {
-                return;
-            }
-            if let Some(path) = found {
-                this.show_path(&tile, &artist, &path);
-            } else if root.is_mapped() {
-                this.fetch_after_cache_miss(&tile);
-            } else {
-                tile.mark_started("");
-            }
-        });
-    }
-
-    // `show` is the only caller and reaches this helper only after a cache
-    // miss while the cell is mapped. Keeping that guard at the cache decision
-    // avoids duplicating it inside the private network-only continuation.
-    fn fetch_after_cache_miss(self: &Rc<Self>, tile: &LazyReleaseCover) {
-        let artist = tile.artist_key();
-        if artist.trim().is_empty() {
-            return;
-        }
-        let runtime = self.portrait.borrow().clone();
-        let Some(runtime) = runtime else {
-            tile.mark_started("");
-            return;
-        };
-        if !runtime.request_would_run(&artist) {
-            tile.mark_started("");
-            return;
-        }
-
-        let guard_root = tile.widget().clone();
-        let guard_artist = artist.clone();
-        let result_root = tile.widget().clone();
-        let result_artist = artist.clone();
-        let this = self.clone();
-        runtime.request_while(
-            artist,
-            move || {
-                LazyReleaseCover::from_widget(&guard_root)
-                    .is_some_and(|tile| tile.artist_key() == guard_artist)
-            },
-            move |found| {
-                let Some(path) = found else {
-                    return;
-                };
-                let Some(tile) = LazyReleaseCover::from_widget(&result_root) else {
-                    return;
-                };
-                if tile.artist_key() == result_artist {
-                    this.show_path(&tile, &result_artist, &path);
-                }
-            },
-        );
-    }
-
-    fn show_path(self: &Rc<Self>, tile: &LazyReleaseCover, artist: &str, path: &Path) {
-        let loader = self.loader.borrow().clone();
-        let Some(loader) = loader else {
-            return;
-        };
-        let sink = gtk4::Picture::new();
-        let sink_for_result = sink.clone();
-        let root = tile.widget().clone();
-        let artist = artist.to_owned();
-
-        // CoverLoader requires a generation pair, but concert-cell correctness
-        // comes from the reconstructible artist-key checks around every async
-        // boundary. This column-wide counter is therefore intentionally never
-        // invalidated; it only satisfies the loader's decode/cache signature.
-        let token = self.generation.get();
-        loader.load_image_into_picture(
-            &sink,
-            path,
-            ThumbnailSize::Portrait,
-            token,
-            &self.generation,
-            move |loaded| {
-                if !loaded {
-                    return;
-                }
-                let Some(tile) = LazyReleaseCover::from_widget(&root) else {
-                    return;
-                };
-                if tile.artist_key() == artist {
-                    tile.show_paintable(sink_for_result.paintable().as_ref());
-                }
-            },
-        );
-    }
-}
+#[cfg(test)]
+use crate::ui::artist_portrait_tiles::{CacheOnlyPortraitResolver, PRODUCTION_CACHE_ONLY_RESOLVER};
 
 pub(super) fn cover_column(view: &gtk4::ColumnView, image: &Rc<ConcertsArtistImage>) {
     let factory = gtk4::SignalListItemFactory::new();
@@ -221,13 +64,81 @@ pub(super) fn cover_column(view: &gtk4::ColumnView, image: &Rc<ConcertsArtistIma
         .factory(&factory)
         .resizable(false)
         .build();
-    widths::pin(&column, widths::COVER);
+    widths::pin(&column, widths::COVER_COLUMN);
     view.append_column(&column);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn descendant_with_class(widget: &gtk4::Widget, class: &str) -> Option<gtk4::Widget> {
+        if widget.has_css_class(class) {
+            return Some(widget.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if let Some(found) = descendant_with_class(&current, class) {
+                return Some(found);
+            }
+            child = current.next_sibling();
+        }
+        None
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nr_2a_concert_placeholder_is_fully_visible_and_square() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
+        let store = gtk4::gio::ListStore::new::<ConcertObject>();
+        store.append(&ConcertObject::new(reprise_core::concerts::ConcertRow {
+            id: 1,
+            availability: reprise_core::concerts::TicketAvailability::Unknown,
+            date_key: "2026-09-01".into(),
+            starts_at: "2026-09-01T19:00:00".into(),
+            artist_name: "Mental Cruelty".into(),
+            venue: "Venue".into(),
+            city: "Zurich".into(),
+            region: None,
+            country: Some("CH".into()),
+            latitude: None,
+            longitude: None,
+            distance_km: None,
+            ticket_url: None,
+            ticket_source: None,
+            event_url: None,
+            provider: "fixture".into(),
+            is_similar: false,
+            similar_to: None,
+        }));
+        let view = gtk4::ColumnView::new(Some(gtk4::NoSelection::new(Some(store))));
+        let image = ConcertsArtistImage::for_test(|_| None);
+        cover_column(&view, &image);
+        let window = gtk4::Window::builder().child(&view).build();
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let root = descendant_with_class(view.upcast_ref(), "new-release-cover")
+            .expect("the Concerts cover cell was realized");
+        let cell = root
+            .ancestor(
+                gtk4::glib::Type::from_name("GtkColumnViewCellWidget")
+                    .expect("GTK registered its ColumnView cell widget type"),
+            )
+            .expect("the tile has a ColumnView cell ancestor");
+        let bounds = root.compute_bounds(&cell).expect("tile bounds in its cell");
+        assert_eq!((bounds.width(), bounds.height()), (56.0, 56.0));
+        assert!(
+            bounds.x() >= 0.0 && bounds.x() + bounds.width() <= cell.width() as f32,
+            "the 56 px tile is horizontally clipped: x={:.1}, width={:.1}, cell={}",
+            bounds.x(),
+            bounds.width(),
+            cell.width()
+        );
+        window.close();
+    }
 
     #[test]
     fn test_construction_uses_only_the_injected_cache_resolver() {

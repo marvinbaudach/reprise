@@ -225,12 +225,13 @@ pub(super) fn append_columns(
     on_open: &OnOpenTarget,
     filter_bar: &Rc<ReleasesFilterBar>,
     on_wire_cell: &OnWireCell,
+    artist_image: &Rc<crate::ui::artist_portrait_tiles::ArtistPortraitTiles>,
 ) -> gtk4::ColumnViewColumn {
     let query: crate::ui::search_highlight::QuerySource = {
         let filter_bar = filter_bar.clone();
         Rc::new(move || filter_bar.query())
     };
-    append_columns_with_query_and_wire(view, on_open, &query, on_wire_cell)
+    append_columns_with_query_and_wire(view, on_open, &query, on_wire_cell, artist_image)
 }
 
 #[cfg(test)]
@@ -240,7 +241,8 @@ fn append_columns_with_query(
     query: &crate::ui::search_highlight::QuerySource,
 ) -> gtk4::ColumnViewColumn {
     let on_wire_cell: OnWireCell = Rc::new(|_, _| {});
-    append_columns_with_query_and_wire(view, on_open, query, &on_wire_cell)
+    let artist_image = crate::ui::artist_portrait_tiles::ArtistPortraitTiles::for_test(|_| None);
+    append_columns_with_query_and_wire(view, on_open, query, &on_wire_cell, &artist_image)
 }
 
 fn append_columns_with_query_and_wire(
@@ -248,9 +250,10 @@ fn append_columns_with_query_and_wire(
     on_open: &OnOpenTarget,
     query: &crate::ui::search_highlight::QuerySource,
     on_wire_cell: &OnWireCell,
+    artist_image: &Rc<crate::ui::artist_portrait_tiles::ArtistPortraitTiles>,
 ) -> gtk4::ColumnViewColumn {
     let titles = column_contract();
-    super::releases_cover_column::append(view, on_wire_cell);
+    super::releases_cover_column::append(view, on_wire_cell, artist_image);
     let date = text_column(
         view,
         on_wire_cell,

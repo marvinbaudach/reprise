@@ -2318,11 +2318,33 @@ the panel).
   by play count. Per artist, at most twenty regular albums or EPs from
   the last 90 days remain, plus exclusively future singles; incomplete
   data is never treated as future, secondary types stay out.
-- **NR-2** [active] [gtk] — Release covers load lazily via Cover Art
+- **NR-2** [replaced by NR-2a] [gtk] — Release covers load lazily via Cover Art
   Archive (`/release-group/{mbid}/front-250`). A missing cover is the
   normal state and immediately shows an equally sized tile made of the
   effective accent color from STYLE-8 plus initials — never a hole or a
   permanent spinner.
+- **NR-2a** [active] [core] [gtk] — A release cell first shows a cached
+  release-group cover. A fresh negative cover marker skips the cover request
+  and immediately resolves the artist portrait cache, then (on a miss) may
+  request a portrait through the NET-1a artwork gate. With no prior cover
+  decision, the cell keeps a muted initials tile while lazily requesting the
+  release-group cover; only a fallback starts that same portrait chain. The
+  fallback is always a vertically centred square with optically centred
+  initials, never a hole, spinner, or accent-coloured slab. An image only
+  fills an empty placeholder: a cover is never exchanged for a portrait, nor
+  a portrait for a cover.
+  Tests: `release_group_cover_state_distinguishes_cached_known_missing_and_unknown`
+  and `nr_2a_missing_cover_uses_fallback_tile`
+  (`reprise-core/src/cover_download.rs`),
+  `nr_2a_release_placeholder_initials_are_optically_centered`,
+  `nr_2a_release_placeholder_stays_square_and_centered_in_a_tall_row`,
+  `nr_2a_concert_placeholder_is_fully_visible_and_square`,
+  `nr_2a_cached_cover_never_calls_the_portrait_resolver`,
+  `nr_2a_known_missing_cover_shows_cached_portrait_at_bind_time`,
+  `nr_2a_unknown_cover_fallback_then_shows_cached_portrait`,
+  `nr_2a_disabled_artwork_module_never_requests_a_missing_portrait`, and
+  `nr_2a_rebinding_drops_an_in_flight_portrait_result`
+  (`ui/updates/release_cover.rs`, `ui/updates/release_cover_portrait_tests.rs`).
 - **NR-3** [replaced by NR-3a] [gtk] — The header ✦ appears only
   when entries exist and carries a badge exclusively for `seen_at IS
   NULL`. Opening stamps the listed episode as seen; it never badges
@@ -5547,7 +5569,7 @@ available. The player plays only finished files.
   pinned at the leading edge, carries no id and no sorter, and shows the
   artist's portrait for every row including similar-artist recommendations —
   cached first, otherwise fetched through the artwork gate of NET-1a, with
-  the accent-coloured initials tile of NR-2 standing in until an image
+  the muted initials tile of NR-2a standing in until an image
   resolves and remaining in place when none does. Sorting, filters, counts,
   activation semantics and the migration-v75 note of CONC-17 are otherwise
   unchanged.

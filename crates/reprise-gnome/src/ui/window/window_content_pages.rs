@@ -82,6 +82,8 @@ pub(super) fn install_event_pages(
     cover_loader: Rc<CoverLoader>,
     artist_portrait: Rc<ArtistPortraitRuntime>,
 ) -> (DeferredPage<ConcertsView>, Rc<ReleasesView>) {
+    let releases_cover_loader = cover_loader.clone();
+    let releases_artist_portrait = artist_portrait.clone();
     let concerts_view = DeferredPage::install(content_stack, "concerts", {
         let conn = conn.clone();
         let concerts_runtime = concerts_runtime.clone();
@@ -106,6 +108,7 @@ pub(super) fn install_event_pages(
             db_path.to_path_buf(),
         ))
     };
+    releases_view.set_artist_image(releases_cover_loader, releases_artist_portrait);
     super::startup_report::mark("releases");
     {
         let _measurement = super::startup_report::measure("view.releases.add-named");
