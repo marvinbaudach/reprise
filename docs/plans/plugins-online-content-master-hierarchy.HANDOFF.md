@@ -116,16 +116,41 @@ Die vier SET-18-Geometrietests liegen jetzt in
 hielt die Datei unter der 800-Zeilen-Grenze und beseitigte die doppelten
 `artwork_job_row`/`lyrics_job_row`-Fixtures.
 
+## Der Stand im Haupt-Checkout: nicht mergen
+
+Eine andere Session hat `7a1e7aba11` („feat: implement plugins preferences
+online content master hierarchy") direkt auf das **lokale** `dev` des geteilten
+Haupt-Checkouts gelegt. Nachgemessen am 24.08.2026:
+
+- Lokales `dev` ist **7 voraus, 50 zurück** gegenüber `origin/dev`
+  (`facf172da4`). `7a1e7aba11` ist kein Vorfahr von `origin/dev`.
+- Der Baumvergleich `origin/dev → 7a1e7aba11` ist **2920 Zeilen plus gegen
+  13062 Zeilen minus** über 227 Dateien. Das sind fast ausschließlich die
+  fehlenden 50 Commits, nicht eigener Inhalt. Ein Merge wäre eine Rückabwicklung.
+- Was der Commit an eigenem Inhalt trägt, ist **schon anderswo gelandet**:
+  `list_density.rs` und `preference_choice_cards.rs` sind auf `origin/dev`
+  ebenfalls gelöscht (#660), `preference_layout_preview.rs` und
+  `preference_plugin_chrome.rs` existieren dort bereits.
+- Übrig bleiben drei Dateien mit der Plugins-Hierarchie: `preference_plugins.rs`
+  (+82), `preference_plugin_chrome.rs` (+18), `strings_online_sources.rs` (+24)
+  — Badge, eingerückte Karte, Farbleiste.
+- Dieser Rest ist auf diesem Branch **vollständig enthalten und weiter geführt**:
+  `ONLINE_CONTENT_PLUGINS_ON/OFF` und `online_content_plugins_on` stehen wörtlich
+  hier; die CSS-Klasse heißt bei ihm `ONLINE_STATUS_BADGE_CLASS`, hier
+  `BADGE_CLASS` — beide tragen denselben String `reprise-online-status-badge`.
+  Dazu kommen hier Fußleiste, entkoppeltes Aufklappen, `SET-11a`/`SET-14b`/
+  `SET-18`, sieben Kataloge und die Belege oben.
+- `attach_chevron`, `reserve_gutter` und `MASTER_ROW_CLASS` fehlen hier — das
+  ist Absicht, nicht Lücke: die Chevron-Rinne des zweiten Entwurfs hatte mit der
+  zurückkehrenden Karte ihren Zweck verloren (siehe „Bewusste Abweichungen").
+
+**Empfehlung:** `7a1e7aba11` verwerfen, nicht mergen. Der Haupt-Checkout ist
+geteilt, deshalb gehört das Zurücksetzen von `dev` dort dem Menschen, nicht
+einer Session — der Commit bleibt über `git reflog show dev` erreichbar.
+
 ## Offen
 
-- **Nichts ist committet.** Vorschlag:
-  `git -C <worktree> add -A && git commit -m "feat(preferences): the plugins master looks like one, and every job is named"`
-- **Der Haupt-Checkout hat einen eigenen Stand.** Eine andere Session hat dort
-  `7a1e7aba11` („feat: implement plugins preferences online content master
-  hierarchy") direkt auf das lokale `dev` gelegt — mit demselben Ziel, aber
-  ohne Fußleiste, dafür mit fremder Arbeit im selben Commit (`list_geometry`,
-  `settings_geometry`, Android-Visualizer). Vor einem Merge klären, welcher
-  Stand gilt.
+- **Committet** als `732341c7cc` auf `feat/plugins-background-activity-hierarchy`.
 - **Android-Stufe von `check-project-quality.sh` ist im frischen Worktree rot**
   — fehlendes SDK-Platform/Lizenzen, kein Codebezug. Bekanntes Muster, siehe
   Memory `fresh-worktree-cannot-pass-the-android-gate-stage`.
