@@ -31,7 +31,13 @@ patterns = {
         r"(?:(?P<symbol>[A-Z][A-Z0-9_]*)\()?"
         r"(?P<value>\d+)(?(symbol)\))(?=,|\s|\}|$)"
     ),
-    "track": r"^\s*description=(?P<value>.+)$",
+    # dumpsys prints the description on the metadata line, not on one of
+    # its own: "metadata: size=9, description=Title, Artist, Album". An
+    # anchor at the start of the line therefore never matches on a real
+    # device -- the underscore in the character class is deliberate
+    # protection against matching a longer key that merely ends in
+    # "description".
+    "track": r"(?:^|[,\s])description=(?P<value>.+)$",
 }
 match = re.search(patterns[field], text, re.MULTILINE)
 if match is None:
@@ -56,6 +62,22 @@ self_test() {
   if session_field state <(printf '%s\n' \
     'other_state=PlaybackState {state=PLAYING(3), position=20800}') >/dev/null 2>&1; then
     fail "a fixture without PlaybackState unexpectedly parsed"
+  fi
+
+
+  actual=$(session_field track <(printf '%s\n' \
+    '      metadata: size=9, description=Disease, Reversionists, Disease - Single')) ||
+    fail "the dumpsys metadata-line fixture did not parse"
+  [[ $actual == 'Disease, Reversionists, Disease - Single' ]] ||
+    fail "the metadata-line fixture yielded '$actual'"
+
+  actual=$(session_field track <(printf '%s\n' '      description=Solo Line')) ||
+    fail "the standalone description fixture did not parse"
+  [[ $actual == 'Solo Line' ]] || fail "the standalone fixture yielded '$actual'"
+
+  if session_field track <(printf '%s\n' '      queue_description=Not This') \
+    >/dev/null 2>&1; then
+    fail "a longer key ending in description unexpectedly parsed"
   fi
 
   printf 'Android visualizer session parser self-test passed\n'
