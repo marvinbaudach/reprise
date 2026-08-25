@@ -1,5 +1,19 @@
 name: Dependabot auto-merge
 
+# Auto-merge is the one path into dev that no human watches, so whether it is
+# armed has to be a standing property of dev's health rather than a snapshot
+# taken once when a pull request arrived.
+#
+# The first version checked dev's health before arming and refused otherwise.
+# That did not hold, and #676 proved it on 2026-08-25: the check refused at
+# 11:10:34 and GitHub merged the pull request at 11:13:19 anyway, because
+# auto-merge had been armed by an earlier run of this workflow and refusing to
+# arm something does not disarm it. The case the brake exists for -- dev breaks
+# after a bump is already waiting -- was the one case it could not catch.
+#
+# So this reconciles instead of arming. Two triggers ask the same question:
+# a pull request event asks it about itself, and CI finishing on dev asks it
+# about every bump still open. Green arms, anything else disarms.
 on:
   pull_request:
     branches:
@@ -8,28 +22,44 @@ on:
       - opened
       - reopened
       - synchronize
+  workflow_run:
+    workflows:
+      - CI
+    branches:
+      - dev
+    types:
+      - completed
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  enable-automerge:
-    name: Enable Dependabot auto-merge
+  reconcile-automerge:
+    name: Reconcile Dependabot auto-merge
     if: >-
+      github.repository == 'marvinbaudach/reprise' &&
+      (
+      github.event_name == 'workflow_run' ||
+      (
       github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.event.pull_request.base.ref == 'dev' &&
-      github.repository == 'marvinbaudach/reprise'
+      github.event.pull_request.base.ref == 'dev'
+      )
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      # Auto-merge is the one path into dev that no human watches. Arming it
-      # while dev is already broken stacks an unreviewed bump on top of a break
-      # nobody has looked at yet, which is how four of them landed in one night
-      # on 2026-08-24. The quality gate on dev's own head is the same check the
-      # branch ruleset requires, so this asks exactly the question the ruleset
-      # asks -- just about the base instead of the pull request.
-      - name: Require a healthy dev before arming auto-merge
+      # The quality gate on dev's own head is the same check the branch ruleset
+      # requires of a pull request, so this asks exactly the ruleset's question
+      # about the base instead of about the bump.
+      #
+      # An empty answer is not "dev is fine". It means dev's head has no
+      # finished gate yet, which is the normal state for the forty minutes
+      # after any merge. Treating that as healthy is what let unverified bumps
+      # stack up; treating it as unhealthy is safe here only because the
+      # workflow_run trigger comes back and re-arms once the gate concludes.
+      - name: Read dev's last quality gate
+        id: health
         run: |
           conclusion=$(
             gh api "repos/$GITHUB_REPOSITORY/commits/dev/check-runs" \
@@ -42,20 +72,45 @@ jobs:
                 | .conclusion // empty
               '
           )
-          if [[ -z $conclusion ]]; then
-            echo "dev has no completed quality gate yet - refusing to arm auto-merge" >&2
-            exit 1
+          echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
+          if [[ $conclusion == success ]]; then
+            echo "dev's last quality gate concluded success"
+          elif [[ -z $conclusion ]]; then
+            echo "dev's head has no finished quality gate yet"
+          else
+            echo "dev's last quality gate concluded '$conclusion'"
           fi
-          if [[ $conclusion != success ]]; then
-            echo "dev's last quality gate concluded '$conclusion' - refusing to arm auto-merge" >&2
-            exit 1
-          fi
-          echo "dev's last quality gate concluded success"
         env:
           GH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
 
-      - name: Merge after required checks pass
-        run: gh pr merge --auto --squash "$PR_URL"
+      # A pull request event reconciles itself; CI finishing on dev reconciles
+      # every bump still waiting, which is the half the first version was
+      # missing. Disarming a pull request that was never armed is not an error
+      # worth failing on -- it is the state this step is trying to reach.
+      - name: Arm or disarm every affected pull request
+        run: |
+          if [[ $GITHUB_EVENT_NAME == pull_request ]]; then
+            urls=$EVENT_PR_URL
+          else
+            urls=$(
+              gh pr list --repo "$GITHUB_REPOSITORY" --state open --base dev \
+                --author 'app/dependabot' --json url --jq '.[].url'
+            )
+          fi
+          if [[ -z $urls ]]; then
+            echo "no open Dependabot pull request to reconcile"
+            exit 0
+          fi
+          for url in $urls; do
+            if [[ $CONCLUSION == success ]]; then
+              echo "arming $url"
+              gh pr merge --auto --squash "$url"
+            else
+              echo "disarming $url"
+              gh pr merge --disable-auto "$url" || true
+            fi
+          done
         env:
           GH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          CONCLUSION: ${{ steps.health.outputs.conclusion }}
+          EVENT_PR_URL: ${{ github.event.pull_request.html_url }}
