@@ -85,7 +85,12 @@ case "${1:-}" in
         repository_owner=$5
         head_sha=$6
         dev_sha=$7
-        if [[ $event == pull_request ]]; then
+        # A pull request skips the expensive suites so review stays cheap;
+        # the real verification happens on the push to dev. Dependabot is the
+        # one author that never reaches that push consciously: its pull
+        # requests merge themselves as soon as the required check turns green,
+        # so for it the pull request IS the only opportunity to test the diff.
+        if [[ $event == pull_request && $actor != "dependabot[bot]" ]]; then
             echo true
         elif [[ $event == push && $ref == refs/heads/main \
             && -n $repository_owner && $actor == "$repository_owner" \

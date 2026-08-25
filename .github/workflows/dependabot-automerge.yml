@@ -23,6 +23,37 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      # Auto-merge is the one path into dev that no human watches. Arming it
+      # while dev is already broken stacks an unreviewed bump on top of a break
+      # nobody has looked at yet, which is how four of them landed in one night
+      # on 2026-08-24. The quality gate on dev's own head is the same check the
+      # branch ruleset requires, so this asks exactly the question the ruleset
+      # asks -- just about the base instead of the pull request.
+      - name: Require a healthy dev before arming auto-merge
+        run: |
+          conclusion=$(
+            gh api "repos/$GITHUB_REPOSITORY/commits/dev/check-runs" \
+              --paginate --jq '
+                [.check_runs[]
+                  | select(.name == "Quality gate")
+                  | select(.status == "completed")]
+                | sort_by(.completed_at)
+                | last
+                | .conclusion // empty
+              '
+          )
+          if [[ -z $conclusion ]]; then
+            echo "dev has no completed quality gate yet - refusing to arm auto-merge" >&2
+            exit 1
+          fi
+          if [[ $conclusion != success ]]; then
+            echo "dev's last quality gate concluded '$conclusion' - refusing to arm auto-merge" >&2
+            exit 1
+          fi
+          echo "dev's last quality gate concluded success"
+        env:
+          GH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
+
       - name: Merge after required checks pass
         run: gh pr merge --auto --squash "$PR_URL"
         env:
