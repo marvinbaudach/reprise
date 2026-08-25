@@ -507,6 +507,22 @@ fn pcm_ingest_does_not_contend_on_display_state() {
     assert_eq!(engine.dropped_audio_frames(), 0);
 }
 
+#[test]
+fn pcm_block_dropped_on_live_audio_contention_is_counted() {
+    let engine = AndroidVisualEngine::new();
+    let pcm = stereo_sine_pcm16(80.0, 48_000, 0, 512);
+
+    assert_eq!(engine.dropped_audio_frames(), 0);
+    let accepted = engine.with_live_processor_locked_for_testing(|| {
+        engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2)
+    });
+
+    assert!(!accepted);
+    assert_eq!(engine.dropped_audio_frames(), 1);
+    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    assert_eq!(engine.dropped_audio_frames(), 1);
+}
+
 #[derive(Default)]
 struct FakeMonotonicClock {
     now_nanos: AtomicU64,
