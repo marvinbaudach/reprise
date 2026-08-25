@@ -175,7 +175,7 @@ pub(crate) fn prepare_tag_mutation(
         Err(error) => {
             return Err(TagMutationFailure {
                 kind: classify_write_error(&error),
-                error: error.to_string(),
+                error: crate::library::import_errors::error_detail(&error),
                 file_written: false,
             });
         }

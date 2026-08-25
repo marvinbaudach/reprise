@@ -66,3 +66,16 @@ fn classify_lofty_maps_io_permission_denied_to_permission_denied() {
     let (kind, _detail) = classify_lofty(&err);
     assert_eq!(kind, ImportErrorKind::PermissionDenied);
 }
+
+#[test]
+fn classify_lofty_detail_includes_the_typed_errors_source() {
+    let io_err = std::io::Error::other("recognizable source detail");
+    let err: lofty::error::FileParseError = io_err.into();
+
+    let (_kind, detail) = classify_lofty(&err);
+
+    assert!(
+        detail.contains("recognizable source detail"),
+        "detail must retain the source omitted by FileParseError::Display: {detail}"
+    );
+}

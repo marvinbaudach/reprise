@@ -210,7 +210,7 @@ pub(crate) fn commit_guarded_tag_changes(
         let error = TagEditError::from(error);
         TagMutationFailure {
             kind: classify_write_error(&error),
-            error: error.to_string(),
+            error: crate::library::import_errors::error_detail(&error),
             file_written: false,
         }
     })?;
@@ -232,7 +232,7 @@ pub(crate) fn commit_guarded_tag_changes(
     }
     let tag = ensure_writable_tag(&mut tagged).map_err(|error| TagMutationFailure {
         kind: classify_write_error(&error),
-        error: error.to_string(),
+        error: crate::library::import_errors::error_detail(&error),
         file_written: false,
     })?;
     for change in &valid {
@@ -243,7 +243,7 @@ pub(crate) fn commit_guarded_tag_changes(
     }
     save_loaded_tagged(&tagged, path).map_err(|error| TagMutationFailure {
         kind: classify_write_error(&error),
-        error: error.to_string(),
+        error: crate::library::import_errors::error_detail(&error),
         file_written: false,
     })?;
     let post_write_failure =

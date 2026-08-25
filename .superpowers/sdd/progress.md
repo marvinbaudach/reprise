@@ -1929,3 +1929,4 @@ Review finding F1: complete (this commit, base 12668517b7, updated CONC-4c's rul
 # Lofty 0.25 error-model migration
 
 Task T1: complete (this commit, base f2379578a8, replaced removed ErrorKind matching with source-chain downcasts that classify unknown formats and I/O errors across both typed lofty error families; the Core library check advanced from the original 14 errors to the 12 expected failures owned by T3-T6)
+Task T2: complete (this commit, base b9822f3f3f, preserved complete lofty and wrapper error detail by joining every source-chain message for scanner records, tag-mutation failures, recovery and Library Doctor reports, and AI-promotion tag failures; added a regression requiring a recognizable nested io error message, with the deliberate production-reversion red proof deferred until T7 makes the crate test target compile)

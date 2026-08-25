@@ -424,8 +424,9 @@ fn write_final_tags(
         track_no: Some(source.track_no.map(|track| track.max(0) as u32)),
         genre: Some(source.genre.clone()),
     };
-    tag_edit::apply_patch_to_file(path, &patch)
-        .map_err(|error| PromotionError::Tag(error.to_string()))?;
+    tag_edit::apply_patch_to_file(path, &patch).map_err(|error| {
+        PromotionError::Tag(crate::library::import_errors::error_detail(&error))
+    })?;
     provenance::write_ai_tags(
         path,
         &AiTagSet {
@@ -435,7 +436,7 @@ fn write_final_tags(
             source_mbid: None,
         },
     )
-    .map_err(|error| PromotionError::Tag(error.to_string()))?;
+    .map_err(|error| PromotionError::Tag(crate::library::import_errors::error_detail(&error)))?;
     Ok(())
 }
 

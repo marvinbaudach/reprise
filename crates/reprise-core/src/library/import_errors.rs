@@ -76,11 +76,23 @@ pub(crate) fn find_source<'a, T: std::error::Error + 'static>(
     }
 }
 
+/// Preserves an error's complete explanation even when an outer error omits
+/// its source from `Display`, as lofty's typed file errors do.
+pub(crate) fn error_detail(mut error: &(dyn std::error::Error + 'static)) -> String {
+    let mut detail = error.to_string();
+    while let Some(source) = error.source() {
+        detail.push_str(": ");
+        detail.push_str(&source.to_string());
+        error = source;
+    }
+    detail
+}
+
 /// Maps a lofty failure to `(kind, detail)` at the source — see this module's
 /// doc comment for why classification must inspect typed errors rather than
 /// either concrete lofty's `Display` text.
 pub(crate) fn classify_lofty(e: &(dyn std::error::Error + 'static)) -> (ImportErrorKind, String) {
-    let detail = e.to_string();
+    let detail = error_detail(e);
     let kind = if find_source::<lofty::error::UnknownFormatError>(e).is_some() {
         ImportErrorKind::UnsupportedFormat
     } else if let Some(io_err) = find_source::<std::io::Error>(e) {
