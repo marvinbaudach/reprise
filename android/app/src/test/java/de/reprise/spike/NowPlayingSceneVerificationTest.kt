@@ -26,10 +26,21 @@ import kotlin.math.roundToInt
 @Config(sdk = [36])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NowPlayingSceneVerificationTest {
+    /**
+     * The rendered proof of the whole change: loud is brighter than quiet, and
+     * barely.
+     *
+     * The layer this replaced was asked to make a quarter's difference between
+     * a quiet passage and a loud one, and the same responsiveness that produced
+     * it produced the flicker. The film is held to the opposite bar. It must
+     * still answer the music — a section change should be visible — but the
+     * answer is bounded well under the step a listener could mistake for the
+     * picture reacting to a drum.
+     */
     @Test
-    fun played_fog_render_answers_the_settled_slow_envelope_without_drifting() {
-        val quietState = settledState(level = 0.126f)
-        val loudState = settledState(level = 0.646f)
+    fun played_fog_render_answers_a_loud_passage_without_lurching_at_it() {
+        val quietState = settledFilmState(level = 0.126f)
+        val loudState = settledFilmState(level = 0.646f)
         val fog = prepareCoverFogBitmap(solidArtwork(Color.WHITE), Color.DKGRAY)
 
         val quiet = renderPlayedFog(quietState, fog)
@@ -38,10 +49,32 @@ class NowPlayingSceneVerificationTest {
         val loudLuma = meanFogRegionLuma(loud)
 
         assertTrue(
-            "settled loud fog luma $loudLuma must exceed quiet $quietLuma by at least 25%",
-            loudLuma >= quietLuma * 1.25f,
+            "settled loud fog luma $loudLuma must exceed quiet $quietLuma",
+            loudLuma > quietLuma,
+        )
+        assertTrue(
+            "loud fog luma $loudLuma must stay within a fifth of quiet $quietLuma",
+            loudLuma <= quietLuma * 1.20f,
         )
         assertArrayEquals(loud, renderPlayedFog(loudState, fog))
+    }
+
+    /** The film drifts on its own clock, with no signal reaching it at all. */
+    @Test
+    fun the_film_moves_on_wall_time_alone_while_the_music_stands_still() {
+        val frames = SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = ByteArray(0))
+        val state = SceneState(frames)
+        val fog = prepareCoverFogBitmap(greyscaleArtwork(), Color.DKGRAY)
+
+        // renderScene, not renderPlayedFog: the played helper freezes the drift
+        // the way a power gate does, which is the opposite of what is measured
+        // here.
+        val before = renderScene(state, fog)
+        repeat(120) { state.advanceOilFilmBy(1f / 60f) }
+        val after = renderScene(state, fog)
+
+        assertEquals(0f, state.bassPressure, 0f)
+        assertFalse("two seconds of drift must change the film", before.contentEquals(after))
     }
 
     @Test
@@ -101,13 +134,12 @@ class NowPlayingSceneVerificationTest {
         ) {
             drawRect(androidx.compose.ui.graphics.Color.Black)
             drawNowPlayingFog(
-                fog = fog,
+                palette = fog.palette,
                 center = Offset(size.width / 2f, size.height * 0.34f),
-                angleA = state.fogAngleA,
-                angleB = state.fogAngleB,
-                fogLevel = state.fogLevel,
+                seconds = state.oilFilmSeconds,
+                level = state.oilFilmLevel,
                 opacity = 0.5f,
-                rotationsEnabled = true,
+                driftEnabled = true,
             )
         }
         return IntArray(bitmap.width * bitmap.height).also { pixels ->
@@ -128,6 +160,7 @@ class NowPlayingSceneVerificationTest {
                 fog = fog,
                 center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION),
                 state = state,
+                visualizerOpacity = 0f,
                 opacity = 1f,
                 rotationsEnabled = false,
             )
@@ -158,7 +191,15 @@ class NowPlayingSceneVerificationTest {
         return (total / count / 255.0).toFloat()
     }
 
-    private fun settledState(level: Float): SceneState {
+    /**
+     * A scene held at one signal level until both its band followers and the
+     * film's own envelope have stopped moving.
+     *
+     * The film's follower releases over two seconds, ten times slower than the
+     * band bank underneath it, so settling the bands alone would leave the film
+     * still on its way and make the comparison a race rather than a reading.
+     */
+    private fun settledFilmState(level: Float): SceneState {
         val cell = (level.coerceIn(0f, 1f) * 255f).roundToInt()
         val frames = SpectrogramFrames(
             bandCount = 24,
@@ -167,6 +208,7 @@ class NowPlayingSceneVerificationTest {
         )
         return SceneState(frames).also { state ->
             repeat(frames.frameCount) { frame -> state.advanceTo(frame) }
+            repeat(FILM_SETTLE_TICKS) { state.advanceOilFilmBy(FILM_SETTLE_STEP_SECONDS) }
         }
     }
 
@@ -223,3 +265,7 @@ private const val FOG_SAMPLE_INSET = 24
 
 /** Four seconds is twenty attack constants for the 200 ms slow fog follower. */
 private const val SETTLE_FRAME_COUNT = 4 * 20
+
+/** Twenty seconds of frame loop: ten release constants of the film's follower. */
+private const val FILM_SETTLE_TICKS = 20 * 60
+private const val FILM_SETTLE_STEP_SECONDS = 1f / 60f

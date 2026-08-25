@@ -6,6 +6,8 @@ import de.reprise.spike.VisualBassPressure
 class SceneState(
     private val frames: SpectrogramFrames,
 ) {
+    private val filmEnvelope = OilFilmEnvelope()
+    private var filmSeconds = 0.0
     private val fogEnvelopes = BandEnvelopes.fog(frames.bandCount, frames.frameRateHz)
     private val motionEnvelopes = BandEnvelopes.motion(frames.bandCount, frames.frameRateHz)
     private val rawBands = FloatArray(frames.bandCount)
@@ -41,6 +43,23 @@ class SceneState(
         private set
     var shimmerElapsedSeconds: Double = 0.0
         private set
+
+    /**
+     * How far the oil film has drifted, in seconds of wall time.
+     *
+     * Kept as a `Double` and handed out as a `Float` on purpose. The film's
+     * orbits are slow enough that a `Float` carries them perfectly well, but a
+     * `Float` *accumulator* does not: past about a day of uninterrupted
+     * playback its spacing grows wider than one frame's worth of time, and
+     * `t += dt` starts rounding to `t`. The clock would not drift then, it
+     * would stop, and the film with it.
+     */
+    val oilFilmSeconds: Float
+        get() = filmSeconds.toFloat()
+
+    /** What the film is lit to — its floor, plus the fifth the music is allowed. */
+    val oilFilmLevel: Float
+        get() = filmEnvelope.level
     var revision: Int = 0
         private set
 
@@ -90,8 +109,12 @@ class SceneState(
         bassPressure = bassMean(motionBands)
         motionLevel = mean(motionBands)
         lastFrameIndex = targetIndex
+        // A seek is the one moment the film may jump: sliding its envelope over
+        // from the old passage would spend two seconds of release explaining a
+        // position change nobody heard.
+        val filmSnapped = filmEnvelope.snapTo(bassPressure)
         if (
-            fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
+            filmSnapped || fogChanged || motionChanged || fogLevel.changedFrom(oldFogLevel) ||
             bassPressure.changedFrom(oldBassPressure) ||
             motionLevel.changedFrom(oldMotionLevel)
         ) {
@@ -201,6 +224,26 @@ class SceneState(
         ) {
             revision += 1
         }
+    }
+
+    /**
+     * Moves the film on by wall time — its drift, and its envelope.
+     *
+     * Both halves are deliberately driven from the clock rather than from the
+     * analysis frames the rest of this class steps on. The drift has to be
+     * music-independent to be worth anything, and the envelope's whole job is
+     * to be slower than the music, so neither may inherit the 20 Hz cadence of
+     * a spectrogram or the gaps in it.
+     *
+     * It reads [bassPressure] as its target, so callers step it after whatever
+     * updated that this tick — otherwise the envelope chases last frame's kick.
+     */
+    fun advanceOilFilmBy(elapsedSeconds: Float) {
+        if (elapsedSeconds <= 0f || !elapsedSeconds.isFinite()) return
+        val previousSeconds = filmSeconds
+        filmSeconds += elapsedSeconds.toDouble()
+        val envelopeMoved = filmEnvelope.advance(bassPressure, elapsedSeconds)
+        if (envelopeMoved || filmSeconds != previousSeconds) revision += 1
     }
 
     /** Keeps both fog layers breathing even when playback has no new signal frame. */
