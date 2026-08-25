@@ -93,6 +93,13 @@ internal fun LibraryScreenState.Browse.catalogShape() = LibraryCatalogShape(
     artists = artists.total,
 )
 
+private data class ArtistPhotoBackfillBinding(
+    val snapshot: () -> ArtistPhotoProgress,
+    val start: ((ArtistPhotoProgress) -> Unit) -> Unit,
+    val cancel: () -> Unit,
+    val postToMain: (() -> Unit) -> Unit,
+)
+
 /**
  * State whose lifetime is the screen rather than one composition.
  *
@@ -123,11 +130,10 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     private var artistPhotoProgress by mutableStateOf<ArtistPhotoProgress?>(null)
     private var dismissedArtistPhotoRunId by mutableStateOf<Long?>(null)
-    private var startArtistPhotoBackfill:
-        (((ArtistPhotoProgress) -> Unit) -> Unit)? = null
-    private var cancelArtistPhotoBackfill: (() -> Unit)? = null
-    private var artistPhotoBackfillSnapshot: (() -> ArtistPhotoProgress)? = null
+    @Volatile
+    private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
     private var retainedLibrary: MusicLibrary? = null
+    val libraryScanMonitor = Any()
     private var reportLibraryState: ((LibraryScreenState) -> Unit)? = null
     private var pendingLibraryState: LibraryScreenState? = null
 
@@ -169,20 +175,29 @@ internal class MobileSurfaceViewModel : ViewModel() {
         snapshot: () -> ArtistPhotoProgress,
         start: ((ArtistPhotoProgress) -> Unit) -> Unit,
         cancel: () -> Unit,
+        postToMain: (() -> Unit) -> Unit = { work -> work() },
     ) {
-        artistPhotoBackfillSnapshot = snapshot
-        startArtistPhotoBackfill = start
-        cancelArtistPhotoBackfill = cancel
-        acceptArtistPhotoProgress(snapshot())
+        artistPhotoBackfillBinding = ArtistPhotoBackfillBinding(
+            snapshot = snapshot,
+            start = start,
+            cancel = cancel,
+            postToMain = postToMain,
+        )
+        val initial = snapshot()
+        postToMain { acceptArtistPhotoProgress(initial) }
     }
 
     fun startArtistPhotoBackfill() {
-        startArtistPhotoBackfill?.invoke(::acceptArtistPhotoProgress)
-        artistPhotoBackfillSnapshot?.let { acceptArtistPhotoProgress(it()) }
+        val binding = artistPhotoBackfillBinding ?: return
+        binding.start { update ->
+            binding.postToMain { acceptArtistPhotoProgress(update) }
+        }
+        val snapshot = binding.snapshot()
+        binding.postToMain { acceptArtistPhotoProgress(snapshot) }
     }
 
     fun cancelArtistPhotoBackfill() {
-        cancelArtistPhotoBackfill?.invoke()
+        artistPhotoBackfillBinding?.cancel?.invoke()
         artistPhotoProgress = null
     }
 
@@ -375,7 +390,7 @@ internal class MobileSurfaceViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        cancelArtistPhotoBackfill?.invoke()
+        artistPhotoBackfillBinding?.cancel?.invoke()
         retainedLibrary?.close()
         retainedLibrary = null
     }

@@ -16,12 +16,13 @@ internal fun MobileSurfaceViewModel.connectArtistPhotoBackfill(
             library.startArtistPortraitBackfill(
                 object : ArtistPortraitProgressListener {
                     override fun onProgress(update: ArtistPortraitProgressUpdate) {
-                        postToMain { deliver(update.toUiProgress()) }
+                        deliver(update.toUiProgress())
                     }
                 },
             )
         },
         cancel = library::cancelArtistPortraitBackfill,
+        postToMain = postToMain,
     )
 }
 

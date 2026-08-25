@@ -43,7 +43,7 @@ internal fun OnlineSourcesSettingsPage(
                 Column {
                     SettingsSwitchRow(
                         title = "Download artist photos",
-                        supporting = "Fetch portraits after a library scan or restore.",
+                        supporting = "Fetch portraits after automatic scans, manual scans, or restores.",
                         checked = enabled,
                         onCheckedChange = setEnabled,
                     )
@@ -56,7 +56,8 @@ internal fun OnlineSourcesSettingsPage(
             }
             item {
                 Text(
-                    "Artist names in your library are sent to Deezer after a scan or restore. " +
+                    "Artist names in your library are sent to Deezer after an automatic scan, " +
+                        "manual scan, or restore. " +
                         "The app sends nothing else to the internet. " +
                         "With downloads off, album covers remain available.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

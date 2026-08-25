@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import de.reprise.spike.settings.OnlineSourcesSettingsPage
 import de.reprise.spike.ui.theme.RepriseTheme
+import java.util.concurrent.ConcurrentLinkedQueue
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -97,6 +98,32 @@ class ArtistPhotoProgressBarTest {
 
         viewModel.acceptArtistPhotoProgress(running(runId = 10))
         assertEquals(10L, viewModel.visibleArtistPhotoProgress?.runId)
+    }
+
+    @Test
+    fun aBackgroundSnapshotIsPostedBeforeItMutatesComposeState() {
+        val posted = ConcurrentLinkedQueue<() -> Unit>()
+        var snapshot = running(runId = 20)
+        val viewModel = MobileSurfaceViewModel()
+        viewModel.bindArtistPhotoBackfill(
+            snapshot = { snapshot },
+            start = {},
+            cancel = {},
+            postToMain = posted::add,
+        )
+        posted.remove().invoke()
+        assertEquals(20L, viewModel.visibleArtistPhotoProgress?.runId)
+        snapshot = running(runId = 21)
+
+        Thread(viewModel::startArtistPhotoBackfill).also {
+            it.start()
+            it.join()
+        }
+
+        assertEquals(20L, viewModel.visibleArtistPhotoProgress?.runId)
+        assertEquals(1, posted.size)
+        posted.remove().invoke()
+        assertEquals(21L, viewModel.visibleArtistPhotoProgress?.runId)
     }
 
     @Test

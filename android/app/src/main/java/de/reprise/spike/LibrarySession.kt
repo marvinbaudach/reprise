@@ -82,6 +82,7 @@ internal class LibrarySession(
     private val port: LibrarySessionPort,
     private val startPortraitPrefetch: () -> Unit = {},
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val scanMonitor: Any = Any(),
 ) {
     private val artworkPaths =
         object : LinkedHashMap<ArtworkCacheKey, String?>(64, 0.75f, true) {
@@ -110,38 +111,42 @@ internal class LibrarySession(
         return state
     }
 
-    @Synchronized
     fun chooseTree(
         treeUri: String,
         report: (LibraryScreenState.Scanning) -> Unit,
-    ): LibraryScreenState {
+    ): LibraryScreenState = synchronized(scanMonitor) {
         port.persistTreePermission(treeUri)
         port.rememberTreeUri(treeUri)
-        return scanTree(treeUri, report)
+        scanTree(treeUri, report)
     }
 
-    @Synchronized
-    fun rescan(report: (LibraryScreenState.Scanning) -> Unit): LibraryScreenState {
-        val treeUri = port.rememberedTreeUri() ?: return LibraryScreenState.NoFolder()
-        return scanTree(treeUri, report)
-    }
+    fun rescan(report: (LibraryScreenState.Scanning) -> Unit): LibraryScreenState =
+        synchronized(scanMonitor) {
+            val treeUri = port.rememberedTreeUri()
+                ?: return@synchronized LibraryScreenState.NoFolder()
+            scanTree(treeUri, report)
+        }
 
     /** Refreshes a configured library without replacing it with the scan screen. */
-    @Synchronized
-    fun autoScan(): LibraryScreenState.Browse? {
-        val treeUri = port.rememberedTreeUri() ?: return null
+    fun autoScan(): LibraryScreenState.Browse? = synchronized(scanMonitor) {
+        val treeUri = port.rememberedTreeUri() ?: return@synchronized null
         val now = nowMillis()
         val elapsed = now - port.lastScanCompletedAtMs()
-        if (elapsed < AUTOMATIC_SCAN_INTERVAL_MS) return null
-        if (!port.isTreeReadable(treeUri)) return null
+        if (elapsed < AUTOMATIC_SCAN_INTERVAL_MS) return@synchronized null
+        if (!port.isTreeReadable(treeUri)) return@synchronized null
 
-        port.configureTree(treeUri)
-        port.scan { }
-        port.rememberScanCompletedAtMs(now)
+        try {
+            port.configureTree(treeUri)
+            port.scan { }
+        } finally {
+            // A failed attempt waits for the normal interval instead of being
+            // retried on every Activity resume.
+            port.rememberScanCompletedAtMs(now)
+        }
         clearArtworkPaths()
         val state = browseState()
         startPortraitPrefetch()
-        return state
+        state
     }
 
     fun stateAfterFailure(message: String): LibraryScreenState {

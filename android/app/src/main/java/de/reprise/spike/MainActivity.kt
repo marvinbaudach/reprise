@@ -63,7 +63,11 @@ class MainActivity : ComponentActivity() {
     // The core is told where to cache covers instead of assuming an XDG
     // directory that does not exist here.
     private val surfaceState by viewModels<MobileSurfaceViewModel>()
-    private lateinit var library: MusicLibrary
+    private val library by lazy {
+        surfaceState.retainLibrary {
+            MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
+        }
+    }
     private var usesProductionSurface = false
     private val equalizerPresets by lazy(::equalizerPresetUi)
     private val sessionPort by lazy {
@@ -82,6 +86,7 @@ class MainActivity : ComponentActivity() {
         LibrarySession(
             port = sessionPort,
             startPortraitPrefetch = artistPortraitPrefetch::start,
+            scanMonitor = surfaceState.libraryScanMonitor,
         )
     }
     private val artworkDelegate = lazy {
@@ -195,9 +200,6 @@ class MainActivity : ComponentActivity() {
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: run {
             usesProductionSurface = true
-            library = surfaceState.retainLibrary {
-                MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
-            }
             surfaceState.connectArtistPhotoBackfill(library) { work -> runOnUiThread(work) }
             productionSurface().also { surfaceState.startArtistPhotoBackfill() }
         }
