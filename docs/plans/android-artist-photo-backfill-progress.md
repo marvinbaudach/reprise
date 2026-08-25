@@ -268,12 +268,12 @@ Die Zahlen des Entwurfs, innerhalb der Karte als dp/sp zu lesen:
 | Abstand Kopfzeile → Balken | 8dp | — |
 | Beschriftung | 12sp `#d3dae4` | `colorScheme.onSurface` |
 | Zähler | 12sp `#5bd6b4` | `colorScheme.primary` (`reprise_teal #4FDBD4`) |
-| Schließen `×` | `#8f96a3`, Trefferfläche 48dp | `colorScheme.onSurfaceVariant` |
+| Schließen `×` | `#8f96a3`, 13sp, Trefferfläche 48dp | `colorScheme.onSurfaceVariant` at alpha `0.753` over `surfaceContainerHigh` (composites to approximately `#9094a4`) |
 | Balken | 4dp hoch, Radius voll | — |
 | Balken, Spur | `#333b48` | `colorScheme.outlineVariant` |
 | Balken, Füllung | `#5bd6b4` | `colorScheme.primary` |
 | Balken, Fehlschlag-Rest | `#9184d9` | `colorScheme.tertiary` (`NocturneTertiary #9184D9`) — dieselbe Farbe wie die Favoriten-Herzen |
-| Dritte Zeile | 11sp `#8f96a3` | `colorScheme.onSurfaceVariant` |
+| Dritte Zeile | 11sp `#8f96a3` | `colorScheme.onSurfaceVariant` at alpha `0.753` over `surfaceContainerHigh` (composites to approximately `#9094a4`) |
 
 Auf „Online sources" dieselbe Karte ohne horizontalen Außenabstand (der Screen
 hat schon 16dp), Innenabstand 12dp, Abstand Kopfzeile → Balken 9dp.

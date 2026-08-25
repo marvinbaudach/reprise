@@ -1,31 +1,52 @@
 package de.reprise.spike
 
+import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import de.reprise.spike.settings.OnlineSourcesSettingsPage
 import de.reprise.spike.ui.theme.RepriseTheme
 import java.util.concurrent.ConcurrentLinkedQueue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import uniffi.reprise_android_ffi.AndroidColorScheme
+import kotlin.math.roundToInt
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w500dp-h1000dp")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ArtistPhotoProgressBarTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
@@ -47,8 +68,20 @@ class ArtistPhotoProgressBarTest {
         compose.onNodeWithText("128 / 412").assertIsDisplayed()
         compose.onNodeWithTag("artist-photo-progress-track")
             .assertProgress(128f / 412f)
-        compose.onNodeWithContentDescription("Artist photos, 128 of 412 downloaded")
-            .assertIsDisplayed()
+    }
+
+    @Test
+    fun determinateProgressHasOneCountAnnouncement() {
+        show(ArtistPhotoProgress(2, ArtistPhotoProgressPhase.RUNNING, 128, 0, 412))
+
+        compose.onNodeWithTag("artist-photo-progress-track")
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Artist photos, 128 of 412 downloaded",
+                ),
+            )
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
     }
 
     @Test
@@ -71,6 +104,30 @@ class ArtistPhotoProgressBarTest {
     }
 
     @Test
+    fun failedCompletionRendersTealThenPurpleAtTheMeasuredSplit() {
+        show(ArtistPhotoProgress(4, ArtistPhotoProgressPhase.COMPLETE, 397, 15, 412))
+
+        val track = compose.onNodeWithTag("artist-photo-progress-track")
+            .getUnclippedBoundsInRoot()
+        val pixels = renderActivity()
+        val density = compose.activity.resources.displayMetrics.density
+        val middleY = (
+            (track.top.value + (track.bottom.value - track.top.value) / 2f) * density
+        ).roundToInt()
+        val left = (track.left.value * density).roundToInt()
+        val width = ((track.right.value - track.left.value) * density).roundToInt()
+        val teal = pixels[left + width / 2, middleY]
+        assertTrue(
+            "transparent sample: track=$track density=$density bitmap=${pixels.width}x${pixels.height} " +
+                "sample=${left + width / 2},$middleY",
+            teal.alpha > 0.9f,
+        )
+
+        assertColorNear(Color(0xFF4FDBD4), teal)
+        assertColorNear(Color(0xFF9184D9), pixels[left + (width * 98) / 100, middleY])
+    }
+
+    @Test
     fun pausedKeepsItsLastDeterminateStand() {
         show(ArtistPhotoProgress(5, ArtistPhotoProgressPhase.PAUSED, 128, 15, 412))
 
@@ -88,6 +145,25 @@ class ArtistPhotoProgressBarTest {
     }
 
     @Test
+    fun noRunLeavesNoNodeAndNoLayoutSpace() {
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                Column {
+                    Spacer(Modifier.fillMaxWidth().height(7.dp).testTag("before-progress"))
+                    ArtistPhotoProgressBar(progress = null, dismiss = {})
+                    Spacer(Modifier.fillMaxWidth().height(7.dp).testTag("after-progress"))
+                }
+            }
+        }
+
+        compose.onAllNodesWithTag("artist-photo-progress", useUnmergedTree = true)
+            .assertCountEquals(0)
+        val before = compose.onNodeWithTag("before-progress").getUnclippedBoundsInRoot()
+        val after = compose.onNodeWithTag("after-progress").getUnclippedBoundsInRoot()
+        assertEquals(before.bottom, after.top)
+    }
+
+    @Test
     fun dismissalSticksForOneRunAndClearsForTheNext() {
         val viewModel = MobileSurfaceViewModel()
         viewModel.acceptArtistPhotoProgress(running(runId = 9))
@@ -98,6 +174,55 @@ class ArtistPhotoProgressBarTest {
 
         viewModel.acceptArtistPhotoProgress(running(runId = 10))
         assertEquals(10L, viewModel.visibleArtistPhotoProgress?.runId)
+    }
+
+    @Test
+    fun composableStaysHiddenForTheDismissedRunAndReturnsForTheNextRun() {
+        val viewModel = MobileSurfaceViewModel()
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                ArtistPhotoProgressBar(
+                    progress = viewModel.visibleArtistPhotoProgress,
+                    dismiss = viewModel::dismissArtistPhotoProgress,
+                )
+            }
+        }
+        compose.runOnIdle { viewModel.acceptArtistPhotoProgress(running(runId = 30)) }
+        compose.onNodeWithTag("artist-photo-progress").assertIsDisplayed()
+
+        compose.runOnIdle { viewModel.dismissArtistPhotoProgress() }
+        compose.onNodeWithTag("artist-photo-progress").assertDoesNotExist()
+        compose.runOnIdle {
+            viewModel.acceptArtistPhotoProgress(running(runId = 30, done = 2))
+        }
+        compose.onNodeWithTag("artist-photo-progress").assertDoesNotExist()
+
+        compose.runOnIdle { viewModel.acceptArtistPhotoProgress(running(runId = 31)) }
+        compose.onNodeWithTag("artist-photo-progress").assertIsDisplayed()
+    }
+
+    @Test
+    fun animatedSegmentFractionsCannotInvert() {
+        val completed = 0.8f
+        val done = clampedArtistPhotoDoneFraction(
+            animatedDone = 0.9f,
+            animatedCompleted = completed,
+        )
+
+        assertEquals(0.8f, done)
+        assertEquals(0f, completed - done)
+    }
+
+    @Test
+    fun mutedTextAlphaCompositesNearTheDesignColourOnTheCard() {
+        val composite = Color(0xFFB2B6CA)
+            .copy(alpha = ARTIST_PHOTO_MUTED_ALPHA)
+            .compositeOver(Color(0xFF292B31))
+        val target = Color(0xFF8F96A3)
+
+        assertTrue(kotlin.math.abs(composite.red - target.red) <= 2f / 255f)
+        assertTrue(kotlin.math.abs(composite.green - target.green) <= 2f / 255f)
+        assertTrue(kotlin.math.abs(composite.blue - target.blue) <= 2f / 255f)
     }
 
     @Test
@@ -230,6 +355,22 @@ class ArtistPhotoProgressBarTest {
         failed = 0,
         total = 412,
     )
+
+    private fun assertColorNear(expected: Color, actual: Color) {
+        assertTrue("red: expected $expected, got $actual", kotlin.math.abs(expected.red - actual.red) < 0.02f)
+        assertTrue(
+            "green: expected $expected, got $actual",
+            kotlin.math.abs(expected.green - actual.green) < 0.02f,
+        )
+        assertTrue("blue: expected $expected, got $actual", kotlin.math.abs(expected.blue - actual.blue) < 0.02f)
+    }
+
+    private fun renderActivity(): androidx.compose.ui.graphics.PixelMap {
+        val content = compose.activity.findViewById<ViewGroup>(android.R.id.content)
+        val bitmap = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
+        content.draw(AndroidCanvas(bitmap))
+        return bitmap.asImageBitmap().toPixelMap()
+    }
 
     private val theme = MobileThemeSelection(
         palette = MobileTheme.NOCTURNE,
