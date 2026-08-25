@@ -151,6 +151,43 @@ pub(in crate::ui) fn realised_widths(view: &gtk4::ColumnView) -> Vec<i32> {
     out
 }
 
+/// How long the widths have to hold still before they count as final.
+///
+/// GTK reaches the final allocation over several frames, and a fixed-width
+/// column can be read one pixel short on the way there. Under contention that
+/// stretch is longer than any single settle: four parallel display workers in
+/// a container measured a 56-pixel cover column at 55 after the 200 ms this
+/// helper used to wait, and at 56 once the row swap had bought it more time —
+/// which the test then reported as the table shifting while scrolling.
+#[cfg(test)]
+const WIDTHS_HOLD_STILL_FOR: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Test-only: the realised widths, once they have stopped moving.
+///
+/// A stopwatch is not a bound on anything — it says how long the test waited,
+/// not whether the thing it waited for happened. This waits for the widths to
+/// agree with themselves across [`WIDTHS_HOLD_STILL_FOR`], which is the state
+/// the column contract is actually about.
+///
+/// On timeout it returns whatever it last read rather than failing here: the
+/// caller is the one holding the assertion, and it can show the widths that
+/// were wrong instead of reporting "timed out".
+#[cfg(test)]
+fn settled_widths(table: &gtk4::ColumnView) -> Vec<i32> {
+    let mut previous: Option<Vec<i32>> = None;
+    let mut unchanged_since = std::time::Instant::now();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        let current = realised_widths(table);
+        if previous.as_ref() != Some(&current) {
+            previous = Some(current);
+            unchanged_since = std::time::Instant::now();
+            return false;
+        }
+        current.iter().all(|width| *width > 0) && unchanged_since.elapsed() >= WIDTHS_HOLD_STILL_FOR
+    });
+    realised_widths(table)
+}
+
 /// Test-only: proves STYLE-9's "measured, not asserted" half for a table — the
 /// columns must not move when the rows on screen change, which is what
 /// scrolling does to a recycled `ColumnView`. `swap_in_longer_rows` replaces
@@ -173,18 +210,16 @@ pub(in crate::ui) fn assert_stable_across_row_change(
     window.set_default_size(1200, 400);
     window.set_child(Some(table));
     window.present();
-    crate::ui::source_context_surface::settle_layout();
 
-    let before = realised_widths(table);
+    let before = settled_widths(table);
     assert!(
         before.iter().all(|width| *width > 0),
         "no realised columns to measure: {before:?}"
     );
 
     swap_in_longer_rows();
-    crate::ui::source_context_surface::settle_layout();
 
-    let after = realised_widths(table);
+    let after = settled_widths(table);
     assert_eq!(
         before, after,
         "columns moved when the rows on screen changed — the table shifts while scrolling"
