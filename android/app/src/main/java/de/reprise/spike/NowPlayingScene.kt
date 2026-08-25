@@ -174,12 +174,14 @@ internal fun NowPlayingScene(
             val fogCenter = playedCenter.copy(
                 x = size.width / 2f + horizontalOffsetPx * FOG_SWIPE_DISTANCE_FACTOR,
             )
-            // The cover and spectrum share their artwork colour, so the screen-level fog
-            // stays live through the visualizer cross-fade instead of being pinned to rest.
+            // The film is drawn first and lit from whichever picture the cover
+            // slot is currently showing — the artwork's own quadrants, or the
+            // visualizer's ramp once the spectrum has crossed over it.
             drawPlayedNowPlayingFog(
                 fog = fog.previous,
                 center = fogCenter,
                 state = state,
+                visualizerOpacity = visualizerOpacity,
                 opacity = 1f - fog.fraction,
                 rotationsEnabled = power.fogRotates,
             )
@@ -187,6 +189,7 @@ internal fun NowPlayingScene(
                 fog = fog.current,
                 center = fogCenter,
                 state = state,
+                visualizerOpacity = visualizerOpacity,
                 opacity = fog.fraction,
                 rotationsEnabled = power.fogRotates,
             )
@@ -334,17 +337,20 @@ internal fun DrawScope.drawPlayedNowPlayingFog(
     fog: CoverFogBitmap?,
     center: Offset,
     state: SceneState,
+    visualizerOpacity: Float,
     opacity: Float,
     rotationsEnabled: Boolean,
 ) {
     drawNowPlayingFog(
-        fog = fog,
+        // Behind the spectrum there is no artwork to read a palette from, so
+        // the film borrows the ramp the bars themselves are drawn from and
+        // follows the cross-fade across to it.
+        palette = fog?.palette?.blendedTo(VisualizerRampPalette, visualizerOpacity),
         center = center,
-        angleA = state.fogAngleA,
-        angleB = state.fogAngleB,
-        fogLevel = state.fogLevel,
+        seconds = state.oilFilmSeconds,
+        level = state.oilFilmLevel,
         opacity = opacity,
-        rotationsEnabled = rotationsEnabled,
+        driftEnabled = rotationsEnabled,
     )
 }
 

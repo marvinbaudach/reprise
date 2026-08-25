@@ -73,13 +73,14 @@ class NowPlayingLegibilityTest {
         ) {
             drawRect(androidx.compose.ui.graphics.Color.Black)
             drawNowPlayingFog(
-                fog = fog,
+                // Level 1 is the brightest the film ever gets, so the title
+                // band is measured against the worst case it has to survive.
+                palette = fog.palette,
                 center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION),
-                angleA = 0f,
-                angleB = 0f,
-                fogLevel = 1f,
+                seconds = 0f,
+                level = 1f,
                 opacity = 1f,
-                rotationsEnabled = false,
+                driftEnabled = false,
             )
         }
 

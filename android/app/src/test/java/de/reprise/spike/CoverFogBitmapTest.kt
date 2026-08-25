@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,9 +39,9 @@ class CoverFogBitmapTest {
             eraseColor(sourceColour)
         }
 
-        val fog = prepareCoverFogBitmap(source, Color.MAGENTA)
+        val texture = prepareFogTexture(source, Color.MAGENTA)
 
-        listOf(fog.wide, fog.tight).forEach { bitmap ->
+        listOf(texture).forEach { bitmap ->
             val y = bitmap.height / 2
             val rimX = (bitmap.width / 2 until bitmap.width).first { x ->
                 Color.alpha(bitmap.getPixel(x, y)) in PARTIAL_ALPHA_RANGE
@@ -61,9 +60,9 @@ class CoverFogBitmapTest {
             eraseColor(Color.WHITE)
         }
 
-        val fog = prepareCoverFogBitmap(source, Color.MAGENTA)
+        val texture = prepareFogTexture(source, Color.MAGENTA)
 
-        listOf(fog.wide, fog.tight).forEach { bitmap ->
+        listOf(texture).forEach { bitmap ->
             val last = bitmap.width - 1
             val secondLast = last - 1
             for (coordinate in 0 until bitmap.width) {
@@ -88,8 +87,17 @@ class CoverFogBitmapTest {
         }
     }
 
+    /**
+     * One cover, one 256 px disc and one palette — and the palette answers the
+     * two halves separately.
+     *
+     * The fixture is white on the left and black on the right, so a palette
+     * that read the cover as a single average would hand back four equal
+     * colours. Quadrant means are what make the film iridescent, so the test is
+     * that the left pair and the right pair disagree.
+     */
     @Test
-    fun artwork_is_cropped_once_into_distinct_256_pixel_prepared_layers() {
+    fun artwork_is_cropped_once_into_a_disc_and_read_once_into_a_palette() {
         val source = Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888)
         for (y in 0 until source.height) {
             for (x in 0 until source.width) {
@@ -99,11 +107,13 @@ class CoverFogBitmapTest {
 
         val fog = prepareCoverFogBitmap(source, Color.MAGENTA)
 
-        assertEquals(256, fog.wide.width)
-        assertEquals(256, fog.wide.height)
-        assertEquals(256, fog.tight.width)
-        assertEquals(256, fog.tight.height)
-        assertNotEquals(fog.wide.getPixel(128, 128), fog.tight.getPixel(128, 128))
+        assertEquals(256, fog.disc.width)
+        assertEquals(256, fog.disc.height)
+        assertEquals(6, fog.palette.clouds.size)
+        assertTrue(
+            "the white half must read brighter than the black half",
+            fog.palette.clouds[0].red > fog.palette.clouds[1].red,
+        )
     }
 
     @Test
@@ -120,7 +130,7 @@ class CoverFogBitmapTest {
     }
 
     @Test
-    fun shimmer_disc_is_a_third_256_pixel_texture_baked_into_the_cached_fog() {
+    fun shimmer_disc_is_a_256_pixel_texture_baked_into_the_cached_fog() {
         val source = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply {
             eraseColor(Color.WHITE)
         }
@@ -140,7 +150,7 @@ class CoverFogBitmapTest {
     }
 
     @Test
-    fun greyscale_artwork_stays_greyscale_in_both_fog_layers() {
+    fun greyscale_artwork_stays_greyscale_in_the_fog_texture() {
         val source = Bitmap.createBitmap(5, 5, Bitmap.Config.ARGB_8888)
         for (y in 0 until source.height) {
             for (x in 0 until source.width) {
@@ -149,9 +159,9 @@ class CoverFogBitmapTest {
             }
         }
 
-        val fog = prepareCoverFogBitmap(source, Color.MAGENTA)
+        val texture = prepareFogTexture(source, Color.MAGENTA)
 
-        listOf(fog.wide, fog.tight).forEach { bitmap ->
+        listOf(texture).forEach { bitmap ->
             for (coordinate in listOf(32, 128, 224)) {
                 val pixel = bitmap.getPixel(coordinate, coordinate)
                 assertEquals(Color.red(pixel), Color.green(pixel))
@@ -164,9 +174,9 @@ class CoverFogBitmapTest {
     fun missing_artwork_uses_only_the_app_accent() {
         val accent = Color.rgb(18, 91, 204)
 
-        val fog = prepareCoverFogBitmap(null, accent)
+        val texture = prepareFogTexture(null, accent)
 
-        listOf(fog.wide, fog.tight).forEach { bitmap ->
+        listOf(texture).forEach { bitmap ->
             val pixel = bitmap.getPixel(128, 128)
             assertTrue(Color.red(pixel) in 17..19)
             assertTrue(Color.green(pixel) in 90..92)
