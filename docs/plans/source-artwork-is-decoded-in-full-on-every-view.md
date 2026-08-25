@@ -145,3 +145,53 @@ The local gate list comes from `merge-readiness`, never hand-assembled.
 Closing check, because the reported symptom is visible rather than
 measurable: launch, open Podcasts, and watch the covers appear as a list
 rather than as arrivals.
+
+## Acceptance evidence
+
+The regression was mutation-tested by changing the worker's final decode
+target from the content-addressed thumbnail back to the original source file,
+then running:
+
+```console
+$ cargo test -p reprise-gnome source_artwork_uses_the_cached_thumbnail_for_texture_decode --no-fail-fast
+   Compiling reprise-gnome v0.1.74 (/home/marvin/Projects/reprise-source-artwork-is-decoded-in-full-on-every-view/crates/reprise-gnome)
+warning: unused variable: `thumbnail_path`
+  --> crates/reprise-gnome/src/ui/podcasts/source_image_texture.rs:64:9
+   |
+64 |     let thumbnail_path = resolve_thumbnail(&CoverSource::FolderImage(path.to_path_buf()), size)
+   |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_thumbnail_path`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `reprise-gnome` (bin "reprise" test) generated 1 warning (run `cargo fix --bin "reprise" -p reprise-gnome --tests` to apply 1 suggestion)
+warning: `reprise-gnome` (bin "reprise") generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 48.04s
+     Running unittests src/main.rs (target/debug/deps/reprise-cc2c8bfabda18feb)
+
+running 1 test
+test ui::podcasts::source_image::source_image_texture::tests::source_artwork_uses_the_cached_thumbnail_for_texture_decode ... FAILED
+
+failures:
+
+---- ui::podcasts::source_image::source_image_texture::tests::source_artwork_uses_the_cached_thumbnail_for_texture_decode stdout ----
+
+thread 'ui::podcasts::source_image::source_image_texture::tests::source_artwork_uses_the_cached_thumbnail_for_texture_decode' (3668110) panicked at crates/reprise-gnome/src/ui/podcasts/source_image_texture.rs:208:28:
+called `Result::unwrap()` on an `Err` value: Error { domain: g-file-error-quark, code: 4, message: "Failed to open file “/tmp/.tmpsWc6RM/original-must-not-be-opened.png”: No such file or directory" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    ui::podcasts::source_image::source_image_texture::tests::source_artwork_uses_the_cached_thumbnail_for_texture_decode
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2839 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p reprise-gnome --bin reprise`
+     Running tests/gnome_conformance.rs (target/debug/deps/gnome_conformance-59027ff405eb86cc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+error: 1 target failed:
+    `-p reprise-gnome --bin reprise`
+```
