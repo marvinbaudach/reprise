@@ -4,6 +4,34 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.71] - 2026-08-25
+
+### Playback and presentation
+
+- Replaced the equalizer's ten sliders with ten named profiles.
+- Made track sorting reachable from the keyboard, without a pointer.
+- Steadied the library while it scrolls: the columns no longer shift as rows
+  change, and the player bar centres the playing track in a single landing.
+
+### Discovery
+
+- Added multi-selection, a row menu, and reversible hiding to new releases.
+- Concert discovery no longer asks for a Bandsintown application id; builds
+  carry their own.
+
+### Preferences
+
+- The plugins page now reads as one master switch over the content beneath it,
+  and every background job it starts is named.
+- Each build offers one primary Last.fm setup path rather than several, and
+  Flatpak builds carry their own Last.fm credentials.
+
+### Fixes
+
+- A toast always carries its message.
+- Refreshed the translation catalogues for the sort menu's new strings.
+- The showroom lightbox fits and zooms on a phone.
+
 ## [0.1.45] - 2026-08-21
 
 ### Desktop library and navigation
