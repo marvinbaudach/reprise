@@ -52,7 +52,13 @@ expect_routes true false true unexpected-product-root/new-source.rs
 
 [[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
     contributor marvinbaudach head dev) == true ]] || \
-    fail "every pull request must skip the expensive external suites"
+    fail "a human pull request must skip the expensive external suites"
+[[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
+    marvinbaudach marvinbaudach head dev) == true ]] || \
+    fail "an owner pull request must skip the expensive external suites too"
+[[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
+    'dependabot[bot]' marvinbaudach head dev) == false ]] || \
+    fail "a dependabot pull request merges itself, so it must run its suites"
 [[ $("$classifier" --suite-skip push refs/heads/dev \
     marvinbaudach marvinbaudach same same) == false ]] || \
     fail "a dev push must always run its selected suites"
