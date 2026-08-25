@@ -116,7 +116,9 @@ pub fn summarize(tags: &[EditableTags]) -> Option<EditableTagSummary> {
 #[derive(Debug, thiserror::Error)]
 pub enum TagEditError {
     #[error("tag operation failed: {0}")]
-    Lofty(#[from] lofty::error::LoftyError),
+    Lofty(#[from] lofty::error::FileParseError),
+    #[error("tag write failed: {0}")]
+    LoftyWrite(#[from] lofty::error::FileEncodingError),
     #[error("audio format has no writable tag type")]
     NoWritableTag,
 }

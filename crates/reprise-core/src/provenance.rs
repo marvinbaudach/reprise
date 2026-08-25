@@ -22,7 +22,7 @@ use std::path::Path;
 use lofty::config::{ParseOptions, WriteOptions};
 use lofty::file::AudioFile;
 use lofty::flac::FlacFile;
-use lofty::ogg::VorbisComments;
+use lofty::ogg::tag::VorbisComments;
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// The `REPRISE_AI` Vorbis key — presence of this key *is* the AI flag in a
@@ -183,7 +183,9 @@ pub enum ProvenanceTagError {
     #[error("could not open render for tagging: {0}")]
     Io(#[from] std::io::Error),
     #[error("could not write provenance tags: {0}")]
-    Lofty(#[from] lofty::error::LoftyError),
+    Lofty(#[from] lofty::error::FileParseError),
+    #[error("could not write provenance tags: {0}")]
+    LoftyWrite(#[from] lofty::error::FileEncodingError),
 }
 
 /// Writes the `REPRISE_AI*` scheme plus a human-readable comment into a FLAC
