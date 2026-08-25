@@ -38,7 +38,7 @@ use crate::library::source::{LibraryReadHandle, LibrarySource};
 pub(crate) fn open_probe(
     source: &dyn LibrarySource,
     path: &Path,
-) -> lofty::error::Result<lofty::probe::Probe<LibraryReadHandle>> {
+) -> Result<lofty::probe::Probe<LibraryReadHandle>, lofty::error::FileParseError> {
     let probe = lofty::probe::Probe::new(source.open_read(path)?);
     Ok(match lofty::file::FileType::from_path(path) {
         Some(file_type) => probe.set_file_type(file_type),
