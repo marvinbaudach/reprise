@@ -1,6 +1,11 @@
 package de.reprise.spike
 
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -30,12 +36,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.LocalPinnableContainer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
-import kotlin.math.roundToInt
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.zIndex
 
 internal data class QueueRowActions(
     val play: (position: Int, expectedTrackId: Long) -> Unit,
@@ -70,9 +89,25 @@ internal fun TrackRows(
     } else {
         TrackListContent::queueRowKey
     }
+    val reorder = rememberQueueReorderState()
+    val haptics = rememberQueueHaptics()
+    // The drop holds its offsets until the reloaded window agrees with them,
+    // and this is how the window says so. Keyed by the order rather than by the
+    // list instance, because every recomposition builds a fresh list.
+    val order = content.joinToString(separator = ",") { item -> rowKey(item).toString() }
+    LaunchedEffect(order) { reorder.onOrderChanged() }
+
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val gridState = rememberLibraryGridState(anchor)
         ObserveLibraryGridAnchor(listKey, gridState, surfaceState)
+        SideEffect {
+            reorder.haptics = haptics
+            reorder.move = queueActions?.move
+            // A grid gives the drag neither a single column to part nor an
+            // edge to scroll against: see QueueReorderState.neighboursPart.
+            reorder.neighboursPart = metrics.listColumns == 1
+            reorder.scrollPort = null
+        }
         LazyVerticalGrid(
             columns = GridCells.Fixed(metrics.listColumns),
             state = gridState,
@@ -103,6 +138,7 @@ internal fun TrackRows(
                     onFavouriteChanged,
                     queueActions,
                     tracks.rows.size,
+                    reorder,
                 )
             }
         }
@@ -111,11 +147,35 @@ internal fun TrackRows(
 
     val listState = rememberLibraryListState(anchor)
     ObserveLibraryListAnchor(listKey, listState, surfaceState)
+    var viewportTopPx by remember { mutableFloatStateOf(0f) }
+    var viewportBottomPx by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val scrollPort = remember(listState, density) {
+        QueueScrollPort(
+            viewportTopPx = { viewportTopPx },
+            viewportBottomPx = { viewportBottomPx },
+            topEdgePx = { with(density) { QUEUE_AUTOSCROLL_TOP_EDGE_DP.dp.toPx() } },
+            bottomEdgePx = { with(density) { QUEUE_AUTOSCROLL_BOTTOM_EDGE_DP.dp.toPx() } },
+            maxStepPx = { with(density) { QUEUE_AUTOSCROLL_MAX_STEP_DP.dp.toPx() } },
+            scrollBy = { delta -> listState.dispatchRawDelta(delta) },
+        )
+    }
+    SideEffect {
+        reorder.haptics = haptics
+        reorder.move = queueActions?.move
+        reorder.neighboursPart = true
+        reorder.scrollPort = if (queueActions == null) null else scrollPort
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .testTag(listKey.testTag()),
+            .testTag(listKey.testTag())
+            .onGloballyPositioned { coordinates ->
+                val bounds = coordinates.boundsInRoot()
+                viewportTopPx = bounds.top
+                viewportBottomPx = bounds.bottom
+            },
     ) {
         items(
             items = content,
@@ -132,6 +192,7 @@ internal fun TrackRows(
                 onFavouriteChanged,
                 queueActions,
                 tracks.rows.size,
+                reorder,
             )
         }
     }
@@ -190,6 +251,9 @@ internal fun TrackListItem(
     onFavouriteChanged: (LibraryTrack, Boolean) -> Unit,
     queueActions: QueueRowActions?,
     rowCount: Int,
+    // Only a queue list has one; every other track list passes none, and no
+    // row without [queueActions] ever reads it.
+    reorder: QueueReorderState? = null,
 ) {
     when (content) {
         is TrackListContent.Row -> {
@@ -212,6 +276,7 @@ internal fun TrackListItem(
                 queuePosition = content.index,
                 queueRowCount = rowCount,
                 queueActions = queueActions,
+                reorder = reorder,
                 play = { play(content.index) },
             )
         }
@@ -233,13 +298,40 @@ private fun LibraryTrackRow(
     queuePosition: Int,
     queueRowCount: Int,
     queueActions: QueueRowActions?,
+    reorder: QueueReorderState?,
     play: () -> Unit,
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
+    val queueDrag = if (queueActions == null) null else reorder
+    val dragged = queueDrag?.isDragging(queuePosition) == true
+    val shiftRows = queueDrag?.neighbourShiftRows(queuePosition) ?: 0
+    // One envelope for the whole lift, read by both the transform and the
+    // colour: two animations of the same thing would drift apart.
+    val lift = if (queueDrag == null) 0f else queueLiftFraction(dragged && queueDrag.lifted)
+    KeepComposedWhileDragged(dragged)
+    val restingColor = if (presentation.isCurrent) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+    } else {
+        MaterialTheme.colorScheme.background
+    }
     // The row itself is a fixed-height, clipped Surface, so the context menu's
     // acknowledgement gets a slot under it rather than a place on top of the
     // cover and the title. See TrackContextMenuMessage.
-    Column {
+    Column(
+        modifier = if (queueDrag == null) {
+            Modifier
+        } else {
+            Modifier
+                .zIndex(if (dragged) 1f else 0f)
+                .queueDragMotion(
+                    reorder = queueDrag,
+                    dragged = dragged,
+                    lift = lift,
+                    shiftRows = shiftRows,
+                    rowHeightDp = metrics.trackRowHeightDp,
+                )
+        },
+    ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -258,11 +350,17 @@ private fun LibraryTrackRow(
                     } else {
                         queueActions.play(queuePosition, track.id)
                     }
-                },
-            color = if (presentation.isCurrent) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                }
+                .queueReorderActions(
+                    actions = if (queueDrag == null) null else queueActions,
+                    trackId = track.id,
+                    position = queuePosition,
+                    rowCount = queueRowCount,
+                ),
+            color = if (queueDrag == null) {
+                restingColor
             } else {
-                MaterialTheme.colorScheme.background
+                queueRowColor(restingColor, queueDrag, queuePosition, lift)
             },
         ) {
             Box {
@@ -307,7 +405,7 @@ private fun LibraryTrackRow(
                             )
                         }
                     }
-                    if (queueActions == null) {
+                    if (queueDrag == null) {
                         FavouriteHeartButton(
                             track = track,
                             surfaceState = surfaceState,
@@ -319,7 +417,7 @@ private fun LibraryTrackRow(
                             position = queuePosition,
                             rowCount = queueRowCount,
                             rowHeightDp = metrics.trackRowHeightDp,
-                            move = queueActions.move,
+                            reorder = queueDrag,
                         )
                     }
                     Column(
@@ -362,7 +460,6 @@ private fun LibraryTrackRow(
                         target = QueueTrackMenuTarget(
                             trackId = track.id,
                             position = queuePosition,
-                            rowCount = queueRowCount,
                             actions = queueActions,
                         ),
                     )
@@ -373,34 +470,213 @@ private fun LibraryTrackRow(
     }
 }
 
+/**
+ * Keeps the row alive for as long as it is being carried.
+ *
+ * A lazy list composes what it can see. The dragged row stays under the finger
+ * by translation alone — its *slot* is where it always was — so as soon as the
+ * auto-scroll walks that slot past the edge of the viewport the list disposes
+ * the row, and with it the pointer handler holding the gesture: the drag would
+ * simply die halfway through, worse the further it travelled. Pinning is the
+ * list's own answer to "this item has to outlive its visibility".
+ */
+@Composable
+private fun KeepComposedWhileDragged(dragged: Boolean) {
+    val container = LocalPinnableContainer.current
+    DisposableEffect(dragged, container) {
+        val pin = if (dragged) container?.pin() else null
+        onDispose { pin?.release() }
+    }
+}
+
+/** How lifted the row is, from flat to fully picked up. */
+@Composable
+private fun queueLiftFraction(lifted: Boolean): Float {
+    val lift by animateFloatAsState(
+        targetValue = if (lifted) 1f else 0f,
+        // Picking up is immediate; putting down travels with the drop.
+        animationSpec = tween(
+            durationMillis = if (lifted) QUEUE_DRAG_LIFT_MS else QUEUE_DRAG_DROP_MS,
+            easing = QueueDragEasing,
+        ),
+        label = "queue-drag-lift",
+    )
+    return lift
+}
+
+/**
+ * Where a queue row is drawn while a reorder is in flight.
+ *
+ * One row is under the finger and follows it pixel for pixel; the rows between
+ * its old and its new slot are one row height out of place and animate there.
+ * Both are transforms, never layout: the list is not re-ordered until the edit
+ * has actually been made, so nothing here can cost a measure pass.
+ */
+@Composable
+private fun Modifier.queueDragMotion(
+    reorder: QueueReorderState,
+    dragged: Boolean,
+    lift: Float,
+    shiftRows: Int,
+    rowHeightDp: Int,
+): Modifier {
+    val neighbourOffset by animateDpAsState(
+        targetValue = (shiftRows * rowHeightDp).dp,
+        animationSpec = tween(QUEUE_DRAG_NEIGHBOUR_MS, easing = QueueDragEasing),
+        label = "queue-drag-neighbour",
+    )
+    return graphicsLayer {
+        val scale = 1f + (QUEUE_DRAG_LIFT_SCALE - 1f) * lift
+        translationY = if (dragged) reorder.translationPx else neighbourOffset.toPx()
+        scaleX = scale
+        scaleY = scale
+        shadowElevation = QUEUE_DRAG_LIFT_ELEVATION_DP.dp.toPx() * lift
+        shape = RectangleShape
+        // The shadow belongs to the rows below, not inside this one.
+        clip = false
+    }
+}
+
+/**
+ * The row's own colour, plus the two things a reorder adds to it: the lifted
+ * row rises from the list's background onto a surface tone while it is held,
+ * and the row that was moved keeps a short teal afterglow once it has landed.
+ */
+@Composable
+private fun queueRowColor(
+    resting: Color,
+    reorder: QueueReorderState,
+    slot: Int,
+    lift: Float,
+): Color {
+    val flash = remember { Animatable(0f) }
+    val owed = reorder.flashSlot == slot
+    LaunchedEffect(reorder.flashToken, owed) {
+        if (!owed) {
+            return@LaunchedEffect
+        }
+        flash.snapTo(1f)
+        flash.animateTo(0f, tween(QUEUE_DRAG_FLASH_MS, easing = QueueDragEasing))
+        reorder.clearFlash(slot)
+    }
+    val held = lerp(resting, MaterialTheme.colorScheme.surface, lift)
+    return lerp(
+        held,
+        MaterialTheme.colorScheme.primary,
+        QUEUE_DRAG_FLASH_ALPHA * flash.value,
+    )
+}
+
+/** TalkBack's label for the row's non-drag reorder, upwards and downwards. */
+internal const val QUEUE_MOVE_UP_LABEL = "Move up"
+internal const val QUEUE_MOVE_DOWN_LABEL = "Move down"
+
+/**
+ * The reorder a finger cannot make.
+ *
+ * The drag handle is the gesture, and it is the only one — a row cannot be
+ * carried by a screen reader's focus. These two actions are the same permitted
+ * move offered a second way (ACC-8, Android scope in `docs/ux-rules.md`): they
+ * live in TalkBack's actions menu on the row, where the alternative to a drag
+ * belongs, and nowhere on screen, so the handle stays the one discoverable way
+ * to reorder for everyone who can reach it.
+ *
+ * They go through the same [QueueRowActions.move] as the drop does, so the
+ * guards and the persistence path are the drag's. The ends of the queue simply
+ * drop the action they have no room for.
+ */
+private fun Modifier.queueReorderActions(
+    actions: QueueRowActions?,
+    trackId: Long,
+    position: Int,
+    rowCount: Int,
+): Modifier {
+    if (actions == null) {
+        return this
+    }
+    val moves = buildList {
+        if (position > 0) {
+            add(
+                CustomAccessibilityAction(QUEUE_MOVE_UP_LABEL) {
+                    actions.move(position, trackId, position - 1)
+                    true
+                },
+            )
+        }
+        if (position + 1 < rowCount) {
+            add(
+                CustomAccessibilityAction(QUEUE_MOVE_DOWN_LABEL) {
+                    actions.move(position, trackId, position + 1)
+                    true
+                },
+            )
+        }
+    }
+    return semantics { customActions = moves }
+}
+
+/**
+ * The only way into a reorder.
+ *
+ * It takes the very first touch — no slop to cross and no long press to sit
+ * through — because the handle has nothing else to do, and because a queue row
+ * has two other gestures of its own: a tap plays it and a long press opens its
+ * menu. Keeping the drag off the row's surface is what leaves those intact.
+ */
 @Composable
 private fun QueueDragHandle(
     track: LibraryTrack,
     position: Int,
     rowCount: Int,
     rowHeightDp: Int,
-    move: (Int, Long, Int) -> Unit,
+    reorder: QueueReorderState,
 ) {
-    var verticalDrag by remember(track.id) { mutableFloatStateOf(0f) }
+    val rowHeightPx = with(LocalDensity.current) { rowHeightDp.dp.toPx() }
+    // Where the finger is on the screen, which is what the auto-scroll edges
+    // are measured against. Read once at lift-off and carried forward by the
+    // finger's own movement: the handle's layout position stops being the
+    // truth the moment the row is translated out from under it.
+    var handleTopPx by remember(track.id) { mutableFloatStateOf(0f) }
     Box(
         modifier = Modifier
             .width(48.dp)
             .height(48.dp)
             .testTag("queue-drag-handle-${track.id}")
-            .pointerInput(track.id, position, rowCount, rowHeightDp) {
-                detectVerticalDragGestures(
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        verticalDrag += dragAmount
-                    },
-                    onDragCancel = { verticalDrag = 0f },
-                    onDragEnd = {
-                        val delta = (verticalDrag / rowHeightDp.dp.toPx()).roundToInt()
-                        val target = (position + delta).coerceIn(0, rowCount - 1)
-                        if (target != position) move(position, track.id, target)
-                        verticalDrag = 0f
-                    },
-                )
+            .onGloballyPositioned { coordinates ->
+                handleTopPx = coordinates.positionInRoot().y
+            }
+            .pointerInput(track.id, position, rowCount, rowHeightPx) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Consuming the down is what keeps the row's own clickable
+                    // and the list's scroll out of the gesture.
+                    down.consume()
+                    reorder.begin(
+                        slot = position,
+                        trackId = track.id,
+                        rowHeightPx = rowHeightPx,
+                        slotCount = rowCount,
+                        pointerRootYPx = handleTopPx + down.position.y,
+                    )
+                    var released = false
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                released = true
+                                break
+                            }
+                            val delta = change.positionChange().y
+                            change.consume()
+                            if (delta != 0f) {
+                                reorder.dragBy(delta)
+                            }
+                        }
+                    } finally {
+                        reorder.end(cancelled = !released)
+                    }
+                }
             },
         contentAlignment = Alignment.Center,
     ) {

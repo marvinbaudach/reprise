@@ -3,6 +3,7 @@ package de.reprise.spike
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -128,7 +129,10 @@ class TrackContextMenuTest {
     }
 
     @Test
-    fun longPressingAQueueRowMovesExactlyOnePosition() {
+    fun theQueueMenuLeavesReorderingToTheDragHandle() {
+        // "Move up"/"Move down" used to sit here, one slot per tap. The handle
+        // beside the row now owns reordering outright, so the menu keeps only
+        // what a drag cannot say: play this row now, or take it out.
         val tracks = listOf(
             configurationTestTrack(41, "Queued One"),
             configurationTestTrack(42, "Queued Two"),
@@ -148,8 +152,48 @@ class TrackContextMenuTest {
 
         compose.onNodeWithTag("queue-track-row-41").performTouchInput { longClick() }
         compose.onNodeWithText("Play now").assertIsDisplayed()
-        compose.onNodeWithText("Move up").assertIsDisplayed()
-        compose.onNodeWithText("Move down").performClick()
+        compose.onNodeWithText("Remove from queue").assertIsDisplayed()
+        compose.onNodeWithText("Move up").assertDoesNotExist()
+        compose.onNodeWithText("Move down").assertDoesNotExist()
+        compose.onNodeWithTag("queue-drag-handle-41", useUnmergedTree = true).assertExists()
+
+        assertEquals(emptyList<Triple<Int, Long, Int>>(), controls.moved)
+    }
+
+    @Test
+    fun talkBackCanMoveAQueueRowWithoutADrag() {
+        // ACC-8: the handle is the gesture, and a screen reader cannot make it.
+        // The same move is a custom action on the row — offered nowhere on
+        // screen, so the drag stays the one visible way to reorder. The ends of
+        // the queue only carry the action they have room for.
+        val tracks = listOf(
+            configurationTestTrack(41, "Queued One"),
+            configurationTestTrack(42, "Queued Two"),
+        )
+        val controls = RecordingContextMenuControls(tracks)
+        // Built here rather than inside setContent: lint reads a view model
+        // constructed in a composable as a leak, and the file's baseline has no
+        // room for one more.
+        val surfaceState = MobileSurfaceViewModel()
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalPlaybackControls provides controls) {
+                    NowPlayingQueuePage(
+                        PlaybackUiState().libraryPlayback(),
+                        surfaceState,
+                        SurfaceLayout.STACKED,
+                    )
+                }
+            }
+        }
+
+        assertEquals(listOf(QUEUE_MOVE_DOWN_LABEL), reorderActionLabels(41))
+        assertEquals(listOf(QUEUE_MOVE_UP_LABEL), reorderActionLabels(42))
+        compose.onAllNodesWithText(QUEUE_MOVE_UP_LABEL).assertCountEquals(0)
+        compose.onAllNodesWithText(QUEUE_MOVE_DOWN_LABEL).assertCountEquals(0)
+
+        assertTrue(invokeReorderAction(41, QUEUE_MOVE_DOWN_LABEL))
+        compose.waitForIdle()
 
         assertEquals(listOf(Triple(0, 41L, 1)), controls.moved)
     }
@@ -323,6 +367,18 @@ class TrackContextMenuTest {
     private fun openTitleMenu(trackId: Long) {
         compose.onNodeWithTag("library-track-row-$trackId").performTouchInput { longClick() }
     }
+
+    /** The row's reorder actions, in the order TalkBack would offer them. */
+    private fun reorderActionLabels(trackId: Long) = customActions(trackId).map { it.label }
+
+    private fun invokeReorderAction(trackId: Long, label: String): Boolean =
+        customActions(trackId).single { it.label == label }.action()
+
+    private fun customActions(trackId: Long) = compose
+        .onNodeWithTag("queue-track-row-$trackId")
+        .fetchSemanticsNode()
+        .config
+        .getOrElse(SemanticsActions.CustomActions) { emptyList() }
 }
 
 private class RecordingContextMenuControls(

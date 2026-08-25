@@ -2858,6 +2858,13 @@ property is set and yet nothing happens.
   persistence paths apply. Custom value controls (e.g. waveform seek) are
   focusable ranges: arrows adjust finely, Page Up/Down coarsely, Home/End
   set minimum/maximum; name, current value, and bounds are accessible.
+  On Android the alternative is a screen-reader action, not a second visible
+  control: the queue row's drag handle is the only reorder on screen, and the
+  same move is offered to TalkBack as a custom action on the row. A menu entry
+  that moves a row one slot per tap would be a second, slower answer to the
+  question the handle already answers. The level stays `[e2e]` because that is
+  where the GTK surface is proven; the Android half is covered by
+  `TrackContextMenuTest`, which the traceability gate does not read.
 - **ACC-9** [active] [gtk] — Shortcuts and access keys follow GNOME:
   existing standard actions use the standard bindings (among others Ctrl+F,
   Ctrl+W, Ctrl+Q, Ctrl+,, Ctrl+?, F1, F10, Alt+←/→); frequent labeled

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.geometry.Offset
@@ -96,6 +97,142 @@ class MainActivityQueueTest {
         compose.waitForIdle()
         assertEquals(Triple(2, 503L, 0), application.controls.moveUpcomingRequests.last())
         assertEquals(listOf(503L, 501L, 502L), upcomingIds())
+    }
+
+    /**
+     * The three things the drop is built around, measured on the real screen.
+     *
+     * A reorder that recomputed the list while the finger was down would show
+     * none of them: the row would jump rather than lift, the rows around it
+     * would re-key rather than step aside, and the edit would land in the
+     * middle of the animation. So the claims are the lift, the parting, and
+     * the fact that nothing is written until the row has arrived.
+     *
+     * The middle row is the one under test because it is the only one with a
+     * neighbour on either side and no list edge cropping what the lift adds.
+     */
+    @Test
+    fun theRowLiftsItsNeighboursPartAndTheEditWaitsForTheDrop() {
+        openQueue()
+        compose.mainClock.autoAdvance = false
+        try {
+            val restingHeight = rowBounds(502).height
+            val restingThirdTop = rowBounds(503).top
+
+            handle(502).performTouchInput { down(center) }
+            compose.waitForIdle()
+            // Generously past the envelope: with the clock paused the first
+            // frame of an animation is spent starting it, so "one duration"
+            // would measure the curve mid-flight rather than at rest.
+            compose.mainClock.advanceTimeBy(QUEUE_DRAG_LIFT_MS * 4L)
+
+            // Picked up, not merely selected: the row stands 2 % proud of the
+            // list it is being carried over.
+            assertEquals(
+                restingHeight * QUEUE_DRAG_LIFT_SCALE,
+                rowBounds(502).height,
+                0.3f,
+            )
+
+            handle(502).performTouchInput { moveBy(Offset(0f, 72.dp.toPx())) }
+            // A paused clock does not drain the recomposition the pointer
+            // event just queued; advancing time alone would measure the frame
+            // before the neighbours were told anything.
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(QUEUE_DRAG_NEIGHBOUR_MS * 3L)
+
+            // The row below has stepped up into the gap rather than the list
+            // having been rebuilt underneath it.
+            assertEquals(restingThirdTop - restingHeight, rowBounds(503).top, 1f)
+            assertEquals(
+                "nothing may be written while the finger is still down",
+                emptyList<Triple<Int, Long, Int>>(),
+                application.controls.moveUpcomingRequests,
+            )
+
+            handle(502).performTouchInput { up() }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(QUEUE_DRAG_DROP_MS - FRAME_MS * 4)
+            assertEquals(
+                "the edit belongs after the row has landed, not on lift-off",
+                emptyList<Triple<Int, Long, Int>>(),
+                application.controls.moveUpcomingRequests,
+            )
+
+            compose.mainClock.advanceTimeBy(QUEUE_DRAG_DROP_MS.toLong())
+            assertEquals(
+                listOf(Triple(1, 502L, 2)),
+                application.controls.moveUpcomingRequests,
+            )
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.waitForIdle()
+        assertEquals(listOf(501L, 503L, 502L), upcomingIds())
+    }
+
+    /**
+     * The queue is longer than the screen, so a reorder that could only reach
+     * what is already visible would not be a reorder at all. Holding the row
+     * against the top edge walks the list under it, and every pixel the list
+     * travels counts towards the drop the same way a pixel of finger travel
+     * does — otherwise the row would land wherever the *finger* pointed while
+     * the slots slid past underneath.
+     */
+    @Test
+    fun holdingTheRowAtTheTopEdgeWalksTheListUnderIt() {
+        application.replaceQueue(longQueueFixture())
+        publishPlayingTrack()
+        compose.onNodeWithTag("library-destination-QUEUE").performClick()
+        compose.onNodeWithTag("now-playing-queue").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-queue").performScrollToIndex(LAST_LONG_SLOT)
+        compose.waitForIdle()
+        compose.onNodeWithText("Queued 0").assertDoesNotExist()
+
+        compose.mainClock.autoAdvance = false
+        try {
+            handle(QUEUE_TAIL_TRACK_ID).performTouchInput {
+                down(center)
+                // Far above the list's own top edge, and left there: the
+                // finger stops moving, the list does not.
+                moveBy(Offset(0f, -600.dp.toPx()))
+            }
+            compose.waitForIdle()
+            // Frame by frame on purpose: the loop takes exactly one step per
+            // frame, and a bulk time jump is not the same as the frames it
+            // would have contained.
+            repeat(AUTOSCROLL_HOLD_FRAMES) { compose.mainClock.advanceTimeByFrame() }
+            handle(QUEUE_TAIL_TRACK_ID).performTouchInput { up() }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(QUEUE_DRAG_DROP_MS * 2L)
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.waitForIdle()
+
+        // The finger itself is worth about eight rows of the twenty-nine; the
+        // row landed at the head of the queue, which only the list's own
+        // travel can account for.
+        assertEquals(
+            Triple(LAST_LONG_SLOT, QUEUE_TAIL_TRACK_ID, 0),
+            application.controls.moveUpcomingRequests.last(),
+        )
+        compose.onNodeWithText("Queued 0").assertIsDisplayed()
+    }
+
+    @Test
+    fun aDragThatEndsWhereItStartedWritesNothing() {
+        openQueue()
+
+        handle(501).performTouchInput {
+            down(center)
+            moveBy(Offset(0f, 72.dp.toPx() * 0.3f))
+            up()
+        }
+        compose.waitForIdle()
+
+        assertEquals(emptyList<Triple<Int, Long, Int>>(), application.controls.moveUpcomingRequests)
+        assertEquals(listOf(501L, 502L, 503L), upcomingIds())
     }
 
     @Test
@@ -212,15 +349,24 @@ class MainActivityQueueTest {
     }
 
     private fun dragHandle(trackId: Long, rowHeights: Float) {
-        compose.onNodeWithTag(
-            "queue-drag-handle-$trackId",
-            useUnmergedTree = true,
-        ).performTouchInput {
+        handle(trackId).performTouchInput {
             down(center)
-            moveTo(Offset(center.x, center.y + 72.dp.toPx() * rowHeights))
+            moveBy(Offset(0f, 72.dp.toPx() * rowHeights))
             up()
         }
     }
+
+    private fun handle(trackId: Long) =
+        compose.onNodeWithTag("queue-drag-handle-$trackId", useUnmergedTree = true)
+
+    /**
+     * Where the row is drawn, in pixels, transforms included — which is the
+     * whole point: the lift and the parting are a `graphicsLayer`, never a
+     * re-layout, so a measurement that ignored the layer would report the
+     * gesture as having done nothing at all.
+     */
+    private fun rowBounds(trackId: Long) =
+        compose.onNodeWithTag("queue-track-row-$trackId").fetchSemanticsNode().boundsInRoot
 
     private fun swipeRow(trackId: Long, fraction: Float) {
         compose.onNodeWithTag("queue-track-row-$trackId").performTouchInput {
@@ -234,6 +380,23 @@ class MainActivityQueueTest {
         val current = checkNotNull(application.currentQueueIndex)
         return application.currentQueue.drop(current + 1).map(LibraryTrack::id)
     }
+
+    private companion object {
+        /** One frame at 60 Hz, rounded the way the test clock counts. */
+        const val FRAME_MS = 16L
+
+        /** Enough frames to walk thirty rows of 72 dp back to the top. */
+        const val AUTOSCROLL_HOLD_FRAMES = 260
+
+        const val LONG_QUEUE_SIZE = 30
+        const val LAST_LONG_SLOT = LONG_QUEUE_SIZE - 1
+        const val QUEUE_TAIL_TRACK_ID = 600L + LAST_LONG_SLOT
+    }
+
+    private fun longQueueFixture() = listOf(configurationTestTrack(1, "Rotation Song 1")) +
+        (0 until LONG_QUEUE_SIZE).map { slot ->
+            configurationTestTrack(600L + slot, "Queued $slot")
+        }
 
     private fun queueFixture() = listOf(
         configurationTestTrack(1, "Rotation Song 1"),
