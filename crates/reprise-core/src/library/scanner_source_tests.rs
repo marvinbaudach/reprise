@@ -494,6 +494,9 @@ fn unknown_extension_keeps_the_path_read_unknown_format_verdict() {
         crate::library::tag_edit::TagEditError::Lofty(error) => {
             crate::library::import_errors::classify_lofty(&error).0
         }
+        crate::library::tag_edit::TagEditError::LoftyWrite(_) => {
+            panic!("a read cannot fail with a tag write error")
+        }
         crate::library::tag_edit::TagEditError::NoWritableTag => {
             panic!("a read cannot fail for lack of a writable tag")
         }

@@ -44,17 +44,17 @@ fn clear_error_reports_whether_a_row_existed() {
     );
 }
 
-/// `ErrorKind::UnknownFormat` — lofty couldn't even guess the file type —
+/// `UnknownFormatError` — lofty couldn't even guess the file type —
 /// must map to `UnsupportedFormat`, exactly as Step 3's mapping rule states.
 #[test]
 fn classify_lofty_maps_unknown_format_to_unsupported_format() {
-    let err = lofty::error::LoftyError::new(lofty::error::ErrorKind::UnknownFormat);
+    let err = lofty::error::FileParseError::from(lofty::error::UnknownFormatError);
     let (kind, detail) = classify_lofty(&err);
     assert_eq!(kind, ImportErrorKind::UnsupportedFormat);
     assert!(!detail.is_empty(), "detail must carry lofty's own text");
 }
 
-/// `ErrorKind::Io(e)` with `e.kind() == PermissionDenied` must map to
+/// An `io::Error` source with `e.kind() == PermissionDenied` must map to
 /// `PermissionDenied`, not the generic `Io` bucket — this is the case lofty's
 /// `Display` text alone could never reliably distinguish (see this module's
 /// doc comment), which is the whole reason `classify_lofty` matches on the
@@ -62,7 +62,7 @@ fn classify_lofty_maps_unknown_format_to_unsupported_format() {
 #[test]
 fn classify_lofty_maps_io_permission_denied_to_permission_denied() {
     let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
-    let err: lofty::error::LoftyError = io_err.into();
+    let err: lofty::error::FileParseError = io_err.into();
     let (kind, _detail) = classify_lofty(&err);
     assert_eq!(kind, ImportErrorKind::PermissionDenied);
 }
