@@ -67,7 +67,9 @@ internal enum class BrowseTab(val label: String, val symbol: String) {
 @Composable
 internal fun BrowseScreen(
     state: LibraryScreenState.Browse,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
+    playbackProgress: () -> Float = { 0f },
+    nowPlayingPlayback: () -> PlaybackUiState = { PlaybackUiState() },
     playbackSettingsRevision: Long,
     surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
     surfaceState: MobileSurfaceViewModel = viewModel(),
@@ -479,6 +481,7 @@ internal fun BrowseScreen(
                         surfaceLayout = surfaceLayout,
                         currentTrack = shownTrack,
                         playback = playback,
+                        progress = playbackProgress,
                         selectedTab = selectedTab,
                         selectTab = ::selectDestination,
                         openNowPlaying = { surfaceState.showNowPlaying(true) },
@@ -511,6 +514,10 @@ internal fun BrowseScreen(
                     // for the distinction and for the third kind.
                     browseError?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
+                    ArtistPhotoProgressBar(
+                        progress = surfaceState.visibleArtistPhotoProgress,
+                        dismiss = surfaceState::dismissArtistPhotoProgress,
+                    )
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier
@@ -651,7 +658,7 @@ internal fun BrowseScreen(
                     ) {
                         NowPlayingSheet(
                             track = track,
-                            playback = playback,
+                            playback = nowPlayingPlayback(),
                             surfaceLayout = surfaceLayout,
                             surfaceState = surfaceState,
                             close = { surfaceState.showNowPlaying(false) },
@@ -698,6 +705,8 @@ internal fun BrowseScreen(
                         themeSelection = themeSelection,
                         onlineSourcesEnabled = onlineSourcesEnabled,
                         setOnlineSourcesEnabled = setOnlineSourcesEnabled,
+                        artistPhotoProgress = surfaceState.visibleArtistPhotoProgress,
+                        dismissArtistPhotoProgress = surfaceState::dismissArtistPhotoProgress,
                         close = { surfaceState.showSettings(false) },
                         chooseFolder = chooseFolder,
                         rescan = rescan,

@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use gtk4::prelude::*;
 use gtk4::{gio, glib};
 use reprise_core::radio::StationRow;
 
@@ -76,10 +77,19 @@ impl RadioModel {
         if self.rows() == rows {
             return;
         }
-        self.store.remove_all();
-        for row in rows {
-            self.store.append(&RadioObject::new(row));
-        }
+        crate::ui::list_store_delta::replace(
+            &self.store,
+            rows,
+            |object| {
+                object
+                    .clone()
+                    .downcast::<RadioObject>()
+                    .expect("radio store contains only station objects")
+                    .row()
+            },
+            |row| row.id,
+            |row| RadioObject::new(row).upcast(),
+        );
     }
 
     /// The rows the store currently holds, in order.
@@ -107,7 +117,8 @@ impl RadioModel {
 
 #[cfg(test)]
 mod tests {
-    use gtk4::gio::prelude::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     use super::*;
 
@@ -148,6 +159,64 @@ mod tests {
                 .row()
                 .id,
             3
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn one_station_metadata_change_is_replaced_separately_from_an_adjacent_insert() {
+        gtk4::init().unwrap();
+        let model = RadioModel::new();
+        let original = vec![row(1), row(2), row(3)];
+        model.replace(original.clone());
+        model.selection().set_selected(2);
+        let retained_before = model.store().item(0).unwrap();
+        let replaced = model.store().item(1).unwrap();
+        let retained_after = model.store().item(2).unwrap();
+        let changes = Rc::new(RefCell::new(Vec::new()));
+        {
+            let changes = changes.clone();
+            model
+                .store()
+                .connect_items_changed(move |_, at, removed, added| {
+                    changes.borrow_mut().push((at, removed, added));
+                });
+        }
+
+        let mut changed = original.clone();
+        changed[1].votes = Some(42);
+        changed.insert(2, row(4));
+        model.replace(changed.clone());
+
+        assert_eq!(changes.borrow().as_slice(), [(1, 1, 1), (2, 0, 1)]);
+        assert_eq!(model.store().item(0).unwrap(), retained_before);
+        assert_ne!(model.store().item(1).unwrap(), replaced);
+        assert_eq!(model.store().item(3).unwrap(), retained_after);
+        assert_eq!(model.selection().selected(), 3);
+        assert_eq!(model.selection().selected_item().unwrap(), retained_after);
+
+        model.replace(changed);
+        assert_eq!(changes.borrow().as_slice(), [(1, 1, 1), (2, 0, 1)]);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn radio_delta_keeps_selection_viewport_and_zero_binds_for_a_noop() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let model = RadioModel::new();
+        let rows = (0..100).map(row).collect::<Vec<_>>();
+        model.replace(rows.clone());
+        model.selection().set_selected(75);
+        let mut changed = rows;
+        changed[0].name = "Updated station".into();
+        let identical = changed.clone();
+
+        crate::ui::list_store_delta::display_test::assert_viewport_selection_and_noop_bind_count(
+            model.selection().clone().upcast(),
+            || model.replace(changed),
+            || model.replace(identical),
+            || model.selection().selected() == 75,
         );
     }
 }

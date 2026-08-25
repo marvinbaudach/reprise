@@ -72,6 +72,7 @@ export function usePageChoreography(still: boolean): void {
     let pointerY = 0;
     let scrollBias = 0;
     let frame: number | null = null;
+    let pointerFrame: number | null = null;
     let pageHeight: number | null = null;
 
     const runRatio = () => {
@@ -173,17 +174,22 @@ export function usePageChoreography(still: boolean): void {
 
     // The pointer fires far more often than the screen refreshes. Writing the
     // transform straight from the event means several style writes for a single
-    // painted frame; recording the position and letting the frame do the work
-    // costs one write per frame and never more.
+    // painted frame; recording the position and letting a dedicated frame move
+    // only the oil costs one write per frame and no page-wide layout pass.
     const onPointerMove = (event: PointerEvent) => {
       pointerX = (event.clientX / window.innerWidth) * 2 - 1;
       pointerY = (event.clientY / window.innerHeight) * 2 - 1;
-      schedule();
+      if (pointerFrame === null) {
+        pointerFrame = requestAnimationFrame(() => {
+          pointerFrame = null;
+          moveOil();
+        });
+      }
     };
 
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', onResize, { passive: true });
-    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    if (!still) window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener(SEEK_FRAME_EVENT, schedule);
     tick();
     // Fonts and images land after the first frame and move everything below them;
@@ -211,6 +217,7 @@ export function usePageChoreography(still: boolean): void {
       window.clearTimeout(late);
       growth.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
+      if (pointerFrame !== null) cancelAnimationFrame(pointerFrame);
     };
   }, [still]);
 }

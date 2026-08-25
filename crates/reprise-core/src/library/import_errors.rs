@@ -17,11 +17,11 @@
 //! would silently reclassify everything into `Unknown`, and no test would
 //! go red, because no test knows the foreign string constant. Worse,
 //! "permission denied" is not reliably obtainable that way at all — lofty
-//! surfaces `EACCES` as `ErrorKind::Io(io::Error)`, whose `Display` text
-//! varies by platform/libc, not as a distinct variant. [`classify_lofty`]
-//! instead matches on lofty's *typed* [`lofty::error::ErrorKind`], breaking
-//! `Io(e)` down further by `e.kind()`, and keeps the original message only
-//! as `reason_detail` — a display payload this module never inspects again.
+//! surfaces `EACCES` through an `io::Error`, whose `Display` text varies by
+//! platform/libc. [`classify_lofty`] instead walks the typed error source
+//! chain, breaking `io::Error` down further by `kind()`, and keeps the
+//! original message only as `reason_detail` — a display payload this module
+//! never inspects again.
 //! [`classify_walkdir`] applies the same principle to directory-traversal
 //! failures.
 //!
@@ -63,61 +63,45 @@ use rusqlite::{OptionalExtension, Transaction};
 
 use crate::models::ImportErrorKind;
 
-/// Maps a lofty read failure to `(kind, detail)` at the SOURCE — see this
-/// module's doc comment for why this must stay a match on
-/// [`lofty::error::ErrorKind`], never on `LoftyError`'s `Display` text.
-///
-/// `lofty::error::ErrorKind` is `#[non_exhaustive]`, so a wildcard arm is
-/// mandatory even ignoring this module's own policy — but the wildcard is
-/// deliberately paired with a `tracing::warn!` carrying the *original* lofty
-/// text: an unobserved catch-all is only a safety net if someone can see
-/// what falls into it, otherwise the next lofty release quietly grows a new
-/// variant this classifier silently mis-buckets as `Unknown` forever. Every
-/// tag/container-parse variant existing in lofty 0.22.4 is enumerated
-/// explicitly below (see `~/.cargo/registry/.../lofty-0.22.4/src/error.rs`)
-/// rather than left to fall through, precisely so that a *future* lofty
-/// addition — not a variant that already existed at the time this was
-/// written — is the only thing that can reach the wildcard.
-pub(crate) fn classify_lofty(e: &lofty::error::LoftyError) -> (ImportErrorKind, String) {
-    use lofty::error::ErrorKind as LK;
-    let detail = e.to_string();
-    let kind = match e.kind() {
-        LK::UnknownFormat => ImportErrorKind::UnsupportedFormat,
-        LK::Io(io_err) => match io_err.kind() {
+/// Finds a typed error anywhere in an error's source chain, including the
+/// outer error itself.
+pub(crate) fn find_source<'a, T: std::error::Error + 'static>(
+    mut error: &'a (dyn std::error::Error + 'static),
+) -> Option<&'a T> {
+    loop {
+        if let Some(found) = error.downcast_ref::<T>() {
+            return Some(found);
+        }
+        error = error.source()?;
+    }
+}
+
+/// Preserves an error's complete explanation even when an outer error omits
+/// its source from `Display`, as lofty's typed file errors do.
+pub(crate) fn error_detail(mut error: &(dyn std::error::Error + 'static)) -> String {
+    let mut detail = error.to_string();
+    while let Some(source) = error.source() {
+        detail.push_str(": ");
+        detail.push_str(&source.to_string());
+        error = source;
+    }
+    detail
+}
+
+/// Maps a lofty failure to `(kind, detail)` at the source — see this module's
+/// doc comment for why classification must inspect typed errors rather than
+/// either concrete lofty's `Display` text.
+pub(crate) fn classify_lofty(e: &(dyn std::error::Error + 'static)) -> (ImportErrorKind, String) {
+    let detail = error_detail(e);
+    let kind = if find_source::<lofty::error::UnknownFormatError>(e).is_some() {
+        ImportErrorKind::UnsupportedFormat
+    } else if let Some(io_err) = find_source::<std::io::Error>(e) {
+        match io_err.kind() {
             std::io::ErrorKind::PermissionDenied => ImportErrorKind::PermissionDenied,
             _ => ImportErrorKind::Io,
-        },
-        // Every tag/container-parse variant lofty 0.22.4 defines, explicitly
-        // enumerated (see this function's doc comment for why "explicit"
-        // matters here): out-of-bounds/oversized data, a failed decode/
-        // encode of the container itself, a malformed picture, an
-        // unsupported or fake tag, undecodable text/timestamps, a malformed
-        // ID3v2/MP4-atom/OGG-page structure, and non-UTF8 text lofty
-        // extracted from a tag.
-        LK::TooMuchData
-        | LK::SizeMismatch
-        | LK::FileDecoding(_)
-        | LK::FileEncoding(_)
-        | LK::NotAPicture
-        | LK::UnsupportedPicture
-        | LK::UnsupportedTag
-        | LK::FakeTag
-        | LK::TextDecode(_)
-        | LK::BadTimestamp(_)
-        | LK::Id3v2(_)
-        | LK::BadAtom(_)
-        | LK::AtomMismatch
-        | LK::OggPage(_)
-        | LK::StringFromUtf8(_)
-        | LK::StrFromUtf8(_) => ImportErrorKind::UnreadableTags,
-        other => {
-            // Safety-net arm: catches `Fmt`/`Alloc`/`Infallible` (none of
-            // which a read path should ever actually produce) and any
-            // variant a future lofty release adds. Observed, not silent —
-            // see this function's doc comment.
-            tracing::warn!(detail = %detail, kind = ?other, "unclassified lofty error");
-            ImportErrorKind::Unknown
         }
+    } else {
+        ImportErrorKind::UnreadableTags
     };
     (kind, detail)
 }

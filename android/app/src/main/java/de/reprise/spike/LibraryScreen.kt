@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -12,7 +13,9 @@ import androidx.compose.runtime.setValue
 @Composable
 internal fun LibraryScreen(
     initialState: LibraryScreenState,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
+    playbackProgress: () -> Float,
+    nowPlayingPlayback: () -> PlaybackUiState,
     playbackSettingsRevision: Long,
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
@@ -41,6 +44,10 @@ internal fun LibraryScreen(
     selectTheme: (MobileTheme) -> Unit,
 ) {
     var state by remember { mutableStateOf(initialState) }
+    DisposableEffect(surfaceState) {
+        val unbind = surfaceState.bindLibraryStateReporter { state = it }
+        onDispose(unbind)
+    }
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { treeUri ->
@@ -62,6 +69,8 @@ internal fun LibraryScreen(
         is LibraryScreenState.Browse -> BrowseScreen(
             state = current,
             playback = playback,
+            playbackProgress = playbackProgress,
+            nowPlayingPlayback = nowPlayingPlayback,
             playbackSettingsRevision = playbackSettingsRevision,
             surfaceLayout = surfaceLayout,
             surfaceState = surfaceState,

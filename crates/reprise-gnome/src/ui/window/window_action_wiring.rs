@@ -1,6 +1,6 @@
 //! Cross-feature action wiring extracted from the main-window composition root.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::{Rc, Weak};
 
@@ -30,7 +30,7 @@ pub(in crate::ui) struct ActionWiring<'a> {
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
-    pub(in crate::ui) stats_view: &'a StatsView,
+    pub(in crate::ui) stats_view: &'a super::content_stack::DeferredPage<StatsView>,
     pub(in crate::ui) releases_view: &'a Rc<crate::ui::releases::ReleasesView>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) scan_controls: &'a ScanControls,
@@ -83,7 +83,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 None => tracing::warn!("sidebar refresh skipped: sidebar is gone"),
             }
         });
-        let stats_view = stats_view.clone();
+        let stats_for_refresh = stats_view.clone();
         let stats_conn = conn.clone();
         let content_stack = content_stack.downgrade();
         player.set_on_listen_event_recorded(move || {
@@ -91,8 +91,28 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 return;
             };
             if content_stack.visible_child_name().as_deref() == Some("stats") {
-                stats_view.refresh(&stats_conn);
+                stats_for_refresh.if_materialized(|view| view.refresh(&stats_conn));
             }
+        });
+        let stats = stats_view.clone();
+        player.add_on_current_track_changed(move |track_id, _, _| {
+            stats.if_materialized(|view| view.playback_marker().set_loaded_track(track_id));
+        });
+        let state = Rc::new(Cell::new(reprise_core::playback::PlaybackState::Stopped));
+        let stats = stats_view.clone();
+        let state_for_callback = state.clone();
+        player.add_on_playback_state_changed(move |next| {
+            state_for_callback.set(next);
+            stats.if_materialized(|view| view.playback_marker().set_playback_state(next));
+        });
+        let player = Rc::downgrade(player);
+        stats_view.on_materialized(move |view| {
+            if let Some(player) = player.upgrade() {
+                if let Some((track_id, _)) = player.current_track.get() {
+                    view.playback_marker().set_loaded_track(track_id);
+                }
+            }
+            view.playback_marker().set_playback_state(state.get());
         });
     }
     // Stage 3 Task 1 backlog item (a): same post-construction injection
@@ -134,104 +154,12 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     super::tag_edit_flow::wire_refresh(track_list, sidebar, player);
 
-    {
-        let navigator = metadata_navigator.clone();
-        stats_view.set_on_go_to_artist(move |artist| {
-            navigator.navigate(
-                NavigationIntent::OpenArtist {
-                    artist: ArtistKey::new(artist),
-                    anchor_track_id: None,
-                },
-                "stats artist link",
-            );
-        });
-    }
-    {
-        // STATS-21: a song started here plays *inside* the ranking it was
-        // read in, exactly like a row activated in the track table plays
-        // inside the visible view. The origin is My Stats — the page the
-        // context came from — rather than the first track's artist, which a
-        // ranking spanning many artists would misname.
-        let player = player.as_ref().map(Rc::downgrade);
+    stats_view.on_materialized({
         let conn = conn.clone();
-        stats_view.set_on_play_track(move |ids, index| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            let origin = play_origin::resolve(&conn, &reprise_core::browser::BrowserPlace::MyStats);
-            player.play_from_view(ids.to_vec(), index, origin);
-        });
-    }
-    if let Some(player) = player.as_ref() {
-        // `STATS-18`/NAV-10b: the songs card is a second surface showing the
-        // loaded track, so it listens on the same fan-out as the track table.
-        let marker = stats_view.playback_marker();
-        player.add_on_current_track_changed(move |track_id, _, _| {
-            marker.set_loaded_track(track_id);
-        });
-        let marker = stats_view.playback_marker();
-        player.add_on_playback_state_changed(move |state| {
-            marker.set_playback_state(state);
-        });
-    }
-    {
-        let player = player.as_ref().map(Rc::downgrade);
-        stats_view.set_on_play_next(move |track_id| {
-            if let Some(player) = player.as_ref().and_then(Weak::upgrade) {
-                player.play_next(&[track_id]);
-            }
-        });
-    }
-    {
-        let player = player.as_ref().map(Rc::downgrade);
-        stats_view.set_on_add_to_queue(move |track_id| {
-            if let Some(player) = player.as_ref().and_then(Weak::upgrade) {
-                player.append_to_queue(&[track_id]);
-            }
-        });
-    }
-    {
-        let navigator = metadata_navigator.clone();
-        stats_view.set_on_metadata_activate(move |target| match target {
-            StatsMetadataTarget::Track(track_id) => navigator.navigate(
-                NavigationIntent::RevealTrack {
-                    origin: Box::new(reprise_core::browser::BrowserPlace::from(
-                        ViewSource::Library,
-                    )),
-                    track_id,
-                },
-                "stats track link",
-            ),
-            StatsMetadataTarget::Album {
-                track_id,
-                album,
-                album_artist,
-            } => {
-                navigator.navigate(
-                    NavigationIntent::OpenAlbum {
-                        album: AlbumKey::new(album, album_artist),
-                        anchor_track_id: Some(track_id),
-                    },
-                    "stats album link",
-                );
-            }
-            StatsMetadataTarget::Artist { track_id, artist } => {
-                navigator.navigate(
-                    NavigationIntent::OpenArtist {
-                        artist: ArtistKey::new(artist),
-                        anchor_track_id: Some(track_id),
-                    },
-                    "stats artist link",
-                );
-            }
-        });
-    }
-    {
-        let navigator = metadata_navigator.clone();
-        stats_view.set_on_go_to_genre(move |genre| {
-            navigator.navigate(NavigationIntent::OpenGenre { genre }, "stats genre link");
-        });
-    }
+        let player = player.clone();
+        let metadata_navigator = metadata_navigator.clone();
+        move |stats_view| wire_stats(stats_view, &conn, player.as_ref(), metadata_navigator)
+    });
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
     // decoupled from `PlayerController`/`Sidebar` themselves (same
     // decoupling-via-closure seam as `on_activate`/`queue_ids_provider`
@@ -441,4 +369,88 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             );
         });
     }
+}
+
+fn wire_stats(
+    stats_view: &Rc<StatsView>,
+    conn: &Rc<Db>,
+    player: Option<&Rc<PlayerController>>,
+    metadata_navigator: super::metadata_navigation::MetadataNavigator,
+) {
+    {
+        let navigator = metadata_navigator.clone();
+        stats_view.set_on_go_to_artist(move |artist| {
+            navigator.navigate(
+                NavigationIntent::OpenArtist {
+                    artist: ArtistKey::new(artist),
+                    anchor_track_id: None,
+                },
+                "stats artist link",
+            );
+        });
+    }
+    {
+        // STATS-21: play inside the ranking shown on My Stats.
+        let player = player.map(Rc::downgrade);
+        let conn = conn.clone();
+        stats_view.set_on_play_track(move |ids, index| {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
+                return;
+            };
+            let origin = play_origin::resolve(&conn, &reprise_core::browser::BrowserPlace::MyStats);
+            player.play_from_view(ids.to_vec(), index, origin);
+        });
+    }
+    {
+        let player = player.map(Rc::downgrade);
+        stats_view.set_on_play_next(move |track_id| {
+            if let Some(player) = player.as_ref().and_then(Weak::upgrade) {
+                player.play_next(&[track_id]);
+            }
+        });
+    }
+    {
+        let player = player.map(Rc::downgrade);
+        stats_view.set_on_add_to_queue(move |track_id| {
+            if let Some(player) = player.as_ref().and_then(Weak::upgrade) {
+                player.append_to_queue(&[track_id]);
+            }
+        });
+    }
+    {
+        let navigator = metadata_navigator.clone();
+        stats_view.set_on_metadata_activate(move |target| match target {
+            StatsMetadataTarget::Track(track_id) => navigator.navigate(
+                NavigationIntent::RevealTrack {
+                    origin: Box::new(reprise_core::browser::BrowserPlace::from(
+                        ViewSource::Library,
+                    )),
+                    track_id,
+                },
+                "stats track link",
+            ),
+            StatsMetadataTarget::Album {
+                track_id,
+                album,
+                album_artist,
+            } => navigator.navigate(
+                NavigationIntent::OpenAlbum {
+                    album: AlbumKey::new(album, album_artist),
+                    anchor_track_id: Some(track_id),
+                },
+                "stats album link",
+            ),
+            StatsMetadataTarget::Artist { track_id, artist } => navigator.navigate(
+                NavigationIntent::OpenArtist {
+                    artist: ArtistKey::new(artist),
+                    anchor_track_id: Some(track_id),
+                },
+                "stats artist link",
+            ),
+        });
+    }
+    let navigator = metadata_navigator;
+    stats_view.set_on_go_to_genre(move |genre| {
+        navigator.navigate(NavigationIntent::OpenGenre { genre }, "stats genre link");
+    });
 }

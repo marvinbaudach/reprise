@@ -63,6 +63,11 @@ plus their tests: `crates/reprise-android-ffi/src/*` test modules,
 `android/app/src/test/java/de/reprise/spike/VisualizerScenePixelsTest.kt`,
 `VisualizerSceneDriverTest.kt`, and anything new you add.
 
+Strand A leaves `PlaybackUiState.kt` with a second, position-free
+`LibraryPlayback` record for the whole library tree. That separation keeps the
+500 ms position tick out of the list; a later scene rebuild must not merge the
+two records back together.
+
 **One named exception:** the single call site
 `drawPlayedVisualizer(buffer = visualEngine.scene(...), …)` in
 `android/app/src/main/java/de/reprise/spike/NowPlayingScene.kt:234-244` — after

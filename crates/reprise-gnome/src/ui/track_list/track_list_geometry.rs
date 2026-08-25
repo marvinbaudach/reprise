@@ -10,12 +10,6 @@ use crate::ui::list_geometry_layout::{LayoutValidation, ListLayout};
 
 use super::Shared;
 
-/// Marks the per-view geometry cache so `ListGeometry` discards the persisted
-/// value for the density that becomes active immediately after this call.
-pub(in crate::ui) fn forget_row_height(cache: &crate::ui::list_geometry::ListGeometryCache) {
-    cache.invalidate();
-}
-
 /// Builds the complete row/header layout, using the live adjustment only when
 /// the layout contains section headers. Section starts are copied before any
 /// GTK or database call so no `RefCell` borrow crosses a re-entrant boundary.
@@ -101,6 +95,13 @@ pub(in crate::ui) fn remember_after_layout(shared: &Shared, n_rows: usize) -> bo
 const SECTION_MEASUREMENT_MAX_ATTEMPTS: u8 = 4;
 
 pub(in crate::ui) fn schedule_section_measurement(shared: &Rc<Shared>) {
+    shared.diagnostic_trail.record(
+        super::diagnostic_trail::Event::GeometryMeasurementScheduled {
+            generation: shared.model.generation(),
+            rows: shared.model.n_items(),
+            sections: shared.queue_sections.borrow().len(),
+        },
+    );
     schedule_section_measurement_attempt(shared, SECTION_MEASUREMENT_MAX_ATTEMPTS);
 }
 

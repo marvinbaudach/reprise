@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use gtk4::glib::prelude::{Cast, ObjectExt};
 use gtk4::prelude::{AdjustmentExt, ScrollableExt, WidgetExt};
-use reprise_core::library::settings::{self, ListDensity};
+use reprise_core::library::settings;
 
 pub(in crate::ui) use crate::ui::list_geometry_content::{
     content_height, rows_content_height, sectioned_content_height, ContentHeight,
@@ -17,7 +17,6 @@ pub(in crate::ui) use crate::ui::list_geometry_content::{
 use crate::ui::list_geometry_layout::ListLayout;
 
 const ROW_HEIGHT_AGREEMENT_EPSILON: f64 = 0.5;
-pub(in crate::ui) const INVALIDATED_ROW_HEIGHT: f64 = -1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::ui) struct RowHeight(f64);
@@ -60,7 +59,7 @@ impl TrustedRowHeight {
     }
 
     pub(in crate::ui) fn from_cache(value: f64) -> Option<Self> {
-        if value == INVALIDATED_ROW_HEIGHT || value == 0.0 {
+        if value == 0.0 {
             return None;
         }
         let source = if value.is_sign_negative() {
@@ -153,6 +152,31 @@ pub(in crate::ui) fn settled_row_height(
         .then_some(widget_height)
 }
 
+/// Returns a realized row height that cleanly disproves the adjustment's
+/// per-row quotient.
+///
+/// This is deliberately asymmetric: only a uniform widget measurement above
+/// the CSS floor can replace remembered geometry. Mixed allocations and a
+/// measurement at or below the floor remain no information, because they may
+/// describe recycled or merely minimum-sized rows rather than settled content.
+fn contradicting_row_height(
+    upper: f64,
+    n_rows: usize,
+    measurement: RowMeasurement,
+    minimum: RowHeight,
+) -> Option<RowHeight> {
+    if n_rows == 0 || !upper.is_finite() || upper <= 0.0 || !measurement.is_uniform() {
+        return None;
+    }
+    let widget_height = measurement.modal()?;
+    if widget_height.pixels() <= minimum.pixels() {
+        return None;
+    }
+    let adjustment_height = upper * (n_rows as f64).recip();
+    ((adjustment_height - widget_height.pixels()).abs() >= ROW_HEIGHT_AGREEMENT_EPSILON)
+        .then_some(widget_height)
+}
+
 pub(in crate::ui) fn settled_content_row_height(
     upper: f64,
     n_rows: usize,
@@ -227,51 +251,35 @@ fn preseed_upper(
     (!current_describes_geometry).then_some(wanted_upper)
 }
 
-pub(in crate::ui) fn invalidate_row_height(cache: &Cell<f64>) {
-    // The persisted startup density is projected before this view has loaded
-    // any geometry. Preserve that unloaded state so its per-density measured
-    // value remains available. A live density switch always has a loaded
-    // estimate and invalidates it here before the new CSS is applied.
-    if TrustedRowHeight::from_cache(cache.get()).is_some() {
-        cache.set(INVALIDATED_ROW_HEIGHT);
-    }
-}
-
 #[derive(Default)]
 pub(in crate::ui) struct ListGeometryCache {
     row_height: Cell<f64>,
     section_header_height: Cell<f64>,
 }
 
+#[cfg(test)]
 impl ListGeometryCache {
-    pub(in crate::ui) fn invalidate(&self) {
-        invalidate_row_height(&self.row_height);
-        crate::ui::list_geometry_header::invalidate_height(&self.section_header_height);
+    pub(in crate::ui) fn seed_measured_row_height(&self, height: f64) {
+        self.row_height.set(height);
     }
 }
 
 /// The one cache-then-persistence load, shared by row and section-header
-/// geometry: check the cache, discard a persisted value the cache marked
-/// invalid, fall back to `minimum` as an *assumed* height, and remember the
-/// result. `discard` clears the persisted value, `load` reads it — the only
-/// two things that differ between the two kinds of height. Keeping this
-/// sequence in one place is deliberate: the same decision living in two
-/// functions is how this codebase has produced drift before.
+/// geometry: check the cache, fall back to the persisted measurement, and
+/// finally to `minimum` as an *assumed* height, remembering the result.
+/// `load` reads the persisted value — the only thing that differs between the
+/// two kinds of height. Keeping this sequence in one place is deliberate: the
+/// same decision living in two functions is how this codebase has produced
+/// drift before.
 pub(in crate::ui) fn load_trusted_height(
     cache: &Cell<f64>,
     minimum: RowHeight,
-    discard: impl FnOnce(),
     load: impl FnOnce() -> Option<f64>,
 ) -> TrustedRowHeight {
     if let Some(cached) = TrustedRowHeight::from_cache(cache.get()) {
         return cached;
     }
-    let invalidated = cache.get() == INVALIDATED_ROW_HEIGHT;
-    if invalidated {
-        discard();
-    }
-    let persisted = if invalidated { None } else { load() };
-    let loaded = persisted.and_then(RowHeight::new).map_or_else(
+    let loaded = load().and_then(RowHeight::new).map_or_else(
         || TrustedRowHeight::assumed(minimum),
         TrustedRowHeight::measured,
     );
@@ -279,27 +287,13 @@ pub(in crate::ui) fn load_trusted_height(
     TrustedRowHeight::from_cache(cache.get()).unwrap_or(loaded)
 }
 
-fn load_row_height(
-    db: &reprise_core::db::Db,
-    density: ListDensity,
-    cache: &Cell<f64>,
-    minimum: RowHeight,
-) -> RowHeight {
-    load_trusted_height(
-        cache,
-        minimum,
-        || {
-            if let Err(error) = settings::set_row_height(db, density, None) {
-                tracing::warn!(%error, "could not discard invalidated row height");
-            }
-        },
-        || {
-            settings::get_row_height(db, density).unwrap_or_else(|error| {
-                tracing::warn!(%error, "could not load persisted row height");
-                None
-            })
-        },
-    )
+fn load_row_height(db: &reprise_core::db::Db, cache: &Cell<f64>, minimum: RowHeight) -> RowHeight {
+    load_trusted_height(cache, minimum, || {
+        settings::get_row_height(db).unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not load persisted row height");
+            None
+        })
+    })
     .height
 }
 
@@ -361,26 +355,9 @@ impl ListGeometry {
         .is_some()
     }
 
-    fn density(&self) -> ListDensity {
-        if self.view.has_css_class("reprise-density-comfortable") {
-            ListDensity::Comfortable
-        } else if self.view.has_css_class("reprise-density-compact") {
-            ListDensity::Compact
-        } else {
-            ListDensity::Standard
-        }
-    }
-
     fn minimum_row_height(&self) -> RowHeight {
-        use crate::ui::style::tokens::{
-            ROW_MIN_HEIGHT_COMFORTABLE, ROW_MIN_HEIGHT_COMPACT, ROW_MIN_HEIGHT_STANDARD,
-        };
-        let minimum = match self.density() {
-            ListDensity::Comfortable => ROW_MIN_HEIGHT_COMFORTABLE,
-            ListDensity::Standard => ROW_MIN_HEIGHT_STANDARD,
-            ListDensity::Compact => ROW_MIN_HEIGHT_COMPACT,
-        };
-        RowHeight::new(f64::from(minimum)).expect("density minima are positive")
+        RowHeight::new(f64::from(crate::ui::style::tokens::ROW_MIN_HEIGHT))
+            .expect("the authored row minimum is positive")
     }
 
     pub(in crate::ui) fn row_height(
@@ -388,12 +365,7 @@ impl ListGeometry {
         db: &reprise_core::db::Db,
         cache: &ListGeometryCache,
     ) -> RowHeight {
-        load_row_height(
-            db,
-            self.density(),
-            &cache.row_height,
-            self.minimum_row_height(),
-        )
+        load_row_height(db, &cache.row_height, self.minimum_row_height())
     }
 
     pub(in crate::ui) fn section_header_height(
@@ -401,12 +373,7 @@ impl ListGeometry {
         db: &reprise_core::db::Db,
         cache: &ListGeometryCache,
     ) -> RowHeight {
-        crate::ui::list_geometry_header::load_height(
-            db,
-            self.density(),
-            &cache.section_header_height,
-        )
-        .height
+        crate::ui::list_geometry_header::load_height(db, &cache.section_header_height).height
     }
 
     pub(in crate::ui) fn layout(
@@ -445,20 +412,33 @@ impl ListGeometry {
         n_rows: usize,
         n_sections: usize,
     ) -> bool {
+        let row_measurement = self.measurement();
         let header_measurement = self.section_header_measurement();
-        let Some(height) = settled_content_row_height(
+        let settled = settled_content_row_height(
             upper,
             n_rows,
             n_sections,
-            self.measurement(),
+            row_measurement,
             header_measurement,
-        ) else {
+        );
+        let height = settled.or_else(|| {
+            (n_sections == 0)
+                .then(|| {
+                    contradicting_row_height(
+                        upper,
+                        n_rows,
+                        row_measurement,
+                        self.minimum_row_height(),
+                    )
+                })
+                .flatten()
+        });
+        let Some(height) = height else {
             return false;
         };
         if n_sections == 0 {
             remember_preferred_height(&cache.row_height, TrustedRowHeight::measured(height));
-            if let Err(error) = settings::set_row_height(db, self.density(), Some(height.pixels()))
-            {
+            if let Err(error) = settings::set_row_height(db, Some(height.pixels())) {
                 tracing::warn!(%error, "could not persist settled row height");
             }
             return true;
@@ -470,7 +450,6 @@ impl ListGeometry {
         };
         crate::ui::list_geometry_header::remember_settled_heights(
             db,
-            self.density(),
             &cache.row_height,
             &cache.section_header_height,
             height,
@@ -504,11 +483,7 @@ impl ListGeometry {
     ) -> (ContentHeight, RowHeightSource, Option<RowHeightSource>) {
         let row_height = self.trusted_row_height(db, cache);
         let header_height = (n_sections > 0).then(|| {
-            crate::ui::list_geometry_header::load_height(
-                db,
-                self.density(),
-                &cache.section_header_height,
-            )
+            crate::ui::list_geometry_header::load_height(db, &cache.section_header_height)
         });
         let header_source = header_height.map(|header| header.source);
         let (content, source) =
@@ -591,6 +566,48 @@ mod tests {
     }
 
     #[test]
+    fn uniform_widget_measurement_can_contradict_seeded_upper() {
+        let minimum = RowHeight::new(28.0).unwrap();
+
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([34, 34, 34]),
+                minimum,
+            ),
+            RowHeight::new(34.0)
+        );
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([34, 35, 34]),
+                minimum,
+            ),
+            None
+        );
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([28, 28, 28]),
+                minimum,
+            ),
+            None
+        );
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([27, 27, 27]),
+                minimum,
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn token_floor_filters_recycled_rows_without_becoming_the_measurement() {
         let minimum = RowHeight::new(28.0).unwrap();
         let measurement = RowMeasurement::from_widget_heights_at_least([0, 25, 25, 34], minimum);
@@ -647,94 +664,27 @@ mod tests {
     }
 
     #[test]
-    fn persisted_row_heights_are_independent_per_density_and_discardable() {
-        use reprise_core::library::settings::{self, ListDensity};
-
+    fn a_persisted_row_height_round_trips_and_can_be_cleared() {
         let db = reprise_core::db::Db::open_in_memory().unwrap();
-        assert_eq!(
-            settings::get_row_height(&db, ListDensity::Standard).unwrap(),
-            None
-        );
+        assert_eq!(settings::get_row_height(&db).unwrap(), None);
 
-        settings::set_row_height(&db, ListDensity::Standard, Some(34.0)).unwrap();
-        settings::set_row_height(&db, ListDensity::Compact, Some(26.0)).unwrap();
+        settings::set_row_height(&db, Some(34.0)).unwrap();
         assert_eq!(
-            settings::get_row_height(&db, ListDensity::Standard).unwrap(),
+            settings::get_row_height(&db).unwrap(),
             RowHeight::new(34.0).map(RowHeight::pixels)
         );
-        assert_eq!(
-            settings::get_row_height(&db, ListDensity::Compact).unwrap(),
-            Some(26.0)
-        );
 
-        settings::set_row_height(&db, ListDensity::Standard, None).unwrap();
-        assert_eq!(
-            settings::get_row_height(&db, ListDensity::Standard).unwrap(),
-            None
-        );
-        assert_eq!(
-            settings::get_row_height(&db, ListDensity::Compact).unwrap(),
-            Some(26.0)
-        );
-    }
-
-    #[test]
-    fn density_change_discards_that_density_before_using_its_token_floor() {
-        use std::cell::Cell;
-
-        use reprise_core::library::settings::{self, ListDensity};
-
-        let db = reprise_core::db::Db::open_in_memory().unwrap();
-        settings::set_row_height(&db, ListDensity::Standard, Some(34.0)).unwrap();
-        let cache = Cell::new(INVALIDATED_ROW_HEIGHT);
-
-        let loaded = load_row_height(
-            &db,
-            ListDensity::Standard,
-            &cache,
-            RowHeight::new(28.0).unwrap(),
-        );
-
-        assert_eq!(loaded, RowHeight::new(28.0).unwrap());
-        assert_eq!(cache.get(), -28.0);
-        assert_eq!(
-            settings::get_row_height(&db, ListDensity::Standard).unwrap(),
-            None
-        );
-    }
-
-    #[test]
-    fn initial_density_projection_keeps_cold_start_persistence_loadable() {
-        let cache = Cell::new(0.0);
-
-        invalidate_row_height(&cache);
-
-        assert_eq!(cache.get(), 0.0);
-    }
-
-    #[test]
-    fn density_change_invalidates_an_already_loaded_height() {
-        let cache = Cell::new(34.0);
-
-        invalidate_row_height(&cache);
-
-        assert_eq!(cache.get(), INVALIDATED_ROW_HEIGHT);
+        settings::set_row_height(&db, None).unwrap();
+        assert_eq!(settings::get_row_height(&db).unwrap(), None);
     }
 
     #[test]
     fn persisted_measurement_outranks_the_token_floor_on_cold_start() {
-        use reprise_core::library::settings::{self, ListDensity};
-
         let db = reprise_core::db::Db::open_in_memory().unwrap();
-        settings::set_row_height(&db, ListDensity::Standard, Some(34.0)).unwrap();
+        settings::set_row_height(&db, Some(34.0)).unwrap();
         let cache = Cell::new(0.0);
 
-        let loaded = load_row_height(
-            &db,
-            ListDensity::Standard,
-            &cache,
-            RowHeight::new(28.0).unwrap(),
-        );
+        let loaded = load_row_height(&db, &cache, RowHeight::new(28.0).unwrap());
 
         assert_eq!(loaded, RowHeight::new(34.0).unwrap());
         assert_eq!(cache.get(), 34.0);

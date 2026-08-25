@@ -225,6 +225,19 @@ fn run_journey(track_list: &TrackList, journey: Journey) -> Outcome {
         })
     };
     track_list.set_source(ViewSource::Library);
+    let reveal_destination = track_list
+        .shared
+        .scroll_glide
+        .deliberate_destination()
+        .expect("the source switch must reveal the playing track before Back restores history");
+    assert_ne!(
+        playing_id, expected_top_id,
+        "the test must distinguish the playing reveal from Back's history anchor"
+    );
+    eprintln!(
+        "PROBE Back boundary: playing_id={playing_id} anchor_id={expected_top_id} \
+         reveal_destination={reveal_destination}"
+    );
     assert!(track_list.restore_browser_place(&captured));
     crate::ui::test_settle::settle_for(PAST_THE_SCROLL_HOLD);
     sampler.remove();

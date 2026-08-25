@@ -84,6 +84,7 @@ pub(super) struct Shared {
 pub(in crate::ui) struct ReleasesView {
     root: gtk4::Widget,
     shared: Rc<Shared>,
+    artist_image: Rc<crate::ui::artist_portrait_tiles::ArtistPortraitTiles>,
 }
 
 impl ReleasesView {
@@ -121,8 +122,18 @@ impl ReleasesView {
                 external_link::launch(&url, "Bandcamp purchase", Some(&shared.on_launch_error));
             }
         });
-        let date_column =
-            releases_columns::append_columns(&column_view, &on_open, &filter_bar, &on_wire_cell);
+        #[cfg(not(test))]
+        let artist_image = crate::ui::artist_portrait_tiles::ArtistPortraitTiles::new();
+        #[cfg(test)]
+        let artist_image =
+            crate::ui::artist_portrait_tiles::ArtistPortraitTiles::for_test(|_| None);
+        let date_column = releases_columns::append_columns(
+            &column_view,
+            &on_open,
+            &filter_bar,
+            &on_wire_cell,
+            &artist_image,
+        );
         let column_registry = super::releases_column_layout::registry(&column_view, conn.clone());
         let column_model = super::releases_column_layout::model(&column_registry);
         crate::ui::table_columns::header_popover::install_header_popover(
@@ -243,7 +254,16 @@ impl ReleasesView {
         Self {
             root: root.upcast(),
             shared,
+            artist_image,
         }
+    }
+
+    pub(in crate::ui) fn set_artist_image(
+        &self,
+        loader: Rc<crate::ui::cover_loader::CoverLoader>,
+        runtime: Rc<crate::ui::artist_portrait_worker::ArtistPortraitRuntime>,
+    ) {
+        self.artist_image.set_sources(loader, runtime);
     }
 
     pub(in crate::ui) fn root(&self) -> &gtk4::Widget {

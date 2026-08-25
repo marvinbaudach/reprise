@@ -149,7 +149,7 @@ fn read_meta_from_source(source: &dyn LibrarySource, path: &Path) -> Result<Trac
 /// deliberately given a non-audio extension (so the walk never treats it as a
 /// track to import). Everything else matches [`read_meta`].
 pub(super) fn read_meta_content_based(path: &Path) -> Result<TrackMeta, ScanError> {
-    let classify = |e: lofty::error::LoftyError| {
+    let classify = |e: lofty::error::FileParseError| {
         let (kind, detail) = import_errors::classify_lofty(&e);
         ScanError::Import { kind, detail }
     };

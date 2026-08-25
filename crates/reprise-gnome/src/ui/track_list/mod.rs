@@ -5,12 +5,12 @@ pub(in crate::ui) use reprise_view::column_widths;
 mod centered_scroll_restore;
 pub(in crate::ui) mod current_track_selection;
 pub(crate) mod diagnostic_trail;
-pub(in crate::ui) mod list_density;
 pub(in crate::ui) mod match_highlight;
 pub(in crate::ui) mod now_playing_marker;
 mod playlist_reorder_guard;
 pub(crate) mod queue_item_menu;
 pub(crate) mod queue_item_presentation;
+mod restore_intent;
 pub(crate) mod queue_row_mapping {
     pub(crate) use reprise_view::queue::rows::{
         classify, is_read_only_episode_projection, reorder_op, reorder_rows, QueueReorderOp,
@@ -26,6 +26,8 @@ mod rating_column;
 mod reload_anchor_scroll;
 pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
+#[cfg(test)]
+mod row_height_floor_display_tests;
 pub(crate) mod row_loss_watchdog;
 pub(crate) mod row_loss_watchdog_state;
 pub(in crate::ui) mod startup_load;

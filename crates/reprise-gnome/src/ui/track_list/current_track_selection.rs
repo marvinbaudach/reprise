@@ -346,6 +346,11 @@ impl TrackList {
                 );
             }
             TrackRevealPolicy::Center => {
+                // This track change is about to claim a new deliberate
+                // destination. Release the previous track's settled reveal
+                // synchronously, before a same-turn catalog reload can ask
+                // restore arbitration whether that stale value still wins.
+                self.shared.scroll_glide.clear_deliberate_destination();
                 // Apply the marker now, then yield before the expensive reveal
                 // so the playback chrome can reach its first frame. The
                 // generation token prevents this request from outliving a

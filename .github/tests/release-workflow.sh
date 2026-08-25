@@ -127,7 +127,7 @@ flatpak_diagnostic_upload = named_step("flatpak", "Upload Flatpak runtime instal
 assert flatpak_diagnostic_upload.get("if") == "failure()", (
     "the verbose runtime-install log must be uploaded only after failure"
 )
-assert flatpak_diagnostic_upload.get("uses") == "actions/upload-artifact@v6"
+assert flatpak_diagnostic_upload.get("uses") == "actions/upload-artifact@v7"
 assert flatpak_diagnostic_upload.get("with", {}).get("name") == (
     "flatpak-runtime-install-log"
 ), "the verbose runtime-install artifact name is part of the operator contract"

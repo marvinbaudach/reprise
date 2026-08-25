@@ -559,10 +559,9 @@ fn opposite_phase_stereo_pcm16(frame_count: usize) -> Vec<u8> {
 
 fn decode_float_bytes(buffer: &[u8]) -> Vec<f32> {
     assert!(buffer.len().is_multiple_of(size_of::<f32>()));
-    buffer
-        .chunks_exact(size_of::<f32>())
-        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("one encoded float")))
-        .collect()
+    let (encoded, rest) = buffer.as_chunks::<{ size_of::<f32>() }>();
+    assert!(rest.is_empty(), "the assertion above rules this out");
+    encoded.iter().copied().map(f32::from_le_bytes).collect()
 }
 
 fn decode_scene(buffer: &[u8]) -> Scene {

@@ -2,6 +2,7 @@
 //! image files named `<key>.<ext>`; a `<key>.notfound` marker records a miss.
 //! Freshness is derived from each file's modification time.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
@@ -131,6 +132,38 @@ pub(crate) fn write_negative(dir: &Path, name: &str) {
         return;
     }
     let _ = std::fs::remove_file(temporary);
+}
+
+pub(crate) fn prune_except(dir: &Path, retained_keys: &HashSet<String>) {
+    let _guard = CACHE_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(std::ffi::OsStr::to_str) else {
+            continue;
+        };
+        let Some(key) = cache_entry_key(file_name) else {
+            continue;
+        };
+        if !retained_keys.contains(key) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn cache_entry_key(file_name: &str) -> Option<&str> {
+    let key = if let Some(key) = file_name.strip_suffix(".notfound") {
+        key
+    } else {
+        IMAGE_EXTS
+            .iter()
+            .find_map(|extension| file_name.strip_suffix(&format!(".{extension}")))?
+    };
+    (key.len() == 16 && key.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(key)
 }
 
 #[cfg(test)]

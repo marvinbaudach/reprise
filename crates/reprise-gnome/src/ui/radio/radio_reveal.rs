@@ -208,7 +208,7 @@ pub(super) fn install(
 ) -> Rc<RadioReveal> {
     let last_scroll_activity = Rc::new(Cell::new(None::<Instant>));
     let last_activity = last_scroll_activity.clone();
-    scrolled.vadjustment().connect_value_changed(move |_| {
+    source_reveal::install_scroll_activity_tracking(scrolled, move || {
         last_activity.set(Some(Instant::now()));
     });
 

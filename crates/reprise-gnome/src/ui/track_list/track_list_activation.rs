@@ -54,6 +54,7 @@ impl super::TrackList {
 pub(in crate::ui) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
     let shared = shared.clone();
     column_view.connect_activate(move |_view, position| {
+        shared.scroll_glide.clear_deliberate_destination();
         if matches!(*shared.source.borrow(), ViewSource::Queue) {
             if shared.model.queue_item_at(position).is_none() {
                 tracing::warn!(position, "queue activate: no item at position");

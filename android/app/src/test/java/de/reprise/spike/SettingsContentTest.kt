@@ -11,12 +11,14 @@ import androidx.compose.ui.test.performClick
 import de.reprise.spike.settings.SettingsNavigation
 import de.reprise.spike.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidColorScheme
+import uniffi.reprise_android_ffi.standardEqualizerPresets
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w500dp-h1000dp")
@@ -32,6 +34,8 @@ class SettingsContentTest {
         compose.onNodeWithContentDescription("Open Audio").performClick()
 
         compose.onNodeWithText("Gapless playback").assertIsDisplayed()
+        compose.onNodeWithContentDescription("125 Hz equalizer band").assertDoesNotExist()
+        compose.onNodeWithText("Adjust bands manually").performClick()
         compose.onNodeWithContentDescription("125 Hz equalizer band").assertIsDisplayed()
         compose.onNodeWithContentDescription("1 kHz equalizer band").assertIsDisplayed()
     }
@@ -63,6 +67,31 @@ class SettingsContentTest {
         compose.onNodeWithText("Rock").performClick()
 
         assertEquals(listOf(rock), replacements)
+    }
+
+    @Test
+    fun thePickerOffersEverySharedPreset() {
+        val presets = equalizerPresetUi()
+
+        assertEquals(standardEqualizerPresets().size, presets.size)
+        assertTrue(presets.all { preset -> preset.name.isNotBlank() })
+        assertEquals(presets.size, presets.map { preset -> preset.name }.toSet().size)
+    }
+
+    @Test
+    fun theBandSectionStartsCollapsed() {
+        val flat = listOf(EqualizerCurvePoint(29.0, 0.0))
+        showSettings(
+            equalizerCurve = flat,
+            equalizerPresets = listOf(EqualizerPresetUi("Flat", flat)),
+        )
+
+        compose.onNodeWithContentDescription("Open Audio").performClick()
+
+        compose.onNodeWithContentDescription("Choose equalizer preset").assertIsDisplayed()
+        compose.onNodeWithText("Adjust bands manually").assertIsDisplayed()
+        compose.onNodeWithContentDescription("125 Hz equalizer band").assertDoesNotExist()
+        compose.onNodeWithText("Edit equalizer").assertDoesNotExist()
     }
 
     @Test

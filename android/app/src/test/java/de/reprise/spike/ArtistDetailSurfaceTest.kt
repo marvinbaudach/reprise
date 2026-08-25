@@ -239,7 +239,7 @@ class ArtistDetailSurfaceTest {
                         searchText = "",
                         selectedArtist = detail,
                         selectedAlbum = selectedAlbum,
-                        playback = PlaybackUiState(),
+                        playback = PlaybackUiState().libraryPlayback(),
                         openArtist = {},
                         openAlbum = { album ->
                             openAlbum(album)
@@ -275,7 +275,7 @@ class ArtistDetailSurfaceTest {
                     searchText = searchText,
                     selectedArtist = null,
                     selectedAlbum = selectedAlbum,
-                    playback = PlaybackUiState(),
+                    playback = PlaybackUiState().libraryPlayback(),
                     openArtist = {},
                     openAlbum = { album ->
                         selectedAlbum = AlbumTrackList(album, window(openedAlbumTracks))

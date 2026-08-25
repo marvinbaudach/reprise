@@ -2,64 +2,26 @@ package de.reprise.spike
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import de.reprise.spike.ui.theme.NowPlayingClear
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 internal object NowPlayingFogSpec {
-    const val wideSizeDp = 620f
-    const val tightSizeDp = 470f
-    const val wideOpacity = 0.92f
-    const val tightOpacity = 0.55f
-    const val wideAngleFactor = 0.9f
-    const val tightAngleFactor = -0.6f
-    const val tightUsesScreenBlend = true
-
-    private const val WIDE_FLOOR = 0.34f
-    private const val TIGHT_FLOOR = 0.14f
     private const val SWELL_LOW = 0.05f
     private const val SWELL_HIGH = 0.70f
-    private const val PRESSURE_LOW = 0f
-    private const val PRESSURE_HIGH = 0.70f
-    private const val SWELL_WEIGHT = 0.52f
-    private const val PRESSURE_WEIGHT = 0.48f
 
     /**
-     * How far the haze swells with the signal.
+     * The level normalised to the range the measured music actually occupies,
+     * kept here for the shimmer.
      *
-     * Opacity alone was too quiet to notice — against a dark cover the whole
-     * range moved the picture by a tenth of a stop. Size is what the eye picks
-     * up, so the layers grow with the level as well as brighten.
+     * The fog itself no longer uses it. It reads a slow envelope of its own now
+     * (see [de.reprise.spike.scene.OilFilmEnvelope]), while the disc over the
+     * cover reads the rate-capped level this normalises — two different answers
+     * to the same hazard, one per layer.
      */
-    private const val SCALE_SWING = 0.14f
-
-    fun breathingSize(baseSizeDp: Float, swell: Float): Float =
-        baseSizeDp * (1f + SCALE_SWING * swell.coerceIn(0f, 1f))
-
-    fun wideAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
-        wideOpacity * response(swell, bassPressure, WIDE_FLOOR) * opacity
-
-    fun tightAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
-        tightOpacity * response(swell, bassPressure, TIGHT_FLOOR) * opacity
-
-    private fun response(swell: Float, bassPressure: Float, floor: Float): Float {
-        val normalizedSwell = normalizedSwell(swell)
-        val normalizedPressure = normalizedPressure(bassPressure)
-        val drive = SWELL_WEIGHT * normalizedSwell + PRESSURE_WEIGHT * normalizedPressure
-        return floor + (1f - floor) * drive.coerceIn(0f, 1f)
-    }
-
     fun normalizedSwell(value: Float): Float = normalize(value, SWELL_LOW, SWELL_HIGH)
-
-    fun normalizedPressure(value: Float): Float = normalize(value, PRESSURE_LOW, PRESSURE_HIGH)
 
     private fun normalize(value: Float, low: Float, high: Float): Float =
         ((value - low) / (high - low)).coerceIn(0f, 1f)
@@ -80,62 +42,49 @@ internal object NowPlayingFogSpec {
     const val titleScrimAlpha = 0.58f
 }
 
-/** Draws only finished textures; no filtering or artwork decoding enters a frame. */
+/**
+ * The light behind the cover: six drifting clouds, then the scrims over them.
+ *
+ * What used to stand here were two blurred copies of the artwork, scaled and
+ * counter-rotated, both of them brightening and swelling with the beat. On
+ * anything with a fast kick that read as a flicker at the tempo of the track —
+ * the layer was answering every impulse the detector found, sixteen a second
+ * on a double bass.
+ *
+ * The film that replaced it is built the other way round. Its motion comes from
+ * the clock and nothing else, and the music is let in through one slow envelope
+ * that moves only the top fifth of the brightness and a tenth of the size. Over
+ * a song section that is clearly visible; over a bar it is nothing at all,
+ * which is the point.
+ *
+ * The scrims are unchanged and still drawn last. They are not part of the film
+ * and must not drift with it: their whole job is to hold the title and the
+ * transport at a fixed, readable ground whatever the clouds are doing.
+ */
 internal fun DrawScope.drawNowPlayingFog(
-    fog: CoverFogBitmap?,
+    palette: OilFilmPalette?,
     center: Offset,
-    angleA: Float,
-    angleB: Float,
-    fogLevel: Float,
-    bassPressure: Float,
+    seconds: Float,
+    level: Float,
     opacity: Float,
-    rotationsEnabled: Boolean,
+    driftEnabled: Boolean,
 ) {
     val boundedOpacity = opacity.coerceIn(0f, 1f)
-    if (fog != null && boundedOpacity > 0f) {
-        drawFogLayer(
-            image = fog.wideImage,
-            center = center,
-            sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.wideSizeDp, fogLevel),
-            angle = if (rotationsEnabled) angleA else 0f,
-            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, bassPressure, boundedOpacity),
-            blendMode = BlendMode.SrcOver,
-        )
-        drawFogLayer(
-            image = fog.tightImage,
-            center = center,
-            sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.tightSizeDp, fogLevel),
-            angle = if (rotationsEnabled) angleB else 0f,
-            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, bassPressure, boundedOpacity),
-            blendMode = BlendMode.Screen,
+    if (palette != null && boundedOpacity > 0f) {
+        drawNowPlayingOilFilm(
+            palette = palette,
+            // The swipe carries the film with the cover, at the same reduced
+            // rate the old layers were offset by, so the light stays behind the
+            // artwork instead of sliding out from under it.
+            horizontalShiftPx = center.x - size.width / 2f,
+            // A power gate that has switched the drift off freezes the clock
+            // rather than the film: the composition stays, the motion stops.
+            seconds = if (driftEnabled) seconds else 0f,
+            level = level,
+            opacity = boundedOpacity,
         )
     }
     drawFogLegibility(center, boundedOpacity)
-}
-
-private fun DrawScope.drawFogLayer(
-    image: androidx.compose.ui.graphics.ImageBitmap,
-    center: Offset,
-    sizeDp: Float,
-    angle: Float,
-    alpha: Float,
-    blendMode: BlendMode,
-) {
-    val side = (sizeDp * density).roundToInt()
-    val offset = IntOffset(
-        (center.x - side / 2f).roundToInt(),
-        (center.y - side / 2f).roundToInt(),
-    )
-    rotate(angle, center) {
-        drawImage(
-            image = image,
-            dstOffset = offset,
-            dstSize = IntSize(side, side),
-            alpha = alpha,
-            blendMode = blendMode,
-            filterQuality = FilterQuality.Low,
-        )
-    }
 }
 
 private fun DrawScope.drawFogLegibility(center: Offset, opacity: Float) {

@@ -46,4 +46,3 @@ pub(in crate::ui) const INFORMATION_VISIBILITY_SAVE_FAILED: &str =
     N_!("Could not save information panel visibility");
 pub(in crate::ui) const STATUS_VISIBILITY_SAVE_FAILED: &str =
     N_!("Could not save status line visibility");
-pub(in crate::ui) const DENSITY_SAVE_FAILED: &str = N_!("Could not save list density");

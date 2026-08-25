@@ -102,11 +102,7 @@ pub(in crate::ui::style) fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
 /// Flattens `foreground` at `alpha` over an opaque `background`, the way GTK
 /// composites an `alpha(...)` fill. Needed to reason about tinted surfaces,
 /// which have no hex literal of their own.
-pub(in crate::ui::style) fn composite(
-    foreground: [u8; 3],
-    background: [u8; 3],
-    alpha: f64,
-) -> [u8; 3] {
+pub(in crate::ui) fn composite(foreground: [u8; 3], background: [u8; 3], alpha: f64) -> [u8; 3] {
     let alpha = alpha.clamp(0.0, 1.0);
     let blend = |index: usize| {
         let value =

@@ -87,7 +87,7 @@ jobs:
             showroom/package-lock.json
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7.6.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.12.3"
 
@@ -239,7 +239,7 @@ jobs:
             showroom/package-lock.json
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7.6.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.12.3"
 

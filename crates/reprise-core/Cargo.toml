@@ -17,7 +17,7 @@ thiserror = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 walkdir = "2"
-lofty = "0.24"
+lofty = "0.25"
 dirs = "6"
 tracing = "0.1"
 # `MediaIntegrationHandles` and the controller channels are typed with
@@ -27,7 +27,7 @@ async-channel = "2.5.0"
 fastrand = "2"
 # Stream-proxy registrations are bearer credentials, so their 128-bit token
 # comes directly from the operating system's cryptographic random source.
-getrandom = "0.3"
+getrandom = "0.4"
 # The proxy resets a partially written response when a later origin window
 # fails, so clients observe a transport error instead of a plausible EOF.
 socket2 = "0.6"

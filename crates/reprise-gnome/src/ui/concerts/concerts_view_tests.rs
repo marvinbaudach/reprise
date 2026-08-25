@@ -79,7 +79,10 @@ fn conc_17a_the_concerts_cover_column_is_pinned_id_less_and_unsorted() {
         cover.title().as_deref(),
         Some(crate::ui::strings::text(crate::ui::strings::COLUMN_COVER).as_str())
     );
-    assert_eq!(cover.fixed_width(), crate::ui::table_column_widths::COVER);
+    assert_eq!(
+        cover.fixed_width(),
+        crate::ui::table_column_widths::COVER_COLUMN
+    );
 }
 
 #[test]
@@ -627,17 +630,6 @@ fn conc_4c_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
         move || refreshes.set(refreshes.get() + 1)
     });
 
-    view.refresh();
-    assert_eq!(
-        view.shared.empty_state.get(),
-        ConcertsEmptyState::NoCredentials
-    );
-    assert_eq!(
-        view.shared.footer.text(),
-        "Concerts needs provider credentials"
-    );
-    assert!(!view.shared.footer.reload_is_visible());
-
     reprise_core::library::settings::set_setting(
         &conn,
         reprise_core::concerts::config::TICKETMASTER_API_KEY,
@@ -662,13 +654,10 @@ fn conc_4c_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
     runtime.notify_settings_changed();
     assert_eq!(
         view.shared.empty_state.get(),
-        ConcertsEmptyState::NoCredentials
+        ConcertsEmptyState::NeverFetched
     );
-    assert_eq!(
-        view.shared.footer.text(),
-        "Concerts needs provider credentials"
-    );
-    assert!(!view.shared.footer.reload_is_visible());
+    assert_eq!(view.shared.footer.text(), "Not loaded yet");
+    assert!(view.shared.footer.reload_is_visible());
     assert_eq!(refreshes.get(), 2);
 }
 

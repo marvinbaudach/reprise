@@ -56,6 +56,11 @@ test('the measured canvases draw only through the shared visible-frame owner', a
   assert.doesNotMatch(renderer, /requestAnimationFrame/);
   assert.match(renderer, /if \(!renderer\.isVisible\(\)\) continue/);
   assert.doesNotMatch(renderer, /selectedMode|SINGLE_COLOUR|'marks'|setMode/);
+  const contextAt = renderer.indexOf("const context = canvas.getContext('2d');");
+  const frameAt = renderer.indexOf('const draw =');
+  assert.ok(contextAt >= 0, 'the renderer must acquire a 2D drawing context');
+  assert.ok(contextAt < frameAt, 'the drawing context must be acquired before the frame loop');
+  assert.equal((renderer.match(/canvas\.getContext\('2d'\)/g) ?? []).length, 1);
   // The clock only owns the playhead while nothing is holding it, and the
   // renderer asks it rather than keeping a second copy of the rule.
   assert.match(renderer, /const position = clock\.advance\(timestamp, still\)/);

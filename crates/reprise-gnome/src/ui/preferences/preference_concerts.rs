@@ -3,7 +3,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -11,7 +10,7 @@ use reprise_core::db::Db;
 
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::location_broadcast::LocationBroadcast;
-use crate::ui::{one_shot_task, strings};
+use crate::ui::strings;
 
 pub(in crate::ui) const LOCATION_REFERENCE_CLASS: &str = "reprise-location-reference";
 
@@ -84,81 +83,11 @@ fn location_reference_row(
     row
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CredentialApplyDecision {
-    Reset,
-    Verify,
-    CouldNotVerify,
-}
-
-fn credential_apply_decision(credential: &str, saved: bool) -> CredentialApplyDecision {
-    if credential.trim().is_empty() {
-        return CredentialApplyDecision::Reset;
-    }
-    if !saved {
-        return CredentialApplyDecision::CouldNotVerify;
-    }
-    CredentialApplyDecision::Verify
-}
-
-fn credential_feedback_message(
-    verification: reprise_core::concerts::CredentialVerification,
-) -> Option<&'static str> {
-    match verification {
-        reprise_core::concerts::CredentialVerification::Empty => None,
-        reprise_core::concerts::CredentialVerification::Valid => {
-            Some(strings::CONCERTS_CREDENTIAL_VALID)
-        }
-        reprise_core::concerts::CredentialVerification::Rejected => {
-            Some(strings::CONCERTS_CREDENTIAL_REJECTED)
-        }
-        reprise_core::concerts::CredentialVerification::CouldNotVerify => {
-            Some(strings::CONCERTS_CREDENTIAL_UNVERIFIED)
-        }
-    }
-}
-
-fn apply_credential_feedback(
-    status: &gtk4::Label,
-    verification: reprise_core::concerts::CredentialVerification,
-) {
-    let Some(message) = credential_feedback_message(verification) else {
-        status.set_visible(false);
-        return;
-    };
-    status.set_label(&strings::text(message));
-    status.set_visible(true);
-}
-
-#[derive(Clone)]
-struct CredentialPreferenceRow {
-    row: adw::PasswordEntryRow,
-    #[cfg(test)]
-    status: gtk4::Label,
-}
-
-#[derive(Clone, Copy)]
-struct CredentialPreferenceSpec {
-    provider: reprise_core::concerts::ProviderKind,
-    key: &'static str,
-    title: &'static str,
-}
-
-fn credential_preference_specs() -> [CredentialPreferenceSpec; 1] {
-    [CredentialPreferenceSpec {
-        provider: reprise_core::concerts::ProviderKind::Bandsintown,
-        key: reprise_core::concerts::config::BANDSINTOWN_APP_ID_KEY,
-        title: strings::CONCERTS_BANDSINTOWN_APP_ID,
-    }]
-}
-
 struct ConcertPreferenceRowsInner {
     rows: Vec<gtk4::Widget>,
     module_rows: Vec<gtk4::Widget>,
     #[cfg(test)]
     location_reference: adw::ActionRow,
-    #[cfg(test)]
-    credentials: Vec<CredentialPreferenceRow>,
     similar_enabled: adw::SwitchRow,
     similar_count: adw::SpinRow,
     module_enabled: Cell<bool>,
@@ -172,7 +101,7 @@ pub(in crate::ui) struct ConcertPreferenceRows {
 impl ConcertPreferenceRows {
     pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
         for row in &self.inner.rows {
-            expander.add_row(row);
+            super::preference_plugin_chrome::add_nested_row(expander, row);
         }
     }
 
@@ -195,10 +124,6 @@ pub(in crate::ui) fn build(
     enabled: bool,
 ) -> ConcertPreferenceRows {
     let location_reference = location_reference_row(conn, broadcast, on_location);
-    let credentials = credential_preference_specs()
-        .into_iter()
-        .map(|spec| password_row(conn, runtime, spec.provider, spec.key, spec.title))
-        .collect::<Vec<_>>();
     let window_days = window_days_row(conn, runtime);
     let similar = reprise_core::concerts::config::similar_config(conn).unwrap_or(
         reprise_core::concerts::config::SimilarConfig {
@@ -239,15 +164,11 @@ pub(in crate::ui) fn build(
             }
         });
     }
-    let mut module_rows = credentials
-        .iter()
-        .map(|credential| credential.row.clone().upcast())
-        .collect::<Vec<_>>();
-    module_rows.extend([
+    let module_rows = vec![
         window_days.upcast(),
         similar_enabled.clone().upcast(),
         similar_count.clone().upcast(),
-    ]);
+    ];
     let mut rows = vec![location_reference.clone().upcast()];
     rows.extend(module_rows.iter().cloned());
     let preferences = ConcertPreferenceRows {
@@ -256,8 +177,6 @@ pub(in crate::ui) fn build(
             module_rows,
             #[cfg(test)]
             location_reference,
-            #[cfg(test)]
-            credentials,
             similar_enabled: similar_enabled.clone(),
             similar_count: similar_count.clone(),
             module_enabled: Cell::new(enabled),
@@ -274,119 +193,6 @@ pub(in crate::ui) fn build(
     }
     preferences.set_sensitive(enabled);
     preferences
-}
-
-fn password_row(
-    conn: &Rc<Db>,
-    runtime: &Rc<ConcertsRuntime>,
-    provider: reprise_core::concerts::ProviderKind,
-    key: &'static str,
-    title: &'static str,
-) -> CredentialPreferenceRow {
-    let value = reprise_core::library::settings::get_setting(conn, key)
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let row = adw::PasswordEntryRow::builder()
-        .title(strings::text(title))
-        .text(value)
-        .show_apply_button(true)
-        .build();
-    let status = gtk4::Label::builder()
-        .accessible_role(gtk4::AccessibleRole::Status)
-        .css_classes(["caption", "dim-label"])
-        .visible(false)
-        .build();
-    row.add_suffix(&status);
-    let generation = Rc::new(Cell::new(0_u64));
-    {
-        let conn = conn.clone();
-        let runtime = runtime.clone();
-        let status = status.clone();
-        let generation = generation.clone();
-        row.connect_changed(move |row| {
-            generation.set(generation.get().wrapping_add(1));
-            status.set_visible(false);
-            if save_setting(&conn, key, row.text().as_str()) {
-                runtime.notify_settings_changed();
-            }
-        });
-    }
-    {
-        let conn = conn.clone();
-        let runtime = runtime.clone();
-        let status = status.clone();
-        let generation = generation.clone();
-        row.connect_apply(move |row| {
-            let credential = row.text().trim().to_owned();
-            let saved = save_setting(&conn, key, &credential);
-            if saved {
-                runtime.notify_settings_changed();
-            }
-            match credential_apply_decision(&credential, saved) {
-                CredentialApplyDecision::Reset => {
-                    generation.set(generation.get().wrapping_add(1));
-                    apply_credential_feedback(
-                        &status,
-                        reprise_core::concerts::CredentialVerification::Empty,
-                    );
-                }
-                CredentialApplyDecision::CouldNotVerify => {
-                    generation.set(generation.get().wrapping_add(1));
-                    apply_credential_feedback(
-                        &status,
-                        reprise_core::concerts::CredentialVerification::CouldNotVerify,
-                    );
-                }
-                CredentialApplyDecision::Verify => {
-                    start_credential_verification(&status, &generation, provider, credential);
-                }
-            }
-        });
-    }
-    CredentialPreferenceRow {
-        row,
-        #[cfg(test)]
-        status,
-    }
-}
-
-fn start_credential_verification(
-    status: &gtk4::Label,
-    generation: &Rc<Cell<u64>>,
-    provider: reprise_core::concerts::ProviderKind,
-    credential: String,
-) {
-    let current = generation.get().wrapping_add(1);
-    generation.set(current);
-    status.set_label(&strings::text(strings::CONCERTS_CREDENTIAL_CHECKING));
-    status.set_visible(true);
-    let receiver = match one_shot_task::spawn("reprise-concert-credential", move || {
-        reprise_core::concerts::verify_credential(provider, &credential)
-    }) {
-        Ok(receiver) => receiver,
-        Err(_) => {
-            apply_credential_feedback(
-                status,
-                reprise_core::concerts::CredentialVerification::CouldNotVerify,
-            );
-            return;
-        }
-    };
-    let status = status.downgrade();
-    let generation = generation.clone();
-    glib::spawn_future_local(async move {
-        let verification = receiver
-            .recv()
-            .await
-            .unwrap_or(reprise_core::concerts::CredentialVerification::CouldNotVerify);
-        if generation.get() != current {
-            return;
-        }
-        if let Some(status) = status.upgrade() {
-            apply_credential_feedback(&status, verification);
-        }
-    });
 }
 
 fn window_days_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::SpinRow {

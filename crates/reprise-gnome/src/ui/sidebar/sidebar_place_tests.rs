@@ -470,6 +470,19 @@ fn content_stack_literal_pages() -> ContentStackLiteralScan {
                 scan.add_named_calls += 1;
                 scan.pages.insert(page.to_string());
             }
+            for call in compact_source.split("DeferredPage::install(").skip(1) {
+                let Some(literal) = call.split(',').nth(1) else {
+                    continue;
+                };
+                let Some(page) = literal
+                    .strip_prefix('"')
+                    .and_then(|literal| literal.split_once('"').map(|(page, _)| page))
+                else {
+                    continue;
+                };
+                scan.add_named_calls += 1;
+                scan.pages.insert(page.to_string());
+            }
         }
     }
 

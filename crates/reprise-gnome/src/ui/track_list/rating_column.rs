@@ -14,7 +14,6 @@ use super::track_list_columns::{
     apply_now_playing, apply_now_playing_item, rating_refresh_for_sort, RatingRefresh,
 };
 use super::{reload, show_toast, Shared};
-use crate::ui::list_density;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list_context_menu;
@@ -46,7 +45,6 @@ pub(in crate::ui) fn append_rating_column(
             super::track_list_selection_input::wire_cell_selection(&rating_widget, item, &shared);
             track_list_dnd::wire_row_dnd(&rating_widget, item, &shared);
             item.set_child(Some(&rating_widget));
-            list_density::inherit(&column_view, &rating_widget);
         });
     }
 

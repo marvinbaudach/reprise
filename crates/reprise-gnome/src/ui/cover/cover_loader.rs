@@ -4,7 +4,6 @@
 //! so a recycled track-list row never shows a stale cover.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -16,12 +15,14 @@ use reprise_core::cover::{thumbnail, ThumbnailSize};
 use crate::ui::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 use crate::ui::track_cover::TrackCover;
 
+use super::cover_cache::CoverCache;
+
 /// Symbolic placeholder shown when a track has no cover (or while loading /
 /// on error). No decode — just an icon name GTK already ships.
 const PLACEHOLDER_ICON: &str = "audio-x-generic-symbolic";
 
 /// Cap on the in-memory texture cache. Thumbnails are tiny; this only spares
-/// re-reading the on-disk PNG during scrolling. Evicts oldest-inserted first.
+/// re-reading the on-disk PNG during scrolling. Evicts least-recently used.
 const MAX_CACHED_TEXTURES: usize = 256;
 
 #[derive(Clone)]
@@ -30,9 +31,14 @@ struct CachedCover {
     path: PathBuf,
 }
 
+enum CacheLookup {
+    Hit(CachedCover),
+    Resolved(PathBuf),
+    Unknown,
+}
+
 pub struct CoverLoader {
-    cache: RefCell<HashMap<String, CachedCover>>,
-    order: RefCell<std::collections::VecDeque<String>>,
+    cache: RefCell<CoverCache<gdk::Texture>>,
     download: CoverDownloadRuntime,
 }
 
@@ -64,9 +70,8 @@ enum WhileResolving {
     /// at once, before anything is known.
     ShowPlaceholder,
     /// A now-playing surface shows one track at a time, and the next track is
-    /// usually from the same album: the cache is keyed by track path, so the
-    /// second track of an album misses even though it resolves to the very
-    /// same file. Blanking up front turns that into a placeholder flash
+    /// usually from the same album. Blanking up front turns a shared-file hit
+    /// into a placeholder flash
     /// between two identical covers. The placeholder still goes up the moment
     /// the *local* answer comes back empty — before the network is asked,
     /// which may take seconds or never answer — so a track without artwork
@@ -107,8 +112,7 @@ impl CoverTarget for TrackCover {
 impl CoverLoader {
     pub fn new(runtime: CoverDownloadRuntime) -> Rc<Self> {
         Rc::new(Self {
-            cache: RefCell::new(HashMap::new()),
-            order: RefCell::new(std::collections::VecDeque::new()),
+            cache: RefCell::new(CoverCache::new(MAX_CACHED_TEXTURES)),
             download: runtime,
         })
     }
@@ -117,36 +121,35 @@ impl CoverLoader {
         image.set_icon_name(Some(PLACEHOLDER_ICON));
     }
 
-    fn cache_get(&self, key: &str) -> Option<CachedCover> {
-        self.cache.borrow().get(key).cloned()
+    fn cache_lookup(&self, key: &str) -> CacheLookup {
+        let mut cache = self.cache.borrow_mut();
+        let Some(path) = cache.resolved_path(key) else {
+            return CacheLookup::Unknown;
+        };
+        match cache.texture(&path) {
+            Some(texture) => CacheLookup::Hit(CachedCover { texture, path }),
+            None => CacheLookup::Resolved(path),
+        }
     }
 
-    fn cache_put(&self, key: String, cover: CachedCover) {
-        let mut cache = self.cache.borrow_mut();
-        if cache.contains_key(&key) {
-            return;
-        }
-        let mut order = self.order.borrow_mut();
-        if cache.len() >= MAX_CACHED_TEXTURES {
-            if let Some(old) = order.pop_front() {
-                cache.remove(&old);
-            }
-        }
-        order.push_back(key.clone());
-        cache.insert(key, cover);
+    fn cache_resolve(&self, key: String, path: PathBuf) {
+        self.cache.borrow_mut().resolve(key, path);
+    }
+
+    fn cache_texture(&self, path: &std::path::Path) -> Option<gdk::Texture> {
+        self.cache.borrow_mut().texture(path)
+    }
+
+    fn cache_put_texture(&self, path: PathBuf, texture: gdk::Texture) {
+        self.cache.borrow_mut().insert_texture(path, texture);
+    }
+
+    fn cache_invalidate_file(&self, path: &std::path::Path) {
+        self.cache.borrow_mut().invalidate_file(path);
     }
 
     pub fn invalidate_paths(&self, paths: &[std::path::PathBuf]) {
-        let prefixes: Vec<String> = paths
-            .iter()
-            .map(|path| format!("{}|", path.to_string_lossy()))
-            .collect();
-        self.cache
-            .borrow_mut()
-            .retain(|key, _| !prefixes.iter().any(|prefix| key.starts_with(prefix)));
-        self.order
-            .borrow_mut()
-            .retain(|key| !prefixes.iter().any(|prefix| key.starts_with(prefix)));
+        self.cache.borrow_mut().invalidate_requests(paths);
     }
 
     pub fn load_into(
@@ -205,22 +208,29 @@ impl CoverLoader {
             return;
         }
         let key = format!("{}|{}", image_path.to_string_lossy(), size.pixels());
-        if let Some(cached) = self.cache_get(&key) {
-            picture.set_paintable(Some(&cached.texture));
-            on_loaded(true);
-            return;
-        }
+        let (known_path, check_shared_texture) = match self.cache_lookup(&key) {
+            CacheLookup::Hit(cached) => {
+                picture.set_paintable(Some(&cached.texture));
+                on_loaded(true);
+                return;
+            }
+            CacheLookup::Resolved(path) => (Some(path), false),
+            CacheLookup::Unknown => (None, true),
+        };
         let this = self.clone();
         let picture = picture.clone();
         let current = current.clone();
         let source = image_path.to_path_buf();
         glib::spawn_future_local(async move {
-            let thumbnail_path = gio::spawn_blocking(move || {
-                thumbnail(&reprise_core::cover::CoverSource::FolderImage(source), size).ok()
-            })
-            .await
-            .ok()
-            .flatten();
+            let thumbnail_path = match known_path {
+                Some(path) => Some(path),
+                None => gio::spawn_blocking(move || {
+                    thumbnail(&reprise_core::cover::CoverSource::FolderImage(source), size).ok()
+                })
+                .await
+                .ok()
+                .flatten(),
+            };
             if current.get() != token {
                 return;
             }
@@ -228,13 +238,24 @@ impl CoverLoader {
                 on_loaded(false);
                 return;
             };
+            this.cache_resolve(key, path.clone());
+            if check_shared_texture {
+                if let Some(texture) = this.cache_texture(&path) {
+                    picture.set_paintable(Some(&texture));
+                    on_loaded(true);
+                    return;
+                }
+            }
             match gdk::Texture::from_filename(&path) {
                 Ok(texture) => {
                     picture.set_paintable(Some(&texture));
-                    this.cache_put(key, CachedCover { texture, path });
+                    this.cache_put_texture(path, texture);
                     on_loaded(true);
                 }
-                Err(_) => on_loaded(false),
+                Err(_) => {
+                    this.cache_invalidate_file(&path);
+                    on_loaded(false);
+                }
             }
         });
     }
@@ -297,11 +318,15 @@ impl CoverLoader {
             return;
         }
         let key = format!("{track_path}|{}", size.pixels());
-        if let Some(cached) = self.cache_get(&key) {
-            target.show_texture(&cached.texture);
-            on_resolved(Some(cached.path));
-            return;
-        }
+        let (known_path, check_shared_texture) = match self.cache_lookup(&key) {
+            CacheLookup::Hit(cached) => {
+                target.show_texture(&cached.texture);
+                on_resolved(Some(cached.path));
+                return;
+            }
+            CacheLookup::Resolved(path) => (Some(path), false),
+            CacheLookup::Unknown => (None, true),
+        };
         if while_resolving == WhileResolving::ShowPlaceholder {
             target.show_placeholder();
         }
@@ -312,20 +337,23 @@ impl CoverLoader {
         let path_owned = track_path.to_string();
         glib::spawn_future_local(async move {
             // Off the main loop: resolve source + build/hit the disk cache.
-            let path_for_worker = path_owned.clone();
-            let mut cache_path: Option<std::path::PathBuf> = gio::spawn_blocking(move || {
-                // Asks what this track resolved to last time before opening
-                // it. The thumbnail cache alone cannot save the read: its key
-                // is a hash of the cover bytes, so it can only be consulted
-                // once the file has already been read.
-                reprise_core::cover::thumbnail_for_track(
-                    std::path::Path::new(&path_for_worker),
-                    size,
-                )
-            })
-            .await
-            .ok()
-            .flatten();
+            let mut cache_path = match known_path {
+                Some(path) => Some(path),
+                None => {
+                    let path_for_worker = path_owned.clone();
+                    gio::spawn_blocking(move || {
+                        // Resolve once per track/size; the second map below
+                        // shares the resulting texture by file across tracks.
+                        reprise_core::cover::thumbnail_for_track(
+                            std::path::Path::new(&path_for_worker),
+                            size,
+                        )
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                }
+            };
 
             // Back on the main loop: bail if this cell was recycled meanwhile.
             if current.get() != token {
@@ -411,15 +439,17 @@ impl CoverLoader {
                 on_resolved(None);
                 return;
             };
+            this.cache_resolve(key, cache_path.clone());
+            if check_shared_texture {
+                if let Some(texture) = this.cache_texture(&cache_path) {
+                    target.show_texture(&texture);
+                    on_resolved(Some(cache_path));
+                    return;
+                }
+            }
             match gdk::Texture::from_filename(&cache_path) {
                 Ok(texture) => {
-                    this.cache_put(
-                        key,
-                        CachedCover {
-                            texture: texture.clone(),
-                            path: cache_path.clone(),
-                        },
-                    );
+                    this.cache_put_texture(cache_path.clone(), texture.clone());
                     target.show_texture(&texture);
                     on_resolved(Some(cache_path));
                 }
@@ -431,6 +461,7 @@ impl CoverLoader {
                     if while_resolving == WhileResolving::KeepPreviousCover {
                         target.show_placeholder();
                     }
+                    this.cache_invalidate_file(&cache_path);
                     on_resolved(None);
                 }
             }

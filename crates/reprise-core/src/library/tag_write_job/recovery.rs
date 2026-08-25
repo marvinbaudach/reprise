@@ -122,7 +122,8 @@ fn classify_file(
             } else {
                 RecoveryState::Failed
             };
-            return Ok(failed_fields(file, fields, state, kind, &error.to_string()));
+            let detail = crate::library::import_errors::error_detail(&error);
+            return Ok(failed_fields(file, fields, state, kind, &detail));
         }
     };
     Ok(fields

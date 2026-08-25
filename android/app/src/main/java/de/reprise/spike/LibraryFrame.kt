@@ -43,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -130,7 +132,8 @@ internal fun LibrarySummaryActions(
 internal fun LibraryBottomFrame(
     surfaceLayout: SurfaceLayout,
     currentTrack: LibraryTrack?,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
+    progress: () -> Float,
     selectedTab: BrowseTab,
     selectTab: (BrowseTab) -> Unit,
     openNowPlaying: () -> Unit,
@@ -152,6 +155,7 @@ internal fun LibraryBottomFrame(
                 metrics = metrics,
                 track = currentTrack,
                 playback = playback,
+                progress = progress,
                 openNowPlaying = openNowPlaying,
             )
         }
@@ -243,10 +247,14 @@ internal fun LibraryNavigationRail(
 private fun MiniPlayer(
     metrics: LibraryFrameMetrics,
     track: LibraryTrack,
-    playback: PlaybackUiState,
+    playback: LibraryPlayback,
+    progress: () -> Float,
     openNowPlaying: () -> Unit,
 ) {
     val controls = LocalPlaybackControls.current
+    val performanceObserver = LocalLibraryPerformanceObserver.current
+    val progressRail = MaterialTheme.colorScheme.outlineVariant
+    val progressFill = MaterialTheme.colorScheme.primary
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -315,14 +323,15 @@ private fun MiniPlayer(
                     .fillMaxWidth()
                     .height(3.dp)
                     .align(Alignment.BottomStart)
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(playback.progressFraction)
-                    .height(3.dp)
-                    .align(Alignment.BottomStart)
-                    .background(MaterialTheme.colorScheme.primary),
+                    .drawBehind {
+                        val fraction = progress()
+                        performanceObserver.miniPlayerProgressDrawn(fraction)
+                        drawRect(color = progressRail)
+                        drawRect(
+                            color = progressFill,
+                            size = Size(size.width * fraction, size.height),
+                        )
+                    },
             )
         }
     }

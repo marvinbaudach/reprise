@@ -12,8 +12,17 @@ import kotlin.math.roundToInt
 /** Geometry and signal response of the cover disc that turns behind the cover. */
 internal object NowPlayingShimmerSpec {
     private const val REST_ALPHA = 0.34f
-    private const val PRESSURE_ALPHA = 0.14f
-    private const val SWELL_ALPHA = 0.16f
+
+    /**
+     * What the level carries, after the kick's share was folded into it.
+     *
+     * The disc used to answer the kick with 0.14 of its own, on top of 0.16 for
+     * the level. Dropping that term outright would have dimmed the disc at its
+     * peak, so the weight moved instead of vanishing: the same brightest state
+     * is still reachable, it is now reached by a loud passage rather than by a
+     * beat, and the level driving it is rate-capped upstream.
+     */
+    private const val SWELL_ALPHA = 0.30f
 
     /**
      * The phone fog spends roughly three times the alpha of the desktop bloom below this
@@ -39,11 +48,9 @@ internal object NowPlayingShimmerSpec {
         return (DEGREES_PER_TURN * wrappedTurns).toFloat()
     }
 
-    fun alpha(swell: Float, bassPressure: Float, opacity: Float): Float =
+    fun alpha(swell: Float, opacity: Float): Float =
         (
-            REST_ALPHA +
-                PRESSURE_ALPHA * NowPlayingFogSpec.normalizedPressure(bassPressure) +
-                SWELL_ALPHA * NowPlayingFogSpec.normalizedSwell(swell)
+            REST_ALPHA + SWELL_ALPHA * NowPlayingFogSpec.normalizedSwell(swell)
             ) * PHONE_FOG_ALPHA_SCALE * opacity.coerceIn(0f, 1f)
 }
 
@@ -54,12 +61,11 @@ internal fun DrawScope.drawNowPlayingShimmer(
     coverDiameterDp: Float,
     elapsedSeconds: Double,
     swell: Float,
-    bassPressure: Float,
     opacity: Float,
     rotationsEnabled: Boolean,
 ) {
     val prepared = fog ?: return
-    val alpha = NowPlayingShimmerSpec.alpha(swell, bassPressure, opacity)
+    val alpha = NowPlayingShimmerSpec.alpha(swell, opacity)
     if (alpha <= 0f) return
     val side = (NowPlayingShimmerSpec.diameterDp(coverDiameterDp) * density).roundToInt()
     val offset = IntOffset(

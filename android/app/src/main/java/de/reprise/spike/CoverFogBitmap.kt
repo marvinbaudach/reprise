@@ -20,22 +20,28 @@ import kotlin.math.sqrt
 
 private const val FOG_BITMAP_SIZE = 256
 private const val FOG_CONTENT_SIZE = 208
-private const val WIDE_BLUR_RADIUS_PX = 18
-private const val TIGHT_BLUR_RADIUS_PX = 10
+private const val FOG_BLUR_RADIUS_PX = 18
 private const val BOX_BLUR_PASSES = 2
 private const val RADIAL_FADE_START = 0.62f
 private const val SHIMMER_MASK_SOLID = 0.12f
 private const val SHIMMER_MASK_CLEAR = 0.68f
 private const val FOG_CROSSFADE_MS = 180
 
-/** The fog and shimmer textures prepared once and only transformed by frame draws. */
+/**
+ * What one artwork contributes to the scene, prepared once away from the frame.
+ *
+ * There used to be three textures here, two of them blurred copies of the cover
+ * that the fog scaled and counter-rotated behind it. The fog is six colour
+ * clouds now and reads [palette] instead, so what is left is the disc the
+ * shimmer turns over the cover — and the palette, which is not a texture at all
+ * but belongs to the same question: what does this cover look like from far
+ * enough away. Both are cached and cross-faded together, so a track change
+ * moves the film's colour and the disc in step.
+ */
 internal data class CoverFogBitmap(
-    val wide: Bitmap,
-    val tight: Bitmap,
     val disc: Bitmap,
+    val palette: OilFilmPalette,
 ) {
-    val wideImage: ImageBitmap = wide.asImageBitmap()
-    val tightImage: ImageBitmap = tight.asImageBitmap()
     val discImage: ImageBitmap = disc.asImageBitmap()
 }
 
@@ -72,21 +78,28 @@ internal class CoverFogTransitionState {
 }
 
 /**
- * Crops one cover to a bounded square and prepares the fog and shimmer textures.
+ * Reads one cover into everything the scene needs from it.
  *
  * This is deliberately Android-bitmap work rather than a Compose modifier:
  * callers run it away from the main thread once per artwork identity, while
- * every later frame only scales and rotates the finished 256 px textures.
+ * every later frame only scales and rotates the finished 256 px disc and draws
+ * six gradients that were built here.
  */
-internal fun prepareCoverFogBitmap(source: Bitmap?, fallbackArgb: Int): CoverFogBitmap {
-    val square = cropSquare(source, fallbackArgb)
-    val wide = repeatedBoxBlur(square, WIDE_BLUR_RADIUS_PX)
-    return CoverFogBitmap(
-        wide = wide,
-        tight = repeatedBoxBlur(square, TIGHT_BLUR_RADIUS_PX),
-        disc = applyShimmerMask(wide),
+internal fun prepareCoverFogBitmap(source: Bitmap?, fallbackArgb: Int): CoverFogBitmap =
+    CoverFogBitmap(
+        disc = applyShimmerMask(prepareFogTexture(source, fallbackArgb)),
+        palette = spreadOilFilmClouds(extractOilFilmQuadrants(source)),
     )
-}
+
+/**
+ * The cropped, faded and blurred cover the shimmer disc is cut from.
+ *
+ * Its own step, rather than a stage buried in [prepareCoverFogBitmap], because
+ * it is the only place the crop and the radial fade can be looked at before the
+ * shimmer mask has eaten the outer two thirds of them.
+ */
+internal fun prepareFogTexture(source: Bitmap?, fallbackArgb: Int): Bitmap =
+    repeatedBoxBlur(cropSquare(source, fallbackArgb), FOG_BLUR_RADIUS_PX)
 
 @Composable
 internal fun rememberCoverFogBitmap(

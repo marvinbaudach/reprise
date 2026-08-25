@@ -241,7 +241,7 @@ fn reads_every_stored_concert_field_without_credentials_or_paths() {
     assert_eq!(body["similar_artists"]["enabled"], true);
     assert_eq!(body["similar_artists"]["count"], 25);
     assert_eq!(body["providers"]["ticketmaster"], true);
-    assert_eq!(body["providers"]["bandsintown"], false);
+    assert_eq!(body["providers"]["bandsintown"], true);
     let raw = serde_json::to_string(&response).unwrap();
     assert!(!raw.contains("must-never-leave-the-database"));
     assert_no_leaks(&raw);

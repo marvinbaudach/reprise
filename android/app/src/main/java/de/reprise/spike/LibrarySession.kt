@@ -10,6 +10,7 @@ import uniffi.reprise_android_ffi.AndroidArtworkSize
  */
 private const val REMEMBERED_ARTWORK_PATHS = 512
 private const val COUNT_ONLY_WINDOW_SIZE = 1L
+internal const val AUTOMATIC_SCAN_INTERVAL_MS = 5 * 60 * 1_000L
 
 internal interface LibrarySessionPort {
     fun rememberedTreeUri(): String?
@@ -23,6 +24,10 @@ internal interface LibrarySessionPort {
     fun configureTree(treeUri: String)
 
     fun scan(report: (LibraryScreenState.Scanning) -> Unit)
+
+    fun lastScanCompletedAtMs(): Long = 0L
+
+    fun rememberScanCompletedAtMs(completedAtMs: Long) = Unit
 
     fun searchTracks(text: String, window: LibraryWindowRange): LibraryWindow<LibraryTrack>
 
@@ -76,6 +81,8 @@ private data class ArtworkCacheKey(
 internal class LibrarySession(
     private val port: LibrarySessionPort,
     private val startPortraitPrefetch: () -> Unit = {},
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val scanMonitor: Any = Any(),
 ) {
     private val artworkPaths =
         object : LinkedHashMap<ArtworkCacheKey, String?>(64, 0.75f, true) {
@@ -107,15 +114,39 @@ internal class LibrarySession(
     fun chooseTree(
         treeUri: String,
         report: (LibraryScreenState.Scanning) -> Unit,
-    ): LibraryScreenState {
+    ): LibraryScreenState = synchronized(scanMonitor) {
         port.persistTreePermission(treeUri)
         port.rememberTreeUri(treeUri)
-        return scanTree(treeUri, report)
+        scanTree(treeUri, report)
     }
 
-    fun rescan(report: (LibraryScreenState.Scanning) -> Unit): LibraryScreenState {
-        val treeUri = port.rememberedTreeUri() ?: return LibraryScreenState.NoFolder()
-        return scanTree(treeUri, report)
+    fun rescan(report: (LibraryScreenState.Scanning) -> Unit): LibraryScreenState =
+        synchronized(scanMonitor) {
+            val treeUri = port.rememberedTreeUri()
+                ?: return@synchronized LibraryScreenState.NoFolder()
+            scanTree(treeUri, report)
+        }
+
+    /** Refreshes a configured library without replacing it with the scan screen. */
+    fun autoScan(): LibraryScreenState.Browse? = synchronized(scanMonitor) {
+        val treeUri = port.rememberedTreeUri() ?: return@synchronized null
+        val now = nowMillis()
+        val elapsed = now - port.lastScanCompletedAtMs()
+        if (elapsed < AUTOMATIC_SCAN_INTERVAL_MS) return@synchronized null
+        if (!port.isTreeReadable(treeUri)) return@synchronized null
+
+        try {
+            port.configureTree(treeUri)
+            port.scan { }
+        } finally {
+            // A failed attempt waits for the normal interval instead of being
+            // retried on every Activity resume.
+            port.rememberScanCompletedAtMs(now)
+        }
+        clearArtworkPaths()
+        val state = browseState()
+        startPortraitPrefetch()
+        state
     }
 
     fun stateAfterFailure(message: String): LibraryScreenState {
@@ -239,14 +270,19 @@ internal class LibrarySession(
         port.configureTree(treeUri)
         report(LibraryScreenState.Scanning())
         port.scan(report)
+        port.rememberScanCompletedAtMs(nowMillis())
         // The files behind those paths may have just changed underneath us.
+        clearArtworkPaths()
+        val state = browseState()
+        startPortraitPrefetch()
+        return state
+    }
+
+    private fun clearArtworkPaths() {
         synchronized(artworkPaths) {
             artworkPaths.clear()
             artworkGeneration++
         }
-        val state = browseState()
-        startPortraitPrefetch()
-        return state
     }
 
     private fun browseState(

@@ -83,6 +83,12 @@ internal class SceneDriver(
         } else {
             fallbackBands(nowNanos, elapsedSeconds.toFloat())
         }
+        if (previousTick != null) {
+            // After the branch above, never before it: the film's envelope
+            // chases whatever this tick decided the bass pressure is, and
+            // stepping it first would have it chase the tick before.
+            state.advanceOilFilmBy(elapsedSeconds.toFloat())
+        }
         if (firstTickNanos == null) {
             firstTickNanos = nowNanos
         }

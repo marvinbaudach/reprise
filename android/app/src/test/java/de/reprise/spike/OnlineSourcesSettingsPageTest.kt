@@ -48,10 +48,11 @@ class OnlineSourcesSettingsPageTest {
     fun thePageExplainsLibraryWidePortraitPrefetch() {
         showPage(enabled = false)
 
-        compose.onNodeWithText("Fetch portraits after a library scan or restore.")
+        compose.onNodeWithText("Fetch portraits after automatic scans, manual scans, or restores.")
             .assertIsDisplayed()
         compose.onNodeWithText(
-            "Artist names in your library are sent to Deezer after a scan or restore.",
+            "Artist names in your library are sent to Deezer after an automatic scan, " +
+                "manual scan, or restore.",
             substring = true,
         )
             .assertIsDisplayed()

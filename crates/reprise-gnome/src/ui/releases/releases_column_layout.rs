@@ -49,7 +49,7 @@ fn label(key: ReleaseColumn) -> String {
 
 fn width(key: ReleaseColumn) -> i32 {
     match key {
-        ReleaseColumn::Cover => widths::COVER,
+        ReleaseColumn::Cover => widths::COVER_COLUMN,
         ReleaseColumn::Date => widths::DATE,
         ReleaseColumn::Title => widths::TITLE_MIN,
         ReleaseColumn::Artist => widths::NAME,

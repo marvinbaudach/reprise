@@ -234,7 +234,6 @@ fn set_player_bar_position_in(
     set_setting_in(conn, PLAYER_BAR_POSITION_KEY, value)
 }
 
-pub const LIST_DENSITY_KEY: &str = "ui.list_density";
 pub const SIDEBAR_VISIBLE_KEY: &str = "ui.sidebar_visible";
 pub const SIDEBAR_COLLAPSED_KEY: &str = "ui.sidebar_collapsed";
 pub const BROWSE_VISIBLE_KEY: &str = "ui.browse_visible";
@@ -259,13 +258,6 @@ pub const COLOR_SCHEME_KEY: &str = "ui.color_scheme";
 pub const CROSSFADE_SECONDS_MIN: u8 = 0;
 pub const CROSSFADE_SECONDS_MAX: u8 = 10;
 pub const CROSSFADE_SECONDS_DEFAULT: u8 = 0;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ListDensity {
-    Comfortable,
-    Standard,
-    Compact,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowViewMode {
@@ -397,27 +389,6 @@ fn set_window_decoration_mode_in(
         WindowDecorationMode::System => "system",
     };
     set_setting_in(conn, WINDOW_DECORATION_MODE_KEY, value)
-}
-
-fn get_list_density_in(conn: &Connection) -> ListDensity {
-    match typed_value(conn, LIST_DENSITY_KEY, "standard").as_str() {
-        "comfortable" => ListDensity::Comfortable,
-        "compact" => ListDensity::Compact,
-        "standard" => ListDensity::Standard,
-        value => {
-            tracing::warn!(value, "unrecognized list density; using Standard");
-            ListDensity::Standard
-        }
-    }
-}
-
-fn set_list_density_in(conn: &Connection, value: ListDensity) -> Result<(), rusqlite::Error> {
-    let value = match value {
-        ListDensity::Comfortable => "comfortable",
-        ListDensity::Standard => "standard",
-        ListDensity::Compact => "compact",
-    };
-    set_setting_in(conn, LIST_DENSITY_KEY, value)
 }
 
 fn get_sidebar_visible_in(conn: &Connection) -> bool {

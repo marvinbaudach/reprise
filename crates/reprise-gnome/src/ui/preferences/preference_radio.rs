@@ -18,7 +18,7 @@ pub(in crate::ui) struct RadioPreferenceRows {
 impl RadioPreferenceRows {
     pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
         for row in self.rows.iter() {
-            expander.add_row(row);
+            super::preference_plugin_chrome::add_nested_row(expander, row);
         }
     }
 

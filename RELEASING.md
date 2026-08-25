@@ -353,7 +353,7 @@ Do not point development hooks at the maintainer's real library.
 - Exercise Minimal View through the menu and Ctrl+M, including playback controls,
   repeated Full/Minimal transitions, close/reopen, and restoration of the full
   window geometry. Exercise every Preferences page and restart to verify persisted
-  theme, accent source, density, sidebar/status, player-bar position, columns,
+  theme, accent source, sidebar/status, player-bar position, columns,
   library root and module states. With the System accent selected, change the
   GNOME accent and confirm Reprise updates without a restart.
 - NPP-1: Toggle the Now Playing panel repeatedly at wide and narrow sizes; its 300 px

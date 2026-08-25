@@ -36,7 +36,7 @@ export function ProductGallery() {
       <div className="frame mosaic-frame">
         <header className="mosaic-heading">
           <h3 id="mosaic-heading" data-reveal>
-            Two platforms. Every view, tab and dialogue.
+            Both platforms. Every view, tab and dialogue.
           </h3>
           <p data-reveal>Click any plate to enlarge</p>
         </header>

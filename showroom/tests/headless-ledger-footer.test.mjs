@@ -28,7 +28,7 @@ test('chapter four presents the exact CLI commands and six MCP capability defaul
 
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(13% 0\.016 269\)"/);
-  assert.match(chapter, /Two frontends with no screen at all\./);
+  assert.match(chapter, /The other two frontends have no screen at all\./);
   assert.doesNotMatch(chapter, / style=/);
   for (const command of [
     'library summary',

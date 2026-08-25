@@ -98,6 +98,7 @@ struct PlayerBarRevealStage {
     adjustment: gtk4::Adjustment,
     window: adw::ApplicationWindow,
     playing_id: i64,
+    reveal_through_preserving_route: Rc<dyn Fn()>,
 }
 
 impl PlayerBarRevealStage {
@@ -152,7 +153,7 @@ impl PlayerBarRevealStage {
         let library = BrowserPlace::from(ViewSource::Library);
         history.restore(library.clone(), library.clone());
         let navigator = MetadataNavigator::new(
-            history,
+            history.clone(),
             &sidebar,
             &track_list,
             adw::NavigationView::new(),
@@ -185,6 +186,7 @@ impl PlayerBarRevealStage {
         );
         player_bar.set_on_title_click({
             let navigator = navigator.clone();
+            let library = library.clone();
             move || {
                 navigator.navigate(
                     NavigationIntent::RevealTrack {
@@ -192,6 +194,34 @@ impl PlayerBarRevealStage {
                         track_id: playing_id,
                     },
                     "player-bar title display test",
+                );
+            }
+        });
+        let reveal_through_preserving_route = Rc::new({
+            let sidebar = sidebar.clone();
+            let track_list = track_list.clone();
+            let content_stack = content_stack.clone();
+            move || {
+                let place = history
+                    .navigate_from(
+                        NavigationIntent::RevealTrack {
+                            origin: Box::new(library.clone()),
+                            track_id: playing_id,
+                        },
+                        track_list.browser_place(),
+                    )
+                    .expect("the reveal must produce a navigation destination");
+                crate::ui::window::library_shell::route_to_place(
+                    &place,
+                    &sidebar,
+                    &track_list,
+                    crate::ui::window::library_shell::ContentPages::new(
+                        &adw::NavigationView::new(),
+                        &content_stack,
+                    ),
+                    &adw::WindowTitle::new("Music", ""),
+                    &ActiveContentFocus::new(&content_stack, &track_list),
+                    "preserving reveal display test",
                 );
             }
         });
@@ -203,6 +233,7 @@ impl PlayerBarRevealStage {
             adjustment,
             window,
             playing_id,
+            reveal_through_preserving_route,
         }
     }
 
@@ -212,6 +243,10 @@ impl PlayerBarRevealStage {
         let button = find_button_with_tooltip(&widget, &tooltip)
             .expect("the player bar must expose its title activation button");
         button.emit_clicked();
+    }
+
+    fn reveal_through_preserving_route(&self) {
+        (self.reveal_through_preserving_route)();
     }
 }
 
@@ -229,6 +264,19 @@ fn find_button_with_tooltip(widget: &gtk4::Widget, tooltip: &str) -> Option<gtk4
         }
     }
     None
+}
+
+fn emit_user_scroll(track_list: &TrackList) {
+    let controllers = track_list.shared.scrolled.observe_controllers();
+    let controller = (0..controllers.n_items())
+        .find_map(|index| {
+            controllers
+                .item(index)?
+                .downcast::<gtk4::EventControllerScroll>()
+                .ok()
+        })
+        .expect("the track scroller must expose its capture-phase scroll witness");
+    assert!(!controller.emit_by_name::<bool>("scroll", &[&0.0_f64, &1.0_f64]));
 }
 
 /// Restores a place through the default viewport contract. This is the control
@@ -346,6 +394,131 @@ fn nav_10b_player_bar_title_centers_in_one_viewport_step() {
     assert!(
         (steps[0].value - expected).abs() <= row_height / 2.0,
         "the only landing must center the revealed track at {expected}: {steps:?}"
+    );
+    stage.window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nav_10b_reveal_intent_outranks_later_restore_writers() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let stage = PlayerBarRevealStage::new();
+    stage.track_list.set_source(ViewSource::Queue);
+    crate::ui::test_settle::settle_for(PAST_THE_SCROLL_HOLD);
+    let handler = super::search_viewport_display_tests::record_viewport_steps(&stage.adjustment);
+
+    stage.reveal_through_preserving_route();
+    crate::ui::test_settle::settle_for(PAST_THE_SCROLL_HOLD);
+    stage.adjustment.disconnect(handler);
+    let trail = crate::ui::scroll_probe::trail::take();
+    let (reveal_entry, reveal_value) = trail
+        .iter()
+        .enumerate()
+        .find_map(|(index, entry)| match entry {
+            crate::ui::scroll_probe::trail::Entry::Write { writer, value }
+                if writer == "centered.reveal.instant" =>
+            {
+                Some((index, *value))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            panic!("the source switch must deliberately reveal the playing track: {trail:?}")
+        });
+    for entry in &trail[reveal_entry + 1..] {
+        if let crate::ui::scroll_probe::trail::Entry::Write { writer, value } = entry {
+            if matches!(
+                writer.as_str(),
+                "anchor.initial.hold_target" | "view_state_restore"
+            ) {
+                assert!(
+                    (*value - reveal_value).abs() < 1.0,
+                    "a later restore must not contradict the reveal; ordered trail: {trail:?}"
+                );
+            }
+        }
+    }
+    let steps = super::search_viewport_display_tests::viewport_steps(trail);
+    assert_eq!(
+        steps.last().map(|step| step.value),
+        Some(reveal_value),
+        "the reveal must remain the final visible destination: {steps:?}"
+    );
+    let stand_downs = stage
+        .track_list
+        .shared
+        .diagnostic_trail
+        .snapshot()
+        .into_iter()
+        .filter(|line| line.contains("ScrollRestoreStandDown"))
+        .collect::<Vec<_>>();
+    assert!(
+        stand_downs
+            .iter()
+            .any(|line| line.contains("writer=anchor.initial.hold_target")),
+        "the anchor restore must name its stand-down: {stand_downs:?}"
+    );
+    assert!(
+        stand_downs
+            .iter()
+            .any(|line| line.contains("writer=view_state_restore")),
+        "the view-state restore must name its stand-down: {stand_downs:?}"
+    );
+    assert!(
+        stage
+            .track_list
+            .shared
+            .scroll_glide
+            .deliberate_destination()
+            .is_some(),
+        "the reveal must leave a durable destination after settling"
+    );
+
+    stage.window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nav_10b_user_scroll_releases_the_reveal_before_a_reload() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let stage = PlayerBarRevealStage::new();
+    stage.track_list.set_source(ViewSource::Queue);
+    crate::ui::test_settle::settle_for(PAST_THE_SCROLL_HOLD);
+    stage.reveal_through_preserving_route();
+    crate::ui::test_settle::settle_for(PAST_THE_SCROLL_HOLD);
+    let reveal = stage
+        .track_list
+        .shared
+        .scroll_glide
+        .deliberate_destination()
+        .expect("the reveal must leave a durable destination");
+
+    emit_user_scroll(&stage.track_list);
+    assert_eq!(
+        stage
+            .track_list
+            .shared
+            .scroll_glide
+            .deliberate_destination(),
+        None,
+        "direct user input must take ownership from the reveal"
+    );
+    let row_height = stage.adjustment.upper() / 200.0;
+    let user_target = row_height * 20.0;
+    stage.adjustment.set_value(user_target);
+    stage.track_list.reload();
+    crate::ui::test_settle::settle_for(PAST_THE_SCROLL_HOLD);
+
+    assert!(
+        (stage.adjustment.value() - user_target).abs() <= row_height / 2.0,
+        "reload must restore the user's position {user_target}, not the reveal {reveal}; actual {}",
+        stage.adjustment.value()
+    );
+    assert!(
+        (stage.adjustment.value() - reveal).abs() > row_height,
+        "the revealed destination must not freeze the viewport after user input"
     );
     stage.window.close();
 }

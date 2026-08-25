@@ -47,12 +47,6 @@ pub const CONCERTS_EMPTY_FAILURE_DESCRIPTION: &str =
 pub const CONCERTS_CONFIGURATION_DESCRIPTION: &str =
     N_!("Saved concerts stay available. Add credentials in Preferences to refresh them.");
 pub const CONCERTS_NO_LINK: &str = N_!("No ticket or event link available");
-pub const CONCERTS_BANDSINTOWN_APP_ID: &str = N_!("Bandsintown app_id");
-pub const CONCERTS_CREDENTIAL_SAVED: &str = N_!("Saved");
-pub const CONCERTS_CREDENTIAL_CHECKING: &str = N_!("Checking key…");
-pub const CONCERTS_CREDENTIAL_VALID: &str = N_!("Key works");
-pub const CONCERTS_CREDENTIAL_REJECTED: &str = N_!("Key was rejected");
-pub const CONCERTS_CREDENTIAL_UNVERIFIED: &str = N_!("Could not verify");
 pub const CONCERTS_LOCATION: &str = N_!("Location");
 pub const CONCERTS_CITY_ENTRY: &str = N_!("City");
 pub const CONCERTS_USE_CURRENT_LOCATION: &str = N_!("Use current location");

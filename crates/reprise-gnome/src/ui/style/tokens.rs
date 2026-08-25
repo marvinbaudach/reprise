@@ -1,6 +1,6 @@
 //! Tunable design values shared by the app-authored CSS sections.
 //!
-//! Every alpha, thickness, and density height that a design pass would want
+//! Every alpha, thickness, and row height that a design pass would want
 //! to adjust lives here; the structural selectors stay with the feature that
 //! owns the CSS classes (see [`super::app_css`]'s section list).
 
@@ -40,21 +40,24 @@ pub(in crate::ui) const PREVIEW_CONTENT_ALPHA: &str = "0.06";
 /// and track-row reordering.
 pub(in crate::ui) const DROP_INDICATOR_THICKNESS: &str = "2px";
 
-/// Track-row content minimum height for the Comfortable density.
-pub(in crate::ui) const ROW_MIN_HEIGHT_COMFORTABLE: i32 = 36;
-
-/// Track-row content minimum height for the Standard density.
-pub(in crate::ui) const ROW_MIN_HEIGHT_STANDARD: i32 = 28;
-
-/// Track-row content minimum height for the Compact density.
+/// Track-row content minimum height, and — the load-bearing part — the height
+/// `ListGeometry` *assumes* a row has before a settled frame has measured one.
 ///
-/// This is the floor the cell content imposes, not a freely chosen one: the
-/// rating stars and cover cannot shrink below it, so a smaller value would be
-/// silently ignored. It sat at 12 for a while and never bound, which made
-/// Compact 8px tighter than Standard while the token promised 16 — the density
-/// test then hardcoded a pixel delta matching neither. Going below this needs
-/// the cell content to shrink first.
-pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 20;
+/// It must stay at or below the height rows really render at. Measured on
+/// 2026-08-24 under the display harness: a track row is 34 px, and the cell
+/// children carrying `.reprise-track-cell` are 18 px inside it. Raised to 36 by
+/// #660 the assumption sat two pixels *above* the truth, and the centred reveal
+/// then had two writers disagreeing about the same row: the seed placed row 137
+/// at `137 * 36 = 4932` while GTK's own anchor placed it at `137 * 34 = 4658`,
+/// each overwriting the other. Eight display tests read that as a viewport that
+/// will not settle in one move.
+///
+/// The rule this token also feeds — `.reprise-track-cell { min-height }` in
+/// `track_list_row_interaction::css` — does not bind: set to 80 for one run the
+/// cells stayed 18 px and the list's `upper` stayed `200 * 34`. So the value
+/// here is the geometry floor and nothing else, which is why it goes back to
+/// what the default density used before #660 rather than to a taller row.
+pub(in crate::ui) const ROW_MIN_HEIGHT: i32 = 28;
 
 /// Queue section-header content minimum height.
 ///
@@ -64,9 +67,6 @@ pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 20;
 /// large system font may still require more space; geometry measurement must
 /// detect that instead of treating this token as truth.
 pub(in crate::ui) const SECTION_HEADER_MIN_HEIGHT: i32 = 36;
-
-/// Font size (px) applied to track-row text in the Compact density.
-pub(in crate::ui) const COMPACT_ROW_FONT_SIZE: i32 = 10;
 
 // --- Redesign interaction + surface vocabulary (see `super::interactions`) ---
 

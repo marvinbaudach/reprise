@@ -23,7 +23,9 @@ const TRANSPORT_DELAY_DEFAULT: u32 = 6;
 /// the action rather than calling the player directly is the point — it is the
 /// exact path a context-menu click takes, so the run exercises the real
 /// `neighbour_ids_for_episode` projection instead of a list built for the test.
-pub(in crate::ui) fn arm_episode_play(view: &Rc<crate::ui::podcasts::PodcastsView>) {
+pub(in crate::ui) fn arm_episode_play(
+    page: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
+) {
     let Ok(value) = std::env::var(EPISODE_PLAY_ENV_VAR) else {
         return;
     };
@@ -34,7 +36,9 @@ pub(in crate::ui) fn arm_episode_play(view: &Rc<crate::ui::podcasts::PodcastsVie
         );
         return;
     };
-    let view = Rc::downgrade(view);
+    // The smoke hook is an explicit request for this source. Route it through
+    // the same synchronous materializer as sidebar navigation.
+    let view = Rc::downgrade(&page.materialize());
     glib::idle_add_local_once(move || {
         let Some(view) = view.upgrade() else {
             return;

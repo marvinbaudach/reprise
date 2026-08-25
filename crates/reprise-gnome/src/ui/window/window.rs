@@ -29,7 +29,6 @@ use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
-use crate::ui::concerts;
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database handle; Core owns the connection and the UI
@@ -235,24 +234,24 @@ pub fn build(
     sidebar.append_relink_card(track_list.missing_relink_progress_widget());
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.
-    let track_content = track_content::build(track_list.widget(), status_bar.widget());
+    let track_content = {
+        let _measurement = super::startup_report::measure("view.library.construct");
+        track_content::build(track_list.widget(), status_bar.widget())
+    };
     // NAV-2: one history for every scoped route through the canonical list.
     let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
     // START-3 depends on this listener existing before `session_restore::restore_runtime`
     // in `window_runtime_wiring`, or its restored-track marker notification is lost.
     super::current_track_selection::wire(player.as_ref(), &track_list);
-    let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
-    stats_view.set_portrait_runtime(artist_portrait.clone());
-    stats_view.wire_year_selector(conn);
-    super::startup_report::mark("stats");
     let content_stack = super::content_stack::build();
-    // Size to the visible page in both axes: dedicated content pages must not
-    // inherit the library's minimum size, nor vice versa.
-    content_stack.add_named(&track_content, Some("library"));
-    content_stack.add_named(stats_view.widget(), Some("stats"));
-    let library_doctor_navigation = adw::NavigationView::new();
-    content_stack.add_named(&library_doctor_navigation, Some("library-doctor"));
-    content_stack.set_visible_child_name("library");
+    let (stats_view, library_doctor_navigation) =
+        super::window_content_pages::install_library_pages(
+            &content_stack,
+            &track_content,
+            track_list.shared_cover_loader(),
+            artist_portrait.clone(),
+            conn,
+        );
     toolbar_view.set_content(Some(&content_stack));
 
     let active_content_focus =
@@ -301,20 +300,15 @@ pub fn build(
             );
         })
     };
-    let concerts_view = Rc::new(concerts::install(
-        conn.clone(),
+    let (concerts_view, releases_view) = super::window_content_pages::install_event_pages(
+        &content_stack,
+        conn,
+        db_path,
         &concerts_runtime,
         &location_broadcast,
-    ));
-    concerts_view.set_artist_image(track_list.shared_cover_loader(), artist_portrait.clone());
-    super::startup_report::mark("concerts");
-    let releases_view = Rc::new(crate::ui::releases::install(
-        conn.clone(),
-        db_path.to_path_buf(),
-    ));
-    super::startup_report::mark("releases");
-    content_stack.add_named(concerts_view.root(), Some("concerts"));
-    content_stack.add_named(releases_view.root(), Some("releases"));
+        track_list.shared_cover_loader(),
+        artist_portrait.clone(),
+    );
     let source_views = super::source_views::install(
         conn,
         &podcasts_runtime,
@@ -340,22 +334,7 @@ pub fn build(
             .bar
             .set_seek_colouring(settings::get_seek_colouring(conn));
     }
-    {
-        let overlay = toast_overlay.downgrade();
-        concerts_view.set_on_launch_error(move |error| {
-            if let Some(overlay) = overlay.upgrade() {
-                crate::ui::toasts::show(&overlay, &error);
-            }
-        });
-    }
-    {
-        let overlay = toast_overlay.downgrade();
-        releases_view.set_on_launch_error(move |error| {
-            if let Some(overlay) = overlay.upgrade() {
-                crate::ui::toasts::show(&overlay, &error);
-            }
-        });
-    }
+    super::window_content_pages::wire_launch_errors(&toast_overlay, &concerts_view, &releases_view);
     super::window_action_wiring::wire(super::window_action_wiring::ActionWiring {
         conn,
         db_path,
@@ -469,6 +448,7 @@ pub fn build(
         &podcasts_runtime,
         &cover_download,
         &lyrics_batch,
+        &cover_batch,
         &artist_portrait,
         &decorations,
     );
@@ -507,7 +487,7 @@ pub fn build(
         track_list: &track_list,
         sidebar: &sidebar,
         player: &player,
-        stats_view,
+        stats_view: &stats_view,
         concerts_view: &concerts_view,
         releases_view: &releases_view,
         podcasts_view: &podcasts_view,
@@ -537,7 +517,15 @@ pub fn build(
         metadata_navigator: &metadata_navigator,
     });
     #[cfg(test)]
-    super::window_online_module_test_hook::publish(&preferences, &cover_batch, &lyrics_batch);
+    super::window_online_module_test_hook::publish(
+        &preferences,
+        &cover_batch,
+        &lyrics_batch,
+        &stats_view,
+        &podcasts_view,
+        &youtube_view,
+        &radio_view,
+    );
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
     tracing::info!("main window built");

@@ -25,9 +25,9 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
         <p className="chapter__intro" data-reveal>
           <strong>The two apps look different on purpose.</strong> GNOME conventions on the desktop,
           Material on the phone. Making them match would not show craft, it would show missing
-          platform UX. What is shared is the signature — and that is the harder half: two rendering
-          stacks, GSK against Skia, two layout systems, two languages, the same visualisation and
-          the same physics. Not a shared component. A shared specification.
+          platform UX. What is shared is the signature — and that is the harder half: separate
+          rendering stacks, GSK against Skia, different layout systems, different languages, the
+          same visualisation and the same physics. Not a shared component. A shared specification.
         </p>
 
         <p className="chapter__intro chapter__intro--closing" data-reveal>

@@ -33,6 +33,10 @@ impl PlayerController {
         self.external.borrow().mode()
     }
 
+    pub(in crate::ui) fn current_external_snapshot(&self) -> Option<ExternalPlaybackSnapshot> {
+        self.external.borrow().snapshot()
+    }
+
     pub(in crate::ui) fn add_on_stream_tags(&self, callback: impl Fn(StreamTags) + 'static) {
         self.external
             .borrow_mut()

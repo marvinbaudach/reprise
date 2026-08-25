@@ -154,7 +154,8 @@ fn prepare_files(
             Ok(Some(values)) => (values.into_iter().collect::<HashMap<_, _>>(), None),
             Err(error) => {
                 let kind = classify_write_error(&error);
-                (HashMap::new(), Some((kind, error.to_string())))
+                let detail = crate::library::import_errors::error_detail(&error);
+                (HashMap::new(), Some((kind, detail)))
             }
             Ok(None) => (
                 HashMap::new(),

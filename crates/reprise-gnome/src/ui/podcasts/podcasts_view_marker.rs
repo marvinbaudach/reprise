@@ -17,7 +17,10 @@ impl PodcastsView {
             }
             return;
         }
+        let adjustment = self.scroller.vadjustment();
+        crate::ui::scroll_probe::probe_snapshot("episode-marker.render.before", &adjustment);
         self.render();
+        crate::ui::scroll_probe::probe_snapshot("episode-marker.render.after", &adjustment);
         let change = if restored {
             LoadedItemChange::SessionRestore
         } else if self.activating_here.get() {
@@ -30,12 +33,13 @@ impl PodcastsView {
 
     pub(super) fn install_reveal_tracking(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        self.scroller.vadjustment().connect_value_changed(move |_| {
+        source_reveal::install_scroll_activity_tracking(&self.scroller, move || {
             if let Some(view) = weak.upgrade() {
                 view.last_scroll_activity
                     .set(Some(std::time::Instant::now()));
             }
         });
+        crate::ui::scroll_probe::observe("episode-list", &self.scroller.vadjustment());
 
         let weak = Rc::downgrade(self);
         self.root.connect_map(move |_| {

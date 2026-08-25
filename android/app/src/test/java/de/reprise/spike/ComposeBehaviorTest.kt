@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -168,7 +169,9 @@ class ComposeBehaviorTest {
             RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
                     state = browse,
-                    playback = playback,
+                    playback = playback.libraryPlayback(),
+                    playbackProgress = remember { { playback.progressFraction } },
+                    nowPlayingPlayback = remember { { playback } },
                     playbackSettingsRevision = 0,
                     chooseFolder = {},
                     rescan = {},
@@ -270,7 +273,9 @@ class ComposeBehaviorTest {
             RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
                     state = browse,
-                    playback = playback,
+                    playback = playback.libraryPlayback(),
+                    playbackProgress = remember { { playback.progressFraction } },
+                    nowPlayingPlayback = remember { { playback } },
                     playbackSettingsRevision = 0,
                     chooseFolder = {},
                     rescan = {},
@@ -362,7 +367,9 @@ class ComposeBehaviorTest {
             RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
                     state = browse,
-                    playback = playback,
+                    playback = playback.libraryPlayback(),
+                    playbackProgress = remember { { playback.progressFraction } },
+                    nowPlayingPlayback = remember { { playback } },
                     playbackSettingsRevision = 0,
                     chooseFolder = {},
                     rescan = {},
@@ -537,6 +544,7 @@ class ComposeBehaviorTest {
         assertTrue(replacements.isEmpty())
         compose.onNodeWithText("Crossfade").assertDoesNotExist()
         compose.onNodeWithText("ReplayGain").assertDoesNotExist()
+        compose.onNodeWithText("Adjust bands manually").performClick()
         compose.onNodeWithText("Edit equalizer").performClick()
         compose.onNodeWithText(
             "Editing here replaces the saved equalizer curve with this device's bands.",
@@ -565,7 +573,7 @@ class ComposeBehaviorTest {
             RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
                     state = browse,
-                    playback = PlaybackUiState(),
+                    playback = PlaybackUiState().libraryPlayback(),
                     playbackSettingsRevision = 0,
                     chooseFolder = {},
                     rescan = {},
@@ -622,7 +630,7 @@ class ComposeBehaviorTest {
             RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
                     state = browse,
-                    playback = PlaybackUiState(),
+                    playback = PlaybackUiState().libraryPlayback(),
                     playbackSettingsRevision = 0,
                     chooseFolder = {},
                     rescan = {},
@@ -704,6 +712,9 @@ class ComposeBehaviorTest {
         }
 
         compose.onNodeWithText("This device provided no equalizer for what is playing.")
+            .assertDoesNotExist()
+        compose.onNodeWithText("Adjust bands manually").performClick()
+        compose.onNodeWithText("This device provided no equalizer for what is playing.")
             .assertIsDisplayed()
         compose.onNodeWithText("Start playback to read this device's equalizer bands.")
             .assertDoesNotExist()
@@ -762,7 +773,7 @@ class ComposeBehaviorTest {
                         currentIndex = null,
                         currentTrackId = null,
                         currentTrackUri = null,
-                    ),
+                    ).libraryPlayback(),
                     playbackSettingsRevision = 0,
                     chooseFolder = {},
                     rescan = {},
