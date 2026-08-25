@@ -19,35 +19,27 @@ class NowPlayingShimmerTest {
         )
     }
 
+    /**
+     * Replaces `shimmer_opacity_rises_with_pressure_and_swell_and_clamps_each_input`.
+     *
+     * The disc answered the kick with a term of its own, in step with the fog
+     * behind it, so both brightened together on every beat. The kick is gone
+     * from here for the same reason it is gone from the fog, and its weight was
+     * folded into the level rather than dropped: rest and peak are the numbers
+     * the old rule pinned, unchanged.
+     */
     @Test
-    fun shimmer_opacity_rises_with_pressure_and_swell_and_clamps_each_input() {
-        val rest = NowPlayingShimmerSpec.alpha(swell = 0f, bassPressure = 0f, opacity = 1f)
-        val pressure = NowPlayingShimmerSpec.alpha(
-            swell = 0f,
-            bassPressure = 0.70f,
-            opacity = 1f,
-        )
-        val swell = NowPlayingShimmerSpec.alpha(
-            swell = 0.70f,
-            bassPressure = 0f,
-            opacity = 1f,
-        )
-        val peak = NowPlayingShimmerSpec.alpha(
-            swell = 0.70f,
-            bassPressure = 0.70f,
-            opacity = 1f,
-        )
+    fun shimmer_opacity_rises_with_the_level_alone_and_clamps_it() {
+        val rest = NowPlayingShimmerSpec.alpha(swell = 0f, opacity = 1f)
+        val peak = NowPlayingShimmerSpec.alpha(swell = 0.70f, opacity = 1f)
 
         assertEquals(0.113_333f, rest, FLOAT_TOLERANCE)
-        assertEquals(0.160_000f, pressure, FLOAT_TOLERANCE)
-        assertEquals(0.166_667f, swell, FLOAT_TOLERANCE)
         assertEquals(0.213_333f, peak, FLOAT_TOLERANCE)
-        assertTrue(pressure > rest)
-        assertTrue(swell > rest)
-        assertEquals(rest, NowPlayingShimmerSpec.alpha(-1f, -1f, 1f), FLOAT_TOLERANCE)
-        assertEquals(peak, NowPlayingShimmerSpec.alpha(2f, 2f, 1f), FLOAT_TOLERANCE)
-        assertEquals(0f, NowPlayingShimmerSpec.alpha(1f, 1f, -1f), FLOAT_TOLERANCE)
-        assertEquals(peak, NowPlayingShimmerSpec.alpha(1f, 1f, 2f), FLOAT_TOLERANCE)
+        assertTrue(peak > rest)
+        assertEquals(rest, NowPlayingShimmerSpec.alpha(-1f, 1f), FLOAT_TOLERANCE)
+        assertEquals(peak, NowPlayingShimmerSpec.alpha(2f, 1f), FLOAT_TOLERANCE)
+        assertEquals(0f, NowPlayingShimmerSpec.alpha(1f, -1f), FLOAT_TOLERANCE)
+        assertEquals(peak, NowPlayingShimmerSpec.alpha(1f, 2f), FLOAT_TOLERANCE)
     }
 
     @Test

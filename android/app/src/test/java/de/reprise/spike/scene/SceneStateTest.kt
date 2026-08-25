@@ -22,12 +22,24 @@ class SceneStateTest {
 
         state.adoptLiveBassPressure(pressure, elapsedSeconds = 0.05f)
 
-        assertEquals(0.6f, state.fogLevel, 0f)
+        // The fog used to adopt the reading whole, which is what let a kick
+        // strobe the screen. It now approaches it at the capped rate, so one
+        // 50 ms tick buys it 50 ms worth of travel and no more. The detector's
+        // own numbers are untouched: what changed is what the haze does with
+        // them, not what is measured.
+        assertEquals(
+            FogDrive.MAX_UNITS_PER_SECOND * 0.05f,
+            state.fogLevel,
+            FLOAT_TOLERANCE,
+        )
         assertEquals(0.85f, state.bassPressure, 0f)
         assertEquals(0.85f, state.motionLevel, 0f)
         assertTrue(state.motionBands.all { it == 0f })
         assertTrue(state.fogAngleA > 0f)
         assertTrue(state.fogAngleB > 350f)
+
+        repeat(40) { state.adoptLiveBassPressure(pressure, elapsedSeconds = 0.05f) }
+        assertEquals(0.6f, state.fogLevel, FLOAT_TOLERANCE)
     }
 
     @Test
@@ -332,4 +344,8 @@ class SceneStateTest {
         frameRateHz = 20,
         cells = ByteArray(frameCount * 24) { cell.toByte() },
     )
+
+    private companion object {
+        const val FLOAT_TOLERANCE = 0.000_01f
+    }
 }

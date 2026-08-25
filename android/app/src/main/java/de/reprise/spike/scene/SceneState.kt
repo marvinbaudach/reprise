@@ -9,6 +9,7 @@ class SceneState(
     private val fogEnvelopes = BandEnvelopes.fog(frames.bandCount, frames.frameRateHz)
     private val motionEnvelopes = BandEnvelopes.motion(frames.bandCount, frames.frameRateHz)
     private val rawBands = FloatArray(frames.bandCount)
+    private val frameSeconds = 1f / frames.frameRateHz
     private val targets = FloatArray(frames.bandCount)
     private val projectedMotion = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
@@ -81,6 +82,10 @@ class SceneState(
         val oldFogLevel = fogLevel
         val oldBassPressure = bassPressure
         val oldMotionLevel = motionLevel
+        // A seek or a track change snaps the drive rather than sliding it there.
+        // The rate cap in FogDrive exists against repeated brightness swings, and
+        // one step on an action the listener took is not a flash sequence; making
+        // it slide would only mean the new track's haze arrives a beat late.
         fogLevel = mean(fogBands).coerceIn(0f, 1f)
         bassPressure = bassMean(motionBands)
         motionLevel = mean(motionBands)
@@ -152,7 +157,11 @@ class SceneState(
         val mix = wanderMix(totalSeconds)
         val oldFogLevel = fogLevel
         val oldBassPressure = bassPressure
-        fogLevel = (WANDER_CENTRE + WANDER_SWING * mix).coerceIn(0f, 1f)
+        fogLevel = FogDrive.step(
+            fogLevel,
+            (WANDER_CENTRE + WANDER_SWING * mix).coerceIn(0f, 1f),
+            elapsedSeconds,
+        )
         bassPressure = 0f
         advanceFogBy(elapsedSeconds * (1f + WANDER_SPEED_SWING * mix))
         if (fogLevel.changedFrom(oldFogLevel) || bassPressure.changedFrom(oldBassPressure)) {
@@ -170,7 +179,7 @@ class SceneState(
         val oldMotionLevel = motionLevel
         val oldAngleA = fogAngleA
         val oldAngleB = fogAngleB
-        fogLevel = pressure
+        fogLevel = FogDrive.step(fogLevel, pressure, elapsedSeconds)
         bassPressure = kick
         motionLevel = energy
         if (elapsedSeconds > 0f) {
@@ -230,7 +239,7 @@ class SceneState(
         val oldMotionLevel = motionLevel
         val oldAngleA = fogAngleA
         val oldAngleB = fogAngleB
-        fogLevel = mean(fogBands).coerceIn(0f, 1f)
+        fogLevel = FogDrive.step(fogLevel, mean(fogBands).coerceIn(0f, 1f), frameSeconds)
         bassPressure = bassMean(motionBands)
         motionLevel = mean(motionBands)
         fogAngleA = EnergyIntegrator.advance(fogAngleA, motionLevel, FOG_FACTOR_A)

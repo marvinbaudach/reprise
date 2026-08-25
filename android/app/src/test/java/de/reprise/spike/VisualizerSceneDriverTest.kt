@@ -2,6 +2,7 @@ package de.reprise.spike
 
 import androidx.compose.ui.graphics.Color
 import androidx.media3.common.Player
+import de.reprise.spike.scene.FogDrive
 import de.reprise.spike.scene.SceneState
 import de.reprise.spike.scene.SpectrogramFrames
 import org.junit.Assert.assertEquals
@@ -52,7 +53,10 @@ class VisualizerSceneDriverTest {
 
         assertEquals(AndroidPlaybackState.BUFFERING, playback.state)
         assertTrue(engine.isPlaybackActive)
-        assertEquals(0.63f, scene.fogLevel, 0f)
+        // A tick of no duration gives the rate-capped fog no room to travel, so
+        // the reading arriving and the haze answering it are now two separate
+        // facts. The one this test is about is the first.
+        assertEquals(0f, scene.fogLevel, 0f)
         assertEquals(0.81f, scene.bassPressure, 0f)
         assertNotNull(requestedVisualizerFrameRateCategory(1f, playback.visualizerActive))
     }
@@ -93,7 +97,7 @@ class VisualizerSceneDriverTest {
         driver.tick()
 
         assertEquals(listOf(null, null), received)
-        assertEquals(0.63f, state.fogLevel, 0f)
+        assertEquals(FogDrive.MAX_UNITS_PER_SECOND * 0.05f, state.fogLevel, 0.000_01f)
         assertEquals(0.81f, state.bassPressure, 0f)
         assertEquals(0.81f, state.motionLevel, 0f)
         assertTrue(state.fogAngleA > 0f)
