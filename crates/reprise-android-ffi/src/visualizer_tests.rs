@@ -195,16 +195,38 @@ fn live_pcm_produces_sixty_four_non_interpolated_cava_bands() {
 
 #[test]
 fn stereo_pcm_is_averaged_to_mono_instead_of_summed() {
-    let engine = AndroidVisualEngine::new();
-    let pcm = opposite_phase_stereo_pcm16(512);
+    let cancellation_clock = Arc::new(FakeMonotonicClock::default());
+    let cancellation = AndroidVisualEngine::with_clock(cancellation_clock.clone());
+    cancellation.set_playing(true);
+    let opposite_phase = opposite_phase_stereo_pcm16(8_192);
 
-    assert!(engine.ingest_pcm_i16(pcm.clone(), pcm.len() as u32, 48_000, 2));
+    ingest_one_live_block(&cancellation, &cancellation_clock, &opposite_phase, 48_000);
 
-    assert!(engine
+    assert!(cancellation
         .live_bands_for_testing()
         .iter()
         .all(|band| *band == 0.0));
-    assert_eq!(engine.bass_pressure().pressure, 0.0);
+    assert_eq!(cancellation.bass_pressure().pressure, 0.0);
+
+    let stereo_clock = Arc::new(FakeMonotonicClock::default());
+    let stereo = AndroidVisualEngine::with_clock(stereo_clock.clone());
+    stereo.set_playing(true);
+    let stereo_pcm = stereo_sine_pcm16(2_000.0, 48_000, 0, 8_192);
+    ingest_one_live_block(&stereo, &stereo_clock, &stereo_pcm, 48_000);
+
+    let mono_clock = Arc::new(FakeMonotonicClock::default());
+    let mono = AndroidVisualEngine::with_clock(mono_clock.clone());
+    mono.set_playing(true);
+    let mono_pcm = stereo_pcm
+        .chunks_exact(2 * size_of::<i16>())
+        .flat_map(|frame| frame[..size_of::<i16>()].iter().copied())
+        .collect::<Vec<_>>();
+    ingest_one_live_mono_block(&mono, &mono_clock, &mono_pcm, 48_000);
+
+    assert_eq!(
+        stereo.live_bands_for_testing(),
+        mono.live_bands_for_testing()
+    );
 }
 
 #[test]
@@ -571,6 +593,20 @@ fn ingest_one_live_block(
 ) {
     assert!(engine.ingest_pcm_i16(pcm.to_vec(), pcm.len() as u32, sample_rate_hz, 2));
     let frame_count = pcm.len() / (2 * size_of::<i16>());
+    clock.advance(Duration::from_secs_f64(
+        frame_count as f64 / f64::from(sample_rate_hz),
+    ));
+    assert!(engine.tick());
+}
+
+fn ingest_one_live_mono_block(
+    engine: &AndroidVisualEngine,
+    clock: &FakeMonotonicClock,
+    pcm: &[u8],
+    sample_rate_hz: u32,
+) {
+    assert!(engine.ingest_pcm_i16(pcm.to_vec(), pcm.len() as u32, sample_rate_hz, 1));
+    let frame_count = pcm.len() / size_of::<i16>();
     clock.advance(Duration::from_secs_f64(
         frame_count as f64 / f64::from(sample_rate_hz),
     ));
