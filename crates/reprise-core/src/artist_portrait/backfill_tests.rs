@@ -1,0 +1,324 @@
+use std::fs::{File, FileTimes};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
+
+use super::*;
+
+fn artists_db(names: &[String]) -> Db {
+    let db = Db::open_in_memory().unwrap();
+    for (index, name) in names.iter().enumerate() {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album_artist, added_at) \
+                 VALUES (?1, ?2, ?3, ?3, 0)",
+                rusqlite::params![format!("/{index}.flac"), format!("Track {index}"), name],
+            )
+            .unwrap();
+    }
+    db
+}
+
+fn artist_names(count: usize) -> Vec<String> {
+    (0..count)
+        .map(|index| format!("Artist {index:03}"))
+        .collect()
+}
+
+fn no_wait() -> Arc<WaitForRetry> {
+    Arc::new(|control, _| control.cancelled())
+}
+
+fn updates() -> (
+    Arc<Mutex<Vec<PortraitBackfillProgress>>>,
+    Arc<PortraitBackfillListener>,
+) {
+    let updates = Arc::new(Mutex::new(Vec::new()));
+    let captured = Arc::clone(&updates);
+    let listener: Arc<PortraitBackfillListener> = Arc::new(move |progress| {
+        captured.lock().unwrap().push(progress);
+    });
+    (updates, listener)
+}
+
+fn wait_for_completion(backfill: &PortraitBackfill) -> PortraitBackfillProgress {
+    for _ in 0..5_000 {
+        let progress = backfill.progress();
+        if progress.state == PortraitBackfillState::Complete && progress.run_id != 0 {
+            return progress;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    panic!("backfill did not complete: {:?}", backfill.progress());
+}
+
+#[test]
+fn total_excludes_fresh_portraits_and_markers_but_includes_an_expired_marker() {
+    let names = ["Cached", "Fresh miss", "Expired miss", "Needed"].map(str::to_owned);
+    let db = artists_db(&names);
+    let cache_dir = tempfile::tempdir().unwrap();
+    let portrait = cache::store_image(cache_dir.path(), "Cached", b"image", "jpg").unwrap();
+    let now = cache::file_epoch_secs(&portrait) + 1;
+    cache::write_negative(cache_dir.path(), "Fresh miss");
+    cache::write_negative(cache_dir.path(), "Expired miss");
+    let expired = cache::negative_marker_path(cache_dir.path(), "Expired miss");
+    File::options()
+        .write(true)
+        .open(expired)
+        .unwrap()
+        .set_times(
+            FileTimes::new()
+                .set_modified(UNIX_EPOCH + Duration::from_secs((now - 8 * 24 * 60 * 60) as u64)),
+        )
+        .unwrap();
+
+    let artists = pending_artists(&db, cache_dir.path(), now).unwrap();
+
+    assert_eq!(artists, vec!["Expired miss", "Needed"]);
+}
+
+#[test]
+fn a_completed_run_leaves_no_work_or_second_request() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let names = vec!["Band".to_owned()];
+    let db = artists_db(&names);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+        counted.fetch_add(1, Ordering::Relaxed);
+        Ok(PortraitOutcome::Found(
+            cache::store_image(directory, name, b"image", "jpg").unwrap(),
+        ))
+    });
+    let (_, listener) = updates();
+    let backfill = PortraitBackfill::new();
+
+    assert!(backfill.start_prepared(
+        names,
+        cache_dir.path().to_owned(),
+        Arc::clone(&fetch),
+        Arc::clone(&listener),
+        no_wait(),
+    ));
+    wait_for_completion(&backfill);
+    let second = pending_artists(&db, cache_dir.path(), chrono::Utc::now().timestamp()).unwrap();
+    assert!(second.is_empty());
+    assert!(backfill.start_prepared(
+        second,
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    ));
+    wait_for_completion(&backfill);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn one_hundred_fast_steps_are_throttled_but_complete_is_always_reported() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let (updates, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    let fetch: Arc<PortraitBackfillFetch> =
+        Arc::new(|name, directory| Ok(PortraitOutcome::Found(directory.join(name))));
+
+    backfill.start_prepared(
+        artist_names(100),
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    let complete = wait_for_completion(&backfill);
+    let updates = updates.lock().unwrap();
+
+    assert!(updates.len() <= 5, "updates: {updates:?}");
+    assert_eq!(updates.last(), Some(&complete));
+    assert_eq!(
+        (complete.done, complete.failed, complete.total),
+        (100, 0, 100)
+    );
+}
+
+#[test]
+fn reported_done_never_moves_backwards() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let (updates, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, directory| {
+        std::thread::sleep(REPORT_INTERVAL);
+        Ok(PortraitOutcome::Found(directory.join(name)))
+    });
+    backfill.start_prepared(
+        artist_names(4),
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    wait_for_completion(&backfill);
+    let updates = updates.lock().unwrap();
+
+    assert!(updates.windows(2).all(|pair| pair[0].done <= pair[1].done));
+}
+
+#[test]
+fn three_transport_errors_pause_and_the_first_ok_resumes() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+        if counted.fetch_add(1, Ordering::Relaxed) < 3 {
+            Err(PortraitError::InvalidResponse)
+        } else {
+            Ok(PortraitOutcome::Found(directory.join(name)))
+        }
+    });
+    let cache_dir = tempfile::tempdir().unwrap();
+    let (updates, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    backfill.start_prepared(
+        vec!["Band".to_owned(), "Next".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    wait_for_completion(&backfill);
+    let states: Vec<_> = updates
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|update| update.state)
+        .collect();
+
+    let paused = states
+        .iter()
+        .position(|state| *state == PortraitBackfillState::Paused)
+        .unwrap();
+    assert!(states[paused + 1..].contains(&PortraitBackfillState::Running));
+}
+
+#[test]
+fn transport_errors_are_retried_without_counts_or_negative_marker() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |_, _| {
+        counted.fetch_add(1, Ordering::Relaxed);
+        Err(PortraitError::InvalidResponse)
+    });
+    let cache_dir = tempfile::tempdir().unwrap();
+    let backfill = Arc::new(PortraitBackfill::new());
+    let cancel = Arc::clone(&backfill);
+    let wait: Arc<WaitForRetry> = Arc::new(move |_, _| {
+        cancel.cancel();
+        true
+    });
+    let (_, listener) = updates();
+
+    backfill.start_prepared(
+        vec!["Offline band".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        wait,
+    );
+    for _ in 0..5_000 {
+        if backfill.progress().run_id == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    assert!(calls.load(Ordering::Relaxed) >= 3);
+    assert!(!cache::negative_marker_path(cache_dir.path(), "Offline band").exists());
+    assert_eq!(
+        (backfill.progress().done, backfill.progress().failed),
+        (0, 0)
+    );
+}
+
+#[test]
+fn run_ids_grow_and_a_second_start_does_not_create_a_worker() {
+    let gate = Arc::new((Mutex::new(false), Condvar::new()));
+    let waiting = Arc::clone(&gate);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+        counted.fetch_add(1, Ordering::Relaxed);
+        let (lock, wake) = &*waiting;
+        let mut open = lock.lock().unwrap();
+        while !*open {
+            open = wake.wait(open).unwrap();
+        }
+        Ok(PortraitOutcome::Found(directory.join(name)))
+    });
+    let cache_dir = tempfile::tempdir().unwrap();
+    let (_, first_listener) = updates();
+    let (_, second_listener) = updates();
+    let backfill = PortraitBackfill::new();
+    assert!(backfill.start_prepared(
+        vec!["First".to_owned()],
+        cache_dir.path().to_owned(),
+        Arc::clone(&fetch),
+        first_listener,
+        no_wait(),
+    ));
+    let first_id = backfill.progress().run_id;
+    assert!(!backfill.start_prepared(
+        vec!["Duplicate".to_owned()],
+        cache_dir.path().to_owned(),
+        Arc::clone(&fetch),
+        second_listener,
+        no_wait(),
+    ));
+    let (lock, wake) = &*gate;
+    *lock.lock().unwrap() = true;
+    wake.notify_all();
+    wait_for_completion(&backfill);
+    let (_, listener) = updates();
+    assert!(backfill.start_prepared(
+        Vec::new(),
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    ));
+    let second_id = wait_for_completion(&backfill).run_id;
+
+    assert!(second_id > first_id);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn the_fetch_closure_delivers_transport_errors_to_the_state_machine() {
+    let seen_wait = Arc::new(AtomicUsize::new(0));
+    let wait_seen = Arc::clone(&seen_wait);
+    let wait: Arc<WaitForRetry> = Arc::new(move |control, _| {
+        wait_seen.fetch_add(1, Ordering::Relaxed);
+        control.cancelled()
+    });
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let tried = Arc::clone(&attempts);
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+        if tried.fetch_add(1, Ordering::Relaxed) < 3 {
+            Err(PortraitError::InvalidResponse)
+        } else {
+            Ok(PortraitOutcome::Found(directory.join(name)))
+        }
+    });
+    let cache_dir = tempfile::tempdir().unwrap();
+    let (_, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    backfill.start_prepared(
+        vec!["Band".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        wait,
+    );
+    wait_for_completion(&backfill);
+
+    assert_eq!(seen_wait.load(Ordering::Relaxed), 1);
+    assert_eq!(attempts.load(Ordering::Relaxed), 4);
+}

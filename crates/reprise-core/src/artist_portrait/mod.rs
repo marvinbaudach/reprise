@@ -2,6 +2,7 @@
 //! library's artist names to Deezer.
 //! Blocking; call from a worker thread.
 
+pub mod backfill;
 mod cache;
 pub(crate) mod deezer;
 mod placeholder;
@@ -11,6 +12,10 @@ mod placeholder_measurement;
 #[cfg(test)]
 mod test_fixtures;
 
+pub use backfill::{
+    PortraitBackfill, PortraitBackfillFetch, PortraitBackfillListener, PortraitBackfillProgress,
+    PortraitBackfillState,
+};
 pub(crate) use cache::{cache_dir, IMAGE_EXTS};
 pub use cache::{verdict, CacheVerdict};
 
