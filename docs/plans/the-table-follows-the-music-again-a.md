@@ -2,7 +2,7 @@
 slug: the-table-follows-the-music-again-a
 worktree: /home/marvin/Projects/reprise-the-table-follows-the-music-again-a
 branch: feature/the-table-follows-the-music-again-a
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-25
 ---
