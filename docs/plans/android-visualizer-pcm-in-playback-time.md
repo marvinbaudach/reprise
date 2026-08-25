@@ -2,7 +2,7 @@
 slug: android-visualizer-pcm-in-playback-time
 worktree: /home/marvin/Projects/reprise-android-visualizer-pcm-in-playback-time
 branch: feature/android-visualizer-pcm-in-playback-time
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-24
 ---
