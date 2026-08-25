@@ -218,7 +218,7 @@ impl MusicLibrary {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Condvar, Mutex};
 
     use super::*;
     use crate::log_capture::CapturedLogs;
@@ -716,5 +716,76 @@ mod tests {
             Some(ArtistPortraitProgressState::Preparing),
         );
         library.cancel_artist_portrait_backfill();
+    }
+
+    #[test]
+    fn revoking_artwork_consent_stops_the_worker_before_the_next_artist() {
+        let directory = tempfile::tempdir().unwrap();
+        let entered = Arc::new((Mutex::new(false), Condvar::new()));
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        let fetch_entered = Arc::clone(&entered);
+        let fetch_release = Arc::clone(&release);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            move |name, dir| {
+                counted.fetch_add(1, Ordering::Relaxed);
+                let (entered_lock, entered_wake) = &*fetch_entered;
+                *entered_lock.lock().unwrap() = true;
+                entered_wake.notify_all();
+                let (release_lock, release_wake) = &*fetch_release;
+                let mut open = release_lock.lock().unwrap();
+                while !*open {
+                    open = release_wake.wait(open).unwrap();
+                }
+                Ok(reprise_core::artist_portrait::PortraitOutcome::Found(
+                    store_portrait_fixture_in(dir, name),
+                ))
+            },
+        )
+        .unwrap();
+        scan_artists(directory.path(), &library, &["First", "Second"]);
+        open_gate(&library);
+        let updates = Arc::new(Mutex::new(Vec::new()));
+        library.start_artist_portrait_backfill(Box::new(CapturingProgress(updates)));
+        let (entered_lock, entered_wake) = &*entered;
+        let mut did_enter = entered_lock.lock().unwrap();
+        while !*did_enter {
+            did_enter = entered_wake.wait(did_enter).unwrap();
+        }
+        drop(did_enter);
+
+        {
+            let writer = library.writer().unwrap();
+            reprise_core::modules::set_enabled(
+                &writer,
+                &reprise_core::modules::ARTWORK_MODULE,
+                false,
+            )
+            .unwrap();
+        }
+        let (release_lock, release_wake) = &*release;
+        *release_lock.lock().unwrap() = true;
+        release_wake.notify_all();
+        for _ in 0..5_000 {
+            if library.artist_portrait_backfill_progress().run_id == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            library.artist_portrait_backfill_progress(),
+            ArtistPortraitProgressUpdate {
+                run_id: 0,
+                state: ArtistPortraitProgressState::Complete,
+                done: 0,
+                failed: 0,
+                total: 0,
+            }
+        );
     }
 }

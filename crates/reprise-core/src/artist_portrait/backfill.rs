@@ -1,6 +1,6 @@
 //! Serial, cancellable library-wide artist-portrait cache population.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -24,6 +24,7 @@ pub enum PortraitBackfillState {
     Preparing,
     Running,
     Paused,
+    /// A run finished when `run_id != 0`; `run_id == 0` is the explicit idle sentinel.
     Complete,
 }
 
@@ -39,6 +40,7 @@ pub struct PortraitBackfillProgress {
 impl PortraitBackfillProgress {
     #[must_use]
     pub const fn idle() -> Self {
+        // Complete is retained for FFI compatibility; run_id zero distinguishes idle/cancelled.
         Self {
             run_id: 0,
             state: PortraitBackfillState::Complete,
@@ -133,9 +135,11 @@ impl PortraitBackfill {
         listener: Arc<PortraitBackfillListener>,
     ) -> bool {
         let prepare_cache = cache_dir.clone();
+        let prepare_database = database_path.clone();
+        let consent_database = database_path;
         self.launch(
             Box::new(move || {
-                let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
+                let db = Db::open_ready(&prepare_database).map_err(|error| error.to_string())?;
                 let now = chrono::Utc::now().timestamp();
                 pending_artists(&db, &prepare_cache, now).map_err(|error| error.to_string())
             }),
@@ -143,6 +147,14 @@ impl PortraitBackfill {
             fetch,
             listener,
             Arc::new(Control::wait),
+            Arc::new(move || {
+                Db::open_ready(&consent_database).is_ok_and(|db| {
+                    crate::online_sources::network_allowed_or_off(
+                        &db,
+                        &crate::modules::ARTWORK_MODULE,
+                    )
+                })
+            }),
         )
     }
 
@@ -182,7 +194,29 @@ impl PortraitBackfill {
         fetch: Arc<PortraitBackfillFetch>,
         listener: Arc<PortraitBackfillListener>,
         wait: Arc<WaitForRetry>,
+        consent_allowed: Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> bool {
+        let mut worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(previous) = worker.take() {
+            if previous.is_finished() {
+                if previous.join().is_err() {
+                    tracing::error!("artist portrait backfill worker panicked");
+                    reset_after_worker_exit(&self.control);
+                }
+            } else {
+                self.control
+                    .shared
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .listener = Some(listener);
+                *worker = Some(previous);
+                return false;
+            }
+        }
+
         {
             let mut shared = self
                 .control
@@ -191,19 +225,6 @@ impl PortraitBackfill {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if shared.active {
                 shared.listener = Some(listener);
-                return false;
-            }
-        }
-
-        let mut worker = self
-            .worker
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(previous) = worker.take() {
-            if previous.is_finished() {
-                let _ = previous.join();
-            } else {
-                *worker = Some(previous);
                 return false;
             }
         }
@@ -224,10 +245,9 @@ impl PortraitBackfill {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             shared.active = true;
             shared.cancelled = false;
-            shared.progress = preparing;
+            shared.progress = PortraitBackfillProgress::idle();
             shared.listener = Some(Arc::clone(&listener));
         }
-        listener(preparing);
 
         let control = Arc::clone(&self.control);
         *worker = Some(std::thread::spawn(move || {
@@ -235,16 +255,18 @@ impl PortraitBackfill {
                 Ok(artists) => artists,
                 Err(error) => {
                     tracing::warn!(%error, "artist portrait backfill could not prepare its worklist");
-                    finish(
-                        &control,
-                        PortraitBackfillProgress {
-                            state: PortraitBackfillState::Complete,
-                            ..preparing
-                        },
-                    );
+                    finish_without_run(&control);
                     return;
                 }
             };
+            if artists.is_empty() {
+                finish_without_run(&control);
+                return;
+            }
+            if !publish_preparing(&control, preparing) {
+                finish_cancelled(&control);
+                return;
+            }
             run_worker(
                 &control,
                 preparing,
@@ -252,6 +274,7 @@ impl PortraitBackfill {
                 &cache_dir,
                 fetch.as_ref(),
                 wait.as_ref(),
+                consent_allowed.as_ref(),
             );
         }));
         true
@@ -272,6 +295,7 @@ impl PortraitBackfill {
             fetch,
             listener,
             wait,
+            Arc::new(|| true),
         )
     }
 }
@@ -291,7 +315,9 @@ impl Drop for PortraitBackfill {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
         {
-            let _ = worker.join();
+            if worker.join().is_err() {
+                tracing::error!("artist portrait backfill worker panicked while shutting down");
+            }
         }
     }
 }
@@ -303,6 +329,7 @@ pub fn pending_artists(
     now: i64,
 ) -> Result<Vec<String>, rusqlite::Error> {
     let mut pending = Vec::new();
+    let mut retained_keys = HashSet::new();
     let mut offset = 0_i64;
     loop {
         let window = queries::query_artists(
@@ -315,11 +342,13 @@ pub fn pending_artists(
         )?;
         let returned = window.rows.len();
         pending.extend(window.rows.into_iter().filter_map(|artist| {
+            retained_keys.insert(cache::key_for(&artist.artist));
             cache::verdict(cache_dir, &artist.artist, now)
                 .needs_fetch()
                 .then_some(artist.artist)
         }));
         if !window.has_more || returned == 0 {
+            cache::prune_except(cache_dir, &retained_keys);
             return Ok(pending);
         }
         offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
@@ -333,19 +362,9 @@ fn run_worker(
     cache_dir: &Path,
     fetch: &PortraitBackfillFetch,
     wait: &WaitForRetry,
+    consent_allowed: &(dyn Fn() -> bool + Send + Sync),
 ) {
     let total = u32::try_from(artists.len()).unwrap_or(u32::MAX);
-    if artists.is_empty() {
-        finish(
-            control,
-            PortraitBackfillProgress {
-                state: PortraitBackfillState::Complete,
-                ..preparing
-            },
-        );
-        return;
-    }
-
     let mut queue = VecDeque::from(artists);
     let mut progress = PortraitBackfillProgress {
         state: PortraitBackfillState::Running,
@@ -353,13 +372,16 @@ fn run_worker(
         ..preparing
     };
     let mut reporter = Reporter::new(preparing);
-    if !publish(control, progress, &mut reporter, false) {
-        return;
+    if !publish(control, progress, &mut reporter) {
+        return finish_cancelled(control);
     }
     let mut consecutive_errors = 0_u32;
 
     while let Some(artist) = queue.pop_front() {
         if control.cancelled() {
+            return finish_cancelled(control);
+        }
+        if !consent_allowed() {
             return finish_cancelled(control);
         }
         match fetch(&artist, cache_dir) {
@@ -375,7 +397,7 @@ fn run_worker(
                 progress.state = PortraitBackfillState::Running;
             }
             Err(error) => {
-                tracing::debug!(artist, %error, "artist portrait backfill request will retry");
+                tracing::debug!(%error, "artist portrait backfill request will retry");
                 queue.push_front(artist);
                 consecutive_errors = consecutive_errors.saturating_add(1);
                 if consecutive_errors >= 3 {
@@ -384,8 +406,8 @@ fn run_worker(
             }
         }
 
-        if !publish(control, progress, &mut reporter, false) {
-            return;
+        if !publish(control, progress, &mut reporter) {
+            return finish_cancelled(control);
         }
         if consecutive_errors >= 3 {
             let index = usize::try_from(consecutive_errors - 3)
@@ -414,10 +436,8 @@ impl Reporter {
         }
     }
 
-    fn should_send(&self, progress: PortraitBackfillProgress, terminal: bool) -> bool {
-        terminal
-            || progress.state != self.last_sent.state
-            || self.last_sent_at.elapsed() >= REPORT_INTERVAL
+    fn should_send(&self, progress: PortraitBackfillProgress) -> bool {
+        progress.state != self.last_sent.state || self.last_sent_at.elapsed() >= REPORT_INTERVAL
     }
 
     fn sent(&mut self, progress: PortraitBackfillProgress) {
@@ -426,12 +446,7 @@ impl Reporter {
     }
 }
 
-fn publish(
-    control: &Control,
-    progress: PortraitBackfillProgress,
-    reporter: &mut Reporter,
-    terminal: bool,
-) -> bool {
+fn publish(control: &Control, progress: PortraitBackfillProgress, reporter: &mut Reporter) -> bool {
     let (listener, should_send) = {
         let mut shared = control
             .shared
@@ -441,7 +456,7 @@ fn publish(
             return false;
         }
         shared.progress = progress;
-        let should_send = reporter.should_send(progress, terminal);
+        let should_send = reporter.should_send(progress);
         (shared.listener.clone(), should_send)
     };
     if should_send {
@@ -454,6 +469,7 @@ fn publish(
 }
 
 fn finish(control: &Control, progress: PortraitBackfillProgress) {
+    // Terminal delivery bypasses Reporter so throttling can never swallow the final state.
     let listener = {
         let mut shared = control
             .shared
@@ -473,11 +489,58 @@ fn finish(control: &Control, progress: PortraitBackfillProgress) {
 }
 
 fn finish_cancelled(control: &Control) {
+    let listener = {
+        let mut shared = control
+            .shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        shared.active = false;
+        shared.cancelled = true;
+        shared.progress = PortraitBackfillProgress::idle();
+        shared.listener.take()
+    };
+    if let Some(listener) = listener {
+        listener(PortraitBackfillProgress::idle());
+    }
+}
+
+fn publish_preparing(control: &Control, preparing: PortraitBackfillProgress) -> bool {
+    let listener = {
+        let mut shared = control
+            .shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if shared.cancelled {
+            return false;
+        }
+        shared.progress = preparing;
+        shared.listener.clone()
+    };
+    if let Some(listener) = listener {
+        listener(preparing);
+    }
+    true
+}
+
+fn finish_without_run(control: &Control) {
     let mut shared = control
         .shared
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     shared.active = false;
+    shared.progress = PortraitBackfillProgress::idle();
+    shared.listener = None;
+}
+
+fn reset_after_worker_exit(control: &Control) {
+    let mut shared = control
+        .shared
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    shared.active = false;
+    shared.cancelled = false;
+    shared.progress = PortraitBackfillProgress::idle();
+    shared.listener = None;
 }
 
 #[cfg(test)]
