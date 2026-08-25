@@ -312,9 +312,9 @@ fn tag_5_progress_reports_written_over_total() {
 
 #[test]
 fn write_error_classification_maps_permission_denied() {
-    let error = TagEditError::Lofty(lofty::error::LoftyError::new(lofty::error::ErrorKind::Io(
-        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
-    )));
+    let error = TagEditError::Lofty(
+        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied").into(),
+    );
     assert_eq!(
         classify_write_error(&error),
         WriteErrorKind::PermissionDenied
@@ -323,10 +323,14 @@ fn write_error_classification_maps_permission_denied() {
 
 #[test]
 fn write_error_classification_maps_not_found() {
-    let error = TagEditError::Lofty(lofty::error::LoftyError::new(lofty::error::ErrorKind::Io(
-        std::io::Error::new(std::io::ErrorKind::NotFound, "gone"),
-    )));
-    assert_eq!(classify_write_error(&error), WriteErrorKind::NotFound);
+    let read_error = TagEditError::Lofty(
+        std::io::Error::new(std::io::ErrorKind::NotFound, "gone while reading").into(),
+    );
+    let write_error = TagEditError::LoftyWrite(
+        std::io::Error::new(std::io::ErrorKind::NotFound, "gone while writing").into(),
+    );
+    assert_eq!(classify_write_error(&read_error), WriteErrorKind::NotFound);
+    assert_eq!(classify_write_error(&write_error), WriteErrorKind::NotFound);
 }
 
 #[test]
@@ -339,9 +343,7 @@ fn write_error_classification_maps_unsupported_format() {
     // as container damage (`UnreadableTags`): writing, it means the
     // target format cannot hold this tag type. Deliberate divergence —
     // see `classify_write_error`'s doc comment before "fixing" it.
-    let error = TagEditError::Lofty(lofty::error::LoftyError::new(
-        lofty::error::ErrorKind::UnsupportedTag,
-    ));
+    let error = TagEditError::LoftyWrite(lofty::error::UnsupportedTagError.into());
     assert_eq!(
         classify_write_error(&error),
         WriteErrorKind::UnsupportedFormat
@@ -352,9 +354,7 @@ fn write_error_classification_maps_unsupported_format() {
 fn write_error_classification_defaults_to_io() {
     // Same story as UnsupportedTag above: too much data for the format is
     // a write-size failure, not tags that cannot be read back.
-    let error = TagEditError::Lofty(lofty::error::LoftyError::new(
-        lofty::error::ErrorKind::TooMuchData,
-    ));
+    let error = TagEditError::LoftyWrite(lofty::error::TooMuchDataError.into());
     assert_eq!(classify_write_error(&error), WriteErrorKind::Io);
 }
 
@@ -363,9 +363,10 @@ fn write_error_classification_shares_the_scanner_view_of_damaged_tags() {
     // The long tail of Lofty parse failures is NOT re-enumerated here —
     // it comes from `import_errors::classify_lofty`, so a damaged
     // container tells the same story in the scanner and the tag editor.
-    let error = TagEditError::Lofty(lofty::error::LoftyError::new(
-        lofty::error::ErrorKind::NotAPicture,
-    ));
+    // Lofty 0.25's PictureParseError has no public constructor. SizeMismatchError
+    // is the closest publicly constructible container-damage fixture and must
+    // share the same UnreadableTags fallback as the old NotAPicture case.
+    let error = TagEditError::Lofty(lofty::error::SizeMismatchError.into());
     assert_eq!(classify_write_error(&error), WriteErrorKind::UnreadableTags);
 }
 

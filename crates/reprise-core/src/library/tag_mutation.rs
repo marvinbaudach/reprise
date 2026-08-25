@@ -60,22 +60,40 @@ impl WriteErrorKind {
 }
 
 pub fn classify_write_error(error: &TagEditError) -> WriteErrorKind {
-    use lofty::error::ErrorKind as LoftyErrorKind;
-
     match error {
         TagEditError::NoWritableTag => WriteErrorKind::UnsupportedFormat,
-        TagEditError::Lofty(lofty_error) => match lofty_error.kind() {
-            LoftyErrorKind::Io(io_error) if io_error.kind() == std::io::ErrorKind::NotFound => {
-                WriteErrorKind::NotFound
-            }
-            LoftyErrorKind::UnsupportedTag => WriteErrorKind::UnsupportedFormat,
-            LoftyErrorKind::TooMuchData => WriteErrorKind::Io,
-            _ => {
-                let (kind, _) = crate::library::import_errors::classify_lofty(lofty_error);
-                WriteErrorKind::from_import_kind(kind)
-            }
+        TagEditError::Lofty(lofty_error) => classify_shared_write_error(lofty_error),
+        TagEditError::LoftyWrite(lofty_error) => if is_not_found(lofty_error) {
+            WriteErrorKind::NotFound
+        } else if crate::library::import_errors::find_source::<lofty::error::UnsupportedTagError>(
+            lofty_error,
+        )
+        .is_some()
+        {
+            WriteErrorKind::UnsupportedFormat
+        } else if crate::library::import_errors::find_source::<lofty::error::TooMuchDataError>(
+            lofty_error,
+        )
+        .is_some()
+        {
+            WriteErrorKind::Io
+        } else {
+            classify_shared_write_error(lofty_error)
         },
     }
+}
+
+fn classify_shared_write_error(error: &(dyn std::error::Error + 'static)) -> WriteErrorKind {
+    if is_not_found(error) {
+        return WriteErrorKind::NotFound;
+    }
+    let (kind, _) = crate::library::import_errors::classify_lofty(error);
+    WriteErrorKind::from_import_kind(kind)
+}
+
+fn is_not_found(error: &(dyn std::error::Error + 'static)) -> bool {
+    crate::library::import_errors::find_source::<std::io::Error>(error)
+        .is_some_and(|io_error| io_error.kind() == std::io::ErrorKind::NotFound)
 }
 
 #[derive(Debug)]
@@ -175,7 +193,7 @@ pub(crate) fn prepare_tag_mutation(
         Err(error) => {
             return Err(TagMutationFailure {
                 kind: classify_write_error(&error),
-                error: error.to_string(),
+                error: crate::library::import_errors::error_detail(&error),
                 file_written: false,
             });
         }
@@ -285,8 +303,8 @@ fn set_patch_fields(tag: &mut Tag, patch: &TagPatch) {
 /// editable again — `TagType::remove_from_path` parses the tag before removing
 /// it and so can't clear the very container that fails to parse.
 pub(super) fn strip_and_rewrite_tag(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
-    let data = std::fs::read(path).map_err(lofty::error::LoftyError::from)?;
-    std::fs::write(path, strip_tag_containers(data)).map_err(lofty::error::LoftyError::from)?;
+    let data = std::fs::read(path).map_err(lofty::error::FileParseError::from)?;
+    std::fs::write(path, strip_tag_containers(data)).map_err(lofty::error::FileParseError::from)?;
     // The file is now strictly readable and tag-free; route through the single
     // loaded-container save seam, which inserts a fresh primary (ID3v2) tag.
     let mut tagged = lofty::read_from_path(path)?;
@@ -365,9 +383,9 @@ fn strip_tag_containers(mut data: Vec<u8>) -> Vec<u8> {
 /// container and so must only be used when the caller is *supplying* new tags
 /// (a manual edit), never to guess at a repair.
 pub(super) fn write_tail_stripped(src: &Path, dest: &Path) -> Result<(), TagEditError> {
-    let data = std::fs::read(src).map_err(lofty::error::LoftyError::from)?;
+    let data = std::fs::read(src).map_err(lofty::error::FileParseError::from)?;
     std::fs::write(dest, strip_trailing_containers(data))
-        .map_err(lofty::error::LoftyError::from)?;
+        .map_err(lofty::error::FileParseError::from)?;
     Ok(())
 }
 

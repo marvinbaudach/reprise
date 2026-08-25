@@ -42,7 +42,7 @@ pub(crate) fn write_prepared_tag_mutation(
         strip_and_rewrite_tag(&prepared.path, &prepared.patch).map_err(|error| {
             TagMutationFailure {
                 kind: classify_write_error(&error),
-                error: error.to_string(),
+                error: crate::library::import_errors::error_detail(&error),
                 file_written: true,
             }
         })?;
@@ -52,7 +52,7 @@ pub(crate) fn write_prepared_tag_mutation(
         let error = TagEditError::from(error);
         TagMutationFailure {
             kind: classify_write_error(&error),
-            error: error.to_string(),
+            error: crate::library::import_errors::error_detail(&error),
             file_written: false,
         }
     })?;
@@ -69,7 +69,7 @@ pub(crate) fn write_prepared_tag_mutation(
     apply_tag_patch_to_tagged(&mut tagged, &prepared.path, &prepared.patch).map_err(|error| {
         TagMutationFailure {
             kind: classify_write_error(&error),
-            error: error.to_string(),
+            error: crate::library::import_errors::error_detail(&error),
             file_written: false,
         }
     })
