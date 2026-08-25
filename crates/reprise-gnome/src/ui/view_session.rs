@@ -191,6 +191,7 @@ pub(in crate::ui) fn restore_browser_place_with_viewport(
         .flatten();
     let saved =
         crate::ui::track_list::view_state_memory::SavedViewState::from_core(&track_place.state);
+    release_reveal_intent_for_foreign_anchor(track_list, &saved);
     prepare_track_view(
         track_list,
         &saved.search,
@@ -225,6 +226,27 @@ pub(in crate::ui) fn restore_browser_place_with_viewport(
         callback(&saved.search);
     }
     true
+}
+
+/// An explicit anchor for another track is a navigation destination, not a
+/// reload around the current reveal. Both paths reach this restore seam with
+/// `PreserveAnchor`, and both may carry an anchor; the stable distinction is
+/// the subject. `RevealTrack` anchors the playing track, while Back restores
+/// the track that was at the old viewport edge.
+fn release_reveal_intent_for_foreign_anchor(
+    track_list: &TrackList,
+    saved: &crate::ui::track_list::view_state_memory::SavedViewState,
+) {
+    let Some((anchor_id, _)) = saved.anchor else {
+        return;
+    };
+    if track_list.shared.playing_track_id.get() == Some(anchor_id) {
+        return;
+    }
+    track_list
+        .shared
+        .scroll_glide
+        .clear_deliberate_destination();
 }
 
 fn prepare_track_view(
