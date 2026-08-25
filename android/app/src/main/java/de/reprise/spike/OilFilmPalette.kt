@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.core.graphics.get
+import de.reprise.spike.ui.theme.oilFilmColour
+import de.reprise.spike.ui.theme.toComposeColor
 
 /**
  * The six colours one oil film is painted from, and the brushes that carry them.
@@ -56,9 +58,10 @@ internal class OilFilmPalette(val clouds: List<Color>) {
  * 70% the way the unblurred design does. Combined with [NowPlayingOilFilmSpec.spread] it is
  * what makes six clouds read as one film rather than as six discs.
  *
- * Every stop is the colour at a lower alpha rather than [Color.Transparent],
- * which is black: interpolating towards black would lay a grey ring around
- * every cloud, and that ring is precisely the hard edge the design forbids.
+ * Every stop is the colour itself at a lower alpha rather than the transparent
+ * constant, which is black: interpolating towards black would lay a grey ring
+ * around every cloud, and that ring is precisely the hard edge the design
+ * forbids.
  */
 private fun cloudBrush(colour: Color): Brush = Brush.radialGradient(
     colorStops = arrayOf(
@@ -123,7 +126,7 @@ internal fun extractOilFilmQuadrants(bitmap: Bitmap?): List<Color> {
                 count += 1
             }
         }
-        Color(lift(red, count), lift(green, count), lift(blue, count), 0xff)
+        argb(lift(red, count), lift(green, count), lift(blue, count)).toComposeColor()
     }
 }
 
@@ -134,8 +137,12 @@ private fun lift(total: Long, count: Int): Int {
 }
 
 private fun neutralQuadrants(): List<Color> = List(QUADRANT_COUNT) {
-    Color(DARK_FLOOR, DARK_FLOOR, DARK_FLOOR, 0xff)
+    argb(DARK_FLOOR, DARK_FLOOR, DARK_FLOOR).toComposeColor()
 }
+
+/** Packs three channels the way the theme's converter expects to read them. */
+private fun argb(red: Int, green: Int, blue: Int): Int =
+    (0xff shl 24) or (red shl 16) or (green shl 8) or blue
 
 /**
  * The visualizer's own ramp, dimmed to a haze.
@@ -190,7 +197,12 @@ private fun saturated(colour: Color): Color {
     val luminance = luminance(colour)
     fun channel(value: Float): Float =
         (luminance + (value - luminance) * SATURATE).coerceIn(0f, 1f)
-    return Color(channel(colour.red), channel(colour.green), channel(colour.blue), colour.alpha)
+    return oilFilmColour(
+        channel(colour.red),
+        channel(colour.green),
+        channel(colour.blue),
+        colour.alpha,
+    )
 }
 
 /**
@@ -212,7 +224,12 @@ private fun saturated(colour: Color): Color {
  */
 private fun contrasted(colour: Color, pivot: Float): Color {
     fun channel(value: Float): Float = ((value - pivot) * CONTRAST + pivot).coerceIn(0f, 1f)
-    return Color(channel(colour.red), channel(colour.green), channel(colour.blue), colour.alpha)
+    return oilFilmColour(
+        channel(colour.red),
+        channel(colour.green),
+        channel(colour.blue),
+        colour.alpha,
+    )
 }
 
 private fun luminance(colour: Color): Float =
@@ -220,7 +237,7 @@ private fun luminance(colour: Color): Float =
 
 internal fun mixColour(from: Color, to: Color, amount: Float): Color {
     val part = amount.coerceIn(0f, 1f)
-    return Color(
+    return oilFilmColour(
         red = from.red + (to.red - from.red) * part,
         green = from.green + (to.green - from.green) * part,
         blue = from.blue + (to.blue - from.blue) * part,
@@ -242,7 +259,7 @@ private fun hslColour(hue: Float, saturation: Float, lightness: Float): Color {
         else -> Triple(chroma, 0f, second)
     }
     val match = lightness - chroma / 2f
-    return Color(red + match, green + match, blue + match, 1f)
+    return oilFilmColour(red + match, green + match, blue + match)
 }
 
 private const val QUADRANT_COUNT = 4
@@ -256,7 +273,7 @@ private const val RAMP_HUE_END = 315f
 private const val RAMP_SATURATION = 0.88f
 private const val RAMP_LIGHTNESS = 0.60f
 private const val RAMP_DARKEN = 0.45f
-private val RampGround = Color(0x10, 0x10, 0x18, 0xff)
+private val RampGround = argb(0x10, 0x10, 0x18).toComposeColor()
 
 private const val SATURATE = 1.6f
 private const val CONTRAST = 1.2f
