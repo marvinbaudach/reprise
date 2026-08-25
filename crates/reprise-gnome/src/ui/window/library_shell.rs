@@ -384,6 +384,15 @@ fn route_to_place_with_viewport(
         reason,
         "history nav: routing to place"
     );
+    // History navigation (Back/Forward) is a deliberate destination change and
+    // must release the reveal intent so the restore writers can land the user
+    // where they were, not where a reveal left the viewport. Session restore
+    // also routes through here and clears at that point, which is harmless:
+    // `center_loaded_track()` runs after the restore completes.
+    track_list
+        .shared
+        .scroll_glide
+        .clear_deliberate_destination();
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
