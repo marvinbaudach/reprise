@@ -56,6 +56,47 @@ pub(in crate::ui) fn probe_value_change(writer: &str, adjustment: &gtk4::Adjustm
     );
 }
 
+/// Watches one adjustment so GTK-owned movement appears beside named writes.
+///
+/// A `SCROLLOBSERVED` line without a preceding `SCROLLWRITE` is movement no
+/// application writer claimed. The handler stays behavior-free when the
+/// environment probe is disabled; tests can still opt into the in-process
+/// trail independently.
+pub(in crate::ui) fn observe(scope: &'static str, adjustment: &gtk4::Adjustment) {
+    use gtk4::prelude::AdjustmentExt;
+
+    let previous = std::cell::Cell::new(adjustment.value());
+    let enabled = std::env::var_os("REPRISE_SCROLL_PROBE").is_some();
+    adjustment.connect_value_changed(move |changed| {
+        let value = changed.value();
+        let from = previous.replace(value);
+        #[cfg(test)]
+        trail::note_observed(value);
+        if enabled {
+            eprintln!(
+                "SCROLLOBSERVED scope={scope} from={from:.1} to={value:.1} upper={:.1} page={:.1}",
+                changed.upper(),
+                changed.page_size(),
+            );
+        }
+    });
+}
+
+/// Places a named boundary around a mutation without writing the adjustment.
+pub(in crate::ui) fn probe_snapshot(at: &str, adjustment: &gtk4::Adjustment) {
+    use gtk4::prelude::AdjustmentExt;
+
+    if std::env::var_os("REPRISE_SCROLL_PROBE").is_none() {
+        return;
+    }
+    eprintln!(
+        "SCROLLSNAPSHOT at={at} value={:.1} upper={:.1} page={:.1}",
+        adjustment.value(),
+        adjustment.upper(),
+        adjustment.page_size(),
+    );
+}
+
 pub(in crate::ui) fn probe_upper(writer: &str, adjustment: &gtk4::Adjustment, upper: f64) {
     use gtk4::prelude::AdjustmentExt;
 
