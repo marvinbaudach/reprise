@@ -78,7 +78,6 @@ class NowPlayingLegibilityTest {
                 angleA = 0f,
                 angleB = 0f,
                 fogLevel = 1f,
-                bassPressure = 1f,
                 opacity = 1f,
                 rotationsEnabled = false,
             )

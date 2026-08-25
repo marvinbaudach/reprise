@@ -27,10 +27,6 @@ internal object NowPlayingFogSpec {
     private const val TIGHT_FLOOR = 0.14f
     private const val SWELL_LOW = 0.05f
     private const val SWELL_HIGH = 0.70f
-    private const val PRESSURE_LOW = 0f
-    private const val PRESSURE_HIGH = 0.70f
-    private const val SWELL_WEIGHT = 0.52f
-    private const val PRESSURE_WEIGHT = 0.48f
 
     /**
      * How far the haze swells with the signal.
@@ -44,22 +40,25 @@ internal object NowPlayingFogSpec {
     fun breathingSize(baseSizeDp: Float, swell: Float): Float =
         baseSizeDp * (1f + SCALE_SWING * swell.coerceIn(0f, 1f))
 
-    fun wideAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
-        wideOpacity * response(swell, bassPressure, WIDE_FLOOR) * opacity
+    /**
+     * How bright each layer stands, from the rate-capped level alone.
+     *
+     * The bass detector's kick used to carry 48% of this, which is what made a
+     * full-screen layer strobe once per beat. It is gone rather than reduced:
+     * the level it is replaced by cannot move faster than
+     * [de.reprise.spike.scene.FogDrive.MAX_UNITS_PER_SECOND], so the whole
+     * range from floor to peak stays available while no signal can flash it.
+     */
+    fun wideAlpha(swell: Float, opacity: Float): Float =
+        wideOpacity * response(swell, WIDE_FLOOR) * opacity
 
-    fun tightAlpha(swell: Float, bassPressure: Float, opacity: Float): Float =
-        tightOpacity * response(swell, bassPressure, TIGHT_FLOOR) * opacity
+    fun tightAlpha(swell: Float, opacity: Float): Float =
+        tightOpacity * response(swell, TIGHT_FLOOR) * opacity
 
-    private fun response(swell: Float, bassPressure: Float, floor: Float): Float {
-        val normalizedSwell = normalizedSwell(swell)
-        val normalizedPressure = normalizedPressure(bassPressure)
-        val drive = SWELL_WEIGHT * normalizedSwell + PRESSURE_WEIGHT * normalizedPressure
-        return floor + (1f - floor) * drive.coerceIn(0f, 1f)
-    }
+    private fun response(swell: Float, floor: Float): Float =
+        floor + (1f - floor) * normalizedSwell(swell)
 
     fun normalizedSwell(value: Float): Float = normalize(value, SWELL_LOW, SWELL_HIGH)
-
-    fun normalizedPressure(value: Float): Float = normalize(value, PRESSURE_LOW, PRESSURE_HIGH)
 
     private fun normalize(value: Float, low: Float, high: Float): Float =
         ((value - low) / (high - low)).coerceIn(0f, 1f)
@@ -87,7 +86,6 @@ internal fun DrawScope.drawNowPlayingFog(
     angleA: Float,
     angleB: Float,
     fogLevel: Float,
-    bassPressure: Float,
     opacity: Float,
     rotationsEnabled: Boolean,
 ) {
@@ -98,7 +96,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.wideSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleA else 0f,
-            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, bassPressure, boundedOpacity),
+            alpha = NowPlayingFogSpec.wideAlpha(fogLevel, boundedOpacity),
             blendMode = BlendMode.SrcOver,
         )
         drawFogLayer(
@@ -106,7 +104,7 @@ internal fun DrawScope.drawNowPlayingFog(
             center = center,
             sizeDp = NowPlayingFogSpec.breathingSize(NowPlayingFogSpec.tightSizeDp, fogLevel),
             angle = if (rotationsEnabled) angleB else 0f,
-            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, bassPressure, boundedOpacity),
+            alpha = NowPlayingFogSpec.tightAlpha(fogLevel, boundedOpacity),
             blendMode = BlendMode.Screen,
         )
     }

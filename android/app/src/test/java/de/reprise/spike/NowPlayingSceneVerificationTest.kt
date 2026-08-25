@@ -106,7 +106,6 @@ class NowPlayingSceneVerificationTest {
                 angleA = state.fogAngleA,
                 angleB = state.fogAngleB,
                 fogLevel = state.fogLevel,
-                bassPressure = state.bassPressure,
                 opacity = 0.5f,
                 rotationsEnabled = true,
             )

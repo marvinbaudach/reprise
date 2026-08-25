@@ -343,7 +343,6 @@ internal fun DrawScope.drawPlayedNowPlayingFog(
         angleA = state.fogAngleA,
         angleB = state.fogAngleB,
         fogLevel = state.fogLevel,
-        bassPressure = state.bassPressure,
         opacity = opacity,
         rotationsEnabled = rotationsEnabled,
     )
@@ -363,7 +362,6 @@ internal fun DrawScope.drawPlayedNowPlayingShimmer(
         coverDiameterDp = COVER_SIZE_DP.toFloat(),
         elapsedSeconds = state.shimmerElapsedSeconds,
         swell = state.fogLevel,
-        bassPressure = state.bassPressure,
         opacity = opacity,
         rotationsEnabled = rotationsEnabled,
     )
