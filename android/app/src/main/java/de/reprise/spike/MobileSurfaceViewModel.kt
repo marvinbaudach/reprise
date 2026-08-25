@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import uniffi.reprise_android_ffi.MusicLibrary
 
 /** The two surface arrangements M9a supports; neither is an orientation. */
 internal enum class SurfaceLayout {
@@ -120,6 +121,22 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     var dockOfferVersion by mutableStateOf(0L)
         private set
+    private var artistPhotoProgress by mutableStateOf<ArtistPhotoProgress?>(null)
+    private var dismissedArtistPhotoRunId by mutableStateOf<Long?>(null)
+    private var startArtistPhotoBackfill:
+        (((ArtistPhotoProgress) -> Unit) -> Unit)? = null
+    private var cancelArtistPhotoBackfill: (() -> Unit)? = null
+    private var artistPhotoBackfillSnapshot: (() -> ArtistPhotoProgress)? = null
+    private var retainedLibrary: MusicLibrary? = null
+    private var reportLibraryState: ((LibraryScreenState) -> Unit)? = null
+    private var pendingLibraryState: LibraryScreenState? = null
+
+    val visibleArtistPhotoProgress: ArtistPhotoProgress?
+        get() = artistPhotoProgress?.takeIf { update ->
+            update.runId != 0L &&
+                update.runId != dismissedArtistPhotoRunId &&
+                !(update.phase == ArtistPhotoProgressPhase.COMPLETE && update.total == 0L)
+        }
 
     private val confirmedRatings = mutableStateMapOf<Long, Int>()
     private val scrollPositions = mutableMapOf<LibraryListKey, LibraryScrollPosition>()
@@ -131,6 +148,51 @@ internal class MobileSurfaceViewModel : ViewModel() {
     private var selectedTabInitialized = false
     private var rememberSelectedTab: (BrowseTab) -> Unit = {}
     private var prefetchedForTrackId: Long? = null
+
+    fun bindLibraryStateReporter(report: (LibraryScreenState) -> Unit): () -> Unit {
+        reportLibraryState = report
+        pendingLibraryState?.let(report)
+        pendingLibraryState = null
+        return {
+            if (reportLibraryState === report) reportLibraryState = null
+        }
+    }
+
+    fun updateLibraryState(state: LibraryScreenState) {
+        reportLibraryState?.invoke(state) ?: run { pendingLibraryState = state }
+    }
+
+    fun retainLibrary(open: () -> MusicLibrary): MusicLibrary =
+        retainedLibrary ?: open().also { retainedLibrary = it }
+
+    fun bindArtistPhotoBackfill(
+        snapshot: () -> ArtistPhotoProgress,
+        start: ((ArtistPhotoProgress) -> Unit) -> Unit,
+        cancel: () -> Unit,
+    ) {
+        artistPhotoBackfillSnapshot = snapshot
+        startArtistPhotoBackfill = start
+        cancelArtistPhotoBackfill = cancel
+        acceptArtistPhotoProgress(snapshot())
+    }
+
+    fun startArtistPhotoBackfill() {
+        startArtistPhotoBackfill?.invoke(::acceptArtistPhotoProgress)
+        artistPhotoBackfillSnapshot?.let { acceptArtistPhotoProgress(it()) }
+    }
+
+    fun cancelArtistPhotoBackfill() {
+        cancelArtistPhotoBackfill?.invoke()
+        artistPhotoProgress = null
+    }
+
+    fun acceptArtistPhotoProgress(update: ArtistPhotoProgress) {
+        artistPhotoProgress = update
+    }
+
+    fun dismissArtistPhotoProgress() {
+        dismissedArtistPhotoRunId = artistPhotoProgress?.runId
+    }
 
     fun initializeSelectedTab(initial: BrowseTab, remember: (BrowseTab) -> Unit) {
         rememberSelectedTab = remember
@@ -310,5 +372,11 @@ internal class MobileSurfaceViewModel : ViewModel() {
         scrubTrackId = trackId
         scrubPosition = released
         return released
+    }
+
+    override fun onCleared() {
+        cancelArtistPhotoBackfill?.invoke()
+        retainedLibrary?.close()
+        retainedLibrary = null
     }
 }

@@ -11,11 +11,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import de.reprise.spike.ArtistPhotoProgress
+import de.reprise.spike.ArtistPhotoProgressBar
 
 @Composable
 internal fun OnlineSourcesSettingsPage(
     enabled: Boolean,
     setEnabled: (Boolean) -> Unit,
+    progress: ArtistPhotoProgress? = null,
+    dismissProgress: () -> Unit = {},
     back: () -> Unit,
 ) {
     Column(
@@ -36,12 +40,19 @@ internal fun OnlineSourcesSettingsPage(
         ) {
             item { SettingsSectionTitle("Artist photos") }
             item {
-                SettingsSwitchRow(
-                    title = "Download artist photos",
-                    supporting = "Fetch portraits after a library scan or restore.",
-                    checked = enabled,
-                    onCheckedChange = setEnabled,
-                )
+                Column {
+                    SettingsSwitchRow(
+                        title = "Download artist photos",
+                        supporting = "Fetch portraits after a library scan or restore.",
+                        checked = enabled,
+                        onCheckedChange = setEnabled,
+                    )
+                    ArtistPhotoProgressBar(
+                        progress = progress,
+                        dismiss = dismissProgress,
+                        inSettings = true,
+                    )
+                }
             }
             item {
                 Text(

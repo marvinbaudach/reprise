@@ -354,6 +354,63 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
 }
 
 @Test
+fun automaticScanIsSilentAndRefreshesAfterFiveMinutes() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = listOf(testTrack()),
+        lastScanCompletedAtMs = 1_000L,
+    )
+    val session = LibrarySession(port, nowMillis = { 301_000L })
+
+    val state = session.autoScan()
+
+    assertEquals(1, port.scanCalls)
+    assertEquals(301_000L, port.lastScanCompletedAtMs())
+    assertEquals(1, (state as LibraryScreenState.Browse).titles.total)
+}
+
+@Test
+fun automaticScanDoesNothingInsideTheFiveMinuteWindow() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = listOf(testTrack()),
+        lastScanCompletedAtMs = 2_000L,
+    )
+    val session = LibrarySession(port, nowMillis = { 301_999L })
+
+    assertEquals(null, session.autoScan())
+    assertEquals(0, port.scanCalls)
+}
+
+@Test
+fun automaticScanDoesNothingWhenTheClockMovesBehindTheSavedTime() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = emptyList(),
+        lastScanCompletedAtMs = 500_000L,
+    )
+
+    assertEquals(null, LibrarySession(port, nowMillis = { 400_000L }).autoScan())
+    assertEquals(0, port.scanCalls)
+}
+
+@Test
+fun manualScanPersistsItsCompletionTime() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = emptyList(),
+    )
+
+    LibrarySession(port, nowMillis = { 42_000L }).rescan { }
+
+    assertEquals(42_000L, port.lastScanCompletedAtMs())
+}
+
+@Test
 fun artistAlbumWindowsDelegateTheLiteralArtistAndWindow() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = null,
@@ -424,8 +481,10 @@ private class RecordingLibrarySessionPort(
     private val readable: Boolean,
     private val tracks: List<LibraryTrack>,
     private val artistTracks: List<LibraryTrack> = emptyList(),
+    lastScanCompletedAtMs: Long = 0L,
 ) : LibrarySessionPort {
     private var remembered = rememberedTreeUri
+    private var lastScanCompleted = lastScanCompletedAtMs
     val configuredUris = mutableListOf<String>()
     val operations = mutableListOf<String>()
     var listCalls = 0
@@ -455,6 +514,12 @@ private class RecordingLibrarySessionPort(
     override fun scan(report: (LibraryScreenState.Scanning) -> Unit) {
         operations += "scan"
         scanCalls += 1
+    }
+
+    override fun lastScanCompletedAtMs(): Long = lastScanCompleted
+
+    override fun rememberScanCompletedAtMs(completedAtMs: Long) {
+        lastScanCompleted = completedAtMs
     }
 
     override fun searchTracks(

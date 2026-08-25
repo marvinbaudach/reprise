@@ -12,12 +12,9 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.DocumentsContract
 import android.util.Log
-import android.view.View
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,15 +31,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.ui.theme.RepriseTheme
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import kotlinx.coroutines.Job
@@ -66,21 +59,19 @@ private const val PREFERENCES_NAME = "reprise_android"
 private const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
 internal const val PLAYBACK_BIND_WATCHDOG_MS = 2_000L
 internal const val PLAYBACK_BIND_FAILURE_LOG = "Playback service bind did not connect"
-/** No scrim behind the system bars: the app's own ground is what shows through. */
-private const val TRANSPARENT_SYSTEM_BAR = 0
 class MainActivity : ComponentActivity() {
     // The core is told where to cache covers instead of assuming an XDG
     // directory that does not exist here.
-    private val libraryDelegate = lazy {
-        MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
-    }
-    private val library by libraryDelegate
+    private val surfaceState by viewModels<MobileSurfaceViewModel>()
+    private lateinit var library: MusicLibrary
+    private var usesProductionSurface = false
     private val equalizerPresets by lazy(::equalizerPresetUi)
     private val sessionPort by lazy {
         AndroidLibrarySessionPort(
             resolver = contentResolver,
             preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
             library = library,
+            afterScan = surfaceState::startArtistPhotoBackfill,
         )
     }
     private val artistPortraitPrefetchDelegate = lazy {
@@ -202,7 +193,14 @@ class MainActivity : ComponentActivity() {
         configureEdgeToEdge(darkPalette = true)
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
-        val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
+        val surface = surfaceProvider?.mainActivitySurface() ?: run {
+            usesProductionSurface = true
+            library = surfaceState.retainLibrary {
+                MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
+            }
+            surfaceState.connectArtistPhotoBackfill(library) { work -> runOnUiThread(work) }
+            productionSurface().also { surfaceState.startArtistPhotoBackfill() }
+        }
         collectPlaybackServiceState()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
@@ -210,7 +208,6 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(surface.onlineSourcesEnabled())
             }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
-            val surfaceState: MobileSurfaceViewModel = viewModel()
             val libraryPlayback by remember { derivedStateOf { playbackState.value.libraryPlayback() } }
             val playbackProgress = remember { { playbackState.value.progressFraction } }
             val nowPlayingPlayback = remember { { playbackState.value } }
@@ -385,6 +382,13 @@ class MainActivity : ComponentActivity() {
             },
             setOnlineSourcesEnabled = { enabled ->
                 runCatching { library.setOnlineSourcesEnabled(enabled) }
+                    .onSuccess {
+                        if (enabled) {
+                            surfaceState.startArtistPhotoBackfill()
+                        } else {
+                            surfaceState.cancelArtistPhotoBackfill()
+                        }
+                    }
             },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
@@ -402,45 +406,6 @@ class MainActivity : ComponentActivity() {
         val destination = tab.toLibraryDestinationChoice() ?: return
         runCatching { library.setLibraryDestination(destination) }
             .onFailure { error -> Log.e(TAG, "Could not remember the library destination", error) }
-    }
-
-    private fun configureEdgeToEdge(darkPalette: Boolean) {
-        val transparent = SystemBarStyle.auto(
-            TRANSPARENT_SYSTEM_BAR,
-            TRANSPARENT_SYSTEM_BAR,
-        ) { darkPalette }
-        enableEdgeToEdge(
-            statusBarStyle = transparent,
-            navigationBarStyle = transparent,
-        )
-    }
-
-    @Suppress("DEPRECATION")
-    private fun setDockWindowMode(docked: Boolean) {
-        val keepScreenOn = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        if (docked) {
-            window.addFlags(keepScreenOn)
-        } else {
-            window.clearFlags(keepScreenOn)
-        }
-        WindowCompat.getInsetsController(window, window.decorView).run {
-            systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (docked) {
-                hide(WindowInsetsCompat.Type.systemBars())
-            } else {
-                show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-        // Robolectric exposes this legacy request while the compat controller
-        // above is the API the device follows. Keeping both also covers API 26.
-        window.decorView.systemUiVisibility = if (docked) {
-            View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        } else {
-            View.SYSTEM_UI_FLAG_VISIBLE
-        }
     }
 
     private fun restoreTheme(): MobileThemeSelection = runCatching {
@@ -482,6 +447,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!usesProductionSurface) return
+        Thread {
+            runCatching { session.autoScan() }
+                .onSuccess { state ->
+                    state?.let { runOnUiThread { surfaceState.updateLibraryState(it) } }
+                }
+                .onFailure { error -> Log.w(TAG, "Silent library scan failed", error) }
+        }.start()
     }
 
     override fun onPause() {
@@ -507,10 +480,10 @@ class MainActivity : ComponentActivity() {
         playbackControls.shutdown()
         // Compose disposal is not the release boundary: Android may destroy
         // the activity while dock mode is still the ViewModel's current mode.
-        // First, and before the library handle is closed below: a heart tap that
-        // is still queued has to reach the database it was written for, and a
-        // write arriving at a closed handle would be a crash rather than a lost
-        // rating.
+        // First, and before final ViewModel cleanup can close the retained
+        // library handle: a heart tap that is still queued has to reach the
+        // database it was written for, and a write arriving at a closed handle
+        // would be a crash rather than a lost rating.
         if (!ratings.shutdown()) {
             Log.w(TAG, "A rating was still being written when the screen closed")
         }
@@ -529,9 +502,6 @@ class MainActivity : ComponentActivity() {
         }
         if (artistPortraitPrefetchDelegate.isInitialized()) {
             artistPortraitPrefetchDelegate.value.shutdown()
-        }
-        if (libraryDelegate.isInitialized()) {
-            libraryDelegate.value.close()
         }
         super.onDestroy()
     }

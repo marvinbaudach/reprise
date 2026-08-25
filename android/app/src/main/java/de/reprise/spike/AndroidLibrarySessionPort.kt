@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.edit
 import uniffi.reprise_android_ffi.AlbumRow
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AlbumWindow as FfiAlbumWindow
@@ -17,11 +18,13 @@ import uniffi.reprise_android_ffi.WindowRange as FfiWindowRange
 
 private const val TAG = "RepriseScan"
 internal const val TREE_URI_PREFERENCE = "library_tree_uri"
+internal const val LAST_SCAN_COMPLETED_AT_PREFERENCE = "last_scan_completed_at_ms"
 
 internal class AndroidLibrarySessionPort(
     private val resolver: ContentResolver,
     private val preferences: SharedPreferences,
     private val library: MusicLibrary,
+    private val afterScan: () -> Unit = {},
 ) : LibrarySessionPort {
     override fun rememberedTreeUri(): String? =
         preferences.getString(TREE_URI_PREFERENCE, null)
@@ -65,6 +68,16 @@ internal class AndroidLibrarySessionPort(
             "Scan completed: added=${summary.added} updated=${summary.updated} " +
                 "errors=${summary.errors}",
         )
+        afterScan()
+    }
+
+    override fun lastScanCompletedAtMs(): Long =
+        preferences.getLong(LAST_SCAN_COMPLETED_AT_PREFERENCE, 0L)
+
+    override fun rememberScanCompletedAtMs(completedAtMs: Long) {
+        preferences.edit(commit = true) {
+            putLong(LAST_SCAN_COMPLETED_AT_PREFERENCE, completedAtMs)
+        }
     }
 
     override fun searchTracks(
