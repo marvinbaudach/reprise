@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import de.reprise.spike.BuildConfig
+import de.reprise.spike.ArtistPhotoProgress
 import de.reprise.spike.EqualizerCurvePoint
 import de.reprise.spike.MobileTheme
 import de.reprise.spike.MobileThemeSelection
@@ -25,6 +26,8 @@ internal fun SettingsNavigation(
     themeSelection: MobileThemeSelection,
     onlineSourcesEnabled: Boolean = false,
     setOnlineSourcesEnabled: (Boolean) -> Unit = {},
+    artistPhotoProgress: ArtistPhotoProgress? = null,
+    dismissArtistPhotoProgress: () -> Unit = {},
     close: () -> Unit,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
@@ -104,6 +107,8 @@ internal fun SettingsNavigation(
             OnlineSourcesSettingsPage(
                 enabled = onlineSourcesEnabled,
                 setEnabled = setOnlineSourcesEnabled,
+                progress = artistPhotoProgress,
+                dismissProgress = dismissArtistPhotoProgress,
                 back = { navController.navigateUp() },
             )
         }

@@ -1,6 +1,10 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use reprise_core::artist_portrait::{load_cached_from, verdict, PortraitOutcome};
+use reprise_core::artist_portrait::{
+    load_cached_from, verdict, PortraitBackfillListener as CorePortraitBackfillListener,
+    PortraitBackfillProgress, PortraitBackfillState, PortraitOutcome,
+};
 use reprise_core::cover::{self, CoverSource};
 use reprise_core::library::source::UnixLibrarySource;
 
@@ -126,13 +130,106 @@ impl MusicLibrary {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ArtistPortraitProgressUpdate {
+    pub run_id: u64,
+    pub state: ArtistPortraitProgressState,
+    pub done: u32,
+    pub failed: u32,
+    pub total: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ArtistPortraitProgressState {
+    Preparing,
+    Running,
+    Paused,
+    Complete,
+}
+
+impl From<PortraitBackfillState> for ArtistPortraitProgressState {
+    fn from(state: PortraitBackfillState) -> Self {
+        match state {
+            PortraitBackfillState::Preparing => Self::Preparing,
+            PortraitBackfillState::Running => Self::Running,
+            PortraitBackfillState::Paused => Self::Paused,
+            PortraitBackfillState::Complete => Self::Complete,
+        }
+    }
+}
+
+impl From<PortraitBackfillProgress> for ArtistPortraitProgressUpdate {
+    fn from(progress: PortraitBackfillProgress) -> Self {
+        Self {
+            run_id: progress.run_id,
+            state: ArtistPortraitProgressState::from(progress.state),
+            done: progress.done,
+            failed: progress.failed,
+            total: progress.total,
+        }
+    }
+}
+
+#[uniffi::export(callback_interface)]
+pub trait ArtistPortraitProgressListener: Send + Sync {
+    fn on_progress(&self, update: ArtistPortraitProgressUpdate);
+}
+
+#[uniffi::export]
+impl MusicLibrary {
+    pub fn artist_portrait_backfill_progress(&self) -> ArtistPortraitProgressUpdate {
+        self.portrait_backfill.progress().into()
+    }
+
+    pub fn start_artist_portrait_backfill(
+        &self,
+        listener: Box<dyn ArtistPortraitProgressListener>,
+    ) {
+        let allowed = match self.reader() {
+            Ok(reader) => reprise_core::online_sources::network_allowed_or_off(
+                &reader,
+                &reprise_core::modules::ARTWORK_MODULE,
+            ),
+            Err(error) => {
+                tracing::warn!(%error, "artist portrait backfill could not check its network gate");
+                false
+            }
+        };
+        if !allowed {
+            return;
+        }
+
+        let forward: Arc<CorePortraitBackfillListener> = Arc::new(move |progress| {
+            listener.on_progress(progress.into());
+        });
+        self.portrait_backfill.start(
+            self.database_path.clone(),
+            self.portrait_dir(),
+            Arc::clone(&self.portrait_fetch),
+            forward,
+        );
+    }
+
+    pub fn cancel_artist_portrait_backfill(&self) {
+        self.portrait_backfill.cancel();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Condvar, Mutex};
 
     use super::*;
     use crate::log_capture::CapturedLogs;
+
+    struct CapturingProgress(Arc<Mutex<Vec<ArtistPortraitProgressUpdate>>>);
+
+    impl ArtistPortraitProgressListener for CapturingProgress {
+        fn on_progress(&self, update: ArtistPortraitProgressUpdate) {
+            self.0.lock().unwrap().push(update);
+        }
+    }
 
     const TINY_IMAGE: &[u8] = &[
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
@@ -572,5 +669,123 @@ mod tests {
             vec!["Alpha", "Beta"]
         );
         assert_eq!(calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn backfill_receives_transport_errors_without_counting_or_marking_them() {
+        let directory = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            move |_, _| {
+                counted.fetch_add(1, Ordering::Relaxed);
+                Err(reprise_core::artist_portrait::PortraitError::InvalidResponse)
+            },
+        )
+        .unwrap();
+        scan_artists(directory.path(), &library, &["Offline band"]);
+        open_gate(&library);
+        let updates = Arc::new(Mutex::new(Vec::new()));
+
+        library.start_artist_portrait_backfill(Box::new(CapturingProgress(Arc::clone(&updates))));
+        for _ in 0..2_000 {
+            if library.artist_portrait_backfill_progress().state
+                == ArtistPortraitProgressState::Paused
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let progress = library.artist_portrait_backfill_progress();
+
+        assert_eq!(progress.state, ArtistPortraitProgressState::Paused);
+        assert_eq!((progress.done, progress.failed, progress.total), (0, 0, 1));
+        assert!(calls.load(Ordering::Relaxed) >= 3);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert_ne!(
+            reprise_core::artist_portrait::verdict(&library.portrait_dir(), "Offline band", now,),
+            reprise_core::artist_portrait::CacheVerdict::FreshNegative,
+        );
+        assert_eq!(
+            updates.lock().unwrap().first().map(|update| update.state),
+            Some(ArtistPortraitProgressState::Preparing),
+        );
+        library.cancel_artist_portrait_backfill();
+    }
+
+    #[test]
+    fn revoking_artwork_consent_stops_the_worker_before_the_next_artist() {
+        let directory = tempfile::tempdir().unwrap();
+        let entered = Arc::new((Mutex::new(false), Condvar::new()));
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        let fetch_entered = Arc::clone(&entered);
+        let fetch_release = Arc::clone(&release);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let library = MusicLibrary::open_with_portrait_fetch(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+            move |name, dir| {
+                counted.fetch_add(1, Ordering::Relaxed);
+                let (entered_lock, entered_wake) = &*fetch_entered;
+                *entered_lock.lock().unwrap() = true;
+                entered_wake.notify_all();
+                let (release_lock, release_wake) = &*fetch_release;
+                let mut open = release_lock.lock().unwrap();
+                while !*open {
+                    open = release_wake.wait(open).unwrap();
+                }
+                Ok(reprise_core::artist_portrait::PortraitOutcome::Found(
+                    store_portrait_fixture_in(dir, name),
+                ))
+            },
+        )
+        .unwrap();
+        scan_artists(directory.path(), &library, &["First", "Second"]);
+        open_gate(&library);
+        let updates = Arc::new(Mutex::new(Vec::new()));
+        library.start_artist_portrait_backfill(Box::new(CapturingProgress(updates)));
+        let (entered_lock, entered_wake) = &*entered;
+        let mut did_enter = entered_lock.lock().unwrap();
+        while !*did_enter {
+            did_enter = entered_wake.wait(did_enter).unwrap();
+        }
+        drop(did_enter);
+
+        {
+            let writer = library.writer().unwrap();
+            reprise_core::modules::set_enabled(
+                &writer,
+                &reprise_core::modules::ARTWORK_MODULE,
+                false,
+            )
+            .unwrap();
+        }
+        let (release_lock, release_wake) = &*release;
+        *release_lock.lock().unwrap() = true;
+        release_wake.notify_all();
+        for _ in 0..5_000 {
+            if library.artist_portrait_backfill_progress().run_id == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            library.artist_portrait_backfill_progress(),
+            ArtistPortraitProgressUpdate {
+                run_id: 0,
+                state: ArtistPortraitProgressState::Complete,
+                done: 0,
+                failed: 0,
+                total: 0,
+            }
+        );
     }
 }

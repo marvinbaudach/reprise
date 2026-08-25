@@ -102,6 +102,7 @@ impl MusicLibrary {
             cache_root: PathBuf::from(app_cache_directory),
             database_path: db_path,
             portrait_fetch,
+            portrait_backfill: reprise_core::artist_portrait::PortraitBackfill::new(),
         })
     }
 

@@ -514,6 +514,10 @@ internal fun BrowseScreen(
                     // for the distinction and for the third kind.
                     browseError?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
+                    ArtistPhotoProgressBar(
+                        progress = surfaceState.visibleArtistPhotoProgress,
+                        dismiss = surfaceState::dismissArtistPhotoProgress,
+                    )
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier
@@ -701,6 +705,8 @@ internal fun BrowseScreen(
                         themeSelection = themeSelection,
                         onlineSourcesEnabled = onlineSourcesEnabled,
                         setOnlineSourcesEnabled = setOnlineSourcesEnabled,
+                        artistPhotoProgress = surfaceState.visibleArtistPhotoProgress,
+                        dismissArtistPhotoProgress = surfaceState::dismissArtistPhotoProgress,
                         close = { surfaceState.showSettings(false) },
                         chooseFolder = chooseFolder,
                         rescan = rescan,

@@ -125,6 +125,17 @@ class MainActivityConfigurationTest {
     }
 
     @Test
+    fun playArtistUsesTheRetainedLibraryOnTheFakeSurfacePath() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+
+        compose.onNodeWithContentDescription("Play Artist 1").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Play Artist 1").assertIsDisplayed()
+    }
+
+    @Test
     fun filteredAlbumPaginationAndItsSearchSurviveRecreation() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-summary-search").performClick()

@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use reprise_core::artist_portrait::{PortraitError, PortraitOutcome};
+use reprise_core::artist_portrait::{PortraitBackfill, PortraitError, PortraitOutcome};
 use reprise_core::db::Db;
 use reprise_core::library::scanner::ScanProgress;
 
@@ -29,6 +29,7 @@ pub struct MusicLibrary {
     pub(crate) cache_root: PathBuf,
     pub(crate) database_path: PathBuf,
     pub(crate) portrait_fetch: Arc<PortraitFetch>,
+    pub(crate) portrait_backfill: PortraitBackfill,
 }
 
 impl MusicLibrary {

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+</helmet>
+
+<section style="background:#12141c; padding:56px 64px 40px; font-family:Inter, sans-serif; color:#e9e9ed">
+  <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:40px; max-width:640px">
+    <div style="font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#8f96a3">Runde 2 · gewählt: <a href="#1c" style="color:#b6acec">1c</a></div>
+    <div style="font-size:30px; font-weight:500; letter-spacing:-.01em">Leiste mit Balken — alle Zustände</div>
+    <div style="font-size:14px; line-height:1.6; color:#9aa1ad; text-wrap:pretty">Laufend, abgeschlossen und mit übersprungenen Künstlern. Die Leiste erscheint direkt nach dem Einschalten, auch bevor der erste Download antwortet, und verschwindet nach dem Abschluss von selbst.</div>
+  </div>
+
+  <div id="2a" style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start">
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="font-size:13px; color:#9aa1ad">Start — Anzahl noch unbekannt</div>
+      <div style="width:300px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8"><span>11:21</span><span style="color:#5bd6b4; font-weight:500">79</span></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px 8px">
+          <span style="font-size:13px; color:#a7aeb9">200 of 728 titles loaded</span>
+          <span style="font-size:13px; color:#8f96a3; letter-spacing:.24em">⌕ ⋮</span>
+        </div>
+        <div style="margin:0 12px 8px; background:#272d38; border:1px solid #333b48; border-radius:10px; padding:11px 12px; display:flex; flex-direction:column; gap:8px">
+          <div style="display:flex; align-items:baseline; gap:8px">
+            <span style="font-size:12px; color:#d3dae4; flex:1">Preparing artist photos</span>
+            <span style="font-size:13px; color:#8f96a3">×</span>
+          </div>
+          <div style="height:4px; border-radius:999px; background:#333b48; overflow:hidden"><div style="width:38%; height:4px; border-radius:999px; background:linear-gradient(90deg,#333b48,#5bd6b4,#333b48)"></div></div>
+        </div>
+        <sc-for list="{{ shortRows }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex; align-items:center; gap:11px; padding:9px 14px; border-bottom:1px solid #2a2e39">
+            <div style="width:38px; height:38px; border-radius:6px; background:linear-gradient(150deg,#3a4152,#262b36); flex:none"></div>
+            <div style="flex:1; min-width:0">
+              <div style="font-size:13px; color:#e9e9ed; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.t }}</div>
+              <div style="font-size:11px; color:#8f96a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.a }}</div>
+            </div>
+            <span style="font-size:13px; color:#9184d9">♥</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="font-size:13px; color:#9aa1ad">Laufend</div>
+      <div style="width:300px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8"><span>11:22</span><span style="color:#5bd6b4; font-weight:500">79</span></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px 8px">
+          <span style="font-size:13px; color:#a7aeb9">728 titles</span>
+          <span style="font-size:13px; color:#8f96a3; letter-spacing:.24em">⌕ ⋮</span>
+        </div>
+        <div style="margin:0 12px 8px; background:#272d38; border:1px solid #333b48; border-radius:10px; padding:11px 12px; display:flex; flex-direction:column; gap:8px">
+          <div style="display:flex; align-items:baseline; gap:8px">
+            <span style="font-size:12px; color:#d3dae4; flex:1">Downloading artist photos</span>
+            <span style="font-size:12px; color:#5bd6b4">128 / 412</span>
+            <span style="font-size:13px; color:#8f96a3">×</span>
+          </div>
+          <div style="height:4px; border-radius:999px; background:#333b48"><div style="width:31%; height:4px; border-radius:999px; background:#5bd6b4"></div></div>
+        </div>
+        <sc-for list="{{ shortRows }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex; align-items:center; gap:11px; padding:9px 14px; border-bottom:1px solid #2a2e39">
+            <div style="width:38px; height:38px; border-radius:6px; background:linear-gradient(150deg,#3a4152,#262b36); flex:none"></div>
+            <div style="flex:1; min-width:0">
+              <div style="font-size:13px; color:#e9e9ed; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.t }}</div>
+              <div style="font-size:11px; color:#8f96a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.a }}</div>
+            </div>
+            <span style="font-size:13px; color:#9184d9">♥</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="font-size:13px; color:#9aa1ad">Abgeschlossen — blendet aus</div>
+      <div style="width:300px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8"><span>11:26</span><span style="color:#5bd6b4; font-weight:500">80</span></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px 8px">
+          <span style="font-size:13px; color:#a7aeb9">728 titles</span>
+          <span style="font-size:13px; color:#8f96a3; letter-spacing:.24em">⌕ ⋮</span>
+        </div>
+        <div style="margin:0 12px 8px; background:#272d38; border:1px solid #333b48; border-radius:10px; padding:11px 12px; display:flex; flex-direction:column; gap:8px">
+          <div style="display:flex; align-items:baseline; gap:8px">
+            <span style="font-size:12px; color:#d3dae4; flex:1">Artist photos complete</span>
+            <span style="font-size:12px; color:#5bd6b4">412 / 412</span>
+            <span style="font-size:13px; color:#8f96a3">×</span>
+          </div>
+          <div style="height:4px; border-radius:999px; background:#333b48"><div style="width:100%; height:4px; border-radius:999px; background:#5bd6b4"></div></div>
+        </div>
+        <sc-for list="{{ shortRows }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex; align-items:center; gap:11px; padding:9px 14px; border-bottom:1px solid #2a2e39">
+            <div style="width:38px; height:38px; border-radius:6px; background:linear-gradient(150deg,#3a4152,#262b36); flex:none"></div>
+            <div style="flex:1; min-width:0">
+              <div style="font-size:13px; color:#e9e9ed; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.t }}</div>
+              <div style="font-size:11px; color:#8f96a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.a }}</div>
+            </div>
+            <span style="font-size:13px; color:#9184d9">♥</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="font-size:13px; color:#9aa1ad">Mit übersprungenen Künstlern</div>
+      <div style="width:300px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8"><span>11:26</span><span style="color:#5bd6b4; font-weight:500">80</span></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px 8px">
+          <span style="font-size:13px; color:#a7aeb9">728 titles</span>
+          <span style="font-size:13px; color:#8f96a3; letter-spacing:.24em">⌕ ⋮</span>
+        </div>
+        <div style="margin:0 12px 8px; background:#272d38; border:1px solid #333b48; border-radius:10px; padding:11px 12px; display:flex; flex-direction:column; gap:8px">
+          <div style="display:flex; align-items:baseline; gap:8px">
+            <span style="font-size:12px; color:#d3dae4; flex:1">Artist photos complete</span>
+            <span style="font-size:12px; color:#5bd6b4">397 / 412</span>
+            <span style="font-size:13px; color:#8f96a3">×</span>
+          </div>
+          <div style="height:4px; border-radius:999px; background:#333b48; display:flex"><div style="width:96%; height:4px; border-radius:999px 0 0 999px; background:#5bd6b4"></div><div style="flex:1; height:4px; border-radius:0 999px 999px 0; background:#9184d9"></div></div>
+          <div style="font-size:11px; color:#8f96a3">15 without a photo</div>
+        </div>
+        <sc-for list="{{ shortRows }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex; align-items:center; gap:11px; padding:9px 14px; border-bottom:1px solid #2a2e39">
+            <div style="width:38px; height:38px; border-radius:6px; background:linear-gradient(150deg,#3a4152,#262b36); flex:none"></div>
+            <div style="flex:1; min-width:0">
+              <div style="font-size:13px; color:#e9e9ed; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.t }}</div>
+              <div style="font-size:11px; color:#8f96a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.a }}</div>
+            </div>
+            <span style="font-size:13px; color:#9184d9">♥</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="background:#12141c; padding:56px 64px 80px; font-family:Inter, sans-serif; color:#e9e9ed; min-height:100%">
+  <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:40px; max-width:640px">
+    <div style="font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#8f96a3">Reprise Android · Runde 1</div>
+    <div style="font-size:30px; font-weight:500; letter-spacing:-.01em">Fortschritt beim Laden von Online-Inhalten</div>
+    <div style="font-size:14px; line-height:1.6; color:#9aa1ad; text-wrap:pretty">Drei Varianten, jeweils als Leiste unter der Kopfzeile der Titelliste und als Zustand auf „Online sources“. Zähler wie am Desktop, keine Steuerelemente außer Schließen.</div>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:56px; align-items:flex-start">
+
+    <div id="1a" style="display:flex; flex-direction:column; gap:16px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <span style="font-size:11px; font-weight:500; letter-spacing:.08em; padding:3px 8px; border:1px solid #9184d9; border-radius:6px; color:#b6acec">1a</span>
+        <span style="font-size:15px; font-weight:500">Aktivitäts-Chip</span>
+      </div>
+      <div style="font-size:13px; line-height:1.55; color:#9aa1ad; max-width:300px">Direkte Entsprechung zum Desktop: Linie über die volle Breite, darunter ein Chip mit Zähler und Schließen.</div>
+      <div style="display:flex; gap:24px; flex-wrap:wrap">
+
+        <div style="width:300px; height:640px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8">
+            <span>11:21</span><span style="color:#5bd6b4; font-weight:500">79</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px 8px">
+            <span style="font-size:13px; color:#a7aeb9">200 of 728 titles loaded</span>
+            <span style="font-size:13px; color:#8f96a3; letter-spacing:.24em">⌕ ⋮</span>
+          </div>
+          <div style="height:2px; background:#2b303c"><div style="width:31%; height:2px; background:#5bd6b4"></div></div>
+          <div style="padding:10px 12px 4px">
+            <div style="display:flex; align-items:center; gap:9px; background:#2a303c; border:1px solid #374050; border-radius:999px; padding:7px 10px">
+              <span style="width:14px; height:14px; border-radius:50%; border:2px solid #5bd6b4; border-top-color:transparent; display:inline-block"></span>
+              <span style="font-size:12px; color:#d3dae4; flex:1">Artist photos · 128 of 412</span>
+              <span style="font-size:13px; color:#8f96a3">×</span>
+            </div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; padding:4px 0 0">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex; align-items:center; gap:11px; padding:9px 14px; border-bottom:1px solid #2a2e39">
+                <div style="width:38px; height:38px; border-radius:6px; background:linear-gradient(150deg,#3a4152,#262b36); flex:none"></div>
+                <div style="flex:1; min-width:0">
+                  <div style="font-size:13px; color:#e9e9ed; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.t }}</div>
+                  <div style="font-size:11px; color:#8f96a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.a }}</div>
+                </div>
+                <span style="font-size:13px; color:#9184d9">♥</span>
+                <span style="font-size:10px; color:#8f96a3; width:26px; text-align:right">{{ r.d }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex; justify-content:space-around; padding:10px 0 14px; background:#1e212a; border-top:1px solid #2a2e39; font-size:10px; color:#8f96a3">
+            <span style="color:#cfd5df">Titles</span><span>Artists</span><span>Queue</span>
+          </div>
+        </div>
+
+        <div style="width:300px; height:640px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8">
+            <span>11:21</span><span style="color:#5bd6b4; font-weight:500">79</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; padding:16px 16px 20px; font-size:17px; color:#e9e9ed">
+            <span style="color:#a7aeb9">←</span><span>Online sources</span>
+          </div>
+          <div style="padding:0 16px; display:flex; flex-direction:column; gap:14px">
+            <div style="font-size:13px; color:#5bd6b4">Artist photos</div>
+            <div style="display:flex; align-items:flex-start; gap:14px">
+              <div style="flex:1">
+                <div style="font-size:15px; margin-bottom:3px">Download artist photos</div>
+                <div style="font-size:12px; color:#8f96a3; line-height:1.5">Fetch portraits after a library scan or restore.</div>
+              </div>
+              <div style="width:42px; height:24px; border-radius:999px; background:#5bd6b4; position:relative; flex:none">
+                <div style="position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; background:#1c3b36"></div>
+              </div>
+            </div>
+            <div style="height:2px; background:#2b303c; margin-top:4px"><div style="width:31%; height:2px; background:#5bd6b4"></div></div>
+            <div style="display:flex; align-items:center; gap:9px; background:#2a303c; border:1px solid #374050; border-radius:999px; padding:7px 10px">
+              <span style="width:14px; height:14px; border-radius:50%; border:2px solid #5bd6b4; border-top-color:transparent; display:inline-block"></span>
+              <span style="font-size:12px; color:#d3dae4; flex:1">Downloading · 128 of 412</span>
+              <span style="font-size:13px; color:#8f96a3">×</span>
+            </div>
+            <div style="font-size:12px; color:#8f96a3; line-height:1.55">Artist names in your library are sent to Deezer after a scan or restore. The app sends nothing else to the internet.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="1b" style="display:flex; flex-direction:column; gap:16px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <span style="font-size:11px; font-weight:500; letter-spacing:.08em; padding:3px 8px; border:1px solid #9184d9; border-radius:6px; color:#b6acec">1b</span>
+        <span style="font-size:15px; font-weight:500">Zweite Kopfzeile</span>
+      </div>
+      <div style="font-size:13px; line-height:1.55; color:#9aa1ad; max-width:300px">Kein zusätzliches Element: der Zähler steht als zweite Zeile neben dem Titel-Zähler, darunter eine Haarlinie.</div>
+      <div style="display:flex; gap:24px; flex-wrap:wrap">
+
+        <div style="width:300px; height:640px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8">
+            <span>11:21</span><span style="color:#5bd6b4; font-weight:500">79</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:10px 16px 9px">
+            <div style="display:flex; flex-direction:column; gap:3px">
+              <span style="font-size:13px; color:#a7aeb9">200 of 728 titles loaded</span>
+              <span style="font-size:11px; color:#5bd6b4">Artist photos 128 of 412</span>
+            </div>
+            <span style="font-size:13px; color:#8f96a3; letter-spacing:.24em">⌕ ⋮</span>
+          </div>
+          <div style="height:1px; background:#2b303c"><div style="width:31%; height:1px; background:#5bd6b4"></div></div>
+          <div style="flex:1; display:flex; flex-direction:column">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex; align-items:center; gap:11px; padding:9px 14px; border-bottom:1px solid #2a2e39">
+                <div style="width:38px; height:38px; border-radius:6px; background:linear-gradient(150deg,#3a4152,#262b36); flex:none"></div>
+                <div style="flex:1; min-width:0">
+                  <div style="font-size:13px; color:#e9e9ed; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.t }}</div>
+                  <div style="font-size:11px; color:#8f96a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.a }}</div>
+                </div>
+                <span style="font-size:13px; color:#9184d9">♥</span>
+                <span style="font-size:10px; color:#8f96a3; width:26px; text-align:right">{{ r.d }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex; justify-content:space-around; padding:10px 0 14px; background:#1e212a; border-top:1px solid #2a2e39; font-size:10px; color:#8f96a3">
+            <span style="color:#cfd5df">Titles</span><span>Artists</span><span>Queue</span>
+          </div>
+        </div>
+
+        <div style="width:300px; height:640px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8">
+            <span>11:21</span><span style="color:#5bd6b4; font-weight:500">79</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; padding:16px 16px 20px; font-size:17px; color:#e9e9ed">
+            <span style="color:#a7aeb9">←</span><span>Online sources</span>
+          </div>
+          <div style="padding:0 16px; display:flex; flex-direction:column; gap:14px">
+            <div style="display:flex; justify-content:space-between; align-items:baseline">
+              <span style="font-size:13px; color:#5bd6b4">Artist photos</span>
+              <span style="font-size:11px; color:#5bd6b4">128 of 412</span>
+            </div>
+            <div style="height:1px; background:#2b303c; margin-top:-6px"><div style="width:31%; height:1px; background:#5bd6b4"></div></div>
+            <div style="display:flex; align-items:flex-start; gap:14px">
+              <div style="flex:1">
+                <div style="font-size:15px; margin-bottom:3px">Download artist photos</div>
+                <div style="font-size:12px; color:#8f96a3; line-height:1.5">Fetch portraits after a library scan or restore.</div>
+              </div>
+              <div style="width:42px; height:24px; border-radius:999px; background:#5bd6b4; position:relative; flex:none">
+                <div style="position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; background:#1c3b36"></div>
+              </div>
+            </div>
+            <div style="font-size:12px; color:#8f96a3; line-height:1.55">Artist names in your library are sent to Deezer after a scan or restore. The app sends nothing else to the internet.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="1c" style="display:flex; flex-direction:column; gap:16px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <span style="font-size:11px; font-weight:500; letter-spacing:.08em; padding:3px 8px; border:1px solid #9184d9; border-radius:6px; color:#b6acec">1c</span>
+        <span style="font-size:15px; font-weight:500">Leiste mit Balken</span>
+      </div>
+      <div style="font-size:13px; line-height:1.55; color:#9aa1ad; max-width:300px">Eigene Leiste mit Beschriftung, Zähler und kräftigem Balken — am besten sichtbar, nimmt am meisten Platz.</div>
+      <div style="display:flex; gap:24px; flex-wrap:wrap">
+
+        <div style="width:300px; height:640px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8">
+            <span>11:21</span><span style="color:#5bd6b4; font-weight:500">79</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px 8px">
+            <span style="font-size:13px; color:#a7aeb9">200 of 728 titles loaded</span>
+            <span style="font-size:13px; color:#8f96a3; letter-spacing:.24em">⌕ ⋮</span>
+          </div>
+          <div style="margin:0 12px 8px; background:#272d38; border:1px solid #333b48; border-radius:10px; padding:11px 12px; display:flex; flex-direction:column; gap:8px">
+            <div style="display:flex; align-items:baseline; gap:8px">
+              <span style="font-size:12px; color:#d3dae4; flex:1">Downloading artist photos</span>
+              <span style="font-size:12px; color:#5bd6b4">128 / 412</span>
+              <span style="font-size:13px; color:#8f96a3">×</span>
+            </div>
+            <div style="height:4px; border-radius:999px; background:#333b48"><div style="width:31%; height:4px; border-radius:999px; background:#5bd6b4"></div></div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex; align-items:center; gap:11px; padding:9px 14px; border-bottom:1px solid #2a2e39">
+                <div style="width:38px; height:38px; border-radius:6px; background:linear-gradient(150deg,#3a4152,#262b36); flex:none"></div>
+                <div style="flex:1; min-width:0">
+                  <div style="font-size:13px; color:#e9e9ed; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.t }}</div>
+                  <div style="font-size:11px; color:#8f96a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ r.a }}</div>
+                </div>
+                <span style="font-size:13px; color:#9184d9">♥</span>
+                <span style="font-size:10px; color:#8f96a3; width:26px; text-align:right">{{ r.d }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex; justify-content:space-around; padding:10px 0 14px; background:#1e212a; border-top:1px solid #2a2e39; font-size:10px; color:#8f96a3">
+            <span style="color:#cfd5df">Titles</span><span>Artists</span><span>Queue</span>
+          </div>
+        </div>
+
+        <div style="width:300px; height:640px; background:#22252e; border:1px solid #313644; border-radius:26px; overflow:hidden; display:flex; flex-direction:column">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px 6px; font-size:11px; color:#c9ced8">
+            <span>11:21</span><span style="color:#5bd6b4; font-weight:500">79</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; padding:16px 16px 20px; font-size:17px; color:#e9e9ed">
+            <span style="color:#a7aeb9">←</span><span>Online sources</span>
+          </div>
+          <div style="padding:0 16px; display:flex; flex-direction:column; gap:16px">
+            <div style="font-size:13px; color:#5bd6b4">Artist photos</div>
+            <div style="display:flex; align-items:flex-start; gap:14px">
+              <div style="flex:1">
+                <div style="font-size:15px; margin-bottom:3px">Download artist photos</div>
+                <div style="font-size:12px; color:#8f96a3; line-height:1.5">Fetch portraits after a library scan or restore.</div>
+              </div>
+              <div style="width:42px; height:24px; border-radius:999px; background:#5bd6b4; position:relative; flex:none">
+                <div style="position:absolute; top:3px; right:3px; width:18px; height:18px; border-radius:50%; background:#1c3b36"></div>
+              </div>
+            </div>
+            <div style="background:#272d38; border:1px solid #333b48; border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:9px">
+              <div style="display:flex; align-items:baseline; gap:8px">
+                <span style="font-size:12px; color:#d3dae4; flex:1">Downloading portraits</span>
+                <span style="font-size:12px; color:#5bd6b4">128 / 412</span>
+              </div>
+              <div style="height:4px; border-radius:999px; background:#333b48"><div style="width:31%; height:4px; border-radius:999px; background:#5bd6b4"></div></div>
+              <div style="font-size:11px; color:#8f96a3">Continues in the background</div>
+            </div>
+            <div style="font-size:12px; color:#8f96a3; line-height:1.55">Artist names in your library are sent to Deezer after a scan or restore. The app sends nothing else to the internet.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const rows = [
+      { t: "(I Used to Make Out With) …", a: "Bring Me the Horizon • Count Y…", d: "6:05" },
+      { t: "(In)Human Scum", a: "Distant • Heritage: Absolute De…", d: "3:34" },
+      { t: "(Not) Enough", a: "Fight The Fade • APOPHYSITIS", d: "4:22" },
+      { t: "29", a: "Gone Cold • Misery In Hindsight", d: "2:20" }
+    ];
+    return {
+      shortRows: rows,
+      rows: [
+        { t: "(I Used to Make Out With) …", a: "Bring Me the Horizon • Count Y…", d: "6:05" },
+        { t: "(In)Human Scum", a: "Distant • Heritage: Absolute De…", d: "3:34" },
+        { t: "(Not) Enough", a: "Fight The Fade • APOPHYSITIS", d: "4:22" },
+        { t: "29", a: "Gone Cold • Misery In Hindsight", d: "2:20" },
+        { t: "2nd Sucks", a: "A Day to Remember • What Sep…", d: "2:27" },
+        { t: "9:30am", a: "Chelsea Grin • Eternal Nightmare", d: "2:36" },
+        { t: "[&] Delinquents", a: "Woe, Is Me • Number[s] (Delux…", d: "2:57" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

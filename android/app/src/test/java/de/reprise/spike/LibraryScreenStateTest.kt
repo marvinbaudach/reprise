@@ -2,8 +2,12 @@ package de.reprise.spike
 
 import androidx.media3.common.Player
 import java.lang.reflect.Proxy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.reprise_android_ffi.AndroidArtworkSize
@@ -354,6 +358,127 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
 }
 
 @Test
+fun automaticScanIsSilentAndRefreshesAfterFiveMinutes() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = listOf(testTrack()),
+        lastScanCompletedAtMs = 1_000L,
+    )
+    val session = LibrarySession(port, nowMillis = { 301_000L })
+
+    val state = session.autoScan()
+
+    assertEquals(1, port.scanCalls)
+    assertEquals(301_000L, port.lastScanCompletedAtMs())
+    assertEquals(1, (state as LibraryScreenState.Browse).titles.total)
+}
+
+@Test
+fun automaticScanDoesNothingInsideTheFiveMinuteWindow() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = listOf(testTrack()),
+        lastScanCompletedAtMs = 2_000L,
+    )
+    val session = LibrarySession(port, nowMillis = { 301_999L })
+
+    assertEquals(null, session.autoScan())
+    assertEquals(0, port.scanCalls)
+}
+
+@Test
+fun automaticScanDoesNothingWhenTheClockMovesBehindTheSavedTime() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = emptyList(),
+        lastScanCompletedAtMs = 500_000L,
+    )
+
+    assertEquals(null, LibrarySession(port, nowMillis = { 400_000L }).autoScan())
+    assertEquals(0, port.scanCalls)
+}
+
+@Test
+fun replacementSessionsCannotOverlapAnAutomaticScan() {
+    val firstScanEntered = CountDownLatch(1)
+    val releaseFirstScan = CountDownLatch(1)
+    val inFlight = AtomicInteger()
+    val maximumInFlight = AtomicInteger()
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = emptyList(),
+        scanAction = {
+            val current = inFlight.incrementAndGet()
+            maximumInFlight.accumulateAndGet(current, ::maxOf)
+            firstScanEntered.countDown()
+            releaseFirstScan.await(2, TimeUnit.SECONDS)
+            inFlight.decrementAndGet()
+        },
+    )
+    val retainedState = MobileSurfaceViewModel()
+    val firstSession = LibrarySession(
+        port,
+        nowMillis = { 301_000L },
+        scanMonitor = retainedState.libraryScanMonitor,
+    )
+    val replacementSession = LibrarySession(
+        port,
+        nowMillis = { 301_001L },
+        scanMonitor = retainedState.libraryScanMonitor,
+    )
+    val firstWorker = Thread { firstSession.autoScan() }
+    val replacementWorker = Thread { replacementSession.autoScan() }
+
+    firstWorker.start()
+    assertTrue(firstScanEntered.await(1, TimeUnit.SECONDS))
+    replacementWorker.start()
+    val overlapDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+    while (maximumInFlight.get() < 2 && System.nanoTime() < overlapDeadline) {
+        Thread.yield()
+    }
+    releaseFirstScan.countDown()
+    firstWorker.join(2_000)
+    replacementWorker.join(2_000)
+
+    assertEquals(1, maximumInFlight.get())
+    assertEquals(1, port.scanCalls)
+}
+
+@Test
+fun failedAutomaticScanStartsTheSameCooldownAsACompletedScan() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = emptyList(),
+        scanAction = { throw IllegalStateException("scan failed") },
+    )
+    val session = LibrarySession(port, nowMillis = { 301_000L })
+
+    assertThrows(IllegalStateException::class.java) { session.autoScan() }
+
+    assertEquals(301_000L, port.lastScanCompletedAtMs())
+    assertEquals(null, LibrarySession(port, nowMillis = { 301_001L }).autoScan())
+    assertEquals(1, port.scanCalls)
+}
+
+@Test
+fun manualScanPersistsItsCompletionTime() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = emptyList(),
+    )
+
+    LibrarySession(port, nowMillis = { 42_000L }).rescan { }
+
+    assertEquals(42_000L, port.lastScanCompletedAtMs())
+}
+
+@Test
 fun artistAlbumWindowsDelegateTheLiteralArtistAndWindow() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = null,
@@ -424,12 +549,17 @@ private class RecordingLibrarySessionPort(
     private val readable: Boolean,
     private val tracks: List<LibraryTrack>,
     private val artistTracks: List<LibraryTrack> = emptyList(),
+    lastScanCompletedAtMs: Long = 0L,
+    private val scanAction: () -> Unit = {},
 ) : LibrarySessionPort {
     private var remembered = rememberedTreeUri
+    private var lastScanCompleted = lastScanCompletedAtMs
     val configuredUris = mutableListOf<String>()
     val operations = mutableListOf<String>()
     var listCalls = 0
-    var scanCalls = 0
+    private val scanCallCount = AtomicInteger()
+    val scanCalls: Int
+        get() = scanCallCount.get()
 
     override fun rememberedTreeUri(): String? = remembered
 
@@ -454,7 +584,14 @@ private class RecordingLibrarySessionPort(
 
     override fun scan(report: (LibraryScreenState.Scanning) -> Unit) {
         operations += "scan"
-        scanCalls += 1
+        scanCallCount.incrementAndGet()
+        scanAction()
+    }
+
+    override fun lastScanCompletedAtMs(): Long = lastScanCompleted
+
+    override fun rememberScanCompletedAtMs(completedAtMs: Long) {
+        lastScanCompleted = completedAtMs
     }
 
     override fun searchTracks(
