@@ -267,8 +267,8 @@ fn scroll_to_anchor(
         .collect::<Vec<_>>();
     // `Some` means the layout is settled. An offset-preserving restore asks
     // GTK to keep the last visible row in view; a centered reveal instead
-    // gives GTK the row edge nearest the arithmetic centre, so its allocation
-    // replay reproduces the value already written by `apply`.
+    // gives GTK the row edge nearest the arithmetic centre, so GTK's realized
+    // row edge owns the single viewport landing.
     let guard_position = if let Some(layout) = applied_layout {
         let page = shared
             .column_view
@@ -322,13 +322,31 @@ fn scroll_to_anchor(
     let adoption = shared.column_view.vadjustment().and_then(|adjustment| {
         crate::ui::scroll_probe::probe_scroll_to(path.scroll_probe(), &adjustment, guard_position);
         let before = adjustment.value();
-        let mut geometry = adoption_geometry?;
-        geometry.before = before;
         let hold_lifetime = Rc::new(hold.cloned()?);
         let weak_hold = Rc::downgrade(&hold_lifetime);
         let handler = Rc::new(RefCell::new(None));
         let callback_handler = handler.clone();
         let writer = path.scroll_probe();
+        if matches!(request.placement, AnchorPlacement::Center) {
+            let id = adjustment.connect_value_changed(move |changed| {
+                crate::ui::scroll_probe::probe_value_change(writer, changed, before);
+                let Some(hold) = weak_hold.upgrade() else {
+                    return;
+                };
+                let handler = callback_handler.borrow_mut().take();
+                if let Some(handler) = handler {
+                    changed.disconnect(handler);
+                }
+                // Centering deliberately lets GTK's realized row edge own
+                // the only landing. Once that edge arrives, the reload hold
+                // protects it rather than the provisional arithmetic target.
+                hold.set_target(changed.value());
+            });
+            handler.borrow_mut().replace(id);
+            return Some((adjustment, handler, hold_lifetime));
+        }
+        let mut geometry = adoption_geometry?;
+        geometry.before = before;
         let id = adjustment.connect_value_changed(move |changed| {
             crate::ui::scroll_probe::probe_value_change(writer, changed, before);
             if !geometry.matches(
@@ -589,13 +607,19 @@ fn apply(
     }
     let provisional_sectioned_refinement =
         !matches!(attempt.path, RestorePath::Initial) && n_sections > 0;
-    if !provisional_sectioned_refinement {
+    if !provisional_sectioned_refinement
+        && matches!(attempt.placement, AnchorPlacement::PreserveOffset)
+    {
         set_hold_target(hold, &adjustment, target, attempt.path);
     }
     if !crate::ui::scroll_probe::preseed_suppressed() {
+        let seed_target = match attempt.placement {
+            AnchorPlacement::PreserveOffset => target,
+            AnchorPlacement::Center => adjustment.value(),
+        };
         geometry.configure(
             &adjustment,
-            target,
+            seed_target,
             &shared.conn,
             &shared.list_geometry_cache,
             current_ids.len(),
@@ -606,7 +630,9 @@ fn apply(
     if !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections) {
         return ApplyResult::Pending;
     }
-    if provisional_sectioned_refinement {
+    if provisional_sectioned_refinement
+        && matches!(attempt.placement, AnchorPlacement::PreserveOffset)
+    {
         // The row-only target is provisional while section geometry settles.
         // Deferring this write until after the settled check makes an early
         // return leave the existing hold target alone; settled refinements
@@ -620,12 +646,14 @@ fn apply(
         current_ids.len(),
         n_sections,
     );
-    crate::ui::scroll_probe::probe(attempt.path.apply_probe(), &adjustment, target);
-    debug_assert!(
-        !crate::ui::list_geometry_changed::in_changed_emission(),
-        "scroll anchor written from inside a changed emission"
-    );
-    adjustment.set_value(target);
+    if matches!(attempt.placement, AnchorPlacement::PreserveOffset) {
+        crate::ui::scroll_probe::probe(attempt.path.apply_probe(), &adjustment, target);
+        debug_assert!(
+            !crate::ui::list_geometry_changed::in_changed_emission(),
+            "scroll anchor written from inside a changed emission"
+        );
+        adjustment.set_value(target);
+    }
     ApplyResult::Applied(layout)
 }
 
