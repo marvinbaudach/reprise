@@ -32,6 +32,7 @@ EOF
   exit 2
 }
 
+# shellcheck disable=SC2329 # Called indirectly by the EXIT trap below.
 cleanup() {
   adb shell rm -f "$REMOTE_VIDEO" >/dev/null 2>&1 || true
   if ((stayon_changed)); then
