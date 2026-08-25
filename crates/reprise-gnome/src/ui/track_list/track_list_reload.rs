@@ -680,9 +680,7 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
     // on the `header->widget == NULL` assertion in gtklistitemmanager.c.
     diagnostic_trail::measure_reload_step(ReloadStep::QueueHeader, || {
         super::queue_sections::apply_queue_header_factory(shared, is_queue);
-        if is_queue {
-            super::track_list_geometry::schedule_section_measurement(shared);
-        }
+        super::track_list_geometry::schedule_section_measurement(shared);
     });
 
     // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_

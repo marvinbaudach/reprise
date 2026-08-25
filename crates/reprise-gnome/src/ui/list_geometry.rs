@@ -152,6 +152,31 @@ pub(in crate::ui) fn settled_row_height(
         .then_some(widget_height)
 }
 
+/// Returns a realized row height that cleanly disproves the adjustment's
+/// per-row quotient.
+///
+/// This is deliberately asymmetric: only a uniform widget measurement above
+/// the CSS floor can replace remembered geometry. Mixed allocations and a
+/// measurement at or below the floor remain no information, because they may
+/// describe recycled or merely minimum-sized rows rather than settled content.
+fn contradicting_row_height(
+    upper: f64,
+    n_rows: usize,
+    measurement: RowMeasurement,
+    minimum: RowHeight,
+) -> Option<RowHeight> {
+    if n_rows == 0 || !upper.is_finite() || upper <= 0.0 || !measurement.is_uniform() {
+        return None;
+    }
+    let widget_height = measurement.modal()?;
+    if widget_height.pixels() <= minimum.pixels() {
+        return None;
+    }
+    let adjustment_height = upper * (n_rows as f64).recip();
+    ((adjustment_height - widget_height.pixels()).abs() >= ROW_HEIGHT_AGREEMENT_EPSILON)
+        .then_some(widget_height)
+}
+
 pub(in crate::ui) fn settled_content_row_height(
     upper: f64,
     n_rows: usize,
@@ -230,6 +255,13 @@ fn preseed_upper(
 pub(in crate::ui) struct ListGeometryCache {
     row_height: Cell<f64>,
     section_header_height: Cell<f64>,
+}
+
+#[cfg(test)]
+impl ListGeometryCache {
+    pub(in crate::ui) fn seed_measured_row_height(&self, height: f64) {
+        self.row_height.set(height);
+    }
 }
 
 /// The one cache-then-persistence load, shared by row and section-header
@@ -380,14 +412,28 @@ impl ListGeometry {
         n_rows: usize,
         n_sections: usize,
     ) -> bool {
+        let row_measurement = self.measurement();
         let header_measurement = self.section_header_measurement();
-        let Some(height) = settled_content_row_height(
+        let settled = settled_content_row_height(
             upper,
             n_rows,
             n_sections,
-            self.measurement(),
+            row_measurement,
             header_measurement,
-        ) else {
+        );
+        let height = settled.or_else(|| {
+            (n_sections == 0)
+                .then(|| {
+                    contradicting_row_height(
+                        upper,
+                        n_rows,
+                        row_measurement,
+                        self.minimum_row_height(),
+                    )
+                })
+                .flatten()
+        });
+        let Some(height) = height else {
             return false;
         };
         if n_sections == 0 {
@@ -517,6 +563,48 @@ mod tests {
             RowHeight::new(34.0)
         );
         assert!(is_settled(2_276.0 * 34.0 + 0.25, 2_276, measurement));
+    }
+
+    #[test]
+    fn uniform_widget_measurement_can_contradict_seeded_upper() {
+        let minimum = RowHeight::new(28.0).unwrap();
+
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([34, 34, 34]),
+                minimum,
+            ),
+            RowHeight::new(34.0)
+        );
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([34, 35, 34]),
+                minimum,
+            ),
+            None
+        );
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([28, 28, 28]),
+                minimum,
+            ),
+            None
+        );
+        assert_eq!(
+            contradicting_row_height(
+                100.0 * 53.0,
+                100,
+                RowMeasurement::from_widget_heights([27, 27, 27]),
+                minimum,
+            ),
+            None
+        );
     }
 
     #[test]

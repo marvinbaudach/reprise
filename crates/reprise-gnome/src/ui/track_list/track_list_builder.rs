@@ -217,6 +217,7 @@ pub(in crate::ui) fn build(
                 shared
                     .last_scroll_activity
                     .set(Some(std::time::Instant::now()));
+                shared.scroll_glide.clear_deliberate_destination();
             }
             gtk4::glib::Propagation::Proceed
         });
@@ -231,6 +232,7 @@ pub(in crate::ui) fn build(
                 shared
                     .last_scroll_activity
                     .set(Some(std::time::Instant::now()));
+                shared.scroll_glide.clear_deliberate_destination();
             }
         });
         scrolled.vscrollbar().add_controller(scrollbar_drag);
