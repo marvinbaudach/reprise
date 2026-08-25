@@ -2,8 +2,8 @@
 slug: android-artist-photo-backfill-progress
 worktree: /home/marvin/Projects/reprise-android-artist-photo-backfill-progress
 branch: feature/android-artist-photo-backfill-progress
-phase: planned
-codex_session:
+phase: coded
+codex_session: 01a03883-85cd-7292-bc17-6b9112f3a344
 created: 2026-08-25
 ---
 # Künstlerfotos nachladen — und den Lauf sichtbar machen (Android)
