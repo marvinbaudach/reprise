@@ -111,6 +111,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.71" date="2026-08-25" type="stable">
+      <description>
+        <p>Replaces the equalizer sliders with named profiles, makes track sorting reachable from the keyboard, steadies the library while it scrolls, and adds multi-selection and reversible hiding to new releases.</p>
+        <p xml:lang="de">Ersetzt die Equalizer-Regler durch benannte Profile, macht die Titelsortierung per Tastatur erreichbar, beruhigt die Bibliothek beim Blättern und ergänzt Mehrfachauswahl und rücknehmbares Ausblenden bei neuen Veröffentlichungen.</p>
+      </description>
+    </release>
     <release version="0.1.45" date="2026-08-21" type="stable">
       <description>
         <p>Adds podcasts, YouTube and radio sources, concert and release discovery, device sync, library repair, tag editing, lyrics, listening statistics, richer artwork and Now Playing visuals, plus CLI and MCP access.</p>
