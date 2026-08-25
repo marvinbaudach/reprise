@@ -118,7 +118,7 @@ rg --quiet 'uses: actions/setup-node@v7' "$workflow" || \
     fail "the base source-quality job must install the pinned Node generation"
 rg --quiet 'node-version: "26\.7\.0"' "$workflow" || \
     fail "the base source-quality job must use the project Node Current pin"
-rg --quiet 'uses: astral-sh/setup-uv@v7\.6\.0' "$workflow" || \
+rg --quiet 'uses: astral-sh/setup-uv@v10\.0\.1' "$workflow" || \
     fail "the base source-quality job must install uv through the pinned action"
 rg --quiet 'version: "0\.12\.3"' "$workflow" || \
     fail "the base source-quality job must use the verified uv pin"
@@ -127,7 +127,7 @@ rg --quiet 'uses: actions/setup-node@v7' <<<"$core_workflow" || \
     fail "the Core suite must install the pinned Node generation before the complete gate"
 rg --quiet 'node-version: "26\.7\.0"' <<<"$core_workflow" || \
     fail "the Core suite must use the project Node Current pin"
-rg --quiet 'uses: astral-sh/setup-uv@v7\.6\.0' <<<"$core_workflow" || \
+rg --quiet 'uses: astral-sh/setup-uv@v10\.0\.1' <<<"$core_workflow" || \
     fail "the Core suite must install uv through the pinned action"
 rg --quiet 'version: "0\.12\.3"' <<<"$core_workflow" || \
     fail "the Core suite must use the verified uv pin"
