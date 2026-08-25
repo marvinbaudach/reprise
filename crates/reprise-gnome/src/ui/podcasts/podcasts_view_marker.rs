@@ -30,7 +30,7 @@ impl PodcastsView {
 
     pub(super) fn install_reveal_tracking(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        self.scroller.vadjustment().connect_value_changed(move |_| {
+        source_reveal::install_scroll_activity_tracking(&self.scroller, move || {
             if let Some(view) = weak.upgrade() {
                 view.last_scroll_activity
                     .set(Some(std::time::Instant::now()));
