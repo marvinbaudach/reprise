@@ -252,3 +252,16 @@ printf 'Evidence: %s\n' "$evidence_dir"
 printf 'Track: %s\n' "$track_start"
 printf 'Crop: %s\n' "$crop"
 cat "$analysis_file"
+
+threshold_verdict=''
+while IFS='=' read -r key value; do
+  if [[ $key == threshold_verdict ]]; then
+    threshold_verdict=$value
+  fi
+done < "$analysis_file"
+
+case $threshold_verdict in
+  PASS) exit 0 ;;
+  FAIL) exit 1 ;;
+  *) fail "the threshold verdict is missing or invalid in $analysis_file" ;;
+esac
