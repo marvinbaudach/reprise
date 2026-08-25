@@ -220,6 +220,15 @@ fn apply_restored_scroll(shared: &Shared, anchor: Option<(i64, f64)>, current_id
     else {
         return false;
     };
+    if super::restore_intent::deliberate_destination_outranks(
+        shared,
+        &adjustment,
+        layout.row_height(),
+        "view_state_restore",
+        target,
+    ) {
+        return true;
+    }
     crate::ui::scroll_probe::probe("view_state_restore", &adjustment, target);
     debug_assert!(
         !crate::ui::list_geometry_changed::in_changed_emission(),

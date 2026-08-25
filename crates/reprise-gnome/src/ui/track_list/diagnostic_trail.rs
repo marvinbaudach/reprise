@@ -241,6 +241,11 @@ pub(crate) enum Event {
         upper: f64,
         page: f64,
     },
+    ScrollRestoreStandDown {
+        writer: String,
+        destination: f64,
+        rejected: f64,
+    },
     RowLoss {
         n_items: u32,
     },
@@ -390,6 +395,16 @@ impl Event {
             } => (
                 "ScrollJump",
                 format!("from={from:.2} to={to:.2} upper={upper:.2} page={page:.2}"),
+            ),
+            Self::ScrollRestoreStandDown {
+                writer,
+                destination,
+                rejected,
+            } => (
+                "ScrollRestoreStandDown",
+                format!(
+                    "writer={writer} destination={destination:.2} rejected={rejected:.2}"
+                ),
             ),
             Self::RowLoss { n_items } => ("RowLoss", format!("n_items={n_items}")),
             Self::RowLossRecovered { after_ms, rows } => (

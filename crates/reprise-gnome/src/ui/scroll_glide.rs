@@ -35,6 +35,7 @@ struct ScrollGlideInner {
     widget: gtk4::glib::WeakRef<gtk4::Widget>,
     animation: RefCell<Option<adw::TimedAnimation>>,
     last_written: Cell<f64>,
+    deliberate_destination: Cell<Option<f64>>,
     generation: Cell<u64>,
 }
 
@@ -47,6 +48,7 @@ impl ScrollGlide {
                 widget: weak,
                 animation: RefCell::new(None),
                 last_written: Cell::new(0.0),
+                deliberate_destination: Cell::new(None),
                 generation: Cell::new(0),
             }),
         }
@@ -64,6 +66,19 @@ impl ScrollGlide {
             .map(adw::TimedAnimation::value_to)
     }
 
+    /// The last destination this glide deliberately placed, including an
+    /// already-finished animation or an instant jump. Restore writers use it
+    /// to avoid overruling a reveal that has already reached the viewport.
+    pub(in crate::ui) fn deliberate_destination(&self) -> Option<f64> {
+        self.inner.deliberate_destination.get()
+    }
+
+    /// Releases a deliberate destination when direct user input takes
+    /// ownership of the viewport.
+    pub(in crate::ui) fn clear_deliberate_destination(&self) {
+        self.inner.deliberate_destination.set(None);
+    }
+
     /// Puts the viewport at `target` in a single step, ending any glide in
     /// flight first.
     ///
@@ -78,7 +93,9 @@ impl ScrollGlide {
         cancel_animation(&self.inner);
         crate::ui::scroll_probe::probe(writer, adjustment, target);
         adjustment.set_value(target);
-        self.inner.last_written.set(adjustment.value());
+        let written = adjustment.value();
+        self.inner.last_written.set(written);
+        self.inner.deliberate_destination.set(Some(written));
     }
 
     pub(in crate::ui) fn glide_to(&self, adjustment: &gtk4::Adjustment, target: f64) {
@@ -88,19 +105,24 @@ impl ScrollGlide {
             cancel_animation(&self.inner);
             crate::ui::scroll_probe::probe("glide.no_widget", adjustment, target);
             adjustment.set_value(target);
-            self.inner.last_written.set(adjustment.value());
+            let written = adjustment.value();
+            self.inner.last_written.set(written);
+            self.inner.deliberate_destination.set(Some(written));
             return;
         };
         if !motion::animations_enabled() || !should_glide(distance, adjustment.page_size()) {
             cancel_animation(&self.inner);
             crate::ui::scroll_probe::probe("glide.instant", adjustment, target);
             adjustment.set_value(target);
-            self.inner.last_written.set(adjustment.value());
+            let written = adjustment.value();
+            self.inner.last_written.set(written);
+            self.inner.deliberate_destination.set(Some(written));
             return;
         }
 
         let generation = next_generation(&self.inner);
         self.inner.last_written.set(current);
+        self.inner.deliberate_destination.set(Some(target));
         let inner = self.inner.clone();
         let adjustment_for_target = adjustment.clone();
         let animation_target = adw::CallbackAnimationTarget::new(move |value| {
@@ -108,6 +130,7 @@ impl ScrollGlide {
                 return;
             }
             if foreign_write(inner.last_written.get(), adjustment_for_target.value()) {
+                inner.deliberate_destination.set(None);
                 abort_generation(&inner, generation);
                 return;
             }
@@ -136,6 +159,7 @@ impl ScrollGlide {
                 return;
             }
             if foreign_write(inner.last_written.get(), adjustment_for_done.value()) {
+                inner.deliberate_destination.set(None);
                 abort_generation(&inner, generation);
                 return;
             }
@@ -145,6 +169,7 @@ impl ScrollGlide {
                 return;
             }
             inner.last_written.set(target);
+            inner.deliberate_destination.set(Some(target));
             inner.animation.borrow_mut().take();
         });
         motion::replace_animation(&self.inner.animation, animation.clone());
