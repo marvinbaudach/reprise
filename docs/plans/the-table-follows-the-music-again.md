@@ -150,3 +150,78 @@ larger surface arrives.
 3. The full display suite, once. Both strands change scroll behaviour the
    suite covers, and the interesting failure is the one needing both
    changes present.
+
+## Post-merge cross-check results — 2026-08-25
+
+Both strands are on `dev`: A as `7c3dfcc10a` (#693), B as `8bd2d23930` (#694).
+
+### 1. The closing manual check — still owed
+
+Play a track, scroll away, click the player-bar title, watch the view stay on
+the track. Not yet performed: it is a look, and the automated substitutes
+available on this machine cannot stand in for it. cua-driver runs its X11 path
+on this Wayland session and does not see the Reprise window at all; reading
+AT-SPI directly does return the tree, but every element reports extents `0,0`,
+so "the viewport stayed" cannot be measured from it, only asserted. An Xvfb
+re-enactment would be a third automated arm over the five acceptance tests and
+the five nav-back tests that already cover this path, on a harness with a
+documented false-positive record for GTK4.
+
+The nearest measured evidence is check 3 below.
+
+### 2. The 1.5-second scroll grace — the two policies agree, deliberately
+
+| | |
+|---|---|
+| `current_track_selection.rs:30` | `USER_SCROLL_GRACE = 1_500 ms` |
+| `source_reveal.rs:46` | `USER_SCROLL_GRACE = 1_500 ms` |
+
+`source_reveal.rs:45` names the sibling constant in its doc comment and tags it
+`NAV-10b`, so the agreement is written down as intended, not incidental. These
+are the only two definitions in the workspace.
+
+**One weakness worth a follow-up.** The agreement is documented but not
+enforced. `source_reveal.rs:233` asserts against the literal `1_500`, not
+against `current_track_selection::USER_SCROLL_GRACE`, so changing one side
+leaves the suite green. The constants also sit in different visibility scopes
+(`pub(super)` against `pub(in crate::ui)`), so the track list's value is not
+reachable from `source_reveal` as it stands.
+
+### 3. The full display suite with both strands present — green
+
+The `dev` CI run over B's merge commit `8bd2d23930` (run `32892115796`, job
+`GNOME quality suite`):
+
+```
+== display test: … ==   812 display tests executed
+test result: ok         0 failed
+skipped: 3 measurement tool(s), not display tests
+```
+
+All five nav-back tests that strand A's first cut had turned red are in that
+run and green with both strands present:
+
+```
+nav_back_lands_on_the_anchored_row
+nav_back_lands_on_the_anchored_row_in_the_full_journey
+nav_back_lands_on_the_anchored_row_when_the_sort_differs
+nav_back_lands_on_the_anchored_row_when_the_table_had_focus
+nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one
+```
+
+The other two `dev` runs over the same commit — `Promotion source`
+(`32892115767`) and `Cross-target` (`32892115806`) — also concluded success.
+
+### Also observed: the v79 migration on a real library
+
+Starting a release build of merged `dev` against the live database took it from
+`user_version` 78 to 79, dropped the two dead density keys
+(`ui.row_height.comfortable`, `ui.row_height.compact`) and left `ui.row_height`
+untouched. Strand A's Task 2 migration therefore has one non-fixture arm.
+
+### Still unfixed, and not in scope of either strand
+
+Symptom 3, the jump when a YouTube episode is double-clicked. Strand B
+falsified the plan's candidate: `set_playing_episode`'s `render()` does not move
+the viewport. A follow-up should probe the pointer sequence and the YouTube
+channel-detail surface instead.
