@@ -15,9 +15,56 @@ fail() {
   exit 1
 }
 
+session_field() {
+  local field=$1
+  local input_file=$2
+  python3 - "$field" "$input_file" <<'PY'
+import pathlib
+import re
+import sys
+
+field, path = sys.argv[1:]
+text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+patterns = {
+    "state": (
+        r"^\s*state=PlaybackState\s*\{state="
+        r"(?:(?P<symbol>[A-Z][A-Z0-9_]*)\()?"
+        r"(?P<value>\d+)(?(symbol)\))(?=,|\s|\}|$)"
+    ),
+    "track": r"^\s*description=(?P<value>.+)$",
+}
+match = re.search(patterns[field], text, re.MULTILINE)
+if match is None:
+    raise SystemExit(f"missing {field} in {path}")
+print(match.group("value").strip())
+PY
+}
+
+self_test() {
+  local actual
+
+  actual=$(session_field state <(printf '%s\n' \
+    'state=PlaybackState {state=3, position=20800, buffered position=53060}')) ||
+    fail "the numeric playback-state fixture did not parse"
+  [[ $actual == 3 ]] || fail "the numeric playback-state fixture yielded $actual, not 3"
+
+  actual=$(session_field state <(printf '%s\n' \
+    'state=PlaybackState {state=PLAYING(3), position=20800, buffered position=53060}')) ||
+    fail "the symbolic playback-state fixture did not parse"
+  [[ $actual == 3 ]] || fail "the symbolic playback-state fixture yielded $actual, not 3"
+
+  if session_field state <(printf '%s\n' \
+    'other_state=PlaybackState {state=PLAYING(3), position=20800}') >/dev/null 2>&1; then
+    fail "a fixture without PlaybackState unexpectedly parsed"
+  fi
+
+  printf 'Android visualizer session parser self-test passed\n'
+}
+
 usage() {
   cat >&2 <<EOF
 Usage: $0 [WINDOW_SECONDS] [RUN_LABEL]
+       $0 --self-test
 
 Measure the currently playing Spectrum scene. Run it once per track, using
 different labels for the primary and control arms. Defaults: 10 seconds and
@@ -43,6 +90,13 @@ cleanup() {
     fi
   fi
 }
+
+if [[ ${1:-} == --self-test ]]; then
+  (($# == 1)) || fail "--self-test does not accept additional arguments"
+  command -v python3 >/dev/null 2>&1 || fail "python3 is unavailable"
+  self_test
+  exit 0
+fi
 
 trap cleanup EXIT
 
@@ -133,27 +187,6 @@ capture_session() {
     }
     END { if (!found) exit 1 }
   ' "$full_file" > "$output_file" || fail "no media session for $PACKAGE_NAME was found (see $full_file)"
-}
-
-session_field() {
-  local field=$1
-  local input_file=$2
-  python3 - "$field" "$input_file" <<'PY'
-import pathlib
-import re
-import sys
-
-field, path = sys.argv[1:]
-text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
-patterns = {
-    "state": r"state=PlaybackState\s*\{state=(\d+)",
-    "track": r"^\s*description=(.+)$",
-}
-match = re.search(patterns[field], text, re.MULTILINE)
-if match is None:
-    raise SystemExit(f"missing {field} in {path}")
-print(match.group(1).strip())
-PY
 }
 
 assert_playing() {
