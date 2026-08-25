@@ -149,6 +149,7 @@ fn apply(
     // `MOT-7`: the animation gate is honoured by jumping, not by animating
     // faster.
     if !crate::ui::motion::animations_enabled() {
+        crate::ui::scroll_probe::probe("episode.reveal.instant", &adjustment, target);
         adjustment.set_value(target);
         return;
     }
@@ -157,7 +158,10 @@ fn apply(
     }
     let animation_target = adw::CallbackAnimationTarget::new({
         let adjustment = adjustment.clone();
-        move |value| adjustment.set_value(value)
+        move |value| {
+            crate::ui::scroll_probe::probe("episode.reveal.frame", &adjustment, value);
+            adjustment.set_value(value);
+        }
     });
     let animation = crate::ui::motion::timed(
         scroller,
