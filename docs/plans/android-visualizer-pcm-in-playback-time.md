@@ -396,6 +396,37 @@ geprüft sind. Mehrere Läufe der Vorgänger waren wertlos, weil die
 Benachrichtigungsleiste offen war (`Total frames rendered: 0`) oder der
 Bildschirm einschlief.
 
+### Auflagen aus dem Review (2026-08-25)
+
+Vier Funde des Reviews sind keine Code-Fehler, sondern Bedingungen an genau
+diese Abnahme. Ohne sie kann ein Lauf grün aussehen und trotzdem nichts sagen.
+
+**A1 — Ein Lauf ist kein Beweis.** Das Skript misst pro Aufruf eine
+Kombination und aggregiert nichts; die Tabelle oben verlangt aber Ziel- **und**
+Kontrollarm im selben Band. Also zwei Aufrufe, zwei `analysis.txt`, und beide
+Zahlen kommen in den Bericht. Ein einzelner zitierter Lauf zählt nicht.
+
+**A2 — Die Capture-Rate gehört ins Protokoll.** `long_gap ≥ 15` und
+`p95 ≤ 8` sind nur bei ~120 fps die 125 ms und 67 ms, die hier gemeint sind.
+Das Skript misst die tatsächliche Bildrate der Aufnahme nie. Drosselt der
+Encoder, stehen dieselben Frame-Zahlen für eine andere Wanduhrzeit und die
+Läufe sind nicht mehr vergleichbar. Also die Rate aus der Datei ablesen und
+mitschreiben, bevor die Schwellen gelten.
+
+**A3 — Belegen, dass die Spektrum-Szene gemessen wurde.** Resumed, Focused und
+PLAYING werden erzwungen, die Szene selbst hängt an einer Nachfrage, die
+`REPRISE_SCENE_ASSUME_READY=1` überspringt. Unbeaufsichtigt kann der Crop auf
+irgendein anderes animiertes Element zeigen. Ein Einzelbild aus dem
+beschnittenen Bereich gehört zu den Belegen.
+
+**A4 — `dropped_audio_frames` misst nicht, was der Regressionsschutz
+behauptet.** Oben steht, ein Wachsen zeige eine falsche *Sperrreihenfolge*. Das
+trifft nicht: Vorher lief die FFT auf dem Audio-Thread etwa 4×/s, jetzt auf dem
+Tick-Thread bis zu 120×/s, und sie hält dabei beide Sperren, während
+`ingest_pcm_i16` nur `try_lock`t und bei Kollision verwirft. Die Mechanik ist
+Haltedauer × Frequenz. Wächst der Zähler, ist die richtige Frage, wie lange
+`tick()` die Sperre hält — nicht, in welcher Reihenfolge es sie nimmt.
+
 ## Parallelität
 
 **Kein Schnitt. Ein Strang.**
