@@ -31,7 +31,7 @@ pub(in crate::ui) struct PodcastPreferenceRows {
 impl PodcastPreferenceRows {
     pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
         for row in &self.inner.rows {
-            expander.add_row(row);
+            super::preference_plugin_chrome::add_nested_row(expander, row);
         }
     }
 
