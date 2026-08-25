@@ -42,14 +42,14 @@ pub enum EpisodeTagError {
     #[error("could not open the download for tagging: {0}")]
     Io(#[from] std::io::Error),
     #[error("could not read the download's container: {0}")]
-    Unreadable(lofty::error::LoftyError),
+    Unreadable(lofty::error::FileParseError),
     #[error("the download's container carries no writable tag")]
     NoWritableTag,
     /// [`lofty::prelude::TagExt::save_to_path`] failed. The Ogg and FLAC
     /// writers truncate the file before rewriting it, so this is the one
     /// failure that can leave a destroyed download behind.
     #[error("could not write the download's tags: {0}")]
-    Write(lofty::error::LoftyError),
+    Write(lofty::error::FileEncodingError),
 }
 
 impl EpisodeTagError {
