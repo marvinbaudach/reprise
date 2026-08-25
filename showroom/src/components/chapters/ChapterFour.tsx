@@ -14,7 +14,7 @@ export function ChapterFour() {
           CH.04
         </p>
         <h2 id="ch-04-heading" className="chapter-four__title" data-reveal>
-          Two frontends with no screen at all.
+          The other two frontends have no screen at all.
         </h2>
         <p className="chapter-four__intro" data-reveal>
           A core with no interface is only a claim until something without a screen uses it. The CLI

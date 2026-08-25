@@ -436,7 +436,7 @@
       <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
         <p data-reveal="" style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: oklch(68% 0.011 269);">CH.03</p>
         <h2 data-reveal="" style="margin: 0 0 26px; font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem); line-height: 1.02; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 580;">Two frameworks. One visual signature.</h2>
-        <p data-reveal="" style="margin: 0 0 14px; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;"><strong style="color: oklch(96% 0.004 269); font-weight: 500;">The two apps look different on purpose.</strong> GNOME conventions on the desktop, Material on the phone. Making them match would not show craft, it would show missing platform UX. What is shared is the signature — and that is the harder half: two rendering stacks, GSK against Skia, two layout systems, two languages, the same visualisation and the same physics. Not a shared component. A shared specification.</p>
+        <p data-reveal="" style="margin: 0 0 14px; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;"><strong style="color: oklch(96% 0.004 269); font-weight: 500;">The two apps look different on purpose.</strong> GNOME conventions on the desktop, Material on the phone. Making them match would not show craft, it would show missing platform UX. What is shared is the signature — and that is the harder half: separate rendering stacks, GSK against Skia, different layout systems, different languages, the same visualisation and the same physics. Not a shared component. A shared specification.</p>
         <p data-reveal="" style="margin: 0; max-width: 68ch; color: oklch(80% 0.008 269); text-wrap: pretty;">The seek bar is the case in point. The decision: show the structure of the track instead of an empty gutter. The implementation: a portable visuals layer that neither frontend owns. The result: physics that were measured afterwards rather than asserted.</p>
 
         <figure data-reveal="" style="margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 0; padding: clamp(1.4rem, 1rem + 1.6vw, 2.6rem); border: 1px solid oklch(30% 0.02 300); border-radius: 14px; background: linear-gradient(160deg, oklch(19% 0.03 300 / 0.7), oklch(16% 0.016 269 / 0.8));">
@@ -485,7 +485,7 @@
         </figure>
 
         <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 14px; margin: clamp(3.5rem, 2.5rem + 3vw, 6rem) 0 clamp(1.5rem, 1.2rem + 1vw, 2.5rem);">
-          <h3 data-reveal="" style="margin: 0; font-size: clamp(1.4rem, 1.15rem + 1.2vw, 2.2rem); color: oklch(97% 0.004 269); letter-spacing: -0.02em; font-variation-settings: 'wdth' 104, 'wght' 560;">Two platforms. Every view, tab and dialogue.</h3>
+          <h3 data-reveal="" style="margin: 0; font-size: clamp(1.4rem, 1.15rem + 1.2vw, 2.2rem); color: oklch(97% 0.004 269); letter-spacing: -0.02em; font-variation-settings: 'wdth' 104, 'wght' 560;">Both platforms. Every view, tab and dialogue.</h3>
           <p data-reveal="" style="margin: 0; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: oklch(68% 0.011 269);">Click any plate to enlarge</p>
         </div>
 
@@ -600,7 +600,7 @@
     <section id="ch-04" data-ground="oklch(13% 0.016 269)" style="padding: clamp(4.5rem, 3rem + 7vw, 9rem) 0;">
       <div style="max-width: 78rem; margin: 0 auto; padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);">
         <p data-reveal="" style="margin: 0 0 14px; font-family: 'Martian Mono', ui-monospace, monospace; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: oklch(68% 0.011 269);">CH.04</p>
-        <h2 data-reveal="" style="margin: 0 0 20px; max-width: 34ch; font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem); line-height: 1.02; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 580;">Two frontends with no screen at all.</h2>
+        <h2 data-reveal="" style="margin: 0 0 20px; max-width: 34ch; font-size: clamp(2rem, 1.5rem + 2.6vw, 3.6rem); line-height: 1.02; letter-spacing: -0.025em; color: oklch(97% 0.004 269); font-variation-settings: 'wdth' 106, 'wght' 580;">The other two frontends have no screen at all.</h2>
         <p data-reveal="" style="margin: 0 0 clamp(2rem, 1.6rem + 1.5vw, 3.5rem); max-width: 66ch; color: oklch(80% 0.008 269); text-wrap: pretty;">A core with no interface is only a claim until something without a screen uses it. The CLI and the MCP server run as separate processes against the same database as the desktop app, and a change-log notifier shows their edits live in a running GTK window without a restart. That is the boundary being load-bearing rather than documented.</p>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: clamp(1.2rem, 1rem + 1vw, 2rem);">
