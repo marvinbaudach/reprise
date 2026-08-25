@@ -276,10 +276,7 @@ fn emit_user_scroll(track_list: &TrackList) {
                 .ok()
         })
         .expect("the track scroller must expose its capture-phase scroll witness");
-    assert_eq!(
-        controller.emit_by_name::<bool>("scroll", &[&0.0_f64, &1.0_f64]),
-        false
-    );
+    assert!(!controller.emit_by_name::<bool>("scroll", &[&0.0_f64, &1.0_f64]));
 }
 
 /// Restores a place through the default viewport contract. This is the control
@@ -467,6 +464,15 @@ fn nav_10b_reveal_intent_outranks_later_restore_writers() {
             .iter()
             .any(|line| line.contains("writer=view_state_restore")),
         "the view-state restore must name its stand-down: {stand_downs:?}"
+    );
+    assert!(
+        stage
+            .track_list
+            .shared
+            .scroll_glide
+            .deliberate_destination()
+            .is_some(),
+        "the reveal must leave a durable destination after settling"
     );
 
     stage.window.close();

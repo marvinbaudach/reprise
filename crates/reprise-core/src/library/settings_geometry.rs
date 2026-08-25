@@ -7,6 +7,12 @@ use super::{get_setting_in, set_setting_in};
 pub const ROW_HEIGHT_KEY: &str = "ui.row_height";
 pub const SECTION_HEADER_HEIGHT_KEY: &str = "ui.section_header_height";
 
+/// Keys that were written by older versions and replaced by `ROW_HEIGHT_KEY`.
+/// The split between comfortable and compact density was collapsed into a single
+/// comfortable size (v79), so these rows are dead weight in any database that
+/// ran the old schema.
+const DEAD_ROW_HEIGHT_KEYS: &[&str] = &["ui.row_height.comfortable", "ui.row_height.compact"];
+
 fn get_height_in(conn: &Connection, key: &str) -> Result<Option<f64>, SqlError> {
     Ok(get_setting_in(conn, key)?
         .and_then(|value| value.parse().ok())
@@ -44,10 +50,82 @@ pub fn set_row_and_section_header_heights(
     })
 }
 
+/// Schema v79: deletes settings rows written by the old per-density row-height
+/// scheme (`ui.row_height.comfortable`, `ui.row_height.compact`). Both were
+/// retired when the list density was consolidated into a single comfortable
+/// size persisted under `ui.row_height`. Any live measurement in the database
+/// already lives under that key; the compact and comfortable rows are orphaned.
+///
+/// Idempotent: the `DELETE` is a no-op when the rows are already gone, and the
+/// version guard short-circuits on every subsequent open.
+pub(crate) fn migrate_v79(conn: &Connection) -> Result<(), SqlError> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 79 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    for key in DEAD_ROW_HEIGHT_KEYS {
+        transaction.execute(
+            "DELETE FROM settings WHERE key = ?1",
+            rusqlite::params![key],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", 79)?;
+    transaction.commit()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::set_setting_in;
+    use super::super::{get_setting_in, set_setting_in};
     use super::*;
+
+    fn open_at_v78() -> Connection {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
+        // Downgrade to v78 so v79 migration runs from the expected starting state.
+        conn.pragma_update(None, "user_version", 78).unwrap();
+        conn
+    }
+
+    #[test]
+    fn v79_drops_dead_per_density_row_height_keys() {
+        let conn = open_at_v78();
+        // Seed the dead keys as an old installation would have left them.
+        set_setting_in(&conn, "ui.row_height.comfortable", "34").unwrap();
+        set_setting_in(&conn, "ui.row_height.compact", "28").unwrap();
+        // The live key must survive the migration.
+        set_setting_in(&conn, ROW_HEIGHT_KEY, "34").unwrap();
+
+        migrate_v79(&conn).unwrap();
+
+        assert_eq!(
+            get_setting_in(&conn, "ui.row_height.comfortable").unwrap(),
+            None,
+            "comfortable key must be deleted"
+        );
+        assert_eq!(
+            get_setting_in(&conn, "ui.row_height.compact").unwrap(),
+            None,
+            "compact key must be deleted"
+        );
+        assert_eq!(
+            get_setting_in(&conn, ROW_HEIGHT_KEY).unwrap(),
+            Some("34".to_owned()),
+            "the live row height key must survive the migration"
+        );
+    }
+
+    #[test]
+    fn v79_is_idempotent_when_dead_keys_are_already_absent() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
+        // Second call must be a no-op (version guard).
+        migrate_v79(&conn).unwrap();
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
+    }
 
     #[test]
     fn row_and_section_header_heights_round_trip_independently() {

@@ -95,6 +95,13 @@ pub(in crate::ui) fn remember_after_layout(shared: &Shared, n_rows: usize) -> bo
 const SECTION_MEASUREMENT_MAX_ATTEMPTS: u8 = 4;
 
 pub(in crate::ui) fn schedule_section_measurement(shared: &Rc<Shared>) {
+    shared.diagnostic_trail.record(
+        super::diagnostic_trail::Event::GeometryMeasurementScheduled {
+            generation: shared.model.generation(),
+            rows: shared.model.n_items(),
+            sections: shared.queue_sections.borrow().len(),
+        },
+    );
     schedule_section_measurement_attempt(shared, SECTION_MEASUREMENT_MAX_ATTEMPTS);
 }
 
