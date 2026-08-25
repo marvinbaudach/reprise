@@ -30,7 +30,7 @@ const NESTED_ROW_CLASS: &str = "reprise-plugin-nested-row";
 /// How far a plugin's own settings sit inside its row.
 const NESTED_INDENT_PX: u32 = 24;
 /// The lift that marks the nested surface as belonging to the row above it.
-const NESTED_SURFACE_ALPHA: f32 = 0.08;
+const NESTED_SURFACE_ALPHA: f32 = 0.21;
 
 /// A chevron-sized hole on a row that never expands.
 ///
@@ -73,7 +73,10 @@ mod tests {
     use libadwaita::prelude::*;
 
     const MIN_NESTED_TITLE_INDENT_PX: f32 = 16.0;
-    const MIN_NESTED_SURFACE_RGB_DISTANCE: u16 = 24;
+    /// The fixture floor is calibrated against the complete Preferences
+    /// dialog in CUA, where it keeps the resting parent and child surfaces at
+    /// least 48 total RGB steps apart without turning the child into a card.
+    const MIN_NESTED_SURFACE_RGB_DISTANCE: u16 = 84;
 
     fn find_label(root: &gtk4::Widget, text: &str) -> Option<gtk4::Label> {
         if let Ok(label) = root.clone().downcast::<gtk4::Label>() {
@@ -160,6 +163,9 @@ mod tests {
     fn set_11a_expanded_settings_are_visibly_nested_below_the_plugin() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
+        let style_manager = libadwaita::StyleManager::default();
+        let previous_scheme = style_manager.color_scheme();
+        style_manager.set_color_scheme(libadwaita::ColorScheme::ForceDark);
         crate::ui::style::install();
 
         let plugin = adw::ExpanderRow::builder().title("New Releases").build();
@@ -222,6 +228,7 @@ mod tests {
         );
 
         window.close();
+        style_manager.set_color_scheme(previous_scheme);
     }
 
     #[test]
