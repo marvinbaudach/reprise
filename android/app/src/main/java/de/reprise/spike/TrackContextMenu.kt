@@ -113,7 +113,6 @@ internal data class LibraryTrackMenuTarget(
 internal data class QueueTrackMenuTarget(
     val trackId: Long,
     val position: Int,
-    val rowCount: Int,
     val actions: QueueRowActions,
 )
 
@@ -129,6 +128,15 @@ private fun LibraryTrackMenuTarget.deletionTarget() = TrackDeletionTarget(
     resolveTrackIds = resolveTrackIds,
 )
 
+/**
+ * The queue row's menu.
+ *
+ * It has no "Move up"/"Move down" pair. A menu that moves a row one slot per
+ * tap is a stand-in for a reorder gesture, and the drag handle beside the row
+ * is that gesture: it picks the row up, carries it as far as the thumb goes,
+ * and puts it down. Leaving both in would offer two answers to one question,
+ * and the slower of the two would be the discoverable one.
+ */
 @Composable
 internal fun TrackContextMenu(
     anchor: TrackContextMenuAnchorState,
@@ -144,22 +152,6 @@ internal fun TrackContextMenu(
             onClick = {
                 anchor.expanded = false
                 target.actions.play(target.position, target.trackId)
-            },
-        )
-        DropdownMenuItem(
-            text = { Text("Move up") },
-            enabled = target.position > 0,
-            onClick = {
-                anchor.expanded = false
-                target.actions.move(target.position, target.trackId, target.position - 1)
-            },
-        )
-        DropdownMenuItem(
-            text = { Text("Move down") },
-            enabled = target.position + 1 < target.rowCount,
-            onClick = {
-                anchor.expanded = false
-                target.actions.move(target.position, target.trackId, target.position + 1)
             },
         )
         DropdownMenuItem(

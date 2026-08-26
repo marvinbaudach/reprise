@@ -18,6 +18,15 @@
         stays invisible. MainActivity asks at the first playback command.
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        The queue's drag handle answers with the vibrator rather than with the
+        platform's single-pulse feedback, because two of its four moments are
+        not one pulse: a drop is a firm tap plus a lighter echo. Granted at
+        install and never prompted for; the app still asks the system's touch
+        feedback setting before every pulse, and a device without a vibrator
+        runs the same gesture with nothing but the animation.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!--
         Android 26 and 27 otherwise permit cleartext traffic by default. The

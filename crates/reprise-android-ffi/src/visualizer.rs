@@ -11,6 +11,7 @@
 //! not use either, so this boundary deliberately omits them rather than adding
 //! fields the phone would copy on every rendered frame.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
@@ -26,6 +27,13 @@ const POLYLINE_KIND: f32 = 1.0;
 const RADIAL_GLOW_KIND: f32 = 2.0;
 const RECORD_PREFIX_LEN: usize = 8;
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
+const LIVE_PCM_BUFFER_SECONDS: usize = 2;
+// This is the single tuning knob for the stable visual delay behind decoded PCM.
+const TARGET_PCM_BUFFER_DURATION: Duration = Duration::from_millis(250);
+// A 30-tick proportional horizon corrects clock drift without visible speed changes.
+const PCM_BUFFER_CONTROLLER_TAU_TICKS: f64 = 30.0;
+const MIN_PCM_CONSUMPTION_RATE: f64 = 0.9;
+const MAX_PCM_CONSUMPTION_RATE: f64 = 1.1;
 pub(crate) const LIVE_AUDIO_STALE_AFTER: Duration = Duration::from_millis(500);
 
 pub(crate) trait MonotonicClock: Send + Sync {
@@ -85,7 +93,44 @@ struct LiveAudioState {
     processor: CavaBarProcessor,
     pressure_detector: BassPressureDetector,
     mono_samples: Vec<f32>,
+    pcm_buffer: PcmRingBuffer,
     bands: [f32; SPECTRUM_BAND_COUNT],
+}
+
+struct PcmRingBuffer {
+    samples: VecDeque<f32>,
+    capacity: usize,
+}
+
+impl PcmRingBuffer {
+    fn new(sample_rate_hz: u32) -> Self {
+        let capacity = sample_rate_hz as usize * LIVE_PCM_BUFFER_SECONDS;
+        Self {
+            samples: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    fn append(&mut self, samples: &[f32]) {
+        if samples.len() >= self.capacity {
+            self.samples.clear();
+            self.samples
+                .extend(samples[samples.len() - self.capacity..].iter().copied());
+            return;
+        }
+
+        let overflow = self
+            .samples
+            .len()
+            .saturating_add(samples.len())
+            .saturating_sub(self.capacity);
+        self.samples.drain(..overflow);
+        self.samples.extend(samples.iter().copied());
+    }
+
+    fn clear(&mut self) {
+        self.samples.clear();
+    }
 }
 
 impl LiveAudioState {
@@ -98,16 +143,12 @@ impl LiveAudioState {
             processor,
             pressure_detector: BassPressureDetector::new(sample_rate_hz),
             mono_samples: Vec::new(),
+            pcm_buffer: PcmRingBuffer::new(sample_rate_hz),
             bands: [0.0; SPECTRUM_BAND_COUNT],
         })
     }
 
-    fn process_pcm_i16(
-        &mut self,
-        bytes: &[u8],
-        frame_bytes: usize,
-        channel_count: usize,
-    ) -> (SpectrumFrame, BassPressure) {
+    fn buffer_pcm_i16(&mut self, bytes: &[u8], frame_bytes: usize, channel_count: usize) {
         let frame_count = bytes.len() / frame_bytes;
         self.mono_samples.clear();
         self.mono_samples.reserve(frame_count);
@@ -121,21 +162,59 @@ impl LiveAudioState {
             self.mono_samples
                 .push(sum / channel_count as f32 / 32_768.0);
         }
+        self.pcm_buffer.append(&self.mono_samples);
+    }
+
+    fn analyze_elapsed(&mut self, elapsed: Duration) -> Option<(SpectrumFrame, BassPressure)> {
+        let target_samples = samples_for_duration(TARGET_PCM_BUFFER_DURATION, self.sample_rate_hz);
+        let fill_samples = self.pcm_buffer.samples.len();
+        if fill_samples > target_samples.saturating_mul(2) {
+            self.pcm_buffer
+                .samples
+                .drain(..fill_samples - target_samples);
+            return None;
+        }
+
+        let nominal_samples = elapsed.as_secs_f64() * f64::from(self.sample_rate_hz);
+        if nominal_samples == 0.0 {
+            return None;
+        }
+        let correction =
+            (fill_samples as f64 - target_samples as f64) / PCM_BUFFER_CONTROLLER_TAU_TICKS;
+        let requested_samples = (nominal_samples + correction)
+            .clamp(
+                nominal_samples * MIN_PCM_CONSUMPTION_RATE,
+                nominal_samples * MAX_PCM_CONSUMPTION_RATE,
+            )
+            .round() as usize;
+        let consumed_samples = requested_samples.min(self.pcm_buffer.samples.len());
+        if consumed_samples == 0 {
+            return None;
+        }
+
+        self.mono_samples.clear();
+        self.mono_samples
+            .extend(self.pcm_buffer.samples.drain(..consumed_samples));
         self.processor
             .process_into(&self.mono_samples, &mut self.bands);
         let pressure = self.pressure_detector.observe(&self.mono_samples);
-        (
+        Some((
             SpectrumFrame::from_cava_bars(self.bands).with_bass_pressure(pressure),
             pressure,
-        )
+        ))
     }
 
     fn reset(&mut self) {
         self.processor.reset();
         self.pressure_detector.reset();
         self.mono_samples.clear();
+        self.pcm_buffer.clear();
         self.bands.fill(0.0);
     }
+}
+
+fn samples_for_duration(duration: Duration, sample_rate_hz: u32) -> usize {
+    (duration.as_secs_f64() * f64::from(sample_rate_hz)).round() as usize
 }
 
 struct VisualState {
@@ -203,6 +282,9 @@ impl AndroidVisualEngine {
         let stream_generation = self.current_stream_generation();
         let now = self.clock.now();
         reconcile_stream_generation(&mut state, stream_generation, now);
+        if state.playing != playing {
+            state.last_visual_tick_at = now;
+        }
         state.playing = playing;
         expire_stale_live_audio(&mut state, now);
         let has_audio = state.has_analysis || state.has_live_audio;
@@ -272,7 +354,7 @@ impl AndroidVisualEngine {
         state.has_analysis = has_analysis;
     }
 
-    /// Downmixes interleaved little-endian PCM16 and feeds the shared CAVA path.
+    /// Downmixes interleaved little-endian PCM16 into the live-audio ring buffer.
     #[allow(clippy::needless_pass_by_value)] // UniFFI cannot export borrowed byte slices.
     pub fn ingest_pcm_i16(
         &self,
@@ -295,8 +377,8 @@ impl AndroidVisualEngine {
         }
 
         let stream_generation = self.current_stream_generation();
-        // Downmix, FFT and bass detection have their own audio-thread state.
-        // Contention drops a frame rather than blocking Media3.
+        // Downmixing and buffering have their own audio-thread state. Contention
+        // drops a block rather than blocking Media3.
         let Some(mut live_audio_slot) = self.try_lock_live_audio() else {
             self.count_dropped_audio_frame();
             return false;
@@ -306,33 +388,13 @@ impl AndroidVisualEngine {
         else {
             return false;
         };
-        let (frame, pressure) =
-            live_audio.process_pcm_i16(&bytes[..byte_count], frame_bytes, channel_count);
-        drop(live_audio_slot);
+        live_audio.buffer_pcm_i16(&bytes[..byte_count], frame_bytes, channel_count);
 
         if self.current_stream_generation() != stream_generation {
+            let current_generation = self.current_stream_generation();
+            reset_live_processor(&mut live_audio_slot, current_generation);
             return false;
         }
-        // Only the finished frame crosses into display-thread state.
-        let Some(mut state) = self.try_lock() else {
-            self.count_dropped_audio_frame();
-            return false;
-        };
-        if self.current_stream_generation() != stream_generation {
-            return false;
-        }
-        let now = self.clock.now();
-        reconcile_stream_generation(&mut state, stream_generation, now);
-
-        state.engine.set_retain_paused_live_shape(true);
-        state.engine.set_has_track(true);
-        let playing = state.playing;
-        state.set_engine_playing(playing, now);
-        state.engine.ingest(&frame);
-        state.has_ingested = true;
-        state.has_live_audio = true;
-        state.last_live_audio_at = Some(now);
-        state.live_pressure = pressure;
         true
     }
 
@@ -356,14 +418,13 @@ impl AndroidVisualEngine {
 
     /// Drops decoder history on resume without discarding the last live scene.
     pub fn reset_audio_history(&self) {
-        // The display lock is taken before the generation changes so a later
-        // reconciliation cannot mistake this history-only reset for a stream
-        // boundary. PCM publication uses try_lock and drops rather than waits.
+        // Keep the same lock order as live PCM ingestion and ticking: audio
+        // before display. Taking both before the generation changes keeps a
+        // later reconciliation from mistaking this reset for a stream boundary.
+        let mut live_audio = self.lock_live_audio();
         let mut state = self.lock();
         let stream_generation = self.advance_stream_generation();
-        if let Some(mut live_audio) = self.try_lock_live_audio() {
-            reset_live_processor(&mut live_audio, stream_generation);
-        }
+        reset_live_processor(&mut live_audio, stream_generation);
         state.stream_generation = stream_generation;
         state.last_live_audio_at = state.has_live_audio.then(|| self.clock.now());
         state.live_pressure = silent_pressure();
@@ -393,14 +454,47 @@ impl AndroidVisualEngine {
         }
     }
 
-    /// Advances the portable presentation state by monotonic elapsed time;
-    /// `true` means it is settled.
+    /// Advances the portable presentation state by monotonic elapsed time.
+    ///
+    /// A newly analyzed live-audio frame always reports `true`, even when the
+    /// portable engine would otherwise report a settled presentation.
     pub fn tick(&self) -> bool {
+        // Keep the same lock order as live PCM ingestion: audio before display.
+        let mut live_audio_slot = self.lock_live_audio();
         let mut state = self.lock();
+        let stream_generation = self.current_stream_generation();
         let now = self.clock.now();
         let elapsed = now.saturating_sub(state.last_visual_tick_at);
         state.last_visual_tick_at = now;
-        state.engine.advance_by(elapsed)
+        reconcile_stream_generation(&mut state, stream_generation, now);
+
+        let live_frame = state.playing.then(|| {
+            live_audio_slot.as_mut().and_then(|live_audio| {
+                if live_audio.stream_generation != stream_generation {
+                    live_audio.reset();
+                    live_audio.stream_generation = stream_generation;
+                    return None;
+                }
+                live_audio.analyze_elapsed(elapsed)
+            })
+        });
+        let live_frame = live_frame.flatten();
+        let ingested_live_frame = if let Some((frame, pressure)) = live_frame {
+            state.engine.set_retain_paused_live_shape(true);
+            state.engine.set_has_track(true);
+            let playing = state.playing;
+            state.set_engine_playing(playing, now);
+            state.engine.ingest(&frame);
+            state.has_ingested = true;
+            state.has_live_audio = true;
+            state.last_live_audio_at = Some(now);
+            state.live_pressure = pressure;
+            true
+        } else {
+            false
+        };
+
+        state.engine.advance_by(elapsed) || ingested_live_frame
     }
 
     /// Returns the scene in the flat format documented by this module.
@@ -524,6 +618,12 @@ impl AndroidVisualEngine {
         try_lock_recovering(&self.live_audio)
     }
 
+    fn lock_live_audio(&self) -> MutexGuard<'_, Option<LiveAudioState>> {
+        self.live_audio
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
     fn current_stream_generation(&self) -> u64 {
         self.stream_generation.load(Ordering::Acquire)
     }
@@ -636,4 +736,9 @@ pub(crate) fn encode_scene(scene: &Scene) -> Vec<u8> {
 
 fn push_float_bytes(buffer: &mut Vec<u8>, value: f32) {
     buffer.extend_from_slice(&value.to_le_bytes());
+}
+
+#[cfg(test)]
+mod pcm_tests {
+    include!("visualizer_pcm_tests.rs");
 }
