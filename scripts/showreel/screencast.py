@@ -14,9 +14,15 @@ stop_flag = sys.argv[2]
 max_seconds = float(sys.argv[3]) if len(sys.argv) > 3 else 900.0
 area = sys.argv[4] if len(sys.argv) > 4 else None  # "x,y,w,h"
 
+# The takes were shot with the cursor drawn, and it shows: driving through
+# AT-SPI means the pointer never moves, but wherever it happens to be parked it
+# sits in frame for the whole take. Off by default now; set SHOWREEL_DRAW_CURSOR
+# to reproduce the original footage.
+draw_cursor = os.environ.get('SHOWREEL_DRAW_CURSOR', '') not in ('', '0', 'no')
+
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 opts = {
-    'draw-cursor': GLib.Variant('b', True),
+    'draw-cursor': GLib.Variant('b', draw_cursor),
     'framerate': GLib.Variant('i', 30),
 }
 if area:

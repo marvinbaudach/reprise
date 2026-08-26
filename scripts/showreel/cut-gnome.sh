@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Desktop footage onto the same 1920x1080 canvas the phone segments use, so the
-# two platforms can sit in one timeline without a resolution change mid-film.
+# The desktop half: a title card, then fifteen shots on the 1920x1080 canvas the
+# phone half also uses, so the film never changes resolution mid-play.
 #
 # Two sources: take 1 carries the sidebar tour, take 2 the three pickup scenes
 # (podcast subscribe, search, lyrics). Take 2 was shot with a SCROLL-LOG debug
@@ -9,20 +9,25 @@
 # seam is invisible and the badge never blinks on mid-film. That is DEBADGE;
 # drop it only if take 2 is re-shot without the badge.
 #
-# Four shots are tighter than the first cut, which ran 63.4 s against a name
-# that says 60. Every second taken out is a hold measured off the takes rather
-# than content: search, podcast-add and lyrics freeze for their last second,
-# and the layout shot spent 2.9 s waiting for the click that is its whole point
-# — its in-point moved instead, so the switch lands early and the result reads.
+# Shot lengths come from measuring the takes, not from taste: search,
+# podcast-add and lyrics were each holding a frozen frame for their last
+# second, and the layout shot spent 2.9 s waiting for the click that is its
+# whole point, so its in-point moved rather than its length being cut.
+#
+# fps=30 has to come first. The screencast is variable-rate (r_frame_rate reads
+# 10000/1, really about 22.6), and zoompan counts input frames — fed VFR it
+# renders the wrong number of them and the shot runs long.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source scripts/showreel/common.sh
+source scripts/showreel/film.sh
 
 IN1="$SHOWREEL_DIR/roh-gnome-take1.mp4"
 IN2="$SHOWREEL_DIR/roh-gnome-take2.mp4"
 PLATE="$SHOWREEL_DIR/welcome-plate.png"
+CARD="$SHOWREEL_DIR/card-title.png"
 OUT="$SHOWREEL_DIR/reprise-gnome.mp4"
-showreel_require "$IN1" "$IN2" "$PLATE"
+showreel_require "$IN1" "$IN2" "$PLATE" "$CARD"
 
 O="$SHOWREEL_WORK/cuts"
 LIST="$O/gnome-list.txt"
@@ -31,39 +36,66 @@ rm -f -- "$O"/g-*.mp4 "$LIST"
 
 CROP="crop=2880:1747:0:53"
 DEBADGE="split[a][b];[b]crop=180:88:600:0[p];[a][p]overlay=128:0"
-CANVAS="scale=1780:-2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=#0d1014,format=yuv420p,fps=30"
+STAGE_W=1628
+PAD="pad=1920:1080:146:0:color=$FILM_GROUND"
+ENC=(-an -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p)
 
-still() { # name image duration
-  ffmpeg -v error -loop 1 -t "$3" -i "$2" -vf "$CANVAS" -an \
-    -c:v libx264 -preset medium -crf 18 -y "$O/g-$1.mp4"
-  printf "file '%s'\n" "$O/g-$1.mp4" >>"$LIST"
-}
-seg() { # name start duration   (take 1)
-  ffmpeg -v error -ss "$2" -t "$3" -i "$IN1" -vf "$CROP,$CANVAS" -an \
-    -c:v libx264 -preset medium -crf 18 -y "$O/g-$1.mp4"
-  printf "file '%s'\n" "$O/g-$1.mp4" >>"$LIST"
-}
-seg2() { # name start duration  (take 2, badge patched out)
-  ffmpeg -v error -ss "$2" -t "$3" -i "$IN2" -vf "$CROP,$DEBADGE,$CANVAS" -an \
-    -c:v libx264 -preset medium -crf 18 -y "$O/g-$1.mp4"
-  printf "file '%s'\n" "$O/g-$1.mp4" >>"$LIST"
-}
+frames() { python3 -c "print(round($1*30))"; }
 
-still 00-welcome "$PLATE" 2.5
-seg  01-library      6.5 2.5
-seg2 02-search      76.5 3.0
-seg  03-releases    14.0 2.0
-seg  04-concerts    21.0 2.0
-seg  05-podcasts    27.5 2.0
-seg2 06-podcast-add 50.5 3.0
-seg  07-youtube     34.5 2.0
-seg  08-sync        41.5 2.5
-seg  09-doctor      49.5 2.5
-seg  10-visuals     57.5 3.0
-seg2 11-lyrics      95.5 3.0
-seg  12-stats       76.0 2.5
-seg  13-layout      87.5 4.5
-seg  14-plugins     96.5 2.5
+card() { # name image duration direction
+  ffmpeg -v error -loop 1 -t "$3" -i "$2" \
+    -vf "fps=30,$(film_push "$(frames "$3")" "$4" 1920 1080),format=yuv420p" \
+    "${ENC[@]}" -y "$O/g-$1.mp4"
+}
+still() { # name image duration direction caption
+  ffmpeg -v error -loop 1 -t "$3" -i "$2" \
+    -vf "fps=30,$(film_push "$(frames "$3")" "$4" "$STAGE_W" "$FILM_STAGE_H"),$PAD,$(film_rail "$5" "$3"),format=yuv420p" \
+    "${ENC[@]}" -y "$O/g-$1.mp4"
+}
+shot() { # source name start duration direction caption [dip]
+  local src=$1 pre=""
+  shift
+  local name=$1 start=$2 dur=$3 dir=$4 cap=$5 dip=${6:-}
+  local input="$IN1"
+  [[ $src == T2 ]] && {
+    input="$IN2"
+    pre="$DEBADGE,"
+  }
+  ffmpeg -v error -ss "$start" -t "$dur" -i "$input" \
+    -vf "fps=30,$CROP,$pre$(film_push "$(frames "$dur")" "$dir" "$STAGE_W" "$FILM_STAGE_H"),$PAD,$(film_rail "$cap" "$dur")$(film_dip "$dip" "$dur"),format=yuv420p" \
+    "${ENC[@]}" -y "$O/g-$name.mp4"
+}
+listed() { printf "file '%s'\n" "$O/g-$1.mp4" >>"$LIST"; }
+
+card  00-card "$CARD" 1.5 in
+still 01-welcome "$PLATE" 2.0 out 'First run'
+shot T1 02-library      6.5 2.5 in  'Your library, local first'
+shot T2 03-search      76.5 3.0 out 'Search every field at once'
+shot T1 04-releases    14.0 2.0 in  'Releases'
+shot T1 05-concerts    21.0 2.0 out 'Concerts'
+shot T1 06-podcasts    27.5 2.0 in  'Podcasts'
+shot T2 07-podcast-add 50.5 3.0 out 'Subscribe to a show'
+shot T1 08-youtube     34.5 2.0 in  'YouTube channels as audio'
+shot T1 09-sync        41.5 2.5 out 'Sync to your phone'
+shot T1 10-doctor      49.5 2.0 in  'Library Doctor'
+shot T1 11-visuals     57.5 3.0 out 'Audio-reactive visuals'
+shot T2 12-lyrics      95.5 3.0 in  'Lyrics'
+shot T1 13-stats       76.0 2.5 out 'Your listening, counted'
+shot T1 14-layout      87.5 4.5 in  'Move the player bar'
+shot T1 15-plugins     96.5 2.5 out 'Online sources are plugins' out
+
+# The opening breathes: the card dissolves into the welcome screen and that
+# into the library. Every later join is a hard cut, which costs no runtime.
+ffmpeg -v error -i "$O/g-00-card.mp4" -i "$O/g-01-welcome.mp4" -i "$O/g-02-library.mp4" \
+  -filter_complex "[0][1]xfade=transition=fade:duration=0.4:offset=1.1[a];\
+[a][2]xfade=transition=fade:duration=0.3:offset=2.8" \
+  "${ENC[@]}" -y "$O/g-opening.mp4"
+
+printf "file '%s'\n" "$O/g-opening.mp4" >"$LIST"
+for name in 03-search 04-releases 05-concerts 06-podcasts 07-podcast-add 08-youtube \
+  09-sync 10-doctor 11-visuals 12-lyrics 13-stats 14-layout 15-plugins; do
+  listed "$name"
+done
 
 ffmpeg -v error -f concat -safe 0 -i "$LIST" -c copy -y "$OUT"
 printf 'gnome %s s\n' "$(showreel_duration "$OUT")"
