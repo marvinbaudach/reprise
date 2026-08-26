@@ -46,23 +46,7 @@ fn decode_pixels_with_thumbnail(
     resolve_thumbnail: impl FnOnce(&CoverSource, ThumbnailSize) -> Result<PathBuf, CoverError>,
 ) -> Result<DecodedPixels, gtk4::glib::Error> {
     let requested_edge = width.max(height).max(0).saturating_mul(2) as u32;
-    let size = [
-        ThumbnailSize::List,
-        ThumbnailSize::Bar,
-        ThumbnailSize::Portrait,
-        ThumbnailSize::Grid,
-        ThumbnailSize::Full,
-    ]
-    .into_iter()
-    .find(|size| size.pixels() >= requested_edge)
-    .ok_or_else(|| {
-        gtk4::glib::Error::new(
-            gtk4::gio::IOErrorEnum::Failed,
-            &format!(
-                "source artwork request of {requested_edge} pixels exceeds the largest desktop thumbnail"
-            ),
-        )
-    })?;
+    let size = thumbnail_size_for_edge(requested_edge);
     let thumbnail_path = resolve_thumbnail(&CoverSource::FolderImage(path.to_path_buf()), size)
         .map_err(|error| {
             gtk4::glib::Error::new(gtk4::gio::IOErrorEnum::Failed, &error.to_string())
@@ -81,6 +65,30 @@ fn decode_pixels_with_thumbnail(
         rowstride: pixbuf.rowstride() as usize,
         has_alpha: pixbuf.has_alpha(),
     })
+}
+
+fn thumbnail_size_for_edge(requested_edge: u32) -> ThumbnailSize {
+    // Glow is omitted because no current caller has a doubled edge that small; add it when one appears.
+    let desktop_sizes = [
+        ThumbnailSize::List,
+        ThumbnailSize::Bar,
+        ThumbnailSize::Portrait,
+        ThumbnailSize::Grid,
+        ThumbnailSize::NowPlaying,
+        ThumbnailSize::Full,
+    ];
+    if let Some(size) = desktop_sizes
+        .into_iter()
+        .find(|size| size.pixels() >= requested_edge)
+    {
+        return size;
+    }
+
+    tracing::warn!(
+        requested_edge,
+        "source artwork request exceeds the largest desktop thumbnail; clamping to Full"
+    );
+    ThumbnailSize::Full
 }
 
 pub(super) fn memory_texture(pixels: DecodedPixels) -> gtk4::gdk::Texture {
@@ -171,6 +179,39 @@ mod tests {
 
     use gtk4::prelude::*;
     use reprise_core::cover::{CoverSource, ThumbnailSize};
+
+    use crate::ui::source_row::{media_size, MediaShape};
+
+    #[test]
+    fn desktop_thumbnail_ladder_covers_every_source_artwork_edge() {
+        let doubled_edge = |shape| {
+            let (width, height) = media_size(shape);
+            width.max(height).saturating_mul(2) as u32
+        };
+        let cases = [
+            (doubled_edge(MediaShape::Square), ThumbnailSize::Bar),
+            (doubled_edge(MediaShape::SourceSquare), ThumbnailSize::Bar),
+            (doubled_edge(MediaShape::Wide), ThumbnailSize::Portrait),
+            (
+                crate::ui::style::tokens::NOW_PLAYING_COVER_SIZE.saturating_mul(2) as u32,
+                ThumbnailSize::NowPlaying,
+            ),
+            (
+                ThumbnailSize::Full.pixels().saturating_add(1),
+                ThumbnailSize::Full,
+            ),
+        ];
+
+        for (requested_edge, expected) in cases {
+            let selected = super::thumbnail_size_for_edge(requested_edge);
+            assert_eq!(
+                selected,
+                expected,
+                "{requested_edge}px should select the {}px variant",
+                expected.pixels()
+            );
+        }
+    }
 
     #[test]
     fn source_artwork_uses_the_cached_thumbnail_for_texture_decode() {

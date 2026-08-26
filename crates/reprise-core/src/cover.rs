@@ -137,8 +137,8 @@ use std::hash::{Hash, Hasher};
 mod mobile_tests;
 
 /// The cached edge lengths — one per consumer (list row / player bar / artist
-/// portrait / album grid / Now-Playing view). Each maps to its own on-disk
-/// cache file.
+/// portrait / album grid / Now Playing / full cover view). Each maps to its own
+/// on-disk cache file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThumbnailSize {
     Glow,
@@ -146,6 +146,7 @@ pub enum ThumbnailSize {
     Bar,
     Portrait,
     Grid,
+    NowPlaying,
     Full,
     /// A 56 dp Android list/mini-player slot at the measured 3x density.
     MobileList,
@@ -163,6 +164,7 @@ impl ThumbnailSize {
             ThumbnailSize::Bar => 96,
             ThumbnailSize::Portrait => 192,
             ThumbnailSize::Grid => 256,
+            ThumbnailSize::NowPlaying => 384,
             ThumbnailSize::Full => 1024,
             ThumbnailSize::MobileList => 168,
             ThumbnailSize::MobilePortrait => 640,
