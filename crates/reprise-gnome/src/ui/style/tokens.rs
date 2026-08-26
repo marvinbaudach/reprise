@@ -118,13 +118,73 @@ pub(in crate::ui) const BTN_PRESS_SCALE: &str = "0.94";
 
 /// Resting fill alpha of a checked toggle (over `@accent_bg_color`). Higher
 /// than [`HOVER_BG_ALPHA`] so the on-state stays louder than any hover.
-pub(in crate::ui) const BTN_CHECKED_FILL_ALPHA: &str = "0.22";
+///
+/// The whole checked ladder yields to [`ACCENT_TINT_CEILING`] — see
+/// [`BTN_CHECKED_FILL_PRESS_ALPHA`]. What keeps the on-state readable is not
+/// the fill's loudness alone: BTN-2 also paints the accent dot and the accent
+/// foreground, and the hover it has to out-shout is
+/// `alpha(currentColor, `[`BTN_HOVER_ALPHA`]`)`, a foreground wash in a
+/// different hue rather than a quieter accent fill.
+pub(in crate::ui) const BTN_CHECKED_FILL_ALPHA: &str = "0.18";
 
 /// Checked + hover: brighter fill, same state display.
-pub(in crate::ui) const BTN_CHECKED_FILL_HOVER_ALPHA: &str = "0.30";
+pub(in crate::ui) const BTN_CHECKED_FILL_HOVER_ALPHA: &str = "0.22";
 
-/// Checked + pressed.
-pub(in crate::ui) const BTN_CHECKED_FILL_PRESS_ALPHA: &str = "0.38";
+/// Checked + pressed, and the loudest accent tint in the app — so this is the
+/// value [`ACCENT_TINT_CEILING`] is pinned to, and it may not exceed it.
+///
+/// It used to be 0.38, chosen for press feedback alone while
+/// `@reprise_accent_text_color` was still derived against the much quieter chip
+/// tint. The label on this fill therefore measured 2.97:1 in the dark palettes
+/// with the entire contrast suite green — nothing modelled the surface the text
+/// actually landed on. Following the precedent [`CHIP_BG_ALPHA`] set, the fill
+/// yields and the accent stays itself.
+pub(in crate::ui) const BTN_CHECKED_FILL_PRESS_ALPHA: &str = "0.26";
+
+/// Resting fill of a source-add action, and its hover and press steps. Same
+/// ladder as the checked toggle and under the same ceiling — these used to be
+/// literals inside `buttons::css`, where the ceiling guard could still see them
+/// but nothing pointed a reader from the fill back to the budget it spends.
+pub(in crate::ui) const ADD_ACTION_FILL_ALPHA: &str = "0.16";
+pub(in crate::ui) const ADD_ACTION_FILL_HOVER_ALPHA: &str = "0.21";
+pub(in crate::ui) const ADD_ACTION_FILL_PRESS_ALPHA: &str = "0.26";
+
+/// The heaviest accent-tinted background any app surface may paint.
+///
+/// `theme::Palette::critical_accent_surface` derives
+/// `@reprise_accent_text_color` against a surface tinted this far, so every
+/// accent foreground stays above [`super::accent::ACCENT_TEXT_MINIMUM_RATIO`]
+/// on the loudest tint that exists — not just on the plain surfaces. Modelling
+/// only the chip tint left the checked player-bar toggle at 2.97:1 while every
+/// contrast test passed, because the toggle fill is brighter than a chip's.
+///
+/// Raising this is not free in either direction. Too low and a louder tint
+/// ships unmeasured; too high and no single foreground can serve both ends of
+/// the palette any more — a heavy tint of a *light* system accent lifts a dark
+/// surface into mid-grey, the lightness search runs out of gamut, and the
+/// monochrome fallback then picks a foreground that fails on the plain surfaces
+/// instead. Measured across the brand teal and the four extreme system accents
+/// `accent::tests` exercises, and across the elevation ladder rather than the
+/// bare palette: 0.28 breaks that way and 0.26 is the last value where every
+/// accent still resolves and clears the ratio on every rung. Counting only the
+/// bare surfaces the budget looks like 0.30 — that reading is what left accent
+/// text on a tinted dialog card at 3.90:1.
+///
+/// `contrast_5a_accent_text_survives_every_tint_up_to_the_ceiling` holds both
+/// ends, and `contrast_5a_no_app_surface_tints_past_the_ceiling` proves no CSS
+/// rule exceeds it.
+pub(in crate::ui) const ACCENT_TINT_CEILING: &str = "0.26";
+
+/// Neutral fill of a disabled primary button, over `currentColor`.
+///
+/// A disabled filled button keeps no accent surface at all. Adwaita dims the
+/// accent fill instead, which lands the near-black accent foreground on a
+/// mid-dark tint of the accent — measured at roughly 2.5:1, the pairing that
+/// made "Sync now" unreadable while it was insensitive. WCAG exempts inactive
+/// controls from the ratio, so the fix is not the ratio itself: it is that the
+/// *absence* of the accent surface, not a muddied version of it, is what says
+/// the action is unavailable.
+pub(in crate::ui) const PRIMARY_DISABLED_FILL_ALPHA: &str = "0.08";
 
 /// Diameter of the on-state dot under a checked toggle — the second,
 /// non-colour cue that keeps the state readable with colour vision deficiency.
@@ -188,6 +248,150 @@ pub(in crate::ui) const NOW_PLAYING_QUEUE_TITLE_SIZE: &str = "13.5px";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every accent tint the app may paint, resting states included. The
+    /// ceiling has to bound this list, not just the loudest single token —
+    /// a tint added here without raising the ceiling ships unmeasured.
+    fn accent_tint_alphas() -> Vec<(&'static str, f64)> {
+        [
+            ("chip", CHIP_BG_ALPHA),
+            ("chip:hover", CHIP_BG_HOVER_ALPHA),
+            ("flat:hover", HOVER_BG_ALPHA),
+            ("panel toggle:checked:hover", HOVER_BG_ALPHA_STRONG),
+            ("toggle:checked", BTN_CHECKED_FILL_ALPHA),
+            ("toggle:checked:hover", BTN_CHECKED_FILL_HOVER_ALPHA),
+            ("toggle:checked:active", BTN_CHECKED_FILL_PRESS_ALPHA),
+            ("add action", ADD_ACTION_FILL_ALPHA),
+            ("add action:hover", ADD_ACTION_FILL_HOVER_ALPHA),
+            ("add action:active", ADD_ACTION_FILL_PRESS_ALPHA),
+            ("now playing pill:active", NOW_PLAYING_PILL_ACTIVE_ALPHA),
+        ]
+        .into_iter()
+        .map(|(name, token)| (name, token.parse().expect("tint token is a fraction")))
+        .collect()
+    }
+
+    fn elevation_rung(token: &str) -> f64 {
+        token.parse().expect("elevation tint token is a fraction")
+    }
+
+    #[test]
+    fn contrast_5a_the_ceiling_bounds_every_accent_tint_token() {
+        let ceiling: f64 = ACCENT_TINT_CEILING.parse().expect("ceiling is a fraction");
+        for (name, alpha) in accent_tint_alphas() {
+            assert!(
+                alpha <= ceiling,
+                "the {name} tint paints at {alpha}, past the {ceiling} ceiling \
+                 @reprise_accent_text_color is derived against"
+            );
+        }
+    }
+
+    /// The derivation is bounded at *both* ends, and only one end is a contrast
+    /// floor. Raising the ceiling far enough pushes the lightened accent out of
+    /// the sRGB gamut, `ensure_contrast_by_lightness` returns `None`, and the
+    /// role falls back to black or white — which silently removes the brand hue
+    /// from every accent foreground in the app rather than failing a test. So
+    /// this asserts the ratio *and* that the answer is still the accent.
+    #[test]
+    fn contrast_5a_accent_text_survives_every_tint_up_to_the_ceiling() {
+        use super::super::accent::{ACCENT_TEXT_MINIMUM_RATIO, APP_ACCENT};
+        use super::super::color_math::{
+            composite, contrast_ratio, ensure_contrast_by_lightness, parse_hex_rgb,
+        };
+        use super::super::theme::Theme;
+
+        let ceiling: f64 = ACCENT_TINT_CEILING.parse().expect("ceiling is a fraction");
+        let accent = parse_hex_rgb(APP_ACCENT).expect("the brand accent is valid hex");
+
+        for theme in Theme::all() {
+            for (appearance, palette, is_dark) in [
+                ("dark", theme.palette(), true),
+                ("light", theme.light_palette(), false),
+            ] {
+                let critical = palette.critical_accent_surface(is_dark, accent);
+                assert!(
+                    ensure_contrast_by_lightness(
+                        accent,
+                        critical,
+                        is_dark,
+                        ACCENT_TEXT_MINIMUM_RATIO
+                    )
+                    .is_some(),
+                    "{theme:?} {appearance}: the accent text role cannot reach \
+                     {ACCENT_TEXT_MINIMUM_RATIO}:1 on a {ceiling} tint by lightness alone and \
+                     would fall back to monochrome, dropping the brand hue app-wide"
+                );
+
+                let text = parse_hex_rgb(&super::super::accent::accent_text_color(
+                    accent, critical, is_dark,
+                ))
+                .expect("the derived accent text is valid hex");
+
+                for surface in palette.surfaces() {
+                    let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                    // Walk the elevation ladder, not just the bare surface: the
+                    // dialog rungs are white over the ground below them, and an
+                    // accent tint on a dialog *card* is lighter than the same
+                    // tint on `dialog_bg_color`. Measuring the bare surfaces
+                    // alone reported this palette safe while accent text on a
+                    // tinted card sat at 3.90:1.
+                    for (rung, elevation) in [
+                        ("plain", 0.0),
+                        ("dialog headerbar", elevation_rung(DIALOG_HEADER_TINT_ALPHA)),
+                        ("dialog card", elevation_rung(DIALOG_CARD_ALPHA)),
+                    ] {
+                        const WHITE: [u8; 3] = [255, 255, 255];
+                        let ground = composite(WHITE, plain, elevation);
+                        for (name, alpha) in accent_tint_alphas() {
+                            let tinted = composite(accent, ground, alpha);
+                            let ratio = contrast_ratio(text, tinted);
+                            assert!(
+                                ratio >= ACCENT_TEXT_MINIMUM_RATIO,
+                                "{theme:?} {appearance}: accent text on the {rung} rung of \
+                                 {surface} under the {name} tint reaches only {ratio:.2}:1"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The disabled primary button is exempt from AA (WCAG excludes inactive
+    /// controls), but "exempt" is what produced the 2.5:1 pairing this replaced.
+    /// Its label is held to the same floor as any other text so the exemption
+    /// cannot quietly become the excuse again.
+    #[test]
+    fn btn_5_the_disabled_primary_label_stays_readable() {
+        use super::super::color_math::{composite, contrast_ratio, parse_hex_rgb};
+        use super::super::theme::Theme;
+
+        let fill: f64 = PRIMARY_DISABLED_FILL_ALPHA
+            .parse()
+            .expect("token is a fraction");
+
+        for theme in Theme::all() {
+            for (appearance, palette) in
+                [("dark", theme.palette()), ("light", theme.light_palette())]
+            {
+                let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
+                for surface in palette.surfaces() {
+                    let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                    // `color` is set on the same rule, so `currentColor` in the
+                    // fill is the already-translucent secondary level.
+                    let ground = composite(foreground, plain, SECONDARY_TEXT_ALPHA * fill);
+                    let label = composite(foreground, ground, SECONDARY_TEXT_ALPHA);
+                    let ratio = contrast_ratio(label, ground);
+                    assert!(
+                        ratio >= 4.5,
+                        "{theme:?} {appearance}: the disabled primary label on {surface} \
+                         reaches only {ratio:.2}:1"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn transition_css_uses_the_micro_motion_token() {

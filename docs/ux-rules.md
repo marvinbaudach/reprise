@@ -3429,12 +3429,24 @@ property is set and yet nothing happens.
   translucent content respectively. Artist, time, search field, and header
   actions are active content; only disabled or purely decorative elements
   are allowed to fall below that.
-- **CONTRAST-5** [active] [gtk] — An accent used as a text or glyph foreground
-  reaches at least 4.5:1 against the critical surface of the current light or
-  dark appearance. The foreground is derived from the effective app or system
-  accent by adjusting OKLab lightness; themes and feature CSS never type their
-  own accent foreground. Accent-colored surfaces are outside this rule and
+- **CONTRAST-5** [replaced by CONTRAST-5a] — An accent used as a text or glyph
+  foreground reaches at least 4.5:1 against the critical surface of the current
+  light or dark appearance. The foreground is derived from the effective app or
+  system accent by adjusting OKLab lightness; themes and feature CSS never type
+  their own accent foreground. Accent-colored surfaces are outside this rule and
   continue to pair with `accent_fg_color`.
+- **CONTRAST-5a** [active] [gtk] — As CONTRAST-5, and the critical surface is
+  pinned: it is the palette surface tinted by `tokens::ACCENT_TINT_CEILING`, the
+  **heaviest accent-tinted background any rule in the app may paint**. "Critical
+  surface" left as a judgement call is what let the checked player-bar toggle
+  ship at 2.97:1 with the whole contrast suite green — the role was derived
+  against the filter chip's tint while the toggle filled almost twice as far.
+  Two obligations follow, and both are enforced rather than reviewed. A fill
+  louder than the ceiling is a bug in the fill, not in the ceiling: the fill
+  yields, the accent stays itself. And the ceiling itself is bounded from above
+  — past it, a heavy tint of a near-white system accent lifts a dark surface to
+  mid-grey, the lightness search leaves the sRGB gamut, and the monochrome
+  fallback silently drops the brand hue app-wide while every ratio still passes.
 - **NAV-10** [replaced by NAV-10a] — The running context stays visible in
   all views with a shared playback-accent marker; on first entry into a
   view it is revealed once, later switches restore NAV-5's remembered
@@ -3995,6 +4007,13 @@ STYLE-1).
   big Play/Pause button is the primary action and may respond more
   visibly on press than its neighbors: an additional ring in the playback
   accent.
+- **BTN-5** [active] [gtk] — A **primary action that cannot be taken drops its
+  accent surface** instead of dimming it. Dimming a filled button leaves the
+  near-black accent foreground on a mid-dark tint of the accent — measured at
+  about 2.5:1, and the reason an insensitive "Sync now" was unreadable. The
+  missing surface is the state signal, so the label stays at the secondary text
+  level and readable. Disabled controls are exempt from CONTRAST-1's ratio;
+  that exemption is not a licence to make them illegible.
 - **BTN-4** [active] [gtk] — Hover, Active and Focus are defined **once**
   (`ui/style/buttons.rs`) and applied everywhere, via class or — where
   Adwaita builds the buttons internally — via selector from the same

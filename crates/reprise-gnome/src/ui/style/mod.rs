@@ -392,8 +392,85 @@ mod tests {
             .collect()
     }
 
+    /// Every accent-tinted *background* alpha the app CSS paints, parsed out of
+    /// the composed stylesheet rather than read off a hand-kept token list —
+    /// several tint alphas are still literals inside their feature's `css()`,
+    /// and a list would not see them.
+    fn accent_background_tints(css: &str) -> Vec<(String, f64)> {
+        css.split(['{', '}', ';'])
+            .filter_map(|declaration| {
+                let (property, value) = declaration.split_once(':')?;
+                let property = property.trim().rsplit([' ', '\n', '\t']).next()?;
+                if property != "background-color" && property != "background" {
+                    return None;
+                }
+                let rest = value.split_once("alpha(")?.1;
+                let (role, alpha) = rest.split_once(',')?;
+                let role = role.trim();
+                if role != "@accent_color" && role != "@accent_bg_color" {
+                    return None;
+                }
+                let alpha = alpha.split(')').next()?.trim().parse().ok()?;
+                Some((declaration.trim().to_owned(), alpha))
+            })
+            .collect()
+    }
+
+    /// CONTRAST-5's other half. `@reprise_accent_text_color` is derived against
+    /// a surface tinted to `tokens::ACCENT_TINT_CEILING`, so that derivation is
+    /// only a guarantee while no rule tints further. A louder fill added
+    /// anywhere in the app silently invalidates the role for every widget that
+    /// reads it — which is exactly how the checked player-bar toggle shipped at
+    /// 2.97:1 with the full contrast suite green.
     #[test]
-    fn contrast_5_app_css_never_uses_unverified_accent_as_foreground() {
+    fn contrast_5a_no_app_surface_tints_past_the_ceiling() {
+        let ceiling: f64 = super::tokens::ACCENT_TINT_CEILING
+            .parse()
+            .expect("the accent tint ceiling is a decimal fraction");
+        let css = super::app_css();
+        let tints = accent_background_tints(&css);
+
+        assert!(
+            !tints.is_empty(),
+            "the tint parser found nothing — app CSS always paints accent tints, \
+             so this is the parser breaking, not the app improving"
+        );
+
+        let over: Vec<_> = tints
+            .into_iter()
+            .filter(|(_, alpha)| *alpha > ceiling)
+            .collect();
+        assert!(
+            over.is_empty(),
+            "app CSS tints a surface past the {ceiling} ceiling that \
+             @reprise_accent_text_color is derived against: {over:#?}\n\
+             either lower the fill or raise ACCENT_TINT_CEILING — and if you \
+             raise it, contrast_5a_accent_text_survives_every_tint_up_to_the_ceiling \
+             decides whether the accent can still follow"
+        );
+    }
+
+    #[test]
+    fn contrast_5a_the_tint_ceiling_guard_catches_a_louder_fill() {
+        let over =
+            accent_background_tints(".x { background-color: alpha(@accent_bg_color, 0.9); }");
+        assert_eq!(over.len(), 1, "guard missed a louder accent fill");
+        assert!((over[0].1 - 0.9).abs() < f64::EPSILON);
+
+        for ignored in [
+            ".x { color: alpha(@accent_color, 0.9); }",
+            ".x { background-color: alpha(currentColor, 0.9); }",
+            ".x { border-color: alpha(@accent_color, 0.9); }",
+        ] {
+            assert!(
+                accent_background_tints(ignored).is_empty(),
+                "guard false-flagged {ignored}"
+            );
+        }
+    }
+
+    #[test]
+    fn contrast_5a_app_css_never_uses_unverified_accent_as_foreground() {
         let unverified = unverified_accent_foregrounds(&super::app_css());
 
         assert!(
@@ -404,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn contrast_5_the_foreground_guard_catches_every_spelling() {
+    fn contrast_5a_the_foreground_guard_catches_every_spelling() {
         // This guard is the regression net for the whole sweep, so prove it
         // actually trips — on each way the violation can be written.
         for offender in [

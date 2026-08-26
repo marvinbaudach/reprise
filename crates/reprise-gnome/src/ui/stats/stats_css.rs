@@ -83,7 +83,7 @@ pub(in crate::ui) fn css() -> String {
            letter-spacing: 0.06em; \
            padding: 1px 6px; \
            border-radius: 4px; \
-           background-color: alpha(@accent_bg_color, 0.28); \
+           background-color: alpha(@accent_bg_color, {ceiling}); \
            color: @reprise_accent_text_color; }}\n\
          \
          .stats-cover-thumb {{ \
@@ -222,6 +222,7 @@ pub(in crate::ui) fn css() -> String {
          .stats-top-track-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-artist-row {{ padding: 0; }}\n\
          .stats-bands-card {{ padding: 8px; }}",
+        ceiling = tokens::ACCENT_TINT_CEILING,
         radius = tokens::RADIUS_SURFACE,
         border_alpha = tokens::SURFACE_BORDER_ALPHA,
         hover_alpha = tokens::BTN_HOVER_ALPHA,
