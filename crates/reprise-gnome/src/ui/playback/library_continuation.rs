@@ -36,7 +36,9 @@ use crate::ui::player_controller::{PlayerController, VisibleView};
 
 #[path = "library_continuation_rebind.rs"]
 mod rebind;
-use rebind::{rebind_to_unfiltered_view, rebound_library_origin};
+use rebind::{
+    rebind_live_count_matches_visible, rebind_to_unfiltered_view, rebound_library_origin,
+};
 
 /// The shared PLAY-11 gate: may this snapshot hand off to the whole library?
 ///
@@ -176,6 +178,23 @@ impl PlayerController {
             return false;
         };
         let visible = provider();
+        if remaining != 0 {
+            let live_count = match queries::query_track_count(
+                &self.conn,
+                &reprise_core::view_source::ViewSource::Library,
+                "",
+                &[],
+            ) {
+                Ok(count) => count,
+                Err(error) => {
+                    tracing::error!(%error, "failed to count live library before queue rebind");
+                    return false;
+                }
+            };
+            if !rebind_live_count_matches_visible(&visible, live_count) {
+                return false;
+            }
+        }
         let random_live_ids = match queries::query_random_live_track_ids(&self.conn) {
             Ok(ids) => ids,
             Err(error) => {

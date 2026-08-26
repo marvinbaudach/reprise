@@ -10,8 +10,10 @@ use crate::ui::player_controller::VisibleView;
 /// Rebuild a running filtered-library snapshot from the now-unfiltered view.
 ///
 /// The live ids are independent evidence for the shared PLAY-11/PLAY-15 row
-/// count and membership gate. The returned ids deliberately come from the
-/// visible view: they retain its sort order and its ordinary queue cap.
+/// count and membership gate. The returned ids come back in the visible
+/// view's order with the running title's index and the ordinary queue cap.
+/// `Queue::set_tracks` then keeps that order at `pos = start_index`, or, when
+/// shuffle is on, reshuffles behind the running title at `pos = 0`.
 pub(super) fn rebind_to_unfiltered_view(
     origin: Option<&PlayOrigin>,
     repeat: Repeat,
@@ -29,6 +31,10 @@ pub(super) fn rebind_to_unfiltered_view(
     Some((visible.ids.clone(), current_position))
 }
 
+pub(super) fn rebind_live_count_matches_visible(visible: &VisibleView, live_count: i64) -> bool {
+    usize::try_from(live_count).is_ok_and(|count| count == visible.total)
+}
+
 /// The origin stored after PLAY-15 takes over. An unfiltered Library origin is
 /// also the loop guard: the reload caused by the queue notification cannot
 /// satisfy `cleared_filter_origin` again.
@@ -43,7 +49,9 @@ mod tests {
     use reprise_core::queue::Repeat;
     use reprise_core::view_source::ViewSource;
 
-    use super::{rebind_to_unfiltered_view, rebound_library_origin};
+    use super::{
+        rebind_live_count_matches_visible, rebind_to_unfiltered_view, rebound_library_origin,
+    };
     use crate::ui::playback::library_continuation::cleared_filter_origin;
     use crate::ui::playback::play_origin::PlayOrigin;
     use crate::ui::player_controller::VisibleView;
@@ -62,6 +70,14 @@ mod tests {
             place,
             label: "Music".into(),
         }
+    }
+
+    #[test]
+    fn play_15_random_live_ids_are_only_needed_when_counts_match() {
+        let visible = whole(&[1, 2, 3]);
+
+        assert!(rebind_live_count_matches_visible(&visible, 3));
+        assert!(!rebind_live_count_matches_visible(&visible, 4));
     }
 
     #[test]
