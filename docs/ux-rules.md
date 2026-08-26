@@ -429,6 +429,12 @@ result.
   a facet, typing in the search field — leaves the snapshot alone, as PLAY-3b
   and PLAY-8 require. Repeat One/All are never rebound; Missing and deleted
   titles are excluded.
+- **PLAY-16** [active] [gtk] — The play button in the player bar and the mini
+  player paints the playback accent with a white glyph. It is the playback
+  identity shared with the running marker and the equalizer bars, and is
+  deliberately exempt from the 3:1 that CONTRAST-5a would otherwise impose on
+  a non-text accent-surface control. The app-accent pairing measures 1.69:1;
+  the exemption records that cost rather than hiding it.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
@@ -3458,6 +3464,9 @@ property is set and yet nothing happens.
   — past it, a heavy tint of a near-white system accent lifts a dark surface to
   mid-grey, the lightness search leaves the sRGB gamut, and the monochrome
   fallback silently drops the brand hue app-wide while every ratio still passes.
+  PLAY-16 is the explicit exception: the play buttons keep the playback accent
+  and white glyph as product identity, with their measured 1.69:1 cost recorded
+  there rather than claimed as this rule's accent-surface carve-out.
 - **NAV-10** [replaced by NAV-10a] — The running context stays visible in
   all views with a shared playback-accent marker; on first entry into a
   view it is revealed once, later switches restore NAV-5's remembered

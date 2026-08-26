@@ -1,5 +1,15 @@
 use super::tokens::{PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA};
 
+/// WCAG 1.4.3's minimum contrast ratio for normal text, matching
+/// `accent::ACCENT_TEXT_MINIMUM_RATIO`.
+const NORMAL_TEXT_MINIMUM_RATIO: f64 = 4.5;
+
+/// White-glyph contrast measured against the default Reprise brand accent.
+const DEFAULT_BRAND_ACCENT_GLYPH_RATIO: f64 = 1.69;
+
+/// Rounding tolerance for the recorded default-brand-accent measurement.
+const DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE: f64 = 0.01;
+
 type CssFn = fn() -> String;
 
 struct PanelRole {
@@ -203,7 +213,14 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
         "the build badge no longer owns its own background, so its exemption \
          from the fixed-foreground sweep no longer holds: {badge}"
     );
-    let swept = css.replace(badge, "");
+    let mut swept = css.replace(badge, "");
+    // PLAY-16 deliberately exempts the two play faces from CONTRAST-5a's fixed
+    // foreground sweep. Remove only their live rule bodies; widening this to a
+    // colour-based exemption would hide unrelated fixed-white regressions.
+    for selector in [".player-bar-play", ".mini-player-play"] {
+        let play = rule_body(&swept, selector).to_owned();
+        swept = swept.replace(&play, "");
+    }
     let fixed = fixed_foregrounds(&swept);
     assert!(
         fixed.is_empty(),
@@ -228,25 +245,9 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
     }
 }
 
-/// Accent *surfaces* are the one carve-out in CONTRAST-5a: they do not take the
-/// derived `@reprise_accent_text_color` but libadwaita's own
-/// `@accent_bg_color`/`@accent_fg_color` pair, which the theme guarantees
-/// against each other.
-///
-/// The pairing is load-bearing in both halves. `@accent_color` — which
-/// `@reprise_player_accent` aliases — is not interchangeable with
-/// `@accent_bg_color`: libadwaita derives it as
-/// `oklab(from accent_bg_color max(l, 0.85))` in dark and `min(l, 0.5)` in
-/// light, a standalone tint for text *on the window*. A dark system accent
-/// therefore gets a white `@accent_fg_color` over a near-pastel `@accent_color`
-/// — the same failure, in a theme nobody tests by hand.
 #[test]
-fn contrast_5a_accent_surfaces_pair_with_the_theme_accent_foreground() {
+fn play_16_the_play_buttons_keep_the_playback_accent_and_white_glyph() {
     use super::color_math::{contrast_ratio, parse_hex_rgb};
-
-    /// Non-text UI elements owe 3:1 (WCAG 1.4.11); the glyph in these buttons
-    /// is the only thing that says play or pause.
-    const GLYPH_MINIMUM_RATIO: f64 = 3.0;
 
     for (css, selector) in [
         (crate::ui::player_bar_layout::css(), ".player-bar-play"),
@@ -257,34 +258,105 @@ fn contrast_5a_accent_surfaces_pair_with_the_theme_accent_foreground() {
     ] {
         let rule = rule_body(&css, selector);
         assert!(
-            rule.contains("background-color: @accent_bg_color"),
-            "{selector} does not paint the accent surface role: {rule}"
+            rule.contains("background-color: @reprise_player_accent"),
+            "PLAY-16: {selector} lost the playback accent: {rule}"
         );
         assert!(
-            rule.contains("color: @accent_fg_color"),
-            "{selector} does not take the accent surface's own foreground: {rule}"
-        );
-        assert!(
-            !rule.contains("background-color: @reprise_player_accent"),
-            "{selector} paints its face with the standalone accent, which \
-             @accent_fg_color carries no guarantee against: {rule}"
+            rule.contains("color: #ffffff"),
+            "PLAY-16: {selector} lost its deliberately white glyph: {rule}"
         );
     }
 
-    // The system path is libadwaita's guarantee; the app path is ours, so it is
-    // the one measured here.
+    let white = [u8::MAX; 3];
     let accent = parse_hex_rgb(super::accent::APP_ACCENT).expect("brand accent is valid hex");
-    let foreground = parse_hex_rgb(
-        super::accent::accent_fg(super::accent::AccentSource::App)
-            .expect("the app accent defines its own foreground"),
-    )
-    .expect("the app accent foreground is valid hex");
-    let ratio = contrast_ratio(foreground, accent);
+    let ratio = contrast_ratio(white, accent);
     assert!(
-        ratio >= GLYPH_MINIMUM_RATIO,
-        "the play glyph reaches only {ratio:.2}:1 on the brand accent (minimum \
-         {GLYPH_MINIMUM_RATIO:.1}:1)"
+        (ratio - DEFAULT_BRAND_ACCENT_GLYPH_RATIO).abs()
+            < DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE,
+        "PLAY-16 records the default brand accent's measured 1.69:1 cost; a build with a \
+         different REPRISE_APP_ACCENT will legitimately differ, measured {ratio:.2}:1"
     );
+}
+
+#[test]
+fn named_button_and_grounded_checkbox_foreground_pairs_clear_normal_text_minimum() {
+    use super::color_math::{composite, contrast_ratio, parse_hex_rgb};
+    use super::theme::Theme;
+    use super::tokens::{
+        BTN_CHECKED_FILL_ALPHA, PRIMARY_DISABLED_FILL_ALPHA, SECONDARY_TEXT_ALPHA,
+    };
+
+    fn hex(rgb: [u8; 3]) -> String {
+        format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])
+    }
+
+    let palette = Theme::DEFAULT.palette();
+    let accent = parse_hex_rgb(super::accent::APP_ACCENT).expect("brand accent is valid hex");
+    let accent_fg = parse_hex_rgb(
+        super::accent::accent_fg(super::accent::AccentSource::App)
+            .expect("the app accent owns a surface foreground"),
+    )
+    .expect("app accent foreground is valid hex");
+    let theme_fg = parse_hex_rgb(palette.fg).expect("theme foreground is valid hex");
+    let headerbar = parse_hex_rgb(palette.headerbar_bg).expect("headerbar is valid hex");
+    let card = parse_hex_rgb(palette.card_bg).expect("card is valid hex");
+    let window = parse_hex_rgb(palette.window_bg).expect("window is valid hex");
+
+    let accent_text = parse_hex_rgb(&super::accent::accent_text_color(
+        accent,
+        palette.critical_accent_surface(true, accent),
+        true,
+    ))
+    .expect("derived accent text is valid hex");
+    let checked_fill = composite(
+        accent,
+        headerbar,
+        BTN_CHECKED_FILL_ALPHA
+            .parse()
+            .expect("checked fill is a fraction"),
+    );
+    let disabled_fill = composite(
+        theme_fg,
+        card,
+        SECONDARY_TEXT_ALPHA
+            * PRIMARY_DISABLED_FILL_ALPHA
+                .parse::<f64>()
+                .expect("disabled fill is a fraction"),
+    );
+    let disabled_text = composite(theme_fg, disabled_fill, SECONDARY_TEXT_ALPHA);
+
+    let css = crate::ui::style::buttons::css();
+    assert!(css.contains("color: @reprise_accent_text_color"));
+    assert!(css.contains("color: @reprise_secondary_fg_color"));
+    let doctor_css = crate::ui::library_doctor::css();
+    assert!(doctor_css.contains(
+        ".doctor-album-check:checked, .doctor-review-select-all:checked { background: \
+         var(--accent-bg-color); color: var(--window-bg-color); }"
+    ));
+
+    // The device-sync playlist checkbox carries no Reprise CSS rule, so no
+    // foreground/background pair can be tied to it here. Whether it needs one
+    // remains an open user decision from the plan's Task 5.
+    let measurements = [
+        ("resting filled primary", accent_fg, accent),
+        ("checked shuffle toggle", accent_text, checked_fill),
+        ("disabled primary", disabled_text, disabled_fill),
+        ("Library Doctor album checkbox", window, accent),
+    ];
+
+    for (target, foreground, background) in measurements {
+        let ratio = contrast_ratio(foreground, background);
+        eprintln!(
+            "MEASURE {target}: foreground={} background={} ratio={ratio:.3}:1",
+            hex(foreground),
+            hex(background)
+        );
+        assert!(
+            ratio >= NORMAL_TEXT_MINIMUM_RATIO,
+            "{target} reaches only {ratio:.3}:1 (minimum \
+             {NORMAL_TEXT_MINIMUM_RATIO:.1}:1)"
+        );
+    }
 }
 
 #[test]

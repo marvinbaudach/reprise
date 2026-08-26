@@ -464,21 +464,12 @@ pub(in crate::ui) fn css() -> String {
         ".{SURFACE_CSS_CLASS} {{ \
            background-color: @headerbar_bg_color; \
            border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
-         /* CONTRAST-5a: this is an accent *surface*, so it takes libadwaita's
-            guaranteed pair — `@accent_bg_color` under `@accent_fg_color` — and
-            not the standalone `@reprise_player_accent`. The glyph used to be a
-            fixed white, which on the brand teal is 1.69:1: the app's most
-            prominent control failed the 3:1 every non-text UI element owes.
-            `@accent_color`, which the player accent aliases, is derived by
-            libadwaita as `oklab(from accent_bg_color max(l, 0.85))` in dark —
-            a pale standalone tint meant for text *on the window*. Keeping the
-            face on it would leave a dark system accent's white
-            `@accent_fg_color` on a near-pastel ground. The glow below stays on
-            the player accent: a shadow owes no ratio, and it is the playback
-            identity the marker and the EQ bars also read. */\n\
+         /* PLAY-16: the play button deliberately keeps the playback accent and
+            a white glyph as its product identity. This measured 1.69:1 and does
+            not meet the 3:1 a non-text control would otherwise owe. */\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
-           background-color: @accent_bg_color; color: @accent_fg_color; \
+           background-color: @reprise_player_accent; color: #ffffff; \
            box-shadow: inset 0 2px 1px alpha(#ffffff, 0.34), \
                        inset 0 -4px 3px alpha(#000000, 0.30), \
                        0 6px 12px alpha(#000000, 0.36), \
