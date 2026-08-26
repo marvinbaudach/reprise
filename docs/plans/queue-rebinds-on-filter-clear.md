@@ -2,7 +2,7 @@
 slug: queue-rebinds-on-filter-clear
 worktree: /home/marvin/Projects/reprise-queue-rebinds-on-filter-clear
 branch: feature/queue-rebinds-on-filter-clear
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-26
 ---
