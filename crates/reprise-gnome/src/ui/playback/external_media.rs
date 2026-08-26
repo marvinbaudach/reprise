@@ -63,11 +63,11 @@ impl PlayerController {
 
     /// Registers a listener for "an episode was marked played".
     ///
-    /// This is deliberately separate from `add_on_queue_changed`: a queue
-    /// change is playback state and moves no database-backed count, which is
-    /// what lets that path patch a single badge instead of rebuilding. Marking
-    /// an episode played *does* move one — the unplayed counts behind the
-    /// Podcasts and YouTube rows — so it needs a signal of its own.
+    /// This is deliberately separate from `add_on_queue_changed`: the played
+    /// mark is database state the open Podcasts and YouTube views render per
+    /// row, so those views have to hear about it even when the queue did not
+    /// change. It moves no sidebar count — under `SRC-1a` those name
+    /// subscriptions — and therefore triggers no rebuild.
     pub(in crate::ui) fn add_on_episode_played(&self, callback: impl Fn(i64) + 'static) {
         self.external
             .borrow_mut()

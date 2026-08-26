@@ -5647,13 +5647,21 @@ grammar for location, filtering, adding, and reversible removal.
 External media remains structurally outside the track queue and the
 listening statistics.
 
-- **SRC-1** [active] [gtk] — Podcasts and radio sit in the LIBRARY
-  section between Music and Queue and appear only when the module is
-  active. The podcast counter shows unplayed episodes, the radio
-  counter shows favorites; zero stays invisible. Radio is active by
-  default because it only transmits on user action; the binding
-  condition is a radio empty state with exactly one directly reachable
-  "Add station" action.
+- **SRC-1** [replaced by SRC-1a] [gtk] — Original rule; its counter half
+  read the podcast number as unplayed episodes, which made two of the
+  three sibling rows count something the third one does not.
+- **SRC-1a** [active] [gtk] — Podcasts, YouTube and radio sit in the
+  LIBRARY section between Music and Queue and appear only when the
+  module is active. Each of the three counters shows its own inventory:
+  how many shows are subscribed, how many channels are followed, how
+  many stations are favorites — never how much is still unheard. A
+  number that also falls when something is played reads as a backlog the
+  user never asked for, and the three rows would then answer three
+  different questions with the same badge; the unplayed count stays
+  where it is usable, in the view's Unplayed filter (`SRC-2`). Zero
+  stays invisible. Radio is active by default because it only transmits
+  on user action; the binding condition is a radio empty state with
+  exactly one directly reachable "Add station" action.
 - **SRC-2** [active] [gtk] — Adding uses a tinted rectangular button
   with a label and radius 8 in both sources, never the chip shape. The plus was
   never rendered on the podcast side because setting its label replaced the

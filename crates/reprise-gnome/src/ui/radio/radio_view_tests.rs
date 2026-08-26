@@ -291,7 +291,7 @@ fn src_13_activating_a_station_here_leaves_the_viewport_where_the_user_put_it() 
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_1_radio_empty_state_offers_add_station_without_playback() {
+fn src_1a_radio_empty_state_offers_add_station_without_playback() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = RadioView::new(conn, None);

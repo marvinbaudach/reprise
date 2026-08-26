@@ -602,7 +602,7 @@ pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, ru
     })
 }
 
-fn kind_setting(kind: PodcastKind) -> &'static str {
+pub(super) fn kind_setting(kind: PodcastKind) -> &'static str {
     match kind {
         PodcastKind::Rss => "rss",
         PodcastKind::Youtube => "youtube",

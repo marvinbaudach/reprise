@@ -155,24 +155,28 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         // online-sources gate, matching every other online-source row here.
         let podcasts_enabled =
             online_sources::network_allowed(conn, &modules::PODCASTS_MODULE).unwrap_or(false);
+        // SRC-1a: both counters name how many sources the user follows, the
+        // way Radio's names its favourites — not how many episodes are
+        // waiting. Three sibling rows that all count their own inventory.
         let podcasts_count = if podcasts_enabled {
-            podcasts::query::count_unplayed_for_kind(conn, podcasts::PodcastKind::Rss).map_or_else(
-                |error| {
-                    tracing::error!(%error, "failed to count unplayed podcast episodes");
-                    0
-                },
-                |count| i64::try_from(count).unwrap_or(i64::MAX),
-            )
+            podcasts::query::count_subscriptions_for_kind(conn, podcasts::PodcastKind::Rss)
+                .map_or_else(
+                    |error| {
+                        tracing::error!(%error, "failed to count podcast subscriptions");
+                        0
+                    },
+                    |count| i64::try_from(count).unwrap_or(i64::MAX),
+                )
         } else {
             0
         };
         let youtube_enabled =
             online_sources::network_allowed(conn, &modules::YOUTUBE_MODULE).unwrap_or(false);
         let youtube_count = if youtube_enabled {
-            podcasts::query::count_unplayed_for_kind(conn, podcasts::PodcastKind::Youtube)
+            podcasts::query::count_subscriptions_for_kind(conn, podcasts::PodcastKind::Youtube)
                 .map_or_else(
                     |error| {
-                        tracing::error!(%error, "failed to count unplayed YouTube episodes");
+                        tracing::error!(%error, "failed to count YouTube subscriptions");
                         0
                     },
                     |count| i64::try_from(count).unwrap_or(i64::MAX),
