@@ -33,6 +33,8 @@ class ManifestPermissionsTest {
     }
 
     private companion object {
+        // VIBRATE carries the queue reorder's haptics; see QueueHaptics and
+        // the manifest comment beside it.
         // ACCESS_NETWORK_STATE and WAKE_LOCK are contributed by
         // androidx.media3:media3-exoplayer:1.10.1. The app-scoped signature
         // permission is contributed by androidx.core:core:1.19.0.
@@ -40,6 +42,7 @@ class ManifestPermissionsTest {
             Manifest.permission.FOREGROUND_SERVICE,
             Manifest.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK,
             Manifest.permission.POST_NOTIFICATIONS,
+            Manifest.permission.VIBRATE,
             Manifest.permission.INTERNET,
             Manifest.permission.ACCESS_NETWORK_STATE,
             Manifest.permission.WAKE_LOCK,
