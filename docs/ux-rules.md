@@ -309,7 +309,8 @@ result.
   from outside it.
 - **PLAY-3b** [active] [gtk] — Changing the filter afterward does not
   touch an already-built queue (the queue is a snapshot; visible in
-  "Queue").
+  "Queue"), except when completely clearing a filtered Music library
+  refinement rebinds it under PLAY-15.
 - **PLAY-4a** [active] [core] — Missing in lists: list playback and
   queue advance skip Missing silently.
 - **PLAY-4b** [active] [gtk] — Double-click on a concrete Missing row:
@@ -354,10 +355,11 @@ result.
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
   running item nor a snapshot that still has titles ahead of it; the
-  exhausted case belongs to PLAY-11. After the last context track, playback
-  ends with Repeat off unless an explicit manual entry or PLAY-11's new
-  full-library continuation follows; queue hygiene is governed by
-  PLAY-5a/5b/5c.
+  exhausted case belongs to PLAY-11, and completely clearing a filtered Music
+  library refinement is PLAY-15's narrow exception. After the last context
+  track, playback ends with Repeat off unless an explicit manual entry or
+  PLAY-11's new full-library continuation follows; queue hygiene is governed
+  by PLAY-5a/5b/5c.
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable
@@ -371,21 +373,21 @@ result.
   player placeholder, never a broken-image state.
 - **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
   while it still has titles ahead of it.** Later navigation, search, facets,
-  and clearing a filter never rewrite a snapshot with a future. Exception once
-  it is exhausted — nothing left ahead of the cursor: if the snapshot
-  originated in a search- or facet-filtered Music library and Music is now
-  completely unfiltered, Reprise continues from all existing library titles in
-  random order. **While a title is still playing, that continuation is bound in
-  at once**, the moment Music becomes unfiltered, so the queue stops reading
-  empty for the rest of the title; the running title keeps the cursor, is never
-  restarted or re-ordered, and every other library title follows it exactly
-  once. If the final title has already ended instead, a new random snapshot
-  starts on a title other than the one just finished — which may occur later in
-  it, but never starts it. Missing and deleted titles are excluded. If the
-  filter is still active, the origin was not the Music library, the visible list
-  is not the complete library, or no other title exists, playback ends as
-  before. Explicit Play Next entries retain priority and Repeat One/All
-  retain their existing queue behavior.
+  and clearing a filter never rewrite a snapshot with a future, except as
+  PLAY-15 provides. Exception once it is exhausted — nothing left ahead of the
+  cursor: if the snapshot originated in a search- or facet-filtered Music
+  library and Music is now completely unfiltered, Reprise continues from all
+  existing library titles in random order. **While a title is still playing,
+  that continuation is bound in at once**, the moment Music becomes unfiltered,
+  so the queue stops reading empty for the rest of the title; the running title
+  keeps the cursor, is never restarted or re-ordered, and every other library
+  title follows it exactly once. If the final title has already ended instead,
+  a new random snapshot starts on a title other than the one just finished —
+  which may occur later in it, but never starts it. Missing and deleted titles
+  are excluded. If the filter is still active, the origin was not the Music
+  library, the visible list is not the complete library, or no other title
+  exists, playback ends as before. Explicit Play Next entries retain priority
+  and Repeat One/All retain their existing queue behavior.
 - **PLAY-12** [active] [gtk] — **The player bar and the Now Playing panel have
   no dead surfaces.** The title, channel/artist line, and cover are links in
   every playback mode. What is playing is findable: each of the three surfaces
@@ -418,6 +420,15 @@ result.
   no predecessor. Rewinding is a seek, not a pipeline restart. After stepping
   back, Next returns to the item the jump left. History exists only at runtime
   and starts empty after launch.
+- **PLAY-15** [active] [gtk] — A snapshot born in a filtered Music library is
+  rebound the moment that view becomes completely unfiltered again, even while
+  it still has titles ahead. The running title keeps the cursor and is never
+  restarted; the now-unfiltered visible list follows it — in the view's own
+  order, or freshly shuffled behind the running title when shuffle is on. The
+  exhausted case stays PLAY-11's. Any other filter change — narrowing, swapping
+  a facet, typing in the search field — leaves the snapshot alone, as PLAY-3b
+  and PLAY-8 require. Repeat One/All are never rebound; Missing and deleted
+  titles are excluded.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
