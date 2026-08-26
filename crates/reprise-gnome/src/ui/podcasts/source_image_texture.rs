@@ -47,10 +47,18 @@ fn decode_pixels_with_thumbnail(
 ) -> Result<DecodedPixels, gtk4::glib::Error> {
     let requested_edge = width.max(height).max(0).saturating_mul(2) as u32;
     let size = thumbnail_size_for_edge(requested_edge);
-    let thumbnail_path = resolve_thumbnail(&CoverSource::FolderImage(path.to_path_buf()), size)
-        .map_err(|error| {
-            gtk4::glib::Error::new(gtk4::gio::IOErrorEnum::Failed, &error.to_string())
-        })?;
+    let thumbnail_path =
+        match resolve_thumbnail(&CoverSource::FolderImage(path.to_path_buf()), size) {
+            Ok(thumbnail_path) => thumbnail_path,
+            Err(error) => {
+                tracing::debug!(
+                    %error,
+                    source = %path.display(),
+                    "could not cache source artwork thumbnail; decoding the original"
+                );
+                path.to_path_buf()
+            }
+        };
     let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(
         thumbnail_path,
         width.saturating_mul(2),
@@ -265,5 +273,53 @@ mod tests {
         assert_eq!((first.width, first.height), (80, 40));
         assert_eq!((texture.width(), texture.height()), (80, 40));
         assert!(!original.exists());
+    }
+
+    #[test]
+    fn source_artwork_falls_back_to_the_original_when_thumbnail_creation_fails() {
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("original.png");
+        let source =
+            gtk4::gdk_pixbuf::Pixbuf::new(gtk4::gdk_pixbuf::Colorspace::Rgb, true, 8, 600, 300)
+                .unwrap();
+        source.fill(0x336699ff);
+        source.savev(&original, "png", &[]).unwrap();
+
+        let pixels = super::decode_pixels_with_thumbnail(&original, 40, 40, |_, _| {
+            Err(reprise_core::cover::CoverError::Io(
+                "cache unavailable".into(),
+            ))
+        })
+        .unwrap();
+
+        assert_eq!((pixels.width, pixels.height), (80, 40));
+    }
+
+    #[test]
+    fn large_source_pixels_are_decoded_to_twice_the_requested_cache_size() {
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("large.png");
+        let cache_root = directory.path().join("cache");
+        let source =
+            gtk4::gdk_pixbuf::Pixbuf::new(gtk4::gdk_pixbuf::Colorspace::Rgb, true, 8, 600, 600)
+                .unwrap();
+        source.fill(0x336699ff);
+        source.savev(&original, "png", &[]).unwrap();
+
+        let mut resolved_path = None;
+        let pixels = super::decode_pixels_with_thumbnail(&original, 40, 40, |source, size| {
+            let thumbnail = reprise_core::cover::thumbnail_with_source(
+                &reprise_core::library::source::UnixLibrarySource,
+                source,
+                size,
+                &cache_root,
+            )?;
+            resolved_path = Some(thumbnail.clone());
+            Ok(thumbnail)
+        })
+        .unwrap();
+
+        assert_eq!((pixels.width, pixels.height), (80, 80));
+        assert!(resolved_path.unwrap().starts_with(cache_root));
     }
 }
