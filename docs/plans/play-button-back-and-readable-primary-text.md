@@ -2,7 +2,7 @@
 slug: play-button-back-and-readable-primary-text
 worktree: /home/marvin/Projects/reprise-play-button-back-and-readable-primary-text
 branch: feature/play-button-back-and-readable-primary-text
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-26
 ---
