@@ -372,7 +372,7 @@ private fun LibraryTrackRow(
             color = if (queueDrag == null) {
                 restingColor
             } else {
-                queueRowColor(restingColor, queueDrag, queuePosition, offsetsHold, lift)
+                queueRowColor(restingColor, queueDrag, queuePosition, lift)
             },
         ) {
             Box {
@@ -559,21 +559,18 @@ private fun queueRowColor(
     resting: Color,
     reorder: QueueReorderState,
     slot: Int,
-    offsetsHold: Boolean,
     lift: Float,
 ): Color {
-    val flash = reorder.flashFraction
-    val flashesHere = queueFlashSlot(
-        flashing = flash > 0f,
-        offsetsHold = offsetsHold,
-        from = reorder.flashFrom,
-        to = reorder.flashTo,
-    ) == slot
     val held = lerp(resting, MaterialTheme.colorScheme.surface, lift)
+    if (reorder.flashSlot != slot) {
+        return held
+    }
+    // Only the one flashing row observes this per-frame animation value.
+    val flash = reorder.flashFraction
     return lerp(
         held,
         MaterialTheme.colorScheme.primary,
-        QUEUE_DRAG_FLASH_ALPHA * if (flashesHere) flash else 0f,
+        QUEUE_DRAG_FLASH_ALPHA * flash,
     )
 }
 

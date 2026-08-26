@@ -119,28 +119,36 @@ The tint fires without knowing whether the edit will be accepted. That is
 deliberate: `move` is fire-and-forget and has no return channel, and waiting for
 one would restore exactly the coupling this plan removes.
 
-### 3. The moved row is identified through the offsets predicate
+### 3. The moved row is identified through its own one-way latch
 
-"Which composed slot is the moved row at right now?" is a question #704 already
-answers:
+The first implementation reused #704's offsets predicate to answer "Which
+composed slot is the moved row at right now?" That was wrong. The predicate is
+deliberately true whenever the offset hold is idle, so `release()` made the
+tint jump back to `start` after the reload even though the tint had already
+handed over to `destination`.
 
-- while the offsets still describe the window (pre-reload) the moved row is
-  composed at **`start`**;
-- once the window has moved on it is composed at **`destination`**.
+The tint therefore owns a separate one-way latch in `QueueReorderState`:
 
-That is `offsetsDescribe(order)`, which `TrackRows` already evaluates once per
-composition as `offsetsHold` and already threads down to the row:
+- at settle-end, when the flash starts, its composed slot is **`start`**;
+- the first `onOrderChanged()` after that changes the slot to
+  **`destination`**, whether or not `awaitingReload` is still set;
+- later offset release or order callbacks cannot move it back;
+- when the animation finishes, the slot is cleared. A new `begin()` also
+  cancels and clears an older tint before starting the next gesture.
+
+The pure selection predicate describes only that latch:
 
 ```kotlin
 internal fun queueFlashSlot(
-    flashing: Boolean, offsetsHold: Boolean, from: Int, to: Int,
-): Int? = if (!flashing) null else if (offsetsHold) from else to
+    flashing: Boolean, handedOver: Boolean, from: Int, to: Int,
+): Int? = if (!flashing) null else if (handedOver) to else from
 ```
 
-with `queueRowColor` taking `offsetsHold` and tinting when the answer equals its
-own slot. Because the animation now lives in the state, the handover from
-`start` to `destination` at the reload is invisible: the old row stops reading
-the value, the new row starts reading the same still-decaying value.
+`queueRowColor` checks the latched slot before reading the animated fraction.
+Because the animation now lives in the state, the handover from `start` to
+`destination` at the reload is invisible: the old row stops reading the value,
+the new row starts reading the same still-decaying value. Only that one row
+subscribes to the fraction's per-frame changes.
 
 **Why not key by track id.** Simpler, but a queue may hold the same track more
 than once — the core tests this explicitly
@@ -150,9 +158,9 @@ would light every occurrence.
 **This also fixes a latent defect.** Today, when the core refuses the move, the
 order never changes, `onOrderChanged()` never fires, and the grace backstop
 reaches `release()`, which tints slot `destination` in a window that is still in
-the *old* order: the neighbour, not the moved row. Under the new rule
-`offsetsHold` is still true, the tint goes to `start` — the row the user sees —
-and the 520 ms flash is over before the 600 ms grace expires.
+the *old* order: the neighbour, not the moved row. Under the new rule the latch
+remains at `start`, the row the user sees, because the composed order never
+changes; the 520 ms flash is over before the 600 ms grace expires.
 
 ## What is pinned, and what cannot be
 
@@ -161,9 +169,10 @@ Same split as #704, for the same reason: the defect is a *timing* one and
 effects whose ordering is the bug, so a Robolectric test is green with and
 without the change. Do not write one and do not claim one is possible.
 
-- **Pinned as a predicate:** `queueFlashSlot(flashing, offsetsHold, from, to)`
-  with `QueueFlashSlotTest`: not flashing → `null`; offsets held → `from`;
-  offsets released → `to`; `from == to` → the same slot either way.
+- **Pinned as a predicate:** `queueFlashSlot(flashing, handedOver, from, to)`
+  with `QueueFlashSlotTest`: not flashing → `null`; before handover → `from`;
+  after handover → `to`; `from == to` → the same slot either way; once handed
+  over, an independently idle-true offsets predicate cannot send it back.
 - **Pinned as evidence:** the on-device measurement below.
 
 ## Verification

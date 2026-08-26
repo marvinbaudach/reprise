@@ -84,15 +84,17 @@ internal fun queueOffsetsDescribe(
  *
  * Before the reload, the moved row is still composed at [from] and only its
  * offset puts it over [to]. After the reload changes the row keys, the same
- * row is composed at [to]. Choosing by that handover instead of track id also
- * keeps duplicate occurrences of one track from flashing together.
+ * row is composed at [to]. [handedOver] is the tint's own one-way latch: it
+ * cannot move back to [from] when the independently managed drag offsets are
+ * released. Choosing by this handover instead of track id also keeps duplicate
+ * occurrences of one track from flashing together.
  */
 internal fun queueFlashSlot(
     flashing: Boolean,
-    offsetsHold: Boolean,
+    handedOver: Boolean,
     from: Int,
     to: Int,
-): Int? = if (!flashing) null else if (offsetsHold) from else to
+): Int? = if (!flashing) null else if (handedOver) to else from
 
 /** One curve for the whole gesture: fast out of the gate, long settle. */
 internal val QueueDragEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -206,16 +208,17 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
     var targetSlot by mutableIntStateOf(0)
         private set
 
-    /** The composed slot the current arrival tint started from. */
-    var flashFrom by mutableIntStateOf(0)
+    /** The composed slot that currently reads the arrival tint. */
+    var flashSlot by mutableStateOf<Int?>(null)
         private set
 
-    /** The composed slot the current arrival tint lands on after the reload. */
-    var flashTo by mutableIntStateOf(0)
-        private set
+    private var flashFrom = 0
+    private var flashTo = 0
+    private var flashHandedOver = false
 
     /** The arrival tint outlives either row composition that reads it. */
     private val flash = Animatable(0f)
+    private var flashJob: Job? = null
 
     val flashFraction: Float get() = flash.value
 
@@ -289,6 +292,12 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
         if (phase != Phase.IDLE) {
             return
         }
+        // One gesture owns the one arrival tint. Starting another explicitly
+        // ends any fade left by its predecessor before geometry is reset.
+        flashJob?.cancel()
+        flashJob = null
+        flashSlot = null
+        flashHandedOver = false
         generation += 1
         phase = Phase.DRAG
         draggedSlot = slot
@@ -341,9 +350,20 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
             }
             flashFrom = start
             flashTo = destination
-            scope.launch {
+            flashHandedOver = false
+            flashSlot = queueFlashSlot(
+                flashing = true,
+                handedOver = false,
+                from = flashFrom,
+                to = flashTo,
+            )
+            flashJob = scope.launch {
                 flash.snapTo(1f)
                 flash.animateTo(0f, tween(QUEUE_DRAG_FLASH_MS, easing = QueueDragEasing))
+                if (generation == myGeneration) {
+                    flashSlot = null
+                    flashJob = null
+                }
             }
             // The row is standing in its new place already, so the edit is
             // invisible — which is the whole point of running it here.
@@ -379,6 +399,15 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
      * moment the list itself agrees with them.
      */
     fun onOrderChanged() {
+        if (flashSlot != null && !flashHandedOver) {
+            flashHandedOver = true
+            flashSlot = queueFlashSlot(
+                flashing = true,
+                handedOver = true,
+                from = flashFrom,
+                to = flashTo,
+            )
+        }
         if (awaitingReload) {
             release(generation)
         }
