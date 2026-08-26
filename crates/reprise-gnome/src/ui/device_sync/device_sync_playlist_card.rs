@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-use super::device_sync_page_copy::{counted, playlist_subtitle};
+use super::device_sync_page_copy::{playlist_subtitle, unique_tracks};
 use super::device_sync_runtime::DeviceView;
 use super::device_sync_strings;
 
@@ -101,14 +101,15 @@ impl PlaylistCard {
                 .enumerate()
                 .find(|(_, row)| row.button.is_focus() || row.button.has_focus())
                 .map(|(index, row)| (index, row.source.clone()));
-            let old_rows = self
-                .rows
-                .borrow_mut()
-                .drain(..)
-                .map(|row| row.button)
-                .collect::<Vec<_>>();
-            for row in old_rows {
-                self.list.remove(&row);
+            // `append` wraps a plain widget in an implicit `GtkListBoxRow`, so
+            // the button we kept is the list's grandchild. Handing it back to
+            // `remove` only earns a "Tried to remove non-child" warning and
+            // leaves the row on screen — a playlist deleted from the library
+            // would keep its stale row while the rebuilt ones pile up beneath
+            // it. Clear the list by its own children instead.
+            self.rows.borrow_mut().clear();
+            while let Some(child) = self.list.first_child() {
+                self.list.remove(&child);
             }
             for playlist in &device.page.playlists {
                 let button = gtk4::ToggleButton::new();
@@ -179,11 +180,7 @@ impl PlaylistCard {
         }
         self.summary.set_label(&format!(
             "{} · {} on device",
-            counted(
-                device.page.unique_track_count,
-                "unique track",
-                "unique tracks"
-            ),
+            unique_tracks(device.page.unique_track_count),
             device_sync_strings::file_size(device.page.target_bytes)
         ));
         self.updating.set(false);

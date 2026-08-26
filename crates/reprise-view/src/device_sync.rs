@@ -26,7 +26,7 @@ const PROFILE_ORIGINAL: &str = N_!("Original files (no conversion)");
 const PLAYLIST_UNAVAILABLE: &str = N_!("Playlist no longer exists — deselect it to continue");
 const SMART_SNAPSHOT: &str = N_!("Smart snapshot");
 const ENTRIES: (&str, &str) = plural("{count} entry", "{count} entries");
-const UNIQUE_TRACKS: (&str, &str) = plural("{count} unique track", "{count} unique tracks");
+pub const UNIQUE_TRACKS: (&str, &str) = plural("{count} unique track", "{count} unique tracks");
 const UNAVAILABLE_TRACKS: (&str, &str) =
     plural("{count} unavailable track", "{count} unavailable tracks");
 const NO_VERIFIED_PLAYLIST_SYNC: &str = N_!("{size} · No verified sync time");
