@@ -1,11 +1,15 @@
-//! PLAY-11: what happens to an exhausted, filter-born playback snapshot once
-//! the Library filter that created it is gone.
+//! PLAY-11/PLAY-15: what happens to a filter-born playback snapshot once the
+//! Library filter that created it is gone.
 //!
 //! Playback is an immutable snapshot (PLAY-3b/PLAY-8): applying, refining, or
-//! clearing a filter never rewrites a queue that still has tracks ahead of it.
-//! PLAY-11 carves out exactly one exception, and this module owns it end to
-//! end so the decision cannot drift between the two moments it can be reached:
+//! swapping a filter never rewrites a running queue. Clearing the filter is
+//! the narrow exception: PLAY-15 rebinds a snapshot that still has a future,
+//! while PLAY-11 continues one that is already exhausted. This module owns the
+//! decision end to end so the shared eligibility gate cannot drift:
 //!
+//! * **Still has titles ahead** — the now-unfiltered visible list replaces the
+//!   filtered snapshot without restarting the running title
+//!   (`continue_library_after_filter_clear`).
 //! * **Exhausted while a track is still playing** — the user cleared the
 //!   filter after starting its last hit. The context has no future left, so
 //!   the continuation is bound in immediately and the panel stops claiming
@@ -29,6 +33,10 @@ use reprise_core::queue::Repeat;
 
 use super::play_origin::PlayOrigin;
 use crate::ui::player_controller::{PlayerController, VisibleView};
+
+#[path = "library_continuation_rebind.rs"]
+mod rebind;
+use rebind::{rebind_to_unfiltered_view, rebound_library_origin};
 
 /// The shared PLAY-11 gate: may this snapshot hand off to the whole library?
 ///
@@ -137,24 +145,22 @@ fn immediate_library_continuation(
 }
 
 impl PlayerController {
-    /// PLAY-11, reached from a Library reload (`window.rs`'s `on_reload`): the
-    /// running snapshot is already exhausted and the filter that built it is
-    /// gone, so the continuation is bound in *now* instead of at the end of
-    /// the title. Playback itself is deliberately untouched — this only gives
-    /// the exhausted context a future.
+    /// PLAY-11/PLAY-15, reached from a Library reload (`window.rs`'s
+    /// `on_reload`): once the filter that built the running snapshot is gone,
+    /// either bind a future into an exhausted context or rebind a context that
+    /// still has titles ahead. Playback itself is deliberately untouched.
     ///
     /// Returns whether a continuation was bound in. Callers fire this on every
-    /// reload, so the cheap rejections (repeat mode, remaining tracks, loaded
-    /// title, filtered origin) all come before the two queries.
+    /// reload, so the cheap rejections (repeat mode, loaded title, filtered
+    /// origin) all come before the two queries.
     pub(in crate::ui) fn continue_library_after_filter_clear(self: &Rc<Self>) -> bool {
-        let (repeat, remaining) = {
-            let queue = self.queue.borrow();
-            (queue.repeat(), queue.remaining_len())
-        };
-        if repeat != Repeat::Off || remaining != 0 {
+        let repeat = self.queue.borrow().repeat();
+        let remaining = self.queue.borrow().remaining_len();
+        if repeat != Repeat::Off {
             return false;
         }
-        let Some((current_track_id, _)) = self.current_track.get() else {
+        let current_track_id = self.current_track.get().map(|(id, _)| id);
+        let Some(current_track_id) = current_track_id else {
             return false;
         };
         let origin = self.play_origin.borrow().clone();
@@ -177,7 +183,30 @@ impl PlayerController {
                 return false;
             }
         };
-        let Some(ids) = immediate_library_continuation(
+        if remaining == 0 {
+            let Some(ids) = immediate_library_continuation(
+                origin.as_ref(),
+                repeat,
+                remaining,
+                Some(current_track_id),
+                &visible,
+                random_live_ids,
+            ) else {
+                return false;
+            };
+
+            let continuation_len = ids.len().saturating_sub(1);
+            self.queue.borrow_mut().set_tracks(ids, 0);
+            *self.play_origin.borrow_mut() = Some(PlayOrigin::library());
+            self.notify_queue_changed();
+            tracing::info!(
+                continuation_len,
+                "library filter cleared on an exhausted queue; bound in a random library continuation"
+            );
+            return true;
+        }
+
+        let Some((ids, start_index)) = rebind_to_unfiltered_view(
             origin.as_ref(),
             repeat,
             remaining,
@@ -188,13 +217,13 @@ impl PlayerController {
             return false;
         };
 
-        let continuation_len = ids.len().saturating_sub(1);
-        self.queue.borrow_mut().set_tracks(ids, 0);
-        *self.play_origin.borrow_mut() = Some(PlayOrigin::library());
+        let snapshot_len = ids.len();
+        self.queue.borrow_mut().set_tracks(ids, start_index);
+        *self.play_origin.borrow_mut() = Some(rebound_library_origin());
         self.notify_queue_changed();
         tracing::info!(
-            continuation_len,
-            "library filter cleared on an exhausted queue; bound in a random library continuation"
+            snapshot_len,
+            "library filter cleared with titles ahead; rebound to the visible library snapshot"
         );
         true
     }
@@ -260,7 +289,9 @@ mod tests {
     use reprise_core::queue::Repeat;
     use reprise_core::view_source::ViewSource;
 
-    use super::{immediate_library_continuation, random_library_continuation};
+    use super::{
+        immediate_library_continuation, random_library_continuation, rebind_to_unfiltered_view,
+    };
     use crate::ui::playback::play_origin::PlayOrigin;
     use crate::ui::player_controller::VisibleView;
 
@@ -465,11 +496,11 @@ mod tests {
     }
 
     #[test]
-    fn play_11_immediate_continuation_leaves_a_queue_with_a_future_alone() {
+    fn play_15_clearing_the_filter_rebinds_a_queue_with_a_future() {
         let origin = library_origin("needle");
 
         assert_eq!(
-            immediate_library_continuation(
+            rebind_to_unfiltered_view(
                 Some(&origin),
                 Repeat::Off,
                 1,
@@ -477,8 +508,8 @@ mod tests {
                 &whole(&[1, 2, 3]),
                 vec![3, 1, 2],
             ),
-            None,
-            "PLAY-8 keeps a snapshot that still has tracks ahead of it immutable"
+            Some((vec![1, 2, 3], 1)),
+            "PLAY-15 replaces the filtered snapshot with the visible unfiltered library"
         );
     }
 
