@@ -464,6 +464,10 @@ are outside this strand's hard write boundary.
 - `cargo audit`: the network-refresh form could not lock the sandbox read-only
   Cargo advisory database. `cargo audit --no-fetch` loaded 1,226 local
   advisories and passed with only accepted `RUSTSEC-2024-0436` (`paste`).
+- `scripts/check-merge-readiness.sh`: stopped before running a product gate at
+  `== Refresh origin/main ==`; SSH rejected
+  `/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf` as having bad ownership or
+  permissions, then Git reported that it could not read the remote repository.
 - File sizes: `list_geometry.rs` is 771 lines; the extracted
   `track_list_reload.rs` is 784 lines. `git diff --check` passed.
 
