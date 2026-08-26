@@ -53,6 +53,10 @@ use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
+#[path = "track_list_reload_geometry.rs"]
+mod geometry;
+use geometry::capture_row_height;
+
 fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
     let n_sections = shared.queue_sections.borrow().len();
     ListGeometry::for_view(&shared.column_view)
@@ -172,20 +176,6 @@ fn pending_reveal_anchor(shared: &Shared, height: RowHeight) -> Option<(i64, f64
     // on the viewport's middle is its top, minus half a viewport, plus half a
     // row. Its rows-only centring model is tracked separately from anchors.
     Some((track_id, height.mul_add(0.5, -adjustment.page_size() / 2.0)))
-}
-
-/// Before the model swap, unlike during restore, the adjustment range and row
-/// count describe the same list. Capture that exact quotient so a later stale
-/// widget allocation or an assumed CSS floor cannot reinterpret the anchor.
-fn capture_row_height(shared: &Shared, old_total: u32) -> Option<RowHeight> {
-    if old_total == 0 {
-        return None;
-    }
-    if shared.queue_sections.borrow().is_empty() {
-        let adjustment = shared.column_view.vadjustment()?;
-        return RowHeight::new(adjustment.upper() / f64::from(old_total));
-    }
-    observed_row_height(shared, old_total).and_then(RowHeight::new)
 }
 
 /// Captures the pre-swap `ReloadAnchor`. The anchor row is resolved through

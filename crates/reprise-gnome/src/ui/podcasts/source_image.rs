@@ -495,21 +495,6 @@ fn validated_url(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn large_source_pixels_are_decoded_to_twice_the_requested_cache_size() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("large.png");
-        let pixbuf =
-            gtk4::gdk_pixbuf::Pixbuf::new(gtk4::gdk_pixbuf::Colorspace::Rgb, true, 8, 600, 600)
-                .unwrap();
-        pixbuf.fill(0x336699ff);
-        pixbuf.savev(&path, "png", &[]).unwrap();
-
-        let pixels = super::decode_pixels(&path, 40, 40).unwrap();
-
-        assert_eq!((pixels.width, pixels.height), (80, 80));
-    }
-
-    #[test]
     fn source_artwork_accepts_only_remote_http_urls() {
         assert_eq!(
             super::validated_url("https://images.test/show.jpg"),

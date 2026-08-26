@@ -18,17 +18,12 @@ pub(in crate::ui) struct SourceViews {
 }
 
 impl SourceViews {
-    pub(in crate::ui) fn wire_episode_played(
-        &self,
-        player: &Rc<PlayerController>,
-        sidebar: &Rc<Sidebar>,
-    ) {
-        let sidebar = Rc::downgrade(sidebar);
+    /// SRC-1a: no sidebar refresh here. The source counters name how many
+    /// shows and channels are subscribed, and playing an episode moves
+    /// neither — only subscribing does, and that path refreshes on its own.
+    pub(in crate::ui) fn wire_episode_played(&self, player: &Rc<PlayerController>) {
         let views = [self.podcasts.clone(), self.youtube.clone()];
         player.add_on_episode_played(move |episode_id| {
-            if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh("episode played");
-            }
             for page in &views {
                 page.if_materialized(|view| view.update_played_state(episode_id));
             }

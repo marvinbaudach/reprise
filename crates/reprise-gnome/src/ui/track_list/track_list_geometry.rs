@@ -40,6 +40,8 @@ pub(in crate::ui) fn layout(
         &shared.list_geometry_cache,
         row_height,
         section_starts,
+        adjustment.upper(),
+        n_rows,
     );
     Some(layout_for_live_allocation(
         layout,

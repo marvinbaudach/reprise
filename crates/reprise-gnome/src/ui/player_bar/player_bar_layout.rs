@@ -464,6 +464,9 @@ pub(in crate::ui) fn css() -> String {
         ".{SURFACE_CSS_CLASS} {{ \
            background-color: @headerbar_bg_color; \
            border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
+         /* PLAY-16: the play button deliberately keeps the playback accent and
+            a white glyph as its product identity. This measured 1.69:1 and does
+            not meet the 3:1 a non-text control would otherwise owe. */\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \

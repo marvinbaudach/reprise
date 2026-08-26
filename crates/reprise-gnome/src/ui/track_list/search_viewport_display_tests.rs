@@ -184,7 +184,9 @@ fn search_16_a_result_set_that_fits_still_centers_after_clear_all() {
         adjustment.upper() > adjustment.page_size(),
         "the expanded list must be genuinely scrollable"
     );
-    let row_height = adjustment.upper() / current_ids.len() as f64;
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled expanded list must expose measured rows");
     let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(playing_id),
         &current_ids,
@@ -300,7 +302,10 @@ fn search_16_clearing_after_a_play_centers_the_loaded_track() {
     crate::ui::test_settle::settle_for(Duration::from_millis(500));
 
     let current_ids = stage.track_list.shared.current_view_ids();
-    let row_height = stage.adjustment.upper() / current_ids.len() as f64;
+    let row_height = super::super::display_test_geometry::measured_row_height(
+        &stage.track_list.shared.column_view,
+    )
+    .expect("the settled cleared list must expose measured rows");
     let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(playing_id),
         &current_ids,
@@ -328,7 +333,10 @@ fn search_16_clearing_without_a_play_returns_to_the_pre_search_place() {
     assert!(stage.search.clear_active_query());
     crate::ui::test_settle::settle_for(Duration::from_millis(500));
 
-    let row_height = stage.adjustment.upper() / 200.0;
+    let row_height = super::super::display_test_geometry::measured_row_height(
+        &stage.track_list.shared.column_view,
+    )
+    .expect("the settled restored list must expose measured rows");
     assert!(
         (stage.adjustment.value() - stage.departed_from).abs() <= row_height,
         "clearing without playback landed at {} instead of the pre-search {}",
@@ -426,7 +434,10 @@ fn search_16_clearing_after_a_play_reaches_the_track_in_one_step() {
     let steps = viewport_steps(crate::ui::scroll_probe::trail::take());
 
     let current_ids = stage.track_list.shared.current_view_ids();
-    let row_height = stage.adjustment.upper() / current_ids.len() as f64;
+    let row_height = super::super::display_test_geometry::measured_row_height(
+        &stage.track_list.shared.column_view,
+    )
+    .expect("the settled cleared list must expose measured rows");
     let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(playing_id),
         &current_ids,
@@ -517,7 +528,9 @@ fn start_3_centering_the_loaded_track_reaches_it_in_one_step() {
     let steps = viewport_steps(crate::ui::scroll_probe::trail::take());
 
     let current_ids = track_list.shared.current_view_ids();
-    let row_height = adjustment.upper() / current_ids.len() as f64;
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled restored list must expose measured rows");
     let expected = super::reload_restore::flat_list_centered_track_scroll_target(
         Some(track_id),
         &current_ids,

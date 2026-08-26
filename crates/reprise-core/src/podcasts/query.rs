@@ -94,20 +94,20 @@ pub fn count_unplayed(db: &Db) -> Result<usize, rusqlite::Error> {
     .map(|count| count.max(0) as usize)
 }
 
-pub fn count_unplayed_for_kind(db: &Db, kind: PodcastKind) -> Result<usize, rusqlite::Error> {
+/// How many shows or channels of one kind the user follows right now.
+///
+/// `SRC-1a`: what the Podcasts and YouTube sidebar counters show. An
+/// inventory number like Radio's favourites, not a "there is something new"
+/// signal — a removed subscription stops counting the moment it is
+/// tombstoned, and nothing about an episode moves it.
+pub fn count_subscriptions_for_kind(db: &Db, kind: PodcastKind) -> Result<usize, rusqlite::Error> {
     let conn = db.conn();
     conn.query_row(
         "SELECT COUNT(*)
-         FROM podcast_episodes e
-         JOIN podcast_subscriptions s ON s.id = e.subscription_id
-         WHERE s.removed_at IS NULL
-           AND e.removed_at IS NULL
-           AND e.played_at IS NULL
-           AND s.kind = ?1",
-        [match kind {
-            PodcastKind::Rss => "rss",
-            PodcastKind::Youtube => "youtube",
-        }],
+         FROM podcast_subscriptions
+         WHERE removed_at IS NULL
+           AND kind = ?1",
+        [super::store::kind_setting(kind)],
         |row| row.get::<_, i64>(0),
     )
     .map(|count| count.max(0) as usize)
@@ -153,10 +153,14 @@ mod tests {
     }
 
     fn add_show(conn: &Connection, url: &str, title: &str) -> i64 {
+        add_source(conn, PodcastKind::Rss, url, title)
+    }
+
+    fn add_source(conn: &Connection, kind: PodcastKind, url: &str, title: &str) -> i64 {
         store::add_or_restore_in(
             conn,
             &NewSubscription {
-                kind: PodcastKind::Rss,
+                kind,
                 feed_url: url.to_owned(),
                 title: title.to_owned(),
                 author: None,
@@ -191,6 +195,43 @@ mod tests {
         .unwrap()
         .expect("episode should be imported")
         .episode_id
+    }
+
+    #[test]
+    fn src_1a_the_source_counter_counts_subscriptions_not_episodes() {
+        // Two shows, one of them without a single episode, against one channel
+        // that carries two: an implementation that still counted episodes, or
+        // one that ignored the kind, cannot produce 2 and 1 here.
+        let db = db();
+        let show = add_source(db.conn(), PodcastKind::Rss, "https://example.test/a", "A");
+        add_source(db.conn(), PodcastKind::Rss, "https://example.test/b", "B");
+        let channel = add_source(db.conn(), PodcastKind::Youtube, "https://yt.test/c", "C");
+        add_episode(db.conn(), show, "one", Some(10));
+        add_episode(db.conn(), channel, "two", Some(20));
+        add_episode(db.conn(), channel, "three", Some(30));
+
+        assert_eq!(
+            count_subscriptions_for_kind(&db, PodcastKind::Rss).unwrap(),
+            2
+        );
+        assert_eq!(
+            count_subscriptions_for_kind(&db, PodcastKind::Youtube).unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn src_1a_an_unsubscribed_show_stops_counting() {
+        let db = db();
+        add_source(db.conn(), PodcastKind::Rss, "https://example.test/a", "A");
+        let gone = add_source(db.conn(), PodcastKind::Rss, "https://example.test/b", "B");
+        add_episode(db.conn(), gone, "leftover", Some(10));
+        store::tombstone_subscription(&db, gone, 100).unwrap();
+
+        assert_eq!(
+            count_subscriptions_for_kind(&db, PodcastKind::Rss).unwrap(),
+            1
+        );
     }
 
     #[test]

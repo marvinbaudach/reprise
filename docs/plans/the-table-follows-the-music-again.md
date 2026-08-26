@@ -155,19 +155,11 @@ larger surface arrives.
 
 Both strands are on `dev`: A as `7c3dfcc10a` (#693), B as `8bd2d23930` (#694).
 
-### 1. The closing manual check — still owed
+### 1. The closing manual check — performed 2026-08-25; failed
 
-Play a track, scroll away, click the player-bar title, watch the view stay on
-the track. Not yet performed: it is a look, and the automated substitutes
-available on this machine cannot stand in for it. cua-driver runs its X11 path
-on this Wayland session and does not see the Reprise window at all; reading
-AT-SPI directly does return the tree, but every element reports extents `0,0`,
-so "the viewport stayed" cannot be measured from it, only asserted. An Xvfb
-re-enactment would be a third automated arm over the five acceptance tests and
-the five nav-back tests that already cover this path, on a harness with a
-documented false-positive record for GTK4.
-
-The nearest measured evidence is check 3 below.
+The user performed the check on 2026-08-25 and the row was not fully centred.
+The successor diagnosis and fix are recorded in
+[`the-row-height-certifies-itself.md`](the-row-height-certifies-itself.md).
 
 ### 2. The 1.5-second scroll grace — the two policies agree, deliberately
 

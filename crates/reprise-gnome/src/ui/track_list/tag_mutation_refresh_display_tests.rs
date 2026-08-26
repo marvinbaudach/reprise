@@ -337,7 +337,9 @@ fn year_resorting_library() -> (Fixture, Vec<i64>) {
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
         adjustment.upper() > adjustment.page_size()
     });
-    let row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled library must expose measured rows");
     adjustment.set_value(160.0 * row_height);
     let fixture = Fixture {
         track_list,
@@ -375,7 +377,10 @@ fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
             },
         })
         .collect::<Vec<_>>();
-    let row_height = fixture.adjustment.upper() / old_ids.len() as f64;
+    let row_height = super::super::display_test_geometry::measured_row_height(
+        &fixture.track_list.shared.column_view,
+    )
+    .expect("the settled library must expose measured rows");
     let row_height = crate::ui::list_geometry::RowHeight::new(row_height)
         .unwrap_or_else(|| panic!("the measured row height must be positive; got {row_height}"));
     let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(row_height);

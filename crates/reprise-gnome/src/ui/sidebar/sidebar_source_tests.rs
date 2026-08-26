@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
+fn src_1a_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = test_shared();
@@ -25,11 +25,25 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
                 [],
             )
             .unwrap();
+        // SRC-1a: the fixture makes the two readings disagree. The show's one
+        // episode is played and the second show has none, so an unplayed count
+        // would badge nothing where two subscriptions stand; the channel
+        // carries two unplayed videos and a second, unsubscribed channel, so
+        // there the episode count would badge two where one channel is
+        // followed.
         crate::test_db::connection(conn)
             .execute(
                 "INSERT INTO podcast_episodes
-               (subscription_id, guid, title, audio_url, position_ms, first_seen_at)
-             VALUES (1, 'episode', 'Episode', 'https://example.test/episode.mp3', 0, 1)",
+               (subscription_id, guid, title, audio_url, position_ms, first_seen_at, played_at)
+             VALUES (1, 'episode', 'Episode', 'https://example.test/episode.mp3', 0, 1, 2)",
+                [],
+            )
+            .unwrap();
+        crate::test_db::connection(conn)
+            .execute(
+                "INSERT INTO podcast_subscriptions
+               (kind, feed_url, title, auto_download, added_at)
+             VALUES ('rss', 'https://example.test/second', 'Second Show', 0, 1)",
                 [],
             )
             .unwrap();
@@ -40,7 +54,11 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
              VALUES ('youtube', 'https://youtube.test/@channel', 'Channel', 0, 1);
              INSERT INTO podcast_episodes
                (subscription_id, guid, title, audio_url, position_ms, first_seen_at)
-             VALUES (2, 'video', 'Video', 'https://youtube.test/watch?v=video', 0, 1);",
+             VALUES (3, 'video', 'Video', 'https://youtube.test/watch?v=video', 0, 1),
+                    (3, 'video2', 'Video 2', 'https://youtube.test/watch?v=video2', 0, 1);
+             INSERT INTO podcast_subscriptions
+               (kind, feed_url, title, auto_download, added_at, removed_at)
+             VALUES ('youtube', 'https://youtube.test/@gone', 'Gone', 0, 1, 2);",
             )
             .unwrap();
         crate::test_db::connection(conn)
@@ -76,7 +94,7 @@ fn src_1_podcast_and_radio_rows_are_gated_ordered_and_live_counted() {
     assert!(music < podcasts && podcasts < youtube && youtube < radio && radio < queue);
     assert_eq!(
         numeric_badge_text(rows[podcasts].0.upcast_ref()),
-        Some("1".to_string())
+        Some("2".to_string())
     );
     assert_eq!(
         numeric_badge_text(rows[youtube].0.upcast_ref()),

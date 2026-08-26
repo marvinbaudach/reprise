@@ -309,7 +309,8 @@ result.
   from outside it.
 - **PLAY-3b** [active] [gtk] — Changing the filter afterward does not
   touch an already-built queue (the queue is a snapshot; visible in
-  "Queue").
+  "Queue"), except when completely clearing a filtered Music library
+  refinement rebinds it under PLAY-15.
 - **PLAY-4a** [active] [core] — Missing in lists: list playback and
   queue advance skip Missing silently.
 - **PLAY-4b** [active] [gtk] — Double-click on a concrete Missing row:
@@ -354,10 +355,11 @@ result.
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
   running item nor a snapshot that still has titles ahead of it; the
-  exhausted case belongs to PLAY-11. After the last context track, playback
-  ends with Repeat off unless an explicit manual entry or PLAY-11's new
-  full-library continuation follows; queue hygiene is governed by
-  PLAY-5a/5b/5c.
+  exhausted case belongs to PLAY-11, and completely clearing a filtered Music
+  library refinement is PLAY-15's narrow exception. After the last context
+  track, playback ends with Repeat off unless an explicit manual entry or
+  PLAY-11's new full-library continuation follows; queue hygiene is governed
+  by PLAY-5a/5b/5c.
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable
@@ -371,21 +373,21 @@ result.
   player placeholder, never a broken-image state.
 - **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
   while it still has titles ahead of it.** Later navigation, search, facets,
-  and clearing a filter never rewrite a snapshot with a future. Exception once
-  it is exhausted — nothing left ahead of the cursor: if the snapshot
-  originated in a search- or facet-filtered Music library and Music is now
-  completely unfiltered, Reprise continues from all existing library titles in
-  random order. **While a title is still playing, that continuation is bound in
-  at once**, the moment Music becomes unfiltered, so the queue stops reading
-  empty for the rest of the title; the running title keeps the cursor, is never
-  restarted or re-ordered, and every other library title follows it exactly
-  once. If the final title has already ended instead, a new random snapshot
-  starts on a title other than the one just finished — which may occur later in
-  it, but never starts it. Missing and deleted titles are excluded. If the
-  filter is still active, the origin was not the Music library, the visible list
-  is not the complete library, or no other title exists, playback ends as
-  before. Explicit Play Next entries retain priority and Repeat One/All
-  retain their existing queue behavior.
+  and clearing a filter never rewrite a snapshot with a future, except as
+  PLAY-15 provides. Exception once it is exhausted — nothing left ahead of the
+  cursor: if the snapshot originated in a search- or facet-filtered Music
+  library and Music is now completely unfiltered, Reprise continues from all
+  existing library titles in random order. **While a title is still playing,
+  that continuation is bound in at once**, the moment Music becomes unfiltered,
+  so the queue stops reading empty for the rest of the title; the running title
+  keeps the cursor, is never restarted or re-ordered, and every other library
+  title follows it exactly once. If the final title has already ended instead,
+  a new random snapshot starts on a title other than the one just finished —
+  which may occur later in it, but never starts it. Missing and deleted titles
+  are excluded. If the filter is still active, the origin was not the Music
+  library, the visible list is not the complete library, or no other title
+  exists, playback ends as before. Explicit Play Next entries retain priority
+  and Repeat One/All retain their existing queue behavior.
 - **PLAY-12** [active] [gtk] — **The player bar and the Now Playing panel have
   no dead surfaces.** The title, channel/artist line, and cover are links in
   every playback mode. What is playing is findable: each of the three surfaces
@@ -418,6 +420,21 @@ result.
   no predecessor. Rewinding is a seek, not a pipeline restart. After stepping
   back, Next returns to the item the jump left. History exists only at runtime
   and starts empty after launch.
+- **PLAY-15** [active] [gtk] — A snapshot born in a filtered Music library is
+  rebound the moment that view becomes completely unfiltered again, even while
+  it still has titles ahead. The running title keeps the cursor and is never
+  restarted; the now-unfiltered visible list follows it — in the view's own
+  order, or freshly shuffled behind the running title when shuffle is on. The
+  exhausted case stays PLAY-11's. Any other filter change — narrowing, swapping
+  a facet, typing in the search field — leaves the snapshot alone, as PLAY-3b
+  and PLAY-8 require. Repeat One/All are never rebound; Missing and deleted
+  titles are excluded.
+- **PLAY-16** [active] [gtk] — The play button in the player bar and the mini
+  player paints the playback accent with a white glyph. It is the playback
+  identity shared with the running marker and the equalizer bars, and is
+  deliberately exempt from the 3:1 that CONTRAST-5a would otherwise impose on
+  a non-text accent-surface control. The app-accent pairing measures 1.69:1;
+  the exemption records that cost rather than hiding it.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
@@ -3429,12 +3446,27 @@ property is set and yet nothing happens.
   translucent content respectively. Artist, time, search field, and header
   actions are active content; only disabled or purely decorative elements
   are allowed to fall below that.
-- **CONTRAST-5** [active] [gtk] — An accent used as a text or glyph foreground
-  reaches at least 4.5:1 against the critical surface of the current light or
-  dark appearance. The foreground is derived from the effective app or system
-  accent by adjusting OKLab lightness; themes and feature CSS never type their
-  own accent foreground. Accent-colored surfaces are outside this rule and
+- **CONTRAST-5** [replaced by CONTRAST-5a] — An accent used as a text or glyph
+  foreground reaches at least 4.5:1 against the critical surface of the current
+  light or dark appearance. The foreground is derived from the effective app or
+  system accent by adjusting OKLab lightness; themes and feature CSS never type
+  their own accent foreground. Accent-colored surfaces are outside this rule and
   continue to pair with `accent_fg_color`.
+- **CONTRAST-5a** [active] [gtk] — As CONTRAST-5, and the critical surface is
+  pinned: it is the palette surface tinted by `tokens::ACCENT_TINT_CEILING`, the
+  **heaviest accent-tinted background any rule in the app may paint**. "Critical
+  surface" left as a judgement call is what let the checked player-bar toggle
+  ship at 2.97:1 with the whole contrast suite green — the role was derived
+  against the filter chip's tint while the toggle filled almost twice as far.
+  Two obligations follow, and both are enforced rather than reviewed. A fill
+  louder than the ceiling is a bug in the fill, not in the ceiling: the fill
+  yields, the accent stays itself. And the ceiling itself is bounded from above
+  — past it, a heavy tint of a near-white system accent lifts a dark surface to
+  mid-grey, the lightness search leaves the sRGB gamut, and the monochrome
+  fallback silently drops the brand hue app-wide while every ratio still passes.
+  PLAY-16 is the explicit exception: the play buttons keep the playback accent
+  and white glyph as product identity, with their measured 1.69:1 cost recorded
+  there rather than claimed as this rule's accent-surface carve-out.
 - **NAV-10** [replaced by NAV-10a] — The running context stays visible in
   all views with a shared playback-accent marker; on first entry into a
   view it is revealed once, later switches restore NAV-5's remembered
@@ -3995,6 +4027,13 @@ STYLE-1).
   big Play/Pause button is the primary action and may respond more
   visibly on press than its neighbors: an additional ring in the playback
   accent.
+- **BTN-5** [active] [gtk] — A **primary action that cannot be taken drops its
+  accent surface** instead of dimming it. Dimming a filled button leaves the
+  near-black accent foreground on a mid-dark tint of the accent — measured at
+  about 2.5:1, and the reason an insensitive "Sync now" was unreadable. The
+  missing surface is the state signal, so the label stays at the secondary text
+  level and readable. Disabled controls are exempt from CONTRAST-3's ratio;
+  that exemption is not a licence to make them illegible.
 - **BTN-4** [active] [gtk] — Hover, Active and Focus are defined **once**
   (`ui/style/buttons.rs`) and applied everywhere, via class or — where
   Adwaita builds the buttons internally — via selector from the same
@@ -5647,13 +5686,21 @@ grammar for location, filtering, adding, and reversible removal.
 External media remains structurally outside the track queue and the
 listening statistics.
 
-- **SRC-1** [active] [gtk] — Podcasts and radio sit in the LIBRARY
-  section between Music and Queue and appear only when the module is
-  active. The podcast counter shows unplayed episodes, the radio
-  counter shows favorites; zero stays invisible. Radio is active by
-  default because it only transmits on user action; the binding
-  condition is a radio empty state with exactly one directly reachable
-  "Add station" action.
+- **SRC-1** [replaced by SRC-1a] [gtk] — Original rule; its counter half
+  read the podcast number as unplayed episodes, which made two of the
+  three sibling rows count something the third one does not.
+- **SRC-1a** [active] [gtk] — Podcasts, YouTube and radio sit in the
+  LIBRARY section between Music and Queue and appear only when the
+  module is active. Each of the three counters shows its own inventory:
+  how many shows are subscribed, how many channels are followed, how
+  many stations are favorites — never how much is still unheard. A
+  number that also falls when something is played reads as a backlog the
+  user never asked for, and the three rows would then answer three
+  different questions with the same badge; the unplayed count stays
+  where it is usable, in the view's Unplayed filter (`SRC-2`). Zero
+  stays invisible. Radio is active by default because it only transmits
+  on user action; the binding condition is a radio empty state with
+  exactly one directly reachable "Add station" action.
 - **SRC-2** [active] [gtk] — Adding uses a tinted rectangular button
   with a label and radius 8 in both sources, never the chip shape. The plus was
   never rendered on the podcast side because setting its label replaced the

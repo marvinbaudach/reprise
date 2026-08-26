@@ -208,7 +208,9 @@ fn fil_9_filter_changes_center_the_visible_playing_track() {
         .position(|id| *id == playing_id)
         .and_then(|position| u32::try_from(position).ok())
         .unwrap();
-    let unfiltered_row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
+    let unfiltered_row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled unfiltered list must expose measured rows");
     adjustment.set_value(f64::from(unfiltered_position) * unfiltered_row_height);
     while gtk4::glib::MainContext::default().iteration(false) {}
     track_list.update_current_track(playing_id, None, CurrentTrackChange::PlaybackStarted);
@@ -221,13 +223,20 @@ fn fil_9_filter_changes_center_the_visible_playing_track() {
     assert_eq!(track_list.shared.model.n_items(), 30);
     assert_playing_track_centered(&track_list, playing_id, &adjustment);
 
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .is_some()
+    });
+
     let filtered_ids = track_list.shared.current_view_ids();
     let filtered_position = filtered_ids
         .iter()
         .position(|id| *id == playing_id)
         .and_then(|position| u32::try_from(position).ok())
         .unwrap();
-    let filtered_row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
+    let filtered_row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled filtered list must expose measured rows");
     adjustment.set_value(f64::from(filtered_position) * filtered_row_height);
     while gtk4::glib::MainContext::default().iteration(false) {}
 
@@ -253,6 +262,7 @@ fn assert_playing_track_centered(
     // Half a row, and why: see `centering_tolerance` in `start_restore_tests`.
     // The restore lands on the row edge nearest the centre, because that is
     // the only value GTK's own anchor reproduces.
+    // Range-derived height only bounds permissible centering error; it is not the target oracle.
     let tolerance = adjustment.upper() / f64::from(track_list.shared.model.n_items()) / 2.0;
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
         scroll_center::centered_scroll_value(

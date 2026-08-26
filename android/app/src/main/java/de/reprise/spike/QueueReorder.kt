@@ -8,7 +8,6 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,6 +61,40 @@ private const val QUEUE_AUTOSCROLL_DIVISOR = 5f
  * the core refused, so a failed edit cannot freeze the list askew.
  */
 private const val QUEUE_RELOAD_GRACE_MS = 600L
+
+/**
+ * The decision behind [QueueReorderState.offsetsDescribe], as a plain
+ * predicate so it can be pinned without a frame clock.
+ *
+ * Note what cannot be tested here, or anywhere in the unit suite: the defect
+ * this guards against is a *timing* one, and `mainClock` erases it. With the
+ * clock paused, `waitForIdle` drains the effect that releases the offsets
+ * before any assertion can look, so the list is measured already correct —
+ * the harness is friendlier than the device. The evidence for the fix is
+ * therefore a measurement on hardware, recorded in the commit that added it.
+ */
+internal fun queueOffsetsDescribe(
+    awaitingReload: Boolean,
+    orderAtEdit: String?,
+    order: String,
+): Boolean = !awaitingReload || orderAtEdit == null || order == orderAtEdit
+
+/**
+ * Which composed slot reads the state-owned arrival tint.
+ *
+ * Before the reload, the moved row is still composed at [from] and only its
+ * offset puts it over [to]. After the reload changes the row keys, the same
+ * row is composed at [to]. [handedOver] is the tint's own one-way latch: it
+ * cannot move back to [from] when the independently managed drag offsets are
+ * released. Choosing by this handover instead of track id also keeps duplicate
+ * occurrences of one track from flashing together.
+ */
+internal fun queueFlashSlot(
+    flashing: Boolean,
+    handedOver: Boolean,
+    from: Int,
+    to: Int,
+): Int? = if (!flashing) null else if (handedOver) to else from
 
 /** One curve for the whole gesture: fast out of the gate, long settle. */
 internal val QueueDragEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -175,13 +208,19 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
     var targetSlot by mutableIntStateOf(0)
         private set
 
-    /** The slot whose arrival tint is currently owed, if any. */
+    /** The composed slot that currently reads the arrival tint. */
     var flashSlot by mutableStateOf<Int?>(null)
         private set
 
-    /** Changes with every owed tint, so a re-used slot flashes again. */
-    var flashToken by mutableLongStateOf(0L)
-        private set
+    private var flashFrom = 0
+    private var flashTo = 0
+    private var flashHandedOver = false
+
+    /** The arrival tint outlives either row composition that reads it. */
+    private val flash = Animatable(0f)
+    private var flashJob: Job? = null
+
+    val flashFraction: Float get() = flash.value
 
     /** Collaborators the composition re-supplies on every pass. */
     var haptics: QueueHaptics = QueueHaptics.None
@@ -206,8 +245,14 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
     private var fingerPx by mutableFloatStateOf(0f)
     private var scrolledPx by mutableFloatStateOf(0f)
     private val settlePx = Animatable(0f)
-    private var awaitingReload = false
-    private var pendingFlashSlot: Int? = null
+    private var awaitingReload by mutableStateOf(false)
+    private var orderAtEdit by mutableStateOf<String?>(null)
+
+    /**
+     * The window order the rows were drawn from when the edit was sent.
+     * Written every composition, read once at the drop.
+     */
+    var windowOrder: String = ""
     private var autoScroll: Job? = null
 
     /** Bumped per gesture so a finished drop cannot clean up its successor. */
@@ -247,6 +292,12 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
         if (phase != Phase.IDLE) {
             return
         }
+        // One gesture owns the one arrival tint. Starting another explicitly
+        // ends any fade left by its predecessor before geometry is reset.
+        flashJob?.cancel()
+        flashJob = null
+        flashSlot = null
+        flashHandedOver = false
         generation += 1
         phase = Phase.DRAG
         draggedSlot = slot
@@ -297,10 +348,27 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
                 release(myGeneration)
                 return@launch
             }
+            flashFrom = start
+            flashTo = destination
+            flashHandedOver = false
+            flashSlot = queueFlashSlot(
+                flashing = true,
+                handedOver = false,
+                from = flashFrom,
+                to = flashTo,
+            )
+            flashJob = scope.launch {
+                flash.snapTo(1f)
+                flash.animateTo(0f, tween(QUEUE_DRAG_FLASH_MS, easing = QueueDragEasing))
+                if (generation == myGeneration) {
+                    flashSlot = null
+                    flashJob = null
+                }
+            }
             // The row is standing in its new place already, so the edit is
             // invisible — which is the whole point of running it here.
-            pendingFlashSlot = destination
             awaitingReload = true
+            orderAtEdit = windowOrder
             move?.invoke(start, id, destination)
             delay(QUEUE_RELOAD_GRACE_MS)
             release(myGeneration)
@@ -308,20 +376,40 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
     }
 
     /**
+     * Whether the offsets still describe the list the rows are drawn from.
+     *
+     * They stop describing it the instant the edit comes back. The reloaded
+     * window already carries the new order, so a parting offset laid on top of
+     * it displaces the row a second time: it covers the neighbour above and
+     * leaves its own slot standing empty, which reads as the two rows swapping
+     * once more after the drop.
+     *
+     * [onOrderChanged] releases the offsets for the same reason, but it is a
+     * coroutine and therefore runs *after* the composition that has already
+     * drawn the new order — measured on a Pixel 10 Pro XL, three frames of
+     * exactly that double count. This is the same question asked during
+     * composition, where the answer is still in time to be used.
+     */
+    fun offsetsDescribe(order: String): Boolean =
+        queueOffsetsDescribe(awaitingReload, orderAtEdit, order)
+
+    /**
      * Called when the window the rows are drawn from has changed order, which
      * for a queue means the edit came back. The offsets have done their job the
      * moment the list itself agrees with them.
      */
     fun onOrderChanged() {
+        if (flashSlot != null && !flashHandedOver) {
+            flashHandedOver = true
+            flashSlot = queueFlashSlot(
+                flashing = true,
+                handedOver = true,
+                from = flashFrom,
+                to = flashTo,
+            )
+        }
         if (awaitingReload) {
             release(generation)
-        }
-    }
-
-    /** Consumes the arrival tint once [slot] has finished showing it. */
-    fun clearFlash(slot: Int) {
-        if (flashSlot == slot) {
-            flashSlot = null
         }
     }
 
@@ -334,11 +422,7 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
         fingerPx = 0f
         scrolledPx = 0f
         awaitingReload = false
-        pendingFlashSlot?.let { slot ->
-            flashSlot = slot
-            flashToken += 1
-            pendingFlashSlot = null
-        }
+        orderAtEdit = null
     }
 
     private fun retarget() {

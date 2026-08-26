@@ -169,14 +169,13 @@ pub fn build(
             move |source, _count, filter, browse| {
                 if let Some(player) = &player_for_reload {
                     player.refresh_library_availability();
-                    // PLAY-11: a Music view that just became completely
-                    // unfiltered is the one moment an exhausted, filter-born
-                    // snapshot may be given a future. Every other reload pays
-                    // only the two `Cell`/`RefCell` reads inside — the queries
-                    // sit behind the exhausted-and-filtered-origin guards, and
-                    // the guard that matters most (a filtered `play_origin`)
-                    // is cleared by the first success, so this cannot re-bind
-                    // the continuation it just installed.
+                    // PLAY-11/PLAY-15: when a Music view becomes completely
+                    // unfiltered, an exhausted filter-born snapshot gains a
+                    // future, while one with titles ahead rebinds to the full
+                    // visible view. The queries stay behind the repeat,
+                    // loaded-title and filtered-origin guards. A successful
+                    // handoff clears the filtered `play_origin`, so its own
+                    // reload cannot bind or rebind the queue again.
                     if matches!(source, ViewSource::Library)
                         && filter.trim().is_empty()
                         && browse.is_empty()
@@ -319,7 +318,7 @@ pub fn build(
     );
     super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
     if let Some(player) = &player {
-        source_views.wire_episode_played(player, &sidebar);
+        source_views.wire_episode_played(player);
         source_views.wire_episode_position(player);
     }
     // The toast layer is attached after the player-bar shell exists so

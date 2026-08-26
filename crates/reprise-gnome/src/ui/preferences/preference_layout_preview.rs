@@ -365,7 +365,7 @@ impl LayoutPreview {
 
 pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{
-        PREVIEW_BORDER_ALPHA, PREVIEW_CONTENT_ALPHA, PREVIEW_SIDEBAR_ALPHA,
+        ACCENT_TINT_CEILING, PREVIEW_BORDER_ALPHA, PREVIEW_CONTENT_ALPHA, PREVIEW_SIDEBAR_ALPHA,
     };
     format!(
         ".{PREVIEW_CLASS} {{ \
@@ -379,7 +379,7 @@ pub(in crate::ui) fn css() -> String {
          .{CONTENT_CLASS} {{ \
            background: alpha(@window_fg_color, {PREVIEW_CONTENT_ALPHA}); \
            padding: 8px; }} \
-         .{PLAYER_CLASS} {{ background: alpha(@accent_bg_color, 0.35); }} \
+         .{PLAYER_CLASS} {{ background: alpha(@accent_bg_color, {ACCENT_TINT_CEILING}); }} \
          .{ZONE_CLASS} {{ \
            border: 1px solid transparent; \
            border-radius: 0; \

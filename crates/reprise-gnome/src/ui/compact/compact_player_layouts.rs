@@ -172,6 +172,8 @@ pub(in crate::ui) fn mini_css() -> String {
          .{CSS_COVER} {{ \
            border-radius: {COVER_RADIUS}px; \
            box-shadow: inset 0 0 0 1px alpha(white, 0.08); }}\n\
+         /* PLAY-16: the playback accent and white glyph are a deliberate
+            product identity; see the full player bar's explicit exception. */\n\
          .{CSS_PLAY} {{ \
            min-width: {PLAY_SIZE}px; min-height: {PLAY_SIZE}px; \
            background-color: @reprise_player_accent; \
