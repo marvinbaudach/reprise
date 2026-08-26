@@ -2,7 +2,7 @@
 slug: queue-landing-flash-follows-the-drop
 worktree: /home/marvin/Projects/reprise-queue-visual-queue-landing-flash-follows-the-drop
 branch: feature/queue-landing-flash-follows-the-drop
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-26
 ---
