@@ -116,16 +116,10 @@ pub(super) fn eject_sensitive(device: &DeviceView) -> bool {
     projection::eject_sensitive(device.page.controls, device.connected, &device.sync_phase)
 }
 
-/// The selection summary counts tracks with the very plural forms the
-/// per-row subtitle already uses. Passing bare `"unique tracks"` here would
-/// hand gettext a template without a `{count}` placeholder, and the number
-/// would be dropped on the floor.
+/// Render the projected selection-summary count. Its plural forms must carry
+/// a `{count}` placeholder or gettext would drop the number on the floor.
 pub(super) fn unique_tracks(count: usize) -> String {
-    render(&projection::counted(
-        count,
-        projection::UNIQUE_TRACKS.0,
-        projection::UNIQUE_TRACKS.1,
-    ))
+    render(&projection::unique_tracks(count))
 }
 
 #[cfg(test)]

@@ -7,10 +7,11 @@
 
 use super::*;
 
-fn named_row(source: SelectionSource, name: &str) -> SyncPlaylistRow {
+fn named_row(source: SelectionSource, name: &str, smart: bool) -> SyncPlaylistRow {
     SyncPlaylistRow {
         source,
         name: Some(name.into()),
+        smart,
         ..row()
     }
 }
@@ -37,15 +38,19 @@ fn page_actions() -> PageActions {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn dsr_1_a_deleted_playlist_takes_its_row_widget_with_it() {
+fn a_deleted_playlist_takes_its_row_widget_with_it() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");
 
     let mut before = device();
     before.page.playlists = vec![
-        named_row(SelectionSource::Playlist(1), "Like Immortal Disfigurement"),
-        named_row(SelectionSource::Playlist(2), "Lorna Shore & Similar"),
-        named_row(SelectionSource::Smart(3), "Recently added"),
+        named_row(
+            SelectionSource::Playlist(1),
+            "Like Immortal Disfigurement",
+            false,
+        ),
+        named_row(SelectionSource::Playlist(2), "Lorna Shore & Similar", false),
+        named_row(SelectionSource::Smart(3), "Recently added", true),
     ];
 
     let (surface, _root) = DeviceSyncPage::new(&before, page_actions(), &no_op_content_actions());
@@ -78,7 +83,7 @@ fn dsr_1_a_deleted_playlist_takes_its_row_widget_with_it() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn dsr_2_the_selection_summary_still_names_its_count() {
+fn the_selection_summary_still_names_its_count() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");
 

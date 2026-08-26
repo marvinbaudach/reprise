@@ -26,7 +26,7 @@ const PROFILE_ORIGINAL: &str = N_!("Original files (no conversion)");
 const PLAYLIST_UNAVAILABLE: &str = N_!("Playlist no longer exists — deselect it to continue");
 const SMART_SNAPSHOT: &str = N_!("Smart snapshot");
 const ENTRIES: (&str, &str) = plural("{count} entry", "{count} entries");
-pub const UNIQUE_TRACKS: (&str, &str) = plural("{count} unique track", "{count} unique tracks");
+const UNIQUE_TRACKS: (&str, &str) = plural("{count} unique track", "{count} unique tracks");
 const UNAVAILABLE_TRACKS: (&str, &str) =
     plural("{count} unavailable track", "{count} unavailable tracks");
 const NO_VERIFIED_PLAYLIST_SYNC: &str = N_!("{size} · No verified sync time");
@@ -160,6 +160,10 @@ pub fn playlist_subtitle(row: &SyncPlaylistRow, last_sync: VerifiedSyncTime) -> 
         ),
     });
     parts
+}
+
+pub fn unique_tracks(count: usize) -> Message {
+    counted(count, UNIQUE_TRACKS.0, UNIQUE_TRACKS.1)
 }
 
 pub fn device_last_sync_copy(
