@@ -2,7 +2,7 @@
 //! library was anchored to when the artist link was clicked.
 //!
 //! The two views have very different lengths, which is the point: the restore
-//! path derives its row height from `adjustment.upper() / current_ids.len()`,
+//! path derives its row height from independently measured realized rows,
 //! and `upper` still belongs to the view being left at the moment the first
 //! write happens.
 
@@ -57,6 +57,7 @@ struct Outcome {
 }
 
 fn mixed_track_list() -> (TrackList, gtk4::Window) {
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
     let conn = crate::test_db::open().unwrap();
     let fixture_conn = crate::test_db::connection(&conn);
     let tx = fixture_conn.unchecked_transaction().unwrap();
@@ -117,7 +118,8 @@ fn top_row_track_id(track_list: &TrackList) -> Option<i64> {
     if total == 0 || adjustment.upper() <= 0.0 {
         return None;
     }
-    let height = adjustment.upper() / f64::from(total);
+    let height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)?;
     let index = (adjustment.value() / height).floor().max(0.0) as u32;
     track_list
         .shared
@@ -151,7 +153,9 @@ fn run_journey(track_list: &TrackList, journey: Journey) -> Outcome {
         track_list.shared.model.n_items(),
         adjustment.upper(),
     );
-    let row_height = adjustment.upper() / library_ids.len() as f64;
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled library must expose measured rows");
 
     // Scrolled deep into the library, where the artist link gets clicked.
     adjustment.set_value(row_height * ANCHOR_POSITION);
@@ -243,7 +247,9 @@ fn run_journey(track_list: &TrackList, journey: Journey) -> Outcome {
     sampler.remove();
 
     let restored_ids = track_list.shared.current_view_ids();
-    let restored_height = adjustment.upper() / restored_ids.len() as f64;
+    let restored_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the restored library must expose measured rows");
     let anchor_index = restored_ids
         .iter()
         .position(|id| *id == expected_top_id)

@@ -5,6 +5,8 @@ pub(in crate::ui) use reprise_view::column_widths;
 mod centered_scroll_restore;
 pub(in crate::ui) mod current_track_selection;
 pub(crate) mod diagnostic_trail;
+#[cfg(test)]
+mod display_test_geometry;
 pub(in crate::ui) mod match_highlight;
 pub(in crate::ui) mod now_playing_marker;
 mod playlist_reorder_guard;
@@ -26,6 +28,8 @@ mod rating_column;
 mod reload_anchor_scroll;
 pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
+#[cfg(test)]
+mod row_height_contract_display_tests;
 #[cfg(test)]
 mod row_height_floor_display_tests;
 pub(crate) mod row_loss_watchdog;

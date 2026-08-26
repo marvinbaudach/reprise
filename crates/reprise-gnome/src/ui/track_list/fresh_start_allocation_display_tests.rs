@@ -51,6 +51,11 @@ fn fresh_start_deep_restore_allocates_visible_rows_at_the_anchor() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
+    assert_eq!(
+        reprise_core::library::settings::get_row_height(&conn).unwrap(),
+        None,
+        "the cold-start fixture must not inherit persisted geometry"
+    );
     let fixture_conn = crate::test_db::connection(&conn);
     let tx = fixture_conn.unchecked_transaction().unwrap();
     for id in 1..=TRACK_COUNT {
@@ -88,6 +93,8 @@ fn fresh_start_deep_restore_allocates_visible_rows_at_the_anchor() {
         Some((anchor_id, 0.0)),
         RowHeight::new(CAPTURED_ROW_HEIGHT),
     );
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    let handler = super::search_viewport_display_tests::record_viewport_steps(&adjustment);
     reload_with_anchor_and_viewport(
         &track_list.shared,
         &captured,
@@ -96,11 +103,22 @@ fn fresh_start_deep_restore_allocates_visible_rows_at_the_anchor() {
         Some(current_ids),
     );
 
-    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-    let target = ANCHOR_POSITION as f64 * CAPTURED_ROW_HEIGHT;
-    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-        (adjustment.value() - target).abs() <= CAPTURED_ROW_HEIGHT
-    });
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || {
+            super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+                .is_some()
+        }
+    ));
+    let measured =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .unwrap();
+    let target = ANCHOR_POSITION as f64 * measured;
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(500));
+    adjustment.disconnect(handler);
+    let steps = super::search_viewport_display_tests::viewport_steps(
+        crate::ui::scroll_probe::trail::take(),
+    );
     let allocated = allocated_row_count(&track_list.shared.column_view);
 
     assert!(
@@ -112,10 +130,14 @@ fn fresh_start_deep_restore_allocates_visible_rows_at_the_anchor() {
         "fresh-start ColumnView allocated only {allocated} row(s)"
     );
     assert!(
-        (adjustment.value() - target).abs() <= CAPTURED_ROW_HEIGHT,
+        (adjustment.value() - target).abs() <= measured,
         "fresh-start restore missed its anchor: target={target}, value={}, page={}",
         adjustment.value(),
         adjustment.page_size()
+    );
+    assert!(
+        steps.len() <= 1,
+        "fresh-start restore visibly jumped between viewport targets: {steps:?}"
     );
     window.close();
 }

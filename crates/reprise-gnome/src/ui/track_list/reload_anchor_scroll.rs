@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::glib::prelude::ObjectExt;
-use gtk4::prelude::{AdjustmentExt, ScrollableExt};
+use gtk4::prelude::{AdjustmentExt, ScrollableExt, WidgetExtManual};
 
 use super::{reload_restore, Shared};
 use crate::ui::adjustment_hold::AdjustmentHold;
@@ -475,12 +475,14 @@ fn arm_refinement(
     let weak_shared = Rc::downgrade(shared);
     let idle_ids = current_ids.to_owned();
     let idle_hold = hold.cloned();
-    gtk4::glib::idle_add_local_once(move || {
+    let view = shared.column_view.clone();
+    let frames_left = Cell::new(8_u8);
+    view.add_tick_callback(move |_, _| {
         if restored.get() {
-            return;
+            return gtk4::glib::ControlFlow::Break;
         }
         let Some(shared) = weak_shared.upgrade() else {
-            return;
+            return gtk4::glib::ControlFlow::Break;
         };
         if refine_once(
             &shared,
@@ -495,6 +497,16 @@ fn arm_refinement(
             },
         ) {
             restored.set(true);
+            return gtk4::glib::ControlFlow::Break;
+        }
+        let Some(remaining) = frames_left.get().checked_sub(1) else {
+            return gtk4::glib::ControlFlow::Break;
+        };
+        frames_left.set(remaining);
+        if remaining == 0 {
+            gtk4::glib::ControlFlow::Break
+        } else {
+            gtk4::glib::ControlFlow::Continue
         }
     });
 }
@@ -626,8 +638,18 @@ fn apply(
             n_sections,
         );
     }
-    // Reject an unrealized layout before its bottom-edge guard row can replace the anchor.
-    if !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections) {
+    // Flat-list layout no longer waits for a persistence witness, but a range
+    // this service just seeded is still provisional. Once GTK authors the
+    // range, its quotient is the reveal authority even if recycled widgets
+    // remain mixed. Sectioned lists additionally need realized headers before
+    // their guard row can be trusted.
+    if !crate::ui::list_geometry::gtk_authored(
+        &shared.list_geometry_cache,
+        adjustment.upper(),
+        current_ids.len(),
+    ) || (n_sections > 0
+        && !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections))
+    {
         return ApplyResult::Pending;
     }
     if provisional_sectioned_refinement

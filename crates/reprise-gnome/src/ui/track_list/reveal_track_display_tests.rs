@@ -27,6 +27,7 @@ use crate::ui::window::metadata_navigation::MetadataNavigator;
 const PAST_THE_SCROLL_HOLD: Duration = Duration::from_millis(500);
 
 fn synthetic_track_list(rows: i64) -> (TrackList, gtk4::Window) {
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
     let conn = crate::test_db::open().unwrap();
     let fixture_conn = crate::test_db::connection(&conn);
     let tx = fixture_conn.unchecked_transaction().unwrap();
@@ -71,7 +72,8 @@ fn synthetic_track_list(rows: i64) -> (TrackList, gtk4::Window) {
 fn anchor_target(track_list: &TrackList, track_id: i64) -> Option<f64> {
     let adjustment = track_list.shared.column_view.vadjustment()?;
     let ids = track_list.shared.current_view_ids();
-    let height = adjustment.upper() / ids.len() as f64;
+    let height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)?;
     let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
         crate::ui::list_geometry::RowHeight::new(height)?,
     );
@@ -81,7 +83,8 @@ fn anchor_target(track_list: &TrackList, track_id: i64) -> Option<f64> {
 fn centered_target(track_list: &TrackList, track_id: i64) -> Option<(f64, f64)> {
     let adjustment = track_list.shared.column_view.vadjustment()?;
     let ids = track_list.shared.current_view_ids();
-    let row_height = adjustment.upper() / ids.len() as f64;
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)?;
     let position = ids.iter().position(|id| *id == track_id)?;
     let position = u32::try_from(position).ok()?;
     let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
@@ -103,6 +106,7 @@ struct PlayerBarRevealStage {
 
 impl PlayerBarRevealStage {
     fn new() -> Self {
+        crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
         let conn = crate::test_db::open().unwrap();
         let fixture_conn = crate::test_db::connection(&conn);
         let tx = fixture_conn.unchecked_transaction().unwrap();
@@ -505,7 +509,10 @@ fn nav_10b_user_scroll_releases_the_reveal_before_a_reload() {
         None,
         "direct user input must take ownership from the reveal"
     );
-    let row_height = stage.adjustment.upper() / 200.0;
+    let row_height = super::super::display_test_geometry::measured_row_height(
+        &stage.track_list.shared.column_view,
+    )
+    .expect("the settled player-bar list must expose measured rows");
     let user_target = row_height * 20.0;
     stage.adjustment.set_value(user_target);
     stage.track_list.reload();

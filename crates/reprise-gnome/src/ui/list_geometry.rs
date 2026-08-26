@@ -16,7 +16,7 @@ pub(in crate::ui) use crate::ui::list_geometry_content::{
 };
 use crate::ui::list_geometry_layout::ListLayout;
 
-const ROW_HEIGHT_AGREEMENT_EPSILON: f64 = 0.5;
+pub(in crate::ui) const ROW_HEIGHT_AGREEMENT_EPSILON: f64 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::ui) struct RowHeight(f64);
@@ -94,13 +94,35 @@ pub(in crate::ui) struct RowMeasurement {
     uniform: bool,
 }
 
+const MIN_SETTLED_ROW_SAMPLE: usize = 3;
+
 impl RowMeasurement {
     /// Measures the unique most frequent non-zero allocated widget height.
     /// Zero-height widgets are unrealized and do not describe a bound row.
     pub(in crate::ui) fn from_widget_heights(heights: impl IntoIterator<Item = i32>) -> Self {
+        Self::from_height_samples(heights.into_iter().filter(|height| *height > 0), 1)
+    }
+
+    /// Measures rows only after their allocation has reached the height the
+    /// widget naturally requests. A settled virtualized list exposes dozens;
+    /// fewer than three survivors are too little evidence for the whole list.
+    pub(in crate::ui) fn from_widget_measurements(
+        measurements: impl IntoIterator<Item = (i32, i32)>,
+    ) -> Self {
+        Self::from_height_samples(
+            measurements.into_iter().filter_map(|(allocated, natural)| {
+                (allocated > 0 && allocated >= natural).then_some(allocated)
+            }),
+            MIN_SETTLED_ROW_SAMPLE,
+        )
+    }
+
+    fn from_height_samples(heights: impl IntoIterator<Item = i32>, minimum_sample: usize) -> Self {
         let mut counts = BTreeMap::<i32, usize>::new();
-        for height in heights.into_iter().filter(|height| *height > 0) {
+        let mut sample_size = 0;
+        for height in heights {
             *counts.entry(height).or_default() += 1;
+            sample_size += 1;
         }
         let max_count = counts.values().copied().max();
         let modes = counts
@@ -109,10 +131,10 @@ impl RowMeasurement {
             .map(|(height, _)| *height)
             .collect::<Vec<_>>();
         Self {
-            modal: (modes.len() == 1)
+            modal: (sample_size >= minimum_sample && modes.len() == 1)
                 .then(|| RowHeight::new(f64::from(modes[0])))
                 .flatten(),
-            uniform: counts.len() == 1,
+            uniform: sample_size >= minimum_sample && counts.len() == 1,
         }
     }
 
@@ -152,31 +174,6 @@ pub(in crate::ui) fn settled_row_height(
         .then_some(widget_height)
 }
 
-/// Returns a realized row height that cleanly disproves the adjustment's
-/// per-row quotient.
-///
-/// This is deliberately asymmetric: only a uniform widget measurement above
-/// the CSS floor can replace remembered geometry. Mixed allocations and a
-/// measurement at or below the floor remain no information, because they may
-/// describe recycled or merely minimum-sized rows rather than settled content.
-fn contradicting_row_height(
-    upper: f64,
-    n_rows: usize,
-    measurement: RowMeasurement,
-    minimum: RowHeight,
-) -> Option<RowHeight> {
-    if n_rows == 0 || !upper.is_finite() || upper <= 0.0 || !measurement.is_uniform() {
-        return None;
-    }
-    let widget_height = measurement.modal()?;
-    if widget_height.pixels() <= minimum.pixels() {
-        return None;
-    }
-    let adjustment_height = upper * (n_rows as f64).recip();
-    ((adjustment_height - widget_height.pixels()).abs() >= ROW_HEIGHT_AGREEMENT_EPSILON)
-        .then_some(widget_height)
-}
-
 pub(in crate::ui) fn settled_content_row_height(
     upper: f64,
     n_rows: usize,
@@ -194,6 +191,19 @@ pub(in crate::ui) fn settled_content_row_height(
     let header_height = headers.modal()?;
     let row_content_height = upper - n_sections as f64 * header_height.pixels();
     settled_row_height(row_content_height, n_rows, rows)
+}
+
+fn persistable_row_height(
+    cache: &ListGeometryCache,
+    upper: f64,
+    n_rows: usize,
+    n_sections: usize,
+    rows: RowMeasurement,
+    headers: Option<RowMeasurement>,
+) -> Option<RowHeight> {
+    gtk_authored(cache, upper, n_rows)
+        .then(|| settled_content_row_height(upper, n_rows, n_sections, rows, headers))
+        .flatten()
 }
 
 #[cfg(test)]
@@ -251,10 +261,68 @@ fn preseed_upper(
     (!current_describes_geometry).then_some(wanted_upper)
 }
 
+fn preseed_unclaimed_upper(
+    cache: &ListGeometryCache,
+    current_upper: f64,
+    content: ContentHeight,
+    source: RowHeightSource,
+    n_rows: usize,
+) -> Option<f64> {
+    let wanted_upper = preseed_upper(current_upper, content, source)?;
+    match cache.configured_upper.get() {
+        // Before GTK has described a complete range, a cold-start seed may
+        // grow its default range. It may never shrink an externally authored
+        // range, which is the poisoned-cache loop this guard exists to stop.
+        None => (!current_upper.is_finite()
+            || wanted_upper > current_upper + ROW_HEIGHT_AGREEMENT_EPSILON)
+            .then_some(wanted_upper),
+        // The live range still describes the old model. Seeding the new model
+        // is the legitimate model-swap case the cache's row count preserves.
+        Some((written_rows, _)) if written_rows != n_rows => Some(wanted_upper),
+        Some(_) => (!gtk_authored(cache, current_upper, n_rows)).then_some(wanted_upper),
+    }
+}
+
 #[derive(Default)]
 pub(in crate::ui) struct ListGeometryCache {
     row_height: Cell<f64>,
     section_header_height: Cell<f64>,
+    configured_upper: Cell<Option<(usize, f64)>>,
+}
+
+pub(in crate::ui) fn record_configured_upper(cache: &ListGeometryCache, n_rows: usize, upper: f64) {
+    cache.configured_upper.set(Some((n_rows, upper)));
+}
+
+/// Reports whether the live range came from outside this geometry service for
+/// the current model. A write for another row count cannot describe this one.
+pub(in crate::ui) fn gtk_authored(cache: &ListGeometryCache, upper: f64, n_rows: usize) -> bool {
+    cache
+        .configured_upper
+        .get()
+        .is_none_or(|(written_rows, written_upper)| {
+            written_rows != n_rows || (upper - written_upper).abs() > ROW_HEIGHT_AGREEMENT_EPSILON
+        })
+}
+
+fn authoritative_row_height(
+    cache: &ListGeometryCache,
+    upper: f64,
+    n_rows: usize,
+    n_sections: usize,
+    remembered: RowHeight,
+    section_header_height: Option<RowHeight>,
+) -> RowHeight {
+    if !gtk_authored(cache, upper, n_rows) || n_rows == 0 {
+        return remembered;
+    }
+    let header_band =
+        section_header_height.map_or(0.0, |height| n_sections as f64 * height.pixels());
+    RowHeight::new((upper - header_band) / n_rows as f64)
+        // A quotient below the authored row minimum can only describe stale
+        // transitional range geometry, not the current model's row pitch.
+        .filter(|height| height.pixels() >= f64::from(crate::ui::style::tokens::ROW_MIN_HEIGHT))
+        .unwrap_or(remembered)
 }
 
 #[cfg(test)]
@@ -311,14 +379,18 @@ impl ListGeometry {
     }
 
     pub(in crate::ui) fn measurement(&self) -> RowMeasurement {
-        let minimum = self.minimum_row_height();
-        RowMeasurement::from_widget_heights_at_least(self.widget_heights("ColumnViewRow"), minimum)
+        RowMeasurement::from_widget_measurements(self.widget_measurements("ColumnViewRow"))
     }
 
-    fn widget_heights(&self, type_fragment: &str) -> Vec<i32> {
-        fn collect(widget: &gtk4::Widget, type_fragment: &str, heights: &mut Vec<i32>) {
-            if widget.type_().name().contains(type_fragment) {
-                heights.push(widget.height());
+    fn widget_measurements(&self, type_fragment: &str) -> Vec<(i32, i32)> {
+        fn collect(widget: &gtk4::Widget, type_fragment: &str, heights: &mut Vec<(i32, i32)>) {
+            let is_data_row = type_fragment != "ColumnViewRow" || widget.css_name() == "row";
+            if is_data_row && widget.type_().name().contains(type_fragment) {
+                let (minimum, natural, _, _) = widget.measure(gtk4::Orientation::Vertical, -1);
+                heights.push((
+                    widget.height(),
+                    if natural == 0 { minimum } else { natural },
+                ));
             }
             let mut child = widget.first_child();
             while let Some(current) = child {
@@ -334,7 +406,9 @@ impl ListGeometry {
 
     fn section_header_measurement(&self) -> Option<RowMeasurement> {
         let measurement = crate::ui::list_geometry_header::measurement_from_widget_heights(
-            self.widget_heights("ListHeader"),
+            self.widget_measurements("ListHeader")
+                .into_iter()
+                .map(|(allocated, _)| allocated),
         );
         measurement.modal().map(|_| measurement)
     }
@@ -380,15 +454,27 @@ impl ListGeometry {
         &self,
         db: &reprise_core::db::Db,
         cache: &ListGeometryCache,
-        row_height: RowHeight,
+        remembered_row_height: RowHeight,
         section_starts: Vec<u32>,
+        upper: f64,
+        n_rows: usize,
     ) -> ListLayout {
+        let section_header_height =
+            (!section_starts.is_empty()).then(|| self.section_header_height(db, cache));
+        let row_height = authoritative_row_height(
+            cache,
+            upper,
+            n_rows,
+            section_starts.len(),
+            remembered_row_height,
+            section_header_height,
+        );
         if section_starts.is_empty() {
             ListLayout::rows_only(row_height)
         } else {
             ListLayout::sectioned(
                 row_height,
-                self.section_header_height(db, cache),
+                section_header_height.expect("sectioned layout has a header height"),
                 section_starts,
             )
         }
@@ -414,25 +500,14 @@ impl ListGeometry {
     ) -> bool {
         let row_measurement = self.measurement();
         let header_measurement = self.section_header_measurement();
-        let settled = settled_content_row_height(
+        let height = persistable_row_height(
+            cache,
             upper,
             n_rows,
             n_sections,
             row_measurement,
             header_measurement,
         );
-        let height = settled.or_else(|| {
-            (n_sections == 0)
-                .then(|| {
-                    contradicting_row_height(
-                        upper,
-                        n_rows,
-                        row_measurement,
-                        self.minimum_row_height(),
-                    )
-                })
-                .flatten()
-        });
         let Some(height) = height else {
             return false;
         };
@@ -505,10 +580,18 @@ impl ListGeometry {
         if n_sections > 0 {
             crate::ui::scroll_probe::probe_preseed_source(&format!("{header_source:?}"));
         }
-        let ContentHeight::Known(_) = content else {
+        let ContentHeight::Known(wanted_upper) = content else {
             return false;
         };
-        let Some(upper) = preseed_upper(adjustment.upper(), content, source) else {
+        let Some(upper) =
+            preseed_unclaimed_upper(cache, adjustment.upper(), content, source, n_rows)
+        else {
+            // An exact no-op is the range this configure request accepted.
+            // Keeping its row count lets the next model swap distinguish that
+            // old-model range without changing the live adjustment here.
+            if (adjustment.upper() - wanted_upper).abs() < ROW_HEIGHT_AGREEMENT_EPSILON {
+                record_configured_upper(cache, n_rows, wanted_upper);
+            }
             return true;
         };
         // `adjustment.configure` re-enters GTK's layout when it runs inside an
@@ -519,6 +602,7 @@ impl ListGeometry {
             "list geometry configured the adjustment from inside a changed emission"
         );
         crate::ui::scroll_probe::probe_upper("anchor.configure", adjustment, upper);
+        record_configured_upper(cache, n_rows, upper);
         adjustment.configure(
             target,
             adjustment.lower(),
@@ -534,6 +618,10 @@ impl ListGeometry {
 #[cfg(test)]
 #[path = "list_geometry_cache_tests.rs"]
 mod cache_tests;
+
+#[cfg(test)]
+#[path = "list_geometry_acceptance_tests.rs"]
+mod acceptance_tests;
 
 #[cfg(test)]
 mod tests {
@@ -563,48 +651,6 @@ mod tests {
             RowHeight::new(34.0)
         );
         assert!(is_settled(2_276.0 * 34.0 + 0.25, 2_276, measurement));
-    }
-
-    #[test]
-    fn uniform_widget_measurement_can_contradict_seeded_upper() {
-        let minimum = RowHeight::new(28.0).unwrap();
-
-        assert_eq!(
-            contradicting_row_height(
-                100.0 * 53.0,
-                100,
-                RowMeasurement::from_widget_heights([34, 34, 34]),
-                minimum,
-            ),
-            RowHeight::new(34.0)
-        );
-        assert_eq!(
-            contradicting_row_height(
-                100.0 * 53.0,
-                100,
-                RowMeasurement::from_widget_heights([34, 35, 34]),
-                minimum,
-            ),
-            None
-        );
-        assert_eq!(
-            contradicting_row_height(
-                100.0 * 53.0,
-                100,
-                RowMeasurement::from_widget_heights([28, 28, 28]),
-                minimum,
-            ),
-            None
-        );
-        assert_eq!(
-            contradicting_row_height(
-                100.0 * 53.0,
-                100,
-                RowMeasurement::from_widget_heights([27, 27, 27]),
-                minimum,
-            ),
-            None
-        );
     }
 
     #[test]
