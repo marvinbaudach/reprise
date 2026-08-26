@@ -34,9 +34,13 @@ doc/
 # It was ignored while it collected generated status dumps — keep those out
 # (session scratch belongs in .superpowers/) and docs/ stays worth reading.
 
-# Pipeline scratch files (codex-run.sh writes these per run)
-.pipeline-task.md
-.pipeline-codex.md
+# Pipeline scratch files, written per run by the pipeline skill's runner: the
+# prompt it is handed, and the summary it writes back. A glob rather than a
+# list — the refactor phase adds .pipeline-refactor.md, and a name that escapes
+# the list gets committed by accident. .pipeline-codex.md did exactly that in
+# bc5a8e85f9, and every run afterwards left its worktree dirty, which made the
+# architecture lint exit 2 on a whitespace complaint about a scratch file.
+.pipeline-*.md
 
 # Accidental SQLite scratch created by GNOME tests
 /crates/reprise-gnome/unused.db*
