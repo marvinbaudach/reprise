@@ -1,7 +1,7 @@
 ---
 slug: the-fill-yields-not-the-accent
 worktree: /home/marvin/Projects/reprise/.worktrees/contrast-gate
-branch: fix/contrast-button-fixes
+branch: fix/the-fill-yields-not-the-accent
 phase: refactored
 codex_session:
 created: 2026-08-26
