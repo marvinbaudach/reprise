@@ -172,12 +172,12 @@ pub(in crate::ui) fn mini_css() -> String {
          .{CSS_COVER} {{ \
            border-radius: {COVER_RADIUS}px; \
            box-shadow: inset 0 0 0 1px alpha(white, 0.08); }}\n\
-         /* CONTRAST-5a: the accent surface pair, for the same reason the full
-            player bar's play button uses it — see `player_bar_layout`. */\n\
+         /* PLAY-16: the playback accent and white glyph are a deliberate
+            product identity; see the full player bar's explicit exception. */\n\
          .{CSS_PLAY} {{ \
            min-width: {PLAY_SIZE}px; min-height: {PLAY_SIZE}px; \
-           background-color: @accent_bg_color; \
-           color: @accent_fg_color; \
+           background-color: @reprise_player_accent; \
+           color: #ffffff; \
            box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.40); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
