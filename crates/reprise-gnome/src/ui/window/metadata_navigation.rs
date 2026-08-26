@@ -591,6 +591,7 @@ mod tests {
         assert!(track_list.shared.browse_filter.borrow().is_empty());
         assert_eq!(&*restored_search.borrow(), &[String::new()]);
         let current_ids = track_list.shared.current_view_ids();
+        // Range-derived height only bounds centering error; it is not the target oracle.
         let row_height = adjustment.upper() / current_ids.len() as f64;
         let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
             crate::ui::list_geometry::RowHeight::new(row_height).unwrap(),

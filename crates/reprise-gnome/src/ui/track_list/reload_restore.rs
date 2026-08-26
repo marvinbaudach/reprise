@@ -128,6 +128,11 @@ pub(in crate::ui) fn prepaint_guard_position(
     let target = scroll_target(anchor, current_ids, layout, viewport_height)?;
     let last = layout
         .last_row_above(target + viewport_height)?
+        // Keep one complete row of slack. GTK's visibility calculation also
+        // accounts for ColumnView chrome that is not part of the row-band
+        // arithmetic; naming the mathematical last row can therefore move a
+        // cold restore by exactly one row after the precise value was set.
+        .saturating_sub(1)
         .min(u32::try_from(current_ids.len().saturating_sub(1)).ok()?);
     Some(last)
 }
@@ -270,7 +275,7 @@ mod tests {
 
         assert_eq!(
             prepaint_guard_position(Some((394, -1.0)), &current_ids, &rows_only(34.0), 239.0,),
-            Some(400)
+            Some(399)
         );
     }
 

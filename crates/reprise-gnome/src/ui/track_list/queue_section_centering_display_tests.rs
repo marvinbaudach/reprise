@@ -76,6 +76,7 @@ fn build_track_list() -> (TrackList, gtk4::Window) {
     let settled =
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
             rendered_queue_headers(&track_list.shared.column_view).len() == EXPECTED_HEADERS_ABOVE
+                // This range check establishes scrollability; it does not predict a target.
                 && track_list
                     .shared
                     .column_view

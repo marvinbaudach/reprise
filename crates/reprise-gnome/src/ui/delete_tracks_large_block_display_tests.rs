@@ -85,6 +85,7 @@ fn browse_11_large_block_delete_keeps_the_deep_viewport_off_the_top() {
         adjustment.value() > adjustment.page_size() * 2.0
     });
     let before_scroll = adjustment.value();
+    // Range-derived height checks the shrinkage precondition; it is not the target oracle.
     let old_row_height = adjustment.upper() / f64::from(shared.model.n_items());
     let expected_remaining = ROWS - DELETE_THROUGH;
     let projected_new_height = expected_remaining as f64 * old_row_height;
@@ -130,6 +131,7 @@ fn browse_11_large_block_delete_keeps_the_deep_viewport_off_the_top() {
         .iter()
         .position(|id| *id == captured_anchor.0)
         .expect("the captured anchor must survive the leading block delete");
+    // Range-derived height only bounds surviving-anchor error; it is not the target oracle.
     let row_height = adjustment.upper() / after_ids.len() as f64;
     let expected = row_height * anchor_position as f64 + captured_anchor.1;
     let samples = samples.borrow();
@@ -180,6 +182,7 @@ fn run_anchor_deleting_delete(label: &str, delete_from: i64, delete_through: i64
         adjustment.value() > adjustment.page_size() * 2.0
     });
     let before_scroll = adjustment.value();
+    // Range-derived height supplies diagnostic context; it is not the target oracle.
     let row_height = adjustment.upper() / f64::from(shared.model.n_items());
 
     let reload_state = capture_catalog_delete_reload(shared);

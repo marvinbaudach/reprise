@@ -3,14 +3,16 @@ use super::*;
 use reprise_core::library::settings;
 
 const GEOMETRY_TRACK_COUNT: i64 = 200;
-const STALE_ROW_HEIGHT: f64 = 53.0;
+const LARGE_GEOMETRY_TRACK_COUNT: i64 = 1_200;
+const POISONED_ROW_HEIGHT: f64 = 30.0;
 
-fn geometry_fixture(seed: Option<f64>) -> (super::super::TrackList, gtk4::Window) {
+fn geometry_fixture(rows: i64, seed: Option<f64>) -> (super::super::TrackList, gtk4::Window) {
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
     let conn = crate::test_db::open().unwrap();
     settings::set_row_height(&conn, seed).unwrap();
     let fixture_conn = crate::test_db::connection(&conn);
     let tx = fixture_conn.unchecked_transaction().unwrap();
-    for id in 1..=GEOMETRY_TRACK_COUNT {
+    for id in 1..=rows {
         tx.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) \
              VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
@@ -40,7 +42,9 @@ fn geometry_fixture(seed: Option<f64>) -> (super::super::TrackList, gtk4::Window
 }
 
 fn uniform_allocated_row_height(column_view: &gtk4::ColumnView) -> Option<f64> {
-    let measurement = crate::ui::list_geometry::ListGeometry::for_view(column_view).measurement();
+    let n_rows = usize::try_from(column_view.model()?.n_items()).ok()?;
+    let measurement =
+        crate::ui::list_geometry::ListGeometry::for_view(column_view).measurement(n_rows);
     measurement
         .is_uniform()
         .then(|| measurement.modal())
@@ -215,37 +219,57 @@ fn tag_1_reload_with_a_deep_anchor_keeps_a_row_inside_the_viewport() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn library_reload_replaces_a_contradicted_persisted_row_height() {
+fn library_reload_heals_a_poisoned_persisted_row_height_from_settled_geometry() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let (track_list, window) = geometry_fixture(None);
+    let (track_list, window) = geometry_fixture(LARGE_GEOMETRY_TRACK_COUNT, None);
 
     assert!(crate::ui::test_settle::settle_until(
         crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
         || uniform_allocated_row_height(&track_list.shared.column_view).is_some()
     ));
-    let allocated = uniform_allocated_row_height(&track_list.shared.column_view).unwrap();
-    assert_ne!(
-        allocated, STALE_ROW_HEIGHT,
-        "fixture must contradict its seed"
-    );
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    track_list
+        .shared
+        .column_view
+        .scroll_to(1_000, None, gtk4::ListScrollFlags::FOCUS, None);
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || adjustment.value() > adjustment.page_size() * 2.0
+    ));
     adjustment.emit_by_name::<()>("changed", &[]);
     track_list
         .shared
         .list_geometry_cache
-        .seed_measured_row_height(STALE_ROW_HEIGHT);
-    settings::set_row_height(&track_list.shared.conn, Some(STALE_ROW_HEIGHT)).unwrap();
-    adjustment.set_upper(STALE_ROW_HEIGHT * GEOMETRY_TRACK_COUNT as f64);
+        .seed_measured_row_height(POISONED_ROW_HEIGHT);
+    settings::set_row_height(&track_list.shared.conn, Some(POISONED_ROW_HEIGHT)).unwrap();
     assert_eq!(
         settings::get_row_height(&track_list.shared.conn).unwrap(),
-        Some(STALE_ROW_HEIGHT),
+        Some(POISONED_ROW_HEIGHT),
         "precondition: the reload must start from contradicted persisted geometry"
     );
     reload(&track_list.shared);
 
-    let persisted = settings::get_row_height(&track_list.shared.conn).unwrap();
-    assert_eq!(persisted, Some(allocated));
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || {
+            let Some(widget_height) = super::super::display_test_geometry::measured_row_height(
+                &track_list.shared.column_view,
+            ) else {
+                return false;
+            };
+            let adjustment_height = adjustment.upper() / LARGE_GEOMETRY_TRACK_COUNT as f64;
+            (widget_height - adjustment_height).abs()
+                < crate::ui::list_geometry::ROW_HEIGHT_AGREEMENT_EPSILON
+                && settings::get_row_height(&track_list.shared.conn).unwrap()
+                    == Some(adjustment_height)
+        }
+    ));
+    let adjustment_height = adjustment.upper() / LARGE_GEOMETRY_TRACK_COUNT as f64;
+    assert_eq!(
+        settings::get_row_height(&track_list.shared.conn).unwrap(),
+        Some(adjustment_height)
+    );
     window.close();
 }
 
@@ -254,7 +278,7 @@ fn library_reload_replaces_a_contradicted_persisted_row_height() {
 fn library_reload_schedules_row_height_measurement() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let (track_list, window) = geometry_fixture(None);
+    let (track_list, window) = geometry_fixture(GEOMETRY_TRACK_COUNT, None);
 
     let scheduled_before = track_list
         .shared
@@ -276,5 +300,42 @@ fn library_reload_schedules_row_height_measurement() {
             && line.contains("rows=200")
             && line.contains("sections=0")
     }));
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn poisoned_reload_capture_waits_for_gtk_authored_geometry() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (track_list, window) =
+        geometry_fixture(LARGE_GEOMETRY_TRACK_COUNT, Some(POISONED_ROW_HEIGHT));
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || uniform_allocated_row_height(&track_list.shared.column_view).is_some()
+    ));
+    let settled_height = uniform_allocated_row_height(&track_list.shared.column_view).unwrap();
+    assert_ne!(settled_height, POISONED_ROW_HEIGHT);
+
+    let rows = usize::try_from(LARGE_GEOMETRY_TRACK_COUNT).unwrap();
+    let poisoned_upper = POISONED_ROW_HEIGHT * rows as f64;
+    crate::ui::list_geometry::record_configured_upper(
+        &track_list.shared.list_geometry_cache,
+        rows,
+        poisoned_upper,
+    );
+    adjustment.set_upper(poisoned_upper);
+
+    let captured = capture_row_height(&track_list.shared, rows as u32);
+    assert_eq!(
+        captured, None,
+        "a range written by ListGeometry must not become reload evidence"
+    );
+
+    adjustment.set_upper(settled_height * rows as f64);
+    let layout = super::super::track_list_geometry::layout(&track_list.shared, captured, rows)
+        .expect("the settled list has layout geometry");
+    assert_eq!(layout.row_height().pixels(), settled_height);
     window.close();
 }

@@ -77,7 +77,9 @@ fn two_source_track_list() -> (Rc<TrackList>, gtk4::Window, gtk4::Adjustment) {
 /// Where the arithmetic centre for `track_id` lies in the view as it stands.
 fn centered_target(track_list: &TrackList, track_id: i64, adjustment: &gtk4::Adjustment) -> f64 {
     let current_ids = track_list.shared.current_view_ids();
-    let row_height = adjustment.upper() / current_ids.len() as f64;
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled source must expose measured rows");
     crate::ui::track_list::reload_restore::flat_list_centered_track_scroll_target(
         Some(track_id),
         &current_ids,
@@ -106,7 +108,9 @@ fn nav_19_switching_source_centers_the_running_track() {
     crate::ui::test_settle::settle_for(Duration::from_millis(500));
 
     let expected = centered_target(&track_list, playing_id, &adjustment);
-    let row_height = adjustment.upper() / track_list.shared.current_view_ids().len() as f64;
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled source must expose measured rows");
     // Half a row, because the restore lands on the row edge nearest the
     // centre — the only value GTK's own anchor reproduces. See
     // `centered_scroll_restore::centered_anchor`.
@@ -155,7 +159,9 @@ fn nav_19_a_view_without_the_running_track_keeps_its_own_place() {
     track_list.set_source(ViewSource::RecentlyAdded);
     crate::ui::test_settle::settle_for(Duration::from_millis(500));
 
-    let row_height = adjustment.upper() / track_list.shared.current_view_ids().len() as f64;
+    let row_height =
+        super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
+            .expect("the settled source must expose measured rows");
     assert!(
         (adjustment.value() - departed_from).abs() <= row_height,
         "a view that does not list the running track keeps its remembered \
