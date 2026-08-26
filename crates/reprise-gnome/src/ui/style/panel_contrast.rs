@@ -185,6 +185,32 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
         );
     }
 
+    // Sweeping two sections is how the play/pause glyph kept a fixed white on
+    // the accent surface — 1.69:1 on the app's most prominent control — while
+    // this guard stayed green. The sweep runs over the whole stylesheet.
+    //
+    // One surface owns *both* of its colours and is therefore legitimately
+    // appearance-independent: the dev-build badge, white on a fixed #b5432f at
+    // 5.51:1. It is exempted by cutting its rule out before the sweep rather
+    // than by filtering the resulting declarations — a filter keyed on the
+    // colour would have waved through every other white foreground too. Cutting
+    // by selector also fails loudly if the rule is renamed, instead of quietly
+    // widening the exemption.
+    let css = super::app_css();
+    let badge = rule_body(&css, ".reprise-build-badge");
+    assert!(
+        badge.contains("#b5432f"),
+        "the build badge no longer owns its own background, so its exemption \
+         from the fixed-foreground sweep no longer holds: {badge}"
+    );
+    let swept = css.replace(badge, "");
+    let fixed = fixed_foregrounds(&swept);
+    assert!(
+        fixed.is_empty(),
+        "app CSS paints a foreground with a fixed colour instead of a themed \
+         role: {fixed:#?}"
+    );
+
     for row in &PANEL_ROLES {
         let css = (row.css)();
         let rules = rule_body(&css, row.selector);
@@ -200,6 +226,65 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
             row.selector
         );
     }
+}
+
+/// Accent *surfaces* are the one carve-out in CONTRAST-5a: they do not take the
+/// derived `@reprise_accent_text_color` but libadwaita's own
+/// `@accent_bg_color`/`@accent_fg_color` pair, which the theme guarantees
+/// against each other.
+///
+/// The pairing is load-bearing in both halves. `@accent_color` — which
+/// `@reprise_player_accent` aliases — is not interchangeable with
+/// `@accent_bg_color`: libadwaita derives it as
+/// `oklab(from accent_bg_color max(l, 0.85))` in dark and `min(l, 0.5)` in
+/// light, a standalone tint for text *on the window*. A dark system accent
+/// therefore gets a white `@accent_fg_color` over a near-pastel `@accent_color`
+/// — the same failure, in a theme nobody tests by hand.
+#[test]
+fn contrast_5a_accent_surfaces_pair_with_the_theme_accent_foreground() {
+    use super::color_math::{contrast_ratio, parse_hex_rgb};
+
+    /// Non-text UI elements owe 3:1 (WCAG 1.4.11); the glyph in these buttons
+    /// is the only thing that says play or pause.
+    const GLYPH_MINIMUM_RATIO: f64 = 3.0;
+
+    for (css, selector) in [
+        (crate::ui::player_bar_layout::css(), ".player-bar-play"),
+        (
+            crate::ui::compact_player_layouts::mini_css(),
+            ".mini-player-play",
+        ),
+    ] {
+        let rule = rule_body(&css, selector);
+        assert!(
+            rule.contains("background-color: @accent_bg_color"),
+            "{selector} does not paint the accent surface role: {rule}"
+        );
+        assert!(
+            rule.contains("color: @accent_fg_color"),
+            "{selector} does not take the accent surface's own foreground: {rule}"
+        );
+        assert!(
+            !rule.contains("background-color: @reprise_player_accent"),
+            "{selector} paints its face with the standalone accent, which \
+             @accent_fg_color carries no guarantee against: {rule}"
+        );
+    }
+
+    // The system path is libadwaita's guarantee; the app path is ours, so it is
+    // the one measured here.
+    let accent = parse_hex_rgb(super::accent::APP_ACCENT).expect("brand accent is valid hex");
+    let foreground = parse_hex_rgb(
+        super::accent::accent_fg(super::accent::AccentSource::App)
+            .expect("the app accent defines its own foreground"),
+    )
+    .expect("the app accent foreground is valid hex");
+    let ratio = contrast_ratio(foreground, accent);
+    assert!(
+        ratio >= GLYPH_MINIMUM_RATIO,
+        "the play glyph reaches only {ratio:.2}:1 on the brand accent (minimum \
+         {GLYPH_MINIMUM_RATIO:.1}:1)"
+    );
 }
 
 #[test]

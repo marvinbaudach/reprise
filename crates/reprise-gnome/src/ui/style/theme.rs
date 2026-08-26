@@ -59,11 +59,18 @@ impl Palette {
     /// dark-on-light. Derived by measuring the palette rather than by naming a
     /// field, so retuning a colour cannot silently invalidate the choice.
     ///
-    /// Accent-tinted chip fills count as surfaces here even though they have no
-    /// hex literal. The tint drags a surface far toward the accent — in the dark
-    /// palettes it triples the luminance of the lightest plain surface — so chip
-    /// text, not popover text, is the real worst case. Measuring only the named
-    /// surfaces left accent text on chips at 3.4:1 while every test passed.
+    /// Accent-tinted fills count as surfaces here even though they have no hex
+    /// literal. The tint drags a surface far toward the accent — in the dark
+    /// palettes it triples the luminance of the lightest plain surface — so
+    /// tinted text, not popover text, is the real worst case. Measuring only
+    /// the named surfaces left accent text on chips at 3.4:1 while every test
+    /// passed.
+    ///
+    /// The tint modelled is [`super::tokens::ACCENT_TINT_CEILING`], the
+    /// heaviest one any app surface may paint — not the chip's. Using the chip
+    /// tint reproduced the same blind spot one rung up: the checked player-bar
+    /// toggle fills brighter than a chip, and its label measured 2.97:1 in the
+    /// dark palettes while this function reported the palette safe.
     pub(in crate::ui::style) fn critical_accent_surface(
         &self,
         is_dark: bool,
@@ -71,16 +78,32 @@ impl Palette {
     ) -> [u8; 3] {
         use super::color_math::{composite, parse_hex_rgb, relative_luminance};
 
-        let chip_tint: f64 = super::tokens::CHIP_BG_HOVER_ALPHA
-            .parse()
-            .expect("the chip tint token is a decimal fraction");
+        const WHITE: [u8; 3] = [255, 255, 255];
+
+        let fraction = |token: &str| -> f64 {
+            token
+                .parse()
+                .expect("surface alpha tokens are decimal fractions")
+        };
+        let heaviest_tint = fraction(super::tokens::ACCENT_TINT_CEILING);
+        // The elevation ladder is painted in white over the surface below it,
+        // so a dialog card is lighter than `dialog_bg_color` ever is on its
+        // own, and an accent tint on that card is lighter again. Leaving the
+        // rungs out repeated the very blind spot the tint ceiling closed, one
+        // storey up: accent text on a tinted dialog card measured 3.90:1.
+        let rungs = [
+            0.0,
+            fraction(super::tokens::DIALOG_HEADER_TINT_ALPHA),
+            fraction(super::tokens::DIALOG_CARD_ALPHA),
+        ];
 
         self.surfaces()
             .into_iter()
             .flat_map(|hex| {
                 let surface = parse_hex_rgb(hex).expect("palette colour must use #RRGGBB");
-                [surface, composite(accent, surface, chip_tint)]
+                rungs.map(|rung| composite(WHITE, surface, rung))
             })
+            .flat_map(|ground| [ground, composite(accent, ground, heaviest_tint)])
             .reduce(|worst, surface| {
                 let take_surface = if is_dark {
                     relative_luminance(surface) > relative_luminance(worst)

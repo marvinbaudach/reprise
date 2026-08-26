@@ -256,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn contrast_5_derived_accent_text_meets_ratio_on_every_live_surface() {
+    fn contrast_5a_derived_accent_text_meets_ratio_on_every_live_surface() {
         use super::super::color_math::parse_hex_rgb;
         use super::super::theme::Theme;
 
@@ -271,9 +271,9 @@ mod tests {
             "#ff3bd4",  // saturated magenta: the case lightness alone cannot fix
         ];
 
-        let chip_tint: f64 = super::super::tokens::CHIP_BG_HOVER_ALPHA
+        let heaviest_tint: f64 = super::super::tokens::ACCENT_TINT_CEILING
             .parse()
-            .expect("the chip tint token is a decimal fraction");
+            .expect("the accent tint ceiling is a decimal fraction");
 
         for theme in Theme::all() {
             for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
@@ -284,13 +284,18 @@ mod tests {
 
                     for surface in palette.surfaces() {
                         let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
-                        // Both the bare surface and the accent-tinted chip fill
-                        // that can sit on it. The role is painted app-wide; the
-                        // critical surface is only the worst case it must
+                        // Both the bare surface and the loudest accent-tinted
+                        // fill that can sit on it. The role is painted app-wide;
+                        // the critical surface is only the worst case it must
                         // survive, so every other one has to follow from it.
+                        //
+                        // This is the pair that bounds the ceiling from above:
+                        // a heavy tint of a near-white accent lifts a dark
+                        // surface toward mid-grey, and past 0.30 no single
+                        // foreground clears both that and the plain surface.
                         for background in [
                             plain,
-                            super::super::color_math::composite(accent_rgb, plain, chip_tint),
+                            super::super::color_math::composite(accent_rgb, plain, heaviest_tint),
                         ] {
                             let ratio = contrast(derived, background);
                             assert!(
@@ -306,19 +311,67 @@ mod tests {
         }
     }
 
+    /// The derivation moves lightness and nothing else. The brand teal does not
+    /// clear the heaviest accent tint on its own — that is the whole reason the
+    /// role is derived rather than aliased — so what has to hold is that the
+    /// answer is still recognisably the accent: same hue, lifted, never the
+    /// monochrome fallback. A retune that pushes the accent out of gamut would
+    /// otherwise trade the brand colour for black or white app-wide without
+    /// failing a ratio anywhere.
     #[test]
-    fn contrast_5_the_app_accent_survives_unchanged_where_it_already_passes() {
-        use super::super::color_math::parse_hex_rgb;
+    fn contrast_5a_the_derived_accent_stays_the_accent_lifted() {
+        use super::super::color_math::{
+            linear_rgb_to_oklab, parse_hex_rgb, relative_luminance, to_linear,
+        };
         use super::super::theme::Theme;
 
-        let palette = Theme::PerpetualRain.palette();
+        // The search holds OKLab chroma fixed, but its answer is quantised back
+        // to 8-bit sRGB, so the hue drifts a little. This bound is wide enough
+        // for that rounding and far too narrow for the fallback, which lands on
+        // a grey axis where hue is not a direction at all.
+        const HUE_TOLERANCE_RADIANS: f64 = 0.03;
+
         let accent = parse_hex_rgb(APP_ACCENT).expect("the brand accent is valid hex");
-        assert_eq!(
-            accent_text_rgb(accent, palette.critical_accent_surface(true, accent), true),
-            accent,
-            "the brand teal clears every dark surface, tinted chips included, \
-             and must not be retinted"
-        );
+        let hue = |color: [u8; 3]| {
+            let (_, green_red, blue_yellow) = linear_rgb_to_oklab(
+                to_linear(color[0]),
+                to_linear(color[1]),
+                to_linear(color[2]),
+            );
+            blue_yellow.atan2(green_red)
+        };
+
+        for theme in Theme::all() {
+            for (appearance, palette, is_dark) in [
+                ("dark", theme.palette(), true),
+                ("light", theme.light_palette(), false),
+            ] {
+                let critical = palette.critical_accent_surface(is_dark, accent);
+                let derived = accent_text_rgb(accent, critical, is_dark);
+
+                assert!(
+                    derived[0] != derived[1] || derived[1] != derived[2],
+                    "{theme:?} {appearance}: the derived accent text {derived:?} is grey — \
+                     the lightness search fell back to monochrome and the brand hue is gone"
+                );
+                assert!(
+                    (hue(derived) - hue(accent)).abs() < HUE_TOLERANCE_RADIANS,
+                    "{theme:?} {appearance}: the derived accent text {derived:?} left the \
+                     brand hue"
+                );
+
+                let moved_away_from_surface = if is_dark {
+                    relative_luminance(derived) >= relative_luminance(accent)
+                } else {
+                    relative_luminance(derived) <= relative_luminance(accent)
+                };
+                assert!(
+                    moved_away_from_surface,
+                    "{theme:?} {appearance}: the derived accent text {derived:?} moved toward \
+                     the surface it has to contrast with"
+                );
+            }
+        }
     }
 
     #[test]
