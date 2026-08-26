@@ -2,7 +2,7 @@
 slug: source-artwork-is-decoded-in-full-on-every-view
 worktree: /home/marvin/Projects/reprise-source-artwork-is-decoded-in-full-on-every-view
 branch: feature/source-artwork-is-decoded-in-full-on-every-view
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-08-25
 ---
@@ -195,3 +195,32 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; fin
 error: 1 target failed:
     `-p reprise-gnome --bin reprise`
 ```
+
+### Mutation probe: the YouTube boundary
+
+The first probe above pins the mechanism (thumbnail, not original). A second
+probe pins the *size selection*, because rounding down there is the failure the
+plan calls worse than the defect being fixed. `ThumbnailSize::Portrait` was
+removed from the ladder in `thumbnail_size_for_edge`, which is what a careless
+future edit looks like, and the caller-driven boundary test went red on exactly
+the YouTube case:
+
+```console
+$ cargo test -p reprise-gnome --bins desktop_thumbnail_ladder
+test ui::podcasts::source_image::source_image_texture::tests::desktop_thumbnail_ladder_covers_every_source_artwork_edge ... FAILED
+
+assertion `left == right` failed: 128px should select the 192px variant
+  left: Grid
+ right: Portrait
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2841 filtered out
+```
+
+128 px is `MediaShape::Wide` (64x36) doubled — the YouTube episode thumbnail,
+the only source-artwork caller whose row exceeds `Bar`. The reversion was
+discarded; the test is green again.
+
+A third probe made the ladder round down (`.rev()` with `<=`) and went red on
+the first case it reaches, 72 px selecting `List` instead of `Bar`, so the loop
+never got as far as the YouTube case — which is why the isolated probe above is
+the one recorded.
