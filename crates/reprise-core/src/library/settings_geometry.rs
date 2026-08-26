@@ -12,6 +12,7 @@ pub const SECTION_HEADER_HEIGHT_KEY: &str = "ui.section_header_height";
 /// comfortable size (v79), so these rows are dead weight in any database that
 /// ran the old schema.
 const DEAD_ROW_HEIGHT_KEYS: &[&str] = &["ui.row_height.comfortable", "ui.row_height.compact"];
+const POISONED_GEOMETRY_KEYS: &[&str] = &[ROW_HEIGHT_KEY, SECTION_HEADER_HEIGHT_KEY];
 
 fn get_height_in(conn: &Connection, key: &str) -> Result<Option<f64>, SqlError> {
     Ok(get_setting_in(conn, key)?
@@ -71,6 +72,28 @@ pub(crate) fn migrate_v79(conn: &Connection) -> Result<(), SqlError> {
         )?;
     }
     transaction.pragma_update(None, "user_version", 79)?;
+    transaction.commit()
+}
+
+/// Schema v80: clears list geometry persisted by the self-certifying height
+/// loop. With no stored value, the frontend starts from its conservative
+/// assumed height until GTK supplies an authoritative measurement.
+///
+/// Idempotent: the version guard leaves databases that already completed this
+/// one-time cleanup entirely alone.
+pub(crate) fn migrate_v80(conn: &Connection) -> Result<(), SqlError> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 80 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    for key in POISONED_GEOMETRY_KEYS {
+        transaction.execute(
+            "DELETE FROM settings WHERE key = ?1",
+            rusqlite::params![key],
+        )?;
+    }
+    transaction.pragma_update(None, "user_version", 80)?;
     transaction.commit()
 }
 
