@@ -410,9 +410,7 @@ mod tests {
                 let rest = value.split_once("alpha(")?.1;
                 let (role, alpha) = rest.split_once(',')?;
                 let role = role.trim();
-                if role != "@accent_bg_color"
-                    && (property == "background-image" || role != "@accent_color")
-                {
+                if role != "@accent_bg_color" && role != "@accent_color" {
                     return None;
                 }
                 let alpha = alpha.split(')').next()?.trim().parse().ok()?;
@@ -420,6 +418,26 @@ mod tests {
             })
             .collect()
     }
+
+    /// Accent-tinted surfaces that carry no foreground at all, so the ceiling
+    /// `@reprise_accent_text_color` is derived against does not bind them.
+    ///
+    /// This list is the *only* legitimate way past the guard, and it is per
+    /// rule on purpose. Exempting a property or a colour role instead — say,
+    /// "gradients over `@accent_color` are never checked" — would hand a free
+    /// pass to every future text-bearing surface that happens to use the same
+    /// shape, which is precisely the blind spot CONTRAST-5a exists to close.
+    /// Adding an entry means proving the surface has no foreground; name the
+    /// widget and say why it cannot carry one.
+    const DECORATIVE_ACCENT_SURFACES: &[&str] = &[
+        // The rail left of the online-children card in preferences: a bare
+        // `gtk4::Box`, `min-width: 2px`, constructed with no children and never
+        // given any (`preference_plugins.rs`). It is a fade-to-transparent
+        // subordination cue, so its 0.55 top stop is decoration; lowering it to
+        // the ceiling would all but erase a 2px sliver to pay a legibility tax
+        // for text that does not exist.
+        "linear-gradient(to bottom, alpha(@accent_color, 0.55)",
+    ];
 
     /// CONTRAST-5a's other half. `@reprise_accent_text_color` is derived against
     /// a surface tinted to `tokens::ACCENT_TINT_CEILING`, so that derivation is
@@ -443,7 +461,12 @@ mod tests {
 
         let over: Vec<_> = tints
             .into_iter()
-            .filter(|(_, alpha)| *alpha > ceiling)
+            .filter(|(declaration, alpha)| {
+                *alpha > ceiling
+                    && !DECORATIVE_ACCENT_SURFACES
+                        .iter()
+                        .any(|decorative| declaration.contains(decorative))
+            })
             .collect();
         assert!(
             over.is_empty(),
@@ -472,6 +495,20 @@ mod tests {
         );
         assert!((gradient[0].1 - 0.9).abs() < f64::EPSILON);
 
+        // The role a gradient tints with does not exempt it. An earlier version
+        // of this guard skipped `@accent_color` gradients wholesale to silence
+        // the one decorative rail; that would have waved through any
+        // text-bearing panel painted the same way.
+        let accent_role = accent_background_tints(
+            ".x { background-image: linear-gradient(alpha(@accent_color, 0.9), transparent); }",
+        );
+        assert_eq!(
+            accent_role.len(),
+            1,
+            "guard missed a louder @accent_color gradient fill"
+        );
+        assert!((accent_role[0].1 - 0.9).abs() < f64::EPSILON);
+
         for ignored in [
             ".x { color: alpha(@accent_color, 0.9); }",
             ".x { background-color: alpha(currentColor, 0.9); }",
@@ -480,6 +517,24 @@ mod tests {
             assert!(
                 accent_background_tints(ignored).is_empty(),
                 "guard false-flagged {ignored}"
+            );
+        }
+    }
+
+    /// An exemption that no longer matches any rule is a silent licence: it
+    /// stops proving anything about the app and starts hiding the next rule
+    /// that happens to be written the same way. Either the surface is still
+    /// there or the entry goes.
+    #[test]
+    fn contrast_5a_every_decorative_exemption_still_names_a_live_rule() {
+        let css = super::app_css();
+
+        for decorative in DECORATIVE_ACCENT_SURFACES {
+            assert!(
+                css.contains(decorative),
+                "the decorative-surface exemption {decorative:?} matches no rule \
+                 in the app stylesheet any more — drop it instead of leaving a \
+                 blind spot behind"
             );
         }
     }
