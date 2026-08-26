@@ -63,6 +63,23 @@ private const val QUEUE_AUTOSCROLL_DIVISOR = 5f
  */
 private const val QUEUE_RELOAD_GRACE_MS = 600L
 
+/**
+ * The decision behind [QueueReorderState.offsetsDescribe], as a plain
+ * predicate so it can be pinned without a frame clock.
+ *
+ * Note what cannot be tested here, or anywhere in the unit suite: the defect
+ * this guards against is a *timing* one, and `mainClock` erases it. With the
+ * clock paused, `waitForIdle` drains the effect that releases the offsets
+ * before any assertion can look, so the list is measured already correct —
+ * the harness is friendlier than the device. The evidence for the fix is
+ * therefore a measurement on hardware, recorded in the commit that added it.
+ */
+internal fun queueOffsetsDescribe(
+    awaitingReload: Boolean,
+    orderAtEdit: String?,
+    order: String,
+): Boolean = !awaitingReload || orderAtEdit == null || order == orderAtEdit
+
 /** One curve for the whole gesture: fast out of the gate, long settle. */
 internal val QueueDragEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
@@ -206,7 +223,14 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
     private var fingerPx by mutableFloatStateOf(0f)
     private var scrolledPx by mutableFloatStateOf(0f)
     private val settlePx = Animatable(0f)
-    private var awaitingReload = false
+    private var awaitingReload by mutableStateOf(false)
+    private var orderAtEdit by mutableStateOf<String?>(null)
+
+    /**
+     * The window order the rows were drawn from when the edit was sent.
+     * Written every composition, read once at the drop.
+     */
+    var windowOrder: String = ""
     private var pendingFlashSlot: Int? = null
     private var autoScroll: Job? = null
 
@@ -301,11 +325,30 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
             // invisible — which is the whole point of running it here.
             pendingFlashSlot = destination
             awaitingReload = true
+            orderAtEdit = windowOrder
             move?.invoke(start, id, destination)
             delay(QUEUE_RELOAD_GRACE_MS)
             release(myGeneration)
         }
     }
+
+    /**
+     * Whether the offsets still describe the list the rows are drawn from.
+     *
+     * They stop describing it the instant the edit comes back. The reloaded
+     * window already carries the new order, so a parting offset laid on top of
+     * it displaces the row a second time: it covers the neighbour above and
+     * leaves its own slot standing empty, which reads as the two rows swapping
+     * once more after the drop.
+     *
+     * [onOrderChanged] releases the offsets for the same reason, but it is a
+     * coroutine and therefore runs *after* the composition that has already
+     * drawn the new order — measured on a Pixel 10 Pro XL, three frames of
+     * exactly that double count. This is the same question asked during
+     * composition, where the answer is still in time to be used.
+     */
+    fun offsetsDescribe(order: String): Boolean =
+        queueOffsetsDescribe(awaitingReload, orderAtEdit, order)
 
     /**
      * Called when the window the rows are drawn from has changed order, which
@@ -334,6 +377,7 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
         fingerPx = 0f
         scrolledPx = 0f
         awaitingReload = false
+        orderAtEdit = null
         pendingFlashSlot?.let { slot ->
             flashSlot = slot
             flashToken += 1

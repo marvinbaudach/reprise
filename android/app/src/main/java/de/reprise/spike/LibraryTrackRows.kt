@@ -96,11 +96,15 @@ internal fun TrackRows(
     // list instance, because every recomposition builds a fresh list.
     val order = content.joinToString(separator = ",") { item -> rowKey(item).toString() }
     LaunchedEffect(order) { reorder.onOrderChanged() }
+    // Asked here rather than left to the effect above: by the time a
+    // coroutine runs, the frame that double-counted the offsets is drawn.
+    val offsetsHold = reorder.offsetsDescribe(order)
 
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val gridState = rememberLibraryGridState(anchor)
         ObserveLibraryGridAnchor(listKey, gridState, surfaceState)
         SideEffect {
+            reorder.windowOrder = order
             reorder.haptics = haptics
             reorder.move = queueActions?.move
             // A grid gives the drag neither a single column to part nor an
@@ -139,6 +143,7 @@ internal fun TrackRows(
                     queueActions,
                     tracks.rows.size,
                     reorder,
+                    offsetsHold,
                 )
             }
         }
@@ -161,6 +166,7 @@ internal fun TrackRows(
         )
     }
     SideEffect {
+        reorder.windowOrder = order
         reorder.haptics = haptics
         reorder.move = queueActions?.move
         reorder.neighboursPart = true
@@ -193,6 +199,7 @@ internal fun TrackRows(
                 queueActions,
                 tracks.rows.size,
                 reorder,
+                offsetsHold,
             )
         }
     }
@@ -254,6 +261,10 @@ internal fun TrackListItem(
     // Only a queue list has one; every other track list passes none, and no
     // row without [queueActions] ever reads it.
     reorder: QueueReorderState? = null,
+    // False for the frames between the edit coming back and the offsets being
+    // released: the reloaded window already carries the new order, so applying
+    // them once more moves the row twice. See [QueueReorderState.offsetsDescribe].
+    offsetsHold: Boolean = true,
 ) {
     when (content) {
         is TrackListContent.Row -> {
@@ -277,6 +288,7 @@ internal fun TrackListItem(
                 queueRowCount = rowCount,
                 queueActions = queueActions,
                 reorder = reorder,
+                offsetsHold = offsetsHold,
                 play = { play(content.index) },
             )
         }
@@ -299,12 +311,13 @@ private fun LibraryTrackRow(
     queueRowCount: Int,
     queueActions: QueueRowActions?,
     reorder: QueueReorderState?,
+    offsetsHold: Boolean,
     play: () -> Unit,
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
     val queueDrag = if (queueActions == null) null else reorder
     val dragged = queueDrag?.isDragging(queuePosition) == true
-    val shiftRows = queueDrag?.neighbourShiftRows(queuePosition) ?: 0
+    val shiftRows = if (offsetsHold) queueDrag?.neighbourShiftRows(queuePosition) ?: 0 else 0
     // One envelope for the whole lift, read by both the transform and the
     // colour: two animations of the same thing would drift apart.
     val lift = if (queueDrag == null) 0f else queueLiftFraction(dragged && queueDrag.lifted)
@@ -325,7 +338,7 @@ private fun LibraryTrackRow(
                 .zIndex(if (dragged) 1f else 0f)
                 .queueDragMotion(
                     reorder = queueDrag,
-                    dragged = dragged,
+                    dragged = dragged && offsetsHold,
                     lift = lift,
                     shiftRows = shiftRows,
                     rowHeightDp = metrics.trackRowHeightDp,
