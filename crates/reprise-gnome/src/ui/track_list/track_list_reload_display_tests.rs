@@ -42,7 +42,9 @@ fn geometry_fixture(rows: i64, seed: Option<f64>) -> (super::super::TrackList, g
 }
 
 fn uniform_allocated_row_height(column_view: &gtk4::ColumnView) -> Option<f64> {
-    let measurement = crate::ui::list_geometry::ListGeometry::for_view(column_view).measurement();
+    let n_rows = usize::try_from(column_view.model()?.n_items()).ok()?;
+    let measurement =
+        crate::ui::list_geometry::ListGeometry::for_view(column_view).measurement(n_rows);
     measurement
         .is_uniform()
         .then(|| measurement.modal())

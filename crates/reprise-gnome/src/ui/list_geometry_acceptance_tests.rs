@@ -65,6 +65,23 @@ fn an_old_models_range_can_seed_the_new_row_count() {
 }
 
 #[test]
+fn a_settled_old_model_can_seed_without_a_previous_range_write() {
+    let cache = ListGeometryCache::default();
+    cache.settled_model_rows.set(Some(2_006));
+
+    assert_eq!(
+        preseed_unclaimed_upper(
+            &cache,
+            60_180.0,
+            ContentHeight::Known(15_000.0),
+            RowHeightSource::Measured,
+            500,
+        ),
+        Some(15_000.0)
+    );
+}
+
+#[test]
 fn layout_uses_the_gtk_quotient_once_the_range_changes() {
     let cache = ListGeometryCache::default();
     record_configured_upper(&cache, 2_006, 60_180.0);
@@ -89,6 +106,30 @@ fn layout_keeps_the_remembered_height_while_the_range_is_ours() {
 }
 
 #[test]
+fn layout_keeps_the_remembered_height_during_a_row_count_swap() {
+    let cache = ListGeometryCache::default();
+    record_configured_upper(&cache, 2_000, 68_000.0);
+    let remembered = RowHeight::new(34.0).unwrap();
+
+    assert_eq!(
+        authoritative_row_height(&cache, 68_000.0, 5, 0, remembered, None),
+        remembered
+    );
+}
+
+#[test]
+fn layout_recognizes_a_row_count_swap_without_a_previous_range_write() {
+    let cache = ListGeometryCache::default();
+    cache.settled_model_rows.set(Some(2_000));
+    let remembered = RowHeight::new(34.0).unwrap();
+
+    assert_eq!(
+        authoritative_row_height(&cache, 68_000.0, 5, 0, remembered, None),
+        remembered
+    );
+}
+
+#[test]
 fn a_widget_height_that_disagrees_with_gtk_persists_nothing() {
     let cache = ListGeometryCache::default();
     cache.seed_measured_row_height(30.0);
@@ -104,7 +145,7 @@ fn a_widget_height_that_disagrees_with_gtk_persists_nothing() {
 
 #[test]
 fn rows_allocated_below_their_natural_height_are_not_evidence() {
-    let measurement = RowMeasurement::from_widget_measurements([(30, 31), (30, 31), (30, 31)]);
+    let measurement = RowMeasurement::from_widget_measurements([(30, 31), (30, 31), (30, 31)], 3);
 
     assert_eq!(measurement.modal(), None);
     assert!(!measurement.is_uniform());
@@ -112,7 +153,7 @@ fn rows_allocated_below_their_natural_height_are_not_evidence() {
 
 #[test]
 fn rows_that_reached_their_natural_height_supply_the_modal() {
-    let measurement = RowMeasurement::from_widget_measurements([(45, 31), (45, 31), (45, 31)]);
+    let measurement = RowMeasurement::from_widget_measurements([(45, 31), (45, 31), (45, 31)], 3);
 
     assert_eq!(measurement.modal(), RowHeight::new(45.0));
     assert!(measurement.is_uniform());
@@ -121,15 +162,15 @@ fn rows_that_reached_their_natural_height_supply_the_modal() {
 #[test]
 fn mixed_finished_rows_remain_non_uniform() {
     let measurement =
-        RowMeasurement::from_widget_measurements([(30, 31), (45, 31), (45, 31), (46, 31)]);
+        RowMeasurement::from_widget_measurements([(30, 31), (45, 31), (45, 31), (46, 31)], 4);
 
     assert!(!measurement.is_uniform());
 }
 
 #[test]
 fn three_finished_rows_are_the_minimum_settled_sample() {
-    let two = RowMeasurement::from_widget_measurements([(45, 31), (45, 31)]);
-    let three = RowMeasurement::from_widget_measurements([(45, 31), (45, 31), (45, 31)]);
+    let two = RowMeasurement::from_widget_measurements([(45, 31), (45, 31)], 100);
+    let three = RowMeasurement::from_widget_measurements([(45, 31), (45, 31), (45, 31)], 100);
 
     assert_eq!(two.modal(), None);
     assert!(!two.is_uniform());
@@ -138,12 +179,23 @@ fn three_finished_rows_are_the_minimum_settled_sample() {
 }
 
 #[test]
+fn every_row_can_settle_a_list_smaller_than_the_sample_floor() {
+    let one = RowMeasurement::from_widget_measurements([(45, 31)], 1);
+    let two = RowMeasurement::from_widget_measurements([(45, 31), (45, 31)], 2);
+
+    assert_eq!(one.modal(), RowHeight::new(45.0));
+    assert!(one.is_uniform());
+    assert_eq!(two.modal(), RowHeight::new(45.0));
+    assert!(two.is_uniform());
+}
+
+#[test]
 fn the_minimum_sample_counts_only_finished_rows() {
     let measurements = std::iter::repeat_n((30, 31), 200)
         .chain([(45, 31), (45, 31)])
         .collect::<Vec<_>>();
 
-    let measurement = RowMeasurement::from_widget_measurements(measurements);
+    let measurement = RowMeasurement::from_widget_measurements(measurements, 202);
 
     assert_eq!(measurement.modal(), None);
     assert!(!measurement.is_uniform());

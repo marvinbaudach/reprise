@@ -190,7 +190,7 @@ fn nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one() {
         samples.len() >= MIN_SAMPLES,
         "the sampler did not cover the delete/follow journey; {sample_report}"
     );
-    // Range-derived height only bounds the jump and row-edge error; it is not the target oracle.
+    // Range-derived height only bounds the jump; it is not the target oracle.
     let row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
     assert!(
         minimum > playing_centre - row_height * 2.0,
@@ -198,7 +198,7 @@ fn nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one() {
          deleted track centre={playing_centre}, row height={row_height}; {sample_report}"
     );
     assert!(
-        (adjustment.value() - expected).abs() <= row_height,
+        (adjustment.value() - expected).abs() < 1.0,
         "the table did not follow playback past the deleted track: actual {}, expected \
          {expected}, the deleted track's place was {playing_centre}; {sample_report}\ntrail:\n{}",
         adjustment.value(),

@@ -1,6 +1,8 @@
 use gtk4::prelude::*;
 use std::collections::BTreeMap;
 
+use crate::ui::list_geometry::MIN_SETTLED_ROW_SAMPLE;
+
 pub(super) fn realized_row_measurements(column_view: &gtk4::ColumnView) -> Vec<(i32, i32)> {
     let mut measurements = Vec::new();
     let mut pending = vec![column_view.clone().upcast::<gtk4::Widget>()];
@@ -25,6 +27,7 @@ pub(super) fn realized_row_measurements(column_view: &gtk4::ColumnView) -> Vec<(
 }
 
 pub(super) fn measured_row_height(column_view: &gtk4::ColumnView) -> Option<f64> {
+    let n_rows = usize::try_from(column_view.model()?.n_items()).ok()?;
     let measurements = realized_row_measurements(column_view);
     let mut counts = BTreeMap::<i32, usize>::new();
     for allocated in measurements
@@ -34,7 +37,7 @@ pub(super) fn measured_row_height(column_view: &gtk4::ColumnView) -> Option<f64>
     {
         *counts.entry(allocated).or_default() += 1;
     }
-    if counts.values().sum::<usize>() < 3 {
+    if counts.values().sum::<usize>() < MIN_SETTLED_ROW_SAMPLE.min(n_rows) {
         return None;
     }
     let max_count = counts.values().copied().max()?;

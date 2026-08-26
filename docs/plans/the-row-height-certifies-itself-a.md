@@ -2,7 +2,7 @@
 slug: the-row-height-certifies-itself-a
 worktree: /home/marvin/Projects/reprise-the-row-height-certifies-itself-a
 branch: feature/the-row-height-certifies-itself-a
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-26
 ---
@@ -565,3 +565,35 @@ at all.
   not have been evidence; it is reported as untested rather than as passed.
 - `SCROLLROWS` likewise never fired, so the allocated-vs-natural criterion was
   not measured live. It is covered by the strand's unit tests, not here.
+
+---
+
+## Accepted review fixes — 2026-08-26
+
+All six accepted findings were fixed in the strand-owned UI surface.
+`configured_upper` now means exactly the last range this service wrote through
+`Adjustment::configure`; the no-op branch never stamps it. A separate
+widget-certified model row count distinguishes a stale old-model range even
+when this service never wrote that old range. Layout keeps the remembered row
+height across that transition, and a legitimate model swap can still preseed
+its new range without overwriting a GTK-authored range for the same model.
+
+Anchor application again requires the unconditional widget-measured settled
+layout proof. The measurement sample floor is capped by the model row count so
+complete one- and two-row lists can settle, and the display oracle imports the
+same named sample constant. NAV-10b's final target assertion is restored to its
+sub-pixel tolerance.
+
+The two blocking display regressions were reproduced before the fixes and then
+passed in separate private XDG/D-Bus/Xvfb processes after them:
+
+```text
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2860 filtered out; finished in 1.08s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2860 filtered out; finished in 0.31s
+```
+
+The restored NAV-10b sub-pixel oracle also passed as one exact isolated display
+test. The focused row-height inventory passed 53 tests. The first final
+BROWSE-11 attempt on server 7001 failed to initialize GTK and was discarded as
+an environment fault; the successful final runs used distinct servers 8501
+and 8502.

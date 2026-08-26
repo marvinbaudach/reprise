@@ -638,18 +638,8 @@ fn apply(
             n_sections,
         );
     }
-    // Flat-list layout no longer waits for a persistence witness, but a range
-    // this service just seeded is still provisional. Once GTK authors the
-    // range, its quotient is the reveal authority even if recycled widgets
-    // remain mixed. Sectioned lists additionally need realized headers before
-    // their guard row can be trusted.
-    if !crate::ui::list_geometry::gtk_authored(
-        &shared.list_geometry_cache,
-        adjustment.upper(),
-        current_ids.len(),
-    ) || (n_sections > 0
-        && !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections))
-    {
+    // Reject a transitional layout before its recycled rows can replace the anchor.
+    if !geometry.is_settled(adjustment.upper(), current_ids.len(), n_sections) {
         return ApplyResult::Pending;
     }
     if provisional_sectioned_refinement

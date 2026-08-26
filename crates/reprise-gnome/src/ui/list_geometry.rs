@@ -93,8 +93,7 @@ pub(in crate::ui) struct RowMeasurement {
     modal: Option<RowHeight>,
     uniform: bool,
 }
-
-const MIN_SETTLED_ROW_SAMPLE: usize = 3;
+pub(in crate::ui) const MIN_SETTLED_ROW_SAMPLE: usize = 3;
 
 impl RowMeasurement {
     /// Measures the unique most frequent non-zero allocated widget height.
@@ -105,15 +104,16 @@ impl RowMeasurement {
 
     /// Measures rows only after their allocation has reached the height the
     /// widget naturally requests. A settled virtualized list exposes dozens;
-    /// fewer than three survivors are too little evidence for the whole list.
+    /// Larger lists require three survivors; shorter lists require every row.
     pub(in crate::ui) fn from_widget_measurements(
         measurements: impl IntoIterator<Item = (i32, i32)>,
+        n_rows: usize,
     ) -> Self {
         Self::from_height_samples(
             measurements.into_iter().filter_map(|(allocated, natural)| {
                 (allocated > 0 && allocated >= natural).then_some(allocated)
             }),
-            MIN_SETTLED_ROW_SAMPLE,
+            MIN_SETTLED_ROW_SAMPLE.min(n_rows),
         )
     }
 
@@ -270,6 +270,16 @@ fn preseed_unclaimed_upper(
 ) -> Option<f64> {
     let wanted_upper = preseed_upper(current_upper, content, source)?;
     match cache.configured_upper.get() {
+        // A model can have settled without this service ever writing its
+        // range. Its certified row count still distinguishes the old live
+        // range from an externally authored range for the new model.
+        None if cache
+            .settled_model_rows
+            .get()
+            .is_some_and(|settled_rows| settled_rows != n_rows) =>
+        {
+            Some(wanted_upper)
+        }
         // Before GTK has described a complete range, a cold-start seed may
         // grow its default range. It may never shrink an externally authored
         // range, which is the poisoned-cache loop this guard exists to stop.
@@ -288,6 +298,7 @@ pub(in crate::ui) struct ListGeometryCache {
     row_height: Cell<f64>,
     section_header_height: Cell<f64>,
     configured_upper: Cell<Option<(usize, f64)>>,
+    settled_model_rows: Cell<Option<usize>>,
 }
 
 pub(in crate::ui) fn record_configured_upper(cache: &ListGeometryCache, n_rows: usize, upper: f64) {
@@ -313,7 +324,19 @@ fn authoritative_row_height(
     remembered: RowHeight,
     section_header_height: Option<RowHeight>,
 ) -> RowHeight {
-    if !gtk_authored(cache, upper, n_rows) || n_rows == 0 {
+    let configured_range_belongs_to_another_model = cache
+        .configured_upper
+        .get()
+        .is_some_and(|(written_rows, _)| written_rows != n_rows);
+    let last_settled_range_belongs_to_another_model = cache
+        .settled_model_rows
+        .get()
+        .is_some_and(|settled_rows| settled_rows != n_rows);
+    if n_rows == 0
+        || configured_range_belongs_to_another_model
+        || last_settled_range_belongs_to_another_model
+        || !gtk_authored(cache, upper, n_rows)
+    {
         return remembered;
     }
     let header_band =
@@ -378,8 +401,8 @@ impl ListGeometry {
         Self { view: view.clone() }
     }
 
-    pub(in crate::ui) fn measurement(&self) -> RowMeasurement {
-        RowMeasurement::from_widget_measurements(self.widget_measurements("ColumnViewRow"))
+    pub(in crate::ui) fn measurement(&self, n_rows: usize) -> RowMeasurement {
+        RowMeasurement::from_widget_measurements(self.widget_measurements("ColumnViewRow"), n_rows)
     }
 
     fn widget_measurements(&self, type_fragment: &str) -> Vec<(i32, i32)> {
@@ -414,7 +437,7 @@ impl ListGeometry {
     }
 
     pub(in crate::ui) fn settled_row_height(&self, upper: f64, n_rows: usize) -> Option<RowHeight> {
-        settled_row_height(upper, n_rows, self.measurement())
+        settled_row_height(upper, n_rows, self.measurement(n_rows))
     }
 
     /// Real widget realization is the only signal that distinguishes a pre-seeded `upper` from settled geometry.
@@ -423,7 +446,7 @@ impl ListGeometry {
             upper,
             n_rows,
             n_sections,
-            self.measurement(),
+            self.measurement(n_rows),
             self.section_header_measurement(),
         )
         .is_some()
@@ -498,8 +521,19 @@ impl ListGeometry {
         n_rows: usize,
         n_sections: usize,
     ) -> bool {
-        let row_measurement = self.measurement();
+        let row_measurement = self.measurement(n_rows);
         let header_measurement = self.section_header_measurement();
+        if settled_content_row_height(
+            upper,
+            n_rows,
+            n_sections,
+            row_measurement,
+            header_measurement,
+        )
+        .is_some()
+        {
+            cache.settled_model_rows.set(Some(n_rows));
+        }
         let height = persistable_row_height(
             cache,
             upper,
@@ -580,18 +614,12 @@ impl ListGeometry {
         if n_sections > 0 {
             crate::ui::scroll_probe::probe_preseed_source(&format!("{header_source:?}"));
         }
-        let ContentHeight::Known(wanted_upper) = content else {
+        let ContentHeight::Known(_) = content else {
             return false;
         };
         let Some(upper) =
             preseed_unclaimed_upper(cache, adjustment.upper(), content, source, n_rows)
         else {
-            // An exact no-op is the range this configure request accepted.
-            // Keeping its row count lets the next model swap distinguish that
-            // old-model range without changing the live adjustment here.
-            if (adjustment.upper() - wanted_upper).abs() < ROW_HEIGHT_AGREEMENT_EPSILON {
-                record_configured_upper(cache, n_rows, wanted_upper);
-            }
             return true;
         };
         // `adjustment.configure` re-enters GTK's layout when it runs inside an
