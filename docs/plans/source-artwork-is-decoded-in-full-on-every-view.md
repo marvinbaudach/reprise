@@ -224,3 +224,52 @@ A third probe made the ladder round down (`.rev()` with `<=`) and went red on
 the first case it reaches, 72 px selecting `List` instead of `Bar`, so the loop
 never got as far as the YouTube case — which is why the isolated probe above is
 the one recorded.
+
+## Measured: the three arms
+
+Release builds on both sides — a debug build would have decoded the resize
+unoptimised on the fix side while gdk-pixbuf stayed full-speed C on the control
+side, understating or inverting the result. Both arms ran against reflinked
+copies of a real profile (6 RSS and 8 YouTube subscriptions, all with image
+URLs), never the live one. `wait_us` at `phase=gtk_return`, in milliseconds:
+
+| arm | n | p50 | p90 | p99 | max | rows > 200 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| control (dev) r1 | 519 | 1402 | 2517 | 3723 | 3812 | 99 % |
+| control (dev) r2 | 519 | 874 | 2262 | 3414 | 3488 | 91 % |
+| fix, cold r1 | 519 | 857 | 2316 | 3868 | 4374 | 89 % |
+| fix, cold r2 | 519 | 895 | 2349 | 3485 | 3518 | 91 % |
+| fix, warm r1 | 378 | 132 | 210 | 296 | 305 | 16 % |
+| fix, warm r2 | 378 | 134 | 200 | 221 | 225 | 10 % |
+
+The cold arm is indistinguishable from the control, exactly as this plan said
+it must be: it pays the resize once and is not the win. The warm arm is, and it
+is the state a user is in on every launch after the first.
+
+**What makes these numbers trustworthy, stated so a later reader can attack
+them:**
+
+- Each cold arm asserted `remote=0 thumbnails=0` before launching and aborted
+  otherwise. The first attempt at this measurement counted the whole `covers/`
+  tree, which also holds `downloaded/` and `resolved/` album covers no arm
+  clears, and could therefore not tell a cold arm from a warm one.
+- Every arm waited for at least four free slots in the shared core budget and a
+  one-minute load below 3, and an arm whose load more than doubled while it ran
+  marks itself SUSPECT. None did; load ran 2.47 down to 1.63 across all six.
+  The first attempt checked once, before the first arm, and load drifted from
+  3.75 to 13.77 — the last arm was measured under three times the load of the
+  first.
+- Two rounds, so drift and effect are separable. The warm arm reproduces to
+  within 2 ms (132/134 p50); the control arm's own p50 varies by 60 % between
+  rounds (1402/874), which is why the claim rests on the order of magnitude and
+  not on any single figure.
+
+**Caveat, deliberately not smoothed away:** the arms do not carry equal row
+counts (519 vs 378). In the warm arm some artwork resolves synchronously from
+the in-memory texture cache and never enters the queue, so 141 requests produce
+no measurement line at all. That is part of the improvement rather than an
+artefact, but it means this is not a strict row-for-row comparison.
+
+**Still not done:** the closing visual check from the section above — launch,
+open Podcasts, watch the covers appear as a list rather than as arrivals. These
+numbers say the wait is gone; they do not say the eye agrees.
