@@ -481,3 +481,80 @@ this strand's explicit "do not touch files outside this worktree" boundary.
 The probe worktree was also already dirty with its instrumentation. No safe
 in-bound alternative can produce the requested real-library interactive arm,
 so neither arm is claimed as evidence.
+
+---
+
+## Blocking measurement arm — RUN 2026-08-26
+
+Run in the main thread, not by Codex: the arms need a real GUI session and the
+live library, both outside the worktree sandbox the implementation ran in.
+
+### Harness
+
+`rowheight-arm.sh` could not be used as written — it asks a human to click. The
+automated replacement is `arm2.sh` (scratchpad), same isolation contract plus two
+layers it turned out to need:
+
+| layer | why it is required |
+|---|---|
+| `XDG_DATA_HOME` | database is a reflink copy; the live library is never written |
+| **private D-Bus** | without it GApplication hands the launch to the user's running Reprise — the first attempt logged `Reprise is already running — presenting the existing window` and measured **nothing** |
+| **Xvfb + unset `WAYLAND_DISPLAY`** | on the live Wayland session the window is not drivable (AT-SPI registry unavailable, no window enumeration) |
+
+Both arms: same script, same seed (`ui.row_height = 30`, the poisoned live
+value), same interaction — sidebar → Music (2006 rows), double-click a row to
+start playback, 40 × Page-Down away from it, then three transport steps.
+
+The session restores the *YouTube* view on this library, so the arm navigates to
+Music explicitly; the first run measured the episode list (`upper=1201`) and was
+discarded. MPRIS `Next` returned without stepping the track (both arms ended on
+the same track at the same position), so the transport is stepped by clicking the
+transport bar's next button instead.
+
+### Result
+
+| arm | `ui.row_height` before → after | reveal targets | consistent with |
+|---|---|---|---|
+| **control** (unmodified dev + probe) | 30 → **30** | 28147.5, 39877.5, 10627.5 | **h = 30** (positions 951, 1342, 367 — exact integers) |
+| **fix** (this strand) | 30 → **45** | 81435.0, 45750.0, 64200.0 | **h = 45** (positions 1818, 1025, 1435 — exact integers) |
+
+`upper = 90270`, `n_rows = 2006`, `page = 795` in both arms, so the true row
+height is `90270 / 2006 = 45`.
+
+Solving `want = pos × h + h/2 − page/2` for `pos` is the discriminator: each
+arm's three targets are exact integers under exactly one `h`, and never under the
+other. Control resolves only at 30; fix resolves only at 45. Under h = 30 the fix
+arm's first target would be row 2727, which does not exist in a 2006-row list.
+
+**Control arm, the loop caught live:**
+
+```
+SCROLLHEIGHT at=remember_if_settled branch=contradiction upper=90270.0 n_rows=2006
+  n_sections=0 quotient=45.00 widget_modal=Some(30.0) widget_uniform=true
+  floor=28.0 chosen=Some(30.0)
+SCROLLHEIGHT at=persist height=30.0 cache_before=30.0
+```
+
+GTK's own `upper` implies 45; the widgets are mid-allocation at 30;
+`contradicting_row_height` picks the 30 and persists it. The next sample already
+reads `widget_modal=Some(45.0)` — the rows settle at 45 immediately after. This is
+mother-plan section 3 reproduced on the real library.
+
+**Fix arm:** no `branch=contradiction`, nothing persists 30, and the run ends with
+the database holding 45 — the value GTK authored — from a database that started
+poisoned and **without strand B**. That is the merge-order precondition met:
+strand A alone fixes the symptom on a poisoned database.
+
+Screenshots: `~/.local/share/reprise/diagnostics/rowheight-probe-2026-08-26/`.
+In `fix-3-next2.png` the playing row (position 1025) sits centred in the
+viewport; in the control arm's equivalent frame the playing row is not on screen
+at all.
+
+### Not covered by this arm
+
+- `SCROLLUPPER writer=anchor.configure` never fired in **either** arm, so the
+  plan's "no anchor.configure line at all" criterion was not exercised — that
+  path was not reached by this interaction. Absence in the fix arm alone would
+  not have been evidence; it is reported as untested rather than as passed.
+- `SCROLLROWS` likewise never fired, so the allocated-vs-natural criterion was
+  not measured live. It is covered by the strand's unit tests, not here.
