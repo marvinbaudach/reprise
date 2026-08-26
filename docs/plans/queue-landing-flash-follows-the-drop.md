@@ -25,13 +25,21 @@ destination row's band, which is the teal tint's signature in this dark theme.
 | t | what the frames show |
 |---|---|
 | 2.63 s | finger lifts, settle animation starts |
-| **3.40 s** | row is at rest — hole back to its 94 px baseline, tint flat at 7.0 |
 | **3.77 s** | tint jumps 7.0 → 22.4: **the flash starts here** |
 | 4.03 s | tint back to baseline |
 
-The row stands still for roughly **370 ms** before the tint arrives. The tint
-lands on the correct row (verified frame by frame: `PRAY FOR PEACE`, the row
-that moved) and its duration matches `QUEUE_DRAG_FLASH_MS = 520`.
+The tint lands on the correct row (verified frame by frame: `PRAY FOR PEACE`,
+the row that moved) and its duration matches `QUEUE_DRAG_FLASH_MS = 520`.
+
+**How long the tint is late is not measurable from this clip.** The obvious
+anchor — the row-hole metric returning to its 94 px baseline — is the wrong
+one. That metric was built in #704 to catch a *missing* row, and it reaches
+baseline while the dropped row is still several pixels from home, so reading a
+"row is at rest" moment off it overstates the delay. The delay the change
+actually removes is the edit's round trip, because `move` is dispatched only
+after the settle animation completes in both the old and the new code. Measured
+paired, arm against arm, that round trip is **≈140 ms** — see the verification
+table, which is the number that counts.
 
 ## Why it is late
 
@@ -49,9 +57,9 @@ pendingFlashSlot?.let { slot ->
 
 and `release()` is reached either from `onOrderChanged()`, when the reloaded
 window comes back, or from the `QUEUE_RELOAD_GRACE_MS = 600` backstop. The tint
-is therefore bound to **the round trip of the edit**, not to the landing. The
-370 ms measured above is that round trip. It is the same instant the #704
-artifact sat on — both were triggered by the reload arriving.
+is therefore bound to **the round trip of the edit**, not to the landing. It is
+the same instant the #704 artifact sat on — both were triggered by the reload
+arriving.
 
 ## Why it cannot simply be started earlier
 
@@ -67,7 +75,7 @@ upwards, the neighbour that parted.
 lives in a `remember` inside `queueRowColor`, i.e. in the row's own composition.
 The queue row key is `queue-$index-$uri`, so a reorder changes the key of every
 row whose index moved, and Compose answers a changed key by disposing the row
-and composing a new one. A flash started at the landing would be ~370 ms in when
+and composing a new one. A flash started at the landing would be mid-fade when
 the reload disposes the row; the replacement composes with a fresh
 `Animatable(0f)`, sees `owed == true`, and runs `snapTo(1f)` — **the tint
 restarts at full brightness.** Two flashes instead of one: worse than today.
@@ -192,14 +200,28 @@ different builds have already come out byte-identical in size. Compare the
 
 Oracle: the destination row's teal metric per frame.
 
-| arm | build | expected |
-|---|---|---|
-| control | `dev` unchanged | one rise, ~370 ms after the row is at rest |
-| **negative** | steps 2+3 **without** step 1 | **two rises** — this is what proves obstacle 2 |
-| fix | all three steps | one rise, at the landing, ≤ 1 frame after it |
+Measure the moved row's band **and** the neighbour's band. A tint on the wrong
+row is invisible to a single-band oracle.
 
-The negative arm is not optional. It is the only thing standing between this
-plan and an unproven assumption about Compose disposal.
+| arm | build | measured |
+|---|---|---|
+| control | `dev` unchanged | one rise at **3.77 s** on the moved row, clean decay; neighbour flat |
+| **negative** | steps 2+3 **without** step 1 | **two rises** on the moved row (3.63 s, then again at 3.73 s back to full) **and the neighbour's tint sticks at full for the rest of the clip** |
+| fix | all three steps | **one rise at 3.63 s** on the moved row, continuous decay 23→20→14→12→10; neighbour shows a single handover frame |
+
+All three arms produced exactly one adjacent swap and identical hole curves, so
+the arms are comparable frame for frame. The fix moves the tint **140 ms**
+earlier — from the reload's arrival to the end of the drop animation. That is
+the whole delay there is to remove.
+
+The negative arm was not optional and it paid for itself: it shows the row-local
+animation does not merely restart the fade, it also leaves the neighbour tinted
+permanently, because that row's `LaunchedEffect` never fires again. Skipping
+step 1 would have shipped a worse defect than the reported one.
+
+**Known residue:** at the handover frame the fix draws the tint on the source
+slot's position for a single 30 fps sample. It is one frame of a 520 ms fade and
+below the threshold this change was asked to fix; recorded rather than hidden.
 
 The row-hole metric from #704 must stay at **0 frames** over 150 px after the
 settle in the fix arm — this change must not reintroduce that artifact.
