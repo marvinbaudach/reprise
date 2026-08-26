@@ -2,7 +2,7 @@
 slug: the-row-height-certifies-itself-a
 worktree: /home/marvin/Projects/reprise-the-row-height-certifies-itself-a
 branch: feature/the-row-height-certifies-itself-a
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-26
 ---
