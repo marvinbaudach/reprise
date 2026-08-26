@@ -8,7 +8,6 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -79,6 +78,21 @@ internal fun queueOffsetsDescribe(
     orderAtEdit: String?,
     order: String,
 ): Boolean = !awaitingReload || orderAtEdit == null || order == orderAtEdit
+
+/**
+ * Which composed slot reads the state-owned arrival tint.
+ *
+ * Before the reload, the moved row is still composed at [from] and only its
+ * offset puts it over [to]. After the reload changes the row keys, the same
+ * row is composed at [to]. Choosing by that handover instead of track id also
+ * keeps duplicate occurrences of one track from flashing together.
+ */
+internal fun queueFlashSlot(
+    flashing: Boolean,
+    offsetsHold: Boolean,
+    from: Int,
+    to: Int,
+): Int? = if (!flashing) null else if (offsetsHold) from else to
 
 /** One curve for the whole gesture: fast out of the gate, long settle. */
 internal val QueueDragEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -192,13 +206,18 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
     var targetSlot by mutableIntStateOf(0)
         private set
 
-    /** The slot whose arrival tint is currently owed, if any. */
-    var flashSlot by mutableStateOf<Int?>(null)
+    /** The composed slot the current arrival tint started from. */
+    var flashFrom by mutableIntStateOf(0)
         private set
 
-    /** Changes with every owed tint, so a re-used slot flashes again. */
-    var flashToken by mutableLongStateOf(0L)
+    /** The composed slot the current arrival tint lands on after the reload. */
+    var flashTo by mutableIntStateOf(0)
         private set
+
+    /** The arrival tint outlives either row composition that reads it. */
+    private val flash = Animatable(0f)
+
+    val flashFraction: Float get() = flash.value
 
     /** Collaborators the composition re-supplies on every pass. */
     var haptics: QueueHaptics = QueueHaptics.None
@@ -231,7 +250,6 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
      * Written every composition, read once at the drop.
      */
     var windowOrder: String = ""
-    private var pendingFlashSlot: Int? = null
     private var autoScroll: Job? = null
 
     /** Bumped per gesture so a finished drop cannot clean up its successor. */
@@ -321,9 +339,14 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
                 release(myGeneration)
                 return@launch
             }
+            flashFrom = start
+            flashTo = destination
+            scope.launch {
+                flash.snapTo(1f)
+                flash.animateTo(0f, tween(QUEUE_DRAG_FLASH_MS, easing = QueueDragEasing))
+            }
             // The row is standing in its new place already, so the edit is
             // invisible — which is the whole point of running it here.
-            pendingFlashSlot = destination
             awaitingReload = true
             orderAtEdit = windowOrder
             move?.invoke(start, id, destination)
@@ -361,13 +384,6 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
         }
     }
 
-    /** Consumes the arrival tint once [slot] has finished showing it. */
-    fun clearFlash(slot: Int) {
-        if (flashSlot == slot) {
-            flashSlot = null
-        }
-    }
-
     private fun release(forGeneration: Long) {
         if (generation != forGeneration || phase == Phase.IDLE) {
             return
@@ -378,11 +394,6 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
         scrolledPx = 0f
         awaitingReload = false
         orderAtEdit = null
-        pendingFlashSlot?.let { slot ->
-            flashSlot = slot
-            flashToken += 1
-            pendingFlashSlot = null
-        }
     }
 
     private fun retarget() {

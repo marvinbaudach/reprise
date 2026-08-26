@@ -1,6 +1,5 @@
 package de.reprise.spike
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -373,7 +372,7 @@ private fun LibraryTrackRow(
             color = if (queueDrag == null) {
                 restingColor
             } else {
-                queueRowColor(restingColor, queueDrag, queuePosition, lift)
+                queueRowColor(restingColor, queueDrag, queuePosition, offsetsHold, lift)
             },
         ) {
             Box {
@@ -560,23 +559,21 @@ private fun queueRowColor(
     resting: Color,
     reorder: QueueReorderState,
     slot: Int,
+    offsetsHold: Boolean,
     lift: Float,
 ): Color {
-    val flash = remember { Animatable(0f) }
-    val owed = reorder.flashSlot == slot
-    LaunchedEffect(reorder.flashToken, owed) {
-        if (!owed) {
-            return@LaunchedEffect
-        }
-        flash.snapTo(1f)
-        flash.animateTo(0f, tween(QUEUE_DRAG_FLASH_MS, easing = QueueDragEasing))
-        reorder.clearFlash(slot)
-    }
+    val flash = reorder.flashFraction
+    val flashesHere = queueFlashSlot(
+        flashing = flash > 0f,
+        offsetsHold = offsetsHold,
+        from = reorder.flashFrom,
+        to = reorder.flashTo,
+    ) == slot
     val held = lerp(resting, MaterialTheme.colorScheme.surface, lift)
     return lerp(
         held,
         MaterialTheme.colorScheme.primary,
-        QUEUE_DRAG_FLASH_ALPHA * flash.value,
+        QUEUE_DRAG_FLASH_ALPHA * if (flashesHere) flash else 0f,
     )
 }
 
