@@ -194,3 +194,19 @@ test db::settings_geometry_migration_tests::v80_preserves_unrelated_settings ...
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2600 filtered out; finished in 0.37s
 ```
+
+### Ownership-gap follow-up
+
+The mother plan's ownership list for strand B was one file short: it omitted
+`crates/reprise-core/src/db_concerts_migration_tests.rs`, whose deliberately
+hard-coded schema-version tripwire still pinned v79 after this strand raised
+`SUPPORTED_SCHEMA_VERSION` to 80. Ownership was extended by exactly that file
+so the test name and independent literal could advance to v80 without weakening
+the tripwire into a tautological comparison.
+
+The complete `reprise-core` suite ran with fresh worktree-local XDG data and
+cache roots and exited 0:
+
+```text
+test result: ok. 2601 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 146.29s
+```
