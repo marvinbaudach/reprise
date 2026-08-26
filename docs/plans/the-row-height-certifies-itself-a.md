@@ -452,6 +452,13 @@ non-oracle site. The corresponding sites in
 `ui/window/metadata_navigation.rs` could not be annotated because both paths
 are outside this strand's hard write boundary.
 
+Follow-up ownership was extended by exactly those two GNOME files. The
+original strand boundary was two files short of the plan's comment inventory;
+their range-derived arithmetic now carries the matching non-oracle comments.
+The focused compile exited 0; the exact isolated display inventory passed seven
+of eight, with the unchanged `BROWSE-11` sampler bound returning 101 at
+`expected=13395`, `minimum=13191`, and `row_height=34`.
+
 ### Project gates
 
 - `cargo fmt --check`: passed.
