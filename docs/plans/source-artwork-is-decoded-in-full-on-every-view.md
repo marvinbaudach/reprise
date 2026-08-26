@@ -2,7 +2,7 @@
 slug: source-artwork-is-decoded-in-full-on-every-view
 worktree: /home/marvin/Projects/reprise-source-artwork-is-decoded-in-full-on-every-view
 branch: feature/source-artwork-is-decoded-in-full-on-every-view
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-25
 ---
