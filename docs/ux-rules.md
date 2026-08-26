@@ -4012,7 +4012,7 @@ STYLE-1).
   near-black accent foreground on a mid-dark tint of the accent — measured at
   about 2.5:1, and the reason an insensitive "Sync now" was unreadable. The
   missing surface is the state signal, so the label stays at the secondary text
-  level and readable. Disabled controls are exempt from CONTRAST-1's ratio;
+  level and readable. Disabled controls are exempt from CONTRAST-3's ratio;
   that exemption is not a licence to make them illegible.
 - **BTN-4** [active] [gtk] — Hover, Active and Focus are defined **once**
   (`ui/style/buttons.rs`) and applied everywhere, via class or — where

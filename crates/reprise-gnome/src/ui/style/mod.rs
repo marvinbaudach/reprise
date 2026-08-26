@@ -401,13 +401,18 @@ mod tests {
             .filter_map(|declaration| {
                 let (property, value) = declaration.split_once(':')?;
                 let property = property.trim().rsplit([' ', '\n', '\t']).next()?;
-                if property != "background-color" && property != "background" {
+                if property != "background-color"
+                    && property != "background"
+                    && property != "background-image"
+                {
                     return None;
                 }
                 let rest = value.split_once("alpha(")?.1;
                 let (role, alpha) = rest.split_once(',')?;
                 let role = role.trim();
-                if role != "@accent_color" && role != "@accent_bg_color" {
+                if role != "@accent_bg_color"
+                    && (property == "background-image" || role != "@accent_color")
+                {
                     return None;
                 }
                 let alpha = alpha.split(')').next()?.trim().parse().ok()?;
@@ -416,7 +421,7 @@ mod tests {
             .collect()
     }
 
-    /// CONTRAST-5's other half. `@reprise_accent_text_color` is derived against
+    /// CONTRAST-5a's other half. `@reprise_accent_text_color` is derived against
     /// a surface tinted to `tokens::ACCENT_TINT_CEILING`, so that derivation is
     /// only a guarantee while no rule tints further. A louder fill added
     /// anywhere in the app silently invalidates the role for every widget that
@@ -457,6 +462,16 @@ mod tests {
         assert_eq!(over.len(), 1, "guard missed a louder accent fill");
         assert!((over[0].1 - 0.9).abs() < f64::EPSILON);
 
+        let gradient = accent_background_tints(
+            ".x { background-image: linear-gradient(alpha(@accent_bg_color, 0.9), transparent); }",
+        );
+        assert_eq!(
+            gradient.len(),
+            1,
+            "guard missed a louder accent gradient fill"
+        );
+        assert!((gradient[0].1 - 0.9).abs() < f64::EPSILON);
+
         for ignored in [
             ".x { color: alpha(@accent_color, 0.9); }",
             ".x { background-color: alpha(currentColor, 0.9); }",
@@ -476,7 +491,7 @@ mod tests {
         assert!(
             unverified.is_empty(),
             "app CSS paints text with an unverified accent: {unverified:#?}\n\
-             use @reprise_accent_text_color instead (CONTRAST-5)"
+             use @reprise_accent_text_color instead (CONTRAST-5a)"
         );
     }
 
