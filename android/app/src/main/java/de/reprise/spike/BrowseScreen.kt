@@ -153,6 +153,20 @@ internal fun BrowseScreen(
         initialPage = selectedTab.ordinal,
         pageCount = { BrowseTab.entries.size },
     )
+    // What the bar marks and what the header counts is the page the gesture has
+    // already committed to — not the one it settled on. `settledPage`, which the
+    // state below is driven from, holds its old value for the whole drag *and*
+    // the whole fling, so a bar reading it cannot move until everything has come
+    // to rest: the pill sits under the tab being left while the tab being
+    // entered is already filling the screen. `targetPage` turns over the moment
+    // a swipe passes the point of no return, and at once on a tap.
+    //
+    // Handed on as a function, never as a value. Read here it would put a
+    // mid-swipe invalidation on this whole composable; read where it is
+    // rendered it invalidates the pill and the count line alone.
+    val shownTab: () -> BrowseTab = remember(pagerState) {
+        { BrowseTab.entries[pagerState.targetPage] }
+    }
 
     fun selectDestination(tab: BrowseTab) {
         if (tab != selectedTab) {
@@ -445,18 +459,28 @@ internal fun BrowseScreen(
     val lastAnsweredTrack = answeredTrack
     val shownTrack = if (playingTrackId == null) null else lastAnsweredTrack?.track
     val shownTrackIsStale = lastAnsweredTrack != null && lastAnsweredTrack.id != playingTrackId
-    val summary = when (selectedTab) {
-        BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
-        BrowseTab.ARTISTS -> selectedAlbum?.tracks
-            ?.visibleCountLabel("track", "tracks")
-            ?: selectedArtist?.let { detail ->
-                val albums = detail.albums.total
-                val otherTitles = detail.untaggedTracks.total
-                "$albums ${if (albums == 1L) "album" else "albums"} · " +
-                    "$otherTitles ${if (otherTitles == 1L) "other title" else "other titles"}"
-            }
-            ?: visibleArtists.visibleCountLabel("artist", "artists")
-        BrowseTab.QUEUE -> "Queue"
+    val summary: () -> String = {
+        // The bar may already mark a tab whose window has not been fetched yet:
+        // the fetch waits for the page to settle, and counting an unfetched
+        // window prints a nought that reads as an answer — "0 of 65 artists"
+        // where the truth is "not asked yet". Until the marked tab is loaded
+        // the line keeps answering for the one that is.
+        val counted = shownTab()
+            .takeIf { it == BrowseTab.QUEUE || it in loadedTabs }
+            ?: selectedTab
+        when (counted) {
+            BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
+            BrowseTab.ARTISTS -> selectedAlbum?.tracks
+                ?.visibleCountLabel("track", "tracks")
+                ?: selectedArtist?.let { detail ->
+                    val albums = detail.albums.total
+                    val otherTitles = detail.untaggedTracks.total
+                    "$albums ${if (albums == 1L) "album" else "albums"} · " +
+                        "$otherTitles ${if (otherTitles == 1L) "other title" else "other titles"}"
+                }
+                ?: visibleArtists.visibleCountLabel("artist", "artists")
+            BrowseTab.QUEUE -> "Queue"
+        }
     }
     val frameMetrics = libraryFrameMetrics(surfaceLayout)
     val nowPlayingFrameModifier = when (surfaceLayout) {
@@ -482,7 +506,7 @@ internal fun BrowseScreen(
                         currentTrack = shownTrack,
                         playback = playback,
                         progress = playbackProgress,
-                        selectedTab = selectedTab,
+                        shownTab = shownTab,
                         selectTab = ::selectDestination,
                         openNowPlaying = { surfaceState.showNowPlaying(true) },
                         nowPlayingExpanded = nowPlayingExpanded,
@@ -619,7 +643,7 @@ internal fun BrowseScreen(
                 Row(modifier = Modifier.fillMaxSize()) {
                     LibraryNavigationRail(
                         surfaceLayout = surfaceLayout,
-                        selectedTab = selectedTab,
+                        shownTab = shownTab,
                         selectTab = ::selectDestination,
                     )
                     libraryScaffold(Modifier.weight(1f))

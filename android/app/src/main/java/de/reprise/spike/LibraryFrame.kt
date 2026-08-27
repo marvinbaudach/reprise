@@ -60,7 +60,7 @@ import de.reprise.spike.ui.theme.MaterialSymbolsRoundedFilled
 
 @Composable
 internal fun LibrarySummaryActions(
-    summary: String,
+    summary: () -> String,
     searching: Boolean,
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
@@ -76,7 +76,11 @@ internal fun LibrarySummaryActions(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = summary,
+            // Called here rather than taken as a value: the count follows the
+            // page, and the page turns over mid-swipe. Read one scope higher it
+            // would invalidate the whole browse screen on every turn — read
+            // inside the text, it invalidates the text.
+            text = summary(),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -134,7 +138,7 @@ internal fun LibraryBottomFrame(
     currentTrack: LibraryTrack?,
     playback: LibraryPlayback,
     progress: () -> Float,
-    selectedTab: BrowseTab,
+    shownTab: () -> BrowseTab,
     selectTab: (BrowseTab) -> Unit,
     openNowPlaying: () -> Unit,
     nowPlayingExpanded: Boolean = false,
@@ -183,7 +187,7 @@ internal fun LibraryBottomFrame(
         ) {
             libraryDestinations.forEach { destination ->
                 NavigationBarItem(
-                    selected = destination == selectedTab,
+                    selected = destination == shownTab(),
                     onClick = { selectTab(destination) },
                     icon = { MaterialSymbol(destination.symbol, destination.label) },
                     label = { Text(destination.label) },
@@ -206,7 +210,7 @@ internal fun LibraryBottomFrame(
 @Composable
 internal fun LibraryNavigationRail(
     surfaceLayout: SurfaceLayout,
-    selectedTab: BrowseTab,
+    shownTab: () -> BrowseTab,
     selectTab: (BrowseTab) -> Unit,
 ) {
     check(surfaceLayout == SurfaceLayout.WIDE_SHORT)
@@ -232,7 +236,7 @@ internal fun LibraryNavigationRail(
         Spacer(Modifier.weight(1f))
         libraryDestinations.forEach { destination ->
             NavigationRailItem(
-                selected = destination == selectedTab,
+                selected = destination == shownTab(),
                 onClick = { selectTab(destination) },
                 icon = { MaterialSymbol(destination.symbol, destination.label) },
                 label = { Text(destination.label) },
