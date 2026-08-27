@@ -130,11 +130,13 @@ jobs:
               ;;
             skipped)
               echo "Release skipped: Quality gate was skipped and is not green." >> "$GITHUB_STEP_SUMMARY"
-              exit 0
+              echo "Release skipped: Quality gate was skipped and is not green." >&2
+              exit 1
               ;;
             *)
               echo "Release skipped: Quality gate concluded '$conclusion'." >> "$GITHUB_STEP_SUMMARY"
-              exit 0
+              echo "Release skipped: Quality gate concluded '$conclusion'." >&2
+              exit 1
               ;;
           esac
 
