@@ -98,14 +98,19 @@ class MainActivity : ComponentActivity() {
     }
     private val artwork by artworkDelegate
 
+    private val libraryWrites = LibraryWrites(
+        onMainThread = { work -> runOnUiThread { work() } },
+    )
+
     /**
-     * Heart taps, off the main thread and answered back on it. The lambda defers
-     * touching [session] until a rating is actually made, so opening the
-     * library still happens when the screen asks for it and not before.
+     * Heart taps use the shared write lane and answer back on the main thread.
+     * The lambda defers touching [session] until a rating is actually made, so
+     * opening the library still happens when the screen asks for it and not
+     * before.
      */
     private val ratings = RatingWriter(
         write = { trackId, favourite -> session.setFavourite(trackId, favourite) },
-        onMainThread = { work -> runOnUiThread { work() } },
+        libraryWrites = libraryWrites,
     )
 
     /**
@@ -483,10 +488,10 @@ class MainActivity : ComponentActivity() {
         // Compose disposal is not the release boundary: Android may destroy
         // the activity while dock mode is still the ViewModel's current mode.
         // First, and before final ViewModel cleanup can close the retained
-        // library handle: a heart tap that is still queued has to reach the
-        // database it was written for, and a write arriving at a closed handle
-        // would be a crash rather than a lost rating.
-        if (!ratings.shutdown()) {
+        // library handle: answered work drains briefly because a control still
+        // waits for its result. Unanswered-only preferences are dropped at once
+        // so a rotation never waits behind the scan-held writer.
+        if (!libraryWrites.shutdown()) {
             Log.w(TAG, "A rating was still being written when the screen closed")
         }
         // Artwork and the playing track's row deliberately get no such drain.
