@@ -420,15 +420,19 @@ mod tests {
             !remembered_sentence(Some(last_verified), now()).contains(&tooltip_text(&copy_balance)),
             "an absent card must never present a stale copy/remove balance"
         );
+    }
 
-        let mut remembered = view(PlannedSyncPhase::Idle);
-        remembered.connected = false;
-        remembered.session_state = DeviceSessionState::Remembered;
-        remembered.last_sync = Some(last_verified);
-        remembered.contents_state = DeviceContentsState::VerifiedEarlier(last_verified);
+    #[test]
+    fn mtp_29_prior_verification_is_not_presented_as_a_current_connected_scan() {
+        let last_verified = now() - chrono::Duration::days(3);
         assert_eq!(
-            card_subtitle(&remembered, now()),
-            "Not connected · synced 3 days ago"
+            leading_sentence(
+                &DeviceContentsState::VerifiedEarlier(last_verified),
+                &SyncBalance::default(),
+                Some(last_verified),
+                now(),
+            ),
+            "Tap to scan device contents"
         );
     }
 
