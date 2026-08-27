@@ -262,7 +262,7 @@ pub(in crate::ui) fn install(
                 previous.dismiss();
             }
             let toast = crate::ui::toasts::plain(&crate::ui::strings::text(
-                crate::ui::strings::SIDE_PANELS_CLOSED,
+                crate::ui::strings::INFO_PANEL_CLOSED,
             ));
             toast.set_button_label(Some(&crate::ui::strings::text(crate::ui::strings::UNDO)));
             toast.set_timeout(UNDO_TIMEOUT_SECONDS);

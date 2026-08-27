@@ -68,7 +68,7 @@ msgid "Show columns"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:151
-msgid "Side panels were closed to fit the window"
+msgid "The info panel was closed to fit the window"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:152
