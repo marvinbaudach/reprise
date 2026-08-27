@@ -145,9 +145,12 @@ impl DeviceSyncRuntime {
             });
             project = states
                 .iter()
+                .filter(|state| state.machine.is_none())
                 .map(|state| state.descriptor.id.clone())
                 .collect::<Vec<_>>();
         }
+        self.notify();
+        let projected_any = !project.is_empty();
         for id in project {
             if let Err(error) = self.recompute_delta_silent(&id) {
                 tracing::warn!(
@@ -157,7 +160,9 @@ impl DeviceSyncRuntime {
                 );
             }
         }
-        self.notify();
+        if projected_any {
+            self.notify();
+        }
         for id in inspect {
             if let Some(device) = self
                 .device_states
