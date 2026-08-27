@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
@@ -20,6 +21,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
@@ -131,6 +135,68 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
         compose.onNodeWithTag("library-destination-TITLES").assertIsSelected()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [36],
+    qualifiers = "w412dp-h916dp-port",
+    application = BlockingArtistLoadApplication::class,
+)
+class CancelledBrowseDoesNotReportFailureTest {
+    @get:Rule
+    val compose = createAndroidComposeRule<MainActivity>()
+
+    private val application: BlockingArtistLoadApplication
+        get() = RuntimeEnvironment.getApplication() as BlockingArtistLoadApplication
+
+    @After
+    fun releaseTheService() {
+        application.releaseArtistRead.countDown()
+        application.releaseService()
+    }
+
+    @Test
+    fun leavingAVisibleTabWhileItsValidWindowReturnsDoesNotReportAFailure() {
+        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.artistReadStarted.count == 0L
+        }
+
+        compose.onNodeWithTag("library-destination-QUEUE").performClick()
+        compose.onNodeWithTag("library-page-QUEUE").assertIsDisplayed()
+        application.releaseArtistRead.countDown()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.artistReadFinished.count == 0L
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Could not load artists:", substring = true).assertDoesNotExist()
+    }
+}
+
+internal class BlockingArtistLoadApplication : ConfigurationTestApplication() {
+    val artistReadStarted = CountDownLatch(1)
+    val releaseArtistRead = CountDownLatch(1)
+    val artistReadFinished = CountDownLatch(1)
+
+    override fun mainActivitySurface(): MainActivitySurfaceDependencies {
+        val dependencies = super.mainActivitySurface()
+        return dependencies.copy(
+            initialStoredDestination = AndroidStoredLibraryDestination.Artists,
+            listArtists = { range ->
+                artistReadStarted.countDown()
+                check(releaseArtistRead.await(10, TimeUnit.SECONDS)) {
+                    "timed out waiting to finish the artist window read"
+                }
+                try {
+                    dependencies.listArtists(range)
+                } finally {
+                    artistReadFinished.countDown()
+                }
+            },
+        )
     }
 }
 

@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.settings.SettingsNavigation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -404,6 +405,7 @@ internal fun BrowseScreen(
             loadedTabs = loadedTabs + pendingTab
             if (visible) browseError = null
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             if (visible) browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
         }
     }
