@@ -29,7 +29,7 @@ pub(in crate::ui) fn registry(track_list: &Rc<TrackList>) -> ColumnRegistry {
 pub(in crate::ui) fn model(
     track_list: &Rc<TrackList>,
 ) -> Rc<dyn crate::ui::table_columns::EditorModel> {
-    registry(track_list)
+    super::track_list_editor_model::model(track_list)
 }
 
 fn cell_alignment(id: ColumnId) -> CellAlignment {

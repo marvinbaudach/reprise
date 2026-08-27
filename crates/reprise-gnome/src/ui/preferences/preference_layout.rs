@@ -430,7 +430,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .build();
     let weak = Rc::downgrade(context);
     let columns = action_row(
-        strings::EDIT_COLUMN_LAYOUT,
+        strings::CUSTOMIZE_TABLE,
         Rc::new(move || {
             if let Some(context) = weak.upgrade() {
                 context.open_column_layout_editor();

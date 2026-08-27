@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-28 10:01+0200\n"
+"POT-Creation-Date: 2026-08-27 18:55+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -68,8 +68,8 @@ msgid "Show columns"
 msgstr "Mostrar columnas"
 
 #: crates/reprise-gnome/src/ui/strings.rs:151
-msgid "The info panel was closed to fit the window"
-msgstr "El panel de información se cerró para ajustarse a la ventana"
+msgid "Side panels were closed to fit the window"
+msgstr "Los paneles laterales se cerraron para ajustarse a la ventana"
 
 #: crates/reprise-gnome/src/ui/strings.rs:152
 #: crates/reprise-gnome/src/ui/strings_issues.rs:47
@@ -314,8 +314,8 @@ msgid "Restart required"
 msgstr "Es necesario reiniciar"
 
 #: crates/reprise-gnome/src/ui/strings.rs:234
-msgid "Edit column layout…"
-msgstr "Editar la disposición de las columnas…"
+msgid "Customize table…"
+msgstr "Personalizar tabla…"
 
 #: crates/reprise-gnome/src/ui/strings.rs:235
 msgid "Reset to Default"
@@ -361,7 +361,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:125
 #: crates/reprise-gnome/src/ui/strings_radio.rs:41
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:91
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:84
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:27
 msgid "Cancel"
 msgstr "Cancelar"
@@ -611,24 +611,24 @@ msgid "Plays"
 msgstr "Reproducciones"
 
 #: crates/reprise-gnome/src/ui/strings.rs:409
-msgid "Sort"
-msgstr "Ordenar"
-
-#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Sort by"
 msgstr "Ordenar por"
 
-#: crates/reprise-gnome/src/ui/strings.rs:411
+#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Direction"
 msgstr "Dirección"
 
-#: crates/reprise-gnome/src/ui/strings.rs:412
+#: crates/reprise-gnome/src/ui/strings.rs:411
 msgid "Ascending"
 msgstr "Ascendente"
 
-#: crates/reprise-gnome/src/ui/strings.rs:413
+#: crates/reprise-gnome/src/ui/strings.rs:412
 msgid "Descending"
 msgstr "Descendente"
+
+#: crates/reprise-gnome/src/ui/strings.rs:413
+msgid "Playlist order"
+msgstr "Orden de la lista de reproducción"
 
 #: crates/reprise-gnome/src/ui/strings.rs:419
 msgid "Playback position"
@@ -721,7 +721,7 @@ msgstr "Reintentar"
 #: crates/reprise-gnome/src/ui/strings_news.rs:43
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:62
 #: crates/reprise-gnome/src/ui/strings_sources.rs:19
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:410
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:403
 msgid "Dismiss"
 msgstr "Descartar"
 
@@ -1322,8 +1322,8 @@ msgid "1 track"
 msgstr "1 pista"
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:63
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:98
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:268
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:91
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:261
 #, rust-format
 msgid "{count} tracks"
 msgstr "{count} pistas"
@@ -1732,7 +1732,7 @@ msgid "Return to the results and choose another review filter."
 msgstr "Vuelve a los resultados y elige otro filtro de revisión."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:90
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:83
 msgid "Select all"
 msgstr "Seleccionar todo"
 
@@ -2282,8 +2282,8 @@ msgid "Information"
 msgstr "Información"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:12
-msgid "Toggle info panel"
-msgstr "Mostrar u ocultar el panel de información"
+msgid "Toggle Now Playing panel"
+msgstr "Mostrar u ocultar el panel En reproducción"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:13
 msgid "Nothing playing"
@@ -4360,7 +4360,7 @@ msgid "Play counts & last played"
 msgstr "Número de reproducciones y última reproducción"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:14
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:86
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:79
 msgid "Playlists"
 msgstr "Listas de reproducción"
 
@@ -4542,7 +4542,7 @@ msgid "ListenBrainz Account"
 msgstr "Cuenta de ListenBrainz"
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:26
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:208
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:201
 msgid "Not connected"
 msgstr "No conectado"
 
@@ -5395,7 +5395,7 @@ msgstr "se aplicará a las {count}"
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:184
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:202
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:92
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:85
 msgid "Save"
 msgstr "Guardar"
 
@@ -5608,226 +5608,217 @@ msgstr "hace {hours} h"
 msgid "{days} d ago"
 msgstr "hace {days} d"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:33
-#, rust-format
-msgid ""
-"{size} in the saved device inventory · Verification time unavailable for "
-"these counts"
-msgstr ""
-"{size} en el inventario guardado del dispositivo · No se conoce la hora de "
-"verificación de estos recuentos"
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:39
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:37
 #, rust-format
 msgid "Syncing {name} · {percent}%"
 msgstr "Sincronizando {name} · {percent}%"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:78
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:71
 msgid "Available space unknown"
 msgstr "Espacio disponible desconocido"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:79
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:72
 msgid "Synchronization Progress"
 msgstr "Progreso de la sincronización"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:75
 #, rust-format
 msgid "Syncing · {completed} / {total}"
 msgstr "Sincronizando · {completed} / {total}"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:83
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:76
 msgid "Choose playlists"
 msgstr "Elegir listas de reproducción"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:84
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:77
 msgid "Choose folder for Playlists"
 msgstr "Elegir carpeta para las listas de reproducción"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:85
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:78
 msgid "Change folder…"
 msgstr "Cambiar carpeta…"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:87
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:80
 msgid "Remove from phone when removed from a playlist"
 msgstr "Quitar del teléfono al eliminar de una lista de reproducción"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:88
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:81
 msgid "Sync automatically when this phone connects"
 msgstr "Sincronizar automáticamente al conectar este teléfono"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:89
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
 msgid "Filter sync content"
 msgstr "Filtrar el contenido de sincronización"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:93
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:86
 msgid "Everything"
 msgstr "Todo"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:94
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:87
 msgid "Smart playlist"
 msgstr "Lista inteligente"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:95
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:88
 msgid "Keep smart playlists up to date on each sync"
 msgstr "Reevaluar las listas inteligentes en cada sincronización"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:96
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:89
 msgid "Unavailable playlist"
 msgstr "Lista no disponible"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:97
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:90
 #, rust-format
 msgid "{selected} selected · {content} · {size}"
 msgstr "{selected} seleccionados · {content} · {size}"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:105
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:98
 #, rust-format
 msgid "{size} available"
 msgstr "{size} disponibles"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:115
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:108
 #, rust-format
 msgid "{size} free"
 msgstr "{size} libres"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:124
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:117
 #, rust-format
 msgid "{completed} of {total} tracks"
 msgstr "{completed} de {total} pistas"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:141
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:134
 #, rust-format
 msgid "{percent} %"
 msgstr "{percent} %"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:164
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:157
 #, rust-format
 msgid "{done} of {total}"
 msgstr "{done} de {total}"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:188
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:181
 #, rust-format
 msgid "~{minutes} min left"
 msgstr "Quedan ~{minutes} min"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:193
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:186
 #, rust-format
 msgid "~{seconds} s left"
 msgstr "Quedan ~{seconds} s"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:209
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:202
 msgid "Finishing synchronization…"
 msgstr "Finishing synchronization…"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:210
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:203
 msgid "Checking what changed…"
 msgstr "Checking what changed…"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:211
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:204
 msgid "Checking changes…"
 msgstr "Checking changes…"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:212
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:205
 #, rust-format
 msgid "Ready to sync · {summary}"
 msgstr "Ready to sync · {summary}"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:215
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:208
 #, rust-format
 msgid "Syncing · {copied} of {total} files"
 msgstr "Syncing · {copied} of {total} files"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:216
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:209
 #, rust-format
 msgid "{minutes} min left"
 msgstr "{minutes} min left"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:217
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:210
 #, rust-format
 msgid "{seconds} s left"
 msgstr "{seconds} s left"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:218
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:211
 msgid "Automatic sync is on"
 msgstr "Automatic sync is on"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:219
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:212
 msgid "Automatic sync is off"
 msgstr "Automatic sync is off"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:220
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:213
 #, rust-format
 msgid "Could not inspect device storage: {error}"
 msgstr "Could not inspect device storage: {error}"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:299
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:292
 #, rust-format
 msgid "{count} to copy"
 msgstr "{count} por copiar"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:304
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:297
 #, rust-format
 msgid "{count} to remove"
 msgstr "{count} por eliminar"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:310
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:303
 #, rust-format
 msgid "{count} playlists to update"
 msgstr "{count} listas por actualizar"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:315
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:308
 msgid "Nothing to transfer"
 msgstr "Nada que transferir"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:394
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:387
 msgid "Device contents never verified"
 msgstr "El contenido del dispositivo nunca se ha verificado"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:396
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:389
 msgid "Scan the device to see what's already there before syncing."
 msgstr "Analiza el dispositivo para ver qué contiene antes de sincronizar."
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:397
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:390
 msgid "Verifying device contents…"
 msgstr "Verificando el contenido del dispositivo…"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:399
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:392
 msgid "Reading storage over MTP — this can take a moment."
 msgstr "Leyendo el almacenamiento por MTP: puede tardar un momento."
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:400
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:393
 msgid "Device contents verified"
 msgstr "Contenido del dispositivo verificado"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:401
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:394
 msgid "Could not verify device contents"
 msgstr "No se pudo verificar el contenido del dispositivo"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:402
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:395
 msgid "On this device"
 msgstr "On this device"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:403
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:396
 msgid "Check again"
 msgstr "Check again"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:404
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:397
 msgid "Review playlists above"
 msgstr "Review playlists above"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:405
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:398
 msgid "Set limit…"
 msgstr "Set limit…"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:406
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:399
 msgid "No size limit"
 msgstr "No size limit"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:407
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:400
 msgid "Rules for this phone"
 msgstr "Rules for this phone"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:409
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:402
 #, rust-format
 msgid ""
 "Podcast and YouTube files are no longer synced and were left untouched "
@@ -5836,77 +5827,44 @@ msgstr ""
 "Los archivos de pódcast y YouTube ya no se sincronizan y se dejaron intactos "
 "fuera de {path}."
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:411
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:404
 msgid "_Sync now"
 msgstr "_Sync now"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:412
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:405
 msgid "_Cancel"
 msgstr "_Cancel"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:413
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:406
 #, rust-format
 msgid "Folder {path} · Smart lists stay current · no size limit"
 msgstr "Folder {path} · Smart lists stay current · no size limit"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:415
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:408
 #, rust-format
 msgid "Folder {path} · Smart lists keep their current contents · no size limit"
 msgstr ""
 "Folder {path} · Smart lists keep their current contents · no size limit"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:417
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:410
 #, rust-format
 msgid ""
 "Reprise music {music} · this run +{this_run} · Other {other} · {free} free"
 msgstr ""
 "Reprise music {music} · this run +{this_run} · Other {other} · {free} free"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:418
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:411
 #, rust-format
 msgid "Not enough space · {free} free · {shortfall} more needed"
 msgstr ""
 "No hay suficiente espacio · {free} libres · se necesitan {shortfall} más"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:420
-#, rust-format
-msgid ""
-"Next connection: {copies} · {replacements} · {playlists} · {size} to transfer"
-msgstr ""
-"Próxima conexión: {copies} · {replacements} · {playlists} · {size} por "
-"transferir"
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:422
-msgid "Files to remove are settled when the device is next inspected."
-msgstr "Los archivos que se eliminarán se determinan en la próxima inspección del dispositivo."
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:430
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:419
 #, rust-format
 msgid "{playlists} playlist · {tracks} · {size}"
 msgid_plural "{playlists} playlists · {tracks} · {size}"
 msgstr[0] "{playlists} playlist · {tracks} · {size}"
 msgstr[1] "{playlists} playlists · {tracks} · {size}"
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:448
-#, rust-format
-msgid "{count} file to copy"
-msgid_plural "{count} files to copy"
-msgstr[0] "{count} archivo por copiar"
-msgstr[1] "{count} archivos por copiar"
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:454
-#, rust-format
-msgid "{count} replacement"
-msgid_plural "{count} replacements"
-msgstr[0] "{count} archivo por sustituir"
-msgstr[1] "{count} archivos por sustituir"
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:460
-#, rust-format
-msgid "{count} playlist write"
-msgid_plural "{count} playlist writes"
-msgstr[0] "{count} lista por escribir"
-msgstr[1] "{count} listas por escribir"
 
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:22
 msgid "Dismiss all import errors"
@@ -6040,7 +5998,7 @@ msgid "Could not save filter visibility"
 msgstr "No se pudo guardar la visibilidad de los filtros"
 
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:46
-msgid "Could not save info panel visibility"
+msgid "Could not save information panel visibility"
 msgstr "No se pudo guardar la visibilidad del panel de información"
 
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:48
@@ -6266,6 +6224,12 @@ msgstr "Decoración del lado del cliente"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
+
+#~ msgid "Edit column layout…"
+#~ msgstr "Editar la disposición de las columnas…"
+
+#~ msgid "Sort"
+#~ msgstr "Ordenar"
 
 #~ msgid "Bandsintown app_id"
 #~ msgstr "app_id de Bandsintown"
