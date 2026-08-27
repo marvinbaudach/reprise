@@ -256,7 +256,7 @@ impl OnDeviceSection {
         self.legacy_notice
             .set_revealed(self.legacy_notice_pending.get());
         self.check_button
-            .set_sensitive(can_scan && device.connected && device.session_state.opens_session());
+            .set_sensitive(can_scan && device.session_state.opens_session());
         self.storage_bar.update(&device.page.storage);
         self.storage_legend.set_label(&storage_legend(device));
 
