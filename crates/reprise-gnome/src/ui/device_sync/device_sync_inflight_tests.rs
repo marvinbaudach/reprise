@@ -95,6 +95,50 @@ fn settings_updates_are_rejected_before_persistence_while_syncing() {
 }
 
 #[test]
+fn unrelated_presence_events_do_not_reproject_a_device_mid_transfer() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        disable_auto_start(&conn, "b");
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            0,
+        ));
+        let (started, releases) = backend.gate_copies(&["a"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+        runtime.sync_now("a").unwrap();
+        assert_eq!(started.recv().await.unwrap(), "a");
+
+        let before = runtime
+            .devices()
+            .into_iter()
+            .find(|device| device.id == "a")
+            .unwrap();
+        reprise_core::library::playlist_membership::add_unique_tracks(&conn, 10, &[2]).unwrap();
+
+        backend.set_devices(&[descriptor("a", true)]);
+
+        let after = runtime
+            .devices()
+            .into_iter()
+            .find(|device| device.id == "a")
+            .unwrap();
+        assert_eq!(after.page, before.page);
+        assert_eq!(after.managed_track_count, before.managed_track_count);
+        assert_eq!(after.size_on_device_bytes, before.size_on_device_bytes);
+        assert_eq!(
+            after.verified_managed_track_count,
+            before.verified_managed_track_count
+        );
+
+        runtime.cancel_current("a");
+        releases["a"].send(()).await.unwrap();
+        settle().await;
+    });
+}
+
+#[test]
 fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
     run(async {
         let (_temp, conn) = fixture();

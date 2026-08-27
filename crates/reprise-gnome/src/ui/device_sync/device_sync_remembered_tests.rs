@@ -145,7 +145,10 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
         );
         assert_eq!(remembered.last_sync.unwrap().timestamp(), 1_753_612_496);
         assert_eq!(remembered.size_on_device_bytes, Some(2_400_000_000));
-        assert_eq!(remembered.verified_managed_track_count, Some(1));
+        assert_eq!(
+            remembered.verified_managed_track_count, None,
+            "a remembered byte total cannot prove the saved file identities still match"
+        );
         assert_eq!(remembered.content_row.target_path, "/Music/Anna");
         assert!(
             !reprise_core::device_sync::aggregate_balance(&[remembered.target_reading]).has_work(),
@@ -206,6 +209,99 @@ fn inventory_changed_after_verification_keeps_counts_but_drops_their_date() {
         assert_eq!(remembered.verified_managed_track_count, None);
         assert_eq!(remembered.content_row.item_count, 1);
         assert_eq!(remembered.content_row.size_on_device_bytes, 200);
+    });
+}
+
+#[test]
+fn same_size_inventory_swap_drops_verified_count_trust() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        let record = |track_id| reprise_core::device_sync::DeviceFileRecord {
+            device_serial: "remembered".into(),
+            track_id,
+            source_path: format!("/music/{track_id}.flac"),
+            source_size: 100,
+            source_mtime: 1,
+            device_path: format!("Artist/Album/Track {track_id}.opus"),
+            device_size: 200,
+            profile_fingerprint: "opus-vbr-160-v1".into(),
+            pinned: false,
+        };
+        reprise_core::device_sync::settings::upsert_device_file(&conn, &record(1)).unwrap();
+        reprise_core::device_sync::settings::record_device_verification(
+            &conn,
+            "remembered",
+            1_753_612_496,
+            200,
+        )
+        .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "DELETE FROM device_files WHERE device_serial = 'remembered' AND track_id = 1",
+                [],
+            )
+            .unwrap();
+        reprise_core::device_sync::settings::upsert_device_file(&conn, &record(2)).unwrap();
+
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(remembered.managed_track_count, 1);
+        assert_eq!(remembered.size_on_device_bytes, Some(200));
+        assert_eq!(remembered.verified_managed_track_count, None);
+    });
+}
+
+#[test]
+fn presence_change_notifies_before_idle_device_reprojection() {
+    run(async {
+        let (_temp, conn) = fixture();
+        disable_auto_start(&conn, "a");
+        add_remembered_playlist(&conn, "b");
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            1,
+        ));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let notifications = Rc::new(RefCell::new(Vec::new()));
+        let captured = notifications.clone();
+        let _subscription = runtime.subscribe(Rc::new(move |state| {
+            captured.borrow_mut().push(state);
+        }));
+        notifications.borrow_mut().clear();
+        reprise_core::library::playlists::rename(&conn, 10, "Travel").unwrap();
+
+        backend.set_devices(&[descriptor("a", true)]);
+
+        let notifications = notifications.borrow();
+        assert!(notifications.len() >= 2);
+        let remembered_name = |state: &DeviceSyncState| {
+            state
+                .devices
+                .iter()
+                .find(|device| device.id == "b")
+                .and_then(|device| {
+                    assert_eq!(
+                        device.session_state,
+                        reprise_core::device_sync::DeviceSessionState::Remembered
+                    );
+                    device
+                        .page
+                        .playlists
+                        .iter()
+                        .find(|row| row.source == SelectionSource::Playlist(10))
+                        .and_then(|row| row.name.clone())
+                })
+        };
+        assert_eq!(remembered_name(&notifications[0]).as_deref(), Some("Road"));
+        assert_eq!(
+            remembered_name(notifications.last().unwrap()).as_deref(),
+            Some("Travel")
+        );
     });
 }
 
