@@ -151,25 +151,51 @@ impl DeviceSyncRuntime {
         }
         self.notify();
         let projected_any = !project.is_empty();
+        let mut recomputed_ids = HashMap::new();
         for id in project {
-            if let Err(error) = self.recompute_delta_silent(&id) {
-                tracing::warn!(
-                    device_id = id,
-                    %error,
-                    "could not project Android sync playlists after a device presence change"
-                );
-            }
+            let recomputed = match self.recompute_delta_silent(&id) {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!(
+                        device_id = id,
+                        %error,
+                        "could not project Android sync playlists after a device presence change"
+                    );
+                    false
+                }
+            };
+            recomputed_ids.insert(id, recomputed);
         }
         if projected_any {
             self.notify();
         }
         for id in inspect {
+            // A device that is still mid-cancellation (machine not yet
+            // cleared by finish_sync) is excluded from `project` above, so
+            // it needs its own recompute attempt before inspection.
+            let recomputed = match recomputed_ids.get(&id) {
+                Some(&recomputed) => recomputed,
+                None => match self.recompute_delta_silent(&id) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        tracing::warn!(
+                            device_id = id,
+                            %error,
+                            "could not prepare Android sync playlists before device inspection"
+                        );
+                        false
+                    }
+                },
+            };
             if let Some(device) = self
                 .device_states
                 .borrow_mut()
                 .iter_mut()
                 .find(|device| device.descriptor.id == id)
             {
+                if recomputed {
+                    device.library_dirty = false;
+                }
                 device.sync_phase = PlannedSyncPhase::ComputingDelta;
             }
             self.refresh_contents_on_connect(&id);

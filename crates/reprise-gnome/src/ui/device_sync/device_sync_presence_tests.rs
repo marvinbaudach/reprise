@@ -37,3 +37,34 @@ fn mtp_48_runtime_opens_exactly_one_session_and_never_scans_the_inert_device() {
         );
     });
 }
+
+#[test]
+fn reconnect_recompute_clears_the_library_stale_marker() {
+    run(async {
+        let (_temp, conn) = fixture();
+        disable_auto_start(&conn, "a");
+        let connected = descriptor("a", true);
+        let backend = Rc::new(FakeBackend::new(vec![connected.clone()], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        backend.set_devices(&[]);
+        runtime.mark_all_devices_stale();
+        reprise_core::library::playlists::create(&conn, "Written while disconnected").unwrap();
+
+        backend.set_devices(&[connected]);
+        settle().await;
+        assert!(runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|playlist| playlist.name.as_deref() == Some("Written while disconnected")));
+
+        reprise_core::library::playlists::create(&conn, "Written after reconnect").unwrap();
+        let snapshot = runtime.picker_snapshot_fresh("a").unwrap();
+        assert!(snapshot
+            .rows
+            .iter()
+            .all(|playlist| playlist.name != "Written after reconnect"));
+    });
+}
