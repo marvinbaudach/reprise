@@ -116,8 +116,10 @@ pub(super) fn eject_sensitive(device: &DeviceView) -> bool {
     projection::eject_sensitive(device.page.controls, device.connected, &device.sync_phase)
 }
 
-pub(super) fn counted(count: usize, singular: &'static str, plural: &'static str) -> String {
-    render(&projection::counted(count, singular, plural))
+/// Render the projected selection-summary count. Its plural forms must carry
+/// a `{count}` placeholder or gettext would drop the number on the floor.
+pub(super) fn unique_tracks(count: usize) -> String {
+    render(&projection::unique_tracks(count))
 }
 
 #[cfg(test)]
