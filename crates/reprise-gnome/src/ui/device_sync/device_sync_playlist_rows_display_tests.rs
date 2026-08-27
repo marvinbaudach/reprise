@@ -99,3 +99,104 @@ fn the_selection_summary_still_names_its_count() {
          `{{count}}` placeholder renders as a bare noun: {text}"
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn remembered_rows_verification_and_preview_render_without_live_measurement_claims() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+
+    let mut empty = device();
+    empty.connected = false;
+    empty.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    empty.storage = DeviceStorageSnapshot::default();
+    empty.page.playlists.clear();
+    empty.page.unique_track_count = 0;
+    empty.page.target_bytes = 0;
+    empty.page.changes = SyncChangeSummary::default();
+    empty.page.controls = SyncPageControls {
+        editable: true,
+        can_start: false,
+        can_cancel: false,
+        can_eject: false,
+    };
+    let (surface, _root) = DeviceSyncPage::new(&empty, page_actions(), &no_op_content_actions());
+    assert!(surface.playlist_card.rows.borrow().is_empty());
+    assert!(surface.root_text().contains("0 unique tracks"));
+
+    let verified_at = chrono::Utc::now() - chrono::Duration::days(1);
+    let mut remembered = empty.clone();
+    remembered.last_sync = Some(verified_at);
+    remembered.contents_state =
+        reprise_core::device_sync::device_view::DeviceContentsState::VerifiedEarlier(verified_at);
+    remembered.page.playlists = vec![
+        named_row(SelectionSource::Playlist(2), "Road", false),
+        named_row(SelectionSource::Smart(2), "Recently added", true),
+    ];
+    remembered.page.unique_track_count = 3;
+    remembered.page.target_bytes = 32 * 1_024;
+    remembered.page.changes = SyncChangeSummary {
+        additions: 2,
+        replacements: 1,
+        removals: 7,
+        playlist_writes: 2,
+        transfer_bytes: 32 * 1_024,
+        ..Default::default()
+    };
+    surface.update(&remembered);
+
+    let rows = surface.playlist_card.rows.borrow();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|row| row.button.is_active()));
+    assert!(rows.iter().all(|row| row.button.is_sensitive()));
+    let text = surface.root_text();
+    assert!(text.contains("Road"));
+    assert!(text.contains("Recently added"));
+    assert!(text.contains("3 unique tracks"));
+    assert!(text.contains("2 files to copy"));
+    assert!(text.contains("2 playlist writes"));
+    assert!(text.contains("Files to remove are settled when the device is next inspected."));
+    assert!(!text.contains("7 removed"));
+    assert!(!text.contains("Device contents never verified"));
+    assert!(!surface.on_device.check_button_is_sensitive());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn active_and_inert_controls_keep_their_hardware_boundaries() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+
+    let active = device();
+    let (surface, _root) = DeviceSyncPage::new(&active, page_actions(), &no_op_content_actions());
+    let active_text = surface.root_text();
+    assert!(surface.dashboard.profile.is_sensitive());
+    assert!(surface.dashboard.eject.is_sensitive());
+    assert!(surface.dashboard.dock.primary.is_sensitive());
+
+    let mut inert = active.clone();
+    inert.session_state = reprise_core::device_sync::DeviceSessionState::Inert {
+        active_device_name: "Other phone".into(),
+    };
+    inert.page.controls = SyncPageControls {
+        editable: true,
+        can_start: false,
+        can_cancel: false,
+        can_eject: false,
+    };
+    surface.update(&inert);
+    assert!(surface.dashboard.profile.is_sensitive());
+    assert!(surface
+        .playlist_card
+        .rows
+        .borrow()
+        .iter()
+        .all(|row| row.button.is_sensitive()));
+    assert!(!surface.dashboard.eject.is_sensitive());
+    assert!(!surface.dashboard.dock.primary.is_sensitive());
+
+    surface.update(&active);
+    assert_eq!(surface.root_text(), active_text);
+    assert!(surface.dashboard.eject.is_sensitive());
+    assert!(surface.dashboard.dock.primary.is_sensitive());
+}

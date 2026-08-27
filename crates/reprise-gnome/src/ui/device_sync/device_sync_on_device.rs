@@ -239,6 +239,11 @@ impl OnDeviceSection {
         &self.root
     }
 
+    #[cfg(test)]
+    pub(super) fn check_button_is_sensitive(&self) -> bool {
+        self.check_button.is_sensitive()
+    }
+
     pub(super) fn update(&self, device: &DeviceView) {
         self.updating.set(true);
         let (verification, _detail, can_scan) =
@@ -250,7 +255,8 @@ impl OnDeviceSection {
             ));
         self.legacy_notice
             .set_revealed(self.legacy_notice_pending.get());
-        self.check_button.set_sensitive(can_scan);
+        self.check_button
+            .set_sensitive(can_scan && device.connected && device.session_state.opens_session());
         self.storage_bar.update(&device.page.storage);
         self.storage_legend.set_label(&storage_legend(device));
 

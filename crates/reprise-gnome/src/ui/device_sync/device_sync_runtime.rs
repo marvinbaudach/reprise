@@ -186,6 +186,7 @@ impl DeviceState {
                 self.scanning,
                 self.scan_error.as_deref(),
                 self.ever_inspected,
+                self.last_sync,
             ),
             content_row,
             target_reading,

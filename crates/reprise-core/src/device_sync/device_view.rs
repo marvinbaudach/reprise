@@ -28,6 +28,8 @@
 //! silently implied by internal scan bookkeeping and never shown to the
 //! user at all.
 
+use chrono::{DateTime, Utc};
+
 use super::mirror::ManagedDeviceFile;
 use super::music_diff::{MusicDiff, MusicReading};
 use super::storage::DeviceStorageSnapshot;
@@ -42,36 +44,41 @@ use super::targets::SyncTarget;
 /// ([`DeviceContentsState::can_scan`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeviceContentsState {
-    /// No successful inspection has happened yet this session.
+    /// No successful inspection has ever been recorded.
     NeverVerified,
     /// An inspection is in flight right now.
     Verifying,
     /// The most recent inspection succeeded.
     Verified,
+    /// A prior session verified the saved inventory at this time. This is
+    /// history, not a current measurement and not permission to scan.
+    VerifiedEarlier(DateTime<Utc>),
     /// The most recent inspection failed; the reason is worth surfacing
     /// next to the "Scan device" retry action.
     Failed(String),
 }
 
 impl DeviceContentsState {
-    /// Whether the "Scan device" action should be enabled. Only false while
-    /// a scan is already running — starting a second one concurrently would
-    /// race the first for the same MTP handles.
+    /// Whether the "Scan device" action should be enabled. A scan already in
+    /// flight cannot be duplicated, and remembered history cannot be checked
+    /// until a live session exists.
     #[must_use]
     pub const fn can_scan(&self) -> bool {
-        !matches!(self, Self::Verifying)
+        !matches!(self, Self::Verifying | Self::VerifiedEarlier(_))
     }
 }
 
 /// `MTP-26`: projects [`DeviceContentsState`] from the runtime's existing
 /// scan bookkeeping (`scanning`, `scan_error`) plus whether an inspection
-/// has ever completed successfully this session (`ever_inspected`) — no new
-/// scan mechanism, this only makes the existing one's outcome legible.
+/// has ever completed successfully this session (`ever_inspected`) and the
+/// last durable verification time — no new scan mechanism, this only makes
+/// the existing one's outcome legible.
 #[must_use]
 pub fn project_contents_state(
     scanning: bool,
     scan_error: Option<&str>,
     ever_inspected: bool,
+    last_verified_at: Option<DateTime<Utc>>,
 ) -> DeviceContentsState {
     if scanning {
         return DeviceContentsState::Verifying;
@@ -80,10 +87,12 @@ pub fn project_contents_state(
         return DeviceContentsState::Failed(error.to_string());
     }
     if ever_inspected {
-        DeviceContentsState::Verified
-    } else {
-        DeviceContentsState::NeverVerified
+        return DeviceContentsState::Verified;
     }
+    last_verified_at.map_or(
+        DeviceContentsState::NeverVerified,
+        DeviceContentsState::VerifiedEarlier,
+    )
 }
 
 /// `MTP-27`: sums one category's on-device inventory into a single byte
@@ -210,7 +219,7 @@ mod tests {
     #[test]
     fn mtp_26_never_verified_before_any_successful_inspection() {
         assert_eq!(
-            project_contents_state(false, None, false),
+            project_contents_state(false, None, false, None),
             DeviceContentsState::NeverVerified
         );
     }
@@ -218,7 +227,7 @@ mod tests {
     #[test]
     fn mtp_26_verifying_takes_priority_over_a_stale_error_or_prior_success() {
         assert_eq!(
-            project_contents_state(true, Some("stale error"), true),
+            project_contents_state(true, Some("stale error"), true, None),
             DeviceContentsState::Verifying
         );
         assert!(!DeviceContentsState::Verifying.can_scan());
@@ -226,7 +235,8 @@ mod tests {
 
     #[test]
     fn mtp_26_a_failed_scan_is_distinct_from_never_having_scanned() {
-        let failed = project_contents_state(false, Some("MTP timeout"), false);
+        let verified_at = chrono::Utc::now() - chrono::Duration::days(1);
+        let failed = project_contents_state(false, Some("MTP timeout"), false, Some(verified_at));
         assert_eq!(failed, DeviceContentsState::Failed("MTP timeout".into()));
         assert!(failed.can_scan(), "a failed scan must still offer retry");
         assert_ne!(failed, DeviceContentsState::NeverVerified);
@@ -235,9 +245,19 @@ mod tests {
     #[test]
     fn mtp_26_verified_only_after_a_real_successful_inspection() {
         assert_eq!(
-            project_contents_state(false, None, true),
+            project_contents_state(false, None, true, None),
             DeviceContentsState::Verified
         );
+    }
+
+    #[test]
+    fn remembered_verification_is_not_a_current_measurement_or_a_scan_action() {
+        let verified_at = chrono::Utc::now() - chrono::Duration::days(1);
+
+        let state = project_contents_state(false, None, false, Some(verified_at));
+
+        assert_eq!(state, DeviceContentsState::VerifiedEarlier(verified_at));
+        assert!(!state.can_scan());
     }
 
     #[test]

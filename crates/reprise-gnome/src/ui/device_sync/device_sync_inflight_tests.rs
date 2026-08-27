@@ -115,6 +115,11 @@ fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
         gtk4::glib::timeout_future(Duration::from_millis(30)).await;
         assert!(!runtime.devices()[0].connected);
         assert!(runtime.devices()[0].last_sync.is_none());
+        assert_eq!(
+            runtime.devices()[0].storage,
+            DeviceStorageSnapshot::default(),
+            "unplug must clear measurements without losing the resumable run"
+        );
 
         backend.set_devices(&[descriptor("a", true)]);
         settle().await;

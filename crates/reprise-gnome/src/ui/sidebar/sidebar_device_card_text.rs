@@ -420,6 +420,16 @@ mod tests {
             !remembered_sentence(Some(last_verified), now()).contains(&tooltip_text(&copy_balance)),
             "an absent card must never present a stale copy/remove balance"
         );
+
+        let mut remembered = view(PlannedSyncPhase::Idle);
+        remembered.connected = false;
+        remembered.session_state = DeviceSessionState::Remembered;
+        remembered.last_sync = Some(last_verified);
+        remembered.contents_state = DeviceContentsState::VerifiedEarlier(last_verified);
+        assert_eq!(
+            card_subtitle(&remembered, now()),
+            "Not connected · synced 3 days ago"
+        );
     }
 
     #[test]

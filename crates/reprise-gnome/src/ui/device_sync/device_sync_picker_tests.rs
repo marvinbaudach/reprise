@@ -39,6 +39,17 @@ fn unplugged_picker_lists_saved_sources_and_persists_a_toggle() {
             .rows
             .iter()
             .any(|row| row.source == SelectionSource::Smart(2) && row.selected));
+        let selected = first
+            .rows
+            .iter()
+            .filter(|row| row.selected)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selected.len(),
+            2,
+            "the offline footer must not claim 0 selected"
+        );
+        assert!(selected.iter().map(|row| row.track_count).sum::<usize>() > 0);
 
         runtime
             .save_picker(
