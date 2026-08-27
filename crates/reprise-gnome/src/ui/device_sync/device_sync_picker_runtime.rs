@@ -33,7 +33,17 @@ pub(crate) struct PickerSave {
 }
 
 impl DeviceSyncRuntime {
+    pub(crate) fn picker_snapshot_fresh(
+        self: &Rc<Self>,
+        device_id: &str,
+    ) -> Result<PickerSnapshot, String> {
+        self.recompute_if_stale(device_id)?;
+        self.picker_snapshot(device_id)
+    }
+
     pub(crate) fn picker_snapshot(&self, device_id: &str) -> Result<PickerSnapshot, String> {
+        // This cached read is intentional: picker_snapshot_fresh is the only
+        // entry point and refreshes a stale device before delegating here.
         let device = self
             .device_states
             .borrow()
