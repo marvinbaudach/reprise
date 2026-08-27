@@ -85,10 +85,31 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
     }
 
+    /**
+     * Replaces an earlier rule that no neighbour was to be fetched until it
+     * became the visible destination. Opening the library fills rows for the
+     * tab it opens on alone — `LibrarySession.browseState` returns the rest
+     * `withoutRows()` — and a swipe draws the next page before it settles, so
+     * under that rule the first swipe onto a tab showed an empty list and
+     * filled it on landing. The window is a bounded 200 rows either way; what
+     * the old rule saved was one such query, what it cost was every first
+     * swipe. The wait below is what remains of it: the fetch is still not
+     * allowed to compete with the opening frames or with a gesture.
+     */
     @Test
-    fun aComposedNeighbourRequestsNoWindowUntilItBecomesTheVisibleDestination() {
+    fun aNeighbourIsFetchedWhileTheScreenIsStillSoNoSwipeLandsOnAnEmptyList() {
         compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
         assertEquals(emptyList<LibraryWindowRange>(), application.artistWindowRequests)
+
+        // Driven by waiting on the effect's own outcome rather than by pushing
+        // the clock: the prefetch suspends on a plain `delay`, which the Compose
+        // frame clock does not drive.
+        compose.waitUntil(timeoutMillis = 10_000) {
+            application.artistWindowRequests.isNotEmpty()
+        }
+
+        // Fetched before anyone swiped, and fetched exactly once.
+        assertEquals(listOf(firstLibraryWindow()), application.artistWindowRequests)
 
         compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
 

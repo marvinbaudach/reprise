@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -49,7 +50,28 @@ import kotlinx.coroutines.withContext
  * asked for. The id says whether the retained row still describes the track
  * the session reports as playing, so actions can be disabled during a change.
  */
+/**
+ * How long the screen has to have been still before a tab nobody is looking at
+ * is fetched. Long enough for the opening composition to be done with the main
+ * thread, short enough to be over before a first swipe can plausibly land.
+ */
+internal const val NEIGHBOUR_PREFETCH_IDLE_MS = 400L
+
 private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
+
+/**
+ * One tab's freshly fetched windows, carried out of the IO dispatcher.
+ *
+ * A tab fills a different set of windows than its neighbours, and a window it
+ * does not fill is `null` rather than empty: an empty window is a real answer
+ * — "no artists match this" — and assigning one where nothing was asked for
+ * would blank a list that had rows.
+ */
+private data class LoadedTab(
+    val titles: LibraryWindow<LibraryTrack>? = null,
+    val artists: LibraryWindow<LibraryArtist>? = null,
+    val artistSearchAlbums: LibraryWindow<LibraryAlbum>? = null,
+)
 
 internal enum class BrowseTab(val label: String, val symbol: String) {
     TITLES("Titles", "library_music"),
@@ -325,31 +347,64 @@ internal fun BrowseScreen(
         }
     }
 
-    LaunchedEffect(selectedTab, state, loadedTabs, searchText) {
-        if (selectedTab == BrowseTab.QUEUE || selectedTab in loadedTabs) return@LaunchedEffect
+    // The tab on screen first, then whatever is still unfetched behind it.
+    //
+    // Opening the library fills rows for the tab it opens on and no other:
+    // `LibrarySession.browseState` hands the rest back through `withoutRows()`,
+    // carrying a total but no rows. A swipe draws the next page as soon as it
+    // begins and only settles afterwards, so a tab whose rows are still absent
+    // is drawn *empty* for the length of the gesture and fills once it lands —
+    // "0 of 65 artists loaded", then 65. Fetching the tab next door while the
+    // pager stands still closes that gap before anyone swipes into it.
+    //
+    // Keyed on `loadedTabs`, so this re-enters after each fetch and works
+    // through what is left one tab at a time rather than firing them at once.
+    // A prefetch stays silent: it must not clear an error the visible tab is
+    // still showing, nor raise one for a tab nobody has asked for. Left out of
+    // `loadedTabs` on failure, it is simply fetched again — with its error
+    // surfaced — when that tab is actually selected.
+    val pendingTab = (listOf(selectedTab) + BrowseTab.entries)
+        .firstOrNull { it != BrowseTab.QUEUE && it !in loadedTabs }
+    // `selectedTab` is a key as well as a component of `pendingTab`: selecting a
+    // tab whose prefetch is already waiting out the idle period leaves
+    // `pendingTab` unchanged, and without the restart the wait would run on
+    // under a tab someone is looking at.
+    LaunchedEffect(pendingTab, selectedTab, state, searchText) {
+        if (pendingTab == null) return@LaunchedEffect
+        val visible = pendingTab == selectedTab
+        if (!visible) {
+            // A prefetch exists to be invisible, so it waits for a moment when
+            // nothing is on the line: not the opening frames, where it would
+            // compete with the first composition, and not a gesture, where a
+            // query landing mid-swipe trades an empty list for a dropped frame.
+            delay(NEIGHBOUR_PREFETCH_IDLE_MS)
+            snapshotFlow { pagerState.isScrollInProgress }.first { !it }
+        }
         runCatching {
-            // Move blocking JNI calls to IO dispatcher to keep the main thread free for rendering
+            // The rows come off a blocking JNI + SQLite call; only the handover
+            // to Compose belongs on the main thread.
             withContext(Dispatchers.IO) {
-                when (selectedTab) {
-                    BrowseTab.TITLES -> searchTitles(searchText, firstLibraryWindow())
-                        .also { visibleTitles = it }
-                    BrowseTab.ARTISTS -> {
-                        visibleArtists = artistsFor(searchText, firstLibraryWindow())
-                        if (searchText.isNotBlank()) {
-                            visibleArtistSearchAlbums = searchAlbums(
-                                searchText,
-                                firstLibraryWindow(),
-                            )
-                        }
-                    }
-                    BrowseTab.QUEUE -> Unit
+                when (pendingTab) {
+                    BrowseTab.TITLES -> LoadedTab(titles = searchTitles(searchText, firstLibraryWindow()))
+                    BrowseTab.ARTISTS -> LoadedTab(
+                        artists = artistsFor(searchText, firstLibraryWindow()),
+                        artistSearchAlbums = if (searchText.isNotBlank()) {
+                            searchAlbums(searchText, firstLibraryWindow())
+                        } else {
+                            null
+                        },
+                    )
+                    BrowseTab.QUEUE -> LoadedTab()
                 }
             }
-        }.onSuccess {
-            loadedTabs = loadedTabs + selectedTab
-            browseError = null
+        }.onSuccess { loaded ->
+            loaded.titles?.let { visibleTitles = it }
+            loaded.artists?.let { visibleArtists = it }
+            loaded.artistSearchAlbums?.let { visibleArtistSearchAlbums = it }
+            loadedTabs = loadedTabs + pendingTab
+            if (visible) browseError = null
         }.onFailure { error ->
-            browseError = error.browseDetail("load ${selectedTab.label.lowercase()}")
+            if (visible) browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
         }
     }
 
