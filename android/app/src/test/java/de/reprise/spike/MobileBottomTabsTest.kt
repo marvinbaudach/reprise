@@ -32,7 +32,7 @@ import uniffi.reprise_android_ffi.AndroidRepeatMode
 @Config(
     sdk = [36],
     qualifiers = "w412dp-h916dp-port",
-    application = ConfigurationTestApplication::class,
+    application = MobileBottomTabsApplication::class,
 )
 class MobileBottomTabsTest {
     @get:Rule
@@ -103,7 +103,6 @@ class MobileBottomTabsTest {
     @Test
     fun aNeighbourIsFetchedWhileTheScreenIsStillSoNoSwipeLandsOnAnEmptyList() {
         compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
-        assertEquals(emptyList<LibraryWindowRange>(), application.artistWindowRequests)
 
         // Driven by waiting on the effect's own outcome rather than by pushing
         // the clock: the prefetch suspends on a plain `delay`, which the Compose
@@ -118,6 +117,7 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
 
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
+        compose.onNodeWithText("Artist 1").assertIsDisplayed()
         assertEquals(listOf(firstLibraryWindow()), application.artistWindowRequests)
     }
 
@@ -135,6 +135,18 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
         compose.onNodeWithTag("library-destination-TITLES").assertIsSelected()
+    }
+}
+
+internal class MobileBottomTabsApplication : ConfigurationTestApplication() {
+    override fun mainActivitySurface(): MainActivitySurfaceDependencies {
+        val dependencies = super.mainActivitySurface()
+        val browse = dependencies.initialState as LibraryScreenState.Browse
+        return dependencies.copy(
+            initialState = browse.copy(
+                artists = browse.artists.copy(rows = emptyList(), hasMore = false),
+            ),
+        )
     }
 }
 
