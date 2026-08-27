@@ -354,11 +354,6 @@ pub(in crate::ui) fn open(
                 super::device_sync_rename::prompt(button, &runtime, &device_id);
             });
     }
-    if let Some(previous) = content_stack.child_by_name("device-sync") {
-        content_stack.remove(&previous);
-    }
-    content_stack.add_named(&root, Some("device-sync"));
-    window_title.set_title(&device.name);
     track_open_page(&root, device_id);
     {
         let runtime = Rc::downgrade(runtime);
@@ -376,6 +371,11 @@ pub(in crate::ui) fn open(
             }
         });
     }
+    if let Some(previous) = content_stack.child_by_name("device-sync") {
+        content_stack.remove(&previous);
+    }
+    content_stack.add_named(&root, Some("device-sync"));
+    window_title.set_title(&device.name);
 
     let subscription = runtime.subscribe(page_state_callback(
         Rc::downgrade(&surface),
