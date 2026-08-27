@@ -554,3 +554,6 @@ fn full_page_warning_copy_is_grammatical_and_path_free() {
 
 #[path = "device_sync_page_display_tests.rs"]
 mod display_tests;
+
+#[path = "device_sync_playlist_rows_display_tests.rs"]
+mod playlist_rows_display_tests;

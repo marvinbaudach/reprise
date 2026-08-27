@@ -162,6 +162,10 @@ pub fn playlist_subtitle(row: &SyncPlaylistRow, last_sync: VerifiedSyncTime) -> 
     parts
 }
 
+pub fn unique_tracks(count: usize) -> Message {
+    counted(count, UNIQUE_TRACKS.0, UNIQUE_TRACKS.1)
+}
+
 pub fn device_last_sync_copy(
     phase: &PlannedSyncPhase,
     last_sync: Option<String>,

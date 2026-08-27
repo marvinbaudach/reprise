@@ -39,7 +39,7 @@ shared_view=crates/reprise-view/src
 # The artist portrait leading the concert row (#600) added an eighth entry:
 # ConcertColumn::Cover, its name arm, its leading pin and the two layout
 # contracts that hold the default order — six production lines.
-view_floor=2125
+view_floor=2128
 
 echo "== Frontend thinness =="
 
