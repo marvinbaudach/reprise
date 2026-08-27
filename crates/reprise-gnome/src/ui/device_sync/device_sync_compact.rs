@@ -170,8 +170,10 @@ impl DeviceSyncRuntime {
             .map(|file| file.device_size)
             .fold(0_u64, u64::saturating_add);
         let has_inventory_history = last_sync.is_some() || !files.is_empty();
-        let inventory_matches_verification =
-            last_sync.is_some() && last_verified_size_bytes == Some(inventory_size_bytes);
+        let inventory_matches_verification = last_sync.is_some()
+            && last_verified_size_bytes == Some(inventory_size_bytes)
+            && managed_files_scanned
+            && inventory_identities_match(&files, &managed_files);
         let playlist_inventory =
             load_device_playlists(conn, device_id).map_err(|error| error.to_string())?;
         let mut playlists =
@@ -239,6 +241,26 @@ impl DeviceSyncRuntime {
             .map(|device| device.settings.clone())
             .ok_or_else(|| "device is not connected".to_string())
     }
+}
+
+fn inventory_identities_match(
+    files: &[reprise_core::device_sync::DeviceFileRecord],
+    managed_files: &[ManagedDeviceFile],
+) -> bool {
+    if files.len() != managed_files.len() {
+        return false;
+    }
+    let mut saved = files
+        .iter()
+        .map(|file| (file.device_path.as_str(), file.device_size))
+        .collect::<Vec<_>>();
+    saved.sort_unstable();
+    let mut inspected = managed_files
+        .iter()
+        .map(|file| (file.relative_path.as_str(), file.size_bytes))
+        .collect::<Vec<_>>();
+    inspected.sort_unstable();
+    saved == inspected
 }
 
 fn desktop_analysis_sizes(
