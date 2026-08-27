@@ -199,11 +199,14 @@ impl DeviceSyncRuntime {
             .iter_mut()
             .find(|device| device.descriptor.id == device_id)
         {
+            let run_owns_plan = device.machine.is_some();
             device.managed_track_count = managed_track_count;
-            device.mirror_plan = projection.plan;
+            if !run_owns_plan {
+                device.mirror_plan = projection.plan;
+                device.sync_phase = PlannedSyncPhase::Idle;
+            }
             device.keep_smart_playlists_updated = keep_smart_playlists_updated;
             device.page = projection.page;
-            device.sync_phase = PlannedSyncPhase::Idle;
         }
         Ok(())
     }

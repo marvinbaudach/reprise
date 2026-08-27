@@ -1,5 +1,86 @@
 use super::*;
 
+fn add_remembered_playlist(conn: &Rc<Db>, device_id: &str) {
+    crate::test_db::connection(conn.as_ref())
+        .execute(
+            "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
+            [],
+        )
+        .unwrap();
+    crate::test_db::connection(conn.as_ref())
+        .execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, 1, 0)",
+            [],
+        )
+        .unwrap();
+    let mut settings = reprise_core::device_sync::settings::load_or_create_settings(
+        conn,
+        device_id,
+        "Remembered phone",
+    )
+    .unwrap();
+    settings.selection = DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]);
+    settings.sync_automatically = false;
+    reprise_core::device_sync::settings::save_settings(conn, &settings).unwrap();
+}
+
+#[test]
+fn remembered_device_projects_saved_playlists_on_startup_without_storage_measurements() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        let backend = Rc::new(FakeBackend::new(Vec::new(), 1));
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(backend.state.inspection_roots.borrow().len(), 0);
+        assert_eq!(remembered.storage, DeviceStorageSnapshot::default());
+        assert_eq!(
+            remembered.page.storage.current.knowledge,
+            reprise_core::device_sync::StorageKnowledge::CapacityUnknown
+        );
+        assert!(remembered.page.blockers.is_empty());
+        let road = remembered
+            .page
+            .playlists
+            .iter()
+            .find(|row| row.name.as_deref() == Some("Road"))
+            .unwrap();
+        assert!(road.selected);
+    });
+}
+
+#[test]
+fn unplugging_discards_live_storage_and_scan_inventory_but_keeps_library_projection() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "a");
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(vec![ManagedDeviceFile {
+            relative_path: "Artist/Album/Track.opus".into(),
+            size_bytes: 123,
+        }]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let connected = runtime.devices().remove(0);
+        assert_eq!(connected.storage.total_bytes, Some(2_000_000));
+        assert_eq!(connected.content_row.item_count, 1);
+
+        backend.set_devices(&[]);
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(remembered.storage, DeviceStorageSnapshot::default());
+        assert_eq!(remembered.content_row.item_count, 0);
+        assert!(remembered
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.name.as_deref() == Some("Road") && row.selected));
+    });
+}
+
 #[test]
 fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local_memory_actions() {
     run(async {

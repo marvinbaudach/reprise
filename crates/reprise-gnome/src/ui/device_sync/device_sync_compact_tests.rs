@@ -274,6 +274,38 @@ fn library_playlist_deletion_refreshes_the_connected_device_projection() {
 }
 
 #[test]
+fn library_playlist_deletion_prunes_an_unplugged_devices_saved_selection() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_playlist(&conn, 10, "Road", &[1, 2]);
+        save_sources(&conn, "remembered", vec![SelectionSource::Playlist(10)]);
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+
+        assert!(runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+        assert!(reprise_core::library::playlists::delete(&conn, 10, "Road").unwrap());
+
+        runtime.library_playlists_changed();
+
+        assert!(!runtime.devices()[0]
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.source == SelectionSource::Playlist(10)));
+        assert_eq!(
+            load_or_create_settings(&conn, "remembered", "Remembered phone")
+                .unwrap()
+                .selection,
+            DeviceSelection::Sources(Vec::new())
+        );
+    });
+}
+
+#[test]
 fn every_library_playlist_mutation_reprojects_connected_device_rows() {
     run(async {
         let (_temp, conn) = fixture();

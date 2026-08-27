@@ -217,7 +217,7 @@ impl DeviceSyncRuntime {
         )
     }
 
-    /// Reprojects library playlists for every connected idle device.
+    /// Reprojects library playlists for every idle device.
     ///
     /// Playlist CRUD and membership changes are local database work, so this
     /// deliberately uses the non-toasting projection path and not a device
@@ -240,7 +240,7 @@ impl DeviceSyncRuntime {
             .device_states
             .borrow()
             .iter()
-            .filter(|device| device.connected && !device.is_busy())
+            .filter(|device| !device.is_busy())
             .map(|device| {
                 (
                     device.descriptor.id.clone(),
@@ -272,7 +272,7 @@ impl DeviceSyncRuntime {
             if selection_changed {
                 let mut device_states = self.device_states.borrow_mut();
                 let Some(device) = device_states.iter_mut().find(|device| {
-                    device.descriptor.id == device_id && device.connected && !device.is_busy()
+                    device.descriptor.id == device_id && !device.is_busy()
                 }) else {
                     continue;
                 };

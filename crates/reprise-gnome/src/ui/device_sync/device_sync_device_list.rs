@@ -55,7 +55,8 @@ impl DeviceSyncRuntime {
             .into_iter()
             .map(|descriptor| (descriptor.id.clone(), descriptor))
             .collect::<HashMap<_, _>>();
-        let mut refresh = Vec::new();
+        let mut inspect = Vec::new();
+        let project;
         {
             let mut states = self.device_states.borrow_mut();
             for state in states.iter_mut() {
@@ -66,6 +67,11 @@ impl DeviceSyncRuntime {
                 state.session_state = DeviceSessionState::Remembered;
                 state.scanning = false;
                 state.scan_generation = state.scan_generation.saturating_add(1);
+                state.scan_error = None;
+                state.ever_inspected = false;
+                state.storage = DeviceStorageSnapshot::default();
+                state.managed_files.clear();
+                state.verified_managed_track_count = None;
                 if state.machine.is_some() {
                     state.resume_initiator = state
                         .descriptor
@@ -104,7 +110,7 @@ impl DeviceSyncRuntime {
                     state.connected = true;
                     state.session_state = projected.state;
                     if state.session_state.opens_session() && (!was_connected || !owned_session) {
-                        refresh.push(id.clone());
+                        inspect.push(id.clone());
                     }
                 } else {
                     let (settings, target) = memory::load_device_memory(&self.conn, &descriptor)
@@ -127,7 +133,7 @@ impl DeviceSyncRuntime {
                         projected.state,
                     ));
                     if opens_session {
-                        refresh.push(id);
+                        inspect.push(id);
                     }
                 }
             }
@@ -137,16 +143,22 @@ impl DeviceSyncRuntime {
                     .copied()
                     .unwrap_or(usize::MAX)
             });
+            project = states
+                .iter()
+                .map(|state| state.descriptor.id.clone())
+                .collect::<Vec<_>>();
         }
-        self.notify();
-        for id in refresh {
+        for id in project {
             if let Err(error) = self.recompute_delta_silent(&id) {
                 tracing::warn!(
                     device_id = id,
                     %error,
-                    "could not prepare Android sync playlists before device inspection"
+                    "could not project Android sync playlists after a device presence change"
                 );
             }
+        }
+        self.notify();
+        for id in inspect {
             if let Some(device) = self
                 .device_states
                 .borrow_mut()
