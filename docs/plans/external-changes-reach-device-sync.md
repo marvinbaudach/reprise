@@ -2,7 +2,7 @@
 slug: external-changes-reach-device-sync
 worktree: /home/marvin/Projects/reprise-external-changes-reach-device-sync
 branch: feature/external-changes-reach-device-sync
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-26
 ---
