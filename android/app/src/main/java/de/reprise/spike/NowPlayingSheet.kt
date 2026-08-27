@@ -158,19 +158,23 @@ internal fun NowPlayingSheet(
                 onTap = { position ->
                     if (!coverBounds.value.contains(position)) return@nowPlayingGestures
                     val showSpectrum = !visualizerVisible.value
-                    runCatching {
-                        visualizerPreference.setVisualizer(
-                            if (showSpectrum) {
-                                AndroidVisualizerChoice.SPECTRUM
-                            } else {
-                                AndroidVisualizerChoice.COVER
-                            },
-                        )
-                    }.onSuccess {
-                        visualizerVisible.value = showSpectrum
-                    }.onFailure { error ->
-                        Log.e(NOW_PLAYING_VISUALIZER_TAG, "Could not save the visualizer choice", error)
-                    }
+                    visualizerPreference.setVisualizer(
+                        choice = if (showSpectrum) {
+                            AndroidVisualizerChoice.SPECTRUM
+                        } else {
+                            AndroidVisualizerChoice.COVER
+                        },
+                        report = { outcome ->
+                            outcome.onSuccess { visualizerVisible.value = showSpectrum }
+                                .onFailure { error ->
+                                    Log.e(
+                                        NOW_PLAYING_VISUALIZER_TAG,
+                                        "Could not save the visualizer choice",
+                                        error,
+                                    )
+                                }
+                        },
+                    )
                 },
             )
             .graphicsLayer {

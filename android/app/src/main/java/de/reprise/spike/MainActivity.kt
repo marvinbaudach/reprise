@@ -134,7 +134,10 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val analysis by analysisDelegate
-    private val visualizerPreference = AndroidVisualizerPreference { library }
+    private val visualizerPreference = AndroidVisualizerPreference(
+        libraryWrites = libraryWrites,
+        library = { library },
+    )
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -286,25 +289,40 @@ class MainActivity : ComponentActivity() {
                                 setGaplessEnabled = surface.setGaplessEnabled,
                                 onlineSourcesEnabled = onlineSourcesEnabled,
                                 setOnlineSourcesEnabled = { enabled ->
-                                    surface.setOnlineSourcesEnabled(enabled)
-                                        .onSuccess { onlineSourcesEnabled = enabled }
-                                        .onFailure { error ->
-                                            Log.e(
-                                                TAG,
-                                                "Could not change online source settings",
-                                                error,
-                                            )
-                                        }
+                                    libraryWrites.submitAnswered(
+                                        work = {
+                                            surface.setOnlineSourcesEnabled(enabled).getOrThrow()
+                                        },
+                                        report = { outcome ->
+                                            outcome.onSuccess {
+                                                onlineSourcesEnabled = enabled
+                                                if (enabled) {
+                                                    surfaceState.startArtistPhotoBackfill()
+                                                } else {
+                                                    surfaceState.cancelArtistPhotoBackfill()
+                                                }
+                                            }.onFailure { error ->
+                                                Log.e(
+                                                    TAG,
+                                                    "Could not change online source settings",
+                                                    error,
+                                                )
+                                            }
+                                        },
+                                    )
                                 },
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
-                                    runCatching {
-                                        surface.selectTheme(themeSelection, palette)
-                                    }.onSuccess { selection ->
-                                        themeSelection = selection
-                                    }.onFailure { error ->
-                                        Log.e(TAG, "Could not change theme", error)
-                                    }
+                                    val currentSelection = themeSelection
+                                    libraryWrites.submitAnswered(
+                                        work = { surface.selectTheme(currentSelection, palette) },
+                                        report = { outcome ->
+                                            outcome.onSuccess { themeSelection = it }
+                                                .onFailure { error ->
+                                                    Log.e(TAG, "Could not change theme", error)
+                                                }
+                                        },
+                                    )
                                 },
                             )
                         }
@@ -389,13 +407,6 @@ class MainActivity : ComponentActivity() {
             },
             setOnlineSourcesEnabled = { enabled ->
                 runCatching { library.setOnlineSourcesEnabled(enabled) }
-                    .onSuccess {
-                        if (enabled) {
-                            surfaceState.startArtistPhotoBackfill()
-                        } else {
-                            surfaceState.cancelArtistPhotoBackfill()
-                        }
-                    }
             },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
@@ -411,8 +422,12 @@ class MainActivity : ComponentActivity() {
 
     private fun rememberBrowseTab(tab: BrowseTab) {
         val destination = tab.toLibraryDestinationChoice() ?: return
-        runCatching { library.setLibraryDestination(destination) }
-            .onFailure { error -> Log.e(TAG, "Could not remember the library destination", error) }
+        libraryWrites.submitUnanswered(
+            work = { library.setLibraryDestination(destination) },
+            onFailure = { error ->
+                Log.e(TAG, "Could not remember the library destination", error)
+            },
+        )
     }
 
     private fun restoreTheme(): MobileThemeSelection = runCatching {

@@ -362,7 +362,10 @@ private class RecordingVisualizerPreference(
         return stored
     }
 
-    override fun setVisualizer(choice: AndroidVisualizerChoice) {
+    override fun setVisualizer(
+        choice: AndroidVisualizerChoice,
+        report: (Result<Unit>) -> Unit,
+    ) {
         writes += choice
         stored = when (choice) {
             AndroidVisualizerChoice.COVER -> AndroidStoredVisualizer.Cover
@@ -370,6 +373,7 @@ private class RecordingVisualizerPreference(
             AndroidVisualizerChoice.PREVIEW_BAND -> AndroidStoredVisualizer.PreviewBand
             AndroidVisualizerChoice.AMBIENT -> AndroidStoredVisualizer.Ambient
         }
+        report(Result.success(Unit))
     }
 }
 
