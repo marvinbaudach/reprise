@@ -684,9 +684,10 @@ fn mtp_48_active_device_offers_cancel_while_the_inert_device_offers_no_sync_acti
         assert!(!a.page.controls.editable);
         assert!(!a.page.controls.can_start);
         assert!(a.page.controls.can_cancel);
-        assert!(!b.page.controls.editable);
+        assert!(b.page.controls.editable);
         assert!(!b.page.controls.can_start);
         assert!(!b.page.controls.can_cancel);
+        assert!(!b.page.controls.can_eject);
 
         runtime.cancel_current("a");
         releases["a"].send(()).await.unwrap();
