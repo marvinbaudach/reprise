@@ -418,12 +418,6 @@ const STORAGE_LEGEND: &str =
 const STORAGE_INSUFFICIENT: &str = N_!("Not enough space · {free} free · {shortfall} more needed");
 const NEXT_CONNECTION_PREVIEW: &str =
     N_!("Next connection: {copies} · {replacements} · {playlists} · {size} to transfer");
-const FILES_TO_COPY: (&str, &str) = (N_!("{count} file to copy"), N_!("{count} files to copy"));
-const REPLACEMENTS: (&str, &str) = (N_!("{count} replacement"), N_!("{count} replacements"));
-const PLAYLIST_WRITES: (&str, &str) = (
-    N_!("{count} playlist write"),
-    N_!("{count} playlist writes"),
-);
 const OFFLINE_REMOVAL_NOTE: &str =
     N_!("Files to remove are settled when the device is next inspected.");
 
@@ -451,20 +445,20 @@ pub fn offline_change_preview(
     transfer_bytes: u64,
 ) -> String {
     let copies = plural(
-        FILES_TO_COPY.0,
-        FILES_TO_COPY.1,
+        "{count} file to copy",
+        "{count} files to copy",
         additions,
         &[("count", &additions.to_string())],
     );
     let replacements = plural(
-        REPLACEMENTS.0,
-        REPLACEMENTS.1,
+        "{count} replacement",
+        "{count} replacements",
         replacements,
         &[("count", &replacements.to_string())],
     );
     let playlist_writes = plural(
-        PLAYLIST_WRITES.0,
-        PLAYLIST_WRITES.1,
+        "{count} playlist write",
+        "{count} playlist writes",
         playlist_writes,
         &[("count", &playlist_writes.to_string())],
     );
@@ -478,7 +472,7 @@ pub fn offline_change_preview(
             ("size", &size),
         ],
     );
-    format!("{preview} {}", text(OFFLINE_REMOVAL_NOTE))
+    format!("{preview} · {}", text(OFFLINE_REMOVAL_NOTE))
 }
 
 fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -> String {
