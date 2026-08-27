@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-27 19:28+0200\n"
+"POT-Creation-Date: 2026-08-27 22:03+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -5638,44 +5638,35 @@ msgid ""
 "Next connection: {copies} · {replacements} · {playlists} · {size} to transfer"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:421
-#, rust-format
-msgid "{count} file to copy"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:421
-#, rust-format
-msgid "{count} files to copy"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:422
-#, rust-format
-msgid "{count} replacement"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:422
-#, rust-format
-msgid "{count} replacements"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:424
-#, rust-format
-msgid "{count} playlist write"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:425
-#, rust-format
-msgid "{count} playlist writes"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:428
 msgid "Files to remove are settled when the device is next inspected."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:436
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:430
 #, rust-format
 msgid "{playlists} playlist · {tracks} · {size}"
 msgid_plural "{playlists} playlists · {tracks} · {size}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:448
+#, rust-format
+msgid "{count} file to copy"
+msgid_plural "{count} files to copy"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:454
+#, rust-format
+msgid "{count} replacement"
+msgid_plural "{count} replacements"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:460
+#, rust-format
+msgid "{count} playlist write"
+msgid_plural "{count} playlist writes"
 msgstr[0] ""
 msgstr[1] ""
 
