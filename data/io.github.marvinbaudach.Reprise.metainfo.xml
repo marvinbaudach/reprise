@@ -111,6 +111,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.84" date="2026-08-27" type="stable">
+      <description>
+        <p>Makes the Android library tabs follow the swipe: the navigation mark and the count move with the gesture, and the tab next door is filled before it is reached, so no first swipe lands on an empty list.</p>
+        <p xml:lang="de">Lässt die Android-Bibliotheksreiter dem Wischen folgen: Markierung und Zählung bewegen sich mit der Geste, und der Nachbarreiter ist gefüllt, bevor er erreicht wird — kein erstes Wischen landet mehr auf einer leeren Liste.</p>
+      </description>
+    </release>
     <release version="0.1.83" date="2026-08-27" type="stable">
       <description>
         <p>Clears a deleted playlist from the device page at once, replaces the equalizer sliders with named profiles, makes track sorting reachable from the keyboard, steadies the library while it scrolls, and gives Android a queue row that moves under the thumb.</p>

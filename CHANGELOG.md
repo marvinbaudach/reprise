@@ -4,6 +4,17 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.84] - 2026-08-27
+
+### Android
+
+- The navigation mark and the header count follow the swipe while it happens,
+  instead of waiting for the gesture to come to rest.
+- Swiping to the tab next door no longer lands on an empty list: it is filled
+  while the screen is still, before anyone reaches it.
+- Browse queries run off the main thread, and a load that was cancelled by
+  navigating away no longer raises an error banner.
+
 ## [0.1.83] - 2026-08-27
 
 ### Playback and presentation

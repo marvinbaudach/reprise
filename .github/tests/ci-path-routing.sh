@@ -50,6 +50,25 @@ expect_routes false false false .yamllint.yaml
 expect_routes false false false .markdownlint-cli2.jsonc
 expect_routes true false true unexpected-product-root/new-source.rs
 
+expect_diff_routes() {
+    local expected_android=$1
+    local expected_gnome=$2
+    local expected_core=$3
+    local event=$4
+    local ref=$5
+    local output
+    output=$("$classifier" --diff "$event" "$ref" HEAD HEAD)
+    rg --quiet "^android=$expected_android$" <<<"$output" || \
+        fail "expected android=$expected_android for $event on $ref; got: $output"
+    rg --quiet "^gnome=$expected_gnome$" <<<"$output" || \
+        fail "expected gnome=$expected_gnome for $event on $ref; got: $output"
+    rg --quiet "^core=$expected_core$" <<<"$output" || \
+        fail "expected core=$expected_core for $event on $ref; got: $output"
+}
+
+expect_diff_routes true true true push refs/heads/main
+expect_diff_routes true true true schedule refs/heads/main
+
 [[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
     contributor marvinbaudach head dev) == true ]] || \
     fail "a human pull request must skip the expensive external suites"
@@ -114,6 +133,12 @@ rg --quiet 'dev_sha=\$\(git rev-parse --verify origin/dev\)' "$workflow" || \
     fail "the workflow does not require exact dev identity"
 rg --quiet 'ci-paths\.sh --diff' "$workflow" || \
     fail "the workflow does not use the tested path classifier"
+rg --multiline --quiet \
+    '"\$EVENT_NAME"\s+"\$REF_NAME" "\$BASE_SHA" "\$HEAD_SHA"' "$workflow" || \
+    fail "the workflow does not pass the tested ref to diff routing"
+rg --multiline --quiet \
+    "schedule:\n    - cron: '17 3 \* \* \*'" "$workflow" || \
+    fail "the nightly full-suite schedule is missing"
 rg --quiet 'require-ci-results\.sh' "$workflow" || \
     fail "the Quality gate does not use the tested result aggregator"
 rg --fixed-strings --quiet 'GITHUB_ACTIONS=false "$contract"' "$workflow" || \
