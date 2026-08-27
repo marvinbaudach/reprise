@@ -368,7 +368,7 @@ pub fn build(
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
-        &split_view,
+        &library_shell.root,
         player_bar_widget,
         bar_position,
     );

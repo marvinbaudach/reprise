@@ -11,7 +11,7 @@ use libadwaita::prelude::*;
 use super::column_layout::{ColumnId, ColumnLayout, ColumnRegistry};
 
 const ALWAYS_REACHABLE: [ColumnId; 3] = [ColumnId::Cover, ColumnId::Title, ColumnId::Artist];
-const FOLD_BREAKPOINT_WIDTH: i32 = 760;
+pub(in crate::ui) const FOLD_BREAKPOINT_WIDTH: i32 = 760;
 const SHOW_FOLDED_ACTION: &str = "show-folded-columns";
 
 type OnFolded = Rc<dyn Fn()>;

@@ -9,8 +9,11 @@ use libadwaita::prelude::*;
 use reprise_core::db::Db;
 
 use crate::ui::info_panel::InfoPanel;
+use crate::ui::now_playing_column::PANEL_WIDTH;
+use crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH;
+use crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH;
 
-const CONSTRAINED_WIDTH: i32 = 1_400;
+const CONSTRAINED_WIDTH: i32 = SIDEBAR_MIN_WIDTH as i32 + PANEL_WIDTH + FOLD_BREAKPOINT_WIDTH;
 const UNDO_TIMEOUT_SECONDS: u32 = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19,29 +22,38 @@ struct PanelVisibility {
     now_playing: bool,
 }
 
-impl PanelVisibility {
-    fn any_open(self) -> bool {
-        self.library || self.now_playing
+#[derive(Clone, Copy)]
+enum Panel {
+    Library,
+    NowPlaying,
+}
+
+fn visibility_after_opening(panel: Panel) -> PanelVisibility {
+    match panel {
+        Panel::Library => PanelVisibility {
+            library: true,
+            now_playing: false,
+        },
+        Panel::NowPlaying => PanelVisibility {
+            library: false,
+            now_playing: true,
+        },
     }
 }
 
-fn constrained_visibility(_current: PanelVisibility) -> PanelVisibility {
+fn constrained_visibility(current: PanelVisibility) -> PanelVisibility {
     PanelVisibility {
-        library: false,
+        library: current.library,
         now_playing: false,
     }
 }
 
 fn effective_library_visibility(
     shows_sidebar: bool,
-    collapsed: bool,
-    persisted_collapsed: bool,
+    _collapsed: bool,
+    _persisted_collapsed: bool,
 ) -> bool {
-    if collapsed {
-        !persisted_collapsed
-    } else {
-        shows_sidebar
-    }
+    shows_sidebar
 }
 
 #[derive(Debug, Default)]
@@ -57,7 +69,8 @@ impl ConstraintState {
         self.active = true;
         self.snapshot = Some(current);
         self.changed_by_user = false;
-        current.any_open().then(|| constrained_visibility(current))
+        let target = constrained_visibility(current);
+        (target != current).then_some(target)
     }
 
     fn note_user_change(&mut self) {
@@ -154,66 +167,74 @@ pub(in crate::ui) fn install(
         let state = state.clone();
         let applying = applying.clone();
         let weak_library = library.downgrade();
+        let weak_now_playing = Rc::downgrade(now_playing);
         library.connect_show_sidebar_notify(move |_| {
             if applying.get() {
                 return;
             }
             let state = state.clone();
             let library = weak_library.clone();
+            let now_playing = weak_now_playing.clone();
+            let applying = applying.clone();
             gtk4::glib::idle_add_local_once(move || {
-                let Some(library) = library.upgrade() else {
+                let (Some(library), Some(now_playing)) = (library.upgrade(), now_playing.upgrade())
+                else {
                     return;
                 };
-                if state.borrow().should_enforce_constraint() && library.shows_sidebar() {
+                let enforce = state.borrow().should_enforce_constraint();
+                if !enforce {
+                    return;
+                }
+                if library.shows_sidebar() {
+                    set_transient_visibility(
+                        &applying,
+                        &library,
+                        &now_playing,
+                        visibility_after_opening(Panel::Library),
+                    );
+                } else {
                     state.borrow_mut().note_user_change();
                 }
             });
-        });
-    }
-    {
-        let state = state.clone();
-        let applying = applying.clone();
-        let library = library.clone();
-        library.connect_collapsed_notify(move |library| {
-            if state.borrow().should_enforce_constraint() && library.shows_sidebar() {
-                applying.set(true);
-                library.set_show_sidebar(false);
-                applying.set(false);
-            }
         });
     }
     {
         let state = state.clone();
         let applying = applying.clone();
         let weak_now_playing = Rc::downgrade(now_playing);
-        now_playing.widget().connect_show_sidebar_notify(move |_| {
-            if applying.get() {
-                return;
-            }
-            let state = state.clone();
-            let now_playing = weak_now_playing.clone();
-            gtk4::glib::idle_add_local_once(move || {
-                let Some(now_playing) = now_playing.upgrade() else {
+        let weak_library = library.downgrade();
+        now_playing
+            .split_view()
+            .connect_show_sidebar_notify(move |_| {
+                if applying.get() {
                     return;
-                };
-                if state.borrow().should_enforce_constraint() && now_playing.is_panel_visible() {
-                    state.borrow_mut().note_user_change();
                 }
+                let state = state.clone();
+                let now_playing = weak_now_playing.clone();
+                let library = weak_library.clone();
+                let applying = applying.clone();
+                gtk4::glib::idle_add_local_once(move || {
+                    let (Some(now_playing), Some(library)) =
+                        (now_playing.upgrade(), library.upgrade())
+                    else {
+                        return;
+                    };
+                    let enforce = state.borrow().should_enforce_constraint();
+                    if !enforce {
+                        return;
+                    }
+                    if now_playing.is_panel_visible() {
+                        set_transient_visibility(
+                            &applying,
+                            &library,
+                            &now_playing,
+                            visibility_after_opening(Panel::NowPlaying),
+                        );
+                    } else {
+                        state.borrow_mut().note_user_change();
+                    }
+                });
             });
-        });
-    }
-    {
-        let state = state.clone();
-        let applying = applying.clone();
-        let now_playing = now_playing.clone();
-        let split = now_playing.widget().clone();
-        split.connect_collapsed_notify(move |split| {
-            if state.borrow().should_enforce_constraint() && split.shows_sidebar() {
-                applying.set(true);
-                now_playing.set_transient_visibility(false);
-                applying.set(false);
-            }
-        });
     }
     {
         let state = state.clone();
@@ -297,7 +318,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn style_7_constrained_window_closes_both_side_panels_as_one_transition() {
+    fn style_7_constrained_window_closes_the_info_panel_and_keeps_the_library_sidebar() {
         let open = PanelVisibility {
             library: true,
             now_playing: true,
@@ -306,7 +327,7 @@ mod tests {
         assert_eq!(
             constrained_visibility(open),
             PanelVisibility {
-                library: false,
+                library: true,
                 now_playing: false,
             }
         );
@@ -317,13 +338,13 @@ mod tests {
         let mut state = ConstraintState::default();
         let before_snap = PanelVisibility {
             library: true,
-            now_playing: false,
+            now_playing: true,
         };
 
         assert_eq!(
             state.apply(before_snap),
             Some(PanelVisibility {
-                library: false,
+                library: true,
                 now_playing: false,
             })
         );
@@ -338,17 +359,69 @@ mod tests {
     #[test]
     fn style_7_widening_restores_pre_snap_state_unless_the_user_changed_it() {
         let before_snap = PanelVisibility {
-            library: false,
+            library: true,
             now_playing: true,
         };
         let mut untouched = ConstraintState::default();
-        untouched.apply(before_snap);
+        assert_eq!(
+            untouched.apply(before_snap),
+            Some(PanelVisibility {
+                library: true,
+                now_playing: false,
+            })
+        );
         assert_eq!(untouched.unapply(), Some(before_snap));
 
         let mut changed = ConstraintState::default();
-        changed.apply(before_snap);
+        assert!(changed.apply(before_snap).is_some());
         changed.note_user_change();
         assert_eq!(changed.unapply(), None);
+    }
+
+    #[test]
+    fn style_7_constrained_entry_without_an_info_panel_close_is_a_non_event() {
+        let mut state = ConstraintState::default();
+        let library_only = PanelVisibility {
+            library: true,
+            now_playing: false,
+        };
+
+        assert_eq!(state.apply(library_only), None);
+        assert_eq!(state.undo(), Some(library_only));
+    }
+
+    #[test]
+    fn style_7_opening_one_panel_excludes_the_other_while_constrained() {
+        assert_eq!(
+            visibility_after_opening(Panel::Library),
+            PanelVisibility {
+                library: true,
+                now_playing: false,
+            }
+        );
+        assert_eq!(
+            visibility_after_opening(Panel::NowPlaying),
+            PanelVisibility {
+                library: false,
+                now_playing: true,
+            }
+        );
+    }
+
+    #[test]
+    fn style_7_panel_and_table_thresholds_stay_coherent() {
+        assert_eq!(
+            crate::ui::window::library_shell::SIDEBAR_COLLAPSE_WIDTH,
+            crate::ui::now_playing_column::INFO_PANEL_COLLAPSE_WIDTH,
+            "both split views must enter overlay mode in the same width bin"
+        );
+        assert_eq!(
+            CONSTRAINED_WIDTH,
+            crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH as i32
+                + crate::ui::now_playing_column::PANEL_WIDTH
+                + crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH,
+            "the mutual-exclusion threshold must reserve the table's fold width"
+        );
     }
 
     #[test]
@@ -386,7 +459,7 @@ mod tests {
         assert_eq!(
             resized_by_user.apply(open),
             Some(PanelVisibility {
-                library: false,
+                library: true,
                 now_playing: false,
             }),
             "the announcement gate must not change which panels close"
@@ -394,10 +467,10 @@ mod tests {
     }
 
     #[test]
-    fn style_7_initial_collapsed_layout_uses_the_persisted_wide_sidebar_state() {
-        assert!(effective_library_visibility(false, true, false));
+    fn style_7_pinned_collapse_never_changes_library_visibility() {
+        assert!(!effective_library_visibility(false, true, false));
         assert!(!effective_library_visibility(false, true, true));
         assert!(!effective_library_visibility(false, false, false));
-        assert!(effective_library_visibility(true, false, true));
+        assert!(effective_library_visibility(true, true, true));
     }
 }
