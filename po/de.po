@@ -629,7 +629,7 @@ msgstr "Absteigend"
 
 #: crates/reprise-gnome/src/ui/strings.rs:413
 msgid "Playlist order"
-msgstr "Wiedergabelistenreihenfolge"
+msgstr "Manuelle Reihenfolge"
 
 #: crates/reprise-gnome/src/ui/strings.rs:419
 msgid "Playback position"

@@ -10,12 +10,13 @@ created: 2026-08-27
 
 Sorting stops being a pill in the track list's browse bar and joins the surface
 that already answers "how is this table arranged" — reached by right-click on the
-header band and from the primary menu, in every table that has columns.
+header band and from the primary menu, in every table that has sortable columns.
 
 ## What is actually true today
 
 The premise that started this ("the sort button is unnecessary, you can sort in
-the table") is true for a pointer and false for everything else.
+the table") is true for a pointer in tables whose columns carry sorters and
+false for everything else.
 
 - **The column header row exposes no accessible action.** Issue #404, closed:
   *"sorting by column is unreachable for assistive technology. Reproducibility:
@@ -28,11 +29,13 @@ the table") is true for a pointer and false for everything else.
 - **Its field list is generated from the table's own columns**
   (`browse_sort.rs:194-205`), so it offers no criterion a column does not have.
   `browse_bar_tests.rs:563` freezes that 1:1.
-- **#404 was closed for one table only.** Releases, Concerts and Radio have the
-  same pointer-only headers (`releases_view.rs:685-690`,
+- **#404 was closed for one table only.** Releases and Concerts have the same
+  pointer-only sortable headers (`releases_view.rs:685-690`,
   `concerts_view.rs:761-786`) and no browse-bar control at all. For assistive
   technology, sorting is unreachable there today. Nobody has measured it, so it
-  is not a known-red rule — it is an unmeasured gap of the same shape.
+  is not a known-red rule — it is an unmeasured gap of the same shape. Radio is
+  different: `ui/radio/` sets no sorter on any column, so it has no sorting
+  today, even with a pointer.
 - **One real defect:** `sortable_columns()` has no visibility filter, so the menu
   offers sorting by columns the user has permanently hidden in preferences.
   `ColumnRegistry::layout()` (`table_columns/registry.rs:252`) is the correct
@@ -102,7 +105,8 @@ default.
   `layout()`** and carry a sorter. Visible-in-layout, not `is_visible()`
   (`registry.rs:226-229`), which reads the live GTK property and would drop
   everything the narrow fold has hidden. This single filter is the
-  hidden-column defect fixed, for all four tables at once.
+  hidden-column defect fixed, for all three sortable tables at once. Radio also
+  uses the implementation but returns no sortable columns.
 - `sort()` — the `ColumnViewSorter`'s primary column and order, so the surface
   always opens marked with what the headers actually show.
 - `set_sort()` — `view.sort_by_column(column, order)`.
@@ -206,7 +210,8 @@ msgids. `SORT` ("Sort", used only by the pill) is retired.
    to the editor's test module **under their existing names**, retargeted at the
    section. Also remove the `wire` call near `track_list_builder.rs:371`.
 8. **Strings**: retire `SORT`, add `CUSTOMIZE_TABLE` and a "Playlist order"
-   msgid, regenerate `po/reprise.pot`, update all eight `po` files. Net +1 msgid.
+   msgid, regenerate `po/reprise.pot`, update all eight `po` files. Net ±0
+   msgids: two retired and two added.
 9. **STYLE-13** (`docs/ux-rules.md:3372-3421`): rewrite the #404 sentence — the
    pointer-free path is the table-customization surface, reached from the primary
    menu and from right-click on the header band, and it covers every table with
@@ -226,11 +231,13 @@ msgids. `SORT` ("Sort", used only by the pill) is retired.
   `browse_bar_tests.rs`.
 - **AT-SPI probe with a control arm**, the same measurement kind that found #404:
   - *Control arm, before the change:* the header row exposes no action in any of
-    the four tables; the sort pill exposes one, in the Library only.
+    the four tables; Library, Releases and Concerts have sortable columns, while
+    Radio has none. The sort pill exposes an action in the Library only.
   - *After:* the header row still exposes no action — unchanged, so the probe is
     reading the same thing — and the path F10 → "Customize table…" → sort radios
-    exposes one in Library, Releases, Concerts and Radio, and stays insensitive
-    in Podcasts, YouTube and Stats.
+    exposes one in Library, Releases and Concerts. Radio's customization surface
+    has no sort section because `ui/radio/` sets no sorter on any column today;
+    the action stays insensitive in Podcasts, YouTube and Stats.
   - Record the tree, not a screenshot.
 - `scripts/check-ux-traceability.sh` — green after task 9; the gate that proves
   tasks 7 and 9 stayed in step.
@@ -248,10 +255,11 @@ msgids. `SORT` ("Sort", used only by the pill) is retired.
 - **The narrow-window fold.** `responsive_columns.rs` keeps its one-shot toast.
   Once sorting lives in the shared surface it is reachable at any width, which
   removes the reason to touch the fold.
-- **A full #404-style CUA sweep** across all four tables. The gap in Releases,
-  Concerts and Radio is argued from the same code shape, not measured; the AT-SPI
-  probe above proves the new path works, not the size of the old gap. Worth its
-  own exploratory run.
+- **A full #404-style CUA sweep** across the three sortable tables. The gap in
+  Releases and Concerts is argued from the same code shape, not measured; the
+  AT-SPI probe above proves the new path works, not the size of the old gap.
+  Radio is a control arm with no sortable columns. Worth its own exploratory
+  run.
 
 ## Parallelität
 

@@ -172,6 +172,16 @@ fn build_sort_section(model: &Rc<dyn EditorModel>) -> Option<gtk4::Box> {
         field_box.append(&choice);
         field_choices.borrow_mut().push((descriptor.id, choice));
     }
+    if !field_choices
+        .borrow()
+        .iter()
+        .any(|(_, choice)| choice.is_active())
+    {
+        first
+            .as_ref()
+            .expect("a non-empty descriptor list has a first choice")
+            .set_active(true);
+    }
 
     let ascending = radio_choice(&strings::text(strings::SORT_ASCENDING));
     let descending = radio_choice(&strings::text(strings::SORT_DESCENDING));
@@ -188,11 +198,14 @@ fn build_sort_section(model: &Rc<dyn EditorModel>) -> Option<gtk4::Box> {
     for (id, choice) in field_choices.borrow().clone() {
         let model = model.clone();
         let syncing = syncing.clone();
-        let descending = descending.clone();
+        let descending = descending.downgrade();
         choice.connect_toggled(move |choice| {
             if syncing.get() || !choice.is_active() {
                 return;
             }
+            let Some(descending) = descending.upgrade() else {
+                return;
+            };
             let order = if descending.is_active() {
                 gtk4::SortType::Descending
             } else {
@@ -207,16 +220,25 @@ fn build_sort_section(model: &Rc<dyn EditorModel>) -> Option<gtk4::Box> {
     ] {
         let model = model.clone();
         let syncing = syncing.clone();
-        let field_choices = field_choices.clone();
+        let field_choices = field_choices
+            .borrow()
+            .iter()
+            .map(|(id, choice)| (id.clone(), choice.downgrade()))
+            .collect::<Vec<_>>();
         choice.connect_toggled(move |choice| {
             if syncing.get() || !choice.is_active() {
                 return;
             }
-            let selected = field_choices
-                .borrow()
-                .iter()
-                .find(|(_, candidate)| candidate.is_active())
-                .map(|(id, _)| id.clone());
+            let mut selected = None;
+            for (id, candidate) in &field_choices {
+                let Some(candidate) = candidate.upgrade() else {
+                    return;
+                };
+                if candidate.is_active() {
+                    selected = Some(id.clone());
+                    break;
+                }
+            }
             if let Some(id) = selected {
                 model.set_sort(&id, order);
             }
@@ -528,6 +550,28 @@ mod tests {
         matches
     }
 
+    fn assert_one_active_per_sort_group(
+        field_choices: &[gtk4::CheckButton],
+        direction_choices: &[gtk4::CheckButton],
+    ) {
+        assert_eq!(
+            field_choices
+                .iter()
+                .filter(|choice| choice.is_active())
+                .count(),
+            1,
+            "field choices are one keyboard-navigable radio group"
+        );
+        assert_eq!(
+            direction_choices
+                .iter()
+                .filter(|choice| choice.is_active())
+                .count(),
+            1,
+            "direction choices are a separate keyboard-navigable radio group"
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn style_13_sort_choices_are_keyboard_radio_actions() {
@@ -537,20 +581,80 @@ mod tests {
         let choices = descendants::<gtk4::CheckButton>(surface.toolbar.upcast_ref());
 
         assert_eq!(choices.len(), 4, "two fields and two directions");
-        for choice in choices {
+        let (field_choices, direction_choices) = choices.split_at(2);
+        assert_one_active_per_sort_group(field_choices, direction_choices);
+        for choice in field_choices {
             assert_eq!(choice.accessible_role(), gtk4::AccessibleRole::Radio);
             assert!(gtk4::test_accessible_has_property(
-                &choice,
+                choice,
                 gtk4::AccessibleProperty::Label
             ));
             assert!(choice.is_focusable());
             assert!(choice.activate());
             assert!(choice.is_active());
             assert!(gtk4::test_accessible_has_state(
-                &choice,
+                choice,
                 gtk4::AccessibleState::Checked
             ));
+            assert_one_active_per_sort_group(field_choices, direction_choices);
         }
+        for choice in direction_choices {
+            assert_eq!(choice.accessible_role(), gtk4::AccessibleRole::Radio);
+            assert!(gtk4::test_accessible_has_property(
+                choice,
+                gtk4::AccessibleProperty::Label
+            ));
+            assert!(choice.is_focusable());
+            assert!(choice.activate());
+            assert!(choice.is_active());
+            assert!(gtk4::test_accessible_has_state(
+                choice,
+                gtk4::AccessibleState::Checked
+            ));
+            assert_one_active_per_sort_group(field_choices, direction_choices);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sort_section_defaults_to_its_first_field_when_the_model_has_no_sort() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let fake = Rc::new(FakeModel::new());
+        fake.sort.replace(None);
+        let model: Rc<dyn EditorModel> = fake;
+        let section = build_sort_section(&model).expect("sortable model builds a section");
+        let choices = descendants::<gtk4::CheckButton>(section.upcast_ref());
+
+        assert_eq!(choices.len(), 4, "two fields and two directions");
+        assert!(choices[0].is_active(), "the first field is the fallback");
+        assert_eq!(
+            choices[..2]
+                .iter()
+                .filter(|choice| choice.is_active())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn dropping_the_sort_section_releases_its_model() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let fake = Rc::new(FakeModel::new());
+        let weak = Rc::downgrade(&fake);
+        let model: Rc<dyn EditorModel> = fake.clone();
+        let section = build_sort_section(&model).expect("sortable model builds a section");
+
+        drop(model);
+        drop(fake);
+        drop(section);
+
+        assert!(
+            weak.upgrade().is_none(),
+            "signal closures must not retain the model"
+        );
     }
 
     #[test]

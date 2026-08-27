@@ -299,9 +299,10 @@ Two new rules in `docs/ux-rules.md`, section U, beside STYLE-6 and STYLE-9.
 **STYLE-10 [active] [gtk] — Columns belong to the user, in every table.**
 A right-click anywhere on a table's header band opens the column editor
 popover: toggle visibility, drag to reorder, reset. The same editor is
-reachable without a pointer through the primary menu's "Edit column layout…",
-which addresses the table of the active view and is insensitive where no
-table is shown. Order, visibility and header-dragged widths are stored per
+reachable without a pointer through the primary menu's "Customize table…";
+its labelled sort section covers every table with sortable columns. The action
+addresses the table of the active view and is insensitive where no table is
+shown. Order, visibility and header-dragged widths are stored per
 table and survive a restart. A table may declare fixed columns — a leading
 artwork column, a trailing action column — which stay visible, keep their
 position and never appear in the editor; every other column belongs to the

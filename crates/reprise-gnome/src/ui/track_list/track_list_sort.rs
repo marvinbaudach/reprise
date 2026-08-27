@@ -538,7 +538,13 @@ mod header_sort_display_tests {
         );
 
         *track_list.shared.source.borrow_mut() = ViewSource::Playlist(7);
+        let before_playlist_order = reloads.get();
         restore_playlist_order(&track_list.shared, gtk4::SortType::Ascending);
+        assert_eq!(
+            reloads.get(),
+            before_playlist_order + 1,
+            "restoring manual playlist order reloads exactly once"
+        );
         assert_eq!(
             model.sort(),
             Some((

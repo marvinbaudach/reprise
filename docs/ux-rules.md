@@ -3390,7 +3390,7 @@ property is set and yet nothing happens.
   indicator is invisible while its width stays reserved, so headers do not
   jump. A header without a sort field carries no sorter and therefore does not
   appear clickable; a sortable header orders its own column. **Issue #404:**
-  sorting is also reachable without a pointer through the labelled table-
+  sorting is also reachable without a pointer through the labelled table
   customization surface, reached from the primary menu and by right-clicking
   the header band. It covers every table with sortable columns. Its field and
   direction choices are labelled, keyboard navigable, and expose the current
@@ -3406,7 +3406,7 @@ property is set and yet nothing happens.
   `style_13_sort_popover_closes_on_escape`
   (`ui/table_columns/editor.rs`),
   `style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator`
-  (`ui/table_columns/registry.rs`),
+  (`ui/table_columns/registry_sort_tests.rs`),
   `nr_39_the_column_editor_lists_status_and_link_and_hides_them` and
   `two_release_sorts_leave_one_indicator`
   (`ui/releases/releases_view_tests.rs`),
