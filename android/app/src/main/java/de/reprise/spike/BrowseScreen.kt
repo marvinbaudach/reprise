@@ -38,9 +38,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.settings.SettingsNavigation
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.withContext
 
 /**
  * One answered request for the playing track's row, carrying the id it was
@@ -326,19 +328,22 @@ internal fun BrowseScreen(
     LaunchedEffect(selectedTab, state, loadedTabs, searchText) {
         if (selectedTab == BrowseTab.QUEUE || selectedTab in loadedTabs) return@LaunchedEffect
         runCatching {
-            when (selectedTab) {
-                BrowseTab.TITLES -> searchTitles(searchText, firstLibraryWindow())
-                    .also { visibleTitles = it }
-                BrowseTab.ARTISTS -> {
-                    visibleArtists = artistsFor(searchText, firstLibraryWindow())
-                    if (searchText.isNotBlank()) {
-                        visibleArtistSearchAlbums = searchAlbums(
-                            searchText,
-                            firstLibraryWindow(),
-                        )
+            // Move blocking JNI calls to IO dispatcher to keep the main thread free for rendering
+            withContext(Dispatchers.IO) {
+                when (selectedTab) {
+                    BrowseTab.TITLES -> searchTitles(searchText, firstLibraryWindow())
+                        .also { visibleTitles = it }
+                    BrowseTab.ARTISTS -> {
+                        visibleArtists = artistsFor(searchText, firstLibraryWindow())
+                        if (searchText.isNotBlank()) {
+                            visibleArtistSearchAlbums = searchAlbums(
+                                searchText,
+                                firstLibraryWindow(),
+                            )
+                        }
                     }
+                    BrowseTab.QUEUE -> Unit
                 }
-                BrowseTab.QUEUE -> Unit
             }
         }.onSuccess {
             loadedTabs = loadedTabs + selectedTab
