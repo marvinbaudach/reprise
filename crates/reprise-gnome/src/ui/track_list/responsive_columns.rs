@@ -89,6 +89,7 @@ impl ResponsiveColumns {
         window: &adw::ApplicationWindow,
         overlay: &adw::ToastOverlay,
     ) {
+        let active_toast = Rc::new(RefCell::new(None::<adw::Toast>));
         let action = gio::SimpleAction::new(SHOW_FOLDED_ACTION, None);
         {
             let this = Rc::downgrade(self);
@@ -101,10 +102,14 @@ impl ResponsiveColumns {
         window.add_action(&action);
 
         let overlay = overlay.downgrade();
+        let notice_toast = active_toast.clone();
         let show_notice: OnFolded = Rc::new(move || {
             let Some(overlay) = overlay.upgrade() else {
                 return;
             };
+            if let Some(previous) = notice_toast.borrow_mut().take() {
+                previous.dismiss();
+            }
             let toast = crate::ui::toasts::plain(&crate::ui::strings::text(
                 crate::ui::strings::COLUMNS_FOLDED,
             ));
@@ -112,9 +117,15 @@ impl ResponsiveColumns {
                 crate::ui::strings::SHOW_COLUMNS,
             )));
             toast.set_action_name(Some(&format!("win.{SHOW_FOLDED_ACTION}")));
-            overlay.add_toast(toast);
+            overlay.add_toast(toast.clone());
+            *notice_toast.borrow_mut() = Some(toast);
         });
         *self.on_folded.borrow_mut() = Some(show_notice.clone());
+        self.breakpoint.connect_unapply(move |_| {
+            if let Some(toast) = active_toast.borrow_mut().take() {
+                toast.dismiss();
+            }
+        });
         if self.folded.get() && !self.expanded_by_user.get() {
             show_notice();
         }

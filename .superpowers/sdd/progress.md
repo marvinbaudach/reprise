@@ -1990,3 +1990,4 @@ Visual verification finding storage-truth: complete (this commit, base 2ec4e1e39
 
 Tasks 1, 2, 3 and 6: complete (commit 61f286b0db, base 3000da8cd2, moved both split-view collapse policies into pinned local breakpoint bins, derived and enforced the 1300-pixel mutual-exclusion threshold, preserved Undo as an override, and added the source, threshold-coherence and 1024-pixel display regressions)
 Task 4: complete (this commit, base 61f286b0db, replaced the threshold-crossing notice with the info-panel-specific message in source, POT and all seven catalogs, with German and Spanish translated and no fuzzy PO entries)
+Task 5: complete (this commit, base 77568dac0b, retained the active fold-notice toast and dismissed it when the responsive-columns breakpoint unapplies, including replacement of an earlier retained notice before posting a new one)
