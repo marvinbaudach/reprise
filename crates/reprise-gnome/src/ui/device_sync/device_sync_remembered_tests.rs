@@ -48,6 +48,8 @@ fn remembered_device_projects_saved_playlists_on_startup_without_storage_measure
             .find(|row| row.name.as_deref() == Some("Road"))
             .unwrap();
         assert!(road.selected);
+        assert_eq!(remembered.page.changes.additions, 1);
+        assert_eq!(remembered.page.changes.playlist_writes, 1);
     });
 }
 
@@ -101,6 +103,21 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
             2_400_000_000,
         )
         .unwrap();
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn,
+            &reprise_core::device_sync::DeviceFileRecord {
+                device_serial: "pixel-anna".into(),
+                track_id: 1,
+                source_path: "/music/1.flac".into(),
+                source_size: 100,
+                source_mtime: 1,
+                device_path: "Artist/Album/Track.opus".into(),
+                device_size: 2_400_000_000,
+                profile_fingerprint: "opus-vbr-160-v1".into(),
+                pinned: false,
+            },
+        )
+        .unwrap();
         let mut target =
             reprise_core::device_sync::load_or_create_target(&conn, "pixel-anna").unwrap();
         target.storage_id = Some(reprise_core::device_sync::StorageId(7));
@@ -128,6 +145,7 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
         );
         assert_eq!(remembered.last_sync.unwrap().timestamp(), 1_753_612_496);
         assert_eq!(remembered.size_on_device_bytes, Some(2_400_000_000));
+        assert_eq!(remembered.verified_managed_track_count, Some(1));
         assert_eq!(remembered.content_row.target_path, "/Music/Anna");
         assert!(
             !reprise_core::device_sync::aggregate_balance(&[remembered.target_reading]).has_work(),
@@ -148,6 +166,46 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
                 .collect::<Vec<_>>(),
             ["active"]
         );
+    });
+}
+
+#[test]
+fn inventory_changed_after_verification_keeps_counts_but_drops_their_date() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        reprise_core::device_sync::settings::record_device_verification(
+            &conn,
+            "remembered",
+            1_753_612_496,
+            100,
+        )
+        .unwrap();
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn,
+            &reprise_core::device_sync::DeviceFileRecord {
+                device_serial: "remembered".into(),
+                track_id: 1,
+                source_path: "/music/1.flac".into(),
+                source_size: 100,
+                source_mtime: 1,
+                device_path: "Artist/Album/Track.opus".into(),
+                device_size: 200,
+                profile_fingerprint: "opus-vbr-160-v1".into(),
+                pinned: false,
+            },
+        )
+        .unwrap();
+
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(remembered.managed_track_count, 1);
+        assert_eq!(remembered.size_on_device_bytes, Some(200));
+        assert_eq!(remembered.verified_managed_track_count, None);
+        assert_eq!(remembered.content_row.item_count, 1);
+        assert_eq!(remembered.content_row.size_on_device_bytes, 200);
     });
 }
 

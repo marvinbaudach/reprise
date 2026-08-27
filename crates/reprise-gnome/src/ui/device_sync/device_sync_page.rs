@@ -12,7 +12,7 @@ use super::device_sync_on_device::storage_legend;
 use super::device_sync_on_device::{OnDeviceActions, OnDeviceSection};
 use super::device_sync_page_actions::PageActions;
 use super::device_sync_page_copy::{
-    change_summary, device_last_sync_copy, eject_sensitive, profile_label,
+    change_summary, device_last_sync_copy, eject_sensitive, offline_change_preview, profile_label,
 };
 // Only named directly by this module's own `#[cfg(test)]` child (below) —
 // a plain `cargo build` never compiles that module, so these would
@@ -215,9 +215,17 @@ impl DeviceSyncPage {
             .profile
             .set_sensitive(device.page.controls.editable);
         self.playlist_card.update(device);
-        self.dashboard
-            .changes
-            .set_label(&change_summary(&device.page.changes));
+        let changes = if device.session_state.shows_diff() {
+            change_summary(&device.page.changes)
+        } else {
+            offline_change_preview(
+                device.page.changes.additions,
+                device.page.changes.replacements,
+                device.page.changes.playlist_writes,
+                device.page.changes.transfer_bytes,
+            )
+        };
+        self.dashboard.changes.set_label(&changes);
         self.dashboard.storage_name.set_label(
             device
                 .page

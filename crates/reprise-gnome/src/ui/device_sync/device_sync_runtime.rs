@@ -65,6 +65,7 @@ struct DeviceState {
     resume_initiator: Option<planned::SyncInitiator>,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
     verified_managed_track_count: Option<usize>,
+    last_verified_size_bytes: Option<u64>,
     size_on_device_bytes: Option<u64>,
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
@@ -106,6 +107,7 @@ impl DeviceState {
             resume_initiator: None,
             last_sync: None,
             verified_managed_track_count: None,
+            last_verified_size_bytes: None,
             size_on_device_bytes: None,
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
@@ -126,15 +128,12 @@ impl DeviceState {
         state.last_sync = memory
             .last_verified_at
             .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0));
-        state.size_on_device_bytes = memory.size_on_device_bytes;
+        state.last_verified_size_bytes = memory.size_on_device_bytes;
         state
     }
 
     fn view(&self) -> DeviceView {
         let mut page = self.page.clone();
-        if !self.session_state.shows_diff() {
-            page.changes = Default::default();
-        }
         page.update_controls(
             self.connected && self.session_state.opens_session(),
             !self.scanning
@@ -150,11 +149,19 @@ impl DeviceState {
         } else {
             project_device_music_reading(MusicDiff::default())
         };
-        let content_row = project_category_content_row(
-            &self.target,
-            self.managed_files.len(),
-            compact::verified_track_bytes(&self.managed_files),
-        );
+        let content_row = if self.session_state.shows_diff() {
+            project_category_content_row(
+                &self.target,
+                self.managed_files.len(),
+                compact::verified_track_bytes(&self.managed_files),
+            )
+        } else {
+            project_category_content_row(
+                &self.target,
+                self.managed_track_count,
+                self.size_on_device_bytes.unwrap_or(0),
+            )
+        };
         DeviceView {
             id: self.descriptor.id.clone(),
             name: self.settings.device_name.clone(),
@@ -271,9 +278,10 @@ impl DeviceSyncRuntime {
             }
             if selection_changed {
                 let mut device_states = self.device_states.borrow_mut();
-                let Some(device) = device_states.iter_mut().find(|device| {
-                    device.descriptor.id == device_id && !device.is_busy()
-                }) else {
+                let Some(device) = device_states
+                    .iter_mut()
+                    .find(|device| device.descriptor.id == device_id && !device.is_busy())
+                else {
                     continue;
                 };
                 device.settings = settings;
@@ -574,8 +582,10 @@ impl DeviceSyncRuntime {
                                 }
                                 device.last_sync = Some(verified_at);
                                 device.verified_managed_track_count = verified_track_count;
-                                device.size_on_device_bytes =
-                                    Some(compact::verified_track_bytes(&device.managed_files));
+                                let verified_size =
+                                    compact::verified_track_bytes(&device.managed_files);
+                                device.last_verified_size_bytes = Some(verified_size);
+                                device.size_on_device_bytes = Some(verified_size);
                                 device.sync_error = None;
                             }
                         }

@@ -29,6 +29,8 @@ pub(super) const JUST_NOW: &str = N_!("just now");
 pub(super) const MINUTES_AGO: &str = N_!("{minutes} min ago");
 pub(super) const HOURS_AGO: &str = N_!("{hours} h ago");
 pub(super) const DAYS_AGO: &str = N_!("{days} d ago");
+const UNDATED_DEVICE_INVENTORY: &str =
+    N_!("{size} in the saved device inventory · Verification time unavailable for these counts");
 
 /// Spinner tooltip while syncing, e.g. "Syncing Pixel 8 · 42%".
 pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {
@@ -53,6 +55,11 @@ pub fn unrememberable_device_status() -> String {
 
 pub fn rename_requires_durable_identity() -> String {
     text(RENAME_REQUIRES_DURABLE_IDENTITY)
+}
+
+pub fn undated_device_inventory(size_bytes: u64) -> String {
+    let size = file_size(size_bytes);
+    formatted(UNDATED_DEVICE_INVENTORY, &[("size", &size)])
 }
 
 /// TIP-2a: a disabled eject keeps its tooltip and appends the reason.
@@ -409,6 +416,16 @@ const DEVICE_POLICY_FROZEN: &str =
 const STORAGE_LEGEND: &str =
     N_!("Reprise music {music} · this run +{this_run} · Other {other} · {free} free");
 const STORAGE_INSUFFICIENT: &str = N_!("Not enough space · {free} free · {shortfall} more needed");
+const NEXT_CONNECTION_PREVIEW: &str =
+    N_!("Next connection: {copies} · {replacements} · {playlists} · {size} to transfer");
+const FILES_TO_COPY: (&str, &str) = (N_!("{count} file to copy"), N_!("{count} files to copy"));
+const REPLACEMENTS: (&str, &str) = (N_!("{count} replacement"), N_!("{count} replacements"));
+const PLAYLIST_WRITES: (&str, &str) = (
+    N_!("{count} playlist write"),
+    N_!("{count} playlist writes"),
+);
+const OFFLINE_REMOVAL_NOTE: &str =
+    N_!("Files to remove are settled when the device is next inspected.");
 
 pub fn legacy_media_notice(path: &str) -> String {
     formatted(LEGACY_MEDIA_NOTICE, &[("path", path)])
@@ -425,6 +442,43 @@ pub fn device_balance(playlists: usize, tracks: &str, size: &str) -> String {
             ("size", size),
         ],
     )
+}
+
+pub fn offline_change_preview(
+    additions: usize,
+    replacements: usize,
+    playlist_writes: usize,
+    transfer_bytes: u64,
+) -> String {
+    let copies = plural(
+        FILES_TO_COPY.0,
+        FILES_TO_COPY.1,
+        additions,
+        &[("count", &additions.to_string())],
+    );
+    let replacements = plural(
+        REPLACEMENTS.0,
+        REPLACEMENTS.1,
+        replacements,
+        &[("count", &replacements.to_string())],
+    );
+    let playlist_writes = plural(
+        PLAYLIST_WRITES.0,
+        PLAYLIST_WRITES.1,
+        playlist_writes,
+        &[("count", &playlist_writes.to_string())],
+    );
+    let size = file_size(transfer_bytes);
+    let preview = formatted(
+        NEXT_CONNECTION_PREVIEW,
+        &[
+            ("copies", &copies),
+            ("replacements", &replacements),
+            ("playlists", &playlist_writes),
+            ("size", &size),
+        ],
+    );
+    format!("{preview} {}", text(OFFLINE_REMOVAL_NOTE))
 }
 
 fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -> String {

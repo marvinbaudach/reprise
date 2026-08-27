@@ -59,6 +59,13 @@ pub(super) fn device_last_sync_copy(device: &DeviceView) -> String {
     if device.sync_phase == PlannedSyncPhase::Finishing {
         return verification_summary(device);
     }
+    if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered
+        && device.verified_managed_track_count.is_none()
+    {
+        if let Some(size) = device.size_on_device_bytes {
+            return super::device_sync_strings::undated_device_inventory(size);
+        }
+    }
     let last_sync = device
         .last_sync
         .map(|timestamp| format_local_date_time(&timestamp.with_timezone(&chrono::Local)));
@@ -86,6 +93,20 @@ pub(super) fn format_local_date_time(timestamp: &chrono::DateTime<chrono::Local>
 
 pub(super) fn change_summary(changes: &SyncChangeSummary) -> String {
     render_joined(&projection::change_summary(changes))
+}
+
+pub(super) fn offline_change_preview(
+    additions: usize,
+    replacements: usize,
+    playlist_writes: usize,
+    transfer_bytes: u64,
+) -> String {
+    super::device_sync_strings::offline_change_preview(
+        additions,
+        replacements,
+        playlist_writes,
+        transfer_bytes,
+    )
 }
 
 pub(super) fn verification_summary(device: &DeviceView) -> String {

@@ -370,6 +370,25 @@ fn mtp_10_verification_summary_claims_only_post_sync_readback() {
 }
 
 #[test]
+fn offline_preview_names_intent_without_rendering_a_removal_count() {
+    let preview = offline_change_preview(2, 1, 2, 32 * 1_024);
+
+    assert!(preview.contains("2 files to copy"));
+    assert!(preview.contains("1 replacement"));
+    assert!(preview.contains("2 playlist writes"));
+    assert!(preview.contains("32.0 KiB to transfer"));
+    assert!(preview.contains("Files to remove are settled when the device is next inspected."));
+    assert!(
+        !preview
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|words| words[0].parse::<usize>().is_ok() && words[1].starts_with("remove")),
+        "the offline copy must not contain any numeric removal claim: {preview}"
+    );
+}
+
+#[test]
 fn mtp_14_device_header_reports_the_last_device_sync_without_claiming_one() {
     let mut device = device();
     assert_eq!(device_last_sync_copy(&device), "Never synchronized");
@@ -402,6 +421,7 @@ fn mtp_50_remembered_page_names_the_last_verified_size_without_a_live_diff() {
             .unwrap(),
     );
     device.size_on_device_bytes = Some(2_400_000_000);
+    device.verified_managed_track_count = Some(2);
 
     let local = chrono::Local
         .timestamp_opt(1_753_612_496, 0)
@@ -414,6 +434,34 @@ fn mtp_50_remembered_page_names_the_last_verified_size_without_a_live_diff() {
             format_local_date_time(&local)
         )
     );
+}
+
+#[test]
+fn remembered_header_does_not_date_inventory_that_changed_after_verification() {
+    let mut device = device();
+    device.connected = false;
+    device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    device.last_sync = Some(
+        chrono::Utc
+            .timestamp_opt(1_753_612_496, 0)
+            .single()
+            .unwrap(),
+    );
+    device.size_on_device_bytes = Some(200);
+    device.verified_managed_track_count = None;
+
+    let copy = device_last_sync_copy(&device);
+
+    assert_eq!(
+        copy,
+        "200 B in the saved device inventory · Verification time unavailable for these counts"
+    );
+    assert!(!copy.contains(&format_local_date_time(
+        &chrono::Local
+            .timestamp_opt(1_753_612_496, 0)
+            .single()
+            .unwrap()
+    )));
 }
 
 #[test]

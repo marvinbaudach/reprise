@@ -132,7 +132,14 @@ impl DeviceSyncRuntime {
     }
 
     pub(super) fn recompute_delta_silent(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
-        let (settings, storage, managed_files, managed_files_scanned) = self
+        let (
+            settings,
+            storage,
+            managed_files,
+            managed_files_scanned,
+            last_sync,
+            last_verified_size_bytes,
+        ) = self
             .device_states
             .borrow()
             .iter()
@@ -143,6 +150,8 @@ impl DeviceSyncRuntime {
                     device.storage.clone(),
                     device.managed_files.clone(),
                     device.ever_inspected && device.scan_error.is_none(),
+                    device.last_sync,
+                    device.last_verified_size_bytes,
                 )
             })
             .ok_or_else(|| "device is not connected".to_string())?;
@@ -156,6 +165,13 @@ impl DeviceSyncRuntime {
         let conn = &self.conn;
         let files = load_device_files(conn, device_id).map_err(|error| error.to_string())?;
         let managed_track_count = files.len();
+        let inventory_size_bytes = files
+            .iter()
+            .map(|file| file.device_size)
+            .fold(0_u64, u64::saturating_add);
+        let has_inventory_history = last_sync.is_some() || !files.is_empty();
+        let inventory_matches_verification =
+            last_sync.is_some() && last_verified_size_bytes == Some(inventory_size_bytes);
         let playlist_inventory =
             load_device_playlists(conn, device_id).map_err(|error| error.to_string())?;
         let mut playlists =
@@ -201,6 +217,9 @@ impl DeviceSyncRuntime {
         {
             let run_owns_plan = device.machine.is_some();
             device.managed_track_count = managed_track_count;
+            device.size_on_device_bytes = has_inventory_history.then_some(inventory_size_bytes);
+            device.verified_managed_track_count =
+                inventory_matches_verification.then_some(managed_track_count);
             if !run_owns_plan {
                 device.mirror_plan = projection.plan;
                 device.sync_phase = PlannedSyncPhase::Idle;
