@@ -55,6 +55,16 @@ def type_into(node, text, per_char=0.14):
         time.sleep(per_char)
 
 
+def toggle(name):
+    t = find(name, role='toggle button', root=frame())
+    if t is None:
+        print(f'  !! {name} missing', flush=True)
+        return False
+    do(t)
+    time.sleep(1.2)
+    return True
+
+
 def open_search(timeout=6.0):
     t = find('Search all fields', role='toggle button', root=frame())
     if t is not None and not t.get_state_set().contains(Atspi.StateType.CHECKED):
@@ -70,20 +80,24 @@ def open_search(timeout=6.0):
 
 time.sleep(2.5)
 
-mark('podcast-add')
-click('Podcasts', role='button', dwell=3.0)
-click('Add podcast', role='button', dwell=2.5)
-dlg = [n for n in walk(frame()) if n.get_role_name() in ('entry', 'text') and 'activate' in actions(n)]
-if dlg:
-    type_into(dlg[0], PODCAST)
-    time.sleep(1.0)
-    click('Search', role='button', dwell=5.0)          # results with their covers
-    click(f'Subscribe to {PODCAST}', role='button', dwell=5.0)
-    if not click('Cancel', role='button', dwell=1.0):
-        click('Close', role='button', dwell=1.0)
-    time.sleep(4.0)                                     # the new show in the list
-else:
-    print('  !! podcast dialog entry missing', flush=True)
+# The add flow subscribes a real show to the real library, so it is off unless
+# asked for: a take that wants only the search and the lyrics has no business
+# changing what is in the library it is filming.
+if os.environ.get('SHOWREEL_PODCAST_ADD'):
+    mark('podcast-add')
+    click('Podcasts', role='button', dwell=3.0)
+    click('Add podcast', role='button', dwell=2.5)
+    dlg = [n for n in walk(frame()) if n.get_role_name() in ('entry', 'text') and 'activate' in actions(n)]
+    if dlg:
+        type_into(dlg[0], PODCAST)
+        time.sleep(1.0)
+        click('Search', role='button', dwell=5.0)          # results with their covers
+        click(f'Subscribe to {PODCAST}', role='button', dwell=5.0)
+        if not click('Cancel', role='button', dwell=1.0):
+            click('Close', role='button', dwell=1.0)
+        time.sleep(4.0)                                     # the new show in the list
+    else:
+        print('  !! podcast dialog entry missing', flush=True)
 
 mark('search')
 click('Music', role='button', dwell=2.0)
@@ -99,8 +113,28 @@ else:
     do(frame(), 'win.clear-all-filters')
     time.sleep(1.5)
 
+# Three lyrics scenes, because the cut cannot know in advance which one frames.
+#
+# In the default layout the lyrics sit in the Now Playing panel on the right,
+# and any crop tight enough to read them has to begin inside the track list —
+# there is no x where that edge does not land in the middle of a word. So the
+# take also shoots the two layouts that give the pane room: the sidebar
+# collapsed, and minimal view. All three are on the tape; the cut picks one and
+# the other two cost nothing.
 mark('lyrics')
 tab('Lyrics', dwell=10.0)
+
+mark('lyrics-nosidebar')
+toggle('Toggle sidebar')
+time.sleep(9.0)
+toggle('Toggle sidebar')
+time.sleep(1.5)
+
+mark('lyrics-minimal')
+do(frame(), 'win.toggle-minimal-view')
+time.sleep(10.0)
+do(frame(), 'win.toggle-minimal-view')
+time.sleep(2.0)
 
 mark('tail')
 tab('Up Next', dwell=2.0)
