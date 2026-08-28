@@ -492,6 +492,27 @@ mod tests {
 
     use super::*;
 
+    fn window_attached_collapsed_setters(source: &str) -> Vec<String> {
+        let compact: String = source
+            .chars()
+            .filter(|char| !char.is_whitespace())
+            .collect();
+        compact
+            .split(';')
+            .filter(|statement| {
+                statement.contains(".add_setter(") && statement.contains("\"collapsed\"")
+            })
+            .filter_map(|statement| {
+                let prefix = statement.split_once(".add_setter(")?.0;
+                prefix
+                    .rsplit(|char: char| !(char.is_ascii_alphanumeric() || char == '_'))
+                    .next()
+                    .map(str::to_owned)
+            })
+            .filter(|breakpoint| compact.contains(&format!("window.add_breakpoint({breakpoint})")))
+            .collect()
+    }
+
     #[test]
     fn browse_1_music_builds_only_the_canonical_track_surface() {
         let window = include_str!("window.rs");
@@ -527,19 +548,33 @@ mod tests {
                 include_str!("../compact/compact_mode_suggestion.rs"),
             ),
         ] {
-            let collapsed_setters = source.lines().filter_map(|line| {
-                line.contains(".add_setter(")
-                    .then_some(line)
-                    .filter(|line| line.contains("\"collapsed\""))
-                    .and_then(|line| line.trim().split('.').next())
-            });
-            for breakpoint in collapsed_setters {
-                assert!(
-                    !source.contains(&format!("window.add_breakpoint({breakpoint})")),
-                    "{name} attaches `{breakpoint}` to the window after giving it a collapsed setter"
-                );
-            }
+            let offenders = window_attached_collapsed_setters(source);
+            assert!(
+                offenders.is_empty(),
+                "{name} attaches collapsed-setter breakpoints {offenders:?} to the window"
+            );
         }
+    }
+
+    #[test]
+    fn breakpoint_guard_recognizes_a_multiline_collapsed_setter() {
+        let broken = concat!(
+            "legacy.add_setter(&split_view, \"collapsed\", Some(&false.to_value()));\n",
+            "window.",
+            "add_breakpoint(legacy);\n",
+            "breakpoint.add_setter(\n",
+            "    &split_view,\n",
+            "    \"collapsed\",\n",
+            "    Some(&false.to_value()),\n",
+            ");\n",
+            "window.",
+            "add_breakpoint(breakpoint);\n",
+        );
+
+        assert_eq!(
+            window_attached_collapsed_setters(broken),
+            ["legacy", "breakpoint"]
+        );
     }
 
     #[test]
