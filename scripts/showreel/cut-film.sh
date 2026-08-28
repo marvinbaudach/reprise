@@ -119,7 +119,7 @@ bridge() { # name deskstart phonestart
   local name=$1 dstart=$2 pstart=$3
   local half=1.3 xf=0.2 dur=2.4
   LIST_OFF=1
-  desk T1 "$name-a" "$dstart" "$half" in 2.0 0.92 0.54 null "" accel
+  desk T1 "$name-a" "$dstart" "$half" in 2.0 0.55 1.00 null "" accel
   phone "$name-b" "$pstart" "$half" out 1.5 null "" decel 0.50 0.375
   LIST_OFF=
   ffmpeg -v error -i "$O/s-$name-a.mp4" -i "$O/s-$name-b.mp4" \
@@ -138,8 +138,15 @@ mcp() { # name start_ask start_result
   LIST_OFF=1
   desk TM "$name-a" "$ask" "$half" hold 0.06 0.50 0.50 \
     "$(film2_prompt 'Build me a playlist like Lorna Shore.' 'asked of an agent, over Reprise MCP' "$half")"
+  # The row is the whole payoff of the shot and it is fourteen pixels tall in a
+  # 1920-wide frame. Two and a half seconds is not long enough to find it
+  # unaided, so it gets marked. The box lands 0.4 s in, after the eye has taken
+  # the screen — a marker that is already there when the cut arrives reads as
+  # chrome, one that lands reads as an answer. Coordinates are measured off the
+  # finished frame, which is what $over sees: it runs after $PAD, so they are
+  # 1920x1080 coordinates and they move if this shot is ever reframed.
   desk TM "$name-b" "$result" "$half" hold 0.10 0.16 0.40 \
-    "$(film2_callout 'The agent wrote it' 'MCP, straight into the library' "$half")"
+    "$(film2_callout 'The agent wrote it' 'MCP, straight into the library' "$half"),drawbox=x=158:y=290:w=228:h=44:color=0x49C9D2@0.95:t=3:enable='gte(t,0.4)'"
   LIST_OFF=
   ffmpeg -v error -i "$O/s-$name-a.mp4" -i "$O/s-$name-b.mp4" \
     -filter_complex "[0:v][1:v]xfade=transition=fade:duration=$xf:offset=$(python3 -c "print(round($half - $xf, 3))"),format=yuv420p[v]" \
@@ -181,7 +188,7 @@ desk T2 02-search   36.3 4.8 hold 0.20 1.00 0.00 "$(film2_callout 'Instant searc
 # x where that edge does not land in the middle of a word. The shot wants a
 # layout with the lyrics given the width — that is a thing to record, not a
 # thing to crop.
-desk T2 03-lyrics   50.5 4.2 hold 0.20 1.00 0.50 "$(film2_callout 'Lyrics, in time' '' 4.2)"
+desk T2 03-lyrics   50.5 4.2 hold 0.17 1.00 0.00 "$(film2_callout 'Lyrics, in time' '' 4.2)"
 desk T1 04-releases 39.8 3.0 hold 0.20 1.00 0.00 "$(film2_callout 'New releases' 'from the artists you keep' 3.0)"
 desk T1 05-concerts 49.5 3.6 hold 0.20 1.00 0.00 "$(film2_callout 'Concerts nearby' 'for the same artists' 3.6)"
 desk T1 06-podcasts 62.8 4.2 hold 0.20 1.00 0.00 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 4.2)"
