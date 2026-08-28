@@ -681,7 +681,9 @@ mod tests {
             directory.path().join("cache").to_str().unwrap(),
             move |_, _| {
                 counted.fetch_add(1, Ordering::Relaxed);
-                Err(reprise_core::artist_portrait::PortraitError::InvalidResponse)
+                Err(reprise_core::artist_portrait::PortraitError::Fetch(
+                    reprise_core::musicbrainz::FetchError::Transport,
+                ))
             },
         )
         .unwrap();
