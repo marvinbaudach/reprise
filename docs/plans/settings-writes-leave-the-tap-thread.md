@@ -2,7 +2,7 @@
 slug: settings-writes-leave-the-tap-thread
 worktree: /home/marvin/Projects/reprise-settings-writes-leave-the-tap-thread
 branch: feature/settings-writes-leave-the-tap-thread
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-27
 ---
