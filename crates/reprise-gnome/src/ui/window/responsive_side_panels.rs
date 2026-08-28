@@ -193,10 +193,9 @@ pub(in crate::ui) fn install(
                 // queued notifications then converge on the final state, and
                 // closes (including collapse-driven foreign writes) are
                 // idempotent non-conflicts rather than user overrides.
-                let target = state.borrow().visibility_change_target(
-                    Panel::Library,
-                    visibility(&library, &now_playing),
-                );
+                let target = state
+                    .borrow()
+                    .visibility_change_target(Panel::Library, visibility(&library, &now_playing));
                 if let Some(target) = target {
                     set_transient_visibility(&applying, &library, &now_playing, target);
                 }
