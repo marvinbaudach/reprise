@@ -487,6 +487,17 @@ mod tests {
         show_content_callback(&split, &content_navigation)();
         assert!(!split.shows_sidebar());
 
+        button.set_active(true);
+        assert!(
+            split.shows_sidebar(),
+            "the narrow toggle opens the sidebar overlay"
+        );
+        button.set_active(false);
+        assert!(
+            !split.shows_sidebar(),
+            "the narrow toggle dismisses the sidebar overlay"
+        );
+
         split.set_collapsed(false);
         assert!(
             !split.shows_sidebar(),
