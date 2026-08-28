@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::artist_portrait::{cache, PortraitError, PortraitOutcome};
 use crate::db::Db;
+use crate::musicbrainz::FetchError;
 use crate::queries::{self, WindowRange};
 
 const REPORT_INTERVAL: Duration = Duration::from_millis(250);
@@ -18,6 +19,10 @@ const RETRY_DELAYS: [Duration; 4] = [
     Duration::from_secs(45),
     Duration::from_secs(120),
 ];
+/// Immediate retries at the head of the queue before an artist yields its slot.
+const MAX_HEAD_RETRIES: u32 = 1;
+/// Total artist-shaped failures for one artist within a single run.
+const MAX_ATTEMPTS_PER_ARTIST: u32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PortraitBackfillState {
@@ -355,6 +360,25 @@ pub fn pending_artists(
     }
 }
 
+/// Classifies a portrait fetch error as network-shaped or artist-shaped.
+///
+/// Network-shaped errors indicate the connection is the problem; every artist would
+/// fail the same way. These retries never consume artist-specific budgets.
+///
+/// Artist-shaped errors indicate the server answered and the answer is specific to
+/// this request. These always consume one artist attempt.
+fn is_network_shaped_error(error: &PortraitError) -> bool {
+    matches!(
+        error,
+        PortraitError::Fetch(
+            FetchError::Timeout
+                | FetchError::Transport
+                | FetchError::Body
+                | FetchError::HttpStatus(429 | 500..=599)
+        )
+    )
+}
+
 fn run_worker(
     control: &Control,
     preparing: PortraitBackfillProgress,
@@ -365,7 +389,7 @@ fn run_worker(
     consent_allowed: &(dyn Fn() -> bool + Send + Sync),
 ) {
     let total = u32::try_from(artists.len()).unwrap_or(u32::MAX);
-    let mut queue = VecDeque::from(artists);
+    let mut queue: VecDeque<(String, u32)> = artists.into_iter().map(|a| (a, 0)).collect();
     let mut progress = PortraitBackfillProgress {
         state: PortraitBackfillState::Running,
         total,
@@ -377,7 +401,7 @@ fn run_worker(
     }
     let mut consecutive_errors = 0_u32;
 
-    while let Some(artist) = queue.pop_front() {
+    while let Some((artist, attempts)) = queue.pop_front() {
         if control.cancelled() {
             return finish_cancelled(control);
         }
@@ -397,11 +421,32 @@ fn run_worker(
                 progress.state = PortraitBackfillState::Running;
             }
             Err(error) => {
-                tracing::debug!(%error, "artist portrait backfill request will retry");
-                queue.push_front(artist);
-                consecutive_errors = consecutive_errors.saturating_add(1);
-                if consecutive_errors >= 3 {
-                    progress.state = PortraitBackfillState::Paused;
+                if is_network_shaped_error(&error) {
+                    // Network-shaped: connection is the problem.
+                    // Retry immediately without consuming artist budget; may trigger Paused.
+                    tracing::debug!(%error, "artist portrait backfill request will retry (network)");
+                    queue.push_front((artist, attempts));
+                    consecutive_errors = consecutive_errors.saturating_add(1);
+                    if consecutive_errors >= 3 {
+                        progress.state = PortraitBackfillState::Paused;
+                    }
+                } else {
+                    // Artist-shaped: server answered but rejected this request.
+                    // Consumes one attempt; never triggers Paused.
+                    let next_attempts = attempts.saturating_add(1);
+                    if next_attempts <= MAX_HEAD_RETRIES {
+                        // Immediate retry at head
+                        tracing::debug!(%error, "artist portrait backfill request will retry (head)");
+                        queue.push_front((artist, next_attempts));
+                    } else if next_attempts < MAX_ATTEMPTS_PER_ARTIST {
+                        // Defer to end of queue
+                        tracing::debug!(%error, "artist portrait backfill request will retry (tail)");
+                        queue.push_back((artist, next_attempts));
+                    } else {
+                        // Budget exhausted
+                        tracing::debug!(%error, "artist portrait backfill request dropped after {next_attempts} attempts");
+                        progress.failed = progress.failed.saturating_add(1);
+                    }
                 }
             }
         }
