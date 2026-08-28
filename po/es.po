@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-28 10:01+0200\n"
+"POT-Creation-Date: 2026-08-28 15:57+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -314,8 +314,8 @@ msgid "Restart required"
 msgstr "Es necesario reiniciar"
 
 #: crates/reprise-gnome/src/ui/strings.rs:234
-msgid "Edit column layout…"
-msgstr "Editar la disposición de las columnas…"
+msgid "Customize table…"
+msgstr "Personalizar tabla…"
 
 #: crates/reprise-gnome/src/ui/strings.rs:235
 msgid "Reset to Default"
@@ -611,24 +611,24 @@ msgid "Plays"
 msgstr "Reproducciones"
 
 #: crates/reprise-gnome/src/ui/strings.rs:409
-msgid "Sort"
-msgstr "Ordenar"
-
-#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Sort by"
 msgstr "Ordenar por"
 
-#: crates/reprise-gnome/src/ui/strings.rs:411
+#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Direction"
 msgstr "Dirección"
 
-#: crates/reprise-gnome/src/ui/strings.rs:412
+#: crates/reprise-gnome/src/ui/strings.rs:411
 msgid "Ascending"
 msgstr "Ascendente"
 
-#: crates/reprise-gnome/src/ui/strings.rs:413
+#: crates/reprise-gnome/src/ui/strings.rs:412
 msgid "Descending"
 msgstr "Descendente"
+
+#: crates/reprise-gnome/src/ui/strings.rs:413
+msgid "Playlist order"
+msgstr "Orden de la lista de reproducción"
 
 #: crates/reprise-gnome/src/ui/strings.rs:419
 msgid "Playback position"
@@ -5878,7 +5878,9 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:422
 msgid "Files to remove are settled when the device is next inspected."
-msgstr "Los archivos que se eliminarán se determinan en la próxima inspección del dispositivo."
+msgstr ""
+"Los archivos que se eliminarán se determinan en la próxima inspección del "
+"dispositivo."
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:430
 #, rust-format
@@ -6266,6 +6268,21 @@ msgstr "Decoración del lado del cliente"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
+
+#~ msgid "Side panels were closed to fit the window"
+#~ msgstr "Los paneles laterales se cerraron para ajustarse a la ventana"
+
+#~ msgid "Toggle Now Playing panel"
+#~ msgstr "Mostrar u ocultar el panel En reproducción"
+
+#~ msgid "Could not save information panel visibility"
+#~ msgstr "No se pudo guardar la visibilidad del panel de información"
+
+#~ msgid "Edit column layout…"
+#~ msgstr "Editar la disposición de las columnas…"
+
+#~ msgid "Sort"
+#~ msgstr "Ordenar"
 
 #~ msgid "Bandsintown app_id"
 #~ msgstr "app_id de Bandsintown"

@@ -56,27 +56,6 @@ pub(in crate::ui) fn sort_by_column(
     crate::ui::table_columns::single_sort_indicator::sync_primary_sort_indicator(view);
 }
 
-/// Applies a sort-field choice through the same `ColumnView` sorter used by a
-/// header click. The sorter observer remains the only writer of `Shared::sort`
-/// and the only trigger for the resulting reload.
-pub(in crate::ui) fn sort_by_field(
-    view: &gtk4::ColumnView,
-    field: &str,
-    order: gtk4::SortType,
-) -> bool {
-    let columns = view.columns();
-    let Some(column) = (0..columns.n_items()).find_map(|index| {
-        columns
-            .item(index)
-            .and_downcast::<gtk4::ColumnViewColumn>()
-            .filter(|column| column.id().as_deref() == Some(field))
-    }) else {
-        return false;
-    };
-    sort_by_column(view, &column, order);
-    true
-}
-
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
 /// them back to a whitelisted sort field + direction, then reloads.
 pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
@@ -99,7 +78,6 @@ pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &R
         let shared = shared.clone();
         cv_sorter.connect_primary_sort_order_notify(move |s| on_sorter_changed(&shared, s));
     }
-    shared.browse_bar.sort_control.wire(column_view, shared);
 }
 
 fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
@@ -139,6 +117,30 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
 /// that module's `Playlist(id)` doc section) — the one sort field this
 /// module ever sets on a source switch rather than a column-header click.
 pub(in crate::ui) const PLAYLIST_ORDER_SORT_FIELD: &str = "playlist_order";
+
+pub(in crate::ui) fn restore_playlist_order(shared: &Rc<Shared>, order: gtk4::SortType) {
+    let source = shared.source.borrow().clone();
+    if !matches!(source, ViewSource::Playlist(_)) {
+        return;
+    }
+    let next = SortState {
+        field: PLAYLIST_ORDER_SORT_FIELD.to_owned(),
+        dir: if order == gtk4::SortType::Descending {
+            "desc"
+        } else {
+            "asc"
+        }
+        .to_owned(),
+    };
+    if *shared.sort.borrow() == next {
+        return;
+    }
+    shared
+        .column_view
+        .sort_by_column(None::<&gtk4::ColumnViewColumn>, order);
+    *shared.sort.borrow_mut() = next;
+    reload(shared);
+}
 
 /// Pure decision of what `shared.sort` should become when the track list
 /// switches to `source`, *before* the switch's reload runs — factored out of
@@ -477,11 +479,11 @@ mod header_sort_display_tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_13_browse_sort_and_header_click_converge_and_reload_once() {
+    fn style_13_table_customization_sort_and_header_click_converge_and_reload_once() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let reloads = Rc::new(Cell::new(0));
-        let track_list = TrackList::new(
+        let track_list = Rc::new(TrackList::new(
             Rc::new(crate::test_db::open().unwrap()),
             Box::new(|_, _, _, _| {}),
             {
@@ -490,7 +492,7 @@ mod header_sort_display_tests {
             },
             super::super::queue_sections::QueueViewModel::default,
             crate::ui::cover_download_worker::setup_for_test(),
-        );
+        ));
         let window = gtk4::Window::builder().child(track_list.widget()).build();
         window.present();
 
@@ -511,11 +513,8 @@ mod header_sort_display_tests {
             gtk4::SortType::Ascending,
         );
         let before_menu = reloads.get();
-        assert!(track_list
-            .shared
-            .browse_bar
-            .sort_control
-            .activate_field("title"));
+        let model = crate::ui::column_layout::model(&track_list);
+        model.set_sort("title", gtk4::SortType::Ascending);
         assert_eq!(*track_list.shared.sort.borrow(), header_state);
         assert_eq!(
             reloads.get(),
@@ -524,11 +523,7 @@ mod header_sort_display_tests {
         );
 
         let before_direction = reloads.get();
-        assert!(track_list
-            .shared
-            .browse_bar
-            .sort_control
-            .activate_direction("desc"));
+        model.set_sort("title", gtk4::SortType::Descending);
         assert_eq!(
             *track_list.shared.sort.borrow(),
             SortState {
@@ -541,21 +536,56 @@ mod header_sort_display_tests {
             before_direction + 1,
             "one direction choice reaches the shared sorter and reloads exactly once"
         );
+
+        *track_list.shared.source.borrow_mut() = ViewSource::Playlist(7);
+        let before_playlist_order = reloads.get();
+        restore_playlist_order(&track_list.shared, gtk4::SortType::Ascending);
+        assert_eq!(
+            reloads.get(),
+            before_playlist_order + 1,
+            "restoring manual playlist order reloads exactly once"
+        );
+        assert_eq!(
+            model.sort(),
+            Some((
+                PLAYLIST_ORDER_SORT_FIELD.to_owned(),
+                gtk4::SortType::Ascending
+            ))
+        );
+        assert_eq!(
+            track_list
+                .shared
+                .column_view
+                .sorter()
+                .and_downcast::<gtk4::ColumnViewSorter>()
+                .expect("ColumnView owns its aggregate sorter")
+                .primary_sort_column(),
+            None,
+            "manual playlist order clears the stale header indicator"
+        );
+        let before_return = reloads.get();
+        model.set_sort("title", gtk4::SortType::Ascending);
+        assert_eq!(track_list.shared.sort.borrow().field, "title");
+        assert_eq!(
+            reloads.get(),
+            before_return + 1,
+            "the same column and order remain selectable after restoring manual order"
+        );
         window.close();
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn style_13_header_sort_is_marked_when_the_sort_popover_opens() {
+    fn style_13_header_sort_is_marked_when_table_customization_opens() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let track_list = TrackList::new(
+        let track_list = Rc::new(TrackList::new(
             Rc::new(crate::test_db::open().unwrap()),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,
             crate::ui::cover_download_worker::setup_for_test(),
-        );
+        ));
         let window = gtk4::Window::builder().child(track_list.widget()).build();
         window.present();
 
@@ -565,31 +595,51 @@ mod header_sort_display_tests {
             &title,
             gtk4::SortType::Descending,
         );
-        track_list.shared.browse_bar.sort_control.button().popup();
-        let context = gtk4::glib::MainContext::default();
-        while context.pending() {
-            context.iteration(false);
-        }
-
-        let title_marked = track_list
-            .shared
-            .browse_bar
-            .sort_control
-            .field_choices()
-            .into_iter()
-            .find(|(field, _)| field == "title")
-            .is_some_and(|(_, choice)| choice.is_active());
-        assert!(title_marked, "the header-selected field is marked on open");
+        let model = crate::ui::column_layout::model(&track_list);
+        assert_eq!(
+            model.sort(),
+            Some(("title".to_owned(), gtk4::SortType::Descending)),
+            "the customization surface reads the header-owned sorter when it opens"
+        );
+        let surface = crate::ui::table_columns::editor::build_surface(&model, true);
+        let title_choice = check_button_with_label(
+            surface.toolbar.upcast_ref(),
+            &crate::ui::strings::text(crate::ui::strings::COLUMN_TITLE),
+        );
+        let descending_choice = check_button_with_label(
+            surface.toolbar.upcast_ref(),
+            &crate::ui::strings::text(crate::ui::strings::SORT_DESCENDING),
+        );
+        assert!(title_choice.is_active(), "the active sort field is marked");
         assert!(
-            track_list
-                .shared
-                .browse_bar
-                .sort_control
-                .direction_choices()[1]
-                .is_active(),
-            "the header-selected descending direction is marked on open"
+            descending_choice.is_active(),
+            "the active sort direction is marked"
         );
         window.close();
+    }
+
+    fn check_button_with_label(widget: &gtk4::Widget, label: &str) -> gtk4::CheckButton {
+        find_check_button_with_label(widget, label)
+            .unwrap_or_else(|| panic!("missing radio choice {label}"))
+    }
+
+    fn find_check_button_with_label(
+        widget: &gtk4::Widget,
+        label: &str,
+    ) -> Option<gtk4::CheckButton> {
+        if let Some(choice) = widget.downcast_ref::<gtk4::CheckButton>() {
+            if choice.label().as_deref() == Some(label) {
+                return Some(choice.clone());
+            }
+        }
+        let mut child = widget.first_child();
+        while let Some(candidate) = child {
+            if let Some(choice) = find_check_button_with_label(&candidate, label) {
+                return Some(choice);
+            }
+            child = candidate.next_sibling();
+        }
+        None
     }
 
     fn column_for_field(view: &gtk4::ColumnView, field: &str) -> gtk4::ColumnViewColumn {

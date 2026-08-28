@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-28 11:38+0200\n"
+"POT-Creation-Date: 2026-08-28 15:57+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -312,7 +312,7 @@ msgid "Restart required"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:234
-msgid "Edit column layout…"
+msgid "Customize table…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:235
@@ -594,23 +594,23 @@ msgid "Plays"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:409
-msgid "Sort"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Sort by"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:411
+#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Direction"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:412
+#: crates/reprise-gnome/src/ui/strings.rs:411
 msgid "Ascending"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:413
+#: crates/reprise-gnome/src/ui/strings.rs:412
 msgid "Descending"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:413
+msgid "Playlist order"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:419

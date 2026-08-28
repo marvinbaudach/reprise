@@ -3326,8 +3326,8 @@ property is set and yet nothing happens.
   learned in the music library is the same behaviour in Releases, Concerts
   and Radio — a user does not experience a missing editor there as an absent
   feature but as the app forgetting what it taught them. The same editor is
-  reachable without a pointer through the primary menu's "Edit column
-  layout…", which addresses the table of the active view and is insensitive
+  reachable without a pointer through the primary menu's "Customize
+  table…", which addresses the table of the active view and is insensitive
   where no table is shown. Order, visibility and header-dragged widths are
   stored per table and survive a restart. A table may declare fixed columns
   — a leading artwork column, a trailing action column on a surface without
@@ -3390,21 +3390,23 @@ property is set and yet nothing happens.
   indicator is invisible while its width stays reserved, so headers do not
   jump. A header without a sort field carries no sorter and therefore does not
   appear clickable; a sortable header orders its own column. **Issue #404:**
-  sorting is also reachable without a pointer through a labelled control in
-  the browse bar. Its field and direction choices are labelled, keyboard
-  navigable, and expose the current choice as state. The browse-bar control
-  and the sortable column headers drive the same `ColumnView` sorter; neither
-  writes or owns a second sort state. **Test rule:**
+  sorting is also reachable without a pointer through the labelled table
+  customization surface, reached from the primary menu and by right-clicking
+  the header band. It covers every table with sortable columns. Its field and
+  direction choices are labelled, keyboard navigable, and expose the current
+  choice as state. The customization surface and the sortable column headers
+  drive the same `ColumnView` sorter; neither writes or owns a second sort
+  state. **Test rule:**
   one rule-named display test per table, plus a measured filler test. Tests:
-  `style_13_browse_sort_and_header_click_converge_and_reload_once`
-  and `style_13_header_sort_is_marked_when_the_sort_popover_opens`
+  `style_13_table_customization_sort_and_header_click_converge_and_reload_once`
+  and `style_13_header_sort_is_marked_when_table_customization_opens`
   (`ui/track_list/track_list_sort.rs`),
   `style_13_sort_choices_match_every_accepted_table_sort_field`,
   `style_13_sort_choices_are_keyboard_radio_actions`, and
   `style_13_sort_popover_closes_on_escape`
-  (`ui/browse/browse_bar_tests.rs`),
+  (`ui/table_columns/editor.rs`),
   `style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator`
-  (`ui/table_columns/registry.rs`),
+  (`ui/table_columns/registry_sort_tests.rs`),
   `nr_39_the_column_editor_lists_status_and_link_and_hides_them` and
   `two_release_sorts_leave_one_indicator`
   (`ui/releases/releases_view_tests.rs`),

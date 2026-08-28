@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-28 10:01+0200\n"
+"POT-Creation-Date: 2026-08-28 15:57+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -311,8 +311,8 @@ msgid "Restart required"
 msgstr "पुनः आरंभ आवश्यक है"
 
 #: crates/reprise-gnome/src/ui/strings.rs:234
-msgid "Edit column layout…"
-msgstr "स्तंभ विन्यास संपादित करें…"
+msgid "Customize table…"
+msgstr "तालिका अनुकूलित करें…"
 
 #: crates/reprise-gnome/src/ui/strings.rs:235
 msgid "Reset to Default"
@@ -593,24 +593,24 @@ msgid "Plays"
 msgstr "चलाने की संख्या"
 
 #: crates/reprise-gnome/src/ui/strings.rs:409
-msgid "Sort"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Sort by"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:411
+#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Direction"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:412
+#: crates/reprise-gnome/src/ui/strings.rs:411
 msgid "Ascending"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:413
+#: crates/reprise-gnome/src/ui/strings.rs:412
 msgid "Descending"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:413
+msgid "Playlist order"
+msgstr "प्लेलिस्ट क्रम"
 
 #: crates/reprise-gnome/src/ui/strings.rs:419
 msgid "Playback position"
@@ -6026,6 +6026,9 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#~ msgid "Edit column layout…"
+#~ msgstr "स्तंभ विन्यास संपादित करें…"
 
 #~ msgid "Bandsintown app_id"
 #~ msgstr "Bandsintown app_id"

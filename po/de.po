@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-28 10:01+0200\n"
+"POT-Creation-Date: 2026-08-28 15:57+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -314,8 +314,8 @@ msgid "Restart required"
 msgstr "Neustart erforderlich"
 
 #: crates/reprise-gnome/src/ui/strings.rs:234
-msgid "Edit column layout…"
-msgstr "Spaltenanordnung bearbeiten…"
+msgid "Customize table…"
+msgstr "Tabelle anpassen…"
 
 #: crates/reprise-gnome/src/ui/strings.rs:235
 msgid "Reset to Default"
@@ -612,24 +612,24 @@ msgid "Plays"
 msgstr "Wiedergaben"
 
 #: crates/reprise-gnome/src/ui/strings.rs:409
-msgid "Sort"
-msgstr "Sortieren"
-
-#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Sort by"
 msgstr "Sortieren nach"
 
-#: crates/reprise-gnome/src/ui/strings.rs:411
+#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Direction"
 msgstr "Richtung"
 
-#: crates/reprise-gnome/src/ui/strings.rs:412
+#: crates/reprise-gnome/src/ui/strings.rs:411
 msgid "Ascending"
 msgstr "Aufsteigend"
 
-#: crates/reprise-gnome/src/ui/strings.rs:413
+#: crates/reprise-gnome/src/ui/strings.rs:412
 msgid "Descending"
 msgstr "Absteigend"
+
+#: crates/reprise-gnome/src/ui/strings.rs:413
+msgid "Playlist order"
+msgstr "Manuelle Reihenfolge"
 
 #: crates/reprise-gnome/src/ui/strings.rs:419
 msgid "Playback position"
@@ -5613,8 +5613,8 @@ msgid ""
 "{size} in the saved device inventory · Verification time unavailable for "
 "these counts"
 msgstr ""
-"{size} im gespeicherten Geräteinventar · Zeitpunkt der Überprüfung für "
-"diese Angaben nicht verfügbar"
+"{size} im gespeicherten Geräteinventar · Zeitpunkt der Überprüfung für diese "
+"Angaben nicht verfügbar"
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:39
 #, rust-format
@@ -5879,7 +5879,8 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:422
 msgid "Files to remove are settled when the device is next inspected."
-msgstr "Zu entfernende Dateien werden bei der nächsten Geräteprüfung festgelegt."
+msgstr ""
+"Zu entfernende Dateien werden bei der nächsten Geräteprüfung festgelegt."
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:430
 #, rust-format
@@ -6267,6 +6268,22 @@ msgstr "Clientseitige Dekoration"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#~ msgid "Side panels were closed to fit the window"
+#~ msgstr "Die Seitenleisten wurden geschlossen, damit sie ins Fenster passen"
+
+#~ msgid "Toggle Now Playing panel"
+#~ msgstr "Wiedergabe-Panel ein-/ausblenden"
+
+#~ msgid "Could not save information panel visibility"
+#~ msgstr ""
+#~ "Die Sichtbarkeit der Informationsspalte konnte nicht gespeichert werden"
+
+#~ msgid "Edit column layout…"
+#~ msgstr "Spaltenanordnung bearbeiten…"
+
+#~ msgid "Sort"
+#~ msgstr "Sortieren"
 
 #~ msgid "Bandsintown app_id"
 #~ msgstr "Bandsintown-app_id"

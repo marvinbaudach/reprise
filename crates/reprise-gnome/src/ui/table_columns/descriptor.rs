@@ -20,6 +20,16 @@ pub(in crate::ui) trait EditorModel: 'static {
     /// row that does nothing.
     fn columns(&self) -> Vec<ColumnDescriptor>;
 
+    fn sortable_columns(&self) -> Vec<ColumnDescriptor> {
+        Vec::new()
+    }
+
+    fn sort(&self) -> Option<(String, gtk4::SortType)> {
+        None
+    }
+
+    fn set_sort(&self, _id: &str, _order: gtk4::SortType) {}
+
     fn is_visible(&self, id: &str) -> bool;
     fn set_visible(&self, id: &str, visible: bool);
     fn move_column(&self, id: &str, target: &str, after: bool);
@@ -76,5 +86,17 @@ mod tests {
         assert!(!model.is_visible("date"));
         model.reset();
         assert!(model.is_visible("date"));
+    }
+
+    #[test]
+    fn an_editor_model_without_sorting_uses_inert_defaults() {
+        let model = Fake {
+            hidden: RefCell::new(Vec::new()),
+        };
+
+        assert!(model.sortable_columns().is_empty());
+        assert_eq!(model.sort(), None);
+        model.set_sort("date", gtk4::SortType::Descending);
+        assert_eq!(model.sort(), None);
     }
 }

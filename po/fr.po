@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-28 10:01+0200\n"
+"POT-Creation-Date: 2026-08-28 15:57+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: French\n"
@@ -311,8 +311,8 @@ msgid "Restart required"
 msgstr "Redémarrage requis"
 
 #: crates/reprise-gnome/src/ui/strings.rs:234
-msgid "Edit column layout…"
-msgstr "Modifier la disposition des colonnes…"
+msgid "Customize table…"
+msgstr "Personnaliser le tableau…"
 
 #: crates/reprise-gnome/src/ui/strings.rs:235
 msgid "Reset to Default"
@@ -600,24 +600,24 @@ msgid "Plays"
 msgstr "Écoutes"
 
 #: crates/reprise-gnome/src/ui/strings.rs:409
-msgid "Sort"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Sort by"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:411
+#: crates/reprise-gnome/src/ui/strings.rs:410
 msgid "Direction"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:412
+#: crates/reprise-gnome/src/ui/strings.rs:411
 msgid "Ascending"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:413
+#: crates/reprise-gnome/src/ui/strings.rs:412
 msgid "Descending"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:413
+msgid "Playlist order"
+msgstr "Ordre de la liste de lecture"
 
 #: crates/reprise-gnome/src/ui/strings.rs:419
 msgid "Playback position"
@@ -6043,6 +6043,9 @@ msgstr ""
 msgid "Separate title bar"
 msgstr ""
 
+#~ msgid "Edit column layout…"
+#~ msgstr "Modifier la disposition des colonnes…"
+
 #~ msgid "Bandsintown app_id"
 #~ msgstr "app_id Bandsintown"
 
@@ -6115,6 +6118,10 @@ msgstr ""
 #~ msgid_plural "Apply {count} changes"
 #~ msgstr[0] "Appliquer {count} modification"
 #~ msgstr[1] "Appliquer {count} modifications"
+
+#, rust-format
+#~ msgid "{count} tags fixed"
+#~ msgstr "{count} tags corrigés"
 
 #~ msgid "Rescan Library"
 #~ msgstr "Réanalyser la bibliothèque"
