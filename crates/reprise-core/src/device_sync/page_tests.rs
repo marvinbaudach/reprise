@@ -87,6 +87,18 @@ fn empty_selection_keeps_controls_destructive_work_and_storage_projection_blocke
 }
 
 #[test]
+fn disconnected_idle_device_keeps_settings_editable_without_hardware_actions() {
+    let mut projection = project_sync_page(SyncPageInput::default());
+
+    projection.page.update_controls(false, true, false);
+
+    assert!(projection.page.controls.editable);
+    assert!(!projection.page.controls.can_start);
+    assert!(!projection.page.controls.can_cancel);
+    assert!(!projection.page.controls.can_eject);
+}
+
+#[test]
 fn mtp_12_page_projects_the_verified_sync_time_for_each_playlist() {
     let road = SelectionSource::Playlist(1);
     let mix = SelectionSource::Playlist(2);

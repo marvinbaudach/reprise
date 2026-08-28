@@ -423,6 +423,20 @@ mod tests {
     }
 
     #[test]
+    fn mtp_29_prior_verification_is_not_presented_as_a_current_connected_scan() {
+        let last_verified = now() - chrono::Duration::days(3);
+        assert_eq!(
+            leading_sentence(
+                &DeviceContentsState::VerifiedEarlier(last_verified),
+                &SyncBalance::default(),
+                Some(last_verified),
+                now(),
+            ),
+            "Tap to scan device contents"
+        );
+    }
+
+    #[test]
     fn mtp_63_the_card_emphasis_separates_active_connected_and_remembered() {
         let active = view(PlannedSyncPhase::Finishing);
         let connected = view(PlannedSyncPhase::Idle);

@@ -1,5 +1,88 @@
 use super::*;
 
+fn add_remembered_playlist(conn: &Rc<Db>, device_id: &str) {
+    crate::test_db::connection(conn.as_ref())
+        .execute(
+            "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
+            [],
+        )
+        .unwrap();
+    crate::test_db::connection(conn.as_ref())
+        .execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, 1, 0)",
+            [],
+        )
+        .unwrap();
+    let mut settings = reprise_core::device_sync::settings::load_or_create_settings(
+        conn,
+        device_id,
+        "Remembered phone",
+    )
+    .unwrap();
+    settings.selection = DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]);
+    settings.sync_automatically = false;
+    reprise_core::device_sync::settings::save_settings(conn, &settings).unwrap();
+}
+
+#[test]
+fn remembered_device_projects_saved_playlists_on_startup_without_storage_measurements() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        let backend = Rc::new(FakeBackend::new(Vec::new(), 1));
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(backend.state.inspection_roots.borrow().len(), 0);
+        assert_eq!(remembered.storage, DeviceStorageSnapshot::default());
+        assert_eq!(
+            remembered.page.storage.current.knowledge,
+            reprise_core::device_sync::StorageKnowledge::CapacityUnknown
+        );
+        assert!(remembered.page.blockers.is_empty());
+        let road = remembered
+            .page
+            .playlists
+            .iter()
+            .find(|row| row.name.as_deref() == Some("Road"))
+            .unwrap();
+        assert!(road.selected);
+        assert_eq!(remembered.page.changes.additions, 1);
+        assert_eq!(remembered.page.changes.playlist_writes, 1);
+    });
+}
+
+#[test]
+fn unplugging_discards_live_storage_and_scan_inventory_but_keeps_library_projection() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "a");
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(vec![ManagedDeviceFile {
+            relative_path: "Artist/Album/Track.opus".into(),
+            size_bytes: 123,
+        }]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let connected = runtime.devices().remove(0);
+        assert_eq!(connected.storage.total_bytes, Some(2_000_000));
+        assert_eq!(connected.content_row.item_count, 1);
+
+        backend.set_devices(&[]);
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(remembered.storage, DeviceStorageSnapshot::default());
+        assert_eq!(remembered.content_row.item_count, 0);
+        assert!(remembered
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.name.as_deref() == Some("Road") && row.selected));
+    });
+}
+
 #[test]
 fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local_memory_actions() {
     run(async {
@@ -18,6 +101,21 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
             "pixel-anna",
             1_753_612_496,
             2_400_000_000,
+        )
+        .unwrap();
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn,
+            &reprise_core::device_sync::DeviceFileRecord {
+                device_serial: "pixel-anna".into(),
+                track_id: 1,
+                source_path: "/music/1.flac".into(),
+                source_size: 100,
+                source_mtime: 1,
+                device_path: "Artist/Album/Track.opus".into(),
+                device_size: 2_400_000_000,
+                profile_fingerprint: "opus-vbr-160-v1".into(),
+                pinned: false,
+            },
         )
         .unwrap();
         let mut target =
@@ -47,6 +145,10 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
         );
         assert_eq!(remembered.last_sync.unwrap().timestamp(), 1_753_612_496);
         assert_eq!(remembered.size_on_device_bytes, Some(2_400_000_000));
+        assert_eq!(
+            remembered.verified_managed_track_count, None,
+            "a remembered byte total cannot prove the saved file identities still match"
+        );
         assert_eq!(remembered.content_row.target_path, "/Music/Anna");
         assert!(
             !reprise_core::device_sync::aggregate_balance(&[remembered.target_reading]).has_work(),
@@ -66,6 +168,139 @@ fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
                 .map(|device| device.id.as_str())
                 .collect::<Vec<_>>(),
             ["active"]
+        );
+    });
+}
+
+#[test]
+fn inventory_changed_after_verification_keeps_counts_but_drops_their_date() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        reprise_core::device_sync::settings::record_device_verification(
+            &conn,
+            "remembered",
+            1_753_612_496,
+            100,
+        )
+        .unwrap();
+        reprise_core::device_sync::settings::upsert_device_file(
+            &conn,
+            &reprise_core::device_sync::DeviceFileRecord {
+                device_serial: "remembered".into(),
+                track_id: 1,
+                source_path: "/music/1.flac".into(),
+                source_size: 100,
+                source_mtime: 1,
+                device_path: "Artist/Album/Track.opus".into(),
+                device_size: 200,
+                profile_fingerprint: "opus-vbr-160-v1".into(),
+                pinned: false,
+            },
+        )
+        .unwrap();
+
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(remembered.managed_track_count, 1);
+        assert_eq!(remembered.size_on_device_bytes, Some(200));
+        assert_eq!(remembered.verified_managed_track_count, None);
+        assert_eq!(remembered.content_row.item_count, 1);
+        assert_eq!(remembered.content_row.size_on_device_bytes, 200);
+    });
+}
+
+#[test]
+fn same_size_inventory_swap_drops_verified_count_trust() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        let record = |track_id| reprise_core::device_sync::DeviceFileRecord {
+            device_serial: "remembered".into(),
+            track_id,
+            source_path: format!("/music/{track_id}.flac"),
+            source_size: 100,
+            source_mtime: 1,
+            device_path: format!("Artist/Album/Track {track_id}.opus"),
+            device_size: 200,
+            profile_fingerprint: "opus-vbr-160-v1".into(),
+            pinned: false,
+        };
+        reprise_core::device_sync::settings::upsert_device_file(&conn, &record(1)).unwrap();
+        reprise_core::device_sync::settings::record_device_verification(
+            &conn,
+            "remembered",
+            1_753_612_496,
+            200,
+        )
+        .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "DELETE FROM device_files WHERE device_serial = 'remembered' AND track_id = 1",
+                [],
+            )
+            .unwrap();
+        reprise_core::device_sync::settings::upsert_device_file(&conn, &record(2)).unwrap();
+
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+        let remembered = runtime.devices().remove(0);
+
+        assert_eq!(remembered.managed_track_count, 1);
+        assert_eq!(remembered.size_on_device_bytes, Some(200));
+        assert_eq!(remembered.verified_managed_track_count, None);
+    });
+}
+
+#[test]
+fn presence_change_notifies_before_idle_device_reprojection() {
+    run(async {
+        let (_temp, conn) = fixture();
+        disable_auto_start(&conn, "a");
+        add_remembered_playlist(&conn, "b");
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            1,
+        ));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let notifications = Rc::new(RefCell::new(Vec::new()));
+        let captured = notifications.clone();
+        let _subscription = runtime.subscribe(Rc::new(move |state| {
+            captured.borrow_mut().push(state);
+        }));
+        notifications.borrow_mut().clear();
+        reprise_core::library::playlists::rename(&conn, 10, "Travel").unwrap();
+
+        backend.set_devices(&[descriptor("a", true)]);
+
+        let notifications = notifications.borrow();
+        assert!(notifications.len() >= 2);
+        let remembered_name = |state: &DeviceSyncState| {
+            state
+                .devices
+                .iter()
+                .find(|device| device.id == "b")
+                .and_then(|device| {
+                    assert_eq!(
+                        device.session_state,
+                        reprise_core::device_sync::DeviceSessionState::Remembered
+                    );
+                    device
+                        .page
+                        .playlists
+                        .iter()
+                        .find(|row| row.source == SelectionSource::Playlist(10))
+                        .and_then(|row| row.name.clone())
+                })
+        };
+        assert_eq!(remembered_name(&notifications[0]).as_deref(), Some("Road"));
+        assert_eq!(
+            remembered_name(notifications.last().unwrap()).as_deref(),
+            Some("Travel")
         );
     });
 }

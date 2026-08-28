@@ -74,7 +74,7 @@ impl SyncPageState {
             .free_bytes
             .is_some_and(|free| self.changes.transfer_bytes > free);
         self.controls = SyncPageControls {
-            editable: connected && !active,
+            editable: !active,
             can_start: connected
                 && ready
                 && !active

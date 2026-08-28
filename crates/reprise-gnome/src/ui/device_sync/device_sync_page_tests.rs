@@ -68,6 +68,7 @@ fn device() -> DeviceView {
             reprise_music_bytes: 32 * 1_024,
             other_music_bytes: 16 * 1_024,
         },
+        storage_measured: true,
         scan_error: None,
         settings: DeviceSettings {
             device_serial: "phone".into(),
@@ -307,7 +308,7 @@ fn mtp_7_full_page_projects_complete_storage_segments() {
         state: StorageProjectionState::Fits,
     };
     assert_eq!(
-        storage_summary(&projection),
+        storage_summary(&projection, true),
         "Writable · Music 48.0 KiB · after sync +16.0 KiB · Other 16.0 KiB · Free 48.0 KiB"
     );
     assert_eq!(
@@ -335,7 +336,7 @@ fn mtp_9_known_read_only_target_is_explicit_and_blocks_sync() {
     device.page.update_controls(true, true, false);
 
     assert_eq!(
-        storage_summary(&device.page.storage),
+        storage_summary(&device.page.storage, true),
         "Read-only · Music 48.0 KiB · after sync no change · Other 16.0 KiB · Free 48.0 KiB"
     );
     assert_eq!(
@@ -345,7 +346,7 @@ fn mtp_9_known_read_only_target_is_explicit_and_blocks_sync() {
     assert!(!device.page.controls.can_start);
 
     device.page.storage.access = DeviceStorageAccess::Unknown;
-    assert!(storage_summary(&device.page.storage).starts_with("Write access unknown ·"));
+    assert!(storage_summary(&device.page.storage, true).starts_with("Write access unknown ·"));
     assert_eq!(storage_access_notice(device.page.storage.access), None);
 }
 
@@ -366,6 +367,25 @@ fn mtp_10_verification_summary_claims_only_post_sync_readback() {
     assert_eq!(
         verification_summary(&device),
         "Verified · 2 Reprise tracks on device"
+    );
+}
+
+#[test]
+fn offline_preview_names_intent_without_rendering_a_removal_count() {
+    let preview = offline_change_preview(2, 1, 2, 32 * 1_024);
+
+    assert!(preview.contains("2 files to copy"));
+    assert!(preview.contains("1 replacement"));
+    assert!(preview.contains("2 playlist writes"));
+    assert!(preview.contains("32.0 KiB to transfer"));
+    assert!(preview.contains("Files to remove are settled when the device is next inspected."));
+    assert!(
+        !preview
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|words| words[0].parse::<usize>().is_ok() && words[1].starts_with("remove")),
+        "the offline copy must not contain any numeric removal claim: {preview}"
     );
 }
 
@@ -402,6 +422,7 @@ fn mtp_50_remembered_page_names_the_last_verified_size_without_a_live_diff() {
             .unwrap(),
     );
     device.size_on_device_bytes = Some(2_400_000_000);
+    device.verified_managed_track_count = Some(2);
 
     let local = chrono::Local
         .timestamp_opt(1_753_612_496, 0)
@@ -414,6 +435,34 @@ fn mtp_50_remembered_page_names_the_last_verified_size_without_a_live_diff() {
             format_local_date_time(&local)
         )
     );
+}
+
+#[test]
+fn remembered_header_does_not_date_inventory_that_changed_after_verification() {
+    let mut device = device();
+    device.connected = false;
+    device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    device.last_sync = Some(
+        chrono::Utc
+            .timestamp_opt(1_753_612_496, 0)
+            .single()
+            .unwrap(),
+    );
+    device.size_on_device_bytes = Some(200);
+    device.verified_managed_track_count = None;
+
+    let copy = device_last_sync_copy(&device);
+
+    assert_eq!(
+        copy,
+        "200 B in the saved device inventory · Verification time unavailable for these counts"
+    );
+    assert!(!copy.contains(&format_local_date_time(
+        &chrono::Local
+            .timestamp_opt(1_753_612_496, 0)
+            .single()
+            .unwrap()
+    )));
 }
 
 #[test]
@@ -442,7 +491,7 @@ fn mtp_7_storage_segments_never_invent_unknown_capacity_or_negative_growth() {
         )
     );
     assert_eq!(
-        storage_summary(&projection),
+        storage_summary(&projection, true),
         "Writable · Music 48.0 KiB · after sync −16.0 KiB · Other 16.0 KiB · Free 80.0 KiB"
     );
 

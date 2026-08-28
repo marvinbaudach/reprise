@@ -550,6 +550,45 @@ fn mtp_61_on_this_device_reads_as_one_balance_without_nested_section_headings() 
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn remembered_verification_replaces_never_verified_without_enabling_check_again() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+    let mut remembered = device();
+    remembered.connected = false;
+    remembered.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    remembered.contents_state =
+        reprise_core::device_sync::device_view::DeviceContentsState::NeverVerified;
+    let (surface, _root) = DeviceSyncPage::new(
+        &remembered,
+        PageActions {
+            set_profile: Rc::new(|_| {}),
+            set_playlist: Rc::new(|_, _| {}),
+            start: Rc::new(|| {}),
+            cancel: Rc::new(|| {}),
+            eject: Rc::new(|| {}),
+        },
+        &no_op_content_actions(),
+    );
+    assert!(surface
+        .root_text()
+        .contains("Device contents never verified"));
+    assert!(!surface.on_device.check_button_is_sensitive());
+
+    let verified_at = chrono::Utc::now() - chrono::Duration::days(1);
+    remembered.last_sync = Some(verified_at);
+    remembered.contents_state =
+        reprise_core::device_sync::device_view::DeviceContentsState::VerifiedEarlier(verified_at);
+    surface.update(&remembered);
+
+    assert!(!surface
+        .root_text()
+        .contains("Device contents never verified"));
+    assert!(surface.root_text().contains("verified 1 d ago"));
+    assert!(!surface.on_device.check_button_is_sensitive());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mtp_61_on_this_device_offers_no_playlist_selection() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");
