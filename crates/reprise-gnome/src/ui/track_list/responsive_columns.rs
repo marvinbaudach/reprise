@@ -107,7 +107,8 @@ impl ResponsiveColumns {
             let Some(overlay) = overlay.upgrade() else {
                 return;
             };
-            if let Some(previous) = notice_toast.borrow_mut().take() {
+            let previous = notice_toast.borrow_mut().take();
+            if let Some(previous) = previous {
                 previous.dismiss();
             }
             let toast = crate::ui::toasts::plain(&crate::ui::strings::text(
@@ -122,7 +123,8 @@ impl ResponsiveColumns {
         });
         *self.on_folded.borrow_mut() = Some(show_notice.clone());
         self.breakpoint.connect_unapply(move |_| {
-            if let Some(toast) = active_toast.borrow_mut().take() {
+            let toast = active_toast.borrow_mut().take();
+            if let Some(toast) = toast {
                 toast.dismiss();
             }
         });

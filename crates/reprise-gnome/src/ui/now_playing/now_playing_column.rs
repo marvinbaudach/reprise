@@ -4,7 +4,7 @@ use libadwaita::prelude::*;
 
 pub(in crate::ui) const PANEL_WIDTH: i32 = 300;
 pub(in crate::ui) const INFO_PANEL_COLLAPSE_WIDTH: i32 =
-    crate::ui::window::library_shell::SIDEBAR_BREAKPOINT_WIDTH - 1;
+    crate::ui::window::library_shell::SIDEBAR_COLLAPSE_WIDTH;
 
 #[derive(Clone)]
 pub(in crate::ui) struct NowPlayingColumn {
@@ -58,8 +58,9 @@ impl NowPlayingColumn {
         // than subtracting the pinned sidebar width: below 800 the library
         // sidebar overlays and the content receives the full window width, so
         // the mapping from window width to this allocation is ambiguous. The
-        // derived mutual-exclusion constraint makes the threshold correct while
-        // the info panel is open. When the hidden panel lands in the ambiguous
+        // `ui/window/responsive_side_panels.rs::CONSTRAINED_WIDTH` guarantees
+        // that mutual exclusion; raising PANEL_WIDTH or relaxing the exclusion
+        // invalidates this threshold. When the hidden panel lands in the ambiguous
         // band (for example 784 px at a 1024 px window), pin-sidebar keeps the
         // breakpoint from changing its visibility behind the constraint owner.
         let condition = adw::BreakpointCondition::new_length(
