@@ -3,6 +3,44 @@
 State on 2026-08-26, evening. Supersedes `showreel-32s.HANDOFF.md`. The film is
 being recut from 31.8 s to **60.0 s** and every take is being re-recorded.
 
+## Done on 2026-08-28 — the film is locked
+
+`reprise-showreel-60s.mp4`, **60.000000 s**, 1800 frames, −16.1 LUFS, −3.7 dBTP.
+The showroom carries it (`dc48fcc631`), suite 85/85 before and after.
+
+Everything below that says "blocked" or "to do" has happened, with three
+exceptions named at the end. What is still worth reading here is the reasoning:
+the shot list, the framing rule, the traps. What is stale is the status.
+
+- **The re-record had already happened** when this handoff was written — the
+  takes postdate it by twenty minutes. The only missing shot was **08b, MCP**,
+  and `cut-film.sh:135` was skipping it *silently* and returning exit 0. The
+  film measured 55.2 s and looked finished. 55.2 + 4.8 = 60.0 was the whole
+  remaining job. Never accept this cut on an exit status; `ffprobe` is the
+  acceptance test.
+- **The agent shot is in**, driven by `take-mcp.sh` with `wait-active.py` in
+  front of it. Three takes were still needed: the first filmed the terminal,
+  the second caught the app on the YouTube page (`ui.session.v1` restores
+  `browser_place`, which `ui.window_view_mode` does not cover).
+- **In-points measured, not guessed.** The row arrives at 7.4 s of the take and
+  is selected at 13.8 s, so `mcp 08b-agent 4.0 15.0`.
+- **The seed contradicted the caption** and now does not: `mcp-playlist.py`
+  seeded from Immortal Disfigurement while the overlay promised Lorna Shore,
+  who was not even in the neighbour list.
+- **Music: variant C, the original one**, windowed from 7.2 s. The regeneration
+  was run and did not pay: ElevenLabs ignores timing markers in the prompt and
+  all three new variants score worse than the old material. The gain came from
+  fixing the meter instead — `pick-window.py` still carried the 31.2 s arc, and
+  it had no notion of silence, so it happily chose a window that reached past
+  the generated track's own ending and put two seconds of nothing at 52 s into
+  the first scored cut.
+
+**Still open:** the device-sync half of the agent shot (no handset was
+connected, `sync-playlist.py` exits cleanly without one, so the take shows the
+agent writing but not the playlist travelling); the lyrics shot still wants a
+layout rather than a crop; the music is a pulse, not an arc, and no generator
+tried so far will give the arc this film asks for.
+
 ## Checkout hazard — resolved
 
 The work now lives in its own worktree at `/home/marvin/Projects/reprise-showreel`
