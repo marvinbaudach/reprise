@@ -2,7 +2,7 @@
 slug: the-sort-leaves-the-browse-bar
 worktree: /home/marvin/Projects/reprise-the-sort-leaves-the-browse-bar
 branch: feature/the-sort-leaves-the-browse-bar
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-27
 ---
