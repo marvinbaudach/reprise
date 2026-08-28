@@ -6,7 +6,6 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::db::Db;
 
 use crate::ui::info_panel::InfoPanel;
 use crate::ui::now_playing_column::PANEL_WIDTH;
@@ -46,14 +45,6 @@ fn constrained_visibility(current: PanelVisibility) -> PanelVisibility {
         library: current.library,
         now_playing: false,
     }
-}
-
-fn effective_library_visibility(
-    shows_sidebar: bool,
-    _collapsed: bool,
-    _persisted_collapsed: bool,
-) -> bool {
-    shows_sidebar
 }
 
 #[derive(Debug, Default)]
@@ -127,18 +118,9 @@ impl ConstraintState {
     }
 }
 
-fn visibility(
-    library: &adw::OverlaySplitView,
-    now_playing: &Rc<InfoPanel>,
-    conn: &Rc<Db>,
-) -> PanelVisibility {
-    let persisted_collapsed = reprise_core::library::settings::get_sidebar_collapsed(conn);
+fn visibility(library: &adw::OverlaySplitView, now_playing: &Rc<InfoPanel>) -> PanelVisibility {
     PanelVisibility {
-        library: effective_library_visibility(
-            library.shows_sidebar(),
-            library.is_collapsed(),
-            persisted_collapsed,
-        ),
+        library: library.shows_sidebar(),
         now_playing: now_playing.is_panel_visible(),
     }
 }
@@ -160,7 +142,6 @@ pub(in crate::ui) fn install(
     overlay: &adw::ToastOverlay,
     library: &adw::OverlaySplitView,
     now_playing: &Rc<InfoPanel>,
-    conn: &Rc<Db>,
 ) {
     let condition = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MaxWidth,
@@ -242,11 +223,10 @@ pub(in crate::ui) fn install(
         let applying = applying.clone();
         let library = library.clone();
         let now_playing = now_playing.clone();
-        let conn = conn.clone();
         let overlay = overlay.downgrade();
         let active_toast = active_toast.clone();
         breakpoint.connect_apply(move |_| {
-            let current = visibility(&library, &now_playing, &conn);
+            let current = visibility(&library, &now_playing);
             let announces = state.borrow().announces_collapse();
             let Some(target) = state.borrow_mut().apply(current) else {
                 return;
@@ -482,13 +462,5 @@ mod tests {
             }),
             "the announcement gate must not change which panels close"
         );
-    }
-
-    #[test]
-    fn style_7_pinned_collapse_never_changes_library_visibility() {
-        assert!(!effective_library_visibility(false, true, false));
-        assert!(!effective_library_visibility(false, true, true));
-        assert!(!effective_library_visibility(false, false, false));
-        assert!(effective_library_visibility(true, true, true));
     }
 }
