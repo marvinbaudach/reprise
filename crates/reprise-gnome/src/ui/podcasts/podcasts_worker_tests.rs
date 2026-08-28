@@ -135,13 +135,13 @@ fn plane_6b_youtube_downloads_use_the_opus_extension() {
 #[test]
 fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
     assert_eq!(
-        request_generation(9, PodcastsOperation::Download { episode_id: 4 }),
+        request_generation(9, &PodcastsOperation::Download { episode_id: 4 }),
         9
     );
     assert_eq!(
         request_generation(
             9,
-            PodcastsOperation::Refresh {
+            &PodcastsOperation::Refresh {
                 policy: podcasts::refresh::RefreshPolicy::Force,
                 kind: None,
             },
@@ -151,7 +151,7 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
     assert_eq!(
         request_generation(
             9,
-            PodcastsOperation::LoadMore {
+            &PodcastsOperation::LoadMore {
                 subscription_id: 7,
                 end: 40,
             },
@@ -164,9 +164,44 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
 fn a_fill_downloads_request_does_not_cancel_a_running_refresh() {
     let current = 7;
     assert_eq!(
-        request_generation(current, PodcastsOperation::FillDownloads),
+        request_generation(current, &PodcastsOperation::FillDownloads),
         current
     );
+}
+
+#[test]
+fn a_scoped_subscription_sync_does_not_invalidate_another_rows_sync() {
+    let current = 11;
+    assert_eq!(
+        request_generation(
+            current,
+            &PodcastsOperation::SyncSubscription {
+                subscription_id: 4,
+                abort: podcasts::pipeline::SyncAbort::new(),
+            },
+        ),
+        current
+    );
+}
+
+#[test]
+fn scoped_sync_progress_is_partial_until_done_or_failed() {
+    let progress = PodcastsWorkerResult::SyncProgress {
+        subscription_id: 4,
+        progress: podcasts::pipeline::SyncProgress::FeedRead { episodes_found: 3 },
+    };
+    let done = PodcastsWorkerResult::SyncProgress {
+        subscription_id: 4,
+        progress: podcasts::pipeline::SyncProgress::Done(Default::default()),
+    };
+    let failed = PodcastsWorkerResult::SyncProgress {
+        subscription_id: 4,
+        progress: podcasts::pipeline::SyncProgress::Failed(podcasts::pipeline::SyncError::Database),
+    };
+
+    assert!(!worker_result_is_terminal(&progress));
+    assert!(worker_result_is_terminal(&done));
+    assert!(worker_result_is_terminal(&failed));
 }
 
 #[test]

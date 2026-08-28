@@ -543,7 +543,7 @@ impl PodcastsView {
 
     fn dispatch_download(self: &Rc<Self>, episode_id: i64) -> bool {
         let operation = PodcastsOperation::Download { episode_id };
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         let (response, receiver) = podcasts_response_channel();
         if !self.runtime.request(PodcastsRequest {
             generation,
@@ -575,7 +575,9 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
                     Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
-                    Ok(PodcastsWorkerResult::Filled(_)) => {}
+                    Ok(
+                        PodcastsWorkerResult::Filled(_) | PodcastsWorkerResult::SyncProgress { .. },
+                    ) => {}
                     Err(error) => {
                         tracing::warn!(%error, episode_id, "podcast download failed");
                         view.set_download_state(

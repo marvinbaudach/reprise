@@ -32,7 +32,7 @@ impl PodcastsView {
             policy: request.policy,
             kind: request.kind,
         };
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         self.generation.set(generation);
         let (response, receiver) = podcasts_response_channel();
         let queued = self.runtime.request(PodcastsRequest {
@@ -92,7 +92,9 @@ impl PodcastsView {
                         view.refresh();
                         break;
                     }
-                    Ok(PodcastsWorkerResult::Filled(_)) => {}
+                    Ok(
+                        PodcastsWorkerResult::Filled(_) | PodcastsWorkerResult::SyncProgress { .. },
+                    ) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
@@ -112,7 +114,7 @@ impl PodcastsView {
             return false;
         }
         let operation = PodcastsOperation::FillDownloads;
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         let (response, receiver) = podcasts_response_channel();
         if !self.runtime.request(PodcastsRequest {
             generation,
@@ -144,7 +146,8 @@ impl PodcastsView {
                     }
                     Ok(
                         PodcastsWorkerResult::Refreshed(_)
-                        | PodcastsWorkerResult::LoadedMore { .. },
+                        | PodcastsWorkerResult::LoadedMore { .. }
+                        | PodcastsWorkerResult::SyncProgress { .. },
                     ) => {}
                     Err(error) => {
                         tracing::warn!(%error, "podcast download fill-up failed");
@@ -248,7 +251,7 @@ impl PodcastsView {
             subscription_id,
             end,
         };
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         self.generation.set(generation);
         let (response, receiver) = podcasts_response_channel();
         if !self.runtime.request(PodcastsRequest {
@@ -284,7 +287,9 @@ impl PodcastsView {
                         view.set_download_state(episode_id, &state);
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
-                    Ok(PodcastsWorkerResult::Filled(_)) => {}
+                    Ok(
+                        PodcastsWorkerResult::Filled(_) | PodcastsWorkerResult::SyncProgress { .. },
+                    ) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
