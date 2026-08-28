@@ -3319,13 +3319,17 @@ property is set and yet nothing happens.
   order, or widths nor the sort. "Show columns" restores the user's
   configuration in the narrow window; additional width is then scrolled
   exclusively horizontally within the table.
-- **STYLE-7** [active] [gtk] — If the library window is shrunk or snapped
-  to a width where both flanks visibly displace the main content, the left
-  library sidebar and the right Now Playing panel close together in the
-  same responsive transition. A 10s undo toast restores exactly the state
-  of both flanks before the shrinking; later widening also restores this
-  state, provided the user did not change the flanks themselves in the
-  narrow window. Responsive changes never overwrite a stored sidebar or
+- **STYLE-7** [active] [gtk] — The left library sidebar is a structural
+  column, not a responsive one: no window width closes it, hides it, or
+  turns it into an overlay over the content. If the library window is
+  shrunk or snapped to a width where the flanks visibly displace the main
+  content, only the right Now Playing panel closes. A 10s undo toast
+  restores exactly the state of both flanks before the shrinking; later
+  widening also restores this state, provided the user did not change the
+  flanks themselves in the narrow window. In that narrow window the
+  exclusion runs one way: opening the sidebar closes the Now Playing panel,
+  while opening the Now Playing panel leaves the sidebar exactly where the
+  user left it. Responsive changes never overwrite a stored sidebar or
   panel preference, and both header toggles remain reachable for manual
   reopening.
 - **STYLE-8** [active] [gtk] — Reprise has one effective accent color for

@@ -3,8 +3,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 pub(in crate::ui) const PANEL_WIDTH: i32 = 300;
-pub(in crate::ui) const INFO_PANEL_COLLAPSE_WIDTH: i32 =
-    crate::ui::window::library_shell::SIDEBAR_COLLAPSE_WIDTH;
+pub(in crate::ui) const INFO_PANEL_COLLAPSE_WIDTH: i32 = 799;
 
 #[derive(Clone)]
 pub(in crate::ui) struct NowPlayingColumn {
@@ -53,16 +52,14 @@ impl NowPlayingColumn {
             .sidebar_width_unit(adw::LengthUnit::Px)
             .build();
 
-        // This bin is allocated inside the library split's content pane. It
-        // deliberately uses the same 799 px bin as the library sidebar rather
-        // than subtracting the pinned sidebar width: below 800 the library
-        // sidebar overlays and the content receives the full window width, so
-        // the mapping from window width to this allocation is ambiguous. The
-        // `ui/window/responsive_side_panels.rs::CONSTRAINED_WIDTH` guarantees
-        // that mutual exclusion; raising PANEL_WIDTH or relaxing the exclusion
-        // invalidates this threshold. When the hidden panel lands in the ambiguous
-        // band (for example 784 px at a 1024 px window), pin-sidebar keeps the
-        // breakpoint from changing its visibility behind the constraint owner.
+        // This bin is allocated inside the library split's content pane, so
+        // the threshold measures the pane, not the window: the library sidebar
+        // is a pinned column at every width and never hands its 240 px back.
+        // The `ui/window/responsive_side_panels.rs::CONSTRAINED_WIDTH` closes
+        // this panel long before the bin gets that narrow; raising PANEL_WIDTH
+        // or relaxing that constraint invalidates this threshold. Pin-sidebar
+        // keeps the breakpoint from changing visibility behind the constraint
+        // owner.
         let condition = adw::BreakpointCondition::new_length(
             adw::BreakpointConditionLengthType::MaxWidth,
             f64::from(INFO_PANEL_COLLAPSE_WIDTH),
