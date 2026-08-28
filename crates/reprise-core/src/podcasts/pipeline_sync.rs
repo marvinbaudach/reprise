@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 use super::{
     adopt_resolved_channel_url, clear_retry, previous_attempt, reclaim_download,
@@ -75,7 +75,6 @@ enum FeedReadOutcome {
     },
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn sync_subscription(
     db: &Db,
     feed_fetcher: &dyn FeedFetcher,
@@ -106,7 +105,6 @@ pub fn sync_subscription(
     result
 }
 
-#[allow(clippy::too_many_arguments)]
 fn sync_subscription_in(
     db: &Db,
     feed_fetcher: &dyn FeedFetcher,
@@ -129,21 +127,21 @@ fn sync_subscription_in(
         return Err(PipelineError::SubscriptionNotFound);
     }
     let mut summary = RefreshSummary::default();
-    refresh_one_in(
+    refresh_one_in(RefreshOneParams {
         conn,
         feed_fetcher,
         youtube_fetcher,
         now,
-        RefreshPolicy::Force,
-        &crate::podcasts::downloads::default_download_root(),
-        &config,
+        policy: RefreshPolicy::Force,
+        download_root: &crate::podcasts::downloads::default_download_root(),
+        config: &config,
         rss_allowed,
         youtube_allowed,
-        &subscription,
-        &mut summary,
+        subscription: &subscription,
+        summary: &mut summary,
         abort,
         on_progress,
-    )?;
+    })?;
     abort_if_requested(abort)?;
     crate::podcasts::downloads::enforce_cleanup_in(
         conn,
@@ -158,22 +156,38 @@ fn sync_subscription_in(
     Ok(summary)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn refresh_one_in(
-    conn: &Connection,
-    feed_fetcher: &dyn FeedFetcher,
-    youtube_fetcher: &dyn YoutubeFetcher,
-    now: i64,
-    policy: RefreshPolicy,
-    download_root: &Path,
-    config: &PodcastConfig,
-    rss_allowed: bool,
-    youtube_allowed: bool,
-    subscription: &SubscriptionRow,
-    summary: &mut RefreshSummary,
-    abort: &SyncAbort,
-    on_progress: &mut dyn FnMut(SyncProgress),
-) -> Result<(), PipelineError> {
+pub(super) struct RefreshOneParams<'a, 'output> {
+    pub conn: &'a Connection,
+    pub feed_fetcher: &'a dyn FeedFetcher,
+    pub youtube_fetcher: &'a dyn YoutubeFetcher,
+    pub now: i64,
+    pub policy: RefreshPolicy,
+    pub download_root: &'a Path,
+    pub config: &'a PodcastConfig,
+    pub rss_allowed: bool,
+    pub youtube_allowed: bool,
+    pub subscription: &'a SubscriptionRow,
+    pub summary: &'output mut RefreshSummary,
+    pub abort: &'a SyncAbort,
+    pub on_progress: &'output mut dyn FnMut(SyncProgress),
+}
+
+pub(super) fn refresh_one_in(params: RefreshOneParams<'_, '_>) -> Result<(), PipelineError> {
+    let RefreshOneParams {
+        conn,
+        feed_fetcher,
+        youtube_fetcher,
+        now,
+        policy,
+        download_root,
+        config,
+        rss_allowed,
+        youtube_allowed,
+        subscription,
+        summary,
+        abort,
+        on_progress,
+    } = params;
     abort_if_requested(abort)?;
     summary.attempted += 1;
     let retry_key = RetryKey {
@@ -218,23 +232,25 @@ pub(super) fn refresh_one_in(
         }
     };
 
-    for episodes_found in 1..=read.feed.episodes.len() {
-        abort_if_requested(abort)?;
-        on_progress(SyncProgress::FeedRead { episodes_found });
-    }
-    abort_if_requested(abort)?;
-    on_progress(SyncProgress::FetchingArtwork);
+    on_progress(SyncProgress::FeedRead {
+        episodes_found: read.feed.episodes.len(),
+    });
     abort_if_requested(abort)?;
 
-    let transaction = conn.unchecked_transaction()?;
+    // Take the write lock before the active read. This makes removal from a
+    // second connection wait or fail before the check instead of committing
+    // between this snapshot and the episode writes.
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let active = transaction.query_row(
         "SELECT EXISTS(SELECT 1 FROM podcast_subscriptions WHERE id = ?1 AND removed_at IS NULL)",
         [subscription.id],
         |row| row.get::<_, bool>(0),
     )?;
     if !active {
-        return Err(PipelineError::SyncAborted);
+        return Err(PipelineError::SubscriptionNotFound);
     }
+    on_progress(SyncProgress::FetchingArtwork);
+    abort_if_requested(abort)?;
     if let Some(url) = read.resolved_channel_url.as_deref() {
         adopt_resolved_channel_url(&transaction, subscription.id, url)?;
     }

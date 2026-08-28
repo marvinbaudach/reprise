@@ -361,21 +361,21 @@ fn refresh_to_root_in(
                 continue;
             }
         }
-        sync::refresh_one_in(
+        sync::refresh_one_in(sync::RefreshOneParams {
             conn,
             feed_fetcher,
             youtube_fetcher,
             now,
-            request.policy,
+            policy: request.policy,
             download_root,
-            &config,
+            config: &config,
             rss_allowed,
             youtube_allowed,
-            &subscription,
-            &mut summary,
-            &SyncAbort::default(),
-            &mut |_| {},
-        )?;
+            subscription: &subscription,
+            summary: &mut summary,
+            abort: &SyncAbort::default(),
+            on_progress: &mut |_| {},
+        })?;
     }
     super::downloads::enforce_cleanup_in(
         conn,
