@@ -2,7 +2,7 @@
 slug: one-bad-artist-no-longer-holds-the-queue
 worktree: /home/marvin/Projects/reprise-one-bad-artist-no-longer-holds-the-queue
 branch: feature/one-bad-artist-no-longer-holds-the-queue
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-28
 ---
