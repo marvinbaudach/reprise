@@ -17,26 +17,32 @@ private const val DRAIN_TIMEOUT_MS = 2_000L
  * minutes of provider I/O. This lane leaves the tap thread immediately while
  * preserving write order and returning answered results through [onMainThread].
  *
- * Teardown drains for at most [DRAIN_TIMEOUT_MS] only while answered work is
- * pending, because a control is still waiting for the database to agree. With
- * only unanswered persistence queued, teardown drops it immediately instead
- * of making every rotation wait behind a running scan. If answered work is in
- * the same FIFO, earlier unanswered work is drained with it.
+ * Teardown waits for at most [DRAIN_TIMEOUT_MS] only while answered work is
+ * pending, because a control is still waiting for the database to agree. The
+ * stopped lane keeps draining after that bound so it cannot strand an answer.
+ * With only unanswered persistence queued, teardown drops it immediately
+ * instead of making every rotation wait behind a running scan. If answered
+ * work is in the same FIFO, earlier unanswered work is drained with it.
  */
 internal class LibraryWrites(
     private val onMainThread: (() -> Unit) -> Unit,
     private val worker: ExecutorService = singleLibraryWriteThread(),
+    private val drainTimeoutMs: Long = DRAIN_TIMEOUT_MS,
 ) {
     private val answeredPending = AtomicInteger()
 
-    /** Persistence nobody is waiting for. Dropped at teardown, never awaited. */
+    /** Persistence nobody is waiting for; failures still return through [onMainThread]. */
     fun submitUnanswered(work: () -> Unit, onFailure: (Throwable) -> Unit) {
         try {
             worker.execute {
-                runCatching(work).onFailure(onFailure)
+                runCatching(work).onFailure { failure ->
+                    onMainThread { onFailure(failure) }
+                }
             }
         } catch (rejected: RejectedExecutionException) {
-            onFailure(IllegalStateException(RATING_WRITER_STOPPED, rejected))
+            onMainThread {
+                onFailure(IllegalStateException(RATING_WRITER_STOPPED, rejected))
+            }
         }
     }
 
@@ -68,9 +74,10 @@ internal class LibraryWrites(
     /**
      * Stops new writes before the caller closes the shared library handle.
      *
-     * Answered work drains briefly so a queued callback is not stranded after
-     * teardown. Unanswered-only work is cancelled at once: losing one stored
-     * preference is safer than blocking the main thread behind a folder scan.
+     * The caller waits briefly for answered work, then leaves the stopped lane
+     * to finish it so a queued callback is not stranded after teardown.
+     * Unanswered-only work is cancelled at once: losing one stored preference
+     * is safer than blocking the main thread behind a folder scan.
      */
     fun shutdown(): Boolean {
         if (answeredPending.get() == 0) {
@@ -80,13 +87,10 @@ internal class LibraryWrites(
 
         worker.shutdown()
         val drained = try {
-            worker.awaitTermination(DRAIN_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            worker.awaitTermination(drainTimeoutMs, TimeUnit.MILLISECONDS)
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
             false
-        }
-        if (!drained) {
-            worker.shutdownNow()
         }
         return drained
     }

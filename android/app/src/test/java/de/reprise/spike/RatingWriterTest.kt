@@ -24,7 +24,7 @@ class RatingWriterTest {
      * the second is what lets the caller write Compose state from `report`
      * without a second thought.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun theWriteLeavesTheCallersThreadAndAnswersOnlyThroughTheHop() {
         val hopped = CountDownLatch(1)
         val hops = mutableListOf<() -> Unit>()
@@ -63,7 +63,7 @@ class RatingWriterTest {
      * is the failure the sheet turns into its message, so losing it here would
      * turn a reported failure into a silent one.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun aWriteThatThrowsComesBackAsTheFailureRatherThanAsSilence() {
         val refusal = IllegalStateException("track is missing")
         val answers = LinkedBlockingQueue<Result<Unit>>()
@@ -91,7 +91,7 @@ class RatingWriterTest {
      * The same run proves teardown drains what was queued rather than dropping
      * it.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun tapsAreWrittenAndAnsweredInTheOrderTheyWereMade() {
         val written = LinkedBlockingQueue<Boolean>()
         val answered = LinkedBlockingQueue<Boolean>()
@@ -121,7 +121,7 @@ class RatingWriterTest {
      * neither moves nor says why is the failure mode this whole path exists to
      * avoid.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun aTapMadeAfterTheWriterStoppedIsAnsweredRatherThanDropped() {
         var writes = 0
         val lane = LibraryWrites(onMainThread = { work -> work() })

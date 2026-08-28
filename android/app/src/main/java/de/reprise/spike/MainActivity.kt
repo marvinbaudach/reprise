@@ -503,11 +503,12 @@ class MainActivity : ComponentActivity() {
         // Compose disposal is not the release boundary: Android may destroy
         // the activity while dock mode is still the ViewModel's current mode.
         // First, and before final ViewModel cleanup can close the retained
-        // library handle: answered work drains briefly because a control still
-        // waits for its result. Unanswered-only preferences are dropped at once
-        // so a rotation never waits behind the scan-held writer.
+        // library handle: the caller waits briefly for answered work, then the
+        // stopped lane continues it because a control still waits for its result.
+        // Unanswered-only preferences are dropped at once so a rotation never
+        // waits behind the scan-held writer.
         if (!libraryWrites.shutdown()) {
-            Log.w(TAG, "A rating was still being written when the screen closed")
+            Log.w(TAG, "A library setting was still being written when the screen closed")
         }
         // Artwork and the playing track's row deliberately get no such drain.
         // Both are reads, so the requests still queued are dropped rather than
