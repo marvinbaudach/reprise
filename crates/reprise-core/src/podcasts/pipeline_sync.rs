@@ -38,6 +38,12 @@ impl SyncAbort {
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
     }
+
+    /// Whether both handles identify the same scoped sync request.
+    #[must_use]
+    pub fn is_same_request(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.cancelled, &other.cancelled)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

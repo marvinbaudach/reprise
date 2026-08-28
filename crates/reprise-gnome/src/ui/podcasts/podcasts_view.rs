@@ -36,7 +36,7 @@ use super::podcasts_removal::{
 use super::podcasts_rendered_order;
 use super::podcasts_reveal::RevealRequest;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
-use super::podcasts_sync_state::{SyncRowState, SyncStep};
+use super::podcasts_sync_state::{remove_subscription_sync_if_owned, SyncRowState, SyncStep};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
@@ -329,6 +329,14 @@ impl PodcastsView {
         let result = podcasts::query::list_source_groups(&self.conn, self.kind);
         match result {
             Ok(groups) => {
+                let recovered = groups
+                    .iter()
+                    .filter(|group| !group.episodes.is_empty())
+                    .map(|group| group.subscription_id)
+                    .collect::<BTreeSet<_>>();
+                self.syncing.borrow_mut().retain(|subscription_id, state| {
+                    state.step != SyncStep::Failed || !recovered.contains(subscription_id)
+                });
                 let mut rows = groups
                     .iter()
                     .flat_map(|group| group.episodes.iter().cloned())

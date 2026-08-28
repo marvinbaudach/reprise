@@ -1,4 +1,5 @@
 use reprise_core::podcasts::pipeline::{SyncAbort, SyncProgress};
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SyncStep {
@@ -6,6 +7,20 @@ pub(super) enum SyncStep {
     ReadingFeed,
     DownloadingArtwork,
     Failed,
+}
+
+pub(super) fn remove_subscription_sync_if_owned(
+    syncing: &mut HashMap<i64, SyncRowState>,
+    subscription_id: i64,
+    owner: &SyncAbort,
+) -> bool {
+    let owned = syncing
+        .get(&subscription_id)
+        .is_some_and(|state| state.abort.is_same_request(owner));
+    if owned {
+        syncing.remove(&subscription_id);
+    }
+    owned
 }
 
 #[derive(Clone, Debug)]
