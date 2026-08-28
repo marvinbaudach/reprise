@@ -60,7 +60,6 @@ pub(in crate::ui) struct PodcastsResponse {
 #[derive(Debug)]
 pub(in crate::ui) struct PodcastsResponseChannel {
     sender: async_channel::Sender<PodcastsResponse>,
-    stale: async_channel::Receiver<PodcastsResponse>,
 }
 
 pub(in crate::ui) fn podcasts_response_channel() -> (
@@ -68,31 +67,18 @@ pub(in crate::ui) fn podcasts_response_channel() -> (
     async_channel::Receiver<PodcastsResponse>,
 ) {
     let (sender, receiver) = async_channel::bounded(1);
-    (
-        PodcastsResponseChannel {
-            sender,
-            stale: receiver.clone(),
-        },
-        receiver,
-    )
+    (PodcastsResponseChannel { sender }, receiver)
 }
 
 impl PodcastsResponseChannel {
     fn publish_latest(&self, response: PodcastsResponse) {
-        match self.sender.try_send(response) {
-            Ok(()) => {}
-            Err(async_channel::TrySendError::Full(response)) => {
-                let _ = self.stale.try_recv();
-                if let Err(error) = self.sender.try_send(response) {
-                    tracing::debug!(%error, "podcast worker response receiver is unavailable");
-                }
-            }
-            Err(async_channel::TrySendError::Closed(_)) => {}
+        if let Err(error) = self.sender.force_send(response) {
+            tracing::debug!(%error, "podcast worker response receiver is unavailable");
         }
     }
 
     fn publish_terminal(&self, response: PodcastsResponse) {
-        if let Err(error) = self.sender.send_blocking(response) {
+        if let Err(error) = self.sender.force_send(response) {
             tracing::debug!(%error, "podcast worker response receiver is unavailable");
         }
     }

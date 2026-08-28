@@ -390,6 +390,35 @@ fn pod_7_response_channel_coalesces_progress_but_never_drops_terminal_state() {
 }
 
 #[test]
+fn terminal_publication_returns_when_the_ui_drops_a_buffered_response_channel() {
+    let (response, receiver) = podcasts_response_channel();
+    response.publish_latest(PodcastsResponse {
+        generation: 1,
+        result: Ok(PodcastsWorkerResult::SyncProgress {
+            subscription_id: 7,
+            progress: podcasts::pipeline::SyncProgress::Started,
+        }),
+    });
+    drop(receiver);
+    let (finished, observed) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        response.publish_terminal(PodcastsResponse {
+            generation: 1,
+            result: Ok(PodcastsWorkerResult::SyncProgress {
+                subscription_id: 7,
+                progress: podcasts::pipeline::SyncProgress::Done(Default::default()),
+            }),
+        });
+        let _ = finished.send(());
+    });
+
+    assert!(observed
+        .recv_timeout(std::time::Duration::from_millis(250))
+        .is_ok());
+}
+
+#[test]
 fn pod_7_episode_removed_during_download_leaves_no_persisted_or_orphaned_file() {
     let conn = crate::test_db::open().unwrap();
     let episode_id = episode(&conn);
