@@ -2,7 +2,7 @@
 slug: the-panels-yield-the-table-its-width
 worktree: /home/marvin/Projects/reprise-the-panels-yield-the-table-its-width
 branch: feature/the-panels-yield-the-table-its-width
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-08-27
 ---
