@@ -200,10 +200,10 @@ internal class TrackArtwork(
      * must not: a cover request that never finishes is a request whose loss
      * costs nothing, so discarding the queue is the whole point of stopping.
      *
-     * That is where this parts company with [RatingWriter.shutdown], which sits
-     * beside it in `onDestroy` and drains what it queued. The difference is not
-     * how careful the two are, it is what they carry. A rating is a write that
-     * has to land exactly once; a cover is a read, and an abandoned read is
+     * That is where this parts company with [LibraryWrites.shutdown], which sits
+     * beside it in `onDestroy` and briefly drains answered writes. The difference
+     * is not how careful the two are, it is what they carry. An answered write has
+     * to report exactly once; a cover is a read, and an abandoned read is
      * indistinguishable from a row that scrolled away.
      *
      * `shutdownNow` is that discard and nothing more — it is not what makes the

@@ -98,14 +98,19 @@ class MainActivity : ComponentActivity() {
     }
     private val artwork by artworkDelegate
 
+    private val libraryWrites = LibraryWrites(
+        onMainThread = { work -> runOnUiThread { work() } },
+    )
+
     /**
-     * Heart taps, off the main thread and answered back on it. The lambda defers
-     * touching [session] until a rating is actually made, so opening the
-     * library still happens when the screen asks for it and not before.
+     * Heart taps use the shared write lane and answer back on the main thread.
+     * The lambda defers touching [session] until a rating is actually made, so
+     * opening the library still happens when the screen asks for it and not
+     * before.
      */
     private val ratings = RatingWriter(
         write = { trackId, favourite -> session.setFavourite(trackId, favourite) },
-        onMainThread = { work -> runOnUiThread { work() } },
+        libraryWrites = libraryWrites,
     )
 
     /**
@@ -129,7 +134,10 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val analysis by analysisDelegate
-    private val visualizerPreference = AndroidVisualizerPreference { library }
+    private val visualizerPreference = AndroidVisualizerPreference(
+        libraryWrites = libraryWrites,
+        library = { library },
+    )
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -209,6 +217,7 @@ class MainActivity : ComponentActivity() {
             var onlineSourcesEnabled by remember {
                 mutableStateOf(surface.onlineSourcesEnabled())
             }
+            val onlineSourcesIntent = remember { PendingToggleIntent() }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val libraryPlayback by remember { derivedStateOf { playbackState.value.libraryPlayback() } }
             val playbackProgress = remember { { playbackState.value.progressFraction } }
@@ -280,26 +289,43 @@ class MainActivity : ComponentActivity() {
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
                                 setGaplessEnabled = surface.setGaplessEnabled,
                                 onlineSourcesEnabled = onlineSourcesEnabled,
-                                setOnlineSourcesEnabled = { enabled ->
-                                    surface.setOnlineSourcesEnabled(enabled)
-                                        .onSuccess { onlineSourcesEnabled = enabled }
-                                        .onFailure { error ->
-                                            Log.e(
-                                                TAG,
-                                                "Could not change online source settings",
-                                                error,
-                                            )
-                                        }
+                                setOnlineSourcesEnabled = {
+                                    val enabled = onlineSourcesIntent.next(onlineSourcesEnabled)
+                                    libraryWrites.submitAnswered(
+                                        work = {
+                                            surface.setOnlineSourcesEnabled(enabled).getOrThrow()
+                                        },
+                                        report = { outcome ->
+                                            outcome.onSuccess {
+                                                onlineSourcesEnabled = enabled
+                                                if (enabled) {
+                                                    surfaceState.startArtistPhotoBackfill()
+                                                } else {
+                                                    surfaceState.cancelArtistPhotoBackfill()
+                                                }
+                                            }.onFailure { error ->
+                                                Log.e(
+                                                    TAG,
+                                                    "Could not change online source settings",
+                                                    error,
+                                                )
+                                            }
+                                            onlineSourcesIntent.answered(enabled)
+                                        },
+                                    )
                                 },
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
-                                    runCatching {
-                                        surface.selectTheme(themeSelection, palette)
-                                    }.onSuccess { selection ->
-                                        themeSelection = selection
-                                    }.onFailure { error ->
-                                        Log.e(TAG, "Could not change theme", error)
-                                    }
+                                    val currentSelection = themeSelection
+                                    libraryWrites.submitAnswered(
+                                        work = { surface.selectTheme(currentSelection, palette) },
+                                        report = { outcome ->
+                                            outcome.onSuccess { themeSelection = it }
+                                                .onFailure { error ->
+                                                    Log.e(TAG, "Could not change theme", error)
+                                                }
+                                        },
+                                    )
                                 },
                             )
                         }
@@ -384,13 +410,6 @@ class MainActivity : ComponentActivity() {
             },
             setOnlineSourcesEnabled = { enabled ->
                 runCatching { library.setOnlineSourcesEnabled(enabled) }
-                    .onSuccess {
-                        if (enabled) {
-                            surfaceState.startArtistPhotoBackfill()
-                        } else {
-                            surfaceState.cancelArtistPhotoBackfill()
-                        }
-                    }
             },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
@@ -406,8 +425,12 @@ class MainActivity : ComponentActivity() {
 
     private fun rememberBrowseTab(tab: BrowseTab) {
         val destination = tab.toLibraryDestinationChoice() ?: return
-        runCatching { library.setLibraryDestination(destination) }
-            .onFailure { error -> Log.e(TAG, "Could not remember the library destination", error) }
+        libraryWrites.submitUnanswered(
+            work = { library.setLibraryDestination(destination) },
+            onFailure = { error ->
+                Log.e(TAG, "Could not remember the library destination", error)
+            },
+        )
     }
 
     private fun restoreTheme(): MobileThemeSelection = runCatching {
@@ -480,14 +503,13 @@ class MainActivity : ComponentActivity() {
         // Stop accepting boundary calls while letting the single ordered lane
         // finish operations already submitted against the service.
         playbackControls.shutdown()
-        // Compose disposal is not the release boundary: Android may destroy
-        // the activity while dock mode is still the ViewModel's current mode.
-        // First, and before final ViewModel cleanup can close the retained
-        // library handle: a heart tap that is still queued has to reach the
-        // database it was written for, and a write arriving at a closed handle
-        // would be a crash rather than a lost rating.
-        if (!ratings.shutdown()) {
-            Log.w(TAG, "A rating was still being written when the screen closed")
+        // Before final ViewModel cleanup can close the retained library handle,
+        // the caller waits briefly for answered work, then the
+        // stopped lane continues it because a control still waits for its result.
+        // Unanswered-only preferences are dropped at once so a rotation never
+        // waits behind the scan-held writer.
+        if (!libraryWrites.shutdown()) {
+            Log.w(TAG, "A library setting was still being written when the screen closed")
         }
         // Artwork and the playing track's row deliberately get no such drain.
         // Both are reads, so the requests still queued are dropped rather than
