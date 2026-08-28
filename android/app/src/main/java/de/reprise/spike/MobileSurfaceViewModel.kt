@@ -390,7 +390,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        artistPhotoBackfillBinding?.cancel?.invoke()
+        val backfill = artistPhotoBackfillBinding
+        artistPhotoBackfillBinding = null
+        backfill?.cancel?.invoke()
         retainedLibrary?.close()
         retainedLibrary = null
     }
