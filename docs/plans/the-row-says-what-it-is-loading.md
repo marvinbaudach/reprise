@@ -2,7 +2,7 @@
 slug: the-row-says-what-it-is-loading
 worktree: /home/marvin/Projects/reprise-the-row-says-what-it-is-loading
 branch: feature/the-row-says-what-it-is-loading
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-28
 ---
