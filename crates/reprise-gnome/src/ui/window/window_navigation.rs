@@ -522,6 +522,7 @@ mod tests {
             .sidebar_position(gtk4::PackType::Start)
             .show_sidebar(true)
             .collapsed(false)
+            .pin_sidebar(true)
             .build();
         let button = gtk4::ToggleButton::builder()
             .icon_name("sidebar-show-symbolic")
