@@ -2,11 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-<<<<<<< HEAD
-"POT-Creation-Date: 2026-08-28 15:57+0200\n"
-=======
-"POT-Creation-Date: 2026-08-28 17:22+0200\n"
->>>>>>> 79e6176327 (feat(gnome): show podcast sync in its row)
+"POT-Creation-Date: 2026-08-28 20:16+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -6300,16 +6296,6 @@ msgstr "Clientseitige Dekoration"
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
 
-#~ msgid "Side panels were closed to fit the window"
-#~ msgstr "Die Seitenleisten wurden geschlossen, damit sie ins Fenster passen"
-
-#~ msgid "Toggle Now Playing panel"
-#~ msgstr "Wiedergabe-Panel ein-/ausblenden"
-
-#~ msgid "Could not save information panel visibility"
-#~ msgstr ""
-#~ "Die Sichtbarkeit der Informationsspalte konnte nicht gespeichert werden"
-
 #~ msgid "Edit column layout…"
 #~ msgstr "Spaltenanordnung bearbeiten…"
 
@@ -7003,3 +6989,13 @@ msgstr "Separate Titelleiste"
 #~ msgid_plural "{count} items added to queue"
 #~ msgstr[0] "{count} Eintrag zur Warteschlange hinzugefügt"
 #~ msgstr[1] "{count} Einträge zur Warteschlange hinzugefügt"
+
+#~ msgid "Side panels were closed to fit the window"
+#~ msgstr "Die Seitenleisten wurden geschlossen, damit sie ins Fenster passen"
+
+#~ msgid "Toggle Now Playing panel"
+#~ msgstr "Wiedergabe-Panel ein-/ausblenden"
+
+#~ msgid "Could not save information panel visibility"
+#~ msgstr ""
+#~ "Die Sichtbarkeit der Informationsspalte konnte nicht gespeichert werden"

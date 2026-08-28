@@ -2,11 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-<<<<<<< HEAD
-"POT-Creation-Date: 2026-08-28 15:57+0200\n"
-=======
-"POT-Creation-Date: 2026-08-28 17:22+0200\n"
->>>>>>> 79e6176327 (feat(gnome): show podcast sync in its row)
+"POT-Creation-Date: 2026-08-28 20:16+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -6300,15 +6296,6 @@ msgstr "Decoración del lado del cliente"
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
 
-#~ msgid "Side panels were closed to fit the window"
-#~ msgstr "Los paneles laterales se cerraron para ajustarse a la ventana"
-
-#~ msgid "Toggle Now Playing panel"
-#~ msgstr "Mostrar u ocultar el panel En reproducción"
-
-#~ msgid "Could not save information panel visibility"
-#~ msgstr "No se pudo guardar la visibilidad del panel de información"
-
 #~ msgid "Edit column layout…"
 #~ msgstr "Editar la disposición de las columnas…"
 
@@ -7004,3 +6991,12 @@ msgstr "Barra de título independiente"
 #~ msgid_plural "{count} items added to queue"
 #~ msgstr[0] "Se añadió {count} elemento a la cola"
 #~ msgstr[1] "Se añadieron {count} elementos a la cola"
+
+#~ msgid "Side panels were closed to fit the window"
+#~ msgstr "Los paneles laterales se cerraron para ajustarse a la ventana"
+
+#~ msgid "Toggle Now Playing panel"
+#~ msgstr "Mostrar u ocultar el panel En reproducción"
+
+#~ msgid "Could not save information panel visibility"
+#~ msgstr "No se pudo guardar la visibilidad del panel de información"

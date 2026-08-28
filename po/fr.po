@@ -7,11 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-<<<<<<< HEAD
-"POT-Creation-Date: 2026-08-28 15:57+0200\n"
-=======
-"POT-Creation-Date: 2026-08-28 17:22+0200\n"
->>>>>>> 79e6176327 (feat(gnome): show podcast sync in its row)
+"POT-Creation-Date: 2026-08-28 20:16+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: French\n"
@@ -6150,10 +6146,6 @@ msgstr ""
 #~ msgstr[0] "Appliquer {count} modification"
 #~ msgstr[1] "Appliquer {count} modifications"
 
-#, rust-format
-#~ msgid "{count} tags fixed"
-#~ msgstr "{count} tags corrigés"
-
 #~ msgid "Rescan Library"
 #~ msgstr "Réanalyser la bibliothèque"
 
@@ -6186,3 +6178,7 @@ msgstr ""
 
 #~ msgid "Sound analysis is unavailable"
 #~ msgstr "L’analyse sonore est indisponible"
+
+#, rust-format
+#~ msgid "{count} tags fixed"
+#~ msgstr "{count} tags corrigés"
