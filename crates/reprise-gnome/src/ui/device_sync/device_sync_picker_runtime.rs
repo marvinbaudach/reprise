@@ -43,7 +43,7 @@ impl DeviceSyncRuntime {
 
     fn picker_snapshot(&self, device_id: &str) -> Result<PickerSnapshot, String> {
         // This cached read is intentional: privacy makes picker_snapshot_fresh
-        // the only entry point, and it refreshes a stale device before delegating here.
+        // the only production entry point, and it refreshes a stale device before delegating here.
         let device = self
             .device_states
             .borrow()
@@ -85,6 +85,14 @@ impl DeviceSyncRuntime {
             rows,
             keep_smart_updated,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn picker_snapshot_cached_for_test(
+        &self,
+        device_id: &str,
+    ) -> Result<PickerSnapshot, String> {
+        self.picker_snapshot(device_id)
     }
 
     pub(crate) fn save_picker(

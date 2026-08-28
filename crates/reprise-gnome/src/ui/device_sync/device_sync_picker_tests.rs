@@ -31,7 +31,9 @@ fn unplugged_picker_lists_saved_sources_and_persists_a_toggle() {
 
         let runtime =
             DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
-        let first = runtime.picker_snapshot("remembered").unwrap();
+        let first = runtime
+            .picker_snapshot_cached_for_test("remembered")
+            .unwrap();
         assert!(first.rows.iter().any(|row| {
             row.source == SelectionSource::Playlist(2) && row.name == "Road" && row.selected
         }));
@@ -64,7 +66,9 @@ fn unplugged_picker_lists_saved_sources_and_persists_a_toggle() {
 
         let reopened =
             DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
-        let saved = reopened.picker_snapshot("remembered").unwrap();
+        let saved = reopened
+            .picker_snapshot_cached_for_test("remembered")
+            .unwrap();
         assert!(saved.rows.iter().any(|row| {
             row.source == SelectionSource::Playlist(2) && row.name == "Road" && !row.selected
         }));
