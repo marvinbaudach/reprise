@@ -206,6 +206,31 @@ class NowPlayingGesturesTest {
     }
 
     @Test
+    fun aSecondTapBeforeTheAnswerSubmitsTheOppositeTargetWithoutMovingEarly() {
+        val preference = RecordingVisualizerPreference(answerImmediately = false)
+        val engines = RecordingVisualEngineFactory()
+        compose.setContent {
+            testNowPlayingSheet(preference = preference, engines = engines)
+        }
+        val gestures = compose.onNodeWithTag("now-playing-gestures")
+
+        gestures.performTouchInput { click(Offset(width * 0.5f, height * 0.34f)) }
+        compose.mainClock.advanceTimeBy(350)
+        gestures.performTouchInput { click(Offset(width * 0.5f, height * 0.34f)) }
+        compose.mainClock.advanceTimeBy(350)
+        compose.waitForIdle()
+
+        assertEquals(
+            listOf(AndroidVisualizerChoice.SPECTRUM, AndroidVisualizerChoice.COVER),
+            preference.writes,
+        )
+        assertEquals("the spectrum must wait for its answer", 0, engines.sceneCalls)
+
+        preference.answerNextSuccess()
+        preference.answerNextSuccess()
+    }
+
+    @Test
     fun singleTapOutsideTheCoverDoesNotSwitch() {
         val preference = RecordingVisualizerPreference()
         val engines = RecordingVisualEngineFactory()
@@ -352,10 +377,12 @@ private class RecordingSeekInteractionSource : MutableInteractionSource {
 
 private class RecordingVisualizerPreference(
     private var stored: AndroidStoredVisualizer = AndroidStoredVisualizer.Cover,
+    private val answerImmediately: Boolean = true,
 ) : VisualizerPreference {
     var reads = 0
         private set
     val writes = mutableListOf<AndroidVisualizerChoice>()
+    private val pending = ArrayDeque<Pair<AndroidVisualizerChoice, (Result<Unit>) -> Unit>>()
 
     override fun visualizerSetting(): AndroidStoredVisualizer {
         reads += 1
@@ -367,13 +394,27 @@ private class RecordingVisualizerPreference(
         report: (Result<Unit>) -> Unit,
     ) {
         writes += choice
+        if (!answerImmediately) {
+            pending += choice to report
+            return
+        }
+        accept(choice)
+        report(Result.success(Unit))
+    }
+
+    fun answerNextSuccess() {
+        val (choice, report) = pending.removeFirst()
+        accept(choice)
+        report(Result.success(Unit))
+    }
+
+    private fun accept(choice: AndroidVisualizerChoice) {
         stored = when (choice) {
             AndroidVisualizerChoice.COVER -> AndroidStoredVisualizer.Cover
             AndroidVisualizerChoice.SPECTRUM -> AndroidStoredVisualizer.Spectrum
             AndroidVisualizerChoice.PREVIEW_BAND -> AndroidStoredVisualizer.PreviewBand
             AndroidVisualizerChoice.AMBIENT -> AndroidStoredVisualizer.Ambient
         }
-        report(Result.success(Unit))
     }
 }
 

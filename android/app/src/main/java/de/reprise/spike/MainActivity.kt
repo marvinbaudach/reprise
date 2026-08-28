@@ -217,6 +217,7 @@ class MainActivity : ComponentActivity() {
             var onlineSourcesEnabled by remember {
                 mutableStateOf(surface.onlineSourcesEnabled())
             }
+            val onlineSourcesIntent = remember { PendingToggleIntent() }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val libraryPlayback by remember { derivedStateOf { playbackState.value.libraryPlayback() } }
             val playbackProgress = remember { { playbackState.value.progressFraction } }
@@ -288,7 +289,8 @@ class MainActivity : ComponentActivity() {
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
                                 setGaplessEnabled = surface.setGaplessEnabled,
                                 onlineSourcesEnabled = onlineSourcesEnabled,
-                                setOnlineSourcesEnabled = { enabled ->
+                                setOnlineSourcesEnabled = {
+                                    val enabled = onlineSourcesIntent.next(onlineSourcesEnabled)
                                     libraryWrites.submitAnswered(
                                         work = {
                                             surface.setOnlineSourcesEnabled(enabled).getOrThrow()
@@ -308,6 +310,7 @@ class MainActivity : ComponentActivity() {
                                                     error,
                                                 )
                                             }
+                                            onlineSourcesIntent.answered(enabled)
                                         },
                                     )
                                 },
@@ -500,10 +503,8 @@ class MainActivity : ComponentActivity() {
         // Stop accepting boundary calls while letting the single ordered lane
         // finish operations already submitted against the service.
         playbackControls.shutdown()
-        // Compose disposal is not the release boundary: Android may destroy
-        // the activity while dock mode is still the ViewModel's current mode.
-        // First, and before final ViewModel cleanup can close the retained
-        // library handle: the caller waits briefly for answered work, then the
+        // Before final ViewModel cleanup can close the retained library handle,
+        // the caller waits briefly for answered work, then the
         // stopped lane continues it because a control still waits for its result.
         // Unanswered-only preferences are dropped at once so a rotation never
         // waits behind the scan-held writer.

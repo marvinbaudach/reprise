@@ -4,6 +4,9 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Looper
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -449,6 +452,9 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     var animationsEnabled = false
     var onlineSourcesEnabled = false
     var onlineSourcesWriteSucceeds = true
+    val onlineSourcesWrites = Collections.synchronizedList(mutableListOf<Boolean>())
+    private var onlineSourcesWriteStarted: CountDownLatch? = null
+    private var onlineSourcesWriteGate: CountDownLatch? = null
     val trackRatings = mutableMapOf<Long, Int>()
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
@@ -616,6 +622,21 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
         serviceController.destroy()
     }
 
+    fun blockOnlineSourcesWrites() {
+        onlineSourcesWrites.clear()
+        onlineSourcesWriteStarted = CountDownLatch(1)
+        onlineSourcesWriteGate = CountDownLatch(1)
+    }
+
+    fun awaitOnlineSourcesWrite(): Boolean =
+        checkNotNull(onlineSourcesWriteStarted).await(5, TimeUnit.SECONDS)
+
+    fun releaseOnlineSourcesWrites() {
+        onlineSourcesWriteGate?.countDown()
+        onlineSourcesWriteGate = null
+        onlineSourcesWriteStarted = null
+    }
+
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
             titles = tracks.window(firstLibraryWindow()),
@@ -692,6 +713,10 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
             selectTheme = { current, _ -> current },
             onlineSourcesEnabled = { onlineSourcesEnabled },
             setOnlineSourcesEnabled = { enabled ->
+                val writeGate = onlineSourcesWriteGate
+                onlineSourcesWrites += enabled
+                onlineSourcesWriteStarted?.countDown()
+                writeGate?.await()
                 if (onlineSourcesWriteSucceeds) {
                     onlineSourcesEnabled = enabled
                     Result.success(Unit)

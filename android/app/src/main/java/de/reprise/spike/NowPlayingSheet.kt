@@ -100,6 +100,7 @@ internal fun NowPlayingSheet(
                 .showsSpectrum(),
         )
     }
+    val visualizerIntent = remember(visualizerPreference) { PendingToggleIntent() }
     val visualizerOpacity = remember(visualizerPreference) {
         Animatable(if (visualizerVisible.value) 1f else 0f)
     }
@@ -157,7 +158,7 @@ internal fun NowPlayingSheet(
                 },
                 onTap = { position ->
                     if (!coverBounds.value.contains(position)) return@nowPlayingGestures
-                    val showSpectrum = !visualizerVisible.value
+                    val showSpectrum = visualizerIntent.next(visualizerVisible.value)
                     visualizerPreference.setVisualizer(
                         choice = if (showSpectrum) {
                             AndroidVisualizerChoice.SPECTRUM
@@ -173,6 +174,7 @@ internal fun NowPlayingSheet(
                                         error,
                                     )
                                 }
+                            visualizerIntent.answered(showSpectrum)
                         },
                     )
                 },
