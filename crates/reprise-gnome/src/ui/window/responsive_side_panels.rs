@@ -27,14 +27,29 @@ enum Panel {
     NowPlaying,
 }
 
-fn visibility_after_opening(panel: Panel) -> PanelVisibility {
+impl Panel {
+    fn is_open(self, visibility: PanelVisibility) -> bool {
+        match self {
+            Panel::Library => visibility.library,
+            Panel::NowPlaying => visibility.now_playing,
+        }
+    }
+}
+
+/// The state a freshly opened panel forces on the other one while constrained.
+///
+/// The exclusion runs one way only. The library sidebar is a structural
+/// column that no width and no other panel takes away, so opening it makes
+/// the now-playing panel yield — while opening the now-playing panel leaves
+/// the sidebar exactly as the user left it.
+fn visibility_after_opening(panel: Panel, current: PanelVisibility) -> PanelVisibility {
     match panel {
         Panel::Library => PanelVisibility {
             library: true,
             now_playing: false,
         },
         Panel::NowPlaying => PanelVisibility {
-            library: false,
+            library: current.library,
             now_playing: true,
         },
     }
@@ -93,10 +108,13 @@ impl ConstraintState {
     fn visibility_change_target(
         &self,
         opened_panel: Panel,
-        resulting_visibility: bool,
+        current: PanelVisibility,
     ) -> Option<PanelVisibility> {
-        (self.should_enforce_constraint() && resulting_visibility)
-            .then(|| visibility_after_opening(opened_panel))
+        if !self.should_enforce_constraint() || !opened_panel.is_open(current) {
+            return None;
+        }
+        let target = visibility_after_opening(opened_panel, current);
+        (target != current).then_some(target)
     }
 
     fn undo(&mut self) -> Option<PanelVisibility> {
@@ -177,7 +195,7 @@ pub(in crate::ui) fn install(
                 // idempotent non-conflicts rather than user overrides.
                 let target = state
                     .borrow()
-                    .visibility_change_target(Panel::Library, library.shows_sidebar());
+                    .visibility_change_target(Panel::Library, visibility(&library, &now_playing));
                 if let Some(target) = target {
                     set_transient_visibility(&applying, &library, &now_playing, target);
                 }
@@ -210,7 +228,7 @@ pub(in crate::ui) fn install(
                     // with the enforced mutually-exclusive state.
                     let target = state.borrow().visibility_change_target(
                         Panel::NowPlaying,
-                        now_playing.is_panel_visible(),
+                        visibility(&library, &now_playing),
                     );
                     if let Some(target) = target {
                         set_transient_visibility(&applying, &library, &now_playing, target);
@@ -390,7 +408,13 @@ mod tests {
 
         assert!(state.apply(before_snap).is_some());
         assert_eq!(
-            state.visibility_change_target(Panel::Library, false),
+            state.visibility_change_target(
+                Panel::Library,
+                PanelVisibility {
+                    library: false,
+                    now_playing: true,
+                }
+            ),
             None,
             "a collapse-driven close does not conflict with the constraint"
         );
@@ -437,36 +461,80 @@ mod tests {
     }
 
     #[test]
-    fn style_7_opening_one_panel_excludes_the_other_while_constrained() {
+    fn style_7_opening_the_library_sidebar_closes_the_info_panel_while_constrained() {
+        let now_playing_only = PanelVisibility {
+            library: false,
+            now_playing: true,
+        };
+
         assert_eq!(
-            visibility_after_opening(Panel::Library),
+            visibility_after_opening(Panel::Library, now_playing_only),
             PanelVisibility {
                 library: true,
                 now_playing: false,
             }
         );
-        assert_eq!(
-            visibility_after_opening(Panel::NowPlaying),
-            PanelVisibility {
-                library: false,
+    }
+
+    #[test]
+    fn the_info_panel_never_takes_the_library_sidebar_away() {
+        for library in [true, false] {
+            let current = PanelVisibility {
+                library,
                 now_playing: true,
-            }
+            };
+
+            assert_eq!(
+                visibility_after_opening(Panel::NowPlaying, current),
+                current,
+                "opening the info panel changed the library sidebar"
+            );
+        }
+
+        let mut state = ConstraintState::default();
+        assert!(
+            state
+                .apply(PanelVisibility {
+                    library: true,
+                    now_playing: false,
+                })
+                .is_none(),
+            "entering the constraint with the info panel closed is a non-event"
+        );
+
+        assert_eq!(
+            state.visibility_change_target(
+                Panel::NowPlaying,
+                PanelVisibility {
+                    library: true,
+                    now_playing: true,
+                }
+            ),
+            None,
+            "a constrained window must keep both the sidebar column and the \
+             info panel the user just opened"
         );
     }
 
     #[test]
     fn style_7_panel_and_table_thresholds_stay_coherent() {
-        assert_eq!(
-            crate::ui::window::library_shell::SIDEBAR_COLLAPSE_WIDTH,
-            crate::ui::now_playing_column::INFO_PANEL_COLLAPSE_WIDTH,
-            "both split views must enter overlay mode in the same width bin"
-        );
+        const {
+            assert!(
+                crate::ui::now_playing_column::INFO_PANEL_COLLAPSE_WIDTH
+                    + (SIDEBAR_MIN_WIDTH as i32)
+                    < CONSTRAINED_WIDTH,
+                "the info panel breakpoint is measured in the content pane, so adding the \
+                 pinned sidebar width must keep its effective window threshold below the \
+                 window-level constraint"
+            );
+        }
         assert_eq!(
             CONSTRAINED_WIDTH,
             crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH as i32
                 + crate::ui::now_playing_column::PANEL_WIDTH
                 + crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH,
-            "the mutual-exclusion threshold must reserve the table's fold width"
+            "the window threshold must account for both flank widths before the table \
+             reaches its fold width"
         );
     }
 

@@ -7,10 +7,10 @@
 //!
 //! ## Sidebar toggle
 //!
-//! `AdwOverlaySplitView` keeps the content mounted while its Start-positioned
-//! sidebar collapses into an overlay below 800 px. The persistent header
-//! toggle controls `show-sidebar`; responsive collapse never overwrites the
-//! user's explicit hidden preference.
+//! `AdwOverlaySplitView` keeps the content mounted and its Start-positioned
+//! sidebar pinned at every window width: no breakpoint collapses the library
+//! column into an overlay. The persistent header toggle owns `show-sidebar`,
+//! so the sidebar only ever appears or disappears because the user said so.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
@@ -368,7 +368,7 @@ pub fn build(
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
-        &library_shell.root,
+        &split_view,
         player_bar_widget,
         bar_position,
     );

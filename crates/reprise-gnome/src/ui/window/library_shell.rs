@@ -5,7 +5,6 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::db::Db;
 
 use super::artist_news_worker::ArtistNewsRuntime;
@@ -19,11 +18,7 @@ use super::track_list::TrackList;
 use crate::ui::nav_history::NavPlace;
 use reprise_core::view_source::ViewSource;
 
-pub(in crate::ui) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
-pub(in crate::ui) const SIDEBAR_COLLAPSE_WIDTH: i32 = SIDEBAR_BREAKPOINT_WIDTH - 1;
-
 pub(in crate::ui) struct LibraryShell {
-    pub root: adw::BreakpointBin,
     pub sidebar_page: adw::NavigationPage,
     pub split_view: adw::OverlaySplitView,
     pub content_nav: adw::NavigationView,
@@ -284,20 +279,17 @@ pub(in crate::ui) fn wire_source_routing(
     arm_smoke_detail_view(sidebar);
 }
 
-struct LibrarySplit {
-    root: adw::BreakpointBin,
-    split: adw::OverlaySplitView,
-}
-
-/// Builds the library split with its wide, pinned state as the default.
+/// Builds the library split as a pinned column that never collapses.
 ///
-/// The local breakpoint bin owns the narrow overlay mode. Unlike a window
-/// breakpoint, it cannot lose arbitration to another responsive concern, and
-/// unapplying it restores the captured wide-state value.
+/// The sidebar is a structural column, not a responsive one: no breakpoint
+/// flips `collapsed`, so narrowing the window never turns the column into an
+/// overlay and never hides it behind the header toggle. Visibility stays
+/// where the user (or the persisted preference) put it — see
+/// `window_navigation::apply_sidebar_visibility`.
 fn build_split_view(
     sidebar_page: &adw::NavigationPage,
     content_nav: &adw::NavigationView,
-) -> LibrarySplit {
+) -> adw::OverlaySplitView {
     sidebar_page.add_css_class("reprise-library-sidebar");
     let split = adw::OverlaySplitView::builder()
         .sidebar(sidebar_page)
@@ -308,18 +300,7 @@ fn build_split_view(
         .pin_sidebar(true)
         .build();
     split.add_css_class("reprise-library-split");
-    let condition = adw::BreakpointCondition::new_length(
-        adw::BreakpointConditionLengthType::MaxWidth,
-        f64::from(SIDEBAR_COLLAPSE_WIDTH),
-        adw::LengthUnit::Px,
-    );
-    let breakpoint = adw::Breakpoint::new(condition);
-    breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
-    let root = adw::BreakpointBin::new();
-    root.set_size_request(1, 1);
-    root.set_child(Some(&split));
-    root.add_breakpoint(breakpoint);
-    LibrarySplit { root, split }
+    split
 }
 
 /// NAV-2/NAV-9b: routes to a remembered place — the re-entrant twin of
@@ -475,11 +456,9 @@ pub(in crate::ui) fn build(
         info_panel.widget(),
         &strings::text(strings::APP_NAME),
     );
-    let library_split = build_split_view(&sidebar_page, &content_nav);
-    let split_view = library_split.split;
+    let split_view = build_split_view(&sidebar_page, &content_nav);
     super::sidebar_presentation::style_overlay_split_view(&split_view);
     LibraryShell {
-        root: library_split.root,
         sidebar_page,
         split_view,
         content_nav,
@@ -664,9 +643,9 @@ mod tests {
                 .build(),
         );
 
-        let shell = build_split_view(&sidebar_page, &content);
-        shell.split.set_show_sidebar(true);
-        let window = gtk4::Window::builder().child(&shell.root).build();
+        let split = build_split_view(&sidebar_page, &content);
+        split.set_show_sidebar(true);
+        let window = gtk4::Window::builder().child(&split).build();
         window.set_default_size(1_024, 768);
         window.set_size_request(1_024, 768);
         window.present();
@@ -676,14 +655,57 @@ mod tests {
             .compute_bounds(&window)
             .expect("content must share the window coordinate space");
         assert!(
-            !shell.split.is_collapsed(),
-            "1024 px library split entered overlay mode: window={} root={} content={content_bounds:?}",
+            !split.is_collapsed(),
+            "1024 px library split entered overlay mode: window={} split={} content={content_bounds:?}",
             window.width(),
-            shell.root.width(),
+            split.width(),
         );
         assert!(
             content_bounds.x() > 100.0,
             "the open library sidebar did not reserve a content slot: {content_bounds:?}"
+        );
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn the_sidebar_keeps_its_column_at_a_narrow_viewport() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let sidebar_page = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let content_label = gtk4::Label::new(Some("Content"));
+        let content = adw::NavigationView::new();
+        content.add(
+            &adw::NavigationPage::builder()
+                .title("Content")
+                .child(&content_label)
+                .build(),
+        );
+
+        let split = build_split_view(&sidebar_page, &content);
+        super::super::sidebar_presentation::style_overlay_split_view(&split);
+        split.set_show_sidebar(true);
+        let window = gtk4::Window::builder().child(&split).build();
+        window.set_default_size(600, 700);
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(
+            !split.is_collapsed(),
+            "a narrow viewport turned the library sidebar into an overlay: \
+             window={}",
+            window.width(),
+        );
+        let content_bounds = content
+            .compute_bounds(&window)
+            .expect("content must share the window coordinate space");
+        assert!(
+            content_bounds.x() > 100.0,
+            "the sidebar stopped reserving a content slot when narrow: \
+             {content_bounds:?}"
         );
         window.close();
     }
@@ -698,7 +720,7 @@ mod tests {
             .build();
         let content = adw::NavigationView::new();
 
-        let split = build_split_view(&sidebar_page, &content).split;
+        let split = build_split_view(&sidebar_page, &content);
 
         assert!(split.has_css_class("reprise-library-split"));
         assert!(sidebar_page.has_css_class("reprise-library-sidebar"));
