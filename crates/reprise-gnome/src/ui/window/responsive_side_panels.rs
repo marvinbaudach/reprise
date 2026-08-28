@@ -298,6 +298,27 @@ pub(in crate::ui) fn install(
 mod tests {
     use super::*;
 
+    fn note_user_change_receivers(source: &str) -> Vec<String> {
+        let production = source
+            .split_once("#[cfg(test)]")
+            .map_or(source, |(production, _)| production);
+        let compact: String = production
+            .chars()
+            .filter(|char| !char.is_whitespace())
+            .collect();
+        compact
+            .split(';')
+            .filter_map(|statement| {
+                let (before_call, _) = statement.rsplit_once(".note_user_change()")?;
+                before_call
+                    .rsplit(['{', '}'])
+                    .next()
+                    .filter(|receiver| !receiver.is_empty())
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
     #[test]
     fn style_7_constrained_window_closes_the_info_panel_and_keeps_the_library_sidebar() {
         let open = PanelVisibility {
@@ -374,6 +395,33 @@ mod tests {
             "a collapse-driven close does not conflict with the constraint"
         );
         assert_eq!(state.unapply(), Some(before_snap));
+    }
+
+    #[test]
+    fn enforcement_latch_is_only_changed_by_undo() {
+        // This protects the wiring invariant behind C1: foreign closes must
+        // not latch a user override. A ConstraintState unit test cannot catch
+        // a note_user_change call reintroduced in either notify handler.
+        assert_eq!(
+            note_user_change_receivers(include_str!("responsive_side_panels.rs")),
+            ["self"]
+        );
+    }
+
+    #[test]
+    fn enforcement_latch_guard_recognizes_the_old_broken_wiring() {
+        let broken = concat!(
+            "library.connect_show_sidebar_notify(move |_| {\n",
+            "    if library.shows_sidebar() {\n",
+            "        enforce();\n",
+            "    } else {\n",
+            "        state.borrow_mut().note_user_",
+            "change();\n",
+            "    }\n",
+            "});\n",
+        );
+
+        assert_eq!(note_user_change_receivers(broken), ["state.borrow_mut()"]);
     }
 
     #[test]
