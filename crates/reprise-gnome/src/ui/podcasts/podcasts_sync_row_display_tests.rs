@@ -46,7 +46,6 @@ fn state(step: SyncStep, episodes_found: usize) -> SyncRowState {
     SyncRowState {
         step,
         episodes_found,
-        error: (step == SyncStep::Failed).then(|| "Database".to_owned()),
         abort: SyncAbort::new(),
     }
 }

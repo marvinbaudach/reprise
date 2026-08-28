@@ -27,7 +27,6 @@ pub(super) fn remove_subscription_sync_if_owned(
 pub(super) struct SyncRowState {
     pub step: SyncStep,
     pub episodes_found: usize,
-    pub error: Option<String>,
     pub abort: SyncAbort,
 }
 
@@ -36,7 +35,6 @@ impl SyncRowState {
         Self {
             step: SyncStep::Added,
             episodes_found: 0,
-            error: None,
             abort,
         }
     }
@@ -49,10 +47,7 @@ impl SyncRowState {
                 self.episodes_found = *episodes_found;
             }
             SyncProgress::FetchingArtwork => self.step = SyncStep::DownloadingArtwork,
-            SyncProgress::Failed(error) => {
-                self.step = SyncStep::Failed;
-                self.error = Some(format!("{error:?}"));
-            }
+            SyncProgress::Failed(_) => self.step = SyncStep::Failed,
             SyncProgress::Done(_) => {}
         }
     }
@@ -92,6 +87,5 @@ mod tests {
         ));
 
         assert_eq!(state.step, SyncStep::Failed);
-        assert!(state.error.is_some());
     }
 }
