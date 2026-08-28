@@ -32,12 +32,12 @@ pub(super) fn subscribe_offline(
         Ok(podcasts::offline_add::OfflineSubscribeOutcome::AlreadySubscribed) => {
             status.set_text(&strings::text(strings::PODCAST_ALREADY_SUBSCRIBED));
         }
-        Ok(podcasts::offline_add::OfflineSubscribeOutcome::Added { .. }) => {
+        Ok(podcasts::offline_add::OfflineSubscribeOutcome::Added { subscription_id }) => {
             status.set_text(&strings::text(strings::PODCAST_ADDED_OFFLINE));
             // `import_latest = false`: there is nothing to import yet while
             // offline, and forcing an immediate refresh attempt now would
             // just fail loudly over the network this dialog just avoided.
-            on_added(false);
+            on_added(subscription_id, false);
         }
         Err(error) => {
             tracing::warn!(%error, "could not save offline podcast subscription");

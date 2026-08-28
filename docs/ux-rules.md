@@ -1324,8 +1324,11 @@ result.
   The footer costs the dialog height, never width, and the fixed columns are
   budgeted so the description states its count in full instead of truncating
   to the plugin name it already sits next to.
-  A row's cancel stops that job and nothing else. While the online-content gate
-  is off the bar lists no rows and says so instead. The main window's own scan
+  A row's cancel stops that job and nothing else. While no job runs, the whole
+  footer is hidden; it never leaves a title-only placeholder. While the
+  online-content gate is off, the bar replaces activity that would otherwise
+  be visible with one reason, but an idle gate-off state still hides the whole
+  footer. The main window's own scan
   card stays where it is, in its own layer under the dialog, and is never
   reparented into it (`docs/plans/plugins-online-content-master-hierarchy.md`).
 - **FB-1** [planned] [core] — Two-class toasts (pill, bottom-centered,
@@ -1438,6 +1441,13 @@ result.
   Continuous gear rotation and indeterminate pulsing obey the central
   reduced-motion gate and remain statically legible when animations are
   disabled.
+  Narrow initial-sync exception: a newly added source row may grow from its
+  resting height to a fixed-height, three-line account of that source's first
+  sync. Its height stays unchanged across every progress and failure state and,
+  on completion, returns to the resting row height with the Standard 250 ms
+  shrink rather than jumping. With reduced motion it swaps immediately. This
+  exception applies only while the row is being established; it does not permit
+  later jobs or variable detail lists to reflow an existing row.
   Named exception: the shared source-error banner of NR-21, CONC-11,
   POD-19, RAD-2 and NET-3 may still be inserted above a populated view and
   removed again when the next refresh succeeds. This is a documented
@@ -1485,6 +1495,25 @@ result.
   action completed without naming the action, leaving any adjacent Undo
   without a subject. The measured trigger was a YouTube title containing `&`
   on 2026-08-23.
+- **FB-12** [planned] [gtk] — Every wait that the user started has a visible
+  owner that names what is being loaded. When the wait belongs to one row,
+  card or entry, that element carries it (FB-9 (3)); a global status line is
+  the fallback for work that belongs to no single element, never the primary
+  answer. A placeholder that shows a resting value while its real value is
+  still being fetched is prohibited: "0 episodes" while the feed is being
+  read is a false statement, not a neutral default. This rule binds all future
+  network-backed lists.
+  Named exception: NR-2a's cover tile. The Updates feed and the Releases and
+  Concerts tables deliberately show one muted initials tile for both a
+  permanently missing cover and one still being fetched
+  (`updates/release_cover.rs`), naming neither. That is a shipped, tested
+  `[active]` behaviour and a considered choice — an immediate tile beats a
+  spinner for a cover that usually resolves within a frame — not an oversight
+  this rule may quietly overrule. It is carried the way FB-9 carries its five
+  banners: as a documented deviation, not a second sanctioned pattern. Before
+  this rule may be promoted to `[active]`, the conflict is settled explicitly —
+  either NR-2a distinguishes its two states, or this exception is written into
+  the promoted rule. No new surface may cite it.
 
 ## H. File association & OS integration
 
@@ -6460,6 +6489,27 @@ listening statistics.
   channel tail the row deliberately dims (POD-15) remains part of the stored
   and searched episode title, so a hit inside that tail is accented too while
   the surrounding tail stays dim.
+- **POD-26** [active] [gtk] — A newly added podcast or YouTube channel owns its
+  initial-sync status in its source row, never in the shared footer. Each
+  subscription has its own row and the row always carries exactly three lines:
+  source added, feed reading with the live episode count, and artwork fetching.
+  Done, active, pending and failed states change those fixed lines in place;
+  failure replaces the active feed line with "Couldn't read feed" and offers
+  Retry rather than adding a fourth line. The fixed 40 x 40 cover in its
+  64 x 40 slot admits that artwork is pending with the source glyph, shimmer
+  and pulse. The row uses the current accent roles for its border and gradient,
+  stays collapsed and cannot be expanded during sync, and Cancel aborts the
+  per-subscription pipeline before that removed subscription can commit
+  episodes. Completion crossfades the progress to the facts line for 250 ms,
+  then animates the row back to the shared 56 px minimum over 250 ms. Reduced
+  motion uses static indicators, no shimmer, pulse, spin or shrink animation,
+  and swaps immediately.
+  Tests: `pod_26_each_loading_row_names_three_stable_steps_and_owns_its_failure`,
+  `pod_26_completion_crossfades_before_the_row_shrinks_to_the_shared_height`,
+  `pod_26_reduced_motion_uses_a_static_indicator_and_no_cover_motion`, and
+  `pod_26_the_rows_cancel_action_trips_the_core_abort_handle`
+  (`ui/podcasts/podcasts_sync_row_display_tests.rs` and
+  `ui/podcasts/tests/podcasts_view_sync_tests.rs`).
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

@@ -1,7 +1,7 @@
 //! Podcasts table, status states, actions, and refresh wiring.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -36,6 +36,9 @@ use super::podcasts_removal::{
 use super::podcasts_rendered_order;
 use super::podcasts_reveal::RevealRequest;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
+use super::podcasts_sync_state::{
+    clear_failed_syncs_that_recovered, remove_subscription_sync_if_owned, SyncRowState, SyncStep,
+};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
@@ -133,6 +136,7 @@ pub(in crate::ui) struct PodcastsView {
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     selection_widgets: RefCell<BTreeMap<i64, podcasts_groups::SelectionRowWidgets>>,
     channel_widgets: RefCell<BTreeMap<i64, podcasts_groups::ChannelRowWidgets>>,
+    sync_widgets: RefCell<BTreeMap<i64, super::podcasts_sync_row::SyncRowWidgets>>,
     artwork_rebinds: RefCell<Vec<podcasts_groups::ArtworkRebind>>,
     scroller: gtk4::ScrolledWindow,
     last_scroll_activity: Cell<Option<std::time::Instant>>,
@@ -142,6 +146,7 @@ pub(in crate::ui) struct PodcastsView {
     pending_reveal: RefCell<Option<RevealRequest>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
+    pub(super) syncing: RefCell<HashMap<i64, SyncRowState>>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     kept_downloads: RefCell<KeptDownloads>,
     /// `NET-3c`: explicit connectivity seam, mirroring `RadioView`'s
@@ -242,6 +247,7 @@ impl PodcastsView {
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
             channel_widgets: RefCell::new(BTreeMap::new()),
+            sync_widgets: RefCell::new(BTreeMap::new()),
             artwork_rebinds: RefCell::new(Vec::new()),
             scroller,
             last_scroll_activity: Cell::new(None),
@@ -251,6 +257,7 @@ impl PodcastsView {
             pending_reveal: RefCell::new(None),
             unavailable_episode: Cell::new(None),
             generation: Cell::new(0),
+            syncing: RefCell::new(HashMap::new()),
             toast_overlay: glib::WeakRef::new(),
             kept_downloads: RefCell::new(KeptDownloads::default()),
             connectivity: Cell::new(Connectivity::default()),
@@ -324,6 +331,14 @@ impl PodcastsView {
         let result = podcasts::query::list_source_groups(&self.conn, self.kind);
         match result {
             Ok(groups) => {
+                let recovered = groups
+                    .iter()
+                    .filter(|group| !group.episodes.is_empty())
+                    .map(|group| group.subscription_id)
+                    .collect::<BTreeSet<_>>();
+                self.syncing.borrow_mut().retain(|subscription_id, state| {
+                    state.step != SyncStep::Failed || !recovered.contains(subscription_id)
+                });
                 let mut rows = groups
                     .iter()
                     .flat_map(|group| group.episodes.iter().cloned())
@@ -387,6 +402,7 @@ impl PodcastsView {
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
         let selected_ids = self.selection.borrow().selected_ids();
+        let syncing = self.syncing.borrow().clone();
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
@@ -408,7 +424,7 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             self.playing_episode.get(),
         );
-        let rendered_widgets = podcasts_groups::replace(
+        let rendered_widgets = podcasts_groups::replace_with_sync(
             &self.group_container,
             &rendered_groups,
             self.playing_episode.get(),
@@ -420,10 +436,12 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             &self.selection,
             &filter.query,
+            &syncing,
         );
         self.download_widgets.replace(rendered_widgets.downloads);
         self.selection_widgets.replace(rendered_widgets.selection);
         self.channel_widgets.replace(rendered_widgets.channels);
+        self.sync_widgets.replace(rendered_widgets.syncs);
         self.artwork_rebinds.replace(rendered_widgets.artwork);
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable
@@ -543,7 +561,7 @@ impl PodcastsView {
 
     fn dispatch_download(self: &Rc<Self>, episode_id: i64) -> bool {
         let operation = PodcastsOperation::Download { episode_id };
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         let (response, receiver) = podcasts_response_channel();
         if !self.runtime.request(PodcastsRequest {
             generation,
@@ -575,7 +593,9 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
                     Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
-                    Ok(PodcastsWorkerResult::Filled(_)) => {}
+                    Ok(
+                        PodcastsWorkerResult::Filled(_) | PodcastsWorkerResult::SyncProgress { .. },
+                    ) => {}
                     Err(error) => {
                         tracing::warn!(%error, episode_id, "podcast download failed");
                         view.set_download_state(
@@ -609,6 +629,7 @@ impl PodcastsView {
         else {
             return;
         };
+        self.cancel_subscription_sync(subscription_id);
         let paths = podcasts::store::downloaded_paths_for_subscription(&self.conn, subscription_id)
             .unwrap_or_default();
         if let Err(error) = podcasts::store::tombstone_subscription(

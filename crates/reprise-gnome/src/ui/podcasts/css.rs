@@ -9,6 +9,58 @@ pub(super) fn css() -> String {
   background: alpha(currentColor, 0.045);
   border: 1px solid alpha(currentColor, 0.08);
 }
+.reprise-podcast-group.reprise-podcast-group-syncing {
+  border-color: alpha(@accent_bg_color, 0.22);
+  background-image: linear-gradient(to bottom, alpha(@accent_bg_color, 0.06), transparent);
+  transition: border-color 250ms ease, background-image 250ms ease;
+}
+.reprise-podcast-group-syncing > title > arrow { opacity: 0.38; }
+.reprise-podcast-sync-row { min-height: 56px; }
+.reprise-podcast-sync-cover {
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 8px;
+  background: alpha(currentColor, 0.08);
+}
+.reprise-podcast-sync-cover-icon { opacity: 0.62; }
+.reprise-podcast-sync-shimmer {
+  min-width: 7px;
+  background: alpha(@accent_bg_color, 0.14);
+  animation: reprise-podcast-shimmer 1900ms linear infinite;
+}
+.reprise-podcast-sync-spin {
+  color: @reprise_accent_text_color;
+  animation: reprise-podcast-spin 900ms linear infinite;
+}
+.reprise-podcast-sync-breathe {
+  animation: reprise-podcast-breathe 2000ms ease-in-out infinite;
+}
+.reprise-podcast-sync-dot {
+  min-width: 6px;
+  min-height: 6px;
+  margin: 5px;
+  border-radius: 999px;
+  background: alpha(currentColor, 0.24);
+}
+.reprise-podcast-sync-dot-active { background: @accent_bg_color; }
+.reprise-podcast-sync-step-done { opacity: 0.62; }
+.reprise-podcast-sync-step-active { color: @reprise_accent_text_color; }
+.reprise-podcast-sync-step-pending { opacity: 0.48; }
+.reprise-podcast-sync-step-failed { color: @error_color; }
+@keyframes reprise-podcast-shimmer {
+  from { transform: translate(-8px, 0); opacity: 0; }
+  18% { opacity: 0.7; }
+  82% { opacity: 0.7; }
+  to { transform: translate(48px, 0); opacity: 0; }
+}
+@keyframes reprise-podcast-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes reprise-podcast-breathe {
+  from { opacity: 0.42; }
+  to { opacity: 0.78; }
+}
 .reprise-podcast-group-artwork {
   min-width: 40px;
   min-height: 40px;
@@ -104,5 +156,21 @@ mod tests {
             "the selected rule must come last, or a selected loaded row would not look selected"
         );
         assert!(css.contains("background: alpha(currentColor, 0.12)"));
+    }
+
+    #[test]
+    fn pod_26_loading_chrome_uses_named_accent_roles_and_the_approved_motion() {
+        let css = css();
+        assert!(css.contains(".reprise-podcast-group-syncing"));
+        assert!(css.contains("border-color: alpha(@accent_bg_color, 0.22)"));
+        assert!(
+            css.contains("linear-gradient(to bottom, alpha(@accent_bg_color, 0.06), transparent)")
+        );
+        assert!(css.contains("animation: reprise-podcast-shimmer 1900ms linear infinite"));
+        assert!(css.contains("animation: reprise-podcast-spin 900ms linear infinite"));
+        assert!(css.contains("animation: reprise-podcast-breathe 2000ms ease-in-out infinite"));
+        assert!(css.contains("transition: border-color 250ms"));
+        assert!(css.contains(".reprise-podcast-group-syncing > title > arrow { opacity: 0.38; }"));
+        assert!(!css.contains("#4ddac4"));
     }
 }

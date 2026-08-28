@@ -41,7 +41,7 @@ pub(super) enum AddDialogPhase {
     Error,
 }
 
-pub(super) type OnAdded = Rc<dyn Fn(bool)>;
+pub(super) type OnAdded = Rc<dyn Fn(i64, bool)>;
 
 /// `SRC-8`: the single size this dialog keeps, whatever a search returns.
 /// `adw::Dialog` treats both as *natural* sizes, so a result label that does
@@ -185,7 +185,7 @@ pub(super) fn present(
     conn: &Rc<Db>,
     preferred_kind: PodcastKind,
     connectivity: Connectivity,
-    on_added: impl Fn(bool) + 'static,
+    on_added: impl Fn(i64, bool) + 'static,
 ) {
     let conn = conn.clone();
     let on_added: OnAdded = Rc::new(on_added);

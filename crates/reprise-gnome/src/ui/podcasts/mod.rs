@@ -33,6 +33,11 @@ mod podcasts_row_interaction;
 mod podcasts_row_state;
 mod podcasts_scroller;
 mod podcasts_selection;
+mod podcasts_sync_row;
+#[cfg(test)]
+#[path = "podcasts_sync_row_display_tests.rs"]
+mod podcasts_sync_row_display_tests;
+mod podcasts_sync_state;
 mod podcasts_title;
 mod podcasts_view;
 mod podcasts_view_data;

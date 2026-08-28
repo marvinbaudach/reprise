@@ -9,6 +9,9 @@ use reprise_core::podcasts::store::{self, NewSubscription};
 
 use super::*;
 
+#[path = "tests/podcasts_view_sync_tests.rs"]
+mod sync_tests;
+
 /// Builds a `PodcastsView` over a freshly migrated in-memory-backed DB.
 /// Callers seed subscriptions/episodes/persisted filter values on `conn`
 /// *before* calling this, since `PodcastsFilterBar::new` and the initial
