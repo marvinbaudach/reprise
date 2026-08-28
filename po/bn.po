@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-27 22:03+0200\n"
+"POT-Creation-Date: 2026-08-28 10:01+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Bengali\n"
@@ -2197,7 +2197,7 @@ msgid "Information"
 msgstr "তথ্য"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:12
-msgid "Toggle Now Playing panel"
+msgid "Toggle info panel"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:13
@@ -5803,7 +5803,7 @@ msgid "Could not save filter visibility"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:46
-msgid "Could not save information panel visibility"
+msgid "Could not save info panel visibility"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:48

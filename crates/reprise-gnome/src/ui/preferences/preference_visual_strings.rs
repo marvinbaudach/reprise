@@ -43,6 +43,6 @@ pub(in crate::ui) const SIDEBAR_VISIBILITY_SAVE_FAILED: &str =
 pub(in crate::ui) const FILTER_VISIBILITY_SAVE_FAILED: &str =
     N_!("Could not save filter visibility");
 pub(in crate::ui) const INFORMATION_VISIBILITY_SAVE_FAILED: &str =
-    N_!("Could not save information panel visibility");
+    N_!("Could not save info panel visibility");
 pub(in crate::ui) const STATUS_VISIBILITY_SAVE_FAILED: &str =
     N_!("Could not save status line visibility");
