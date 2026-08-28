@@ -83,6 +83,9 @@ impl JobRowState {
 /// without a widget in sight, so the rules are testable on their own.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct BarState {
+    /// Whether online-job chrome has anything truthful to show. The scan slot
+    /// is independent and may still keep the widget visible.
+    pub(in crate::ui) visible: bool,
     pub(in crate::ui) rows: Vec<JobRowState>,
     /// `None` while nothing runs: the draft asks for no badge at all then,
     /// rather than a badge reading zero.
@@ -92,17 +95,27 @@ pub(in crate::ui) struct BarState {
 }
 
 pub(in crate::ui) fn bar_state(jobs: &[Option<JobRowState>], online_enabled: bool) -> BarState {
-    // Off means off: no online job can be running, so none is listed and the
-    // footer says why instead of standing empty.
+    let rows = jobs.iter().flatten().cloned().collect::<Vec<_>>();
+    if rows.is_empty() {
+        return BarState {
+            visible: false,
+            rows,
+            count_badge: None,
+            empty_notice: None,
+        };
+    }
+    // Only replace activity that would otherwise be visible. With no job,
+    // "No online jobs" would itself keep an otherwise empty footer alive.
     if !online_enabled {
         return BarState {
+            visible: true,
             rows: Vec::new(),
             count_badge: None,
             empty_notice: Some(strings::text(strings::BACKGROUND_NO_ONLINE_JOBS)),
         };
     }
-    let rows = jobs.iter().flatten().cloned().collect::<Vec<_>>();
     BarState {
+        visible: true,
         count_badge: (!rows.is_empty()).then(|| rows.len().to_string()),
         empty_notice: None,
         rows,
@@ -213,6 +226,7 @@ impl BackgroundBar {
         self.inner.scan_slot.append(line);
         self.inner.scan_slot.append(chip);
         self.inner.scan_slot.set_visible(true);
+        self.inner.root.set_visible(true);
     }
 
     pub(in crate::ui) fn set_on_cancel(&self, callback: impl Fn(JobOwner) + 'static) {
@@ -270,6 +284,9 @@ impl BackgroundBar {
             }
             None => self.inner.empty.set_visible(false),
         }
+        self.inner
+            .root
+            .set_visible(state.visible || self.inner.scan_slot.is_visible());
     }
 
     fn job_row(&self, state: &JobRowState) -> gtk4::Box {

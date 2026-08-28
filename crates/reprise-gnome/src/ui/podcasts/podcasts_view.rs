@@ -134,6 +134,7 @@ pub(in crate::ui) struct PodcastsView {
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     selection_widgets: RefCell<BTreeMap<i64, podcasts_groups::SelectionRowWidgets>>,
     channel_widgets: RefCell<BTreeMap<i64, podcasts_groups::ChannelRowWidgets>>,
+    sync_widgets: RefCell<BTreeMap<i64, super::podcasts_sync_row::SyncRowWidgets>>,
     artwork_rebinds: RefCell<Vec<podcasts_groups::ArtworkRebind>>,
     scroller: gtk4::ScrolledWindow,
     last_scroll_activity: Cell<Option<std::time::Instant>>,
@@ -244,6 +245,7 @@ impl PodcastsView {
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
             channel_widgets: RefCell::new(BTreeMap::new()),
+            sync_widgets: RefCell::new(BTreeMap::new()),
             artwork_rebinds: RefCell::new(Vec::new()),
             scroller,
             last_scroll_activity: Cell::new(None),
@@ -390,6 +392,7 @@ impl PodcastsView {
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
         let selected_ids = self.selection.borrow().selected_ids();
+        let syncing = self.syncing.borrow().clone();
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
@@ -411,7 +414,7 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             self.playing_episode.get(),
         );
-        let rendered_widgets = podcasts_groups::replace(
+        let rendered_widgets = podcasts_groups::replace_with_sync(
             &self.group_container,
             &rendered_groups,
             self.playing_episode.get(),
@@ -423,10 +426,12 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             &self.selection,
             &filter.query,
+            &syncing,
         );
         self.download_widgets.replace(rendered_widgets.downloads);
         self.selection_widgets.replace(rendered_widgets.selection);
         self.channel_widgets.replace(rendered_widgets.channels);
+        self.sync_widgets.replace(rendered_widgets.syncs);
         self.artwork_rebinds.replace(rendered_widgets.artwork);
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable

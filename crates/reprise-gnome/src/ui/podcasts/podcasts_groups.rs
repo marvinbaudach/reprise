@@ -1,7 +1,7 @@
 //! Channel/show-grouped podcast and YouTube rows.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
 
 use chrono::Local;
@@ -24,6 +24,8 @@ use super::podcasts_row_interaction::{
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
 use super::podcasts_selection::PodcastSelection;
+use super::podcasts_sync_row::{self, SyncRowWidgets};
+use super::podcasts_sync_state::SyncRowState;
 use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -60,6 +62,7 @@ pub(super) struct RenderedRowWidgets {
     pub(super) downloads: BTreeMap<i64, DownloadRowWidgets>,
     pub(super) selection: BTreeMap<i64, SelectionRowWidgets>,
     pub(super) channels: BTreeMap<i64, ChannelRowWidgets>,
+    pub(super) syncs: BTreeMap<i64, SyncRowWidgets>,
     pub(super) artwork: Vec<ArtworkRebind>,
 }
 
@@ -81,6 +84,7 @@ struct GroupRenderContext<'a> {
     unavailable_episode: Option<i64>,
     selection: &'a Rc<RefCell<PodcastSelection>>,
     paths: &'a Rc<EpisodePaths>,
+    syncing: &'a HashMap<i64, SyncRowState>,
 }
 
 struct EpisodeRenderContext<'a> {
@@ -109,6 +113,37 @@ pub(super) fn replace(
     selection: &Rc<RefCell<PodcastSelection>>,
     query: &str,
 ) -> RenderedRowWidgets {
+    replace_with_sync(
+        container,
+        groups,
+        playing_episode,
+        expanded_sources,
+        expanded_episode_sources,
+        download_states,
+        images_allowed,
+        connectivity,
+        unavailable_episode,
+        selection,
+        query,
+        &HashMap::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn replace_with_sync(
+    container: &gtk4::Box,
+    groups: &[RenderedSourceGroup],
+    playing_episode: Option<EpisodeMark>,
+    expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
+    expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
+    download_states: &BTreeMap<i64, DownloadState>,
+    images_allowed: bool,
+    connectivity: Connectivity,
+    unavailable_episode: Option<i64>,
+    selection: &Rc<RefCell<PodcastSelection>>,
+    query: &str,
+    syncing: &HashMap<i64, SyncRowState>,
+) -> RenderedRowWidgets {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
@@ -116,6 +151,7 @@ pub(super) fn replace(
         downloads: BTreeMap::new(),
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
+        syncs: BTreeMap::new(),
         artwork: Vec::new(),
     };
     let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
@@ -130,6 +166,7 @@ pub(super) fn replace(
         unavailable_episode,
         selection,
         paths: &paths,
+        syncing,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut widgets));
@@ -159,6 +196,7 @@ fn build_group(
     widgets: &mut RenderedRowWidgets,
 ) -> gtk4::Expander {
     let group = &rendered.group;
+    let sync_state = context.syncing.get(&group.subscription_id);
     let expander = gtk4::Expander::new(None);
     // The title lives in the header widget, which leaves the expander itself
     // nameless in the accessibility tree — a screen reader announces "toggle
@@ -172,10 +210,17 @@ fn build_group(
             .contains(&group.subscription_id);
     // Set before the notify handler is connected, so forcing a show open for
     // a search never records that as a manual expansion.
-    expander.set_expanded(expanded);
+    expander.set_expanded(sync_state.is_none() && expanded);
     let subscription_id = group.subscription_id;
+    let expansion_locked = sync_state.is_some();
     let expanded_sources = context.expanded_sources.clone();
     expander.connect_expanded_notify(move |expander| {
+        if expansion_locked {
+            if expander.is_expanded() {
+                expander.set_expanded(false);
+            }
+            return;
+        }
         if expander.is_expanded() {
             expanded_sources.borrow_mut().insert(subscription_id);
         } else {
@@ -188,6 +233,9 @@ fn build_group(
         &rendered.summary,
         context.images_allowed,
         &mut widgets.artwork,
+        sync_state,
+        Some(&expander),
+        &mut widgets.syncs,
     );
     expander.set_label_widget(Some(&header));
     widgets.channels.insert(
@@ -258,7 +306,15 @@ fn group_header(
     summary: &SourceSummary,
     images_allowed: bool,
 ) -> gtk4::Widget {
-    group_header_with_rebind(group, summary, images_allowed, &mut Vec::new())
+    group_header_with_rebind(
+        group,
+        summary,
+        images_allowed,
+        &mut Vec::new(),
+        None,
+        None,
+        &mut BTreeMap::new(),
+    )
 }
 
 fn group_header_with_rebind(
@@ -266,6 +322,9 @@ fn group_header_with_rebind(
     summary: &SourceSummary,
     images_allowed: bool,
     artwork_rebinds: &mut Vec<ArtworkRebind>,
+    sync_state: Option<&SyncRowState>,
+    expander: Option<&gtk4::Expander>,
+    sync_widgets: &mut BTreeMap<i64, SyncRowWidgets>,
 ) -> gtk4::Widget {
     let skeleton = crate::ui::source_row::skeleton();
     let header = skeleton.root.clone();
@@ -281,26 +340,32 @@ fn group_header_with_rebind(
         PodcastKind::Rss => "audio-input-microphone-symbolic",
         PodcastKind::Youtube => "video-x-generic-symbolic",
     };
-    let rebind = Rc::new(move |images_allowed| {
-        while let Some(child) = artwork_host.first_child() {
-            artwork_host.remove(&child);
-        }
-        let artwork = super::source_image::SourceImage::new_after_startup(
-            image_url.as_deref(),
-            fallback_icon,
-            40,
-            images_allowed,
-        );
-        artwork
-            .widget()
-            .add_css_class("reprise-podcast-group-artwork");
-        artwork_host.append(&crate::ui::source_row::media(
-            artwork.widget(),
-            crate::ui::source_row::MediaShape::SourceSquare,
-        ));
-    }) as ArtworkRebind;
-    rebind(images_allowed);
-    artwork_rebinds.push(rebind);
+    if sync_state.is_none() {
+        let rebind = Rc::new(move |images_allowed| {
+            while let Some(child) = artwork_host.first_child() {
+                artwork_host.remove(&child);
+            }
+            let artwork = super::source_image::SourceImage::new_after_startup(
+                image_url.as_deref(),
+                fallback_icon,
+                40,
+                images_allowed,
+            );
+            artwork
+                .widget()
+                .add_css_class("reprise-podcast-group-artwork");
+            artwork
+                .widget()
+                .set_transition_type(gtk4::StackTransitionType::Crossfade);
+            artwork.widget().set_transition_duration(200);
+            artwork_host.append(&crate::ui::source_row::media(
+                artwork.widget(),
+                crate::ui::source_row::MediaShape::SourceSquare,
+            ));
+        }) as ArtworkRebind;
+        rebind(images_allowed);
+        artwork_rebinds.push(rebind);
+    }
 
     let source = source_header(group.kind, &group.title, group.author.as_deref());
     let title = gtk4::Label::new(Some(source.title));
@@ -327,7 +392,19 @@ fn group_header_with_rebind(
     let facts = gtk4::Label::new(Some(&facts));
     facts.add_css_class("caption");
     facts.add_css_class("dim-label");
-    skeleton.trailing.append(&facts);
+    if let (Some(state), Some(expander)) = (sync_state, expander) {
+        let widgets = podcasts_sync_row::attach(
+            &skeleton,
+            expander,
+            &facts,
+            group.subscription_id,
+            group.kind,
+            state,
+        );
+        sync_widgets.insert(group.subscription_id, widgets);
+    } else {
+        skeleton.trailing.append(&facts);
+    }
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
         .menu_model(&podcasts_context_menu::build_source(group))

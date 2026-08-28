@@ -54,22 +54,20 @@ impl PodcastsView {
                         progress,
                     }) if response_id == subscription_id => {
                         if matches!(progress, podcasts::pipeline::SyncProgress::Done(_)) {
-                            view.syncing.borrow_mut().remove(&subscription_id);
-                            view.refresh();
-                            (view.callbacks.on_sidebar_refresh)();
-                            view.request_fill_downloads();
+                            view.finish_subscription_sync(subscription_id);
                             break;
                         }
-                        let known = {
+                        let state = {
                             let mut syncing = view.syncing.borrow_mut();
                             syncing.get_mut(&subscription_id).map(|state| {
                                 state.apply(&progress);
+                                state.clone()
                             })
                         };
-                        if known.is_none() {
+                        let Some(state) = state else {
                             break;
-                        }
-                        view.render();
+                        };
+                        view.update_subscription_sync(subscription_id, &state);
                         if matches!(progress, podcasts::pipeline::SyncProgress::Failed(_)) {
                             break;
                         }
@@ -82,15 +80,16 @@ impl PodcastsView {
                         | PodcastsWorkerResult::Filled(_),
                     ) => {}
                     Err(error) => {
-                        let updated = {
+                        let state = {
                             let mut syncing = view.syncing.borrow_mut();
                             syncing.get_mut(&subscription_id).map(|state| {
                                 state.step = SyncStep::Failed;
                                 state.error = Some(error);
+                                state.clone()
                             })
                         };
-                        if updated.is_some() {
-                            view.render();
+                        if let Some(state) = state {
+                            view.update_subscription_sync(subscription_id, &state);
                         }
                         break;
                     }
@@ -98,6 +97,34 @@ impl PodcastsView {
             }
         });
         true
+    }
+
+    fn update_subscription_sync(&self, subscription_id: i64, state: &SyncRowState) {
+        let widgets = self.sync_widgets.borrow().get(&subscription_id).cloned();
+        if let Some(widgets) = widgets {
+            super::super::podcasts_sync_row::update(&widgets, state);
+        } else {
+            self.render();
+        }
+    }
+
+    fn finish_subscription_sync(self: &Rc<Self>, subscription_id: i64) {
+        let widgets = self.sync_widgets.borrow().get(&subscription_id).cloned();
+        let weak = Rc::downgrade(self);
+        let finish = move || {
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            view.syncing.borrow_mut().remove(&subscription_id);
+            view.refresh();
+            (view.callbacks.on_sidebar_refresh)();
+            view.request_fill_downloads();
+        };
+        if let Some(widgets) = widgets {
+            super::super::podcasts_sync_row::complete(&widgets, finish);
+        } else {
+            finish();
+        }
     }
 
     pub(super) fn cancel_subscription_sync(&self, subscription_id: i64) -> bool {
