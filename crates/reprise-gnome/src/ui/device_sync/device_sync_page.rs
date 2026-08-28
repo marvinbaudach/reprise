@@ -234,9 +234,10 @@ impl DeviceSyncPage {
                 .as_deref()
                 .unwrap_or("Device storage"),
         );
-        self.dashboard
-            .storage_summary
-            .set_label(&storage_summary(&device.page.storage));
+        self.dashboard.storage_summary.set_label(&storage_summary(
+            &device.page.storage,
+            device.storage_measured,
+        ));
         self.dashboard.storage_bar.update(&device.page.storage);
         self.update_actions(device);
         self.on_device.update(device);

@@ -282,6 +282,9 @@ impl OnDeviceSection {
 }
 
 pub(super) fn storage_legend(device: &DeviceView) -> String {
+    if !device.storage_measured {
+        return device_sync_strings::text(device_sync_strings::SPACE_UNKNOWN);
+    }
     if let StorageProjectionState::Insufficient { shortfall_bytes } = device.page.storage.state {
         let Some(free_bytes) = device.page.storage.current.free_bytes else {
             return device_sync_strings::text(device_sync_strings::SPACE_UNKNOWN);

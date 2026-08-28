@@ -68,6 +68,7 @@ fn device() -> DeviceView {
             reprise_music_bytes: 32 * 1_024,
             other_music_bytes: 16 * 1_024,
         },
+        storage_measured: true,
         scan_error: None,
         settings: DeviceSettings {
             device_serial: "phone".into(),
@@ -307,7 +308,7 @@ fn mtp_7_full_page_projects_complete_storage_segments() {
         state: StorageProjectionState::Fits,
     };
     assert_eq!(
-        storage_summary(&projection),
+        storage_summary(&projection, true),
         "Writable · Music 48.0 KiB · after sync +16.0 KiB · Other 16.0 KiB · Free 48.0 KiB"
     );
     assert_eq!(
@@ -335,7 +336,7 @@ fn mtp_9_known_read_only_target_is_explicit_and_blocks_sync() {
     device.page.update_controls(true, true, false);
 
     assert_eq!(
-        storage_summary(&device.page.storage),
+        storage_summary(&device.page.storage, true),
         "Read-only · Music 48.0 KiB · after sync no change · Other 16.0 KiB · Free 48.0 KiB"
     );
     assert_eq!(
@@ -345,7 +346,7 @@ fn mtp_9_known_read_only_target_is_explicit_and_blocks_sync() {
     assert!(!device.page.controls.can_start);
 
     device.page.storage.access = DeviceStorageAccess::Unknown;
-    assert!(storage_summary(&device.page.storage).starts_with("Write access unknown ·"));
+    assert!(storage_summary(&device.page.storage, true).starts_with("Write access unknown ·"));
     assert_eq!(storage_access_notice(device.page.storage.access), None);
 }
 
@@ -490,7 +491,7 @@ fn mtp_7_storage_segments_never_invent_unknown_capacity_or_negative_growth() {
         )
     );
     assert_eq!(
-        storage_summary(&projection),
+        storage_summary(&projection, true),
         "Writable · Music 48.0 KiB · after sync −16.0 KiB · Other 16.0 KiB · Free 80.0 KiB"
     );
 

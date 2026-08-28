@@ -149,6 +149,8 @@ pub struct DeviceView {
     /// is only listed while another connected device owns it.
     pub session_state: reprise_core::device_sync::DeviceSessionState,
     pub storage: DeviceStorageSnapshot,
+    /// Whether `storage` came from a successful inspection in this session.
+    pub storage_measured: bool,
     pub scan_error: Option<String>,
     pub settings: DeviceSettings,
     pub sync_phase: PlannedSyncPhase,

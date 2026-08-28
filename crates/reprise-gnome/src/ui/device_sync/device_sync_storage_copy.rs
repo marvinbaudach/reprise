@@ -6,11 +6,18 @@ use reprise_core::device_sync::{
 
 use super::device_sync_strings;
 
-pub(super) fn storage_summary(storage: &DeviceStorageProjection) -> String {
+const STORAGE_PROJECTION_UNAVAILABLE: &str =
+    "Storage projection is unavailable until the selection is valid.";
+
+pub(super) fn storage_summary(storage: &DeviceStorageProjection, storage_measured: bool) -> String {
     format!(
         "{} · {}",
         storage_access_label(storage.access),
-        storage_capacity_summary(storage)
+        if storage_measured {
+            storage_capacity_summary(storage)
+        } else {
+            STORAGE_PROJECTION_UNAVAILABLE.into()
+        }
     )
 }
 
@@ -29,9 +36,7 @@ pub(in crate::ui) fn storage_access_label(access: DeviceStorageAccess) -> &'stat
 
 fn storage_capacity_summary(storage: &DeviceStorageProjection) -> String {
     match storage.state {
-        StorageProjectionState::Blocked => {
-            "Storage projection is unavailable until the selection is valid.".into()
-        }
+        StorageProjectionState::Blocked => STORAGE_PROJECTION_UNAVAILABLE.into(),
         StorageProjectionState::Inconsistent => {
             "The device reported inconsistent storage information.".into()
         }

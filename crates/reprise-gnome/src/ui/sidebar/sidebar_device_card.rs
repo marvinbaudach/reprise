@@ -504,6 +504,7 @@ pub(super) mod tests {
             memory_status: None,
             session_state: reprise_core::device_sync::DeviceSessionState::Active,
             storage: Default::default(),
+            storage_measured: false,
             scan_error: None,
             settings: reprise_core::device_sync::DeviceSettings {
                 device_serial: "pixel".into(),

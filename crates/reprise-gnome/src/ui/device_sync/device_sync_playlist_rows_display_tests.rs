@@ -110,6 +110,7 @@ fn remembered_rows_verification_and_preview_render_without_live_measurement_clai
     empty.connected = false;
     empty.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
     empty.storage = DeviceStorageSnapshot::default();
+    empty.storage_measured = false;
     empty.page.playlists.clear();
     empty.page.unique_track_count = 0;
     empty.page.target_bytes = 0;
@@ -143,6 +144,13 @@ fn remembered_rows_verification_and_preview_render_without_live_measurement_clai
         transfer_bytes: 32 * 1_024,
         ..Default::default()
     };
+    remembered.page.storage = reprise_core::device_sync::project_storage(
+        &remembered.storage,
+        &reprise_core::device_sync::MirrorPlan {
+            transfer_bytes: remembered.page.changes.transfer_bytes,
+            ..Default::default()
+        },
+    );
     surface.update(&remembered);
 
     let rows = surface.playlist_card.rows.borrow();
@@ -157,8 +165,31 @@ fn remembered_rows_verification_and_preview_render_without_live_measurement_clai
     assert!(text.contains("2 playlist writes"));
     assert!(text.contains("Files to remove are settled when the device is next inspected."));
     assert!(!text.contains("7 removed"));
+    let storage_summary = surface.dashboard.storage_summary.text();
+    assert_eq!(
+        storage_summary,
+        "Write access unknown · Storage projection is unavailable until the selection is valid."
+    );
+    assert!(
+        !storage_summary.contains("Music ") && !text.contains("Reprise music "),
+        "an unmeasured storage snapshot must not render a music byte figure: {text}"
+    );
     assert!(!text.contains("Device contents never verified"));
     assert!(!surface.on_device.check_button_is_sensitive());
+    drop(rows);
+
+    let mut active = device();
+    let mut after = composition(Some(48 * 1_024));
+    after.reprise_music_bytes = 48 * 1_024;
+    active.page.storage.after_sync = Some(after);
+    active.page.storage.transfer_bytes = 16 * 1_024;
+    surface.update(&active);
+    let active_text = surface.root_text();
+    assert!(active_text.contains(
+        "Writable · Music 48.0 KiB · after sync +16.0 KiB · Other 16.0 KiB · Free 48.0 KiB"
+    ));
+    assert!(active_text
+        .contains("Reprise music 48.0 KiB · this run +16.0 KiB · Other 16.0 KiB · 48.0 KiB free"));
 }
 
 #[test]

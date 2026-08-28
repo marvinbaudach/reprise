@@ -172,6 +172,7 @@ impl DeviceState {
                 .then(device_sync_strings::unrememberable_device_status),
             session_state: self.session_state.clone(),
             storage: self.storage.clone(),
+            storage_measured: self.ever_inspected,
             scan_error: self.scan_error.clone(),
             settings: self.settings.clone(),
             sync_phase: self.sync_phase.clone(),
