@@ -1503,6 +1503,17 @@ result.
   still being fetched is prohibited: "0 episodes" while the feed is being
   read is a false statement, not a neutral default. This rule binds all future
   network-backed lists.
+  Named exception: NR-2a's cover tile. The Updates feed and the Releases and
+  Concerts tables deliberately show one muted initials tile for both a
+  permanently missing cover and one still being fetched
+  (`updates/release_cover.rs`), naming neither. That is a shipped, tested
+  `[active]` behaviour and a considered choice — an immediate tile beats a
+  spinner for a cover that usually resolves within a frame — not an oversight
+  this rule may quietly overrule. It is carried the way FB-9 carries its five
+  banners: as a documented deviation, not a second sanctioned pattern. Before
+  this rule may be promoted to `[active]`, the conflict is settled explicitly —
+  either NR-2a distinguishes its two states, or this exception is written into
+  the promoted rule. No new surface may cite it.
 
 ## H. File association & OS integration
 
