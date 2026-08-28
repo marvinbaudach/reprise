@@ -210,9 +210,12 @@ fn build_group(
             .contains(&group.subscription_id);
     // Set before the notify handler is connected, so forcing a show open for
     // a search never records that as a manual expansion.
-    expander.set_expanded(sync_state.is_none() && expanded);
+    // Only a running sync locks the row. A failed one keeps its progress list
+    // and its Retry button, but stops hiding episodes the source already has.
+    let sync_loading = sync_state.is_some_and(SyncRowState::is_loading);
+    expander.set_expanded(!sync_loading && expanded);
     let subscription_id = group.subscription_id;
-    let expansion_locked = sync_state.is_some();
+    let expansion_locked = sync_loading;
     let expanded_sources = context.expanded_sources.clone();
     expander.connect_expanded_notify(move |expander| {
         if expansion_locked {
@@ -340,7 +343,7 @@ fn group_header_with_rebind(
         PodcastKind::Rss => "audio-input-microphone-symbolic",
         PodcastKind::Youtube => "video-x-generic-symbolic",
     };
-    if sync_state.is_none() {
+    if !sync_state.is_some_and(SyncRowState::is_loading) {
         let rebind = Rc::new(move |images_allowed| {
             while let Some(child) = artwork_host.first_child() {
                 artwork_host.remove(&child);

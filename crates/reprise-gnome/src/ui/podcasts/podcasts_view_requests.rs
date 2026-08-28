@@ -230,6 +230,15 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(summary)) => {
                         view.footer_spinner.stop();
+                        let still_failing: Vec<i64> = summary
+                            .failures
+                            .iter()
+                            .map(|failure| failure.subscription_id)
+                            .collect();
+                        clear_failed_syncs_that_recovered(
+                            &mut view.syncing.borrow_mut(),
+                            &still_failing,
+                        );
                         view.refresh();
                         if summary.failures.is_empty() {
                             view.clear_fetch_failure();
