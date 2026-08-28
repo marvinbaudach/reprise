@@ -38,12 +38,36 @@ window, so Mutter's focus-stealing prevention is confirmed for that route too.
 shot from two 2.5 s halves. A third beat for the sync costs 2.4 s that must
 come off another shot, or the film stops being 100 beats.
 
-**The music is a pulse, not an arc.** Variant C (the original, 31 s run),
-windowed from 7.2 s, match 0.293. The regeneration on 2026-08-28 failed
-because the prompts carried *timestamps* — ElevenLabs does not honour them.
-Style words are the lever that works. A composed bed (`bed.py` extended to
-60 s, acceptance: correlation > 0.80) was being built when this session ended;
-check `~/.cache/reprise-showreel/musik/bed-60s.wav`.
+**The music in the film is a pulse, not an arc** — variant C (the original,
+31 s run), windowed from 7.2 s, match 0.293. Two attempts to improve it are in
+flight; neither has been heard yet.
+
+*What was learned the expensive way:* a prompt to ElevenLabs may not carry
+**timestamps**. The 2026-08-28 regeneration wrote "riser from 37 seconds, full
+stop at 39 seconds" and every variant came back worse than the material it was
+meant to replace. **Character words are the lever that works** — genre,
+instrumentation, "wide dynamic range", "real breakdowns", "it must not be one
+loud block".
+
+1. **Execution 16** of n8n workflow `Nv8IFwnuNSmBegAv` was started at the end
+   of the session, prompts rewritten on character alone: **A** instrumental
+   metalcore, **B** instrumental hip hop, **C** djent/electronic hybrid. The
+   user chose metalcore, and B is the deliberate neutral counter-sample,
+   because the showroom's reader is a hiring reader and metalcore polarises.
+   The films's own library is metalcore, which is the argument for it.
+   Files land at `/opt/n8n-stack/files/musik/reprise-showreel-{a,b,c}.mp3` on
+   `hetzner-media` and **overwrite** the previous run — local copies of the
+   originals are kept as `*-31s.mp3` in `~/.cache/reprise-showreel/musik/`.
+2. **A composed bed**, `bed.py` extended from 34.8 s to 60.0 s, acceptance
+   correlation > 0.80 against `target_arc`. Lands at
+   `~/.cache/reprise-showreel/musik/bed-60s.wav`.
+
+**How to finish the music.** Score every candidate with
+`pick-window.py TRACK 60.0 100.0` — it now reports `match` *and* `quietest`,
+and refuses windows with holes. Then
+`score.sh TRACK reprise-showreel-cut.mp4 reprise-showreel-60s.mp4`, then
+`encode-web.sh`, then `npm test` in `showroom/`. Judge by ear as well: the
+match number says the shape fits, not that it sounds good.
 
 **The lyrics shot** is legible but the lyrics are still a narrow column at the
 edge. No crop fixes that — it wants a recording with the pane given the width.
