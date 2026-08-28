@@ -78,6 +78,14 @@ internal class LibraryWrites(
      * to finish it so a queued callback is not stranded after teardown.
      * Unanswered-only work is cancelled at once: losing one stored preference
      * is safer than blocking the main thread behind a folder scan.
+     *
+     * The timeout path deliberately does not call `shutdownNow()`, and doing so
+     * would not shorten teardown anyway: the drain only runs out because a
+     * write is parked in the library writer inside a JNI call, which
+     * `Thread.interrupt()` cannot unblock. All `shutdownNow()` ever bounded was
+     * the queued tail — short setter writes that finish in milliseconds once
+     * the scan releases the writer — while dropping a queued answered task and
+     * stranding its report.
      */
     fun shutdown(): Boolean {
         if (answeredPending.get() == 0) {

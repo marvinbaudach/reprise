@@ -190,6 +190,16 @@ writer problem, which has its own plan.
    switch queued. Two queues to make the rule exact would be more machinery than
    the difference is worth.
 
+7. **The timeout path does not call `shutdownNow()`** (ruled 2026-08-28, after
+   review finding M1). `shutdownNow()` discarded a queued answered task, so its
+   `report` never fired and the pending counter leaked. Dropping the call does
+   not lengthen teardown in any way that matters: the drain only times out
+   because a write is parked in the library writer inside a JNI call, and
+   `Thread.interrupt()` does not unblock that — so `shutdownNow()` never bounded
+   the *running* task's lifetime, only the queued tail, which is short setter
+   writes finishing in milliseconds once the scan releases the writer. Decision
+   6 is untouched: the caller still waits at most 2000 ms.
+
 ## Task 1 — `LibraryWrites`, red first
 
 New: `android/app/src/main/java/de/reprise/spike/LibraryWrites.kt` and
@@ -245,10 +255,10 @@ private fun singleLibraryWriteThread(): ExecutorService =
 
 `shutdown` keeps a count of answered work still pending — incremented at submit,
 decremented once the report has been handed over. At zero it calls
-`shutdownNow()` and returns `true` immediately; otherwise it is `RatingWriter`'s
-existing shape — `shutdown()`, `awaitTermination(DRAIN_TIMEOUT_MS)`,
-`shutdownNow()` on timeout. **One counter, one executor.** This is Decision 6
-exactly as worded there; do not build a second queue to make the rule finer.
+`shutdownNow()` and returns `true` immediately; otherwise `shutdown()` plus
+`awaitTermination(DRAIN_TIMEOUT_MS)`, and **no `shutdownNow()` on timeout** —
+see Decision 7. **One counter, one executor.** This is Decision 6 exactly as
+worded there; do not build a second queue to make the rule finer.
 
 Carry `RatingWriter`'s doc-comment discipline: say *why* the lane exists (cite
 the scan holding the writer for its whole folder walk), and state the
@@ -380,10 +390,18 @@ the fix arm is missing, and the app is currently not installed
    like: the expected behaviour is that the switch lands once the scan releases
    the writer, not that it feels instant.
 4. `adb shell ls /data/anr` gains no new `MainActivity is not responding` entry.
-5. Once the scan has finished, restart the app: the last tab is remembered.
-6. Record the negative case honestly too — a tab switched during the scan and
-   then killed before the scan ended is *not* remembered. That is the accepted
-   trade, not a defect.
+
+**Struck 2026-08-28 — steps 5 and 6 ("the last tab is remembered" after a
+restart, and its negative case).** Measured on both arms: the tab switch lands
+in the UI every time but survives no `am force-stop` + relaunch, on this branch
+*and* on `origin/dev` 3000da8cd2. The premise is therefore not a property of
+this diff and step 6's negative case is moot while a completed switch is
+forgotten too. Whether the browse tab is meant to survive process death at all —
+and what `setLibraryDestination` actually persists — is a separate product
+question, tracked outside this plan.
+
+Read the nav item *container* for the tab, not its `TextView`: the container
+carries `selected="true"`, the TextView always says `false`.
 
 ## Not in this plan
 
