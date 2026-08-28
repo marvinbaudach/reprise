@@ -23,7 +23,7 @@ struct PickerDraft {
 type RefreshFn = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 pub(super) fn present(parent: &gtk4::Widget, runtime: &Rc<DeviceSyncRuntime>, device_id: &str) {
-    let Ok(snapshot) = runtime.picker_snapshot(device_id) else {
+    let Ok(snapshot) = runtime.picker_snapshot_fresh(device_id) else {
         return;
     };
     let draft = Rc::new(RefCell::new(PickerDraft {

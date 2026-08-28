@@ -9,6 +9,8 @@
 
 use super::{read_and_plan, RefreshPlan};
 
+use std::rc::Rc;
+
 use reprise_core::db::Db;
 use reprise_core::events::{read_since, writer_token};
 use reprise_core::library::{playlists, settings};
@@ -82,6 +84,42 @@ fn read_and_plan_ignores_a_foreign_settings_only_change() {
         plan.is_empty(),
         "a foreign settings write must not reload views in v1"
     );
+}
+
+#[test]
+fn external_playlist_reaches_the_connected_device_picker() {
+    let device_root = tempfile::tempdir().unwrap();
+    let conn = Rc::new(crate::test_db::open_fresh().unwrap());
+    let backend = Rc::new(
+        crate::ui::device_sync::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(
+            device_root.path(),
+        )
+        .unwrap(),
+    );
+    let runtime = crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime::with_backend(
+        &conn, backend,
+    );
+
+    let before = runtime
+        .picker_snapshot_fresh(crate::ui::device_sync::device_sync_smoke::DEVICE_ID)
+        .unwrap();
+    assert!(before.rows.iter().all(|row| row.name != "From MCP"));
+
+    let second = Db::open_migrated(conn.path().as_deref()).unwrap();
+    playlists::create(&second, "From MCP").unwrap();
+    crate::ui::window::window_runtime_wiring::external_changes_wiring::refresh_device_sync(
+        &runtime,
+        &RefreshPlan {
+            sidebar: true,
+            track_list: true,
+            conversion: false,
+        },
+    );
+
+    let after = runtime
+        .picker_snapshot_fresh(crate::ui::device_sync::device_sync_smoke::DEVICE_ID)
+        .unwrap();
+    assert!(after.rows.iter().any(|row| row.name == "From MCP"));
 }
 
 /// UX EXT-1a: a playlist created through a second database connection appears

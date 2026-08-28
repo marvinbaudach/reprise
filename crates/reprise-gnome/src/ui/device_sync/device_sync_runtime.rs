@@ -70,6 +70,7 @@ struct DeviceState {
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
     keep_smart_playlists_updated: bool,
+    library_dirty: bool,
     page: SyncPageState,
 }
 
@@ -112,6 +113,7 @@ impl DeviceState {
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
             keep_smart_playlists_updated: true,
+            library_dirty: false,
             page: SyncPageState::default(),
         }
     }
@@ -344,6 +346,32 @@ impl DeviceSyncRuntime {
             .map(DeviceState::view)
             .collect::<Vec<_>>();
         devices
+    }
+
+    pub(in crate::ui) fn mark_all_devices_stale(&self) {
+        for device in self.device_states.borrow_mut().iter_mut() {
+            device.library_dirty = true;
+        }
+    }
+
+    pub(in crate::ui) fn recompute_if_stale(
+        self: &Rc<Self>,
+        device_id: &str,
+    ) -> Result<(), String> {
+        {
+            let mut devices = self.device_states.borrow_mut();
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id && device.connected)
+            else {
+                return Ok(());
+            };
+            if !device.library_dirty {
+                return Ok(());
+            }
+            device.library_dirty = false;
+        }
+        self.recompute_delta(device_id)
     }
 
     pub fn cancel_current(self: &Rc<Self>, device_id: &str) {

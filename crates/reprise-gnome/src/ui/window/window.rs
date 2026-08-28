@@ -493,6 +493,7 @@ pub fn build(
         youtube_view: &youtube_view,
         radio_view: &radio_view,
         podcasts_runtime: &podcasts_runtime,
+        device_sync: &device_sync,
         content_stack: &content_stack,
         library_doctor_navigation: &library_doctor_navigation,
         doctor_chrome: &doctor_chrome,
