@@ -99,11 +99,20 @@ impl ConstraintState {
         self.active && !self.changed_by_user
     }
 
+    fn visibility_change_target(
+        &self,
+        opened_panel: Panel,
+        resulting_visibility: bool,
+    ) -> Option<PanelVisibility> {
+        (self.should_enforce_constraint() && resulting_visibility)
+            .then(|| visibility_after_opening(opened_panel))
+    }
+
     fn undo(&mut self) -> Option<PanelVisibility> {
         if !self.active {
             return None;
         }
-        self.changed_by_user = true;
+        self.note_user_change();
         self.snapshot
     }
 
@@ -181,19 +190,15 @@ pub(in crate::ui) fn install(
                 else {
                     return;
                 };
-                let enforce = state.borrow().should_enforce_constraint();
-                if !enforce {
-                    return;
-                }
-                if library.shows_sidebar() {
-                    set_transient_visibility(
-                        &applying,
-                        &library,
-                        &now_playing,
-                        visibility_after_opening(Panel::Library),
-                    );
-                } else {
-                    state.borrow_mut().note_user_change();
+                // Re-read the live result in the idle callback. Multiple
+                // queued notifications then converge on the final state, and
+                // closes (including collapse-driven foreign writes) are
+                // idempotent non-conflicts rather than user overrides.
+                let target = state
+                    .borrow()
+                    .visibility_change_target(Panel::Library, library.shows_sidebar());
+                if let Some(target) = target {
+                    set_transient_visibility(&applying, &library, &now_playing, target);
                 }
             });
         });
@@ -219,19 +224,15 @@ pub(in crate::ui) fn install(
                     else {
                         return;
                     };
-                    let enforce = state.borrow().should_enforce_constraint();
-                    if !enforce {
-                        return;
-                    }
-                    if now_playing.is_panel_visible() {
-                        set_transient_visibility(
-                            &applying,
-                            &library,
-                            &now_playing,
-                            visibility_after_opening(Panel::NowPlaying),
-                        );
-                    } else {
-                        state.borrow_mut().note_user_change();
+                    // As above, the live result makes stale idle callbacks
+                    // harmless: only a panel that is still open can conflict
+                    // with the enforced mutually-exclusive state.
+                    let target = state.borrow().visibility_change_target(
+                        Panel::NowPlaying,
+                        now_playing.is_panel_visible(),
+                    );
+                    if let Some(target) = target {
+                        set_transient_visibility(&applying, &library, &now_playing, target);
                     }
                 });
             });
@@ -376,6 +377,23 @@ mod tests {
         assert!(changed.apply(before_snap).is_some());
         changed.note_user_change();
         assert_eq!(changed.unapply(), None);
+    }
+
+    #[test]
+    fn style_7_foreign_close_does_not_cancel_snapshot_restoration() {
+        let before_snap = PanelVisibility {
+            library: true,
+            now_playing: true,
+        };
+        let mut state = ConstraintState::default();
+
+        assert!(state.apply(before_snap).is_some());
+        assert_eq!(
+            state.visibility_change_target(Panel::Library, false),
+            None,
+            "a collapse-driven close does not conflict with the constraint"
+        );
+        assert_eq!(state.unapply(), Some(before_snap));
     }
 
     #[test]
