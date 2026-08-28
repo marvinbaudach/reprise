@@ -391,6 +391,47 @@ the fix arm is missing, and the app is currently not installed
    the writer, not that it feels instant.
 4. `adb shell ls /data/anr` gains no new `MainActivity is not responding` entry.
 
+### What step 3 actually looked like (2026-08-28, Pixel 10 Pro XL)
+
+The tab tap and the pager swipe were covered by the ANR / no-ANR arm pair. The
+two contracts on the *answered* lane — theme and visualizer — were measured
+separately, each inside its own `autoScan` window, on the fix build (0.1.62,
+741 titles, portrait locked).
+
+`autoScan` is silent, so the window itself is not directly observable. The
+control is the same gesture with the gate closed: it isolates the scan without
+changing anything else about the build or the tap.
+
+| contract | lane | gate closed | gate open |
+|---|---|---|---|
+| theme (`selectTheme`) | `submitAnswered` | control moved after **377 ms** | after **6.3–9.2 s** |
+| visualizer (cover tap) | `submitAnswered` | moved within **< 1 s** | after **5.6–7.2 s** |
+
+That gap is the positive proof step 2 asks for: nothing else in the build
+delays a settings write by seven seconds, so a scan was holding the writer at
+the moment of the gesture. It is also exactly the behaviour Decision 3 predicts
+— the switch lands when the scan releases the writer, not instantly.
+
+**What this pair does not show, stated plainly.** Both arms are the fixed
+build, so the table proves that a scan delays the answered write and that the
+tap thread stays free while it does. It does *not* show that the same two
+gestures would have blocked the main thread on `origin/dev`. The ANR / no-ANR
+arm pair covers that only for `rememberBrowseTab`, which is on the *unanswered*
+lane; no control-arm ANR was reproduced for `submitAnswered`. It was not run
+because swapping arms costs an uninstall, a reinstall and a full library
+reconfiguration, and because the two lanes share one executor and one writer
+mutex — the blocking mechanism is not lane-specific. That is an argument, not a
+measurement, and it is the one gap left in this plan's evidence.
+
+The tap thread stayed free throughout. `uiautomator dump` has to be served by
+the app's main thread, and every dump inside both windows answered in
+2.7–3.0 s — the same cost as with no scan running; a blocked main thread makes
+it fail outright. `/data/anr` gained no entry in either window.
+
+Observing the visualizer needs a note: both choices animate, so a frame diff
+cannot separate them. The mean green channel of the artwork rectangle can —
+~76 in one state, ~26 in the other.
+
 **Struck 2026-08-28 — steps 5 and 6 ("the last tab is remembered" after a
 restart, and its negative case).** Measured on both arms: the tab switch lands
 in the UI every time but survives no `am force-stop` + relaunch, on this branch
