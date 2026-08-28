@@ -256,7 +256,7 @@ fn three_transport_errors_pause_and_the_first_ok_resumes() {
     let counted = Arc::clone(&calls);
     let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
         if counted.fetch_add(1, Ordering::Relaxed) < 3 {
-            Err(PortraitError::InvalidResponse)
+            Err(PortraitError::Fetch(crate::musicbrainz::FetchError::Transport))
         } else {
             Ok(PortraitOutcome::Found(directory.join(name)))
         }
@@ -292,7 +292,7 @@ fn transport_errors_are_retried_without_counts_or_negative_marker() {
     let counted = Arc::clone(&calls);
     let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |_, _| {
         counted.fetch_add(1, Ordering::Relaxed);
-        Err(PortraitError::InvalidResponse)
+        Err(PortraitError::Fetch(crate::musicbrainz::FetchError::Transport))
     });
     let cache_dir = tempfile::tempdir().unwrap();
     let backfill = Arc::new(PortraitBackfill::new());
@@ -375,7 +375,7 @@ fn cancellation_interrupts_the_production_retry_wait() {
     let counted = Arc::clone(&attempts);
     let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |_, _| {
         counted.fetch_add(1, Ordering::Relaxed);
-        Err(PortraitError::InvalidResponse)
+        Err(PortraitError::Fetch(crate::musicbrainz::FetchError::Transport))
     });
     let cache_dir = tempfile::tempdir().unwrap();
     let (_, listener) = updates();
@@ -503,7 +503,7 @@ fn the_fetch_closure_delivers_transport_errors_to_the_state_machine() {
     let tried = Arc::clone(&attempts);
     let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
         if tried.fetch_add(1, Ordering::Relaxed) < 3 {
-            Err(PortraitError::InvalidResponse)
+            Err(PortraitError::Fetch(crate::musicbrainz::FetchError::Transport))
         } else {
             Ok(PortraitOutcome::Found(directory.join(name)))
         }
@@ -522,4 +522,158 @@ fn the_fetch_closure_delivers_transport_errors_to_the_state_machine() {
 
     assert_eq!(seen_wait.load(Ordering::Relaxed), 1);
     assert_eq!(attempts.load(Ordering::Relaxed), 4);
+}
+
+#[test]
+fn one_broken_artist_does_not_block_the_others() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, directory| {
+        if name == "Bad" {
+            Err(PortraitError::InvalidResponse)
+        } else {
+            Ok(PortraitOutcome::Found(directory.join(name)))
+        }
+    });
+    let (_, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    backfill.start_prepared(
+        vec!["Bad".to_owned(), "A".to_owned(), "B".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    let final_progress = wait_for_completion(&backfill);
+
+    assert_eq!(final_progress.state, PortraitBackfillState::Complete);
+    assert_eq!(final_progress.done, 2);
+    assert_eq!(final_progress.failed, 1);
+}
+
+#[test]
+fn a_run_of_only_broken_artists_still_finishes() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|_, _| {
+        Err(PortraitError::InvalidResponse)
+    });
+    let (_, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    backfill.start_prepared(
+        vec!["Bad1".to_owned(), "Bad2".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    let final_progress = wait_for_completion(&backfill);
+
+    assert_eq!(final_progress.state, PortraitBackfillState::Complete);
+    assert_eq!(final_progress.done, 0);
+    assert_eq!(final_progress.failed, 2);
+}
+
+#[test]
+fn a_broken_artist_never_pauses_the_run() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let (updates, listener) = updates();
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, directory| {
+        if name == "Bad" {
+            Err(PortraitError::InvalidResponse)
+        } else {
+            Ok(PortraitOutcome::Found(directory.join(name)))
+        }
+    });
+    let backfill = PortraitBackfill::new();
+    backfill.start_prepared(
+        vec!["Bad".to_owned(), "A".to_owned(), "B".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    wait_for_completion(&backfill);
+    let states: Vec<_> = updates
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|update| update.state)
+        .collect();
+
+    assert!(!states.contains(&PortraitBackfillState::Paused));
+}
+
+#[test]
+fn a_dropped_artist_gets_no_negative_marker() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let cache_path = cache_dir.path().to_owned();
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&call_count);
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _| {
+        if name == "Bad" {
+            counted.fetch_add(1, Ordering::Relaxed);
+            Err(PortraitError::InvalidResponse)
+        } else {
+            Ok(PortraitOutcome::Found(cache_path.join(name)))
+        }
+    });
+    let (_, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    backfill.start_prepared(
+        vec!["Bad".to_owned(), "A".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    wait_for_completion(&backfill);
+
+    let negative_marker = cache::negative_marker_path(cache_dir.path(), "Bad");
+    assert!(!negative_marker.exists());
+    // Verify it was actually attempted (to distinguish from never-tried artists)
+    assert!(call_count.load(Ordering::Relaxed) > 0);
+}
+
+#[test]
+fn a_total_outage_spends_no_attempt_budget() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, directory| {
+        if name == "A" || name == "B" {
+            // Network-shaped error: Transport
+            Err(PortraitError::Fetch(crate::musicbrainz::FetchError::Transport))
+        } else {
+            Ok(PortraitOutcome::Found(directory.join(name)))
+        }
+    });
+    let (_, listener) = updates();
+    let backfill = Arc::new(PortraitBackfill::new());
+    let cancel = Arc::clone(&backfill);
+    // Count how many times we attempt; if network errors consume budget, we'd exceed this
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&attempt_count);
+    let wait: Arc<WaitForRetry> = Arc::new(move |_, _| {
+        // On the 4th+ attempt, cancel to prevent infinite loop
+        // This allows us to verify that network errors don't exhaust artist budgets
+        if counted.fetch_add(1, Ordering::Relaxed) >= 3 {
+            cancel.cancel();
+            true
+        } else {
+            false
+        }
+    });
+    backfill.start_prepared(
+        vec!["A".to_owned(), "B".to_owned(), "C".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        wait,
+    );
+    wait_for_worker_to_finish(&backfill);
+    let final_progress = backfill.progress();
+
+    // A and B experience network-shaped errors and never exhaust budgets.
+    // After enough retries, the run is cancelled.
+    // If network errors incorrectly consumed budgets, A or B would be dropped.
+    // If fixed correctly, they're still "Running" and not dropped.
+    assert_eq!(final_progress.failed, 0, "network errors should not result in failed artists");
+    assert_eq!(final_progress.done, 0, "network errors should not complete the artists");
 }
