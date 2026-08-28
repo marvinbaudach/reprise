@@ -2,7 +2,7 @@
 slug: remembered-device-keeps-its-playlists
 worktree: /home/marvin/Projects/reprise-remembered-device-keeps-its-playlists
 branch: feature/remembered-device-keeps-its-playlists
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-27
 ---
