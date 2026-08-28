@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-27 22:03+0200\n"
+"POT-Creation-Date: 2026-08-28 10:01+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -68,8 +68,8 @@ msgid "Show columns"
 msgstr "Spalten anzeigen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:151
-msgid "Side panels were closed to fit the window"
-msgstr "Die Seitenleisten wurden geschlossen, damit sie ins Fenster passen"
+msgid "The info panel was closed to fit the window"
+msgstr "Der Infobereich wurde geschlossen, damit er ins Fenster passt"
 
 #: crates/reprise-gnome/src/ui/strings.rs:152
 #: crates/reprise-gnome/src/ui/strings_issues.rs:47
@@ -2279,8 +2279,8 @@ msgid "Information"
 msgstr "Informationen"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:12
-msgid "Toggle Now Playing panel"
-msgstr "Wiedergabe-Panel ein-/ausblenden"
+msgid "Toggle info panel"
+msgstr "Infobereich ein-/ausblenden"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:13
 msgid "Nothing playing"
@@ -6041,9 +6041,8 @@ msgid "Could not save filter visibility"
 msgstr "Die Sichtbarkeit der Filterleiste konnte nicht gespeichert werden"
 
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:46
-msgid "Could not save information panel visibility"
-msgstr ""
-"Die Sichtbarkeit der Informationsspalte konnte nicht gespeichert werden"
+msgid "Could not save info panel visibility"
+msgstr "Die Sichtbarkeit des Infobereichs konnte nicht gespeichert werden"
 
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:48
 msgid "Could not save status line visibility"

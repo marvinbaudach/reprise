@@ -11,7 +11,7 @@ use libadwaita::prelude::*;
 use super::column_layout::{ColumnId, ColumnLayout, ColumnRegistry};
 
 const ALWAYS_REACHABLE: [ColumnId; 3] = [ColumnId::Cover, ColumnId::Title, ColumnId::Artist];
-const FOLD_BREAKPOINT_WIDTH: i32 = 760;
+pub(in crate::ui) const FOLD_BREAKPOINT_WIDTH: i32 = 760;
 const SHOW_FOLDED_ACTION: &str = "show-folded-columns";
 
 type OnFolded = Rc<dyn Fn()>;
@@ -89,6 +89,7 @@ impl ResponsiveColumns {
         window: &adw::ApplicationWindow,
         overlay: &adw::ToastOverlay,
     ) {
+        let active_toast = Rc::new(RefCell::new(None::<adw::Toast>));
         let action = gio::SimpleAction::new(SHOW_FOLDED_ACTION, None);
         {
             let this = Rc::downgrade(self);
@@ -101,10 +102,15 @@ impl ResponsiveColumns {
         window.add_action(&action);
 
         let overlay = overlay.downgrade();
+        let notice_toast = active_toast.clone();
         let show_notice: OnFolded = Rc::new(move || {
             let Some(overlay) = overlay.upgrade() else {
                 return;
             };
+            let previous = notice_toast.borrow_mut().take();
+            if let Some(previous) = previous {
+                previous.dismiss();
+            }
             let toast = crate::ui::toasts::plain(&crate::ui::strings::text(
                 crate::ui::strings::COLUMNS_FOLDED,
             ));
@@ -112,9 +118,16 @@ impl ResponsiveColumns {
                 crate::ui::strings::SHOW_COLUMNS,
             )));
             toast.set_action_name(Some(&format!("win.{SHOW_FOLDED_ACTION}")));
-            overlay.add_toast(toast);
+            overlay.add_toast(toast.clone());
+            *notice_toast.borrow_mut() = Some(toast);
         });
         *self.on_folded.borrow_mut() = Some(show_notice.clone());
+        self.breakpoint.connect_unapply(move |_| {
+            let toast = active_toast.borrow_mut().take();
+            if let Some(toast) = toast {
+                toast.dismiss();
+            }
+        });
         if self.folded.get() && !self.expanded_by_user.get() {
             show_notice();
         }

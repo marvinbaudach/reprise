@@ -8,8 +8,8 @@ macro_rules! N_ {
 
 use super::{formatted, plural, text};
 pub const INFORMATION: &str = N_!("Information");
-/// Tooltip of the headerbar Now Playing panel toggle (TIP-1b).
-pub const INFO_PANEL_TOGGLE: &str = N_!("Toggle Now Playing panel");
+/// Tooltip of the headerbar info panel toggle (TIP-1b).
+pub const INFO_PANEL_TOGGLE: &str = N_!("Toggle info panel");
 pub const NOW_PLAYING_NOTHING: &str = N_!("Nothing playing");
 pub const UP_NEXT: &str = N_!("Up Next");
 pub const QUEUE_EMPTY: &str = N_!("Queue is empty");

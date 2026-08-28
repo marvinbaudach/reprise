@@ -368,7 +368,7 @@ pub fn build(
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
-        &split_view,
+        &library_shell.root,
         player_bar_widget,
         bar_position,
     );
@@ -526,7 +526,7 @@ pub fn build(
         &radio_view,
     );
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
-    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
+    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel);
     tracing::info!("main window built");
     let startup_completion = if startup_report_armed {
         let mapped = Rc::new(Cell::new(false));

@@ -27,7 +27,7 @@ pub(in crate::ui) mod rating_cell_refresh;
 mod rating_column;
 mod reload_anchor_scroll;
 pub(in crate::ui) mod reload_restore;
-mod responsive_columns;
+pub(in crate::ui) mod responsive_columns;
 #[cfg(test)]
 mod row_height_contract_display_tests;
 #[cfg(test)]
