@@ -3326,12 +3326,12 @@ property is set and yet nothing happens.
   content, only the right Now Playing panel closes. A 10s undo toast
   restores exactly the state of both flanks before the shrinking; later
   widening also restores this state, provided the user did not change the
-  flanks themselves in the narrow window. In that narrow window the
-  exclusion runs one way: opening the sidebar closes the Now Playing panel,
-  while opening the Now Playing panel leaves the sidebar exactly where the
-  user left it. Responsive changes never overwrite a stored sidebar or
-  panel preference, and both header toggles remain reachable for manual
-  reopening.
+  flanks themselves in the narrow window. Unless the user has undone the
+  constraint in that narrow window, the exclusion runs one way: opening the
+  sidebar closes the Now Playing panel, while opening the Now Playing panel
+  leaves the sidebar exactly where the user left it. Responsive changes never
+  overwrite a stored sidebar or panel preference, and both header toggles
+  remain reachable for manual reopening.
 - **STYLE-8** [active] [gtk] — Reprise has one effective accent color for
   every accent role. Appearance offers exactly two sources between Theme and
   Color Scheme: the Reprise app accent `#4FDBD4`, which is the default, and

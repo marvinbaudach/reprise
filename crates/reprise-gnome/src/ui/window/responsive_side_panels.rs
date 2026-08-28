@@ -521,9 +521,12 @@ mod tests {
     fn style_7_panel_and_table_thresholds_stay_coherent() {
         const {
             assert!(
-                crate::ui::now_playing_column::INFO_PANEL_COLLAPSE_WIDTH < CONSTRAINED_WIDTH,
-                "the info panel must be closed by the constraint before its \
-                 own overlay breakpoint can fire"
+                crate::ui::now_playing_column::INFO_PANEL_COLLAPSE_WIDTH
+                    + (SIDEBAR_MIN_WIDTH as i32)
+                    < CONSTRAINED_WIDTH,
+                "the info panel breakpoint is measured in the content pane, so adding the \
+                 pinned sidebar width must keep its effective window threshold below the \
+                 window-level constraint"
             );
         }
         assert_eq!(
@@ -531,7 +534,8 @@ mod tests {
             crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH as i32
                 + crate::ui::now_playing_column::PANEL_WIDTH
                 + crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH,
-            "the mutual-exclusion threshold must reserve the table's fold width"
+            "the window threshold must account for both flank widths before the table \
+             reaches its fold width"
         );
     }
 
