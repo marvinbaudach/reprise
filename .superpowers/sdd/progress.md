@@ -2003,3 +2003,7 @@ Review finding M2 and minors m6/m8: complete (this commit, base a29a728d0c, trac
 # The sort leaves the browse bar
 
 Tasks 1-9: complete (this commit, base ac3754495b, moved sorting into the shared table-customization surface for every sortable table, preserved playlist manual order as an explicit restorable choice, removed the browse-bar pill, renamed and translated the surface, and updated STYLE-13 atomically; the track-list sorter-bearing and accepted-field sets were verified to coincide exactly, the active gettext catalog stayed at 1,307 msgids because two retired strings were replaced by two new strings, and the required format, strict workspace Clippy, isolated workspace tests, live audit, architecture, traceability, accessibility, input-parity, GNOME-idiom and complete display gates passed; the requested later AT-SPI probe was not run)
+
+# The row says what it is loading
+
+Task 1: complete (this commit, base a85590b9f0, factored the shared podcast feed read behind a cancellable per-subscription sync, emitted ordered feed-count and artwork progress, staged episode writes in one abort-safe transaction, and preserved resolved YouTube handles on an unchanged official feed; the missing API, abort-safety and unchanged-handle regressions were observed red before all 58 podcast-pipeline tests passed, and format, strict all-target workspace Clippy, the complete workspace suite, Core purity and live audit passed with only accepted RUSTSEC-2024-0436)

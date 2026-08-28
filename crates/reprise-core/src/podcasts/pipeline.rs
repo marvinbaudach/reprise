@@ -16,12 +16,15 @@ use super::download_state::DownloadState;
 use super::feed::{ParsedEpisode, ParsedFeed};
 use super::http::Response;
 use super::refresh::{RefreshPolicy, RefreshRequest};
-use super::store::FetchSuccess;
 use super::{PodcastError, PodcastKind, SubscriptionRow};
 
 #[path = "pipeline_load_more.rs"]
 mod load_more;
 pub use load_more::load_more_youtube;
+
+#[path = "pipeline_sync.rs"]
+mod sync;
+pub use sync::{sync_subscription, SyncAbort, SyncError, SyncProgress};
 
 const OFFICIAL_YOUTUBE_LIMIT: usize = 15;
 
@@ -233,6 +236,10 @@ pub enum PipelineError {
     EpisodeNotFound,
     #[error("a download for this episode is already running")]
     DownloadAlreadyRunning,
+    #[error("podcast sync was cancelled")]
+    SyncAborted,
+    #[error("podcast subscription does not exist")]
+    SubscriptionNotFound,
 }
 
 #[path = "pipeline_download.rs"]
@@ -354,170 +361,21 @@ fn refresh_to_root_in(
                 continue;
             }
         }
-        summary.attempted += 1;
-        let mut resolved_channel_url = None::<String>;
-        let result = match subscription.kind {
-            PodcastKind::Rss if rss_allowed => {
-                feed_fetcher.fetch(&subscription).and_then(|response| {
-                    let feed = super::feed::parse_feed(&response.body, config.import_count)?;
-                    Ok((feed, Some(response)))
-                })
-            }
-            PodcastKind::Rss => Err(PodcastError::Disabled(
-                "RSS podcasts are disabled".to_owned(),
-            )),
-            PodcastKind::Youtube if youtube_allowed => {
-                // Resolving a channel identity runs a yt-dlp subprocess, so a
-                // transient failure here is ordinary. It must stay this one
-                // subscription's failure, handled by the shared `Err` arm below
-                // like any fetch or parse failure — propagating it with `?`
-                // would abandon every remaining subscription in the batch and
-                // skip recording the failure on this one.
-                let channel_url = if super::youtube::long_form_feed_url(&subscription.feed_url)
-                    .is_some()
-                {
-                    Ok(subscription.feed_url.clone())
-                } else {
-                    youtube_fetcher
-                        .resolve_channel_url(&subscription.feed_url)
-                        .map(|resolved| resolved.unwrap_or_else(|| subscription.feed_url.clone()))
-                };
-                let channel_url = match channel_url {
-                    Ok(channel_url) => channel_url,
-                    Err(error) => {
-                        tracing::warn!(
-                            subscription_id = subscription.id,
-                            %error,
-                            "could not resolve the YouTube channel identity"
-                        );
-                        super::store::update_fetch_failed_in(conn, subscription.id, now)?;
-                        summary.push_failure(&subscription, &error);
-                        continue;
-                    }
-                };
-                if let Some(feed_url) = super::youtube::long_form_feed_url(&channel_url) {
-                    if channel_url != subscription.feed_url {
-                        resolved_channel_url = Some(channel_url.clone());
-                    }
-                    let official_feed = feed_fetcher
-                        .fetch_url(
-                            &feed_url,
-                            subscription.etag.as_deref(),
-                            subscription.last_modified.as_deref(),
-                        )
-                        .and_then(|response| {
-                            let feed =
-                                super::feed::parse_feed(&response.body, OFFICIAL_YOUTUBE_LIMIT)?;
-                            Ok((feed, Some(response)))
-                        });
-                    match official_feed {
-                        result @ (Ok(_) | Err(PodcastError::NotModified)) => result,
-                        Err(_) => youtube_fetcher
-                            .list(&channel_url, config.youtube_import_count)
-                            .map(|feed| (feed, None)),
-                    }
-                } else {
-                    youtube_fetcher
-                        .list(&channel_url, config.youtube_import_count)
-                        .map(|feed| (feed, None))
-                }
-            }
-            PodcastKind::Youtube => Err(PodcastError::Disabled(
-                "YouTube sources are disabled".to_owned(),
-            )),
-        };
-        let (feed, response) = match result {
-            Ok(result) => result,
-            Err(PodcastError::NotModified) => {
-                if let Some(url) = resolved_channel_url.as_deref() {
-                    adopt_resolved_channel_url(conn, subscription.id, url)?;
-                }
-                super::store::update_fetch_not_modified_in(conn, subscription.id, now)?;
-                clear_retry(retry_key);
-                summary.not_modified += 1;
-                continue;
-            }
-            Err(error) => {
-                tracing::warn!(
-                    subscription_id = subscription.id,
-                    %error,
-                    "podcast refresh failed"
-                );
-                let retry = if matches!(request.policy, RefreshPolicy::Force) {
-                    None
-                } else {
-                    super::refresh::next_retry(&error, previous_attempt(retry_key), now)
-                };
-                if retry.is_some() {
-                    // Keep the last successful-fetch timestamp due so the
-                    // existing outer hourly trigger continues dispatching.
-                    // The in-process retry state below still prevents an
-                    // actual provider call before the computed deadline.
-                    record_failed_outcome_in(conn, subscription.id)?;
-                } else {
-                    super::store::update_fetch_failed_in(conn, subscription.id, now)?;
-                }
-                set_retry(retry_key, retry);
-                summary.push_failure(&subscription, &error);
-                continue;
-            }
-        };
-
-        if let Some(url) = resolved_channel_url.as_deref() {
-            adopt_resolved_channel_url(conn, subscription.id, url)?;
-        }
-
-        let baseline = super::store::future_only_baseline_in(conn, subscription.id)?
-            .into_iter()
-            .collect::<std::collections::HashSet<_>>();
-        let first_seen_at = if matches!(
-            subscription.last_outcome.as_deref(),
-            Some("ok" | "not_modified")
-        ) {
-            now
-        } else {
-            subscription.added_at
-        };
-        for episode in &feed.episodes {
-            if baseline.contains(&episode.guid) {
-                continue;
-            }
-            let Some(upsert) =
-                super::store::upsert_episode_in(conn, subscription.id, episode, first_seen_at)?
-            else {
-                continue;
-            };
-            if upsert.inserted {
-                summary.episodes_inserted += 1;
-            } else {
-                summary.episodes_updated += 1;
-            }
-            reclaim_download(
-                conn,
-                download_root,
-                &subscription,
-                episode,
-                upsert.episode_id,
-            )?;
-        }
-        let response = response.as_ref();
-        super::store::update_fetch_success_in(
+        sync::refresh_one_in(
             conn,
-            subscription.id,
+            feed_fetcher,
+            youtube_fetcher,
             now,
-            FetchSuccess {
-                etag: response.and_then(|value| value.etag.as_deref()),
-                last_modified: response.and_then(|value| value.last_modified.as_deref()),
-                title: match subscription.kind {
-                    PodcastKind::Rss => feed.title.as_deref(),
-                    PodcastKind::Youtube => super::youtube::subscription_title(&feed),
-                },
-                author: feed.author.as_deref(),
-                image_url: feed.image_url.as_deref(),
-            },
+            request.policy,
+            download_root,
+            &config,
+            rss_allowed,
+            youtube_allowed,
+            &subscription,
+            &mut summary,
+            &SyncAbort::default(),
+            &mut |_| {},
         )?;
-        clear_retry(retry_key);
-        summary.refreshed += 1;
     }
     super::downloads::enforce_cleanup_in(
         conn,
@@ -620,6 +478,10 @@ mod fill_downloads_tests;
 #[cfg(test)]
 #[path = "pipeline_refresh_policy_tests.rs"]
 mod refresh_policy_tests;
+
+#[cfg(test)]
+#[path = "pipeline_sync_tests.rs"]
+mod sync_tests;
 
 #[cfg(test)]
 #[path = "pipeline_tag_tests.rs"]
