@@ -58,8 +58,8 @@ pub(super) fn append_candidate(
     button.connect_clicked(move |button| {
         let result = subscribe(&conn, &candidate, auto_download_default, None);
         match result {
-            Ok(_) => {
-                on_added(true);
+            Ok(subscription_id) => {
+                on_added(subscription_id, true);
                 // SRC-5/SRC-7: acknowledge in place; only the next submitted
                 // search drops the row.
                 source_add_action::mark_added(
@@ -129,8 +129,8 @@ pub(super) fn append_preview(
             baseline.as_deref(),
         );
         match result {
-            Ok(_) => {
-                on_added(import.is_active());
+            Ok(subscription_id) => {
+                on_added(subscription_id, import.is_active());
                 if let Some(parent) = parent_weak.upgrade() {
                     clear(&parent);
                 }

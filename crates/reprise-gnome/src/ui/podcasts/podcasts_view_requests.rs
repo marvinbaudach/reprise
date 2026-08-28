@@ -18,6 +18,103 @@ impl Drop for RefreshFeedbackGuard {
 }
 
 impl PodcastsView {
+    pub(super) fn request_subscription_sync(self: &Rc<Self>, subscription_id: i64) -> bool {
+        self.cancel_subscription_sync(subscription_id);
+        let abort = podcasts::pipeline::SyncAbort::new();
+        self.syncing
+            .borrow_mut()
+            .insert(subscription_id, SyncRowState::new(abort.clone()));
+        self.render();
+
+        let operation = PodcastsOperation::SyncSubscription {
+            subscription_id,
+            abort,
+        };
+        let generation = request_generation(self.generation.get(), &operation);
+        let (response, receiver) = podcasts_response_channel();
+        if !self.runtime.request(PodcastsRequest {
+            generation,
+            operation,
+            response,
+        }) {
+            self.syncing.borrow_mut().remove(&subscription_id);
+            self.render();
+            return false;
+        }
+
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            while let Ok(response) = receiver.recv().await {
+                let Some(view) = weak.upgrade() else {
+                    return;
+                };
+                match response.result {
+                    Ok(PodcastsWorkerResult::SyncProgress {
+                        subscription_id: response_id,
+                        progress,
+                    }) if response_id == subscription_id => {
+                        if matches!(progress, podcasts::pipeline::SyncProgress::Done(_)) {
+                            view.syncing.borrow_mut().remove(&subscription_id);
+                            view.refresh();
+                            (view.callbacks.on_sidebar_refresh)();
+                            view.request_fill_downloads();
+                            break;
+                        }
+                        let known = {
+                            let mut syncing = view.syncing.borrow_mut();
+                            syncing.get_mut(&subscription_id).map(|state| {
+                                state.apply(&progress);
+                            })
+                        };
+                        if known.is_none() {
+                            break;
+                        }
+                        view.render();
+                        if matches!(progress, podcasts::pipeline::SyncProgress::Failed(_)) {
+                            break;
+                        }
+                    }
+                    Ok(PodcastsWorkerResult::SyncProgress { .. }) => {}
+                    Ok(
+                        PodcastsWorkerResult::Refreshed(_)
+                        | PodcastsWorkerResult::LoadedMore { .. }
+                        | PodcastsWorkerResult::DownloadState { .. }
+                        | PodcastsWorkerResult::Filled(_),
+                    ) => {}
+                    Err(error) => {
+                        let updated = {
+                            let mut syncing = view.syncing.borrow_mut();
+                            syncing.get_mut(&subscription_id).map(|state| {
+                                state.step = SyncStep::Failed;
+                                state.error = Some(error);
+                            })
+                        };
+                        if updated.is_some() {
+                            view.render();
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+        true
+    }
+
+    pub(super) fn cancel_subscription_sync(&self, subscription_id: i64) -> bool {
+        let abort = self
+            .syncing
+            .borrow()
+            .get(&subscription_id)
+            .map(|state| state.abort.clone());
+        let Some(abort) = abort else {
+            return false;
+        };
+        abort.cancel();
+        self.syncing.borrow_mut().remove(&subscription_id);
+        self.render();
+        true
+    }
+
     pub(in crate::ui) fn request_refresh(self: &Rc<Self>, force: bool) -> bool {
         let policy = if force {
             podcasts::refresh::RefreshPolicy::Force

@@ -467,11 +467,11 @@ impl PodcastsView {
             &self.conn,
             self.kind,
             self.connectivity(),
-            move |import_latest| {
+            move |subscription_id, import_latest| {
                 if let Some(view) = weak.upgrade() {
                     view.refresh();
                     if import_latest {
-                        view.request_refresh(true);
+                        view.request_subscription_sync(subscription_id);
                     }
                     (view.callbacks.on_sidebar_refresh)();
                 }

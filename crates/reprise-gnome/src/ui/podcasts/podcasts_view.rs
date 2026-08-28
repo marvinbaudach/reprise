@@ -1,7 +1,7 @@
 //! Podcasts table, status states, actions, and refresh wiring.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -36,6 +36,7 @@ use super::podcasts_removal::{
 use super::podcasts_rendered_order;
 use super::podcasts_reveal::RevealRequest;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
+use super::podcasts_sync_state::{SyncRowState, SyncStep};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
@@ -142,6 +143,7 @@ pub(in crate::ui) struct PodcastsView {
     pending_reveal: RefCell<Option<RevealRequest>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
+    pub(super) syncing: RefCell<HashMap<i64, SyncRowState>>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     kept_downloads: RefCell<KeptDownloads>,
     /// `NET-3c`: explicit connectivity seam, mirroring `RadioView`'s
@@ -251,6 +253,7 @@ impl PodcastsView {
             pending_reveal: RefCell::new(None),
             unavailable_episode: Cell::new(None),
             generation: Cell::new(0),
+            syncing: RefCell::new(HashMap::new()),
             toast_overlay: glib::WeakRef::new(),
             kept_downloads: RefCell::new(KeptDownloads::default()),
             connectivity: Cell::new(Connectivity::default()),
@@ -611,6 +614,7 @@ impl PodcastsView {
         else {
             return;
         };
+        self.cancel_subscription_sync(subscription_id);
         let paths = podcasts::store::downloaded_paths_for_subscription(&self.conn, subscription_id)
             .unwrap_or_default();
         if let Err(error) = podcasts::store::tombstone_subscription(

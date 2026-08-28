@@ -543,7 +543,11 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let on_added: OnAdded = Rc::new(|_| {});
+    let added = Rc::new(Cell::new(None));
+    let added_for_callback = added.clone();
+    let on_added: OnAdded = Rc::new(move |subscription_id, import_latest| {
+        added_for_callback.set(Some((subscription_id, import_latest)));
+    });
     append_heading(&parent, &strings::text(strings::PODCAST_APPLE_RESULTS));
     append_candidate(
         &parent,
@@ -585,6 +589,9 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
         "the acknowledged action must not be pressable again"
     );
     assert!(button.has_css_class("reprise-source-added"));
+    let (subscription_id, import_latest) = added.get().expect("add callback");
+    assert!(subscription_id > 0);
+    assert!(import_latest);
 }
 
 #[test]
@@ -593,7 +600,7 @@ fn the_add_dialog_offers_an_automatic_fill_switch() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let on_added: OnAdded = Rc::new(|_| {});
+    let on_added: OnAdded = Rc::new(|_, _| {});
     append_preview(
         &parent,
         Preview {
