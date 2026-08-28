@@ -2,7 +2,7 @@
 slug: the-sidebar-keeps-its-column
 worktree: /home/marvin/Projects/reprise-sidebar-column
 branch: feature/the-sidebar-keeps-its-column
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-28
 ---
