@@ -2,7 +2,7 @@
 slug: lyrics-batch-only-new-finds
 worktree: /home/marvin/Projects/reprise-lyrics-batch-only-new-finds
 branch: feature/lyrics-batch-only-new-finds
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-29
 ---
