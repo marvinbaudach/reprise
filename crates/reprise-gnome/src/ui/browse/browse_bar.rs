@@ -25,7 +25,7 @@ use crate::ui::track_list::Shared;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
 /// FIL-7: the sticky settings key for the AI-exclude filter.
-const EXCLUDE_AI_KEY: &str = "filter.exclude_ai";
+pub(in crate::ui) const EXCLUDE_AI_KEY: &str = "filter.exclude_ai";
 /// FIL-1c: the place pill's own class — outlined, so a location never reads as
 /// one of the filled filter chips beside it.
 pub(in crate::ui) const PLACE_PILL_CSS_CLASS: &str = "reprise-place-pill";

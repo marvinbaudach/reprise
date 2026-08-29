@@ -1,7 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gtk4::prelude::WidgetExt;
 use reprise_core::playback::{
@@ -9,10 +8,9 @@ use reprise_core::playback::{
 };
 use reprise_core::queue::{QueueSnapshot, Repeat};
 use reprise_core::up_next::{QueueItem, UpNextQueue};
-use reprise_core::waveform::{RenderDataBackend, WaveformBackend, WaveformError};
 
-use super::player_controller::{PlayerController, PlayerControllerBackends};
-use crate::ui::scrobble_runtime::ScrobbleRuntime;
+use super::player_controller::PlayerController;
+use super::test_support::controller_with_db;
 
 #[derive(Default)]
 struct PlaybackCalls {
@@ -68,51 +66,11 @@ impl PlaybackBackend for TestPlayback {
     fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
 }
 
-struct TestWaveform;
-
-impl WaveformBackend for TestWaveform {
-    fn extract_peaks(&self, _: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
-        Ok(vec![0; buckets])
-    }
-}
-
-impl RenderDataBackend for TestWaveform {}
-
 fn controller(calls: Rc<PlaybackCalls>, test_root: &Path) -> Rc<PlayerController> {
-    controller_with_db(calls, test_root, Rc::new(crate::test_db::open().unwrap()))
-}
-
-fn controller_with_db(
-    calls: Rc<PlaybackCalls>,
-    test_root: &Path,
-    conn: Rc<reprise_core::db::Db>,
-) -> Rc<PlayerController> {
-    let app = libadwaita::Application::builder()
-        .application_id("io.github.marvinbaudach.Reprise.SeekStartTest")
-        .build();
-    let (_event_sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
-    let listenbrainz = ScrobbleRuntime::new(
-        test_root.join("listenbrainz.db"),
-        reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
-        "ListenBrainz",
-    );
-    let lastfm = ScrobbleRuntime::new(
-        test_root.join("lastfm.db"),
-        reprise_core::scrobbling::ScrobbleProvider::LastFm,
-        "Last.fm",
-    );
-    PlayerController::new(
-        conn,
-        crate::ui::cover_download_worker::setup_for_test(),
-        listenbrainz,
-        lastfm,
-        PlayerControllerBackends {
-            playback: Box::new(TestPlayback { calls }),
-            playback_events,
-            media: reprise_core::media_integration::MediaIntegrationHandles::inert(),
-            waveform: Arc::new(TestWaveform),
-        },
-        &app,
+    controller_with_db(
+        test_root,
+        Rc::new(crate::test_db::open().unwrap()),
+        Box::new(TestPlayback { calls }),
     )
 }
 
@@ -336,9 +294,11 @@ fn restored_youtube_episode_keeps_the_clicked_position_until_delayed_source_star
     let test_root = tempfile::tempdir().unwrap();
     let calls = Rc::new(PlaybackCalls::default());
     let controller = controller_with_db(
-        calls.clone(),
         test_root.path(),
         Rc::new(reprise_core::db::Db::open_in_memory().unwrap()),
+        Box::new(TestPlayback {
+            calls: calls.clone(),
+        }),
     );
     let subscription_id = store::add_or_restore(
         &controller.conn,

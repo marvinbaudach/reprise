@@ -73,6 +73,7 @@ use std::rc::Rc;
 
 use gtk4::glib;
 
+use crate::ui::mpris_play_context::resolve_agent_playback_queue;
 use crate::ui::player_controller::PlayerController;
 use reprise_core::media_integration::{self, MprisCommand, MprisPlaybackStatus, MprisState};
 use reprise_core::playback::PlaybackState;
@@ -397,8 +398,8 @@ impl PlayerController {
     /// (trackid-matched, µs→ms converted, clamped) by `mpris.rs`'s `set_
     /// position` before it ever reaches here, so it goes straight to `seek`
     /// — the same method `Seek` (via `mpris_seek_relative`) and the bar's
-    /// seek scale all funnel through. `PlayTrackIds` goes straight to
-    /// `play_from_view` — see that arm's own comment below.
+    /// seek scale all funnel through. `PlayTrackIds` resolves its queue
+    /// context in `mpris_play_track_ids` before reaching `play_from_view`.
     pub(super) fn handle_mpris_command(self: &Rc<Self>, command: MprisCommand) {
         match command {
             MprisCommand::Play => self.mpris_play(),
@@ -421,18 +422,7 @@ impl PlayerController {
             MprisCommand::SetShuffle(on) => self.mpris_set_shuffle(on),
             MprisCommand::SetLoop(repeat) => self.mpris_set_loop(repeat),
             MprisCommand::SetVolume(volume) => self.mpris_set_volume(volume),
-            // Seeds the queue from `ids` and starts playback at index 0 —
-            // the same `play_from_view` primitive the sidebar/track-list/
-            // file-open call sites use (see that method's doc comment).
-            // Origin is always `library()`: an MCP/D-Bus-issued play has no
-            // browser view to attribute the context to, so it collapses to
-            // the same fallback `file_open.rs`'s desktop-association path
-            // uses for the same reason.
-            MprisCommand::PlayTrackIds(ids) => self.play_from_view(
-                ids,
-                0,
-                crate::ui::playback::play_origin::PlayOrigin::library(),
-            ),
+            MprisCommand::PlayTrackIds(ids) => self.mpris_play_track_ids(ids),
             MprisCommand::QueueAddNext(ids) => {
                 self.play_next(&ids);
             }
@@ -441,6 +431,27 @@ impl PlayerController {
             }
             MprisCommand::QueueClear => self.clear_play_next(),
         }
+    }
+
+    /// Starts externally requested track IDs with the same library context a
+    /// direct activation receives. Exactly one requested ID expands to the
+    /// flat Library snapshot in the session's persisted sort, including the
+    /// real AI-exclusion setting, when that snapshot contains the track.
+    /// Explicit multi-track and empty requests keep exact-list semantics;
+    /// query errors, excluded tracks, and tracks beyond the queue cap fall
+    /// back to the requested single-track context so the requested song is
+    /// never replaced by a guessed library index.
+    ///
+    /// Known limitation: the D-Bus command carries only a flattened ID list,
+    /// so a one-track playlist is indistinguishable from a single-track
+    /// request and inherits the Library snapshot too.
+    fn mpris_play_track_ids(self: &Rc<Self>, requested_ids: Vec<i64>) {
+        let (ids, start_index) = resolve_agent_playback_queue(&self.conn, requested_ids);
+        self.play_from_view(
+            ids,
+            start_index,
+            crate::ui::playback::play_origin::PlayOrigin::library(),
+        );
     }
 
     /// MPRIS `Play`: per spec, starts or resumes playback — unlike
