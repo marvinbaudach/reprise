@@ -26,6 +26,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -71,7 +72,6 @@ private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
 private data class LoadedTab(
     val titles: LibraryWindow<LibraryTrack>? = null,
     val artists: LibraryWindow<LibraryArtist>? = null,
-    val artistSearchAlbums: LibraryWindow<LibraryAlbum>? = null,
 )
 
 internal enum class BrowseTab(val label: String, val symbol: String) {
@@ -101,7 +101,6 @@ internal fun BrowseScreen(
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist> =
         { _, range -> listArtists(range) },
@@ -148,21 +147,17 @@ internal fun BrowseScreen(
     val shape = state.catalogShape()
     val restored = remember(state) { surfaceState.loadedWindows(shape) }
     var visibleTitles by remember(state) { mutableStateOf(restored?.titles ?: state.titles) }
-    var visibleArtistSearchAlbums by remember(state) {
-        mutableStateOf(restored?.artistSearchAlbums ?: LibraryWindow.empty())
-    }
     var visibleArtists by remember(state) { mutableStateOf(restored?.artists ?: state.artists) }
     var loadedTabs by remember(state) {
         mutableStateOf(restored?.loadedTabs ?: state.loadedTabs)
     }
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
-    var openAlbumOrigin by remember(state) { mutableStateOf(restored?.openAlbumOrigin) }
     var browseError by remember(state) { mutableStateOf(state.message) }
-    var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
-    var artistSearchAlbumsRequestedOffset by remember(state, searchText) {
-        mutableStateOf<Long?>(null)
+    var visibleLoadRetryRevision by remember(state, searchText, selectedTab) {
+        mutableIntStateOf(0)
     }
+    var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var artistsRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
     var artistRequestedOffset by remember(state, selectedArtist?.artist) {
@@ -256,11 +251,10 @@ internal fun BrowseScreen(
         playTracks(selection) { message -> browseError = message }
     }
 
-    fun openAlbumDetail(album: LibraryAlbum, origin: OpenAlbumOrigin) {
+    fun openAlbumDetail(album: LibraryAlbum) {
         runCatching { openAlbum(album) }
             .onSuccess { detail ->
                 selectedAlbum = detail
-                openAlbumOrigin = origin
                 albumRequestedOffset = null
                 browseError = null
             }
@@ -289,13 +283,7 @@ internal fun BrowseScreen(
                 }
                 BrowseTab.ARTISTS -> {
                     visibleArtists = artistsFor(text, firstLibraryWindow())
-                    visibleArtistSearchAlbums = if (text.isBlank()) {
-                        LibraryWindow.empty()
-                    } else {
-                        searchAlbums(text, firstLibraryWindow())
-                    }
                     artistsRequestedOffset = null
-                    artistSearchAlbumsRequestedOffset = null
                 }
                 // The queue is an order, not a view of the library, so there is
                 // nothing here for a filter to narrow. Selecting it closes the
@@ -329,12 +317,10 @@ internal fun BrowseScreen(
     val loaded = LoadedLibraryWindows(
         titles = visibleTitles,
         artists = visibleArtists,
-        artistSearchAlbums = visibleArtistSearchAlbums,
         loadedTabs = loadedTabs,
         searchText = searchText,
         openAlbum = selectedAlbum,
         openArtist = selectedArtist,
-        openAlbumOrigin = openAlbumOrigin,
     )
     SideEffect { surfaceState.keepLoadedWindows(shape, loaded) }
 
@@ -361,16 +347,17 @@ internal fun BrowseScreen(
     // Keyed on `loadedTabs`, so this re-enters after each fetch and works
     // through what is left one tab at a time rather than firing them at once.
     // A prefetch stays silent: it must not clear an error the visible tab is
-    // still showing, nor raise one for a tab nobody has asked for. Left out of
-    // `loadedTabs` on failure, it is simply fetched again — with its error
-    // surfaced — when that tab is actually selected.
+    // still showing, nor raise one for a tab nobody has asked for. A failed
+    // hidden prefetch remains outside `loadedTabs` and is fetched when selected.
+    // A visible failure gets one immediate re-attempt; a second failure leaves
+    // the error standing without restarting this effect again.
     val pendingTab = (listOf(selectedTab) + BrowseTab.entries)
         .firstOrNull { it != BrowseTab.QUEUE && it !in loadedTabs }
     // `selectedTab` is a key as well as a component of `pendingTab`: selecting a
     // tab whose prefetch is already waiting out the idle period leaves
     // `pendingTab` unchanged, and without the restart the wait would run on
     // under a tab someone is looking at.
-    LaunchedEffect(pendingTab, selectedTab, state, searchText) {
+    LaunchedEffect(pendingTab, selectedTab, state, searchText, visibleLoadRetryRevision) {
         if (pendingTab == null) return@LaunchedEffect
         val visible = pendingTab == selectedTab
         if (!visible) {
@@ -389,11 +376,6 @@ internal fun BrowseScreen(
                     BrowseTab.TITLES -> LoadedTab(titles = searchTitles(searchText, firstLibraryWindow()))
                     BrowseTab.ARTISTS -> LoadedTab(
                         artists = artistsFor(searchText, firstLibraryWindow()),
-                        artistSearchAlbums = if (searchText.isNotBlank()) {
-                            searchAlbums(searchText, firstLibraryWindow())
-                        } else {
-                            null
-                        },
                     )
                     BrowseTab.QUEUE -> LoadedTab()
                 }
@@ -401,12 +383,14 @@ internal fun BrowseScreen(
         }.onSuccess { loaded ->
             loaded.titles?.let { visibleTitles = it }
             loaded.artists?.let { visibleArtists = it }
-            loaded.artistSearchAlbums?.let { visibleArtistSearchAlbums = it }
             loadedTabs = loadedTabs + pendingTab
             if (visible) browseError = null
         }.onFailure { error ->
             if (error is CancellationException) throw error
-            if (visible) browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
+            if (visible) {
+                browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
+                if (visibleLoadRetryRevision == 0) visibleLoadRetryRevision = 1
+            }
         }
     }
 
@@ -419,19 +403,6 @@ internal fun BrowseScreen(
                 browseError = null
             }
             .onFailure { error -> browseError = error.browseDetail("load more titles") }
-    }
-
-    fun loadMoreArtistSearchAlbums(request: LibraryWindowRange) {
-        if (visibleArtistSearchAlbums.nextRequest(artistSearchAlbumsRequestedOffset) != request) {
-            return
-        }
-        artistSearchAlbumsRequestedOffset = request.offset
-        runCatching { searchAlbums(searchText, request) }
-            .onSuccess { continuation ->
-                visibleArtistSearchAlbums = visibleArtistSearchAlbums.append(continuation)
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("load more albums") }
     }
 
     fun loadMoreArtists(request: LibraryWindowRange) {
@@ -644,7 +615,6 @@ internal fun BrowseScreen(
                                     surfaceLayout = surfaceLayout,
                                     surfaceState = surfaceState,
                                     artists = visibleArtists,
-                                    albumResults = visibleArtistSearchAlbums,
                                     searchText = searchText,
                                     selectedArtist = selectedArtist,
                                     selectedAlbum = selectedAlbum,
@@ -656,19 +626,17 @@ internal fun BrowseScreen(
                                                 artistRequestedOffset = null
                                                 artistAlbumsRequestedOffset = null
                                                 browseError = null
+                                                surfaceState.closeSearch()
+                                                if (searchText.isNotEmpty()) {
+                                                    surfaceState.updateSearch("")
+                                                    loadedTabs = emptySet()
+                                                }
                                             }
                                             .onFailure { error ->
                                                 browseError = error.browseDetail("open the artist")
                                             }
                                     },
-                                    openAlbum = { album ->
-                                        val origin = if (selectedArtist == null) {
-                                            OpenAlbumOrigin.ARTIST_SEARCH
-                                        } else {
-                                            OpenAlbumOrigin.ARTIST_DETAIL
-                                        }
-                                        openAlbumDetail(album, origin)
-                                    },
+                                    openAlbum = ::openAlbumDetail,
                                     closeArtist = {
                                         selectedAlbum = null
                                         selectedArtist = null
@@ -684,19 +652,11 @@ internal fun BrowseScreen(
                                     },
                                     lastRequestedOffset = artistsRequestedOffset,
                                     artistRequestedOffset = artistRequestedOffset,
-                                    artistAlbumsRequestedOffset = if (selectedArtist == null) {
-                                        artistSearchAlbumsRequestedOffset
-                                    } else {
-                                        artistAlbumsRequestedOffset
-                                    },
+                                    artistAlbumsRequestedOffset = artistAlbumsRequestedOffset,
                                     albumRequestedOffset = albumRequestedOffset,
                                     loadMoreArtists = ::loadMoreArtists,
                                     loadMoreArtistTracks = ::loadMoreArtistTracks,
-                                    loadMoreArtistAlbums = if (selectedArtist == null) {
-                                        ::loadMoreArtistSearchAlbums
-                                    } else {
-                                        ::loadMoreArtistAlbums
-                                    },
+                                    loadMoreArtistAlbums = ::loadMoreArtistAlbums,
                                     loadMoreAlbumTracks = ::loadMoreAlbumTracks,
                                 )
                                 BrowseTab.QUEUE -> NowPlayingQueuePage(
@@ -821,13 +781,4 @@ internal fun BrowseScreen(
             }
         }
     }
-}
-
-@Composable
-private fun BrowseErrorLine(message: String) {
-    Text(
-        text = message,
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-    )
 }

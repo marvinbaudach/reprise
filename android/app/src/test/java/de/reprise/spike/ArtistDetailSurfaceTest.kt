@@ -1,8 +1,20 @@
 package de.reprise.spike
 
+import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PixelMap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -14,18 +26,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import de.reprise.spike.ui.theme.RepriseTheme
+import org.junit.After
 import org.junit.Rule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import uniffi.reprise_android_ffi.AndroidColorScheme
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36], qualifiers = "w500dp-h1000dp")
+@Config(
+    sdk = [36],
+    qualifiers = "w500dp-h1000dp",
+    application = ConfigurationTestApplication::class,
+)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ArtistDetailSurfaceTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
@@ -35,6 +56,30 @@ class ArtistDetailSurfaceTest {
         colorScheme = AndroidColorScheme.SYSTEM,
         dynamicAvailable = false,
     )
+    private val application: ConfigurationTestApplication
+        get() = RuntimeEnvironment.getApplication() as ConfigurationTestApplication
+
+    @After
+    fun releaseTheService() {
+        application.releaseService()
+    }
+
+    @Test
+    fun artistPortraitShimmerTurnsAQuarterTurn() {
+        val (before, after) = shimmerFrames(animationsEnabled = true)
+
+        assertTrue(
+            "a quarter turn changed no off-axis shimmer pixels",
+            before.offAxisDifference(after) > 40,
+        )
+    }
+
+    @Test
+    fun artistPortraitShimmerStopsWhenAnimationsAreDisabled() {
+        val (before, after) = shimmerFrames(animationsEnabled = false)
+
+        assertEquals(0, before.offAxisDifference(after))
+    }
 
     @Test
     fun artistPageListsTheArtistsAlbums() {
@@ -87,6 +132,8 @@ class ArtistDetailSurfaceTest {
         assertEquals(listOf(target), opened)
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Dinosaur Act").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
     }
 
     @Test
@@ -167,55 +214,101 @@ class ArtistDetailSurfaceTest {
     }
 
     @Test
-    fun artistSearchShowsAlbumsBeforeArtistsInSeparateSections() {
+    fun nonBlankArtistSearchShowsArtistsWithoutAnAlbumSection() {
         showArtistSearch(
-            albums = listOf(album("The Great Destroyer", 2005)),
             artists = listOf(LibraryArtist("Low", 4, 2, "content://low")),
         )
 
-        val albumHeading = compose.onNodeWithText("Albums").getUnclippedBoundsInRoot().top
-        val artistHeading = compose.onNodeWithText("Artists").getUnclippedBoundsInRoot().top
-        assertTrue(albumHeading < artistHeading)
-        compose.onNodeWithText("The Great Destroyer").assertIsDisplayed()
         compose.onNodeWithText("Low").assertIsDisplayed()
-    }
-
-    @Test
-    fun artistSearchAlbumOpensTheAlbumPageDirectly() {
-        showArtistSearch(
-            albums = listOf(album("The Curtain Hits the Cast", 1996)),
-            openedAlbumTracks = listOf(track("Over the Ocean")),
-        )
-
-        compose.onNodeWithText("The Curtain Hits the Cast").performClick()
-
-        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
-        compose.onNodeWithText("Over the Ocean").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Back to artists").assertDoesNotExist()
+        compose.onNodeWithText("Albums").assertDoesNotExist()
     }
 
     @Test
     fun emptyArtistSearchShowsArtistsWithoutAnAlbumSection() {
         showArtistSearch(
-            albums = listOf(album("Ones and Sixes", 2015)),
             artists = listOf(LibraryArtist("Low", 4, 2, "content://low")),
             searchText = "",
         )
 
         compose.onNodeWithText("Low").assertIsDisplayed()
         compose.onNodeWithText("Albums").assertDoesNotExist()
-        compose.onNodeWithText("Ones and Sixes").assertDoesNotExist()
     }
 
     @Test
-    fun artistSearchFieldNamesAlbumsAndArtists() {
+    fun artistSearchFieldNamesArtists() {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 LibrarySearchField(BrowseTab.ARTISTS, "", {}, {})
             }
         }
 
-        compose.onNodeWithText("Search albums and artists").assertIsDisplayed()
+        compose.onNodeWithText("Search artists").assertIsDisplayed()
+    }
+
+    private fun shimmerFrames(animationsEnabled: Boolean): Pair<PixelMap, PixelMap> {
+        application.animationsEnabled = animationsEnabled
+        val controller = AmbientMotionController()
+        val bitmap = asymmetricArtwork()
+        val image = bitmap.asImageBitmap()
+        SharedArtworkCache.putFog(
+            image,
+            prepareCoverFogBitmap(bitmap, android.graphics.Color.DKGRAY),
+        )
+        val visual = ArtworkVisual(image, ambientColors = null)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                CompositionLocalProvider(LocalAmbientMotionController provides controller) {
+                    BindAmbientRuntime(controller) { application.animationsEnabled }
+                    Box(
+                        Modifier
+                            .size(width = 300.dp, height = 500.dp)
+                            .background(Color.Black),
+                    ) {
+                        ArtistPortraitShimmer(
+                            visual = visual,
+                            playing = false,
+                            coverDiameterDp = 80f,
+                            centerFraction = SHIMMER_CENTER_FRACTION,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("artist-portrait-shimmer"),
+                        )
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(FRAME_MS)
+        val before = compose.onNodeWithTag("artist-portrait-shimmer").captureToImage().toPixelMap()
+        compose.mainClock.advanceTimeBy(QUARTER_TURN_MS)
+        val after = compose.onNodeWithTag("artist-portrait-shimmer").captureToImage().toPixelMap()
+        return before to after
+    }
+
+    private fun PixelMap.offAxisDifference(other: PixelMap): Int {
+        val centerY = (height * SHIMMER_CENTER_FRACTION).toInt()
+        val top = (centerY - height / 5).coerceAtLeast(0)
+        return (top until centerY).sumOf { y ->
+            (width / 10 until width * 2 / 5).count { x -> this[x, y] != other[x, y] }
+        }
+    }
+
+    private fun asymmetricArtwork(): Bitmap = Bitmap.createBitmap(
+        64,
+        64,
+        Bitmap.Config.ARGB_8888,
+    ).apply {
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val colour = when {
+                    x < width / 2 && y < height / 2 -> android.graphics.Color.RED
+                    x >= width / 2 && y < height / 2 -> android.graphics.Color.GREEN
+                    x < width / 2 -> android.graphics.Color.BLUE
+                    else -> android.graphics.Color.YELLOW
+                }
+                setPixel(x, y, colour)
+            }
+        }
     }
 
     private fun showArtist(
@@ -259,29 +352,20 @@ class ArtistDetailSurfaceTest {
     }
 
     private fun showArtistSearch(
-        albums: List<LibraryAlbum>,
         artists: List<LibraryArtist> = emptyList(),
-        openedAlbumTracks: List<LibraryTrack> = emptyList(),
         searchText: String = "low",
     ) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
-                var selectedAlbum by remember { mutableStateOf<AlbumTrackList?>(null) }
                 ArtistsTab(
                     surfaceLayout = SurfaceLayout.STACKED,
                     surfaceState = MobileSurfaceViewModel(),
                     artists = window(artists),
-                    albumResults = window(albums),
                     searchText = searchText,
                     selectedArtist = null,
-                    selectedAlbum = selectedAlbum,
                     playback = PlaybackUiState().libraryPlayback(),
                     openArtist = {},
-                    openAlbum = { album ->
-                        selectedAlbum = AlbumTrackList(album, window(openedAlbumTracks))
-                    },
                     closeArtist = {},
-                    closeAlbum = { selectedAlbum = null },
                     play = {},
                     lastRequestedOffset = null,
                     artistRequestedOffset = null,
@@ -327,3 +411,7 @@ class ArtistDetailSurfaceTest {
         hasMore = false,
     )
 }
+
+private const val FRAME_MS = 16L
+private const val QUARTER_TURN_MS = 15_000L
+private const val SHIMMER_CENTER_FRACTION = 0.35f

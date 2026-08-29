@@ -31,14 +31,8 @@ internal enum class LibraryListKey {
     ARTISTS,
     ALBUM_TRACKS,
     ARTIST_ALBUMS,
-    ARTIST_SEARCH_ALBUMS,
     ARTIST_TRACKS,
     UPCOMING,
-}
-
-internal enum class OpenAlbumOrigin {
-    ARTIST_SEARCH,
-    ARTIST_DETAIL,
 }
 
 /**
@@ -59,7 +53,6 @@ internal enum class OpenAlbumOrigin {
 internal data class LoadedLibraryWindows(
     val titles: LibraryWindow<LibraryTrack>,
     val artists: LibraryWindow<LibraryArtist>,
-    val artistSearchAlbums: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
     val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
     val searchText: String = "",
     /**
@@ -70,7 +63,6 @@ internal data class LoadedLibraryWindows(
      */
     val openAlbum: AlbumTrackList?,
     val openArtist: ArtistTrackList? = null,
-    val openAlbumOrigin: OpenAlbumOrigin? = null,
 )
 
 /**
@@ -351,7 +343,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
             ?.let { windows ->
                 if (
                     selectedTab == BrowseTab.ARTISTS &&
-                    windows.openAlbumOrigin == OpenAlbumOrigin.ARTIST_DETAIL &&
                     windows.openAlbum != null &&
                     windows.openArtist == null
                 ) {

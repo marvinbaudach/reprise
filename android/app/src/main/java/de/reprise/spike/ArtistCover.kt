@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
+internal const val ARTIST_PORTRAIT_DIAMETER_DP = 210
+
 @Composable
 internal fun rememberArtistArtworkVisual(
     name: String,
@@ -76,7 +78,7 @@ internal fun ArtistPortraitHeader(
     ) {
         ArtworkCover(
             visual = visual,
-            size = 210,
+            size = ARTIST_PORTRAIT_DIAMETER_DP,
             modifier = Modifier.testTag("artist-portrait-head-image"),
             shape = MaterialTheme.shapes.extraLarge,
             decorative = true,
