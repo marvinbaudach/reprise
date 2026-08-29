@@ -187,7 +187,13 @@ mod tests {
         assert!(css.contains("animation: reprise-podcast-shimmer 1900ms linear infinite"));
         assert!(css.contains("animation: reprise-podcast-spin 900ms linear infinite"));
         assert!(css.contains("animation: reprise-podcast-breathe 2000ms ease-in-out infinite"));
-        assert!(css.contains("transition: border-color 250ms"));
+        // Read from the token rather than pinned as a literal: this duration is
+        // the shared `STANDARD_MS`, so a retune elsewhere in the app must not
+        // surface here as a failing podcasts test.
+        assert!(css.contains(&format!(
+            "transition: border-color {}ms",
+            motion::STANDARD_MS
+        )));
         assert!(css.contains(".reprise-podcast-group-syncing > title > arrow { opacity: 0.38; }"));
         assert!(!css.contains("#4ddac4"));
     }

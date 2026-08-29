@@ -30,14 +30,15 @@ pub(in crate::ui) const STATS_TWEEN_MS: u32 = 250;
 pub(in crate::ui) const STATS_ENTRANCE_DELAY_MS: u32 = 100;
 pub(in crate::ui) const STATS_HORIZONTAL_STAGGER_MS: u32 = 40;
 
-// `POD-26`: the podcast group's loading chrome. The first three are loop
-// periods rather than interaction transitions — like `INDICATOR_SPIN_MS`, none
-// of MICRO/STANDARD/AMBIENT applies to something that never ends — and the
-// fourth is the group artwork's crossfade. They are named here so the podcasts
-// CSS carries no timing of its own.
-pub(in crate::ui) const PODCAST_SYNC_SHIMMER_MS: u32 = 1_900;
+// `POD-26`: the podcast group's loading chrome. These are loop periods rather
+// than interaction transitions — like `INDICATOR_SPIN_MS`, none of
+// MICRO/STANDARD/AMBIENT applies to something that never ends — and they are
+// named here so the podcasts CSS carries no timing of its own.
+pub(in crate::ui) const PODCAST_SYNC_SHIMMER_MS: u32 = 1900;
 pub(in crate::ui) const PODCAST_SYNC_SPIN_MS: u32 = 900;
-pub(in crate::ui) const PODCAST_SYNC_BREATHE_MS: u32 = 2_000;
+pub(in crate::ui) const PODCAST_SYNC_BREATHE_MS: u32 = 2000;
+// The podcast group header's artwork crossfade. Not part of the chrome above:
+// it runs on the group that is *not* syncing, when a cover swaps in.
 pub(in crate::ui) const PODCAST_ARTWORK_CROSSFADE_MS: u32 = 200;
 
 pub(in crate::ui) const MICRO_EASING: adw::Easing = adw::Easing::EaseOutQuad;
