@@ -8,6 +8,7 @@ use std::time::Instant;
 use gtk4::prelude::*;
 use reprise_core::remote_image::{CacheScope, ImageOutcome};
 
+use super::source_artwork_measurement;
 use super::{decode_pixels, DecodedPixels};
 
 const ARTWORK_WORKERS: usize = 8;
@@ -290,8 +291,7 @@ pub(super) fn queue(
 }
 
 pub(super) fn measurement_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var_os("REPRISE_MEASURE_SOURCE_ARTWORK").is_some())
+    source_artwork_measurement::enabled()
 }
 
 fn record_measurement(phase: &str, measurement: Option<RequestMeasurement>) {

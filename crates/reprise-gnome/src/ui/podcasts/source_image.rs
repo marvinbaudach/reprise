@@ -30,8 +30,11 @@ use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::remote_image::CacheScope;
 
+#[path = "source_artwork_measurement.rs"]
+mod source_artwork_measurement;
 #[path = "source_artwork_queue.rs"]
 mod source_artwork_queue;
+pub(super) use source_artwork_measurement::record_render_pass;
 #[path = "source_image_fallback.rs"]
 mod source_image_fallback;
 #[path = "source_image_texture.rs"]

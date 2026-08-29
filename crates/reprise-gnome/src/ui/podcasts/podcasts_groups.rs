@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
+use std::sync::atomic::AtomicU64;
 
 use chrono::Local;
 use gtk4::glib::variant::ToVariant;
@@ -34,6 +35,7 @@ use crate::ui::strings;
 /// `SRC-14`: the look of a selected row. Applied here at build time and by
 /// `PodcastsView::apply_selection` afterwards.
 pub(super) const SELECTED_ROW_CLASS: &str = "reprise-podcast-episode-selected";
+static REPLACE_PASSES: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
 pub(super) struct DownloadRowWidgets {
@@ -209,6 +211,12 @@ fn replace_with_sync_and_artwork(
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut widgets));
     }
+    super::source_image::record_render_pass(
+        &REPLACE_PASSES,
+        "podcasts_groups.replace",
+        groups.len(),
+        widgets.selection.len(),
+    );
     widgets
 }
 

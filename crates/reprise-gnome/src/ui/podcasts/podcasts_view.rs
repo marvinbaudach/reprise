@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
+use std::sync::atomic::AtomicU64;
 
 use gtk4::gio;
 use gtk4::glib::{self};
@@ -89,6 +90,7 @@ const EMPTY_PAGE: &str = "empty";
 /// same geometry, "Enable in Preferences" instead of Add.
 const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
+static RENDER_PASSES: AtomicU64 = AtomicU64::new(0);
 
 pub(in crate::ui) struct PodcastsView {
     root: gtk4::Box,
@@ -410,6 +412,16 @@ impl PodcastsView {
         let total = rows.len();
         super::podcasts_list_surface::update(&self.end_of_results, &filter, filtered.len(), total);
         let rendered_groups = rendered_source_groups(&groups, &filter, &download_states);
+        let rendered_rows = rendered_groups
+            .iter()
+            .map(|rendered| rendered.group.episodes.len())
+            .sum();
+        super::source_image::record_render_pass(
+            &RENDER_PASSES,
+            "podcasts_view",
+            rendered_groups.len(),
+            rendered_rows,
+        );
         // `NET-1a` / `C1`: computed once per render pass from the live
         // module + global-gate state, then threaded down to every source
         // image entry point in this view instead of each one re-deriving it.
