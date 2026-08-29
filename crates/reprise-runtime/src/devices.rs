@@ -100,23 +100,24 @@ impl DeviceRun {
                 SyncStep::Removing => "removing",
                 SyncStep::Transcoding => "transcoding",
                 SyncStep::Copying => "copying",
+                SyncStep::WritingAnalysis => "writing_analysis",
                 SyncStep::WritingPlaylists => "writing_playlists",
+                SyncStep::WritingTrackMetadata => "writing_track_metadata",
             },
             PlannedSyncPhase::Finishing => "verifying",
         }
     }
 
     fn snapshot(&self, device: &str) -> DeviceRunSnapshot {
-        let (current_track, bytes_done, bytes_total) =
-            match self.machine.as_ref().map(DeviceSyncMachine::phase) {
-                Some(PlannedSyncPhase::Syncing {
-                    current_track,
-                    bytes_done,
-                    bytes_total,
-                    ..
-                }) => (current_track.clone(), *bytes_done, *bytes_total),
-                _ => (String::new(), 0, 0),
-            };
+        let current_track = match self.machine.as_ref().map(DeviceSyncMachine::phase) {
+            Some(PlannedSyncPhase::Syncing { current_track, .. }) => current_track.clone(),
+            _ => String::new(),
+        };
+        let (bytes_done, bytes_total) = self
+            .machine
+            .as_ref()
+            .map(|machine| (machine.bytes_done(), machine.bytes_total()))
+            .unwrap_or_default();
         DeviceRunSnapshot {
             device: device.to_owned(),
             phase: self.phase().to_owned(),
@@ -124,6 +125,15 @@ impl DeviceRun {
                 bytes_done,
                 bytes_total,
                 bytes_per_second: self.rate.bytes_per_second,
+                units_done: self
+                    .machine
+                    .as_ref()
+                    .map_or(0, DeviceSyncMachine::units_done),
+                units_total: self
+                    .machine
+                    .as_ref()
+                    .map_or(0, DeviceSyncMachine::units_total),
+                estimated_remaining_seconds: None,
             },
             current_track,
             failed_track_ids: self

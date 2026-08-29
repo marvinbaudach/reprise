@@ -309,8 +309,8 @@ fn device_card_contrast_ladder_visual_fixture() {
         done: 214,
         total: 1047,
         current_track: "Immortal — Lorna Shore".into(),
-        bytes_done: 214,
-        bytes_total: 1047,
+        unit_bytes_done: 214,
+        unit_bytes_total: 1047,
     });
     active.name = "Pixel 8 · syncing".into();
     let mut connected = view(PlannedSyncPhase::Idle);
@@ -360,9 +360,9 @@ fn mtp_64_sidebar_device_card_delegates_to_the_main_window_page() {
 
 #[test]
 fn byte_progress_fraction_is_bounded_and_handles_an_unknown_total() {
-    assert_eq!(sync_fraction(50, 100), 0.5);
-    assert_eq!(sync_fraction(150, 100), 1.0);
-    assert_eq!(sync_fraction(50, 0), 0.0);
+    assert_eq!(sync_fraction(0, 1, 50, 100), 0.5);
+    assert_eq!(sync_fraction(1, 1, 50, 100), 1.0);
+    assert_eq!(sync_fraction(0, 0, 50, 100), 0.0);
 }
 
 #[test]
@@ -472,8 +472,8 @@ fn mot_7_disabled_animations_apply_progress_and_state_changes_immediately() {
         done: 0,
         total: 1,
         current_track: "Track".into(),
-        bytes_done: 50,
-        bytes_total: 100,
+        unit_bytes_done: 50,
+        unit_bytes_total: 100,
     });
     let on_open: OpenCallback = Rc::new(|_, _| {});
     let card = DeviceCard::new(&device, &on_open, &no_cancel());
@@ -523,8 +523,8 @@ fn enabled_animations_interpolate_progress_to_the_latest_fraction() {
         done: 0,
         total: 1,
         current_track: "Track".into(),
-        bytes_done: 50,
-        bytes_total: 100,
+        unit_bytes_done: 50,
+        unit_bytes_total: 100,
     });
 
     card.update(&syncing);

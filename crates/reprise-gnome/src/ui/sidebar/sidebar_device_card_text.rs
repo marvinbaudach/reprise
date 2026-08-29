@@ -56,22 +56,11 @@ pub(super) fn is_syncing(device: &DeviceView) -> bool {
 /// fixed-width slot so the count cannot shove it.
 #[must_use]
 pub(super) fn syncing_file_count(device: &DeviceView) -> Option<String> {
-    let changes = &device.page.changes;
-    let transfers = changes.additions.saturating_add(changes.replacements);
-    let playlist_files = changes
-        .playlist_writes
-        .saturating_add(changes.playlist_removals);
-    let planned_total = transfers
-        .saturating_add(playlist_files)
-        .saturating_add(changes.removals);
     if device.sync_phase == PlannedSyncPhase::Finishing {
-        return (planned_total > 0)
-            .then(|| format_syncing_file_count(planned_total, planned_total));
+        let total = device.units_total as usize;
+        return (total > 0).then(|| format_syncing_file_count(total, total));
     }
-    let PlannedSyncPhase::Syncing {
-        step, done, total, ..
-    } = &device.sync_phase
-    else {
+    let PlannedSyncPhase::Syncing { done, total, .. } = &device.sync_phase else {
         return None;
     };
     let local_total = *total as usize;
@@ -79,17 +68,11 @@ pub(super) fn syncing_file_count(device: &DeviceView) -> Option<String> {
         return None;
     }
 
-    let offset = match step {
-        SyncStep::Transcoding | SyncStep::Copying => 0,
-        SyncStep::WritingPlaylists => transfers,
-        SyncStep::Removing => transfers.saturating_add(playlist_files),
-    };
-    let run_total = planned_total.max(offset.saturating_add(local_total));
-    let current = offset
-        .saturating_add((*done as usize).min(local_total.saturating_sub(1)))
+    let current = (*done as usize)
+        .min(local_total.saturating_sub(1))
         .saturating_add(1)
-        .min(run_total);
-    Some(format_syncing_file_count(current, run_total))
+        .min(local_total);
+    Some(format_syncing_file_count(current, local_total))
 }
 
 fn format_syncing_file_count(current: usize, total: usize) -> String {
@@ -210,7 +193,9 @@ pub(super) fn card_subtitle(device: &DeviceView, now: DateTime<Utc>) -> String {
             ..
         } => {
             let mut activity = device_sync_strings::sync_activity(step_glyph(step), current_track);
-            if matches!(step, SyncStep::Copying) && device.bytes_per_second > 0 {
+            if matches!(step, SyncStep::Copying | SyncStep::WritingAnalysis)
+                && device.bytes_per_second > 0
+            {
                 activity.push_str(&format!(
                     " · {}/s",
                     device_sync_strings::file_size(device.bytes_per_second)
@@ -266,8 +251,10 @@ pub(super) fn step_glyph(step: &SyncStep) -> &'static str {
     match step {
         SyncStep::Transcoding => "⟳ transcoding ·",
         SyncStep::Copying => "↑",
+        SyncStep::WritingAnalysis => "↑ analysis ·",
         SyncStep::Removing => "−",
         SyncStep::WritingPlaylists => "≡",
+        SyncStep::WritingTrackMetadata => "≡ metadata ·",
     }
 }
 
@@ -456,8 +443,8 @@ mod tests {
             done: 1_046,
             total: 1_047,
             current_track: "Last transfer".into(),
-            bytes_done: 1,
-            bytes_total: 1,
+            unit_bytes_done: 1,
+            unit_bytes_total: 1,
         });
         device.page.changes.additions = 1_047;
         device.page.changes.playlist_writes = 3;
@@ -473,8 +460,8 @@ mod tests {
             done: 0,
             total: 3,
             current_track: "Road".into(),
-            bytes_done: 1,
-            bytes_total: 1,
+            unit_bytes_done: 1,
+            unit_bytes_total: 1,
         };
         assert_eq!(
             syncing_file_count(&device).as_deref(),
@@ -486,8 +473,8 @@ mod tests {
             done: 11,
             total: 12,
             current_track: "old.mp3".into(),
-            bytes_done: 1,
-            bytes_total: 1,
+            unit_bytes_done: 1,
+            unit_bytes_total: 1,
         };
         assert_eq!(
             syncing_file_count(&device).as_deref(),
@@ -508,8 +495,8 @@ mod tests {
             done: 9,
             total: 3,
             current_track: "old.mp3".into(),
-            bytes_done: 0,
-            bytes_total: 0,
+            unit_bytes_done: 0,
+            unit_bytes_total: 0,
         });
 
         assert_eq!(
@@ -522,8 +509,8 @@ mod tests {
             done: 0,
             total: 0,
             current_track: String::new(),
-            bytes_done: 0,
-            bytes_total: 0,
+            unit_bytes_done: 0,
+            unit_bytes_total: 0,
         };
         assert_eq!(syncing_file_count(&device), None);
     }
@@ -535,8 +522,8 @@ mod tests {
             done: 0,
             total: 1,
             current_track: "Track".into(),
-            bytes_done: 0,
-            bytes_total: 1,
+            unit_bytes_done: 0,
+            unit_bytes_total: 1,
         });
         remembered.connected = false;
         remembered.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;

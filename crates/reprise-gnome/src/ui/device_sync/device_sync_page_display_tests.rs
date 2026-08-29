@@ -154,8 +154,8 @@ fn mtp_60_sync_status_text_does_not_resize_the_playlist_workspace() {
         done: 8,
         total: 278,
         current_track: "Claw Marks — Brand of Sacrifice".into(),
-        bytes_done: 8,
-        bytes_total: 278,
+        unit_bytes_done: 8,
+        unit_bytes_total: 278,
     };
     let (surface, root) = DeviceSyncPage::new(
         &device,
@@ -198,8 +198,8 @@ fn mtp_60_sync_status_text_does_not_resize_the_playlist_workspace() {
         done: 16,
         total: 278,
         current_track: "Lifeblood (feat. Will Ramos) — Brand of Sacrifice".into(),
-        bytes_done: 16,
-        bytes_total: 278,
+        unit_bytes_done: 16,
+        unit_bytes_total: 278,
     };
     device.bytes_per_second = 29_200_000;
     surface.update(&device);
@@ -420,8 +420,8 @@ fn mtp_64_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
         done: 1,
         total: 2,
         current_track: "Immortal — Lorna Shore".into(),
-        bytes_done: 50,
-        bytes_total: 100,
+        unit_bytes_done: 50,
+        unit_bytes_total: 100,
     };
     device.bytes_per_second = 2 * 1_024 * 1_024;
     surface.update(&device);

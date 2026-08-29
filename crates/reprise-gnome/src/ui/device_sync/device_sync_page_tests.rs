@@ -85,7 +85,12 @@ fn device() -> DeviceView {
         verified_managed_track_count: None,
         size_on_device_bytes: None,
         managed_track_count: 0,
+        bytes_done: 0,
+        bytes_total: 0,
         bytes_per_second: 0,
+        units_done: 0,
+        units_total: 0,
+        estimated_remaining: None,
         contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
         content_row: crate::ui::device_sync_runtime::empty_content_row(),
         target_reading: crate::ui::device_sync_runtime::empty_target_reading(),
@@ -146,8 +151,8 @@ fn mtp_60_the_dock_reads_in_every_state() {
         done: 214,
         total: 1_047,
         current_track: "Immortal — Lorna Shore".into(),
-        bytes_done: 214,
-        bytes_total: 1_047,
+        unit_bytes_done: 214,
+        unit_bytes_total: 1_047,
     };
     running_device.bytes_per_second = 64 * 1_024 * 1_024;
     let running = DockReading::for_device(&running_device);
@@ -207,8 +212,8 @@ fn mtp_60_copy_progress_separates_the_live_mtp_rate_from_track_text() {
         done: 1,
         total: 2,
         current_track: "Immortal — Lorna Shore".into(),
-        bytes_done: 50,
-        bytes_total: 100,
+        unit_bytes_done: 50,
+        unit_bytes_total: 100,
     };
     copying.bytes_per_second = 2 * 1_024 * 1_024;
 
@@ -571,8 +576,8 @@ fn mtp_4_eject_is_available_only_for_an_idle_connected_device() {
         done: 0,
         total: 1,
         current_track: "Track".into(),
-        bytes_done: 0,
-        bytes_total: 1,
+        unit_bytes_done: 0,
+        unit_bytes_total: 1,
     };
     assert!(!eject_sensitive(&device));
     device.sync_phase = PlannedSyncPhase::Finishing;

@@ -77,16 +77,16 @@ impl DockReading {
                 done,
                 total,
                 current_track,
-                bytes_done,
-                bytes_total,
+                unit_bytes_done,
+                unit_bytes_total,
                 ..
             } => Self::Running {
                 copied: *done as usize,
                 total: *total as usize,
                 current_track: (!current_track.is_empty()).then(|| current_track.clone()),
                 bytes_per_second: device.bytes_per_second,
-                remaining: remaining(*bytes_done, *bytes_total, device.bytes_per_second),
-                fraction: fraction(*done, *total, *bytes_done, *bytes_total),
+                remaining: device.estimated_remaining,
+                fraction: fraction(*done, *total, *unit_bytes_done, *unit_bytes_total),
             },
             PlannedSyncPhase::Finishing => Self::Finishing {
                 summary: device_sync_strings::text(device_sync_strings::FINISHING_SYNC),
@@ -299,17 +299,14 @@ fn has_error_notice(device: &DeviceView) -> bool {
         || device.sync_error.is_some()
 }
 
-fn remaining(bytes_done: u64, bytes_total: u64, bytes_per_second: u64) -> Option<Duration> {
-    let bytes = bytes_total.checked_sub(bytes_done)?;
-    (bytes > 0 && bytes_per_second > 0)
-        .then(|| Duration::from_secs(bytes.div_ceil(bytes_per_second)))
-}
-
-fn fraction(done: u32, total: u32, bytes_done: u64, bytes_total: u64) -> f64 {
-    let value = if bytes_total > 0 {
-        bytes_done as f64 / bytes_total as f64
-    } else if total > 0 {
-        f64::from(done) / f64::from(total)
+fn fraction(done: u32, total: u32, unit_bytes_done: u64, unit_bytes_total: u64) -> f64 {
+    let unit_fraction = if unit_bytes_total > 0 {
+        unit_bytes_done as f64 / unit_bytes_total as f64
+    } else {
+        0.0
+    };
+    let value = if total > 0 {
+        (f64::from(done) + unit_fraction) / f64::from(total)
     } else {
         0.0
     };

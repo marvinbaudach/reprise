@@ -135,10 +135,10 @@ fn mtp_18_a_run_opens_on_the_step_that_actually_runs_first() {
         &PlannedSyncPhase::Syncing {
             step: SyncStep::Copying,
             done: 0,
-            total: 1,
+            total: 2,
             current_track: "Track 1 — Artist".into(),
-            bytes_done: 0,
-            bytes_total: 100,
+            unit_bytes_done: 0,
+            unit_bytes_total: 100,
         },
         "the run opens on its first transfer, not on the removals that run last"
     );
@@ -177,8 +177,8 @@ fn mtp_18_a_run_with_nothing_but_removals_opens_on_them() {
             done: 0,
             total: 1,
             current_track: "Reprise/9.opus".into(),
-            bytes_done: 0,
-            bytes_total: 0,
+            unit_bytes_done: 0,
+            unit_bytes_total: 0,
         }
     );
 }
@@ -357,8 +357,8 @@ fn a_transcoded_track_is_copied_from_the_temporary_file() {
             done: 0,
             total: 1,
             current_track: "Track 1 — Artist".into(),
-            bytes_done: 0,
-            bytes_total: 100,
+            unit_bytes_done: 0,
+            unit_bytes_total: 0,
         }
     );
     assert_eq!(
@@ -464,10 +464,14 @@ fn copy_progress_advances_the_byte_counter_without_emitting_an_effect() {
         machine.dispatch(Event::CopyProgress { copied: 40 }),
         Vec::new()
     );
-    let PlannedSyncPhase::Syncing { bytes_done, .. } = machine.phase() else {
+    let PlannedSyncPhase::Syncing {
+        unit_bytes_done, ..
+    } = machine.phase()
+    else {
         panic!("expected a syncing phase");
     };
-    assert_eq!(*bytes_done, 40);
+    assert_eq!(*unit_bytes_done, 40);
+    assert_eq!(machine.bytes_done(), 0);
 }
 
 #[test]
@@ -481,10 +485,13 @@ fn progress_beyond_the_estimate_never_exceeds_the_planned_total() {
     machine.dispatch(Event::PartialsCleaned(Ok(())));
     machine.dispatch(Event::CopyProgress { copied: 4_000 });
 
-    let PlannedSyncPhase::Syncing { bytes_done, .. } = machine.phase() else {
+    let PlannedSyncPhase::Syncing {
+        unit_bytes_done, ..
+    } = machine.phase()
+    else {
         panic!("expected a syncing phase");
     };
-    assert_eq!(*bytes_done, 100);
+    assert_eq!(*unit_bytes_done, 100);
 }
 
 #[test]

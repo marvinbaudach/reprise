@@ -16,10 +16,9 @@
 
 use std::collections::HashSet;
 
-use super::{
-    DesiredManagedFile, DeviceFileRecord, ManagedRemoval, MirrorPlan, SelectionSource,
-    TransferAction,
-};
+use super::ledger::WorkLedger;
+use super::phase_transitions;
+use super::{DesiredManagedFile, DeviceFileRecord, MirrorPlan, SelectionSource, TransferAction};
 
 /// The step a run is currently working on.
 ///
@@ -30,7 +29,9 @@ pub enum SyncStep {
     Removing,
     Transcoding,
     Copying,
+    WritingAnalysis,
     WritingPlaylists,
+    WritingTrackMetadata,
 }
 
 /// The externally visible progress of a run.
@@ -44,8 +45,8 @@ pub enum PlannedSyncPhase {
         done: u32,
         total: u32,
         current_track: String,
-        bytes_done: u64,
-        bytes_total: u64,
+        unit_bytes_done: u64,
+        unit_bytes_total: u64,
     },
     Finishing,
 }
@@ -82,6 +83,9 @@ pub enum Effect {
         index: usize,
         device_size: u64,
     },
+    WriteAnalysis {
+        index: usize,
+    },
     WritePlaylist {
         index: usize,
     },
@@ -107,6 +111,7 @@ pub enum Effect {
     ForgetPlaylist {
         index: usize,
     },
+    WriteTrackMetadataList,
     Finished(SyncOutcome),
 }
 
@@ -141,6 +146,7 @@ pub enum Event {
     CopyProgress {
         copied: u64,
     },
+    AnalysisWritten(Result<u64, String>),
     PlaylistWritten(Result<(), String>),
     PlaylistRecorded(Result<(), String>),
     TrackRemoved(Result<(), String>),
@@ -148,6 +154,7 @@ pub enum Event {
     ReplacedFileRemoved(Result<(), String>),
     PlaylistRemoved(Result<(), String>),
     PlaylistForgotten(Result<(), String>),
+    TrackMetadataListWritten(Result<(), String>),
     Cancel,
 }
 
@@ -160,12 +167,13 @@ pub struct TransferOperation {
 
 /// The effect the machine is currently waiting to hear back about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Awaiting {
+pub(super) enum Awaiting {
     Start,
     Partials,
     Transcode(usize),
     Copy(usize),
     RecordFile(usize),
+    WriteAnalysis(usize),
     WritePlaylist(usize),
     RecordPlaylist(usize),
     RemovePlaylist(usize),
@@ -173,6 +181,7 @@ enum Awaiting {
     RemoveTrack(usize),
     ForgetFile(usize),
     RemoveReplacedFile(usize),
+    WriteTrackMetadataList,
     Done,
 }
 
@@ -188,7 +197,9 @@ pub struct DeviceSyncMachine {
     /// Device paths whose transfer failed. A playlist that would point at one
     /// of them must not be published.
     failed_device_paths: HashSet<String>,
-    completed_bytes: u64,
+    ledger: WorkLedger,
+    writes_track_metadata_list: bool,
+    copied_bytes: Option<u64>,
     transcoded_bytes: Option<u64>,
     deferred_replacements: Vec<(String, i64)>,
     planned_playlist_sources: HashSet<SelectionSource>,
@@ -206,6 +217,7 @@ impl DeviceSyncMachine {
             .iter()
             .map(|write| write.source.clone())
             .collect();
+        let ledger = WorkLedger::for_plan(&plan, false);
         Self {
             device_id,
             plan,
@@ -216,13 +228,21 @@ impl DeviceSyncMachine {
             terminal_error: None,
             failures: Vec::new(),
             failed_device_paths: HashSet::new(),
-            completed_bytes: 0,
+            ledger,
+            writes_track_metadata_list: false,
+            copied_bytes: None,
             transcoded_bytes: None,
             deferred_replacements: Vec::new(),
             planned_playlist_sources,
             successful_playlist_sources: HashSet::new(),
             stale_playlist_on_device: false,
         }
+    }
+
+    pub fn with_track_metadata_list(mut self) -> Self {
+        self.writes_track_metadata_list = true;
+        self.ledger = WorkLedger::for_plan(&self.plan, true);
+        self
     }
 
     pub fn device_id(&self) -> &str {
@@ -247,6 +267,32 @@ impl DeviceSyncMachine {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled
+    }
+
+    pub fn bytes_done(&self) -> u64 {
+        self.ledger.bytes_done()
+    }
+
+    pub fn bytes_total(&self) -> u64 {
+        self.ledger.bytes_total()
+    }
+
+    pub fn units_done(&self) -> u32 {
+        self.ledger.done()
+    }
+
+    pub fn units_total(&self) -> u32 {
+        self.ledger.total()
+    }
+
+    pub fn verified_sources(&self) -> Vec<SelectionSource> {
+        let mut sources = self
+            .successful_playlist_sources
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        sources.sort();
+        sources
     }
 
     /// Applies one outcome and returns the work it unlocked.
@@ -283,11 +329,13 @@ impl DeviceSyncMachine {
                 }
                 Err(_) => {
                     self.fail_transfer(index);
+                    self.ledger.complete_unit(0);
                     self.advance_past_transfer(index)
                 }
             },
             (Awaiting::Copy(index), Event::TrackCopied(result)) => match result {
                 Ok(device_size) => {
+                    self.copied_bytes = Some(device_size);
                     self.awaiting = Awaiting::RecordFile(index);
                     vec![Effect::RecordFile { index, device_size }]
                 }
@@ -297,6 +345,7 @@ impl DeviceSyncMachine {
                     if !self.cancelled {
                         self.fail_transfer(index);
                     }
+                    self.ledger.complete_unit(0);
                     self.advance_past_transfer(index)
                 }
             },
@@ -315,7 +364,19 @@ impl DeviceSyncMachine {
                     }
                     Err(_) => self.fail_transfer(index),
                 }
+                self.ledger
+                    .complete_unit(self.copied_bytes.take().unwrap_or_default());
                 self.advance_past_transfer(index)
+            }
+            (Awaiting::WriteAnalysis(index), Event::AnalysisWritten(result)) => {
+                match result {
+                    Ok(bytes) => self.ledger.complete_unit(bytes),
+                    Err(error) => {
+                        self.terminal_error = Some(error);
+                        self.ledger.complete_unit(0);
+                    }
+                }
+                self.enter_analysis_writes(index + 1)
             }
             (Awaiting::WritePlaylist(index), Event::PlaylistWritten(result)) => match result {
                 Ok(()) => {
@@ -324,6 +385,7 @@ impl DeviceSyncMachine {
                 }
                 Err(_) => {
                     self.fail_playlist();
+                    self.ledger.complete_unit(0);
                     self.enter_playlist_writes(index + 1)
                 }
             },
@@ -335,12 +397,14 @@ impl DeviceSyncMachine {
                     }
                     Err(_) => self.fail_playlist(),
                 }
+                self.ledger.complete_unit(0);
                 self.enter_playlist_writes(index + 1)
             }
             (Awaiting::RemovePlaylist(index), Event::PlaylistRemoved(result)) => match result {
                 Ok(()) => {
                     let source = &self.plan.playlist_removals[index].source;
                     if self.planned_playlist_sources.contains(source) {
+                        self.ledger.complete_unit(0);
                         self.enter_playlist_removals(index + 1)
                     } else {
                         self.awaiting = Awaiting::ForgetPlaylist(index);
@@ -352,6 +416,7 @@ impl DeviceSyncMachine {
                     // entries may name files the removal stage would delete.
                     self.stale_playlist_on_device = true;
                     self.fail_playlist();
+                    self.ledger.complete_unit(0);
                     self.enter_playlist_removals(index + 1)
                 }
             },
@@ -359,28 +424,37 @@ impl DeviceSyncMachine {
                 if result.is_err() {
                     self.fail_playlist();
                 }
+                self.ledger.complete_unit(0);
                 self.enter_playlist_removals(index + 1)
             }
             (Awaiting::RemoveTrack(index), Event::TrackRemoved(result)) => match result {
-                Ok(()) => match removal_track_id(&self.plan.remove[index]) {
+                Ok(()) => match phase_transitions::removal_track_id(&self.plan.remove[index]) {
                     Some(_) => {
                         self.awaiting = Awaiting::ForgetFile(index);
                         vec![Effect::ForgetFile { index }]
                     }
-                    None => self.enter_removals(index + 1),
+                    None => {
+                        self.ledger.complete_unit(0);
+                        self.enter_removals(index + 1)
+                    }
                 },
                 Err(_) => {
-                    let track_id = removal_track_id(&self.plan.remove[index]).unwrap_or(-1);
+                    let track_id =
+                        phase_transitions::removal_track_id(&self.plan.remove[index]).unwrap_or(-1);
                     self.fail_track(track_id);
+                    self.ledger.complete_unit(0);
                     self.enter_removals(index + 1)
                 }
             },
             (Awaiting::ForgetFile(index), Event::FileForgotten(result)) => {
                 if result.is_err() {
-                    if let Some(track_id) = removal_track_id(&self.plan.remove[index]) {
+                    if let Some(track_id) =
+                        phase_transitions::removal_track_id(&self.plan.remove[index])
+                    {
                         self.fail_track(track_id);
                     }
                 }
+                self.ledger.complete_unit(0);
                 self.enter_removals(index + 1)
             }
             (Awaiting::RemoveReplacedFile(index), Event::ReplacedFileRemoved(result)) => {
@@ -389,28 +463,33 @@ impl DeviceSyncMachine {
                 }
                 self.enter_deferred_removals(index + 1)
             }
+            (Awaiting::WriteTrackMetadataList, Event::TrackMetadataListWritten(result)) => {
+                if let Err(error) = result {
+                    self.terminal_error = Some(error);
+                }
+                self.ledger.complete_unit(0);
+                self.finish()
+            }
             _ => Vec::new(),
         }
     }
 
     fn observe_copy_progress(&mut self, copied: u64) {
-        let Awaiting::Copy(index) = self.awaiting else {
+        if !matches!(
+            self.awaiting,
+            Awaiting::Copy(_) | Awaiting::WriteAnalysis(_)
+        ) {
             return;
-        };
-        let estimated = self.transfers[index].desired.target_bytes;
-        let total = self.plan.transfer_bytes;
-        let done = self
-            .completed_bytes
-            .saturating_add(copied.min(estimated))
-            .min(total);
+        }
+        self.ledger.observe_unit_bytes(copied);
         if let PlannedSyncPhase::Syncing {
-            bytes_done,
-            bytes_total,
+            unit_bytes_done,
+            unit_bytes_total,
             ..
         } = &mut self.phase
         {
-            *bytes_done = (*bytes_done).max(done);
-            *bytes_total = total;
+            *unit_bytes_done = self.ledger.unit_bytes_done();
+            *unit_bytes_total = self.ledger.unit_bytes_total();
         }
     }
 
@@ -419,18 +498,18 @@ impl DeviceSyncMachine {
             return self.finish();
         }
         let Some(operation) = self.transfers.get(from) else {
-            return self.enter_playlists();
+            return self.enter_analysis_writes(0);
         };
         self.transcoded_bytes = None;
+        self.copied_bytes = None;
         match operation.desired.action {
             TransferAction::CopyOriginal => self.start_copy(from),
             action @ (TransferAction::TranscodeOpus160 | TransferAction::TranscodeMp3(_)) => {
-                self.phase = self.syncing_phase(
+                self.ledger.begin_unit(0);
+                self.phase = phase_transitions::syncing(
+                    &self.ledger,
                     SyncStep::Transcoding,
-                    from,
-                    self.transfers.len(),
-                    self.transfer_activity(from),
-                    self.completed_bytes,
+                    phase_transitions::transfer_activity(&self.transfers[from]),
                 );
                 self.awaiting = Awaiting::Transcode(from);
                 vec![Effect::Transcode {
@@ -449,12 +528,11 @@ impl DeviceSyncMachine {
                 self.transfers[index].desired.target_bytes,
             ),
         };
-        self.phase = self.syncing_phase(
+        self.ledger.begin_unit(bytes);
+        self.phase = phase_transitions::syncing(
+            &self.ledger,
             SyncStep::Copying,
-            index,
-            self.transfers.len(),
-            self.transfer_activity(index),
-            self.completed_bytes,
+            phase_transitions::transfer_activity(&self.transfers[index]),
         );
         self.awaiting = Awaiting::Copy(index);
         vec![Effect::CopyTrack {
@@ -465,10 +543,24 @@ impl DeviceSyncMachine {
     }
 
     fn advance_past_transfer(&mut self, index: usize) -> Vec<Effect> {
-        self.completed_bytes = self
-            .completed_bytes
-            .saturating_add(self.transfers[index].desired.target_bytes);
         self.enter_transfers(index + 1)
+    }
+
+    fn enter_analysis_writes(&mut self, from: usize) -> Vec<Effect> {
+        if self.cancelled {
+            return self.finish();
+        }
+        let Some(write) = self.plan.analysis_writes.get(from) else {
+            return self.enter_playlists();
+        };
+        self.ledger.begin_unit(write.size_bytes);
+        self.phase = phase_transitions::syncing(
+            &self.ledger,
+            SyncStep::WritingAnalysis,
+            write.device_path.clone(),
+        );
+        self.awaiting = Awaiting::WriteAnalysis(from);
+        vec![Effect::WriteAnalysis { index: from }]
     }
 
     fn enter_playlists(&mut self) -> Vec<Effect> {
@@ -501,14 +593,14 @@ impl DeviceSyncMachine {
             return self.enter_playlist_removals(0);
         };
         if self.playlist_references_a_failed_transfer(from) {
+            self.ledger.complete_unit(0);
             return self.enter_playlist_writes(from + 1);
         }
-        self.phase = self.syncing_phase(
+        self.ledger.begin_unit(0);
+        self.phase = phase_transitions::syncing(
+            &self.ledger,
             SyncStep::WritingPlaylists,
-            from,
-            self.plan.playlist_writes.len(),
             write.source_name.clone(),
-            self.plan.transfer_bytes,
         );
         self.awaiting = Awaiting::WritePlaylist(from);
         vec![Effect::WritePlaylist { index: from }]
@@ -525,8 +617,15 @@ impl DeviceSyncMachine {
             if self.planned_playlist_sources.contains(source)
                 && !self.successful_playlist_sources.contains(source)
             {
+                self.ledger.complete_unit(0);
                 continue;
             }
+            self.ledger.begin_unit(0);
+            self.phase = phase_transitions::syncing(
+                &self.ledger,
+                SyncStep::Removing,
+                self.plan.playlist_removals[index].device_path.clone(),
+            );
             self.awaiting = Awaiting::RemovePlaylist(index);
             return vec![Effect::RemovePlaylist { index }];
         }
@@ -567,12 +666,11 @@ impl DeviceSyncMachine {
         let Some(removal) = self.plan.remove.get(from) else {
             return self.enter_deferred_removals(0);
         };
-        self.phase = self.syncing_phase(
+        self.ledger.begin_unit(0);
+        self.phase = phase_transitions::syncing(
+            &self.ledger,
             SyncStep::Removing,
-            from,
-            self.plan.remove.len(),
-            removal_path(removal),
-            0,
+            phase_transitions::removal_path(removal),
         );
         self.awaiting = Awaiting::RemoveTrack(from);
         vec![Effect::RemoveTrack { index: from }]
@@ -583,11 +681,25 @@ impl DeviceSyncMachine {
             return self.finish();
         }
         let Some((device_path, _)) = self.deferred_replacements.get(from) else {
-            return self.finish();
+            return self.enter_track_metadata_list();
         };
         let device_path = device_path.clone();
         self.awaiting = Awaiting::RemoveReplacedFile(from);
         vec![Effect::RemoveReplacedFile { device_path }]
+    }
+
+    fn enter_track_metadata_list(&mut self) -> Vec<Effect> {
+        if !self.writes_track_metadata_list {
+            return self.finish();
+        }
+        self.ledger.begin_unit(0);
+        self.phase = phase_transitions::syncing(
+            &self.ledger,
+            SyncStep::WritingTrackMetadata,
+            super::track_metadata_list::FILE_NAME.to_owned(),
+        );
+        self.awaiting = Awaiting::WriteTrackMetadataList;
+        vec![Effect::WriteTrackMetadataList]
     }
 
     fn finish(&mut self) -> Vec<Effect> {
@@ -625,34 +737,11 @@ impl DeviceSyncMachine {
     /// step that runs later — as this did with `Removing` — tells the user the
     /// run is doing something it has not started.
     fn opening_phase(&self) -> PlannedSyncPhase {
-        if !self.transfers.is_empty() {
-            let step = match self.transfers[0].desired.action {
-                TransferAction::CopyOriginal => SyncStep::Copying,
-                TransferAction::TranscodeOpus160 | TransferAction::TranscodeMp3(_) => {
-                    SyncStep::Transcoding
-                }
-            };
-            return self.syncing_phase(step, 0, self.transfers.len(), self.transfer_activity(0), 0);
-        }
-        if let Some(write) = self.plan.playlist_writes.first() {
-            return self.syncing_phase(
-                SyncStep::WritingPlaylists,
-                0,
-                self.plan.playlist_writes.len(),
-                write.source_name.clone(),
-                0,
-            );
-        }
-        self.syncing_phase(
-            SyncStep::Removing,
-            0,
-            self.plan.remove.len(),
-            self.plan
-                .remove
-                .first()
-                .map(removal_path)
-                .unwrap_or_default(),
-            0,
+        phase_transitions::opening(
+            &self.transfers,
+            &self.plan,
+            &self.ledger,
+            self.writes_track_metadata_list,
         )
     }
 
@@ -672,30 +761,6 @@ impl DeviceSyncMachine {
     /// same sentinel the GTK runtime used.
     fn fail_playlist(&mut self) {
         self.failures.push(-1);
-    }
-
-    fn transfer_activity(&self, index: usize) -> String {
-        let track = &self.transfers[index].desired.track;
-        track_activity(&track.title, &track.artist)
-    }
-
-    fn syncing_phase(
-        &self,
-        step: SyncStep,
-        done: usize,
-        total: usize,
-        current_track: String,
-        bytes_done: u64,
-    ) -> PlannedSyncPhase {
-        let bytes_total = self.plan.transfer_bytes;
-        PlannedSyncPhase::Syncing {
-            step,
-            done: u32::try_from(done).unwrap_or(u32::MAX),
-            total: u32::try_from(total).unwrap_or(u32::MAX),
-            current_track,
-            bytes_done: bytes_done.min(bytes_total),
-            bytes_total,
-        }
     }
 }
 
@@ -722,27 +787,4 @@ fn transfer_operations(plan: &MirrorPlan) -> Vec<TransferOperation> {
         .collect::<Vec<_>>();
     operations.sort_by_key(|operation| operation.desired.track.id);
     operations
-}
-
-fn removal_path(removal: &ManagedRemoval) -> String {
-    match removal {
-        ManagedRemoval::Inventory(file) => file.device_path.clone(),
-        ManagedRemoval::Orphan(file) => file.relative_path.clone(),
-    }
-}
-
-fn removal_track_id(removal: &ManagedRemoval) -> Option<i64> {
-    match removal {
-        ManagedRemoval::Inventory(file) => Some(file.track_id),
-        ManagedRemoval::Orphan(_) => None,
-    }
-}
-
-fn track_activity(title: &str, artist: &str) -> String {
-    let artist = artist.trim();
-    if artist.is_empty() {
-        title.to_string()
-    } else {
-        format!("{title} — {artist}")
-    }
 }
