@@ -2,7 +2,7 @@
 slug: the-waveform-works-before-the-first-play
 worktree: /home/marvin/Projects/reprise-the-waveform-works-before-the-first-play
 branch: feature/the-waveform-works-before-the-first-play
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-08-29
 ---
