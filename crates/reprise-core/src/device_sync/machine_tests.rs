@@ -471,7 +471,15 @@ fn copy_progress_advances_the_byte_counter_without_emitting_an_effect() {
         panic!("expected a syncing phase");
     };
     assert_eq!(*unit_bytes_done, 40);
-    assert_eq!(machine.bytes_done(), 0);
+    assert_eq!(machine.bytes_done(), 40);
+
+    machine.dispatch(Event::TrackCopied(Ok(100)));
+    machine.dispatch(Event::FileRecorded(Ok(())));
+    assert_eq!(
+        machine.bytes_done(),
+        100,
+        "closing the unit folds its bytes into the completed total exactly once"
+    );
 }
 
 #[test]

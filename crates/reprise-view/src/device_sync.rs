@@ -462,7 +462,7 @@ mod tests {
                 },
                 subtitle: ProgressSubtitle::CurrentTrack("Immortal — Lorna Shore".into()),
                 speed: ProgressSpeed::BytesPerSecond(2 * 1_024 * 1_024),
-                fraction: 0.5,
+                fraction: 0.75,
             }
         );
     }

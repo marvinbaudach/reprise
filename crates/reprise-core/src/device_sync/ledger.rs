@@ -46,7 +46,7 @@ impl WorkLedger {
     pub fn complete_unit(&mut self, bytes_written: u64) {
         self.bytes_done = self
             .bytes_done
-            .saturating_add(bytes_written)
+            .saturating_add(bytes_written.max(self.unit_bytes_done))
             .min(self.bytes_total);
         self.done = self.done.saturating_add(1).min(self.total);
         self.unit_bytes_done = 0;
@@ -63,6 +63,8 @@ impl WorkLedger {
 
     pub fn bytes_done(&self) -> u64 {
         self.bytes_done
+            .saturating_add(self.unit_bytes_done)
+            .min(self.bytes_total)
     }
 
     pub fn bytes_total(&self) -> u64 {

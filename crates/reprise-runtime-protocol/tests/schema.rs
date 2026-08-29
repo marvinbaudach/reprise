@@ -586,7 +586,7 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 4);
-    assert_eq!(PROTOCOL_VERSION.minor, 3);
+    assert_eq!(PROTOCOL_VERSION.minor, 4);
 }
 
 /// The effects facet, pinned like the others: a client decodes by name, so a
