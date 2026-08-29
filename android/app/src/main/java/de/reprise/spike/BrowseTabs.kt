@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +34,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
+import uniffi.reprise_android_ffi.AndroidPlaybackState
+
+private const val ARTIST_PORTRAIT_DIAMETER_DP = 210f
 
 internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText.isNotBlank()) {
     "No matching ${label.lowercase()}."
@@ -320,48 +324,62 @@ private fun ArtistDetailSections(
     val listState = rememberLibraryListState(anchor)
     ObserveLibraryListAnchor(key, listState, surfaceState)
     val metrics = libraryFrameMetrics(surfaceLayout)
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().testTag(key.testTag()),
-    ) {
-        item(key = "artist-portrait-head") { ArtistPortraitHeader(head, artist) }
-        if (albums.rows.isNotEmpty()) {
-            item(key = "artist-albums-heading") { SectionHeading("Albums") }
-            items(
-                albums.rows,
-                key = { album -> "artist-album-${album.artist}\u0000${album.title}" },
-            ) { album -> AlbumRow(album, openAlbum) }
-            albumContinuation?.let { request ->
-                item(key = "artist-albums-load-${request.offset}") {
-                    LaunchedEffect(request.offset) { loadMoreAlbums(request) }
-                    LoadingWindowRow()
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val portraitCenterFraction = if (maxHeight.value > 0f) {
+            (ARTIST_PORTRAIT_DIAMETER_DP / 2f / maxHeight.value).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        ArtistPortraitShimmer(
+            visual = head,
+            playing = playback.state == AndroidPlaybackState.PLAYING,
+            coverDiameterDp = ARTIST_PORTRAIT_DIAMETER_DP,
+            centerFraction = portraitCenterFraction,
+            modifier = Modifier.fillMaxSize(),
+        )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().testTag(key.testTag()),
+        ) {
+            item(key = "artist-portrait-head") { ArtistPortraitHeader(head, artist) }
+            if (albums.rows.isNotEmpty()) {
+                item(key = "artist-albums-heading") { SectionHeading("Albums") }
+                items(
+                    albums.rows,
+                    key = { album -> "artist-album-${album.artist}\u0000${album.title}" },
+                ) { album -> AlbumRow(album, openAlbum) }
+                albumContinuation?.let { request ->
+                    item(key = "artist-albums-load-${request.offset}") {
+                        LaunchedEffect(request.offset) { loadMoreAlbums(request) }
+                        LoadingWindowRow()
+                    }
                 }
             }
-        }
-        if (untaggedTracks.rows.isNotEmpty()) {
-            item(key = "artist-tracks-heading") { SectionHeading("Other titles") }
-            items(
-                trackContent,
-                key = { content ->
-                    when (content) {
-                        is TrackListContent.Row -> "artist-track-${content.track.uri}"
-                        is TrackListContent.Continuation ->
-                            "artist-tracks-load-${content.request.offset}"
-                    }
-                },
-            ) { content ->
-                TrackListItem(
-                    content = content,
-                    surfaceState = surfaceState,
-                    metrics = metrics,
-                    playback = playback,
-                    play = play,
-                    loadMore = loadMoreTracks,
-                    subtitle = TrackRowSubtitle.ALBUM_ONLY,
-                    onFavouriteChanged = { _, _ -> },
-                    queueActions = null,
-                    rowCount = untaggedTracks.rows.size,
-                )
+            if (untaggedTracks.rows.isNotEmpty()) {
+                item(key = "artist-tracks-heading") { SectionHeading("Other titles") }
+                items(
+                    trackContent,
+                    key = { content ->
+                        when (content) {
+                            is TrackListContent.Row -> "artist-track-${content.track.uri}"
+                            is TrackListContent.Continuation ->
+                                "artist-tracks-load-${content.request.offset}"
+                        }
+                    },
+                ) { content ->
+                    TrackListItem(
+                        content = content,
+                        surfaceState = surfaceState,
+                        metrics = metrics,
+                        playback = playback,
+                        play = play,
+                        loadMore = loadMoreTracks,
+                        subtitle = TrackRowSubtitle.ALBUM_ONLY,
+                        onFavouriteChanged = { _, _ -> },
+                        queueActions = null,
+                        rowCount = untaggedTracks.rows.size,
+                    )
+                }
             }
         }
     }
