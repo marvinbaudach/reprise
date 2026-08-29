@@ -31,6 +31,8 @@ mod seek_start;
 mod seek_start_tests;
 pub(crate) mod session_player;
 pub(in crate::ui) mod source_item_identity;
+#[cfg(test)]
+pub(in crate::ui) mod test_support;
 pub(in crate::ui) mod up_next_transport;
 #[allow(unused_imports)]
 use super::*;

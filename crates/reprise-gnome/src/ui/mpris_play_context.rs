@@ -66,18 +66,12 @@ pub(super) fn resolve_agent_playback_queue(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
     use std::rc::Rc;
-    use std::sync::Arc;
 
     use reprise_core::media_integration::MprisCommand;
-    use reprise_core::playback::{
-        AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
-    };
-    use reprise_core::waveform::{RenderDataBackend, WaveformBackend, WaveformError};
+    use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError, PlaybackState};
 
-    use crate::ui::playback::player_controller::{PlayerController, PlayerControllerBackends};
-    use crate::ui::scrobble_runtime::ScrobbleRuntime;
+    use crate::ui::playback::test_support::controller_with_db;
 
     struct TestPlayback;
 
@@ -111,49 +105,6 @@ mod tests {
         fn set_next(&self, _: Option<&str>) {}
 
         fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
-    }
-
-    struct TestWaveform;
-
-    impl WaveformBackend for TestWaveform {
-        fn extract_peaks(&self, _: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
-            Ok(vec![0; buckets])
-        }
-    }
-
-    impl RenderDataBackend for TestWaveform {}
-
-    fn controller_with_db(
-        test_root: &Path,
-        conn: Rc<reprise_core::db::Db>,
-    ) -> Rc<PlayerController> {
-        let app = libadwaita::Application::builder()
-            .application_id("io.github.marvinbaudach.Reprise.AgentQueueTest")
-            .build();
-        let (_event_sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
-        let listenbrainz = ScrobbleRuntime::new(
-            test_root.join("listenbrainz.db"),
-            reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
-            "ListenBrainz",
-        );
-        let lastfm = ScrobbleRuntime::new(
-            test_root.join("lastfm.db"),
-            reprise_core::scrobbling::ScrobbleProvider::LastFm,
-            "Last.fm",
-        );
-        PlayerController::new(
-            conn,
-            crate::ui::cover_download_worker::setup_for_test(),
-            listenbrainz,
-            lastfm,
-            PlayerControllerBackends {
-                playback: Box::new(TestPlayback),
-                playback_events,
-                media: reprise_core::media_integration::MediaIntegrationHandles::inert(),
-                waveform: Arc::new(TestWaveform),
-            },
-            &app,
-        )
     }
 
     #[test]
@@ -237,7 +188,7 @@ mod tests {
             ..Default::default()
         };
         reprise_core::library::session::save(&conn, &session).unwrap();
-        let controller = controller_with_db(test_root.path(), conn);
+        let controller = controller_with_db(test_root.path(), conn, Box::new(TestPlayback));
 
         controller.handle_mpris_command(MprisCommand::PlayTrackIds(vec![20]));
 
