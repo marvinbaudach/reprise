@@ -1,6 +1,6 @@
 //! Full-page per-device surface for Android playlist mirroring.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 use gtk4::prelude::*;
@@ -12,7 +12,7 @@ use super::device_sync_on_device::storage_legend;
 use super::device_sync_on_device::{OnDeviceActions, OnDeviceSection};
 use super::device_sync_page_actions::PageActions;
 use super::device_sync_page_copy::{
-    change_summary, device_last_sync_copy, eject_sensitive, profile_label,
+    change_summary, device_last_sync_copy, eject_sensitive, offline_change_preview, profile_label,
 };
 // Only named directly by this module's own `#[cfg(test)]` child (below) —
 // a plain `cargo build` never compiles that module, so these would
@@ -31,6 +31,35 @@ use super::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView}
 use super::device_sync_storage_copy::storage_access_notice;
 use super::device_sync_storage_copy::storage_summary;
 use super::device_sync_strings;
+
+struct OpenDevicePage {
+    root: gtk4::glib::WeakRef<gtk4::Stack>,
+    device_id: String,
+}
+
+thread_local! {
+    static OPEN_DEVICE_PAGE: RefCell<Option<OpenDevicePage>> = const { RefCell::new(None) };
+}
+
+pub(in crate::ui) fn mapped_device_id() -> Option<String> {
+    OPEN_DEVICE_PAGE.with(|page| {
+        let page = page.borrow();
+        let page = page.as_ref()?;
+        let root = page.root.upgrade()?;
+        root.is_mapped().then(|| page.device_id.clone())
+    })
+}
+
+fn track_open_page(root: &gtk4::Stack, device_id: &str) {
+    let root_ref = gtk4::glib::WeakRef::new();
+    root_ref.set(Some(root));
+    OPEN_DEVICE_PAGE.with(|page| {
+        page.replace(Some(OpenDevicePage {
+            root: root_ref,
+            device_id: device_id.to_string(),
+        }));
+    });
+}
 
 struct DeviceSyncPage {
     root: gtk4::glib::WeakRef<gtk4::Stack>,
@@ -215,9 +244,17 @@ impl DeviceSyncPage {
             .profile
             .set_sensitive(device.page.controls.editable);
         self.playlist_card.update(device);
-        self.dashboard
-            .changes
-            .set_label(&change_summary(&device.page.changes));
+        let changes = if device.session_state.shows_diff() {
+            change_summary(&device.page.changes)
+        } else {
+            offline_change_preview(
+                device.page.changes.additions,
+                device.page.changes.replacements,
+                device.page.changes.playlist_writes,
+                device.page.changes.transfer_bytes,
+            )
+        };
+        self.dashboard.changes.set_label(&changes);
         self.dashboard.storage_name.set_label(
             device
                 .page
@@ -226,9 +263,10 @@ impl DeviceSyncPage {
                 .as_deref()
                 .unwrap_or("Device storage"),
         );
-        self.dashboard
-            .storage_summary
-            .set_label(&storage_summary(&device.page.storage));
+        self.dashboard.storage_summary.set_label(&storage_summary(
+            &device.page.storage,
+            device.storage_measured,
+        ));
         self.dashboard.storage_bar.update(&device.page.storage);
         self.update_actions(device);
         self.on_device.update(device);
@@ -315,6 +353,23 @@ pub(in crate::ui) fn open(
             .connect_clicked(move |button| {
                 super::device_sync_rename::prompt(button, &runtime, &device_id);
             });
+    }
+    track_open_page(&root, device_id);
+    {
+        let runtime = Rc::downgrade(runtime);
+        let device_id = device_id.to_string();
+        root.connect_map(move |_| {
+            let Some(runtime) = runtime.upgrade() else {
+                return;
+            };
+            if let Err(error) = runtime.recompute_if_stale(&device_id) {
+                tracing::warn!(
+                    %error,
+                    device_id,
+                    "could not refresh the mapped device-sync page"
+                );
+            }
+        });
     }
     if let Some(previous) = content_stack.child_by_name("device-sync") {
         content_stack.remove(&previous);

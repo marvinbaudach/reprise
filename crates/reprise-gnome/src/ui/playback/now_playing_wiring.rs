@@ -418,6 +418,9 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {
+        if state == PlaybackState::Stopped {
+            self.clear_pending_local_seek();
+        }
         self.bar.set_state(state);
         if state != PlaybackState::Playing {
             // The bar resets its own consumers in `set_state`; use the shared

@@ -65,10 +65,12 @@ struct DeviceState {
     resume_initiator: Option<planned::SyncInitiator>,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
     verified_managed_track_count: Option<usize>,
+    last_verified_size_bytes: Option<u64>,
     size_on_device_bytes: Option<u64>,
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
     keep_smart_playlists_updated: bool,
+    library_dirty: bool,
     page: SyncPageState,
 }
 
@@ -106,10 +108,12 @@ impl DeviceState {
             resume_initiator: None,
             last_sync: None,
             verified_managed_track_count: None,
+            last_verified_size_bytes: None,
             size_on_device_bytes: None,
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
             keep_smart_playlists_updated: true,
+            library_dirty: false,
             page: SyncPageState::default(),
         }
     }
@@ -126,15 +130,12 @@ impl DeviceState {
         state.last_sync = memory
             .last_verified_at
             .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0));
-        state.size_on_device_bytes = memory.size_on_device_bytes;
+        state.last_verified_size_bytes = memory.size_on_device_bytes;
         state
     }
 
     fn view(&self) -> DeviceView {
         let mut page = self.page.clone();
-        if !self.session_state.shows_diff() {
-            page.changes = Default::default();
-        }
         page.update_controls(
             self.connected && self.session_state.opens_session(),
             !self.scanning
@@ -150,11 +151,19 @@ impl DeviceState {
         } else {
             project_device_music_reading(MusicDiff::default())
         };
-        let content_row = project_category_content_row(
-            &self.target,
-            self.managed_files.len(),
-            compact::verified_track_bytes(&self.managed_files),
-        );
+        let content_row = if self.session_state.shows_diff() {
+            project_category_content_row(
+                &self.target,
+                self.managed_files.len(),
+                compact::verified_track_bytes(&self.managed_files),
+            )
+        } else {
+            project_category_content_row(
+                &self.target,
+                self.managed_track_count,
+                self.size_on_device_bytes.unwrap_or(0),
+            )
+        };
         DeviceView {
             id: self.descriptor.id.clone(),
             name: self.settings.device_name.clone(),
@@ -165,6 +174,7 @@ impl DeviceState {
                 .then(device_sync_strings::unrememberable_device_status),
             session_state: self.session_state.clone(),
             storage: self.storage.clone(),
+            storage_measured: self.ever_inspected,
             scan_error: self.scan_error.clone(),
             settings: self.settings.clone(),
             sync_phase: self.sync_phase.clone(),
@@ -179,6 +189,7 @@ impl DeviceState {
                 self.scanning,
                 self.scan_error.as_deref(),
                 self.ever_inspected,
+                self.last_sync,
             ),
             content_row,
             target_reading,
@@ -217,7 +228,7 @@ impl DeviceSyncRuntime {
         )
     }
 
-    /// Reprojects library playlists for every connected idle device.
+    /// Reprojects library playlists for every idle device.
     ///
     /// Playlist CRUD and membership changes are local database work, so this
     /// deliberately uses the non-toasting projection path and not a device
@@ -240,7 +251,7 @@ impl DeviceSyncRuntime {
             .device_states
             .borrow()
             .iter()
-            .filter(|device| device.connected && !device.is_busy())
+            .filter(|device| !device.is_busy())
             .map(|device| {
                 (
                     device.descriptor.id.clone(),
@@ -271,9 +282,10 @@ impl DeviceSyncRuntime {
             }
             if selection_changed {
                 let mut device_states = self.device_states.borrow_mut();
-                let Some(device) = device_states.iter_mut().find(|device| {
-                    device.descriptor.id == device_id && device.connected && !device.is_busy()
-                }) else {
+                let Some(device) = device_states
+                    .iter_mut()
+                    .find(|device| device.descriptor.id == device_id && !device.is_busy())
+                else {
                     continue;
                 };
                 device.settings = settings;
@@ -334,6 +346,32 @@ impl DeviceSyncRuntime {
             .map(DeviceState::view)
             .collect::<Vec<_>>();
         devices
+    }
+
+    pub(in crate::ui) fn mark_all_devices_stale(&self) {
+        for device in self.device_states.borrow_mut().iter_mut() {
+            device.library_dirty = true;
+        }
+    }
+
+    pub(in crate::ui) fn recompute_if_stale(
+        self: &Rc<Self>,
+        device_id: &str,
+    ) -> Result<(), String> {
+        {
+            let mut devices = self.device_states.borrow_mut();
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id && device.connected)
+            else {
+                return Ok(());
+            };
+            if !device.library_dirty {
+                return Ok(());
+            }
+            device.library_dirty = false;
+        }
+        self.recompute_delta(device_id)
     }
 
     pub fn cancel_current(self: &Rc<Self>, device_id: &str) {
@@ -574,8 +612,10 @@ impl DeviceSyncRuntime {
                                 }
                                 device.last_sync = Some(verified_at);
                                 device.verified_managed_track_count = verified_track_count;
-                                device.size_on_device_bytes =
-                                    Some(compact::verified_track_bytes(&device.managed_files));
+                                let verified_size =
+                                    compact::verified_track_bytes(&device.managed_files);
+                                device.last_verified_size_bytes = Some(verified_size);
+                                device.size_on_device_bytes = Some(verified_size);
                                 device.sync_error = None;
                             }
                         }

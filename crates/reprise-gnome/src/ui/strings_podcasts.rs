@@ -89,6 +89,12 @@ pub const PODCAST_SOURCE_OFF_DESCRIPTION: &str = N_!(
 pub const PODCAST_ENABLE_IN_PREFERENCES: &str = N_!("Enable in Preferences");
 pub const PODCAST_REFRESH_NOW: &str = N_!("Refresh now");
 pub const PODCAST_REFRESHING: &str = N_!("Refreshing podcasts…");
+pub const PODCAST_SYNC_ADDED: &str = N_!("Podcast added");
+pub const YOUTUBE_SYNC_ADDED: &str = N_!("Channel added");
+pub const PODCAST_SYNC_READING: &str = N_!("Reading feed");
+pub const PODCAST_SYNC_ARTWORK: &str = N_!("Fetching artwork");
+pub const PODCAST_SYNC_FAILED: &str = N_!("Couldn't read feed");
+pub const PODCAST_SYNC_RETRY: &str = N_!("Retry");
 // `POD-17`: what the footer says when the subscriptions cannot be read at all.
 // The failure is a database one, so there is nothing the text could usefully
 // name — the "Refresh now" button beside it is the offer.
@@ -116,6 +122,7 @@ pub const PODCAST_PREVIEW: &str = N_!("Preview");
 pub const PODCAST_SEARCHING: &str = N_!("Searching…");
 pub const PODCAST_APPLE_RESULTS: &str = N_!("PODCASTS · APPLE PODCASTS");
 pub const PODCAST_YOUTUBE_RESULTS: &str = N_!("YOUTUBE · audio only");
+pub const YOUTUBE_LARGEST_FIRST: &str = N_!("Largest first");
 /// `SRC-22`: Apple does not identify which hidden provider field matched, so
 /// the marker explains only the mismatch the row can prove.
 pub const PODCAST_SEARCH_MATCH_NOT_SHOWN: &str = N_!(
@@ -217,6 +224,20 @@ pub fn podcast_episode_count(count: usize) -> String {
         count,
         &[("count", &count_text)],
     )
+}
+
+pub fn podcast_sync_reading(count: usize) -> String {
+    if count == 0 {
+        return text(PODCAST_SYNC_READING);
+    }
+    let count_text = count.to_string();
+    let episodes = plural(
+        "{count} episode",
+        "{count} episodes",
+        count,
+        &[("count", &count_text)],
+    );
+    formatted(N_!("Reading feed — {episodes}"), &[("episodes", &episodes)])
 }
 
 pub fn podcast_last_episode_days(count: usize) -> String {
@@ -620,6 +641,10 @@ pub fn compact_file_size(bytes: u64) -> String {
         format!("{:.0} {unit}", scaled.round())
     }
 }
+
+#[cfg(test)]
+#[path = "strings_podcasts_sync_tests.rs"]
+mod sync_tests;
 
 #[cfg(test)]
 mod tests {

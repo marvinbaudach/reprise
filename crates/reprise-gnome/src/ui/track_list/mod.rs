@@ -13,6 +13,7 @@ mod playlist_reorder_guard;
 pub(crate) mod queue_item_menu;
 pub(crate) mod queue_item_presentation;
 mod restore_intent;
+mod track_list_editor_model;
 pub(crate) mod queue_row_mapping {
     pub(crate) use reprise_view::queue::rows::{
         classify, is_read_only_episode_projection, reorder_op, reorder_rows, QueueReorderOp,
@@ -27,7 +28,7 @@ pub(in crate::ui) mod rating_cell_refresh;
 mod rating_column;
 mod reload_anchor_scroll;
 pub(in crate::ui) mod reload_restore;
-mod responsive_columns;
+pub(in crate::ui) mod responsive_columns;
 #[cfg(test)]
 mod row_height_contract_display_tests;
 #[cfg(test)]

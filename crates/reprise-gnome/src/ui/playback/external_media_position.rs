@@ -90,7 +90,7 @@ impl PlayerController {
             self.update_external_mpris(self.external_mpris_status());
         }
         if let Some(resume_ms) = retry_seek {
-            let _ = self.player.seek_to(resume_ms);
+            self.seek(resume_ms);
         }
     }
 

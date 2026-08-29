@@ -364,9 +364,13 @@ fn parse_editor_key<K: ColumnKey>(id: &str, operation: &str, role: &str) -> Opti
     key
 }
 
+#[cfg(test)]
+#[path = "registry_sort_tests.rs"]
+mod sort_tests;
+
 impl<K: ColumnKey> EditorModel for ColumnRegistry<K> {
     fn title(&self) -> String {
-        crate::ui::strings::text(crate::ui::strings::EDIT_COLUMN_LAYOUT)
+        crate::ui::strings::text(crate::ui::strings::CUSTOMIZE_TABLE)
     }
 
     fn columns(&self) -> Vec<ColumnDescriptor> {
@@ -383,6 +387,45 @@ impl<K: ColumnKey> EditorModel for ColumnRegistry<K> {
                     .map_or_else(|| key.as_str().to_owned(), |label| label(key)),
             })
             .collect()
+    }
+
+    fn sortable_columns(&self) -> Vec<ColumnDescriptor> {
+        let layout = self.layout();
+        let label = self.label.borrow();
+        layout
+            .order
+            .into_iter()
+            .filter(|key| layout.visible.contains(key))
+            .filter_map(|key| {
+                let column = self.column(key)?;
+                let id = column.id()?.to_string();
+                column.sorter().map(|_| ColumnDescriptor {
+                    id,
+                    label: label
+                        .as_ref()
+                        .map_or_else(|| key.as_str().to_owned(), |label| label(key)),
+                })
+            })
+            .collect()
+    }
+
+    fn sort(&self) -> Option<(String, gtk4::SortType)> {
+        let sorter = self
+            .view
+            .sorter()
+            .and_downcast::<gtk4::ColumnViewSorter>()?;
+        let id = sorter.primary_sort_column()?.id()?.to_string();
+        Some((id, sorter.primary_sort_order()))
+    }
+
+    fn set_sort(&self, id: &str, order: gtk4::SortType) {
+        let column = self
+            .columns
+            .values()
+            .find(|column| column.id().as_deref() == Some(id));
+        if let Some(column) = column {
+            self.view.sort_by_column(Some(column), order);
+        }
     }
 
     fn is_visible(&self, id: &str) -> bool {
@@ -440,7 +483,6 @@ pub(in crate::ui) fn filler_for<K: ColumnKey>(layout: &Layout<K>, preferred: K) 
 
 #[cfg(test)]
 mod tests {
-    use super::super::single_sort_indicator;
     use super::*;
     use gtk4::prelude::*;
     use reprise_view::columns::{ColumnId, ReleaseColumn};
@@ -592,82 +634,6 @@ mod tests {
         .expect_err("Title has no widget id");
 
         assert!(error.contains("non-pinned column"), "{error}");
-    }
-
-    #[test]
-    fn hiding_primary_sort_chooses_first_visible_sortable_free_column() {
-        let layout = reprise_view::columns::layout::set_visible(
-            &reprise_view::columns::Layout::<ReleaseColumn>::default(),
-            ReleaseColumn::Title,
-            false,
-        );
-
-        assert_eq!(
-            sort_fallback(&layout, Some(ReleaseColumn::Title), |_| true),
-            SortFallback::Use(ReleaseColumn::Date)
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator() {
-        fn sortable_column(key: ColumnId) -> gtk4::ColumnViewColumn {
-            let column = gtk4::ColumnViewColumn::builder()
-                .title(key.as_str())
-                .id(key.as_str())
-                .build();
-            column.set_sorter(Some(&gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal)));
-            column
-        }
-
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
-        let title = sortable_column(ColumnId::Title);
-        let artist = sortable_column(ColumnId::Artist);
-        view.append_column(&title);
-        view.append_column(&artist);
-        let store = gtk4::gio::ListStore::new::<gtk4::glib::Object>();
-        let sorted = gtk4::SortListModel::new(Some(store), view.sorter());
-        view.set_model(Some(&gtk4::NoSelection::new(Some(sorted))));
-        single_sort_indicator::mark(&view);
-        let registry = ColumnRegistry::new(
-            &view,
-            Rc::new(crate::test_db::open().unwrap()),
-            TableKeys {
-                layout: settings::COLUMN_LAYOUT_KEY,
-                widths: settings::COLUMN_WIDTHS_KEY,
-            },
-            vec![
-                (ColumnId::Title, title.clone()),
-                (ColumnId::Artist, artist.clone()),
-            ],
-        );
-        registry.apply(&registry.layout());
-        view.sort_by_column(Some(&artist), gtk4::SortType::Descending);
-        let window = gtk4::Window::builder()
-            .default_width(500)
-            .default_height(160)
-            .child(&view)
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        EditorModel::set_visible(registry.as_ref(), ColumnId::Artist.as_str(), false);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        let sorter = view
-            .sorter()
-            .and_downcast::<gtk4::ColumnViewSorter>()
-            .expect("ColumnView owns its aggregate sorter");
-        assert_eq!(sorter.primary_sort_column().as_ref(), Some(&title));
-        assert_eq!(sorter.primary_sort_order(), gtk4::SortType::Ascending);
-        assert_eq!(
-            single_sort_indicator::count_primary_indicators(view.upcast_ref()),
-            1,
-            "the visible fallback sort must retain exactly one header indicator"
-        );
-        window.close();
     }
 
     /// STYLE-10: the filler role is not welded to one column. Hiding the

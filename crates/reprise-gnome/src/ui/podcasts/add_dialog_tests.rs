@@ -244,6 +244,7 @@ fn src_18_a_result_row_states_its_freshness_after_the_author() {
         super::super::add_dialog_results::rss_subtitle(Some("Ada"), Some(0), 14 * 86_400);
     let row = candidate_row("Show", &subtitle, None, None, PodcastKind::Rss, None, false);
     let labels = row
+        .root
         .first_child()
         .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Box>()
@@ -254,6 +255,24 @@ fn src_18_a_result_row_states_its_freshness_after_the_author() {
         .expect("result subtitle");
 
     assert_eq!(rendered.text(), "Ada · New 2 weeks ago");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_9_candidate_rows_expose_the_existing_root_and_subtitle_for_wave_two() {
+    gtk4::init().unwrap();
+    let row = candidate_row(
+        "Channel",
+        "3 matching videos",
+        None,
+        Some("channel"),
+        PodcastKind::Youtube,
+        None,
+        false,
+    );
+
+    assert_eq!(row.subtitle.text(), "3 matching videos");
+    assert!(row.root.is::<gtk4::Box>());
 }
 
 #[test]
@@ -272,7 +291,7 @@ fn src_21_highlighted_title_keeps_its_end_ellipsis_and_pango_attributes() {
     let window = gtk4::Window::builder()
         .default_width(280)
         .default_height(100)
-        .child(&row)
+        .child(&row.root)
         .build();
     window.present();
     let main_loop = gtk4::glib::MainLoop::new(None, false);
@@ -281,6 +300,7 @@ fn src_21_highlighted_title_keeps_its_end_ellipsis_and_pango_attributes() {
     main_loop.run();
 
     let labels = row
+        .root
         .first_child()
         .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Box>()
@@ -318,6 +338,7 @@ fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
         false,
     );
     let adjacent_labels = adjacent_row
+        .root
         .first_child()
         .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Box>()
@@ -344,6 +365,7 @@ fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
         false,
     );
     let labels = row
+        .root
         .first_child()
         .and_then(|child| child.next_sibling())
         .and_downcast::<gtk4::Box>()
@@ -388,8 +410,8 @@ fn src_22_unexplained_marker_is_accessible_and_keeps_its_space() {
 
     let marker_minimum = marker.measure(gtk4::Orientation::Horizontal, -1).0;
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    content.append(&adjacent_row);
-    content.append(&row);
+    content.append(&adjacent_row.root);
+    content.append(&row.root);
     let window = gtk4::Window::builder()
         .default_width(280)
         .default_height(160)
@@ -458,8 +480,8 @@ fn src_8_a_long_result_row_never_widens_the_dialog() {
         false,
     );
 
-    let (long_minimum, _, _, _) = long.measure(gtk4::Orientation::Horizontal, -1);
-    let (short_minimum, _, _, _) = short.measure(gtk4::Orientation::Horizontal, -1);
+    let (long_minimum, _, _, _) = long.root.measure(gtk4::Orientation::Horizontal, -1);
+    let (short_minimum, _, _, _) = short.root.measure(gtk4::Orientation::Horizontal, -1);
 
     assert_eq!(
         long_minimum, short_minimum,
@@ -485,6 +507,7 @@ fn src_5_result_rows_use_the_source_artwork_surface() {
         false,
     );
     let image = row
+        .root
         .first_child()
         .and_downcast::<gtk4::Stack>()
         .expect("source image stack");
@@ -531,6 +554,7 @@ fn src_11_result_row_stays_on_the_fallback_when_images_are_not_allowed() {
         false,
     );
     let image = row
+        .root
         .first_child()
         .and_downcast::<gtk4::Stack>()
         .expect("source image stack");
@@ -543,7 +567,11 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let on_added: OnAdded = Rc::new(|_| {});
+    let added = Rc::new(Cell::new(None));
+    let added_for_callback = added.clone();
+    let on_added: OnAdded = Rc::new(move |subscription_id, import_latest| {
+        added_for_callback.set(Some((subscription_id, import_latest)));
+    });
     append_heading(&parent, &strings::text(strings::PODCAST_APPLE_RESULTS));
     append_candidate(
         &parent,
@@ -555,6 +583,9 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
             image_url: None,
             url: "https://example.test/new-feed".into(),
             identity_guids: Vec::new(),
+            follower_count: None,
+            channel_id: None,
+            matching_video_count: None,
         },
         None,
         &conn,
@@ -585,6 +616,9 @@ fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
         "the acknowledged action must not be pressable again"
     );
     assert!(button.has_css_class("reprise-source-added"));
+    let (subscription_id, import_latest) = added.get().expect("add callback");
+    assert!(subscription_id > 0);
+    assert!(import_latest);
 }
 
 #[test]
@@ -593,7 +627,7 @@ fn the_add_dialog_offers_an_automatic_fill_switch() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let on_added: OnAdded = Rc::new(|_| {});
+    let on_added: OnAdded = Rc::new(|_, _| {});
     append_preview(
         &parent,
         Preview {
@@ -716,6 +750,9 @@ fn new_subscription_uses_the_selected_automatic_fill_choice() {
             image_url: None,
             url: "https://example.test/feed".into(),
             identity_guids: Vec::new(),
+            follower_count: None,
+            channel_id: None,
+            matching_video_count: None,
         },
         true,
         None,

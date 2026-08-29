@@ -135,13 +135,13 @@ fn plane_6b_youtube_downloads_use_the_opus_extension() {
 #[test]
 fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
     assert_eq!(
-        request_generation(9, PodcastsOperation::Download { episode_id: 4 }),
+        request_generation(9, &PodcastsOperation::Download { episode_id: 4 }),
         9
     );
     assert_eq!(
         request_generation(
             9,
-            PodcastsOperation::Refresh {
+            &PodcastsOperation::Refresh {
                 policy: podcasts::refresh::RefreshPolicy::Force,
                 kind: None,
             },
@@ -151,7 +151,7 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
     assert_eq!(
         request_generation(
             9,
-            PodcastsOperation::LoadMore {
+            &PodcastsOperation::LoadMore {
                 subscription_id: 7,
                 end: 40,
             },
@@ -164,9 +164,44 @@ fn pod_7_download_request_does_not_invalidate_an_in_flight_refresh() {
 fn a_fill_downloads_request_does_not_cancel_a_running_refresh() {
     let current = 7;
     assert_eq!(
-        request_generation(current, PodcastsOperation::FillDownloads),
+        request_generation(current, &PodcastsOperation::FillDownloads),
         current
     );
+}
+
+#[test]
+fn a_scoped_subscription_sync_does_not_invalidate_another_rows_sync() {
+    let current = 11;
+    assert_eq!(
+        request_generation(
+            current,
+            &PodcastsOperation::SyncSubscription {
+                subscription_id: 4,
+                abort: podcasts::pipeline::SyncAbort::new(),
+            },
+        ),
+        current
+    );
+}
+
+#[test]
+fn scoped_sync_progress_is_partial_until_done_or_failed() {
+    let progress = PodcastsWorkerResult::SyncProgress {
+        subscription_id: 4,
+        progress: podcasts::pipeline::SyncProgress::FeedRead { episodes_found: 3 },
+    };
+    let done = PodcastsWorkerResult::SyncProgress {
+        subscription_id: 4,
+        progress: podcasts::pipeline::SyncProgress::Done(Default::default()),
+    };
+    let failed = PodcastsWorkerResult::SyncProgress {
+        subscription_id: 4,
+        progress: podcasts::pipeline::SyncProgress::Failed(podcasts::pipeline::SyncError::Database),
+    };
+
+    assert!(!worker_result_is_terminal(&progress));
+    assert!(worker_result_is_terminal(&done));
+    assert!(worker_result_is_terminal(&failed));
 }
 
 #[test]
@@ -352,6 +387,35 @@ fn pod_7_response_channel_coalesces_progress_but_never_drops_terminal_state() {
             state: DownloadState::Failed { ref message },
         } if message == "offline"
     ));
+}
+
+#[test]
+fn terminal_publication_returns_when_the_ui_drops_a_buffered_response_channel() {
+    let (response, receiver) = podcasts_response_channel();
+    response.publish_latest(PodcastsResponse {
+        generation: 1,
+        result: Ok(PodcastsWorkerResult::SyncProgress {
+            subscription_id: 7,
+            progress: podcasts::pipeline::SyncProgress::Started,
+        }),
+    });
+    drop(receiver);
+    let (finished, observed) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        response.publish_terminal(PodcastsResponse {
+            generation: 1,
+            result: Ok(PodcastsWorkerResult::SyncProgress {
+                subscription_id: 7,
+                progress: podcasts::pipeline::SyncProgress::Done(Default::default()),
+            }),
+        });
+        let _ = finished.send(());
+    });
+
+    assert!(observed
+        .recv_timeout(std::time::Duration::from_millis(250))
+        .is_ok());
 }
 
 #[test]

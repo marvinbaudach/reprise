@@ -7,10 +7,10 @@
 //!
 //! ## Sidebar toggle
 //!
-//! `AdwOverlaySplitView` keeps the content mounted while its Start-positioned
-//! sidebar collapses into an overlay below 800 px. The persistent header
-//! toggle controls `show-sidebar`; responsive collapse never overwrites the
-//! user's explicit hidden preference.
+//! `AdwOverlaySplitView` keeps the content mounted and its Start-positioned
+//! sidebar pinned at every window width: no breakpoint collapses the library
+//! column into an overlay. The persistent header toggle owns `show-sidebar`,
+//! so the sidebar only ever appears or disappears because the user said so.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
@@ -493,6 +493,7 @@ pub fn build(
         youtube_view: &youtube_view,
         radio_view: &radio_view,
         podcasts_runtime: &podcasts_runtime,
+        device_sync: &device_sync,
         content_stack: &content_stack,
         library_doctor_navigation: &library_doctor_navigation,
         doctor_chrome: &doctor_chrome,
@@ -526,7 +527,7 @@ pub fn build(
         &radio_view,
     );
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
-    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
+    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel);
     tracing::info!("main window built");
     let startup_completion = if startup_report_armed {
         let mapped = Rc::new(Cell::new(false));

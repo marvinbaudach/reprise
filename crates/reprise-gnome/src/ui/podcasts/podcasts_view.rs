@@ -1,8 +1,9 @@
 //! Podcasts table, status states, actions, and refresh wiring.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
+use std::sync::atomic::AtomicU64;
 
 use gtk4::gio;
 use gtk4::glib::{self};
@@ -36,6 +37,9 @@ use super::podcasts_removal::{
 use super::podcasts_rendered_order;
 use super::podcasts_reveal::RevealRequest;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
+use super::podcasts_sync_state::{
+    clear_failed_syncs_that_recovered, remove_subscription_sync_if_owned, SyncRowState, SyncStep,
+};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
@@ -57,6 +61,8 @@ mod artwork_refresh_tests;
 mod connectivity_ui;
 #[path = "podcasts_view_copy.rs"]
 mod copy;
+#[path = "podcasts_view_downloads.rs"]
+mod downloads;
 #[cfg(test)]
 #[path = "podcasts_end_of_results_tests.rs"]
 mod end_of_results_tests;
@@ -84,6 +90,7 @@ const EMPTY_PAGE: &str = "empty";
 /// same geometry, "Enable in Preferences" instead of Add.
 const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
+static RENDER_PASSES: AtomicU64 = AtomicU64::new(0);
 
 pub(in crate::ui) struct PodcastsView {
     root: gtk4::Box,
@@ -133,6 +140,7 @@ pub(in crate::ui) struct PodcastsView {
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     selection_widgets: RefCell<BTreeMap<i64, podcasts_groups::SelectionRowWidgets>>,
     channel_widgets: RefCell<BTreeMap<i64, podcasts_groups::ChannelRowWidgets>>,
+    sync_widgets: RefCell<BTreeMap<i64, super::podcasts_sync_row::SyncRowWidgets>>,
     artwork_rebinds: RefCell<Vec<podcasts_groups::ArtworkRebind>>,
     scroller: gtk4::ScrolledWindow,
     last_scroll_activity: Cell<Option<std::time::Instant>>,
@@ -142,6 +150,7 @@ pub(in crate::ui) struct PodcastsView {
     pending_reveal: RefCell<Option<RevealRequest>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
+    pub(super) syncing: RefCell<HashMap<i64, SyncRowState>>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     kept_downloads: RefCell<KeptDownloads>,
     /// `NET-3c`: explicit connectivity seam, mirroring `RadioView`'s
@@ -242,6 +251,7 @@ impl PodcastsView {
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
             channel_widgets: RefCell::new(BTreeMap::new()),
+            sync_widgets: RefCell::new(BTreeMap::new()),
             artwork_rebinds: RefCell::new(Vec::new()),
             scroller,
             last_scroll_activity: Cell::new(None),
@@ -251,6 +261,7 @@ impl PodcastsView {
             pending_reveal: RefCell::new(None),
             unavailable_episode: Cell::new(None),
             generation: Cell::new(0),
+            syncing: RefCell::new(HashMap::new()),
             toast_overlay: glib::WeakRef::new(),
             kept_downloads: RefCell::new(KeptDownloads::default()),
             connectivity: Cell::new(Connectivity::default()),
@@ -324,6 +335,14 @@ impl PodcastsView {
         let result = podcasts::query::list_source_groups(&self.conn, self.kind);
         match result {
             Ok(groups) => {
+                let recovered = groups
+                    .iter()
+                    .filter(|group| !group.episodes.is_empty())
+                    .map(|group| group.subscription_id)
+                    .collect::<BTreeSet<_>>();
+                self.syncing.borrow_mut().retain(|subscription_id, state| {
+                    state.step != SyncStep::Failed || !recovered.contains(subscription_id)
+                });
                 let mut rows = groups
                     .iter()
                     .flat_map(|group| group.episodes.iter().cloned())
@@ -387,11 +406,22 @@ impl PodcastsView {
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
         let selected_ids = self.selection.borrow().selected_ids();
+        let syncing = self.syncing.borrow().clone();
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
         super::podcasts_list_surface::update(&self.end_of_results, &filter, filtered.len(), total);
         let rendered_groups = rendered_source_groups(&groups, &filter, &download_states);
+        let rendered_rows = rendered_groups
+            .iter()
+            .map(|rendered| rendered.group.episodes.len())
+            .sum();
+        super::source_image::record_render_pass(
+            &RENDER_PASSES,
+            "podcasts_view",
+            rendered_groups.len(),
+            rendered_rows,
+        );
         // `NET-1a` / `C1`: computed once per render pass from the live
         // module + global-gate state, then threaded down to every source
         // image entry point in this view instead of each one re-deriving it.
@@ -408,7 +438,7 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             self.playing_episode.get(),
         );
-        let rendered_widgets = podcasts_groups::replace(
+        let rendered_widgets = podcasts_groups::replace_with_sync(
             &self.group_container,
             &rendered_groups,
             self.playing_episode.get(),
@@ -420,10 +450,12 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             &self.selection,
             &filter.query,
+            &syncing,
         );
         self.download_widgets.replace(rendered_widgets.downloads);
         self.selection_widgets.replace(rendered_widgets.selection);
         self.channel_widgets.replace(rendered_widgets.channels);
+        self.sync_widgets.replace(rendered_widgets.syncs);
         self.artwork_rebinds.replace(rendered_widgets.artwork);
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable
@@ -491,290 +523,5 @@ impl PodcastsView {
         if self.youtube_detail.is_active() {
             self.stack.set_visible_child_name("youtube-channel");
         }
-    }
-
-    fn toggle_download(self: &Rc<Self>, episode_id: i64) {
-        let allowed = {
-            let states = self.download_states.borrow();
-            download_request_allowed(states.get(&episode_id))
-        };
-        if !allowed {
-            return;
-        }
-        let Ok(Some(row)) = podcasts::store::episode(&self.conn, episode_id) else {
-            return;
-        };
-        if let Some(path) = row.downloaded_path.as_deref() {
-            let file_exists = std::path::Path::new(path).is_file();
-            if download_toggle_action(Some(path), file_exists) == DownloadToggleAction::Trash {
-                let file = gio::File::for_path(path);
-                if let Err(error) = file.trash(None::<&gio::Cancellable>) {
-                    self.show_error(&error.to_string());
-                    return;
-                }
-            }
-            if let Err(error) = podcasts::store::set_downloaded_path(&self.conn, episode_id, None) {
-                self.show_error(&error.to_string());
-                return;
-            }
-            self.download_states
-                .borrow_mut()
-                .insert(episode_id, DownloadState::NotDownloaded);
-            if file_exists {
-                self.refresh();
-                return;
-            }
-        }
-        if connectivity::deferrable_action_outcome(
-            self.connectivity.get(),
-            DownloadState::NotDownloaded.local_availability(),
-        ) == ActionOutcome::QueuedOffline
-        {
-            self.deferred_actions
-                .borrow_mut()
-                .push(DeferredAction::Download(episode_id));
-            self.set_download_state(episode_id, &DownloadState::Queued);
-            self.footer_status
-                .set_text(&strings::text(strings::PODCAST_QUEUED_OFFLINE));
-            return;
-        }
-        self.dispatch_download(episode_id);
-    }
-
-    fn dispatch_download(self: &Rc<Self>, episode_id: i64) -> bool {
-        let operation = PodcastsOperation::Download { episode_id };
-        let generation = request_generation(self.generation.get(), operation);
-        let (response, receiver) = podcasts_response_channel();
-        if !self.runtime.request(PodcastsRequest {
-            generation,
-            operation,
-            response,
-        }) {
-            return false;
-        }
-        self.set_download_state(episode_id, &DownloadState::Queued);
-        let weak = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            while let Ok(response) = receiver.recv().await {
-                let Some(view) = weak.upgrade() else {
-                    return;
-                };
-                match response.result {
-                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }) => {
-                        let terminal = matches!(
-                            state,
-                            DownloadState::Downloaded { .. } | DownloadState::Failed { .. }
-                        );
-                        view.set_download_state(episode_id, &state);
-                        if matches!(state, DownloadState::Downloaded { .. }) {
-                            view.refresh();
-                        }
-                        if terminal {
-                            break;
-                        }
-                    }
-                    Ok(PodcastsWorkerResult::Refreshed(_)) => {}
-                    Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
-                    Ok(PodcastsWorkerResult::Filled(_)) => {}
-                    Err(error) => {
-                        tracing::warn!(%error, episode_id, "podcast download failed");
-                        view.set_download_state(
-                            episode_id,
-                            &DownloadState::Failed {
-                                message: strings::text(strings::PODCAST_DOWNLOAD_FAILED),
-                            },
-                        );
-                        view.show_error(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
-                        break;
-                    }
-                }
-            }
-        });
-        true
-    }
-
-    pub(in crate::ui) fn set_download_state(&self, episode_id: i64, state: &DownloadState) {
-        self.download_states
-            .borrow_mut()
-            .insert(episode_id, state.clone());
-        let widgets = self.download_widgets.borrow().get(&episode_id).cloned();
-        if let Some(widgets) = widgets {
-            podcasts_groups::update_download_state(&widgets, state);
-        }
-        self.youtube_detail.update_download_state(episode_id, state);
-    }
-
-    fn unsubscribe(self: &Rc<Self>, subscription_id: i64) {
-        let Ok(Some(subscription)) = podcasts::store::subscription(&self.conn, subscription_id)
-        else {
-            return;
-        };
-        let paths = podcasts::store::downloaded_paths_for_subscription(&self.conn, subscription_id)
-            .unwrap_or_default();
-        if let Err(error) = podcasts::store::tombstone_subscription(
-            &self.conn,
-            subscription_id,
-            chrono::Utc::now().timestamp(),
-        ) {
-            self.show_error(&error.to_string());
-            return;
-        }
-        (self.callbacks.on_subscription_removed)(subscription_id);
-        (self.callbacks.on_sidebar_refresh)();
-        self.refresh();
-
-        let Some(overlay) = self.toast_overlay.upgrade() else {
-            self.kept_downloads.borrow_mut().add(subscription_id, paths);
-            if let Err(error) =
-                podcasts::store::commit_remove_subscription(&self.conn, subscription_id)
-            {
-                self.show_error(&error.to_string());
-            }
-            return;
-        };
-        let toast =
-            crate::ui::toasts::plain(&strings::podcast_unsubscribe_from(&subscription.title));
-        toast.set_button_label(Some(&strings::text(strings::PODCAST_UNDO)));
-        toast.set_timeout(10);
-        toast.set_priority(adw::ToastPriority::High);
-        let undone = Rc::new(Cell::new(false));
-        let weak = Rc::downgrade(self);
-        let undo_flag = undone.clone();
-        toast.connect_button_clicked(move |_| {
-            undo_flag.set(true);
-            if let Some(view) = weak.upgrade() {
-                if let Err(error) =
-                    podcasts::store::undo_remove_subscription(&view.conn, subscription_id)
-                {
-                    view.show_error(&error.to_string());
-                }
-                view.refresh();
-                (view.callbacks.on_sidebar_refresh)();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        toast.connect_dismissed(move |_| {
-            if undone.get() {
-                return;
-            }
-            let Some(view) = weak.upgrade() else {
-                return;
-            };
-            view.kept_downloads
-                .borrow_mut()
-                .add(subscription_id, paths.clone());
-            if let Err(error) =
-                podcasts::store::commit_remove_subscription(&view.conn, subscription_id)
-            {
-                view.show_error(&error.to_string());
-                return;
-            }
-            view.schedule_download_toast();
-        });
-        overlay.add_toast(toast);
-    }
-
-    fn remove_episode(self: &Rc<Self>, episode_id: i64) {
-        let Ok(Some(episode)) = podcasts::store::episode(&self.conn, episode_id) else {
-            return;
-        };
-        if let Err(error) = podcasts::store::tombstone_episode(
-            &self.conn,
-            episode_id,
-            chrono::Utc::now().timestamp(),
-        ) {
-            self.show_error(&error.to_string());
-            return;
-        }
-        self.refresh();
-        (self.callbacks.on_sidebar_refresh)();
-
-        let Some(overlay) = self.toast_overlay.upgrade() else {
-            match podcasts::store::commit_remove_episode(&self.conn, episode_id) {
-                Ok(Some(path)) => self
-                    .kept_downloads
-                    .borrow_mut()
-                    .add(episode.subscription_id, vec![path]),
-                Ok(None) => {}
-                Err(error) => self.show_error(&error.to_string()),
-            }
-            self.schedule_download_toast();
-            return;
-        };
-
-        let toast = crate::ui::toasts::plain(&strings::podcast_removed_episode(&episode.title));
-        toast.set_button_label(Some(&strings::text(strings::PODCAST_UNDO)));
-        toast.set_timeout(10);
-        toast.set_priority(adw::ToastPriority::High);
-        let undone = Rc::new(Cell::new(false));
-        let weak = Rc::downgrade(self);
-        let undo_flag = undone.clone();
-        toast.connect_button_clicked(move |_| {
-            undo_flag.set(true);
-            if let Some(view) = weak.upgrade() {
-                if let Err(error) = podcasts::store::undo_remove_episode(&view.conn, episode_id) {
-                    view.show_error(&error.to_string());
-                }
-                view.refresh();
-                (view.callbacks.on_sidebar_refresh)();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        toast.connect_dismissed(move |_| {
-            if undone.get() {
-                return;
-            }
-            let Some(view) = weak.upgrade() else {
-                return;
-            };
-            match podcasts::store::commit_remove_episode(&view.conn, episode_id) {
-                Ok(Some(path)) => view
-                    .kept_downloads
-                    .borrow_mut()
-                    .add(episode.subscription_id, vec![path]),
-                Ok(None) => {}
-                Err(error) => {
-                    view.show_error(&error.to_string());
-                    return;
-                }
-            }
-            view.schedule_download_toast();
-        });
-        overlay.add_toast(toast);
-    }
-
-    fn schedule_download_toast(self: &Rc<Self>) {
-        let weak = Rc::downgrade(self);
-        glib::idle_add_local_once(move || {
-            if let Some(view) = weak.upgrade() {
-                view.flush_download_toast();
-            }
-        });
-    }
-
-    fn flush_download_toast(&self) {
-        let (shows, paths) = self.kept_downloads.borrow_mut().take();
-        if paths.is_empty() {
-            return;
-        }
-        let Some(overlay) = self.toast_overlay.upgrade() else {
-            return;
-        };
-        let toast = crate::ui::toasts::plain(&strings::podcast_downloads_kept(shows, paths.len()));
-        toast.set_button_label(Some(&strings::text(strings::PODCAST_DELETE_FILES)));
-        toast.set_priority(adw::ToastPriority::High);
-        toast.connect_button_clicked(move |_| {
-            if download_commit_action(true) != DownloadCommitAction::Trash {
-                return;
-            }
-            for path in &paths {
-                if let Err(error) =
-                    gio::File::for_path(path).trash(None::<&gio::Cancellable>)
-                {
-                    tracing::warn!(%error, path = %path.display(), "could not trash podcast download");
-                }
-            }
-        });
-        overlay.add_toast(toast);
     }
 }

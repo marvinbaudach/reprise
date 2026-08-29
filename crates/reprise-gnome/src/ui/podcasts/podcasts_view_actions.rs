@@ -144,6 +144,12 @@ impl PodcastsView {
             podcasts_context_menu::ACTION_UNSUBSCRIBE,
             PodcastsView::unsubscribe,
         );
+        self.add_target_action(&group, "cancel-sync", |view, subscription_id| {
+            view.cancel_subscription_sync(subscription_id);
+        });
+        self.add_target_action(&group, "retry-sync", |view, subscription_id| {
+            view.request_subscription_sync(subscription_id);
+        });
         let load_more =
             gio::SimpleAction::new("load-more", Some(&<(i64, u32)>::static_variant_type()));
         let weak = Rc::downgrade(self);
@@ -467,11 +473,11 @@ impl PodcastsView {
             &self.conn,
             self.kind,
             self.connectivity(),
-            move |import_latest| {
+            move |subscription_id, import_latest| {
                 if let Some(view) = weak.upgrade() {
                     view.refresh();
                     if import_latest {
-                        view.request_refresh(true);
+                        view.request_subscription_sync(subscription_id);
                     }
                     (view.callbacks.on_sidebar_refresh)();
                 }

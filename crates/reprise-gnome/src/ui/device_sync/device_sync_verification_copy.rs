@@ -27,6 +27,11 @@ pub(super) fn verification_copy(
             );
             (title, String::new(), true)
         }
+        DeviceContentsState::VerifiedEarlier(verified_at) => (
+            device_sync_strings::verified_ago(now, *verified_at),
+            String::new(),
+            false,
+        ),
         DeviceContentsState::Failed(error) => (
             device_sync_strings::text(device_sync_strings::CONTENTS_NOT_VERIFIABLE),
             error.clone(),
@@ -40,7 +45,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mtp_26_verification_copy_names_all_four_states_and_gates_the_scan_action() {
+    fn mtp_26_verification_copy_names_all_five_states_and_gates_the_scan_action() {
         let now = chrono::DateTime::from_timestamp(1_785_183_239, 0).unwrap();
         let (title, _, can_scan) =
             verification_copy(&DeviceContentsState::NeverVerified, None, now);
@@ -48,6 +53,16 @@ mod tests {
         assert!(can_scan);
 
         let (_, _, can_scan) = verification_copy(&DeviceContentsState::Verifying, None, now);
+        assert!(!can_scan);
+
+        let verified_earlier = now - chrono::Duration::days(1);
+        let (title, detail, can_scan) = verification_copy(
+            &DeviceContentsState::VerifiedEarlier(verified_earlier),
+            Some(verified_earlier),
+            now,
+        );
+        assert_eq!(title, "verified 1 d ago");
+        assert!(detail.is_empty());
         assert!(!can_scan);
 
         let (title, detail, can_scan) = verification_copy(

@@ -268,12 +268,16 @@ pub struct PlayerController {
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// One state owner for preview, podcast, and live-radio playback.
     pub(in crate::ui) external: RefCell<super::external_media::ExternalPlaybackState>,
+    pub(in crate::ui) pending_local_seek:
+        RefCell<Option<super::external_media_state::ResumePolicy>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
     pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
-    reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
+    /// `pub(super)` only so the sibling `player_controller_toast` can read it —
+    /// the reader moved out of this file, the field's writer did not.
+    pub(super) reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
     /// Refreshes an already-open My Stats page after a real listen event is
     /// committed. Kept separate from the track-list reload seam because a
     /// listen changes statistics, not library membership.
@@ -462,6 +466,7 @@ impl PlayerController {
             deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
             external: RefCell::new(super::external_media::ExternalPlaybackState::default()),
+            pending_local_seek: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
             listen_event_recorded: RefCell::new(None),
@@ -608,6 +613,7 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        self.clear_pending_local_seek();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
         // Ordinary queue playback leaves preview mode (INST-4b).
@@ -755,41 +761,6 @@ impl PlayerController {
             Err(error) => {
                 tracing::error!(%error, track_id = id, "failed to resolve track for playback");
                 self.skip_after_failure();
-            }
-        }
-    }
-
-    /// Shows `text` as an `adw::Toast` on the window's toast overlay, if one
-    /// has been wired via `set_toast_overlay` and is still alive — degrades
-    /// to a warn log otherwise (never unwraps the `WeakRef` upgrade). See the
-    /// module's `## Toast + track-list-reload seam` doc section. `pub(in crate::ui)`
-    /// so `playback_faults.rs`'s `handle_unplayable_track`/`skip_after_
-    /// failure` can call it too.
-    pub(in crate::ui) fn show_toast(&self, text: &str) {
-        match self.toast_overlay.upgrade() {
-            Some(overlay) => crate::ui::toasts::show(&overlay, text),
-            None => {
-                tracing::warn!(text, "toast overlay is gone; degrading to log-only");
-            }
-        }
-    }
-
-    /// Calls the track-list reload callback wired via `set_track_list_reload`,
-    /// if any — used after `queries::mark_track_missing` so the now-missing
-    /// row disappears from the view. Degrades to a warn log if no callback is
-    /// wired yet. Borrow discipline: the `Rc<dyn Fn()>` is cloned out of the
-    /// `RefCell` in its own `let` statement before being called, mirroring
-    /// the `queue` borrow discipline elsewhere in this file (see the
-    /// module's `## Toast + track-list-reload seam` doc section for why this
-    /// one field can currently never be re-entered, but the hoist keeps the
-    /// same shape regardless). `pub(in crate::ui)` so `playback_faults.rs`'s
-    /// `handle_unplayable_track` can call it too.
-    pub(in crate::ui) fn reload_track_list(&self) {
-        let reload = self.reload_track_list.borrow().clone();
-        match reload {
-            Some(reload) => reload(),
-            None => {
-                tracing::warn!("track list reload requested but no callback is wired yet");
             }
         }
     }

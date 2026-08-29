@@ -1324,8 +1324,11 @@ result.
   The footer costs the dialog height, never width, and the fixed columns are
   budgeted so the description states its count in full instead of truncating
   to the plugin name it already sits next to.
-  A row's cancel stops that job and nothing else. While the online-content gate
-  is off the bar lists no rows and says so instead. The main window's own scan
+  A row's cancel stops that job and nothing else. While no job runs, the whole
+  footer is hidden; it never leaves a title-only placeholder. While the
+  online-content gate is off, the bar replaces activity that would otherwise
+  be visible with one reason, but an idle gate-off state still hides the whole
+  footer. The main window's own scan
   card stays where it is, in its own layer under the dialog, and is never
   reparented into it (`docs/plans/plugins-online-content-master-hierarchy.md`).
 - **FB-1** [planned] [core] — Two-class toasts (pill, bottom-centered,
@@ -1438,6 +1441,13 @@ result.
   Continuous gear rotation and indeterminate pulsing obey the central
   reduced-motion gate and remain statically legible when animations are
   disabled.
+  Narrow initial-sync exception: a newly added source row may grow from its
+  resting height to a fixed-height, three-line account of that source's first
+  sync. Its height stays unchanged across every progress and failure state and,
+  on completion, returns to the resting row height with the Standard 250 ms
+  shrink rather than jumping. With reduced motion it swaps immediately. This
+  exception applies only while the row is being established; it does not permit
+  later jobs or variable detail lists to reflow an existing row.
   Named exception: the shared source-error banner of NR-21, CONC-11,
   POD-19, RAD-2 and NET-3 may still be inserted above a populated view and
   removed again when the next refresh succeeds. This is a documented
@@ -1485,6 +1495,25 @@ result.
   action completed without naming the action, leaving any adjacent Undo
   without a subject. The measured trigger was a YouTube title containing `&`
   on 2026-08-23.
+- **FB-12** [planned] [gtk] — Every wait that the user started has a visible
+  owner that names what is being loaded. When the wait belongs to one row,
+  card or entry, that element carries it (FB-9 (3)); a global status line is
+  the fallback for work that belongs to no single element, never the primary
+  answer. A placeholder that shows a resting value while its real value is
+  still being fetched is prohibited: "0 episodes" while the feed is being
+  read is a false statement, not a neutral default. This rule binds all future
+  network-backed lists.
+  Named exception: NR-2a's cover tile. The Updates feed and the Releases and
+  Concerts tables deliberately show one muted initials tile for both a
+  permanently missing cover and one still being fetched
+  (`updates/release_cover.rs`), naming neither. That is a shipped, tested
+  `[active]` behaviour and a considered choice — an immediate tile beats a
+  spinner for a cover that usually resolves within a frame — not an oversight
+  this rule may quietly overrule. It is carried the way FB-9 carries its five
+  banners: as a documented deviation, not a second sanctioned pattern. Before
+  this rule may be promoted to `[active]`, the conflict is settled explicitly —
+  either NR-2a distinguishes its two states, or this exception is written into
+  the promoted rule. No new surface may cite it.
 
 ## H. File association & OS integration
 
@@ -3134,7 +3163,14 @@ property is set and yet nothing happens.
   library after the cover batch, after completed library scans, and the moment
   the module is switched on — switching it on starts the run once; a further
   settings change while it is already on never restarts a run in progress, and
-  switching it off only stops one. Tracks
+  switching it off only stops one. An automatic run covers only tracks added to
+  the library or changed on disk since the last **completed** run; a library
+  that has never completed one, a library whose last full sweep is more than
+  30 days old, and every run started by switching the module on cover the
+  present library in full. A run that is cancelled or fails does not advance
+  that mark, so its unreached tracks belong to the next run; a full sweep
+  defers the next scheduled one from the moment it starts, whether or not it
+  finishes. Tracks
   with local lyrics, complete positive cache entries, or fresh negative
   entries are skipped; a cached plain result is retried for synchronized text
   at most once per seven-day negative-TTL window. Provider requests keep at
@@ -3290,15 +3326,19 @@ property is set and yet nothing happens.
   order, or widths nor the sort. "Show columns" restores the user's
   configuration in the narrow window; additional width is then scrolled
   exclusively horizontally within the table.
-- **STYLE-7** [active] [gtk] — If the library window is shrunk or snapped
-  to a width where both flanks visibly displace the main content, the left
-  library sidebar and the right Now Playing panel close together in the
-  same responsive transition. A 10s undo toast restores exactly the state
-  of both flanks before the shrinking; later widening also restores this
-  state, provided the user did not change the flanks themselves in the
-  narrow window. Responsive changes never overwrite a stored sidebar or
-  panel preference, and both header toggles remain reachable for manual
-  reopening.
+- **STYLE-7** [active] [gtk] — The left library sidebar is a structural
+  column, not a responsive one: no window width closes it, hides it, or
+  turns it into an overlay over the content. If the library window is
+  shrunk or snapped to a width where the flanks visibly displace the main
+  content, only the right Now Playing panel closes. A 10s undo toast
+  restores exactly the state of both flanks before the shrinking; later
+  widening also restores this state, provided the user did not change the
+  flanks themselves in the narrow window. Unless the user has undone the
+  constraint in that narrow window, the exclusion runs one way: opening the
+  sidebar closes the Now Playing panel, while opening the Now Playing panel
+  leaves the sidebar exactly where the user left it. Responsive changes never
+  overwrite a stored sidebar or panel preference, and both header toggles
+  remain reachable for manual reopening.
 - **STYLE-8** [active] [gtk] — Reprise has one effective accent color for
   every accent role. Appearance offers exactly two sources between Theme and
   Color Scheme: the Reprise app accent `#4FDBD4`, which is the default, and
@@ -3326,8 +3366,8 @@ property is set and yet nothing happens.
   learned in the music library is the same behaviour in Releases, Concerts
   and Radio — a user does not experience a missing editor there as an absent
   feature but as the app forgetting what it taught them. The same editor is
-  reachable without a pointer through the primary menu's "Edit column
-  layout…", which addresses the table of the active view and is insensitive
+  reachable without a pointer through the primary menu's "Customize
+  table…", which addresses the table of the active view and is insensitive
   where no table is shown. Order, visibility and header-dragged widths are
   stored per table and survive a restart. A table may declare fixed columns
   — a leading artwork column, a trailing action column on a surface without
@@ -3390,21 +3430,23 @@ property is set and yet nothing happens.
   indicator is invisible while its width stays reserved, so headers do not
   jump. A header without a sort field carries no sorter and therefore does not
   appear clickable; a sortable header orders its own column. **Issue #404:**
-  sorting is also reachable without a pointer through a labelled control in
-  the browse bar. Its field and direction choices are labelled, keyboard
-  navigable, and expose the current choice as state. The browse-bar control
-  and the sortable column headers drive the same `ColumnView` sorter; neither
-  writes or owns a second sort state. **Test rule:**
+  sorting is also reachable without a pointer through the labelled table
+  customization surface, reached from the primary menu and by right-clicking
+  the header band. It covers every table with sortable columns. Its field and
+  direction choices are labelled, keyboard navigable, and expose the current
+  choice as state. The customization surface and the sortable column headers
+  drive the same `ColumnView` sorter; neither writes or owns a second sort
+  state. **Test rule:**
   one rule-named display test per table, plus a measured filler test. Tests:
-  `style_13_browse_sort_and_header_click_converge_and_reload_once`
-  and `style_13_header_sort_is_marked_when_the_sort_popover_opens`
+  `style_13_table_customization_sort_and_header_click_converge_and_reload_once`
+  and `style_13_header_sort_is_marked_when_table_customization_opens`
   (`ui/track_list/track_list_sort.rs`),
   `style_13_sort_choices_match_every_accepted_table_sort_field`,
   `style_13_sort_choices_are_keyboard_radio_actions`, and
   `style_13_sort_popover_closes_on_escape`
-  (`ui/browse/browse_bar_tests.rs`),
+  (`ui/table_columns/editor.rs`),
   `style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator`
-  (`ui/table_columns/registry.rs`),
+  (`ui/table_columns/registry_sort_tests.rs`),
   `nr_39_the_column_editor_lists_status_and_link_and_hides_them` and
   `two_release_sorts_leave_one_indicator`
   (`ui/releases/releases_view_tests.rs`),
@@ -5772,9 +5814,14 @@ listening statistics.
   count as a compact addition ("62.4k subscribers", "1.2M subscribers") as soon
   as the channel publishes it. It is an optional addition and never replaces
   the existing hit count. Missing, hidden or malformed values are **omitted** —
-  never rendered as zero and never as "unknown". The number comes from the
-  search subprocess that already runs; there is no additional query per
-  channel.
+  never rendered as zero and never as "unknown". Results render before counts.
+  A second, bounded wave makes one playlist-head request per discovered
+  channel, with at most four requests in flight, a 15-second per-channel
+  timeout, a 20-second pass budget and at most 20 channels. The complete wave
+  patches the existing rows together instead of rebuilding or trickling them
+  in. A failed or timed-out request is deliberately indistinguishable from a
+  hidden count: the optional segment stays absent and search success remains
+  undisturbed.
 - **SRC-10** [active] [gtk] — The genuine "nothing added yet" empty state
   carries the same geometry for Podcasts, YouTube and Radio: the glyph of its
   own sidebar entry in a muted rounded tile, a title, a paragraph with one
@@ -6137,6 +6184,18 @@ listening statistics.
   matched, so the explanation names none. The marker keeps its space while the
   title ellipsizes and cannot widen the dialog (`SRC-8`). Country charts have
   no query and therefore no marker.
+- **SRC-23** [active] [gtk] — **Add Channel keeps relevance as its default and
+  offers explicit subscriber ordering.** A YouTube-only "Largest first" toggle
+  sits beside the result heading and resets for every submitted search. It
+  stays sensitive and focusable while subscriber counts are pending, so a user
+  can set and hear the intended state without losing the control from AT-SPI
+  traversal; no row moves until the complete count wave arrives. Active order
+  places published counts descending first, keeps provider relevance order for
+  equal counts, and appends every missing count in its original relevance
+  order — never treating absence as zero. Inactive order is provider relevance.
+  Either order moves the existing row roots without rebuilding them, so the
+  result list changes at most once when the wave arrives and never eats an
+  in-flight row action.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. Resume positions belong only to RSS
@@ -6458,6 +6517,27 @@ listening statistics.
   channel tail the row deliberately dims (POD-15) remains part of the stored
   and searched episode title, so a hit inside that tail is accented too while
   the surrounding tail stays dim.
+- **POD-26** [active] [gtk] — A newly added podcast or YouTube channel owns its
+  initial-sync status in its source row, never in the shared footer. Each
+  subscription has its own row and the row always carries exactly three lines:
+  source added, feed reading with the live episode count, and artwork fetching.
+  Done, active, pending and failed states change those fixed lines in place;
+  failure replaces the active feed line with "Couldn't read feed" and offers
+  Retry rather than adding a fourth line. The fixed 40 x 40 cover in its
+  64 x 40 slot admits that artwork is pending with the source glyph, shimmer
+  and pulse. The row uses the current accent roles for its border and gradient,
+  stays collapsed and cannot be expanded during sync, and Cancel aborts the
+  per-subscription pipeline before that removed subscription can commit
+  episodes. Completion crossfades the progress to the facts line for 250 ms,
+  then animates the row back to the shared 56 px minimum over 250 ms. Reduced
+  motion uses static indicators, no shimmer, pulse, spin or shrink animation,
+  and swaps immediately.
+  Tests: `pod_26_each_loading_row_names_three_stable_steps_and_owns_its_failure`,
+  `pod_26_completion_crossfades_before_the_row_shrinks_to_the_shared_height`,
+  `pod_26_reduced_motion_uses_a_static_indicator_and_no_cover_motion`, and
+  `pod_26_the_rows_cancel_action_trips_the_core_abort_handle`
+  (`ui/podcasts/podcasts_sync_row_display_tests.rs` and
+  `ui/podcasts/tests/podcasts_view_sync_tests.rs`).
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

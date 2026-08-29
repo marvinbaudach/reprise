@@ -62,7 +62,8 @@ fn view_section_entries() -> Vec<(String, &'static str)> {
             "win.toggle-minimal-view",
         ),
         (
-            strings::text(strings::EDIT_COLUMN_LAYOUT),
+            strings::text(strings::CUSTOMIZE_TABLE),
+            // a11y-semantics: role=menu-item name=customize-table state=enabled action=activate
             "win.edit-column-layout",
         ),
     ]

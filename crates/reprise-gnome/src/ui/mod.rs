@@ -73,6 +73,7 @@ pub(crate) mod motion;
 pub(crate) mod motion_reveal;
 mod mounts;
 pub mod mpris_mirror;
+mod mpris_play_context;
 pub(crate) mod nav_history;
 pub(crate) mod notifications;
 pub(crate) mod now_playing;

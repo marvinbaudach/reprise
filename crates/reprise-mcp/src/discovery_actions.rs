@@ -146,6 +146,8 @@ fn search_youtube(
     db: &reprise_core::db::Db,
     query: &str,
 ) -> Result<Vec<DiscoveryCandidateDto>, DataError> {
+    use std::sync::atomic::AtomicBool;
+
     use reprise_core::podcasts::{self, discovery, PodcastKind};
 
     let config = podcasts::config::load(db).map_err(DataError::Db)?;
@@ -157,12 +159,14 @@ fn search_youtube(
             "YouTube sources are disabled in Reprise preferences".to_owned(),
         ));
     }
-    let rows = podcasts::ytdlp::YtDlp::discover_with_browser(
+    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
         config.ytdlp_path.as_deref(),
         config.youtube_browser,
-    )
-    .search_channels(query)
-    .map_err(|error| podcast_source_error(&error))?;
+    );
+    let mut rows = ytdlp
+        .search_channels(query)
+        .map_err(|error| podcast_source_error(&error))?;
+    ytdlp.enrich_follower_counts(&mut rows, &AtomicBool::new(false));
     let subscribed = discovery::active_source_keys(db);
     Ok(rows
         .into_iter()

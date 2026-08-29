@@ -24,17 +24,20 @@ class RatingWriterTest {
      * the second is what lets the caller write Compose state from `report`
      * without a second thought.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun theWriteLeavesTheCallersThreadAndAnswersOnlyThroughTheHop() {
         val hopped = CountDownLatch(1)
         val hops = mutableListOf<() -> Unit>()
         var writingThread: Thread? = null
-        val writer = RatingWriter(
-            write = { _, _ -> writingThread = Thread.currentThread() },
+        val lane = LibraryWrites(
             onMainThread = { work ->
                 hops += work
                 hopped.countDown()
             },
+        )
+        val writer = RatingWriter(
+            write = { _, _ -> writingThread = Thread.currentThread() },
+            libraryWrites = lane,
         )
         var answered: Result<Unit>? = null
 
@@ -51,7 +54,7 @@ class RatingWriterTest {
 
             assertEquals(true, answered?.isSuccess)
         } finally {
-            writer.shutdown()
+            lane.shutdown()
         }
     }
 
@@ -60,13 +63,14 @@ class RatingWriterTest {
      * is the failure the sheet turns into its message, so losing it here would
      * turn a reported failure into a silent one.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun aWriteThatThrowsComesBackAsTheFailureRatherThanAsSilence() {
         val refusal = IllegalStateException("track is missing")
         val answers = LinkedBlockingQueue<Result<Unit>>()
+        val lane = LibraryWrites(onMainThread = { work -> work() })
         val writer = RatingWriter(
             write = { _, _ -> throw refusal },
-            onMainThread = { work -> work() },
+            libraryWrites = lane,
         )
 
         try {
@@ -77,7 +81,7 @@ class RatingWriterTest {
             val answered = answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)
             assertEquals(refusal, answered?.exceptionOrNull())
         } finally {
-            writer.shutdown()
+            lane.shutdown()
         }
     }
 
@@ -87,13 +91,14 @@ class RatingWriterTest {
      * The same run proves teardown drains what was queued rather than dropping
      * it.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun tapsAreWrittenAndAnsweredInTheOrderTheyWereMade() {
         val written = LinkedBlockingQueue<Boolean>()
         val answered = LinkedBlockingQueue<Boolean>()
+        val lane = LibraryWrites(onMainThread = { work -> work() })
         val writer = RatingWriter(
             write = { _, favourite -> written.put(favourite) },
-            onMainThread = { work -> work() },
+            libraryWrites = lane,
         )
 
         try {
@@ -103,11 +108,11 @@ class RatingWriterTest {
                 }
             }
 
-            assertTrue("teardown must drain what was queued", writer.shutdown())
+            assertTrue("teardown must drain what was queued", lane.shutdown())
             assertEquals(listOf(true, false, true, false, true), written.toList())
             assertEquals(listOf(true, false, true, false, true), answered.toList())
         } finally {
-            writer.shutdown()
+            lane.shutdown()
         }
     }
 
@@ -116,14 +121,15 @@ class RatingWriterTest {
      * neither moves nor says why is the failure mode this whole path exists to
      * avoid.
      */
-    @Test
+    @Test(timeout = 10_000)
     fun aTapMadeAfterTheWriterStoppedIsAnsweredRatherThanDropped() {
         var writes = 0
+        val lane = LibraryWrites(onMainThread = { work -> work() })
         val writer = RatingWriter(
             write = { _, _ -> writes += 1 },
-            onMainThread = { work -> work() },
+            libraryWrites = lane,
         )
-        assertTrue(writer.shutdown())
+        assertTrue(lane.shutdown())
         var answered: Result<Unit>? = null
 
         writer.setFavourite(trackId = 830, favourite = true) { outcome ->

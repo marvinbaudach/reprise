@@ -7,7 +7,10 @@ use std::sync::Arc;
 
 use gtk4::glib;
 use reprise_core::db::Db;
-use reprise_core::library::startup_tasks::{self, TimeWindowTask};
+use reprise_core::library::startup_tasks::{
+    self, begin_lyrics_pass, lyrics_last_full_sweep, lyrics_scope, lyrics_watermark, now_unix,
+    LyricsPass, LyricsScope, TimeWindowTask,
+};
 pub(in crate::ui) use reprise_core::lyrics::{
     BatchProgress as LyricsBatchProgress, BatchState as LyricsBatchState,
 };
@@ -74,6 +77,7 @@ pub(in crate::ui) struct LyricsBatch {
     cancellation: ScanCancellation,
     enabled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
+    running: Cell<bool>,
     progress: Cell<LyricsBatchProgress>,
     subscribers: ProgressSubscribers<LyricsBatchProgress>,
 }
@@ -86,6 +90,7 @@ impl LyricsBatch {
             cancellation: ScanCancellation::default(),
             enabled: Arc::new(AtomicBool::new(network_allowed(conn))),
             generation: Arc::new(AtomicU64::new(0)),
+            running: Cell::new(false),
             progress: Cell::new(LyricsBatchProgress::idle()),
             subscribers: ProgressSubscribers::default(),
         })
@@ -134,19 +139,43 @@ impl LyricsBatch {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
-        let summaries = match reprise_core::queries::query_live_track_summaries(&self.conn) {
-            Ok(summaries) => summaries,
-            Err(error) => {
-                tracing::warn!(%error, "could not query tracks for lyrics batch");
-                self.set_progress(failed_progress(LyricsBatchProgress::idle()));
-                return;
+        let pass = begin_lyrics_pass(&self.conn, LyricsScope::Everything);
+        self.start_with_pass(pass);
+    }
+
+    fn start_with_pass(self: &Rc<Self>, pass: LyricsPass) {
+        let summaries = match pass.scope() {
+            LyricsScope::Everything => {
+                match reprise_core::queries::query_live_track_summaries(&self.conn) {
+                    Ok(summaries) => summaries,
+                    Err(error) => {
+                        tracing::warn!(%error, "could not query tracks for lyrics batch");
+                        self.set_progress(failed_progress(LyricsBatchProgress::idle()));
+                        return;
+                    }
+                }
+            }
+            LyricsScope::AddedSince(since) => {
+                match reprise_core::queries::query_track_summaries_added_since(&self.conn, since) {
+                    Ok(summaries) => summaries,
+                    Err(error) => {
+                        tracing::warn!(%error, "could not query tracks added since last batch");
+                        self.set_progress(failed_progress(LyricsBatchProgress::idle()));
+                        return;
+                    }
+                }
             }
         };
         self.cancellation.reset();
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         let progress = LyricsBatchProgress::running(summaries.len());
+        if progress.state == LyricsBatchState::Running {
+            self.running.set(true);
+        }
         self.set_progress(progress);
         if progress.state == LyricsBatchState::Complete {
+            pass.record_completed_or_warn(&self.conn);
+            self.running.set(false);
             return;
         }
         let (events, receiver) = async_channel::unbounded();
@@ -163,6 +192,7 @@ impl LyricsBatch {
             })
             .is_err()
         {
+            self.running.set(false);
             self.set_progress(failed_progress(progress));
             return;
         }
@@ -178,11 +208,22 @@ impl LyricsBatch {
                 match event {
                     WorkerEvent::Progress(progress) => {
                         batch.set_progress(progress);
+                        if progress.state == LyricsBatchState::Complete {
+                            pass.record_completed_or_warn(&batch.conn);
+                            batch.running.set(false);
+                            return;
+                        }
                     }
                     WorkerEvent::Cancelled => {
                         batch.set_progress(LyricsBatchProgress::idle());
+                        batch.running.set(false);
                         return;
                     }
+                }
+            }
+            if let Some(batch) = batch.upgrade() {
+                if batch.generation.load(Ordering::Relaxed) == generation {
+                    batch.running.set(false);
                 }
             }
         });
@@ -193,6 +234,9 @@ impl LyricsBatch {
         previous_session: &reprise_core::library::session::SessionState,
         current_library_root: &str,
     ) {
+        if self.running.get() {
+            return;
+        }
         let is_due = || {
             startup_tasks::should_run_time_window(
                 TimeWindowTask::Lyrics,
@@ -204,7 +248,11 @@ impl LyricsBatch {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
-        self.start();
+        let watermark = lyrics_watermark(&self.conn);
+        let last_full_sweep = lyrics_last_full_sweep(&self.conn);
+        let scope = lyrics_scope(watermark, last_full_sweep, now_unix());
+        let pass = begin_lyrics_pass(&self.conn, scope);
+        self.start_with_pass(pass);
     }
 
     pub(in crate::ui) fn start_after_cover(

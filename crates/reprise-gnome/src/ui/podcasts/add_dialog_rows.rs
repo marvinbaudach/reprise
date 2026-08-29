@@ -25,6 +25,12 @@ pub(super) struct Preview {
     pub(super) guids: Vec<String>,
 }
 
+#[derive(Clone)]
+pub(super) struct CandidateRow {
+    pub(super) root: gtk4::Widget,
+    pub(super) subtitle: gtk4::Label,
+}
+
 pub(super) fn append_heading(parent: &gtk4::Box, text: &str) {
     let label = gtk4::Label::new(Some(text));
     label.add_css_class("caption");
@@ -40,8 +46,8 @@ pub(super) fn append_candidate(
     conn: &Rc<Db>,
     on_added: &OnAdded,
     auto_download_default: bool,
-) {
-    let row = candidate_row(
+) -> CandidateRow {
+    let handle = candidate_row(
         &candidate.title,
         &candidate.subtitle,
         candidate.author.as_deref(),
@@ -50,6 +56,11 @@ pub(super) fn append_candidate(
         candidate.image_url.as_deref(),
         images_allowed(conn),
     );
+    let row = handle
+        .root
+        .clone()
+        .downcast::<gtk4::Box>()
+        .expect("candidate rows are boxes");
     // SRC-7: the same compact action every discovery row uses.
     let title = candidate.title.clone();
     let button = source_add_action::add_button(source_add_action::AddActionKind::Subscribe, &title);
@@ -58,8 +69,8 @@ pub(super) fn append_candidate(
     button.connect_clicked(move |button| {
         let result = subscribe(&conn, &candidate, auto_download_default, None);
         match result {
-            Ok(_) => {
-                on_added(true);
+            Ok(subscription_id) => {
+                on_added(subscription_id, true);
                 // SRC-5/SRC-7: acknowledge in place; only the next submitted
                 // search drops the row.
                 source_add_action::mark_added(
@@ -75,7 +86,8 @@ pub(super) fn append_candidate(
         }
     });
     row.append(&button);
-    parent.append(&row);
+    parent.append(&handle.root);
+    handle
 }
 
 pub(super) fn append_preview(
@@ -97,7 +109,7 @@ pub(super) fn append_preview(
         preview.image_url.as_deref(),
         images_allowed(conn),
     );
-    parent.append(&row);
+    parent.append(&row.root);
     let import = gtk4::CheckButton::with_label(&strings::podcast_import_latest_count(import_count));
     import.set_active(true);
     parent.append(&import);
@@ -115,6 +127,9 @@ pub(super) fn append_preview(
         image_url: preview.image_url,
         url: preview.url,
         identity_guids: preview.guids.clone(),
+        follower_count: None,
+        channel_id: None,
+        matching_video_count: None,
     };
     let conn = conn.clone();
     let on_added = on_added.clone();
@@ -129,8 +144,8 @@ pub(super) fn append_preview(
             baseline.as_deref(),
         );
         match result {
-            Ok(_) => {
-                on_added(import.is_active());
+            Ok(subscription_id) => {
+                on_added(subscription_id, import.is_active());
                 if let Some(parent) = parent_weak.upgrade() {
                     clear(&parent);
                 }
@@ -161,7 +176,7 @@ pub(super) fn candidate_row(
     kind: PodcastKind,
     image_url: Option<&str>,
     images_allowed: bool,
-) -> gtk4::Box {
+) -> CandidateRow {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
     row.add_css_class("reprise-podcast-result");
     let image = super::source_image::SourceImage::new(
@@ -213,5 +228,8 @@ pub(super) fn candidate_row(
     subtitle_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     labels.append(&subtitle_label);
     row.append(&labels);
-    row
+    CandidateRow {
+        root: row.upcast(),
+        subtitle: subtitle_label,
+    }
 }

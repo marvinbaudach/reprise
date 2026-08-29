@@ -1,6 +1,95 @@
 use super::*;
 
 #[test]
+fn unplugged_picker_lists_saved_sources_and_persists_a_toggle() {
+    run(async {
+        let (_downloads, conn) = fixture();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO playlists (id, name, position) VALUES (2, 'Road', 0)",
+                [],
+            )
+            .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (2, 1, 0)",
+                [],
+            )
+            .unwrap();
+        let mut settings = reprise_core::device_sync::settings::load_or_create_settings(
+            &conn,
+            "remembered",
+            "Remembered phone",
+        )
+        .unwrap();
+        settings.selection = DeviceSelection::Sources(vec![
+            SelectionSource::Playlist(2),
+            SelectionSource::Smart(2),
+        ]);
+        settings.sync_automatically = false;
+        save_settings(&conn, &settings).unwrap();
+
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+        let first = runtime
+            .picker_snapshot_cached_for_test("remembered")
+            .unwrap();
+        assert!(first.rows.iter().any(|row| {
+            row.source == SelectionSource::Playlist(2) && row.name == "Road" && row.selected
+        }));
+        assert!(first
+            .rows
+            .iter()
+            .any(|row| row.source == SelectionSource::Smart(2) && row.selected));
+        let selected = first
+            .rows
+            .iter()
+            .filter(|row| row.selected)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selected.len(),
+            2,
+            "the offline footer must not claim 0 selected"
+        );
+        assert!(selected.iter().map(|row| row.track_count).sum::<usize>() > 0);
+
+        runtime
+            .save_picker(
+                "remembered",
+                PickerSave {
+                    playlist_changes: vec![(SelectionSource::Playlist(2), false)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        drop(runtime);
+
+        let reopened =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+        let saved = reopened
+            .picker_snapshot_cached_for_test("remembered")
+            .unwrap();
+        assert!(saved.rows.iter().any(|row| {
+            row.source == SelectionSource::Playlist(2) && row.name == "Road" && !row.selected
+        }));
+        assert!(saved
+            .rows
+            .iter()
+            .any(|row| row.source == SelectionSource::Smart(2) && row.selected));
+        assert_eq!(
+            reprise_core::device_sync::settings::load_or_create_settings(
+                &conn,
+                "remembered",
+                "Remembered phone",
+            )
+            .unwrap()
+            .selection,
+            DeviceSelection::Sources(vec![SelectionSource::Smart(2)])
+        );
+    });
+}
+
+#[test]
 fn smart_playlist_toggle_freezes_and_then_resumes_live_evaluation() {
     run(async {
         let (_downloads, conn) = fixture();

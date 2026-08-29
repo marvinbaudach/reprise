@@ -2,8 +2,8 @@
 
 use std::rc::Rc;
 
-use gtk4::glib;
 use gtk4::prelude::*;
+use gtk4::{gdk, glib};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -130,6 +130,153 @@ fn build_row(state: &Rc<EditorState>, descriptor: super::ColumnDescriptor) -> ad
     row
 }
 
+type SortChoice = (String, gtk4::CheckButton);
+
+fn radio_choice(label: &str) -> gtk4::CheckButton {
+    let choice = gtk4::CheckButton::builder()
+        .label(label)
+        .accessible_role(gtk4::AccessibleRole::Radio)
+        .build();
+    choice.update_property(&[gtk4::accessible::Property::Label(label)]);
+    // a11y-semantics: role=radio name=explicit-label state=checked action=activate
+    choice.set_focusable(true);
+    choice
+}
+
+fn section_label(message: &str) -> gtk4::Label {
+    let label = gtk4::Label::new(Some(&strings::text(message)));
+    label.set_halign(gtk4::Align::Start);
+    label.add_css_class("heading");
+    label
+}
+
+fn build_sort_section(model: &Rc<dyn EditorModel>) -> Option<gtk4::Box> {
+    let descriptors = model.sortable_columns();
+    if descriptors.is_empty() {
+        return None;
+    }
+
+    let current = model.sort();
+    let syncing = Rc::new(std::cell::Cell::new(true));
+    let field_choices = Rc::new(std::cell::RefCell::new(Vec::<SortChoice>::new()));
+    let field_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    let mut first = None::<gtk4::CheckButton>;
+    for descriptor in descriptors {
+        let choice = radio_choice(&descriptor.label);
+        if let Some(first) = &first {
+            choice.set_group(Some(first));
+        } else {
+            first = Some(choice.clone());
+        }
+        choice.set_active(current.as_ref().is_some_and(|(id, _)| id == &descriptor.id));
+        field_box.append(&choice);
+        field_choices.borrow_mut().push((descriptor.id, choice));
+    }
+    if !field_choices
+        .borrow()
+        .iter()
+        .any(|(_, choice)| choice.is_active())
+    {
+        first
+            .as_ref()
+            .expect("a non-empty descriptor list has a first choice")
+            .set_active(true);
+    }
+
+    let ascending = radio_choice(&strings::text(strings::SORT_ASCENDING));
+    let descending = radio_choice(&strings::text(strings::SORT_DESCENDING));
+    descending.set_group(Some(&ascending));
+    let descending_active = current
+        .as_ref()
+        .is_some_and(|(_, order)| *order == gtk4::SortType::Descending);
+    ascending.set_active(!descending_active);
+    descending.set_active(descending_active);
+    let direction_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    direction_box.append(&ascending);
+    direction_box.append(&descending);
+
+    for (id, choice) in field_choices.borrow().clone() {
+        let model = model.clone();
+        let syncing = syncing.clone();
+        let descending = descending.downgrade();
+        choice.connect_toggled(move |choice| {
+            if syncing.get() || !choice.is_active() {
+                return;
+            }
+            let Some(descending) = descending.upgrade() else {
+                return;
+            };
+            let order = if descending.is_active() {
+                gtk4::SortType::Descending
+            } else {
+                gtk4::SortType::Ascending
+            };
+            model.set_sort(&id, order);
+        });
+    }
+    for (choice, order) in [
+        (ascending.clone(), gtk4::SortType::Ascending),
+        (descending.clone(), gtk4::SortType::Descending),
+    ] {
+        let model = model.clone();
+        let syncing = syncing.clone();
+        let field_choices = field_choices
+            .borrow()
+            .iter()
+            .map(|(id, choice)| (id.clone(), choice.downgrade()))
+            .collect::<Vec<_>>();
+        choice.connect_toggled(move |choice| {
+            if syncing.get() || !choice.is_active() {
+                return;
+            }
+            let mut selected = None;
+            for (id, candidate) in &field_choices {
+                let Some(candidate) = candidate.upgrade() else {
+                    return;
+                };
+                if candidate.is_active() {
+                    selected = Some(id.clone());
+                    break;
+                }
+            }
+            if let Some(id) = selected {
+                model.set_sort(&id, order);
+            }
+        });
+    }
+    syncing.set(false);
+
+    let section = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    section.append(&section_label(strings::SORT_BY));
+    section.append(&field_box);
+    section.append(&section_label(strings::SORT_DIRECTION));
+    section.append(&direction_box);
+    Some(section)
+}
+
+fn handle_popover_key(
+    key: gdk::Key,
+    modifiers: gdk::ModifierType,
+    popover: &glib::WeakRef<gtk4::Popover>,
+) -> glib::Propagation {
+    if key != gdk::Key::Escape || !modifiers.is_empty() {
+        return glib::Propagation::Proceed;
+    }
+    if let Some(popover) = popover.upgrade() {
+        popover.popdown();
+    }
+    glib::Propagation::Stop
+}
+
+pub(super) fn wire_popover_escape(popover: &gtk4::Popover) {
+    let keys = gtk4::EventControllerKey::new();
+    let popover_weak = popover.downgrade();
+    keys.connect_key_pressed(move |_, key, _, modifiers| {
+        handle_popover_key(key, modifiers, &popover_weak)
+    });
+    popover.add_controller(keys);
+}
+
 /// `show_window_controls`: the dialog/preferences variants keep the header
 /// bar's native decoration (adw::Dialog turns it into the dialog's close
 /// button); the header popover variant must not — a popover is no window,
@@ -159,8 +306,13 @@ pub(in crate::ui) fn build_surface(
     header.set_show_end_title_buttons(show_window_controls);
     header.pack_start(&reset);
     header.set_title_widget(Some(&adw::WindowTitle::new(&model.title(), "")));
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 18);
+    if let Some(sort) = build_sort_section(model) {
+        content.append(&sort);
+    }
+    content.append(&list);
     let scroll = gtk4::ScrolledWindow::builder()
-        .child(&list)
+        .child(&content)
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .margin_top(18)
         .margin_bottom(18)
@@ -238,6 +390,7 @@ mod tests {
     struct FakeModel {
         order: RefCell<Vec<String>>,
         hidden: RefCell<Vec<String>>,
+        sort: RefCell<Option<(String, gtk4::SortType)>>,
     }
 
     impl FakeModel {
@@ -245,6 +398,7 @@ mod tests {
             Self {
                 order: RefCell::new(vec!["date".to_owned(), "title".to_owned()]),
                 hidden: RefCell::new(Vec::new()),
+                sort: RefCell::new(Some(("date".to_owned(), gtk4::SortType::Ascending))),
             }
         }
     }
@@ -263,6 +417,18 @@ mod tests {
                     label: id.clone(),
                 })
                 .collect()
+        }
+
+        fn sortable_columns(&self) -> Vec<ColumnDescriptor> {
+            self.columns()
+        }
+
+        fn sort(&self) -> Option<(String, gtk4::SortType)> {
+            self.sort.borrow().clone()
+        }
+
+        fn set_sort(&self, id: &str, order: gtk4::SortType) {
+            self.sort.replace(Some((id.to_owned(), order)));
         }
 
         fn is_visible(&self, id: &str) -> bool {
@@ -294,6 +460,34 @@ mod tests {
 
     fn model() -> Rc<dyn EditorModel> {
         Rc::new(FakeModel::new())
+    }
+
+    struct UnsortableModel(FakeModel);
+
+    impl EditorModel for UnsortableModel {
+        fn title(&self) -> String {
+            self.0.title()
+        }
+
+        fn columns(&self) -> Vec<ColumnDescriptor> {
+            self.0.columns()
+        }
+
+        fn is_visible(&self, id: &str) -> bool {
+            self.0.is_visible(id)
+        }
+
+        fn set_visible(&self, id: &str, visible: bool) {
+            self.0.set_visible(id, visible);
+        }
+
+        fn move_column(&self, id: &str, target: &str, after: bool) {
+            self.0.move_column(id, target, after);
+        }
+
+        fn reset(&self) {
+            self.0.reset();
+        }
     }
 
     #[test]
@@ -336,6 +530,208 @@ mod tests {
             child = next;
         }
         false
+    }
+
+    fn descendants<T: glib::object::IsA<gtk4::Widget> + glib::object::ObjectType>(
+        widget: &gtk4::Widget,
+    ) -> Vec<T> {
+        let mut matches = widget
+            .clone()
+            .downcast::<T>()
+            .ok()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            let next = current.next_sibling();
+            matches.extend(descendants::<T>(&current));
+            child = next;
+        }
+        matches
+    }
+
+    fn assert_one_active_per_sort_group(
+        field_choices: &[gtk4::CheckButton],
+        direction_choices: &[gtk4::CheckButton],
+    ) {
+        assert_eq!(
+            field_choices
+                .iter()
+                .filter(|choice| choice.is_active())
+                .count(),
+            1,
+            "field choices are one keyboard-navigable radio group"
+        );
+        assert_eq!(
+            direction_choices
+                .iter()
+                .filter(|choice| choice.is_active())
+                .count(),
+            1,
+            "direction choices are a separate keyboard-navigable radio group"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_13_sort_choices_are_keyboard_radio_actions() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let surface = build_surface(&model(), true);
+        let choices = descendants::<gtk4::CheckButton>(surface.toolbar.upcast_ref());
+
+        assert_eq!(choices.len(), 4, "two fields and two directions");
+        let (field_choices, direction_choices) = choices.split_at(2);
+        assert_one_active_per_sort_group(field_choices, direction_choices);
+        for choice in field_choices {
+            assert_eq!(choice.accessible_role(), gtk4::AccessibleRole::Radio);
+            assert!(gtk4::test_accessible_has_property(
+                choice,
+                gtk4::AccessibleProperty::Label
+            ));
+            assert!(choice.is_focusable());
+            assert!(choice.activate());
+            assert!(choice.is_active());
+            assert!(gtk4::test_accessible_has_state(
+                choice,
+                gtk4::AccessibleState::Checked
+            ));
+            assert_one_active_per_sort_group(field_choices, direction_choices);
+        }
+        for choice in direction_choices {
+            assert_eq!(choice.accessible_role(), gtk4::AccessibleRole::Radio);
+            assert!(gtk4::test_accessible_has_property(
+                choice,
+                gtk4::AccessibleProperty::Label
+            ));
+            assert!(choice.is_focusable());
+            assert!(choice.activate());
+            assert!(choice.is_active());
+            assert!(gtk4::test_accessible_has_state(
+                choice,
+                gtk4::AccessibleState::Checked
+            ));
+            assert_one_active_per_sort_group(field_choices, direction_choices);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sort_section_defaults_to_its_first_field_when_the_model_has_no_sort() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let fake = Rc::new(FakeModel::new());
+        fake.sort.replace(None);
+        let model: Rc<dyn EditorModel> = fake;
+        let section = build_sort_section(&model).expect("sortable model builds a section");
+        let choices = descendants::<gtk4::CheckButton>(section.upcast_ref());
+
+        assert_eq!(choices.len(), 4, "two fields and two directions");
+        assert!(choices[0].is_active(), "the first field is the fallback");
+        assert_eq!(
+            choices[..2]
+                .iter()
+                .filter(|choice| choice.is_active())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn dropping_the_sort_section_releases_its_model() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let fake = Rc::new(FakeModel::new());
+        let weak = Rc::downgrade(&fake);
+        let model: Rc<dyn EditorModel> = fake.clone();
+        let section = build_sort_section(&model).expect("sortable model builds a section");
+
+        drop(model);
+        drop(fake);
+        drop(section);
+
+        assert!(
+            weak.upgrade().is_none(),
+            "signal closures must not retain the model"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_13_sort_choices_match_every_accepted_table_sort_field() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let track_list = Rc::new(crate::ui::track_list::TrackList::new(
+            Rc::new(crate::test_db::open().unwrap()),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        let model = crate::ui::column_layout::model(&track_list);
+        let actual = model
+            .sortable_columns()
+            .into_iter()
+            .map(|column| column.id)
+            .collect::<Vec<_>>();
+        let layout = track_list.column_registry.layout();
+        let columns = track_list.shared.column_view.columns();
+        let expected = (0..columns.n_items())
+            .filter_map(|index| {
+                let column = columns
+                    .item(index)
+                    .and_downcast::<gtk4::ColumnViewColumn>()?;
+                let field = column.id()?.to_string();
+                let key = crate::ui::column_layout::ColumnId::from_sort_field(&field)?;
+                (layout.visible.contains(&key) && column.sorter().is_some()).then_some(field)
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_13_sort_popover_closes_on_escape() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let popover = gtk4::Popover::new();
+
+        assert_eq!(
+            handle_popover_key(
+                gdk::Key::Escape,
+                gdk::ModifierType::empty(),
+                &popover.downgrade()
+            ),
+            glib::Propagation::Stop
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sort_section_is_shared_by_the_dialog_and_header_popover() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let model = model();
+        let dialog = build_dialog(&model);
+        let (popover, _) = super::super::header_popover::build_header_popover(&model);
+
+        for root in [dialog.dialog.child().unwrap(), popover.child().unwrap()] {
+            let radios = descendants::<gtk4::CheckButton>(&root);
+            assert_eq!(radios.len(), 4);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn unsortable_models_do_not_show_a_sort_section() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let model: Rc<dyn EditorModel> = Rc::new(UnsortableModel(FakeModel::new()));
+        let surface = build_surface(&model, true);
+
+        assert!(descendants::<gtk4::CheckButton>(surface.toolbar.upcast_ref()).is_empty());
     }
 
     #[test]

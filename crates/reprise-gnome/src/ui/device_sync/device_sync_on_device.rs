@@ -239,6 +239,11 @@ impl OnDeviceSection {
         &self.root
     }
 
+    #[cfg(test)]
+    pub(super) fn check_button_is_sensitive(&self) -> bool {
+        self.check_button.is_sensitive()
+    }
+
     pub(super) fn update(&self, device: &DeviceView) {
         self.updating.set(true);
         let (verification, _detail, can_scan) =
@@ -250,7 +255,8 @@ impl OnDeviceSection {
             ));
         self.legacy_notice
             .set_revealed(self.legacy_notice_pending.get());
-        self.check_button.set_sensitive(can_scan);
+        self.check_button
+            .set_sensitive(can_scan && device.session_state.opens_session());
         self.storage_bar.update(&device.page.storage);
         self.storage_legend.set_label(&storage_legend(device));
 
@@ -276,6 +282,9 @@ impl OnDeviceSection {
 }
 
 pub(super) fn storage_legend(device: &DeviceView) -> String {
+    if !device.storage_measured {
+        return device_sync_strings::text(device_sync_strings::SPACE_UNKNOWN);
+    }
     if let StorageProjectionState::Insufficient { shortfall_bytes } = device.page.storage.state {
         let Some(free_bytes) = device.page.storage.current.free_bytes else {
             return device_sync_strings::text(device_sync_strings::SPACE_UNKNOWN);

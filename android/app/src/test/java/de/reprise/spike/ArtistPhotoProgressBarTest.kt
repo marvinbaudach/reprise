@@ -30,6 +30,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelStore
 import de.reprise.spike.settings.OnlineSourcesSettingsPage
 import de.reprise.spike.ui.theme.RepriseTheme
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -249,6 +250,29 @@ class ArtistPhotoProgressBarTest {
         assertEquals(1, posted.size)
         posted.remove().invoke()
         assertEquals(21L, viewModel.visibleArtistPhotoProgress?.runId)
+    }
+
+    @Test
+    fun lateBackfillCommandsAfterClearDoNotReachTheClosedLibraryBinding() {
+        var starts = 0
+        var cancels = 0
+        val viewModel = MobileSurfaceViewModel()
+        viewModel.bindArtistPhotoBackfill(
+            snapshot = { running(runId = 22) },
+            start = { starts += 1 },
+            cancel = { cancels += 1 },
+        )
+        ViewModelStore().apply {
+            put("surface", viewModel)
+            clear()
+        }
+        assertEquals(1, cancels)
+
+        viewModel.startArtistPhotoBackfill()
+        viewModel.cancelArtistPhotoBackfill()
+
+        assertEquals(0, starts)
+        assertEquals(1, cancels)
     }
 
     @Test

@@ -145,6 +145,7 @@ impl PlayerController {
                     summary.year,
                 );
                 self.sync_cover(&summary.path);
+                self.sync_position(0, summary.duration_ms);
                 // The restored track is a known track — the Lyrics tab keys
                 // off the same metadata the bar already shows, so it must not
                 // wait for playback to start. LYR-2 still holds: the fetch

@@ -432,7 +432,11 @@ impl NowPlayingPanel {
         panel
     }
 
-    pub(in crate::ui) fn widget(&self) -> &adw::OverlaySplitView {
+    pub(in crate::ui) fn widget(&self) -> &adw::BreakpointBin {
+        self.widgets.column.root()
+    }
+
+    pub(in crate::ui) fn split_view(&self) -> &adw::OverlaySplitView {
         self.widgets.column.widget()
     }
 

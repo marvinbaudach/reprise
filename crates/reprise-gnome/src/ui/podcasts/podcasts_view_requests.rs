@@ -18,6 +18,163 @@ impl Drop for RefreshFeedbackGuard {
 }
 
 impl PodcastsView {
+    pub(super) fn request_subscription_sync(self: &Rc<Self>, subscription_id: i64) -> bool {
+        self.cancel_subscription_sync_without_render(subscription_id);
+        let abort = podcasts::pipeline::SyncAbort::new();
+        self.syncing
+            .borrow_mut()
+            .insert(subscription_id, SyncRowState::new(abort.clone()));
+        self.render();
+
+        let operation = PodcastsOperation::SyncSubscription {
+            subscription_id,
+            abort: abort.clone(),
+        };
+        let generation = request_generation(self.generation.get(), &operation);
+        let (response, receiver) = podcasts_response_channel();
+        if !self.runtime.request(PodcastsRequest {
+            generation,
+            operation,
+            response,
+        }) {
+            self.syncing.borrow_mut().remove(&subscription_id);
+            self.render();
+            return false;
+        }
+
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            while let Ok(response) = receiver.recv().await {
+                let Some(view) = weak.upgrade() else {
+                    return;
+                };
+                match response.result {
+                    Ok(PodcastsWorkerResult::SyncProgress {
+                        subscription_id: response_id,
+                        progress,
+                    }) if response_id == subscription_id => {
+                        if matches!(progress, podcasts::pipeline::SyncProgress::Done(_)) {
+                            view.finish_subscription_sync(subscription_id, &abort);
+                            break;
+                        }
+                        let state = {
+                            let mut syncing = view.syncing.borrow_mut();
+                            syncing.get_mut(&subscription_id).and_then(|state| {
+                                state.abort.is_same_request(&abort).then(|| {
+                                    state.apply(&progress);
+                                    state.clone()
+                                })
+                            })
+                        };
+                        let Some(state) = state else {
+                            break;
+                        };
+                        view.update_subscription_sync(subscription_id, &state);
+                        if matches!(progress, podcasts::pipeline::SyncProgress::Failed(_)) {
+                            break;
+                        }
+                    }
+                    Ok(PodcastsWorkerResult::SyncProgress { .. }) => {}
+                    Ok(
+                        PodcastsWorkerResult::Refreshed(_)
+                        | PodcastsWorkerResult::LoadedMore { .. }
+                        | PodcastsWorkerResult::DownloadState { .. }
+                        | PodcastsWorkerResult::Filled(_),
+                    ) => {}
+                    Err(error) => {
+                        let state = {
+                            let mut syncing = view.syncing.borrow_mut();
+                            syncing.get_mut(&subscription_id).and_then(|state| {
+                                state.abort.is_same_request(&abort).then(|| {
+                                    state.step = SyncStep::Failed;
+                                    tracing::debug!(%error, "podcast subscription sync request failed");
+                                    state.clone()
+                                })
+                            })
+                        };
+                        if let Some(state) = state {
+                            view.update_subscription_sync(subscription_id, &state);
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+        true
+    }
+
+    fn update_subscription_sync(&self, subscription_id: i64, state: &SyncRowState) {
+        let widgets = self.sync_widgets.borrow().get(&subscription_id).cloned();
+        if let Some(widgets) = widgets {
+            super::super::podcasts_sync_row::update(&widgets, state);
+        } else {
+            tracing::debug!(
+                subscription_id,
+                "podcast sync row is outside the rendered filter"
+            );
+        }
+    }
+
+    fn finish_subscription_sync(
+        self: &Rc<Self>,
+        subscription_id: i64,
+        owner: &podcasts::pipeline::SyncAbort,
+    ) {
+        let still_owned = self
+            .syncing
+            .borrow()
+            .get(&subscription_id)
+            .is_some_and(|state| state.abort.is_same_request(owner));
+        if !still_owned {
+            return;
+        }
+        let widgets = self.sync_widgets.borrow().get(&subscription_id).cloned();
+        let weak = Rc::downgrade(self);
+        let owner = owner.clone();
+        let finish = move || {
+            let Some(view) = weak.upgrade() else {
+                return;
+            };
+            if !remove_subscription_sync_if_owned(
+                &mut view.syncing.borrow_mut(),
+                subscription_id,
+                &owner,
+            ) {
+                return;
+            }
+            view.refresh();
+            (view.callbacks.on_sidebar_refresh)();
+            view.request_fill_downloads();
+        };
+        if let Some(widgets) = widgets {
+            super::super::podcasts_sync_row::complete(&widgets, finish);
+        } else {
+            finish();
+        }
+    }
+
+    pub(super) fn cancel_subscription_sync(&self, subscription_id: i64) -> bool {
+        let cancelled = self.cancel_subscription_sync_without_render(subscription_id);
+        if cancelled {
+            self.render();
+        }
+        cancelled
+    }
+
+    fn cancel_subscription_sync_without_render(&self, subscription_id: i64) -> bool {
+        let abort = self
+            .syncing
+            .borrow()
+            .get(&subscription_id)
+            .map(|state| state.abort.clone());
+        let Some(abort) = abort else {
+            return false;
+        };
+        abort.cancel();
+        self.syncing.borrow_mut().remove(&subscription_id);
+        true
+    }
+
     pub(in crate::ui) fn request_refresh(self: &Rc<Self>, force: bool) -> bool {
         let policy = if force {
             podcasts::refresh::RefreshPolicy::Force
@@ -32,7 +189,7 @@ impl PodcastsView {
             policy: request.policy,
             kind: request.kind,
         };
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         self.generation.set(generation);
         let (response, receiver) = podcasts_response_channel();
         let queued = self.runtime.request(PodcastsRequest {
@@ -73,6 +230,15 @@ impl PodcastsView {
                     }
                     Ok(PodcastsWorkerResult::Refreshed(summary)) => {
                         view.footer_spinner.stop();
+                        let still_failing: Vec<i64> = summary
+                            .failures
+                            .iter()
+                            .map(|failure| failure.subscription_id)
+                            .collect();
+                        clear_failed_syncs_that_recovered(
+                            &mut view.syncing.borrow_mut(),
+                            &still_failing,
+                        );
                         view.refresh();
                         if summary.failures.is_empty() {
                             view.clear_fetch_failure();
@@ -92,7 +258,9 @@ impl PodcastsView {
                         view.refresh();
                         break;
                     }
-                    Ok(PodcastsWorkerResult::Filled(_)) => {}
+                    Ok(
+                        PodcastsWorkerResult::Filled(_) | PodcastsWorkerResult::SyncProgress { .. },
+                    ) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
@@ -112,7 +280,7 @@ impl PodcastsView {
             return false;
         }
         let operation = PodcastsOperation::FillDownloads;
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         let (response, receiver) = podcasts_response_channel();
         if !self.runtime.request(PodcastsRequest {
             generation,
@@ -144,7 +312,8 @@ impl PodcastsView {
                     }
                     Ok(
                         PodcastsWorkerResult::Refreshed(_)
-                        | PodcastsWorkerResult::LoadedMore { .. },
+                        | PodcastsWorkerResult::LoadedMore { .. }
+                        | PodcastsWorkerResult::SyncProgress { .. },
                     ) => {}
                     Err(error) => {
                         tracing::warn!(%error, "podcast download fill-up failed");
@@ -248,7 +417,7 @@ impl PodcastsView {
             subscription_id,
             end,
         };
-        let generation = request_generation(self.generation.get(), operation);
+        let generation = request_generation(self.generation.get(), &operation);
         self.generation.set(generation);
         let (response, receiver) = podcasts_response_channel();
         if !self.runtime.request(PodcastsRequest {
@@ -284,7 +453,9 @@ impl PodcastsView {
                         view.set_download_state(episode_id, &state);
                     }
                     Ok(PodcastsWorkerResult::Refreshed(_)) => {}
-                    Ok(PodcastsWorkerResult::Filled(_)) => {}
+                    Ok(
+                        PodcastsWorkerResult::Filled(_) | PodcastsWorkerResult::SyncProgress { .. },
+                    ) => {}
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
