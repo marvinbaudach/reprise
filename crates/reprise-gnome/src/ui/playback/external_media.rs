@@ -208,6 +208,7 @@ impl PlayerController {
     }
 
     fn prepare_external_playback(&self) {
+        self.clear_pending_local_seek();
         self.persist_external_position();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -304,10 +305,10 @@ impl PlayerController {
         self.notify_external_changed();
 
         if needs_ytdlp {
-            self.fetch_youtube(generation, episode_id, resume_ms);
+            self.fetch_youtube(generation, episode_id);
             return Ok(());
         }
-        self.start_podcast_source(generation, episode_id, source, resume_ms)
+        self.start_podcast_source(generation, episode_id, source)
     }
 
     pub(super) fn start_podcast_source(
@@ -315,7 +316,6 @@ impl PlayerController {
         generation: u64,
         episode_id: i64,
         source: EpisodeSource,
-        resume_ms: i64,
     ) -> Result<(), PlaybackError> {
         if !self.external_generation_matches_podcast(generation) {
             return Ok(());
@@ -329,7 +329,7 @@ impl PlayerController {
             return Err(error);
         }
         self.flush_episode_skip_toast();
-        let should_seek = {
+        let resume_ms = {
             let mut external = self.external.borrow_mut();
             let Some(ExternalSession::Podcast(session)) = external.session.as_mut() else {
                 return Ok(());
@@ -341,9 +341,12 @@ impl PlayerController {
             // `play_uri` only accepts the local URI; transport failures still
             // arrive asynchronously. Keep the advance chain until playback
             // actually moves in `handle_external_position`.
-            resume_ms > 0
+            let ExternalMedia::Podcast { resume_ms, .. } = &session.media else {
+                unreachable!("podcast session contains radio media");
+            };
+            *resume_ms
         };
-        if should_seek {
+        if resume_ms > 0 {
             let succeeded = self.player.seek_to(resume_ms).is_ok();
             let mut external = self.external.borrow_mut();
             if external.generation == generation {
@@ -527,6 +530,7 @@ impl PlayerController {
     /// queue-takeover path is [`Self::leave_external_for_queue`], which leaves
     /// the loaded track alone.
     pub(in crate::ui) fn stop_external(&self) {
+        self.clear_pending_local_seek();
         self.persist_external_position();
         {
             let mut external = self.external.borrow_mut();

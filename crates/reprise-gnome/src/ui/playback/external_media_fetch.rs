@@ -33,7 +33,7 @@ impl PlayerController {
     ///
     /// A YouTube episode is played from a local file or not at all. Progress
     /// is forwarded to the source rows while the session stays resolving.
-    pub(super) fn fetch_youtube(self: &Rc<Self>, generation: u64, episode_id: i64, resume_ms: i64) {
+    pub(super) fn fetch_youtube(self: &Rc<Self>, generation: u64, episode_id: i64) {
         let Some(database_path) = self.conn.path() else {
             self.fail_podcast(generation, "the active database has no persistent path");
             return;
@@ -102,7 +102,6 @@ impl PlayerController {
                         generation,
                         episode_id,
                         EpisodeSource::File(path),
-                        resume_ms,
                     );
                 }
                 FetchOutcome::Fail(message) => controller.fail_podcast(generation, &message),

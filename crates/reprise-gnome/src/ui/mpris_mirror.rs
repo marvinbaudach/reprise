@@ -6,8 +6,8 @@
 //! ownership (`mpris_state`/`now_playing`/`volume`/`mpris_seek_notify`),
 //! starting the D-Bus thread in `PlayerController::new`, the drain loop that
 //! calls `handle_mpris_command` below once per received command, and the
-//! `seek` method (also called directly by the bar's seek scale) that both
-//! actually seeks and triggers the `Seeked` signal via `notify_mpris_seek`.
+//! `seek` method (also reached by a bar seek once its item is loaded) that
+//! both actually seeks and triggers the `Seeked` signal via `notify_mpris_seek`.
 //!
 //! ## What lives here
 //!
@@ -335,12 +335,10 @@ impl PlayerController {
         mirror.repeat = repeat;
     }
 
-    /// Seeks to `position_ms` — the one method behind every seek in the app,
-    /// whatever originated it: the bar's seek scale (`player_controller_
-    /// wiring.rs`'s `wire_bar_controls`/`connect_seek` closure) and every
-    /// MPRIS-initiated seek (`Seek`/`SetPosition`, resolved to an absolute
-    /// `position_ms` by `handle_mpris_command` above before calling this)
-    /// all funnel through here (Stage 3 Task 10). One method for both
+    /// Seeks a loaded pipeline to `position_ms`. The bar's seek scale
+    /// delegates here when media is already loaded, while every MPRIS seek
+    /// (`Seek`/`SetPosition`, resolved to an absolute `position_ms` by
+    /// `handle_mpris_command` above) calls it directly. One method for both
     /// origins so the `Seeked` signal — which the MPRIS spec requires after
     /// *every* successful seek, not just ones MPRIS itself initiated (the
     /// task brief is explicit: "auch app-internen!") — only has to be wired
@@ -351,14 +349,20 @@ impl PlayerController {
     /// MPRIS `Seeked` story and both helpers it calls already live in this
     /// file.
     pub(super) fn seek(&self, position_ms: i64) {
+        self.try_seek_with_feedback(position_ms);
+    }
+
+    pub(super) fn try_seek_with_feedback(&self, position_ms: i64) -> bool {
         match self.player.seek_to(position_ms) {
             Ok(()) => {
                 self.update_mpris_position(position_ms);
                 self.notify_mpris_seek(position_ms);
                 self.lyrics.external_seek(position_ms);
+                true
             }
             Err(error) => {
                 tracing::error!(%error, position_ms, "seek failed");
+                false
             }
         }
     }

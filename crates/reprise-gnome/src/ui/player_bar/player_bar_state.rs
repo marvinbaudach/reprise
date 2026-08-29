@@ -172,6 +172,14 @@ pub(in crate::ui) fn bar_should_be_sensitive(
     state != PlaybackState::Stopped || queue_has_tracks || library_has_tracks || play_next_available
 }
 
+pub(in crate::ui) fn waveform_should_be_sensitive(
+    state: PlaybackState,
+    seek_enabled: bool,
+    has_loaded_length: bool,
+) -> bool {
+    seek_enabled && (state != PlaybackState::Stopped || has_loaded_length)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +349,53 @@ mod tests {
             false,
             false
         ));
+    }
+
+    #[test]
+    fn stopped_waveform_with_a_loaded_length_is_seekable() {
+        assert!(waveform_should_be_sensitive(
+            PlaybackState::Stopped,
+            true,
+            true
+        ));
+    }
+
+    #[test]
+    fn stopped_waveform_without_a_loaded_length_is_not_seekable() {
+        assert!(!waveform_should_be_sensitive(
+            PlaybackState::Stopped,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn playing_waveform_does_not_wait_for_a_length() {
+        assert!(waveform_should_be_sensitive(
+            PlaybackState::Playing,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn paused_waveform_does_not_wait_for_a_length() {
+        assert!(waveform_should_be_sensitive(
+            PlaybackState::Paused,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn disabled_seeking_keeps_the_waveform_inert_in_every_state() {
+        for state in [
+            PlaybackState::Stopped,
+            PlaybackState::Paused,
+            PlaybackState::Playing,
+        ] {
+            assert!(!waveform_should_be_sensitive(state, false, true));
+        }
     }
 
     #[test]
