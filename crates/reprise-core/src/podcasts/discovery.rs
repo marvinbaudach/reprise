@@ -17,6 +17,9 @@ pub struct Candidate {
     pub image_url: Option<String>,
     pub url: String,
     pub identity_guids: Vec<String>,
+    pub follower_count: Option<u64>,
+    pub channel_id: Option<String>,
+    pub matching_video_count: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -222,6 +225,9 @@ mod tests {
             image_url: Some("https://img.test/source.jpg".into()),
             url: url.into(),
             identity_guids: Vec::new(),
+            follower_count: None,
+            channel_id: None,
+            matching_video_count: None,
         }
     }
 

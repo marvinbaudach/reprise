@@ -24,6 +24,7 @@ pub(super) fn short_timeouts() -> YtDlpTimeouts {
         update: Duration::from_secs(2),
         list: Duration::from_secs(2),
         search: Duration::from_secs(2),
+        channel_head: Duration::from_secs(2),
         resolve: Duration::from_secs(2),
         download: Duration::from_secs(2),
     }

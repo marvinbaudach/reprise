@@ -94,7 +94,7 @@ pub(super) fn stable_source_url(value: &Value) -> Option<String> {
 /// yt-dlp reports `channel_follower_count` on video entries, but only when the
 /// channel publishes it. A hidden count is absent or null, and some responses
 /// carry a float — none of those may become a visible zero.
-fn entry_follower_count(entry: &Value) -> Option<u64> {
+pub(super) fn entry_follower_count(entry: &Value) -> Option<u64> {
     let value = entry.get("channel_follower_count")?;
     if let Some(count) = value.as_u64() {
         return Some(count);

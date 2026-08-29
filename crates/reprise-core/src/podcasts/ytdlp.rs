@@ -10,8 +10,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde_json::Value;
-
 #[path = "ytdlp_range.rs"]
 mod range;
 
@@ -20,6 +18,13 @@ mod failure;
 
 #[path = "ytdlp_discovery.rs"]
 mod discovery;
+
+#[path = "ytdlp_follower_enrich.rs"]
+mod follower_enrich;
+
+#[path = "ytdlp_playlist.rs"]
+mod playlist;
+use playlist::{duration_secs, parse as parse_playlist};
 
 pub use discovery::resolve_binary;
 
@@ -42,6 +47,7 @@ pub struct YtDlpTimeouts {
     pub update: Duration,
     pub list: Duration,
     pub search: Duration,
+    pub channel_head: Duration,
     pub resolve: Duration,
     pub download: Duration,
 }
@@ -53,6 +59,7 @@ impl Default for YtDlpTimeouts {
             update: Duration::from_secs(60),
             list: Duration::from_secs(60),
             search: Duration::from_secs(60),
+            channel_head: Duration::from_secs(15),
             resolve: Duration::from_secs(45),
             download: Duration::from_secs(600),
         }
@@ -689,89 +696,8 @@ fn canonical_parent(path: &Path) -> Result<PathBuf, PodcastError> {
         })
 }
 
-fn parse_playlist(operation: &'static str, body: &str) -> Result<YtDlpPlaylist, PodcastError> {
-    let value: Value = serde_json::from_str(body).map_err(|_| response_error(operation))?;
-    let raw_entries = value
-        .get("entries")
-        .and_then(Value::as_array)
-        .ok_or_else(|| response_error(operation))?;
-    let source_url = raw_entries
-        .iter()
-        .find_map(|entry| {
-            entry
-                .get("channel_id")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|id| format!("https://www.youtube.com/channel/{id}"))
-        })
-        .or_else(|| super::ytdlp_search::stable_source_url(&value))
-        .or_else(|| {
-            raw_entries
-                .iter()
-                .find_map(super::ytdlp_search::stable_source_url)
-        });
-    let entries = raw_entries
-        .iter()
-        .filter_map(|entry| {
-            let id = entry.get("id")?.as_str()?.trim().to_string();
-            let title = entry.get("title")?.as_str()?.trim().to_string();
-            if id.is_empty() || title.is_empty() {
-                return None;
-            }
-            Some(YtDlpVideo {
-                id,
-                title,
-                duration_secs: duration_secs(entry.get("duration")),
-                timestamp: integer_value(entry.get("timestamp")),
-                upload_date: entry
-                    .get("upload_date")
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned),
-                image_url: super::ytdlp_search::entry_image_url(entry),
-            })
-        })
-        .collect();
-
-    Ok(YtDlpPlaylist {
-        title: value
-            .get("title")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        channel: std::iter::once(&value)
-            .chain(raw_entries.iter())
-            .find_map(super::ytdlp_search::channel_name),
-        source_url,
-        image_url: super::ytdlp_search::listing_image_url(&value),
-        entries,
-    })
-}
-
-fn duration_secs(value: Option<&Value>) -> Option<i64> {
-    value
-        .and_then(|value| {
-            value
-                .as_f64()
-                .or_else(|| value.as_str()?.parse::<f64>().ok())
-        })
-        .filter(|duration| duration.is_finite() && *duration >= 0.0)
-        .map(|duration| duration as i64)
-}
-
 #[path = "ytdlp_resolved.rs"]
 pub(super) mod resolved;
-
-fn integer_value(value: Option<&Value>) -> Option<i64> {
-    value
-        .and_then(|value| {
-            value
-                .as_i64()
-                .or_else(|| value.as_str()?.parse::<i64>().ok())
-        })
-        .filter(|value| *value >= 0)
-}
 
 #[cfg(all(test, unix))]
 #[path = "ytdlp_range_tests.rs"]
@@ -794,3 +720,7 @@ mod process_tests;
 #[cfg(all(test, unix))]
 #[path = "ytdlp_tests.rs"]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "ytdlp_follower_enrich_tests.rs"]
+mod follower_enrich_tests;
