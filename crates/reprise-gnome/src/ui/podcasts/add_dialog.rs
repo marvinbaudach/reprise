@@ -545,7 +545,7 @@ fn attach_candidates(
                     add_dialog_followers::start(
                         youtube_results,
                         follower_request,
-                        conn,
+                        &conn,
                         generation,
                         request_generation,
                     );

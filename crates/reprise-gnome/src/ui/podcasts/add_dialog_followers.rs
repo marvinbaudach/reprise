@@ -175,18 +175,16 @@ fn reorder(parent: &gtk4::Box, rows: &[RenderedCandidate], largest_first: bool) 
 pub(super) fn start(
     results: YoutubeResults,
     request: YoutubeFollowerRequest,
-    conn: Rc<Db>,
+    conn: &Db,
     generation: Rc<Cell<u64>>,
     request_generation: u64,
 ) {
     // `NET-1a`: permission is re-read after wave 1. It can change while the
     // first search is running, and an earlier allow is not authority for a
     // second set of provider requests.
-    let youtube_allowed = reprise_core::online_sources::network_allowed(
-        &conn,
-        &reprise_core::modules::YOUTUBE_MODULE,
-    )
-    .unwrap_or(false);
+    let youtube_allowed =
+        reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::YOUTUBE_MODULE)
+            .unwrap_or(false);
     if !youtube_allowed || request.cancelled.load(Ordering::Acquire) {
         request.cancelled.store(true, Ordering::Release);
         return;
