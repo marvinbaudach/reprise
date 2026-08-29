@@ -81,6 +81,34 @@ esac
 }
 
 #[test]
+fn follower_enrichment_never_dispatches_a_non_youtube_channel_url() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = directory.path().join("invoked");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "touch '{}'\nprintf '%s\\n' '{{\"channel_follower_count\":99}}'",
+            log.display()
+        ),
+    );
+    let runner =
+        YtDlp::with_binary_and_timeouts(binary, short_timeouts()).with_browser_session("brave");
+    let mut channels = vec![channel("UC-untrusted"), channel("UC-wrong-scheme")];
+    channels[0].url = "https://attacker.example/channel/UC-untrusted".to_owned();
+    channels[1].url = "file://youtube.com/channel/UC-wrong-scheme".to_owned();
+
+    runner.enrich_follower_counts(&mut channels, &AtomicBool::new(false));
+
+    assert!(
+        !log.exists(),
+        "the untrusted URL reached the yt-dlp boundary"
+    );
+    assert!(channels
+        .iter()
+        .all(|channel| channel.follower_count.is_none()));
+}
+
+#[test]
 fn src_9_channel_head_never_invents_a_hidden_or_malformed_count() {
     let directory = tempfile::tempdir().unwrap();
     let binary = fake_binary(

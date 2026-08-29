@@ -49,6 +49,13 @@ impl YtDlp {
             .iter()
             .enumerate()
             .filter(|(_, channel)| channel.follower_count.is_none())
+            .filter(|(_, channel)| {
+                let Ok(url) = url::Url::parse(&channel.url) else {
+                    return false;
+                };
+                matches!(url.scheme(), "http" | "https")
+                    && super::super::url_detect::is_youtube_url(&url)
+            })
             .take(FOLLOWER_ENRICHMENT_MAX_CHANNELS)
             .map(|(index, channel)| (index, channel.url.clone()))
             .collect::<Vec<_>>();
