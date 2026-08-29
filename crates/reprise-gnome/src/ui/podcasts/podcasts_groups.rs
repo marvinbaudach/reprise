@@ -9,6 +9,7 @@ use chrono::Local;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::connectivity::Connectivity;
+use reprise_core::db::Db;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
@@ -81,10 +82,11 @@ struct GroupRenderContext<'a> {
     query: &'a str,
     expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     download_states: &'a BTreeMap<i64, DownloadState>,
-    /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-    /// &modules::ARTWORK_MODULE)`, computed once per render pass by
-    /// the caller — this module never reads settings itself.
+    /// `NET-1a` / `C1`: the caller's render-pass gate. A first expansion
+    /// recomputes it from `conn` because a retained hidden page can outlive
+    /// the value captured here.
     images_allowed: bool,
+    conn: &'a Rc<Db>,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &'a Rc<RefCell<PodcastSelection>>,
@@ -114,6 +116,7 @@ pub(super) fn replace(
     expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
     images_allowed: bool,
+    conn: &Rc<Db>,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &Rc<RefCell<PodcastSelection>>,
@@ -127,6 +130,7 @@ pub(super) fn replace(
         expanded_episode_sources,
         download_states,
         images_allowed,
+        conn,
         connectivity,
         unavailable_episode,
         selection,
@@ -144,6 +148,7 @@ pub(super) fn replace_with_sync(
     expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
     images_allowed: bool,
+    conn: &Rc<Db>,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &Rc<RefCell<PodcastSelection>>,
@@ -158,6 +163,7 @@ pub(super) fn replace_with_sync(
         expanded_episode_sources,
         download_states,
         images_allowed,
+        conn,
         connectivity,
         unavailable_episode,
         selection,
@@ -176,6 +182,7 @@ fn replace_with_sync_and_artwork(
     expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
     images_allowed: bool,
+    conn: &Rc<Db>,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &Rc<RefCell<PodcastSelection>>,
@@ -201,6 +208,7 @@ fn replace_with_sync_and_artwork(
         expanded_episode_sources,
         download_states,
         images_allowed,
+        conn,
         connectivity,
         unavailable_episode,
         selection,
@@ -267,8 +275,8 @@ fn build_group(
     let expansion_locked = sync_loading;
     let expanded_sources = context.expanded_sources.clone();
     let requested_for_notify = artwork_requested.clone();
-    let allowed_for_notify = artwork_allowed.clone();
     let artwork_for_notify = group_artwork.clone();
+    let conn_for_notify = context.conn.clone();
     expander.connect_expanded_notify(move |expander| {
         if expansion_locked {
             if expander.is_expanded() {
@@ -278,11 +286,19 @@ fn build_group(
         }
         if expander.is_expanded() {
             expanded_sources.borrow_mut().insert(subscription_id);
-            if !requested_for_notify.replace(true) {
-                let images_allowed = allowed_for_notify.get();
+            if !requested_for_notify.get() {
+                let images_allowed = reprise_core::online_sources::network_allowed(
+                    &conn_for_notify,
+                    &reprise_core::modules::ARTWORK_MODULE,
+                )
+                .unwrap_or(false);
+                requested_for_notify.set(true);
                 let rebinds = artwork_for_notify.borrow().clone();
                 for rebind in rebinds {
                     rebind(images_allowed);
+                }
+                if !images_allowed {
+                    requested_for_notify.set(false);
                 }
             }
         } else {
