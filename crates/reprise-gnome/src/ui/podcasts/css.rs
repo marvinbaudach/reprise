@@ -1,7 +1,12 @@
 //! Podcasts source structural styles.
 
+use crate::ui::motion;
+
 pub(super) fn css() -> String {
-    r#"
+    format!("{HEAD}{sync}{TAIL}", sync = sync_chrome_css())
+}
+
+const HEAD: &str = r#"
 .reprise-podcasts-source { min-width: 0; }
 .reprise-podcasts-table { border-top: 1px solid alpha(currentColor, 0.10); }
 .reprise-podcast-group {
@@ -9,33 +14,48 @@ pub(super) fn css() -> String {
   background: alpha(currentColor, 0.045);
   border: 1px solid alpha(currentColor, 0.08);
 }
-.reprise-podcast-group.reprise-podcast-group-syncing {
+"#;
+
+/// `POD-26`'s loading chrome. It sits between two raw blocks rather than inside
+/// them because its durations are interpolated from `ui::motion`: `MOT-1` keeps
+/// timing out of the CSS itself (`scripts/check-motion-tokens.sh`).
+fn sync_chrome_css() -> String {
+    format!(
+        r#".reprise-podcast-group.reprise-podcast-group-syncing {{
   border-color: alpha(@accent_bg_color, 0.22);
   background-image: linear-gradient(to bottom, alpha(@accent_bg_color, 0.06), transparent);
-  transition: border-color 250ms ease, background-image 250ms ease;
-}
-.reprise-podcast-group-syncing > title > arrow { opacity: 0.38; }
-.reprise-podcast-sync-row { min-height: 56px; }
-.reprise-podcast-sync-cover {
+  transition: border-color {standard}ms ease, background-image {standard}ms ease;
+}}
+.reprise-podcast-group-syncing > title > arrow {{ opacity: 0.38; }}
+.reprise-podcast-sync-row {{ min-height: 56px; }}
+.reprise-podcast-sync-cover {{
   min-width: 40px;
   min-height: 40px;
   border-radius: 8px;
   background: alpha(currentColor, 0.08);
-}
-.reprise-podcast-sync-cover-icon { opacity: 0.62; }
-.reprise-podcast-sync-shimmer {
+}}
+.reprise-podcast-sync-cover-icon {{ opacity: 0.62; }}
+.reprise-podcast-sync-shimmer {{
   min-width: 7px;
   background: alpha(@accent_bg_color, 0.14);
-  animation: reprise-podcast-shimmer 1900ms linear infinite;
-}
-.reprise-podcast-sync-spin {
+  animation: reprise-podcast-shimmer {shimmer}ms linear infinite;
+}}
+.reprise-podcast-sync-spin {{
   color: @reprise_accent_text_color;
-  animation: reprise-podcast-spin 900ms linear infinite;
+  animation: reprise-podcast-spin {spin}ms linear infinite;
+}}
+.reprise-podcast-sync-breathe {{
+  animation: reprise-podcast-breathe {breathe}ms ease-in-out infinite;
+}}
+"#,
+        standard = motion::STANDARD_MS,
+        shimmer = motion::PODCAST_SYNC_SHIMMER_MS,
+        spin = motion::PODCAST_SYNC_SPIN_MS,
+        breathe = motion::PODCAST_SYNC_BREATHE_MS,
+    )
 }
-.reprise-podcast-sync-breathe {
-  animation: reprise-podcast-breathe 2000ms ease-in-out infinite;
-}
-.reprise-podcast-sync-dot {
+
+const TAIL: &str = r#".reprise-podcast-sync-dot {
   min-width: 6px;
   min-height: 6px;
   margin: 5px;
@@ -122,9 +142,7 @@ pub(super) fn css() -> String {
   padding: 10px;
   background: alpha(currentColor, 0.04);
 }
-"#
-    .to_owned()
-}
+"#;
 
 #[cfg(test)]
 mod tests {

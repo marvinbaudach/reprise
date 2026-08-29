@@ -30,6 +30,16 @@ pub(in crate::ui) const STATS_TWEEN_MS: u32 = 250;
 pub(in crate::ui) const STATS_ENTRANCE_DELAY_MS: u32 = 100;
 pub(in crate::ui) const STATS_HORIZONTAL_STAGGER_MS: u32 = 40;
 
+// `POD-26`: the podcast group's loading chrome. The first three are loop
+// periods rather than interaction transitions — like `INDICATOR_SPIN_MS`, none
+// of MICRO/STANDARD/AMBIENT applies to something that never ends — and the
+// fourth is the group artwork's crossfade. They are named here so the podcasts
+// CSS carries no timing of its own.
+pub(in crate::ui) const PODCAST_SYNC_SHIMMER_MS: u32 = 1_900;
+pub(in crate::ui) const PODCAST_SYNC_SPIN_MS: u32 = 900;
+pub(in crate::ui) const PODCAST_SYNC_BREATHE_MS: u32 = 2_000;
+pub(in crate::ui) const PODCAST_ARTWORK_CROSSFADE_MS: u32 = 200;
+
 pub(in crate::ui) const MICRO_EASING: adw::Easing = adw::Easing::EaseOutQuad;
 pub(in crate::ui) const STANDARD_EASING: adw::Easing = adw::Easing::EaseOutCubic;
 /// Retained without a Rust call site: accent changes ride whatever transition
