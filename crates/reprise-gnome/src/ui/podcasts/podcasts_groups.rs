@@ -27,6 +27,7 @@ use super::podcasts_selection::PodcastSelection;
 use super::podcasts_sync_row::{self, SyncRowWidgets};
 use super::podcasts_sync_state::SyncRowState;
 use super::podcasts_title::TitleParts;
+use crate::ui::motion;
 use crate::ui::playing_marker;
 use crate::ui::strings;
 
@@ -360,7 +361,9 @@ fn group_header_with_rebind(
             artwork
                 .widget()
                 .set_transition_type(gtk4::StackTransitionType::Crossfade);
-            artwork.widget().set_transition_duration(200);
+            artwork
+                .widget()
+                .set_transition_duration(motion::PODCAST_ARTWORK_CROSSFADE_MS);
             artwork_host.append(&crate::ui::source_row::media(
                 artwork.widget(),
                 crate::ui::source_row::MediaShape::SourceSquare,
