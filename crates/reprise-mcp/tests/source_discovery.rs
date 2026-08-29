@@ -135,10 +135,19 @@ fn youtube_search_omits_the_subscriber_count_only_when_the_channel_hides_it() {
     std::fs::write(
         &fake_ytdlp,
         r#"#!/bin/sh
-printf '%s\n' '{"entries":[
-  {"id":"v1","title":"Vid A","channel_id":"UC-visible","channel":"Visible Channel","channel_follower_count":62400},
-  {"id":"v2","title":"Vid B","channel_id":"UC-hidden","channel":"Hidden Channel"}
-]}'
+set -eu
+case "$*" in
+  "--no-warnings --flat-playlist -J ytsearch20:rust audio")
+    printf '%s\n' '{"entries":[
+      {"id":"v1","title":"Vid A","channel_id":"UC-visible","channel":"Visible Channel"},
+      {"id":"v2","title":"Vid B","channel_id":"UC-hidden","channel":"Hidden Channel"}
+    ]}' ;;
+  "--no-warnings --flat-playlist -I 0 -J https://www.youtube.com/channel/UC-visible")
+    printf '%s\n' '{"channel_follower_count":62400}' ;;
+  "--no-warnings --flat-playlist -I 0 -J https://www.youtube.com/channel/UC-hidden")
+    printf '%s\n' '{}' ;;
+  *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
+esac
 "#,
     )
     .unwrap();
