@@ -100,12 +100,8 @@ pub const UNAVAILABLE_PLAYLIST: &str = N_!("Unavailable playlist");
 pub const PICKER_FOOTER: &str = N_!("{selected} selected · {content} · {size}");
 pub const TRACKS: &str = N_!("{count} tracks");
 
-pub fn playlist_selection_tooltip(locked: bool) -> String {
-    text(if locked {
-        PLAYLIST_SELECTION_LOCKED
-    } else {
-        CHOOSE_PLAYLISTS
-    })
+pub fn playlist_selection_locked_reason() -> String {
+    text(PLAYLIST_SELECTION_LOCKED)
 }
 
 pub fn available_space(bytes: Option<u64>) -> String {

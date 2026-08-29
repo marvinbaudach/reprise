@@ -57,7 +57,7 @@ impl PlaylistCard {
         header.append(&choose);
 
         let locked_reason = label(
-            &device_sync_strings::playlist_selection_tooltip(true),
+            &device_sync_strings::playlist_selection_locked_reason(),
             "dim-label",
         );
         locked_reason.set_wrap(true);
@@ -97,8 +97,7 @@ impl PlaylistCard {
     pub(super) fn update(&self, device: &DeviceView) {
         self.updating.set(true);
         let editable = device.page.controls.editable;
-        let locked_reason =
-            (!editable).then(|| device_sync_strings::playlist_selection_tooltip(true));
+        let locked_reason = (!editable).then(device_sync_strings::playlist_selection_locked_reason);
         self.locked_reason.set_visible(!editable);
         self.choose.set_sensitive(editable);
         self.choose.set_tooltip_text(locked_reason.as_deref());
