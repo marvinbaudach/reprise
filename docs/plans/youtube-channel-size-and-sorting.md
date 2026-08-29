@@ -2,7 +2,7 @@
 slug: youtube-channel-size-and-sorting
 worktree: /home/marvin/Projects/reprise-youtube-channel-size-and-sorting
 branch: feature/youtube-channel-size-and-sorting
-phase: implementation
+phase: coded
 created: 2026-08-16
 reviewed: 2026-08-29
 ---
@@ -85,6 +85,17 @@ together after roughly six seconds, and reorder only if `Largest first` is
 active. No live hidden-count channel was identified during the measurements, so
 that case remains fixture-verified unless this check finds one; if it does, add
 its channel id here.
+
+### 2026-08-29 result
+
+The check ran through CUA on an isolated Xvfb/Openbox display with private
+D-Bus/AT-SPI, disposable XDG data and cache, and the fake audio sink. The first
+snapshot showed 15 relevance-ordered rows without counts and an enabled
+`Largest first` toggle. With the toggle activated while counts were pending,
+the first enriched snapshot arrived about 8.3 seconds later; all 15 rows gained
+counts together and the stored rows were ordered 834k, 629k, 229k, 199k, and
+downward. No channel in that result set hid its count, so hidden-count behavior
+remains fixture-verified rather than live-verified.
 
 ## Non-goals
 
