@@ -109,17 +109,17 @@ fn playlist_selection_explains_and_enforces_its_locked_state() {
     let mut locked = device();
     locked.page.controls.editable = false;
     let (surface, _root) = DeviceSyncPage::new(&locked, page_actions(), &no_op_content_actions());
-    let reason = device_sync_strings::playlist_selection_tooltip(true);
+    let reason = "Playlist selection is locked while this device is synchronizing; wait for synchronization to finish before changing it.";
 
     assert!(surface.playlist_card.locked_reason.is_visible());
     assert_eq!(surface.playlist_card.locked_reason.text(), reason);
     assert!(!surface.playlist_card.choose.is_sensitive());
     assert_eq!(
         surface.playlist_card.choose.tooltip_text().as_deref(),
-        Some(reason.as_str())
+        Some(reason)
     );
     assert!(surface.playlist_card.rows.borrow().iter().all(|row| {
-        !row.button.is_sensitive() && row.button.tooltip_text().as_deref() == Some(reason.as_str())
+        !row.button.is_sensitive() && row.button.tooltip_text().as_deref() == Some(reason)
     }));
 
     let mut editable = locked;

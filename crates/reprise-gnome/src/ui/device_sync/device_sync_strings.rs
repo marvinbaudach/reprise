@@ -82,7 +82,7 @@ pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
 pub const SYNCING_FILE_COUNT: &str = N_!("Syncing · {completed} / {total}");
 pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
 const PLAYLIST_SELECTION_LOCKED: &str = N_!(
-    "Playlist selection is locked while this device is synchronizing; cancel the synchronization to change it."
+    "Playlist selection is locked while this device is synchronizing; wait for synchronization to finish before changing it."
 );
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
