@@ -80,6 +80,38 @@ fn stale_remembered_device_reprojects_library_changes_while_disconnected() {
 }
 
 #[test]
+fn failed_stale_reprojection_remains_dirty_for_a_retry() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+
+        runtime.mark_all_devices_stale();
+        reprise_core::library::playlists::rename(&conn, 10, "Travel").unwrap();
+        crate::test_db::connection(&conn)
+            .execute("ALTER TABLE playlists RENAME TO unavailable_playlists", [])
+            .unwrap();
+
+        let first_refresh = runtime.recompute_if_stale("remembered");
+
+        crate::test_db::connection(&conn)
+            .execute("ALTER TABLE unavailable_playlists RENAME TO playlists", [])
+            .unwrap();
+        assert!(first_refresh.is_err());
+        runtime.recompute_if_stale("remembered").unwrap();
+
+        assert!(runtime
+            .devices()
+            .remove(0)
+            .page
+            .playlists
+            .iter()
+            .any(|row| { row.name.as_deref() == Some("Travel") }));
+    });
+}
+
+#[test]
 fn unplugging_discards_live_storage_and_scan_inventory_but_keeps_library_projection() {
     run(async {
         let (_temp, conn) = fixture();

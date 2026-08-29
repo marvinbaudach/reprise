@@ -383,7 +383,18 @@ impl DeviceSyncRuntime {
             }
             device.library_dirty = false;
         }
-        self.recompute_delta(device_id)
+        let result = self.recompute_delta(device_id);
+        if result.is_err() {
+            if let Some(device) = self
+                .device_states
+                .borrow_mut()
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+            {
+                device.library_dirty = true;
+            }
+        }
+        result
     }
 
     pub fn cancel_current(self: &Rc<Self>, device_id: &str) {
