@@ -2,7 +2,7 @@
 slug: an-agent-started-song-inherits-the-library-queue
 worktree: /home/marvin/Projects/reprise-an-agent-started-song-inherits-the-library-queue
 branch: feature/an-agent-started-song-inherits-the-library-queue
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-29
 ---
