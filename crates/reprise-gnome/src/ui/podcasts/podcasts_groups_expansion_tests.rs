@@ -62,22 +62,28 @@ fn render_with_counted_episode_artwork(
             )
         },
     );
-    replace_with_sync_and_artwork(
-        &container,
-        std::slice::from_ref(rendered),
-        None,
+    let groups = std::slice::from_ref(rendered);
+    let expanded_episode_sources = Rc::new(RefCell::new(BTreeSet::new()));
+    let download_states = BTreeMap::new();
+    let selection = Rc::new(RefCell::new(PodcastSelection::default()));
+    let syncing = HashMap::new();
+    let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
+    let context = GroupRenderContext {
+        playing_episode: None,
         expanded_sources,
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        cached_images_allowed,
-        &conn,
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
         query,
-        &HashMap::new(),
-        artwork,
-    );
+        expanded_episode_sources: &expanded_episode_sources,
+        download_states: &download_states,
+        images_allowed: cached_images_allowed,
+        conn: &conn,
+        connectivity: Connectivity::Online,
+        unavailable_episode: None,
+        selection: &selection,
+        paths: &paths,
+        syncing: &syncing,
+        episode_artwork: artwork,
+    };
+    replace_with_sync_and_artwork(&container, groups, &context);
     container
         .first_child()
         .and_downcast::<gtk4::Expander>()
