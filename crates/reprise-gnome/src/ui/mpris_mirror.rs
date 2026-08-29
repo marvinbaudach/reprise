@@ -349,14 +349,20 @@ impl PlayerController {
     /// MPRIS `Seeked` story and both helpers it calls already live in this
     /// file.
     pub(super) fn seek(&self, position_ms: i64) {
+        self.try_seek_with_feedback(position_ms);
+    }
+
+    pub(super) fn try_seek_with_feedback(&self, position_ms: i64) -> bool {
         match self.player.seek_to(position_ms) {
             Ok(()) => {
                 self.update_mpris_position(position_ms);
                 self.notify_mpris_seek(position_ms);
                 self.lyrics.external_seek(position_ms);
+                true
             }
             Err(error) => {
                 tracing::error!(%error, position_ms, "seek failed");
+                false
             }
         }
     }

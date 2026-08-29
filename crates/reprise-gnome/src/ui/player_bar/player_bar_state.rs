@@ -379,6 +379,15 @@ mod tests {
     }
 
     #[test]
+    fn paused_waveform_does_not_wait_for_a_length() {
+        assert!(waveform_should_be_sensitive(
+            PlaybackState::Paused,
+            true,
+            false
+        ));
+    }
+
+    #[test]
     fn disabled_seeking_keeps_the_waveform_inert_in_every_state() {
         for state in [
             PlaybackState::Stopped,

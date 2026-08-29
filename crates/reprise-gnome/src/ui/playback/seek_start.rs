@@ -27,11 +27,17 @@ impl PlayerController {
             if let Some(item) = current {
                 let change = restored_start_change(self.restored_placement_intact.get());
                 self.start_current_item(item, change);
-                let started_requested_track = item.track_id().is_some_and(|id| {
-                    self.current_track.get().is_some_and(|(loaded, _)| loaded == id)
-                });
-                if started_requested_track {
-                    self.start_pending_seek(position_ms);
+                match item {
+                    QueueItem::Track(id)
+                        if self
+                            .current_track
+                            .get()
+                            .is_some_and(|(loaded, _)| loaded == id) =>
+                    {
+                        self.start_pending_seek(position_ms);
+                    }
+                    QueueItem::Episode(_) => self.seek(position_ms),
+                    QueueItem::Track(_) => {}
                 }
                 return;
             }
@@ -48,18 +54,7 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn seek_after_start(&self, position_ms: i64) -> bool {
-        match self.player.seek_to(position_ms) {
-            Ok(()) => {
-                self.update_mpris_position(position_ms);
-                self.notify_mpris_seek(position_ms);
-                self.lyrics.external_seek(position_ms);
-                true
-            }
-            Err(error) => {
-                tracing::error!(%error, position_ms, "seek failed");
-                false
-            }
-        }
+        self.try_seek_with_feedback(position_ms)
     }
 
     pub(in crate::ui) fn retry_pending_local_seek(&self, duration_ms: i64) {

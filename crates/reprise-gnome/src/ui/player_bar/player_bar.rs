@@ -355,6 +355,7 @@ impl PlayerBar {
             // layers would freeze on the last frame that did (AC-24).
             self.set_bass(0.0, 0.0);
         }
+        // Harmless with the old duration; a Stopped zero crossing refreshes again below.
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);

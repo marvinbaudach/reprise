@@ -80,6 +80,9 @@ fn replace_podcast_resume_target(
     let Some(ExternalSession::Podcast(session)) = state.session.as_mut() else {
         return false;
     };
+    if let ExternalMedia::Podcast { resume_ms, .. } = &mut session.media {
+        *resume_ms = position_ms;
+    }
     session.resume = ResumePolicy::new(position_ms);
     true
 }
@@ -204,7 +207,6 @@ impl PlayerController {
         if !waiting {
             return false;
         }
-        self.resume_restored_episode();
         let replaced = replace_podcast_resume_target(
             &mut self.external.borrow_mut(),
             position_ms,
@@ -212,11 +214,7 @@ impl PlayerController {
         if !replaced {
             return true;
         }
-        let succeeded = self.seek_after_start(position_ms);
-        let mut external = self.external.borrow_mut();
-        if let Some(ExternalSession::Podcast(session)) = external.session.as_mut() {
-            session.resume.initial_seek_finished(succeeded);
-        }
+        self.resume_restored_episode();
         true
     }
 }
@@ -397,5 +395,9 @@ mod tests {
             panic!("expected podcast session");
         };
         assert_eq!(session.resume, ResumePolicy::new(30_000));
+        let ExternalMedia::Podcast { resume_ms, .. } = session.media else {
+            panic!("expected podcast media");
+        };
+        assert_eq!(resume_ms, 30_000);
     }
 }
