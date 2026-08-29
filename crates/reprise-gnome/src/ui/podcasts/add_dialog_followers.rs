@@ -149,6 +149,11 @@ impl YoutubeResults {
             reorder(&self.parent, &rows, true);
         }
     }
+
+    fn finish_without_counts(&self) {
+        self.largest_first.set_active(false);
+        self.largest_first.set_sensitive(false);
+    }
 }
 
 fn reorder(parent: &gtk4::Box, rows: &[RenderedCandidate], largest_first: bool) {
@@ -187,6 +192,7 @@ pub(super) fn start(
             .unwrap_or(false);
     if !youtube_allowed || request.cancelled.load(Ordering::Acquire) {
         request.cancelled.store(true, Ordering::Release);
+        results.finish_without_counts();
         return;
     }
 
@@ -205,10 +211,14 @@ pub(super) fn start(
         let counts = match receiver {
             Ok(receiver) => match receiver.recv().await {
                 Ok(counts) => counts,
-                Err(_) => return,
+                Err(_) => {
+                    results.finish_without_counts();
+                    return;
+                }
             },
             Err(error) => {
                 tracing::warn!(%error, "could not start YouTube follower enrichment");
+                results.finish_without_counts();
                 return;
             }
         };
@@ -304,6 +314,21 @@ esac
         assert!(results.largest_first.has_css_class("pill"));
         results.largest_first.set_active(true);
         assert!(results.largest_first.is_active());
+        assert!(!results.counts_ready.get());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_23_terminal_enrichment_failure_makes_largest_first_unavailable() {
+        gtk4::init().unwrap();
+        let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        let results = YoutubeResults::new(&parent, "YOUTUBE · audio only", Some("metal".into()));
+        results.largest_first.set_active(true);
+
+        results.finish_without_counts();
+
+        assert!(!results.largest_first.is_active());
+        assert!(!results.largest_first.is_sensitive());
         assert!(!results.counts_ready.get());
     }
 
