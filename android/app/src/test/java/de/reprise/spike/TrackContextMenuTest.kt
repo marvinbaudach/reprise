@@ -8,6 +8,9 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -94,11 +97,17 @@ class TrackContextMenuTest {
             year = 2026,
             totalDurationMs = 360_000,
         )
+        val otherAlbum = album.copy(
+            title = "Other Album",
+            representativeUri = "content://albums/other",
+        )
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(
                     LocalPlaybackControls provides controls,
-                    LocalAlbumTrackIds provides { listOf(9L, 7L, 5L) },
+                    LocalAlbumTrackIds provides { selected ->
+                        if (selected == album) listOf(9L, 7L, 5L) else listOf(4L)
+                    },
                 ) {
                     ArtistsTab(
                         surfaceLayout = SurfaceLayout.STACKED,
@@ -106,8 +115,8 @@ class TrackContextMenuTest {
                         artists = LibraryWindow.empty(),
                         searchText = "",
                         selectedArtist = ArtistTrackList(
-                            artist = LibraryArtist("Album Artist", 3, 1, "content://artist"),
-                            albums = LibraryWindow(1, listOf(album), false),
+                            artist = LibraryArtist("Album Artist", 4, 2, "content://artist"),
+                            albums = LibraryWindow(2, listOf(album, otherAlbum), false),
                         ),
                         playback = PlaybackUiState().libraryPlayback(),
                         openArtist = {},
@@ -124,7 +133,9 @@ class TrackContextMenuTest {
         }
 
         compose.onNodeWithText("Whole Album").performTouchInput { longClick() }
-        compose.onAllNodesWithText("Play")[1].performClick()
+        compose.onNode(
+            hasText("Play") and hasAnyAncestor(hasTestTag("library-track-context-menu")),
+        ).performClick()
 
         assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
         assertEquals(0, controls.playedStartIndex)

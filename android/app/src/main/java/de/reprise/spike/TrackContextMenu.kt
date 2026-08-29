@@ -197,6 +197,7 @@ internal fun TrackContextMenu(
     DropdownMenu(
         expanded = anchor.expanded,
         onDismissRequest = { anchor.expanded = false },
+        modifier = Modifier.testTag("library-track-context-menu"),
         offset = anchor.touchOffset,
     ) {
         DropdownMenuItem(
