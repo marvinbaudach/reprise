@@ -7,6 +7,7 @@ import android.os.Looper
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -457,6 +458,9 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     var animationsEnabled = false
     var onlineSourcesEnabled = false
     var onlineSourcesWriteSucceeds = true
+    @Volatile
+    var artistListFailuresRemaining = 0
+    val artistListAttempts = AtomicInteger()
     val onlineSourcesWrites = Collections.synchronizedList(mutableListOf<Boolean>())
     private var onlineSourcesWriteStarted: CountDownLatch? = null
     private var onlineSourcesWriteGate: CountDownLatch? = null
@@ -675,6 +679,11 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                     .window(range)
             },
             listArtists = { range ->
+                artistListAttempts.incrementAndGet()
+                if (artistListFailuresRemaining > 0) {
+                    artistListFailuresRemaining -= 1
+                    error("artist catalog unavailable")
+                }
                 artistWindowRequests += range
                 artists.window(range)
             },

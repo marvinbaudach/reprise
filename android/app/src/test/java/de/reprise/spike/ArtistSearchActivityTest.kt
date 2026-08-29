@@ -53,10 +53,38 @@ class ArtistSearchActivityTest {
 
         compose.onNodeWithText("Search artists").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to artists").performClick()
-        compose.waitUntil {
+        compose.waitUntil(5_000) {
             compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
         }
 
+        compose.onNodeWithText("Artist 1").assertIsDisplayed()
+    }
+
+    @Test
+    fun aFailedCatalogReloadAfterOpeningAnArtistCanBeRetried() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithContentDescription("Search library").performClick()
+        compose.onNodeWithText("Search artists").performTextInput("Artist 45")
+        compose.waitForIdle()
+
+        val attemptsBeforeFailure = application.artistListAttempts.get()
+        application.artistListFailuresRemaining = 1
+        compose.onNode(
+            hasText("Artist 45") and hasText("45 tracks", substring = true),
+        ).performClick()
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.waitUntil {
+            compose.onAllNodesWithText("Could not load artists:", substring = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithText("Retry").performClick()
+        compose.waitUntil(5_000) {
+            application.artistListAttempts.get() >= attemptsBeforeFailure + 2
+        }
+
+        compose.onNodeWithTag("library-artists-list")
+            .performScrollToNode(hasText("Artist 1"))
         compose.onNodeWithText("Artist 1").assertIsDisplayed()
     }
 }

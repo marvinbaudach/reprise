@@ -26,6 +26,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -153,6 +154,8 @@ internal fun BrowseScreen(
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
     var browseError by remember(state) { mutableStateOf(state.message) }
+    var failedVisibleTab by remember(state) { mutableStateOf<BrowseTab?>(null) }
+    var loadRetryRevision by remember(state) { mutableIntStateOf(0) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var artistsRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
@@ -343,16 +346,16 @@ internal fun BrowseScreen(
     // Keyed on `loadedTabs`, so this re-enters after each fetch and works
     // through what is left one tab at a time rather than firing them at once.
     // A prefetch stays silent: it must not clear an error the visible tab is
-    // still showing, nor raise one for a tab nobody has asked for. Left out of
-    // `loadedTabs` on failure, it is simply fetched again — with its error
-    // surfaced — when that tab is actually selected.
+    // still showing, nor raise one for a tab nobody has asked for. A failed
+    // hidden prefetch remains outside `loadedTabs` and is fetched when selected;
+    // a visible failure exposes an explicit retry beside its error.
     val pendingTab = (listOf(selectedTab) + BrowseTab.entries)
         .firstOrNull { it != BrowseTab.QUEUE && it !in loadedTabs }
     // `selectedTab` is a key as well as a component of `pendingTab`: selecting a
     // tab whose prefetch is already waiting out the idle period leaves
     // `pendingTab` unchanged, and without the restart the wait would run on
     // under a tab someone is looking at.
-    LaunchedEffect(pendingTab, selectedTab, state, searchText) {
+    LaunchedEffect(pendingTab, selectedTab, state, searchText, loadRetryRevision) {
         if (pendingTab == null) return@LaunchedEffect
         val visible = pendingTab == selectedTab
         if (!visible) {
@@ -379,10 +382,16 @@ internal fun BrowseScreen(
             loaded.titles?.let { visibleTitles = it }
             loaded.artists?.let { visibleArtists = it }
             loadedTabs = loadedTabs + pendingTab
-            if (visible) browseError = null
+            if (visible) {
+                browseError = null
+                failedVisibleTab = null
+            }
         }.onFailure { error ->
             if (error is CancellationException) throw error
-            if (visible) browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
+            if (visible) {
+                browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
+                failedVisibleTab = pendingTab
+            }
         }
     }
 
@@ -571,7 +580,19 @@ internal fun BrowseScreen(
                     // Both of these are state rather than acknowledgements, so both
                     // stand until something supersedes them — see TransientMessage
                     // for the distinction and for the third kind.
-                    browseError?.let { BrowseErrorLine(it) }
+                    browseError?.let { message ->
+                        BrowseErrorLine(
+                            message = message,
+                            retry = if (failedVisibleTab == selectedTab) {
+                                {
+                                    failedVisibleTab = null
+                                    loadRetryRevision += 1
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                    }
                     playback.error?.let { BrowseErrorLine(it) }
                     ArtistPhotoProgressBar(
                         progress = surfaceState.visibleArtistPhotoProgress,
@@ -773,13 +794,4 @@ internal fun BrowseScreen(
             }
         }
     }
-}
-
-@Composable
-private fun BrowseErrorLine(message: String) {
-    Text(
-        text = message,
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-    )
 }
