@@ -530,7 +530,11 @@ impl PlayerBar {
         }
         let duration_ms = duration_ms.max(0);
         let position_ms = position_ms.clamp(0, duration_ms);
+        let had_loaded_length = self.duration_ms.get() > 0;
         self.duration_ms.set(duration_ms);
+        if had_loaded_length != (duration_ms > 0) {
+            self.refresh_sensitivity();
+        }
         self.waveform.set_duration(duration_ms);
         let fraction = if duration_ms > 0 {
             position_ms as f64 / duration_ms as f64
@@ -753,9 +757,13 @@ impl PlayerBar {
         );
         self.root.set_sensitive(playback_available);
         self.play_pause_button.set_sensitive(playback_available);
-        self.waveform
-            .widget()
-            .set_sensitive(state != PlaybackState::Stopped && self.seek_enabled.get());
+        self.waveform.widget().set_sensitive(
+            super::player_bar_state::waveform_should_be_sensitive(
+                state,
+                self.seek_enabled.get(),
+                self.duration_ms.get() > 0,
+            ),
+        );
     }
 
     /// Reflects the queue's repeat mode on the repeat button. Repeat is a

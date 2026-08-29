@@ -2003,3 +2003,7 @@ Review finding M2 and minors m6/m8: complete (this commit, base a29a728d0c, trac
 # The sort leaves the browse bar
 
 Tasks 1-9: complete (this commit, base ac3754495b, moved sorting into the shared table-customization surface for every sortable table, preserved playlist manual order as an explicit restorable choice, removed the browse-bar pill, renamed and translated the surface, and updated STYLE-13 atomically; the track-list sorter-bearing and accepted-field sets were verified to coincide exactly, the active gettext catalog stayed at 1,307 msgids because two retired strings were replaced by two new strings, and the required format, strict workspace Clippy, isolated workspace tests, live audit, architecture, traceability, accessibility, input-parity, GNOME-idiom and complete display gates passed; the requested later AT-SPI probe was not run)
+
+# The waveform works before the first play
+
+Tasks 1-2: complete (this commit, base 57029052ab, restored the current track duration after the stopped-state reset, kept the local waveform seekable while that duration is loaded, and refreshed sensitivity only when duration crosses zero; the four policy regressions were observed compile-red before the exact scoped GNOME suite passed with 2,102 tests and 836 display tests ignored)
