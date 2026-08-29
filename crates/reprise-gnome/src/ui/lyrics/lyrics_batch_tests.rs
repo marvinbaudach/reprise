@@ -300,6 +300,57 @@ fn lyr_6_a_second_automatic_start_keeps_the_active_pass() {
 }
 
 #[test]
+fn lyr_6_an_empty_explicit_pass_releases_the_automatic_start_guard() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let now = startup_tasks::now_unix();
+        set_lyrics_timestamps(&conn, 100, now);
+        insert_track(&conn, 1, "/music/present.flac", 101, 100);
+        let (batch, requests) = controlled_batch(&conn);
+
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+        let superseded_request = requests.try_recv().unwrap();
+
+        crate::test_db::connection(&conn)
+            .execute("UPDATE tracks SET missing_since = 1 WHERE id = 1", [])
+            .unwrap();
+        batch.start();
+        assert_eq!(batch.progress.get().state, LyricsBatchState::Complete);
+
+        superseded_request
+            .events
+            .try_send(WorkerEvent::Cancelled)
+            .unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+
+        let watermark = startup_tasks::lyrics_watermark(&conn).unwrap();
+        insert_track(
+            &conn,
+            2,
+            "/music/new-after-empty-pass.flac",
+            watermark + 1,
+            watermark + 1,
+        );
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+
+        let request = requests.try_recv().unwrap();
+        assert_eq!(request.tracks.len(), 1);
+        assert_eq!(
+            request.tracks[0].path.to_str(),
+            Some("/music/new-after-empty-pass.flac")
+        );
+        request.events.try_send(WorkerEvent::Cancelled).unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+    });
+}
+
+#[test]
 fn lyr_6_switching_the_module_on_still_sweeps_the_full_library() {
     run(async {
         let conn = Rc::new(crate::test_db::open().unwrap());

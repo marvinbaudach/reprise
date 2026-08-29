@@ -175,6 +175,7 @@ impl LyricsBatch {
         self.set_progress(progress);
         if progress.state == LyricsBatchState::Complete {
             pass.record_completed_or_warn(&self.conn);
+            self.running.set(false);
             return;
         }
         let (events, receiver) = async_channel::unbounded();
