@@ -3,9 +3,22 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
+#[cfg(test)]
+static REGISTRATIONS: AtomicU64 = AtomicU64::new(0);
+
 pub(super) fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var_os("REPRISE_MEASURE_SOURCE_ARTWORK").is_some())
+}
+
+#[cfg(test)]
+pub(super) fn record_registration_for_test() {
+    REGISTRATIONS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(super) fn registration_count_for_test() -> u64 {
+    REGISTRATIONS.load(Ordering::Relaxed)
 }
 
 pub(in crate::ui::podcasts) fn record_render_pass(

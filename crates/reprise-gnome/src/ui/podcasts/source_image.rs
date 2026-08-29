@@ -35,6 +35,9 @@ mod source_artwork_measurement;
 #[path = "source_artwork_queue.rs"]
 mod source_artwork_queue;
 pub(super) use source_artwork_measurement::record_render_pass;
+#[cfg(test)]
+#[path = "source_image_load_policy_tests.rs"]
+mod load_policy_tests;
 #[path = "source_image_fallback.rs"]
 mod source_image_fallback;
 #[path = "source_image_texture.rs"]
