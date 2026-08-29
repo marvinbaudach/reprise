@@ -29,6 +29,8 @@ use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest
 
 use crate::ui::device_sync_strings;
 
+use super::device_sync_remembered;
+
 #[path = "device_sync_rate.rs"]
 pub(super) mod rate;
 #[path = "device_sync_types.rs"]
@@ -362,11 +364,21 @@ impl DeviceSyncRuntime {
             let mut devices = self.device_states.borrow_mut();
             let Some(device) = devices
                 .iter_mut()
-                .find(|device| device.descriptor.id == device_id && device.connected)
+                .find(|device| device.descriptor.id == device_id)
             else {
                 return Ok(());
             };
             if !device.library_dirty {
+                return Ok(());
+            }
+            if !device_sync_remembered::page_is_readable(device.connected, &device.session_state) {
+                tracing::debug!(
+                    device_id = %device.descriptor.id,
+                    device_name = %device.settings.device_name,
+                    connected = device.connected,
+                    session_state = ?device.session_state,
+                    "skipping stale device refresh because its page is not readable"
+                );
                 return Ok(());
             }
             device.library_dirty = false;

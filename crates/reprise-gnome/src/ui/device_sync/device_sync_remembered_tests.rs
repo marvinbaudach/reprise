@@ -54,6 +54,32 @@ fn remembered_device_projects_saved_playlists_on_startup_without_storage_measure
 }
 
 #[test]
+fn stale_remembered_device_reprojects_library_changes_while_disconnected() {
+    run(async {
+        let (_temp, conn) = fixture();
+        add_remembered_playlist(&conn, "remembered");
+        let runtime =
+            DeviceSyncRuntime::with_backend(&conn, Rc::new(FakeBackend::new(Vec::new(), 1)));
+
+        runtime.mark_all_devices_stale();
+        reprise_core::library::playlists::rename(&conn, 10, "Travel").unwrap();
+        runtime.recompute_if_stale("remembered").unwrap();
+
+        let remembered = runtime.devices().remove(0);
+        assert!(!remembered.connected);
+        assert_eq!(
+            remembered.session_state,
+            reprise_core::device_sync::DeviceSessionState::Remembered
+        );
+        assert!(remembered
+            .page
+            .playlists
+            .iter()
+            .any(|row| row.name.as_deref() == Some("Travel")));
+    });
+}
+
+#[test]
 fn unplugging_discards_live_storage_and_scan_inventory_but_keeps_library_projection() {
     run(async {
         let (_temp, conn) = fixture();
