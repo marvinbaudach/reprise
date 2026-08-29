@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,7 +54,7 @@ class ArtistSearchActivityTest {
 
         compose.onNodeWithText("Search artists").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to artists").performClick()
-        compose.waitUntil(5_000) {
+        compose.waitUntil {
             compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
         }
 
@@ -61,7 +62,7 @@ class ArtistSearchActivityTest {
     }
 
     @Test
-    fun aFailedCatalogReloadAfterOpeningAnArtistCanBeRetried() {
+    fun aFailedCatalogReloadAfterOpeningAnArtistRetriesAutomatically() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist 45")
@@ -74,17 +75,35 @@ class ArtistSearchActivityTest {
         ).performClick()
         compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.waitUntil {
-            compose.onAllNodesWithText("Could not load artists:", substring = true)
-                .fetchSemanticsNodes().isNotEmpty()
-        }
-
-        compose.onNodeWithText("Retry").performClick()
-        compose.waitUntil(5_000) {
             application.artistListAttempts.get() >= attemptsBeforeFailure + 2
         }
 
+        compose.onNodeWithText("Retry").assertDoesNotExist()
         compose.onNodeWithTag("library-artists-list")
             .performScrollToNode(hasText("Artist 1"))
         compose.onNodeWithText("Artist 1").assertIsDisplayed()
+    }
+
+    @Test
+    fun aPersistentlyFailedCatalogReloadRetriesOnlyOnce() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithContentDescription("Search library").performClick()
+        compose.onNodeWithText("Search artists").performTextInput("Artist 45")
+        compose.waitForIdle()
+
+        val attemptsBeforeFailure = application.artistListAttempts.get()
+        application.artistListFailuresRemaining = Int.MAX_VALUE
+        compose.onNode(
+            hasText("Artist 45") and hasText("45 tracks", substring = true),
+        ).performClick()
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.waitUntil {
+            application.artistListAttempts.get() >= attemptsBeforeFailure + 2
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Could not load artists:", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Retry").assertDoesNotExist()
+        assertEquals(attemptsBeforeFailure + 2, application.artistListAttempts.get())
     }
 }
