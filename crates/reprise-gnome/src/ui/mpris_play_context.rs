@@ -1,4 +1,10 @@
-//! Pure queue-context decision for externally requested track playback.
+//! Queue-context decisions for externally requested track playback.
+//!
+//! `agent_playback_queue` is the pure decision: a single track inherits the
+//! flat library when the snapshot contains it, otherwise the explicit
+//! context stays unchanged. `resolve_agent_playback_queue` builds that
+//! library snapshot by reading the persisted session and sticky Library
+//! filters from the database, then delegates to the pure decision.
 
 use crate::ui::browse_bar::EXCLUDE_AI_KEY;
 
@@ -19,7 +25,9 @@ pub(super) fn agent_playback_queue(
 }
 
 /// Resolves a single external track request against the flat Library snapshot
-/// described by the persisted session and sticky Library filters.
+/// described by the persisted session and sticky Library filters. Any request
+/// that is not exactly one id short-circuits and keeps its explicit context
+/// unchanged, `(requested_ids, 0)`.
 pub(super) fn resolve_agent_playback_queue(
     db: &reprise_core::db::Db,
     requested_ids: Vec<i64>,
