@@ -1,7 +1,57 @@
+use std::future::Future;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 use super::*;
+
+const LYRICS_WATERMARK_KEY: &str = "startup_tasks.lyrics_watermark";
+const LYRICS_FULL_SWEEP_KEY: &str = "startup_tasks.lyrics_full_sweep";
+
+fn controlled_batch(conn: &Rc<Db>) -> (Rc<LyricsBatch>, async_channel::Receiver<WorkerRequest>) {
+    reprise_core::modules::set_enabled(conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+        .unwrap();
+    let (sender, receiver) = async_channel::unbounded();
+    let batch = Rc::new(LyricsBatch {
+        conn: conn.clone(),
+        worker: LyricsBatchWorker { sender },
+        cancellation: ScanCancellation::default(),
+        enabled: Arc::new(AtomicBool::new(true)),
+        generation: Arc::new(AtomicU64::new(0)),
+        progress: Cell::new(LyricsBatchProgress::idle()),
+        subscribers: ProgressSubscribers::default(),
+    });
+    (batch, receiver)
+}
+
+fn insert_track(db: &Db, id: i64, path: &str, added_at: i64, file_mtime: i64) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime) \
+             VALUES (?1, ?2, '', '', ?3, ?4)",
+            rusqlite::params![id, path, added_at, file_mtime],
+        )
+        .unwrap();
+}
+
+fn set_lyrics_timestamps(db: &Db, watermark: i64, last_full_sweep: i64) {
+    reprise_core::library::settings::set_setting(db, LYRICS_WATERMARK_KEY, &watermark.to_string())
+        .unwrap();
+    reprise_core::library::settings::set_setting(
+        db,
+        LYRICS_FULL_SWEEP_KEY,
+        &last_full_sweep.to_string(),
+    )
+    .unwrap();
+}
+
+fn run<T>(future: impl Future<Output = T>) -> T {
+    let context = glib::MainContext::new();
+    context
+        .with_thread_default(|| context.block_on(future))
+        .unwrap()
+}
 
 #[test]
 fn cover_completion_starts_lyrics_only_after_the_subscription_is_armed() {
@@ -84,6 +134,152 @@ fn a_hard_kill_keeps_the_automatic_batch_due() {
     );
 
     assert_eq!(batch.generation.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn lyr_6_an_automatic_pass_covers_only_tracks_added_since_the_last_completed_one() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let now = startup_tasks::now_unix();
+        set_lyrics_timestamps(&conn, 100, now);
+        insert_track(&conn, 1, "/music/old.flac", 100, 100);
+        insert_track(&conn, 2, "/music/new.flac", 101, 100);
+        let (batch, requests) = controlled_batch(&conn);
+
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+
+        assert_eq!(batch.progress.get().total, 1);
+        let request = requests.try_recv().unwrap();
+        assert_eq!(request.tracks.len(), 1);
+        assert_eq!(request.tracks[0].path.to_str(), Some("/music/new.flac"));
+        request.events.try_send(WorkerEvent::Cancelled).unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+    });
+}
+
+#[test]
+fn lyr_6_a_cancelled_pass_leaves_the_watermark_untouched() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let now = startup_tasks::now_unix();
+        set_lyrics_timestamps(&conn, 100, now);
+        insert_track(&conn, 1, "/music/new.flac", 101, 100);
+        let (batch, requests) = controlled_batch(&conn);
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+        let request = requests.try_recv().unwrap();
+
+        request.events.try_send(WorkerEvent::Cancelled).unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+
+        assert_eq!(startup_tasks::lyrics_watermark(&conn), Some(100));
+        assert_eq!(batch.progress.get().state, LyricsBatchState::Idle);
+    });
+}
+
+#[test]
+fn lyr_6_a_library_that_never_completed_a_pass_is_swept_in_full() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        insert_track(&conn, 1, "/music/old.flac", 1, 1);
+        insert_track(&conn, 2, "/music/new.flac", 2, 2);
+        let (batch, requests) = controlled_batch(&conn);
+
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+
+        let request = requests.try_recv().unwrap();
+        assert_eq!(request.tracks.len(), 2);
+        assert!(startup_tasks::lyrics_last_full_sweep(&conn).is_some());
+        assert_eq!(startup_tasks::lyrics_watermark(&conn), None);
+        request.events.try_send(WorkerEvent::Cancelled).unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+    });
+}
+
+#[test]
+fn lyr_6_a_full_sweep_attempt_defers_the_next_one_by_the_full_interval() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let now = startup_tasks::now_unix();
+        set_lyrics_timestamps(
+            &conn,
+            100,
+            now - startup_tasks::LYRICS_FULL_SWEEP_INTERVAL_SECONDS,
+        );
+        insert_track(&conn, 1, "/music/old.flac", 100, 100);
+        insert_track(&conn, 2, "/music/new.flac", 101, 100);
+        let (batch, requests) = controlled_batch(&conn);
+
+        batch.start();
+        let full_request = requests.try_recv().unwrap();
+        assert_eq!(full_request.tracks.len(), 2);
+
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+
+        let request = requests.try_recv().unwrap();
+        assert_eq!(request.tracks.len(), 1);
+        assert_eq!(request.tracks[0].path.to_str(), Some("/music/new.flac"));
+        full_request
+            .events
+            .try_send(WorkerEvent::Cancelled)
+            .unwrap();
+        request.events.try_send(WorkerEvent::Cancelled).unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+    });
+}
+
+#[test]
+fn lyr_6_switching_the_module_on_still_sweeps_the_full_library() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let now = startup_tasks::now_unix();
+        set_lyrics_timestamps(&conn, 100, now);
+        insert_track(&conn, 1, "/music/old.flac", 100, 100);
+        insert_track(&conn, 2, "/music/new.flac", 101, 100);
+        let (batch, requests) = controlled_batch(&conn);
+
+        batch.start();
+
+        let request = requests.try_recv().unwrap();
+        assert_eq!(request.tracks.len(), 2);
+        request.events.try_send(WorkerEvent::Cancelled).unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+    });
+}
+
+#[test]
+fn lyr_6_an_empty_narrow_pass_still_advances_the_watermark() {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    set_lyrics_timestamps(&conn, 1, startup_tasks::now_unix());
+    insert_track(&conn, 1, "/music/old.flac", 1, 1);
+    let (batch, requests) = controlled_batch(&conn);
+    let states = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let states_for_callback = states.clone();
+    batch.subscribe_progress(
+        || true,
+        move |progress| states_for_callback.borrow_mut().push(progress.state),
+    );
+
+    batch.start_automatically(
+        &reprise_core::library::session::SessionState::default(),
+        "/music",
+    );
+
+    assert!(requests.is_empty());
+    assert_eq!(batch.progress.get().state, LyricsBatchState::Complete);
+    assert!(!states.borrow().contains(&LyricsBatchState::Running));
+    assert!(startup_tasks::lyrics_watermark(&conn).unwrap() > 1);
 }
 
 #[test]
