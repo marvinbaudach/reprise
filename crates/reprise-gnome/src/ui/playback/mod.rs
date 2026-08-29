@@ -24,6 +24,9 @@ pub(crate) mod player_controller_wiring;
 pub(in crate::ui) mod player_event_handling;
 pub(in crate::ui) mod preview;
 mod queue_insertion;
+mod seek_start;
+#[cfg(test)]
+mod seek_start_tests;
 pub(crate) mod queue_transport;
 pub(crate) mod session_player;
 pub(in crate::ui) mod source_item_identity;

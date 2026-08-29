@@ -208,6 +208,7 @@ impl PlayerController {
     }
 
     fn prepare_external_playback(&self) {
+        self.clear_pending_local_seek();
         self.persist_external_position();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -527,6 +528,7 @@ impl PlayerController {
     /// queue-takeover path is [`Self::leave_external_for_queue`], which leaves
     /// the loaded track alone.
     pub(in crate::ui) fn stop_external(&self) {
+        self.clear_pending_local_seek();
         self.persist_external_position();
         {
             let mut external = self.external.borrow_mut();

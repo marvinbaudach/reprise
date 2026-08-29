@@ -195,6 +195,7 @@ impl PlayerController {
                 // `update_mpris_mirror` rebuilds — see `update_mpris_
                 // position`'s doc comment.
                 self.update_mpris_position(position_ms);
+                self.retry_pending_local_seek(duration_ms);
             }
             PlayerEvent::Buffering {
                 percent,
@@ -337,6 +338,7 @@ impl PlayerController {
     /// so the bar is reset directly here instead. `pub(in crate::ui)` so `mpris_
     /// mirror.rs` and `playback_faults.rs` can call it too.
     pub(in crate::ui) fn reset_to_stopped(&self) {
+        self.clear_pending_local_seek();
         self.evaluate_play_tracking();
         // A hard stop leaves every preview/external mode.
         self.leave_external_for_queue();

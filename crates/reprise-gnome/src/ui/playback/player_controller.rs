@@ -268,6 +268,7 @@ pub struct PlayerController {
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// One state owner for preview, podcast, and live-radio playback.
     pub(in crate::ui) external: RefCell<super::external_media::ExternalPlaybackState>,
+    pub(in crate::ui) pending_local_seek: RefCell<Option<super::external_media_state::ResumePolicy>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
     pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -462,6 +463,7 @@ impl PlayerController {
             deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
             external: RefCell::new(super::external_media::ExternalPlaybackState::default()),
+            pending_local_seek: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
             listen_event_recorded: RefCell::new(None),
@@ -608,6 +610,7 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        self.clear_pending_local_seek();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
         // Ordinary queue playback leaves preview mode (INST-4b).
