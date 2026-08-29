@@ -484,6 +484,10 @@ pub fn now_unix() -> i64 {
 }
 
 #[cfg(test)]
+#[path = "startup_tasks_lyrics_tests.rs"]
+mod lyrics_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::library::session::{CleanExit, SessionState};

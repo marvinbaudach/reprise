@@ -183,6 +183,30 @@ fn lyr_6_a_cancelled_pass_leaves_the_watermark_untouched() {
 }
 
 #[test]
+fn lyr_6_a_completed_pass_advances_the_watermark() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let now = startup_tasks::now_unix();
+        set_lyrics_timestamps(&conn, 100, now);
+        insert_track(&conn, 1, "/music/new.flac", 101, 100);
+        let (batch, requests) = controlled_batch(&conn);
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+        let request = requests.try_recv().unwrap();
+
+        request
+            .events
+            .try_send(WorkerEvent::Progress(LyricsBatchProgress::running(0)))
+            .unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+
+        assert!(startup_tasks::lyrics_watermark(&conn).unwrap() > 100);
+    });
+}
+
+#[test]
 fn lyr_6_a_library_that_never_completed_a_pass_is_swept_in_full() {
     run(async {
         let conn = Rc::new(crate::test_db::open().unwrap());
