@@ -183,6 +183,8 @@ Share the column list and the row mapper with `query_live_track_summaries` (one
 and is later relinked keeps its old `added_at`/`file_mtime` and is therefore never
 picked up by a narrow pass. There is no column marking a return (`relink` only
 nulls `missing_since`). The 30-day full sweep is what eventually covers it.
+A track added in the exact same second a pass's start is recorded is likewise
+not picked up by the next narrow pass; the 30-day full sweep covers it.
 
 ### 5. Scope selection and recording (gnome)
 
