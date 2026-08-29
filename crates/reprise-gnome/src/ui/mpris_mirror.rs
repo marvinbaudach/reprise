@@ -73,7 +73,7 @@ use std::rc::Rc;
 
 use gtk4::glib;
 
-use crate::ui::mpris_play_context::agent_playback_queue;
+use crate::ui::mpris_play_context::resolve_agent_playback_queue;
 use crate::ui::player_controller::PlayerController;
 use reprise_core::media_integration::{self, MprisCommand, MprisPlaybackStatus, MprisState};
 use reprise_core::playback::PlaybackState;
@@ -446,50 +446,7 @@ impl PlayerController {
     /// so a one-track playlist is indistinguishable from a single-track
     /// request and inherits the Library snapshot too.
     fn mpris_play_track_ids(self: &Rc<Self>, requested_ids: Vec<i64>) {
-        let (ids, start_index) = if requested_ids.len() == 1 {
-            let persisted = reprise_core::library::session::load(&self.conn);
-            let sort = if persisted.sort_field.is_empty() || persisted.sort_dir.is_empty() {
-                crate::ui::track_list_sort::SortState::default()
-            } else {
-                crate::ui::track_list_sort::restored_sort(
-                    &persisted.sort_field,
-                    &persisted.sort_dir,
-                )
-            };
-            let exclude_ai =
-                reprise_core::library::settings::get_bool(&self.conn, "filter.exclude_ai", false)
-                    .unwrap_or(false);
-            match reprise_core::queries::query_track_ids_browsed_ai(
-                &self.conn,
-                &reprise_core::view_source::ViewSource::Library,
-                &sort.field,
-                &sort.dir,
-                "",
-                &reprise_core::queries::BrowseFilter::default(),
-                &[],
-                exclude_ai,
-            ) {
-                Ok(library_ids) => {
-                    if reprise_core::queries::is_queue_capped(library_ids.len()) {
-                        tracing::warn!(
-                            limit = reprise_core::queries::QUEUE_LIMIT,
-                            "queue capped at {} tracks",
-                            reprise_core::queries::QUEUE_LIMIT
-                        );
-                    }
-                    agent_playback_queue(requested_ids, library_ids)
-                }
-                Err(error) => {
-                    tracing::error!(
-                        %error,
-                        "failed to build library queue for MPRIS play; falling back to a single-track queue"
-                    );
-                    (requested_ids, 0)
-                }
-            }
-        } else {
-            (requested_ids, 0)
-        };
+        let (ids, start_index) = resolve_agent_playback_queue(&self.conn, requested_ids);
         self.play_from_view(
             ids,
             start_index,
