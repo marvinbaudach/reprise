@@ -4,6 +4,86 @@
 //! repository's 800-line source-size gate.
 
 use super::*;
+use std::cell::Cell;
+
+fn rendered_group(episode_count: i64) -> RenderedSourceGroup {
+    let episodes = (1..=episode_count)
+        .map(|id| {
+            let mut row = episode();
+            row.id = id;
+            row.guid = format!("episode-{id}");
+            row.title = format!("Episode {id}");
+            row.image_url = Some(format!("https://images.test/episode-{id}.jpg"));
+            row
+        })
+        .collect::<Vec<_>>();
+    RenderedSourceGroup {
+        summary: SourceSummary {
+            episode_count: episodes.len(),
+            new_count: 0,
+            downloaded_bytes: 0,
+            latest_published_at: None,
+        },
+        group: SourceGroup {
+            subscription_id: 1,
+            title: "Werkbank".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            episodes,
+        },
+    }
+}
+
+fn render_with_counted_episode_artwork(
+    rendered: &RenderedSourceGroup,
+    expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
+    query: &str,
+    submissions: &Rc<Cell<usize>>,
+) -> gtk4::Expander {
+    let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let submissions_for_factory = submissions.clone();
+    let artwork = Rc::new(move |_: &EpisodeRow, _: bool, should_submit: bool| {
+        let label = gtk4::Label::new(None);
+        if should_submit {
+            submissions_for_factory.set(submissions_for_factory.get() + 1);
+            label.add_css_class("test-episode-cover");
+        }
+        (
+            label.upcast::<gtk4::Widget>(),
+            crate::ui::source_row::MediaShape::Square,
+        )
+    });
+    replace_with_sync_and_artwork(
+        &container,
+        std::slice::from_ref(rendered),
+        None,
+        expanded_sources,
+        &Rc::new(RefCell::new(BTreeSet::new())),
+        &BTreeMap::new(),
+        true,
+        Connectivity::Online,
+        None,
+        &Rc::new(RefCell::new(PodcastSelection::default())),
+        query,
+        &HashMap::new(),
+        artwork,
+    );
+    container
+        .first_child()
+        .and_downcast::<gtk4::Expander>()
+        .expect("one expander per show")
+}
+
+fn descendant_count_with_class(root: &gtk4::Widget, class: &str) -> usize {
+    let mut count = usize::from(root.has_css_class(class));
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        count += descendant_count_with_class(&widget, class);
+        child = widget.next_sibling();
+    }
+    count
+}
 
 fn episode() -> EpisodeRow {
     EpisodeRow {
@@ -92,4 +172,60 @@ fn pod_25_a_query_expands_surviving_shows_without_overwriting_manual_state() {
         !render("").is_expanded(),
         "removing the query hands the show back its own collapsed state"
     );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn collapsed_group_submits_episode_artwork_only_on_its_first_expansion() {
+    gtk4::init().unwrap();
+    let rendered = rendered_group(2);
+    let submissions = Rc::new(Cell::new(0));
+    let expander = render_with_counted_episode_artwork(
+        &rendered,
+        &Rc::new(RefCell::new(BTreeSet::new())),
+        "",
+        &submissions,
+    );
+
+    assert!(!expander.is_expanded());
+    assert_eq!(submissions.get(), 0, "collapsed rows must submit nothing");
+
+    expander.set_expanded(true);
+    assert_eq!(submissions.get(), 2, "each row submits exactly once");
+    assert_eq!(
+        descendant_count_with_class(expander.upcast_ref(), "test-episode-cover"),
+        2,
+        "both rows show their loaded cover"
+    );
+
+    expander.set_expanded(false);
+    expander.set_expanded(true);
+    assert_eq!(
+        submissions.get(),
+        2,
+        "re-expansion reuses the loaded covers"
+    );
+    assert_eq!(
+        descendant_count_with_class(expander.upcast_ref(), "test-episode-cover"),
+        2,
+        "collapsing and re-expanding must not lose a cover"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_expanded_group_submits_episode_artwork_during_render() {
+    gtk4::init().unwrap();
+    let rendered = rendered_group(2);
+    let submissions = Rc::new(Cell::new(0));
+
+    let expander = render_with_counted_episode_artwork(
+        &rendered,
+        &Rc::new(RefCell::new(BTreeSet::new())),
+        "episode",
+        &submissions,
+    );
+
+    assert!(expander.is_expanded());
+    assert_eq!(submissions.get(), 2, "auto-expanded rows submit normally");
 }

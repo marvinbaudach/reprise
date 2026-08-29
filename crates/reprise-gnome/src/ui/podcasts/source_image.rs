@@ -248,13 +248,23 @@ impl SourceImage {
         request: ArtworkRequest<'_>,
         fallback_icon: &str,
     ) -> SourceImage {
+        Self::new_with_dimensions_when(request, fallback_icon, true)
+    }
+
+    pub(crate) fn new_with_dimensions_when(
+        request: ArtworkRequest<'_>,
+        fallback_icon: &str,
+        should_load: bool,
+    ) -> SourceImage {
         let (width, height) = request.dimensions;
         let image = Self::build(
             source_image_fallback::Fallback::Icon(fallback_icon),
             width,
             height,
         );
-        image.set_urls(request, |_| {});
+        if should_load {
+            image.set_urls(request, |_| {});
+        }
         image
     }
 
