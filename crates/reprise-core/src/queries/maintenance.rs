@@ -16,6 +16,23 @@ use rusqlite::{Connection, OptionalExtension};
 use super::clauses::PRESENT;
 use super::TrackSummary;
 
+const TRACK_SUMMARY_COLUMNS: &str =
+    "path, title, artist, album, album_artist, genre, artist_mbid, year, duration_ms";
+
+fn row_to_summary(row: &rusqlite::Row<'_>) -> Result<TrackSummary, rusqlite::Error> {
+    Ok(TrackSummary {
+        path: row.get(0)?,
+        title: row.get(1)?,
+        artist: row.get(2)?,
+        album: row.get(3)?,
+        album_artist: row.get(4)?,
+        genre: row.get(5)?,
+        artist_mbid: row.get(6)?,
+        year: row.get(7)?,
+        duration_ms: row.get(8)?,
+    })
+}
+
 /// Resolves one track id to its `TrackSummary` — the queue's per-track
 /// playback step (`play_track_id` in `ui::player_controller`) calls this for
 /// every auto-advance/next/previous, and Stage 2 Task 5's skip-on-missing-
@@ -172,25 +189,27 @@ pub fn query_live_track_paths(db: &Db) -> Result<Vec<String>, rusqlite::Error> {
 pub fn query_live_track_summaries(db: &Db) -> Result<Vec<TrackSummary>, rusqlite::Error> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
-        "SELECT path, title, artist, album, album_artist, genre, artist_mbid,
-                year, duration_ms FROM tracks WHERE {PRESENT} ORDER BY path"
+        "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks WHERE {PRESENT} ORDER BY path"
+    ))?;
+    let summaries = statement.query_map([], row_to_summary)?.collect();
+    summaries
+}
+
+/// Returns present tracks added to the library or changed on disk after
+/// `since`, in stable path order.
+pub fn query_track_summaries_added_since(
+    db: &Db,
+    since: i64,
+) -> Result<Vec<TrackSummary>, rusqlite::Error> {
+    let conn = db.conn();
+    let mut statement = conn.prepare(&format!(
+        "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks \
+         WHERE {PRESENT} AND (added_at > ?1 OR file_mtime > ?1) ORDER BY path"
     ))?;
     let summaries = statement
-        .query_map([], |row| {
-            Ok(TrackSummary {
-                path: row.get(0)?,
-                title: row.get(1)?,
-                artist: row.get(2)?,
-                album: row.get(3)?,
-                album_artist: row.get(4)?,
-                genre: row.get(5)?,
-                artist_mbid: row.get(6)?,
-                year: row.get(7)?,
-                duration_ms: row.get(8)?,
-            })
-        })?
-        .collect();
-    summaries
+        .query_map([since], row_to_summary)?
+        .collect::<Result<_, _>>()?;
+    Ok(summaries)
 }
 
 /// Resolves exact titles to deterministic track ids. This is intended for

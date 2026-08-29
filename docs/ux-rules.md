@@ -3163,7 +3163,14 @@ property is set and yet nothing happens.
   library after the cover batch, after completed library scans, and the moment
   the module is switched on — switching it on starts the run once; a further
   settings change while it is already on never restarts a run in progress, and
-  switching it off only stops one. Tracks
+  switching it off only stops one. An automatic run covers only tracks added to
+  the library or changed on disk since the last **completed** run; a library
+  that has never completed one, a library whose last full sweep is more than
+  30 days old, and every run started by switching the module on cover the
+  present library in full. A run that is cancelled or fails does not advance
+  that mark, so its unreached tracks belong to the next run; a full sweep
+  defers the next scheduled one from the moment it starts, whether or not it
+  finishes. Tracks
   with local lyrics, complete positive cache entries, or fresh negative
   entries are skipped; a cached plain result is retried for synchronized text
   at most once per seven-day negative-TTL window. Provider requests keep at

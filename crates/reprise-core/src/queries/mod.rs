@@ -169,8 +169,8 @@ pub use maintenance::{
     query_live_track_summaries, query_queue_purge_track_ids, query_queue_retained_track_ids,
     query_random_live_track_ids, query_sync_tracks, query_sync_tracks_with_source,
     query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
-    query_track_summary, remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks,
-    track_id_for_path, undo_tombstone,
+    query_track_summaries_added_since, query_track_summary, remove_missing_tracks,
+    remove_tracks_matching_paths, tombstone_tracks, track_id_for_path, undo_tombstone,
 };
 pub use maintenance_missing::mark_track_missing_if_current;
 pub use track_summary::TrackSummary;

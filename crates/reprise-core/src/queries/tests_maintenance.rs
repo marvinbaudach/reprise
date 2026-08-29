@@ -133,6 +133,65 @@ fn feature_queries_filter_and_order_tracks_for_their_consumers() {
 }
 
 #[test]
+fn lyrics_added_since_finds_only_present_tracks_added_or_changed_after_the_watermark() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    for (id, path, added_at, file_mtime, missing_since, removed_at) in [
+        (1, "/music/old.flac", 10, 10, None, None),
+        (2, "/music/z-new.flac", 101, 10, None, None),
+        (3, "/music/a-retagged.flac", 10, 102, None, None),
+        (4, "/music/missing.flac", 103, 103, Some(1), None),
+        (5, "/music/removed.flac", 104, 104, None, Some(1)),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, added_at, file_mtime, missing_since, removed_at) \
+             VALUES (?1, ?2, '', '', ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, path, added_at, file_mtime, missing_since, removed_at],
+        )
+        .unwrap();
+    }
+
+    let paths = query_track_summaries_added_since(&db, 100)
+        .unwrap()
+        .into_iter()
+        .map(|summary| summary.path)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        paths,
+        vec![
+            "/music/a-retagged.flac".to_string(),
+            "/music/z-new.flac".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn lyrics_added_since_zero_matches_the_complete_present_library() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    for (id, path, added_at, file_mtime, missing_since) in [
+        (1, "/music/b.flac", 1, 1, None),
+        (2, "/music/a.flac", 2, 2, None),
+        (3, "/music/missing.flac", 3, 3, Some(1)),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, added_at, file_mtime, missing_since) \
+             VALUES (?1, ?2, '', '', ?3, ?4, ?5)",
+            rusqlite::params![id, path, added_at, file_mtime, missing_since],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+        query_track_summaries_added_since(&db, 0).unwrap(),
+        query_live_track_summaries(&db).unwrap()
+    );
+}
+
+#[test]
 fn play_9_random_idle_snapshot_contains_only_present_library_tracks() {
     let db = crate::db::Db::open_in_memory().unwrap();
     let conn = db.conn();
