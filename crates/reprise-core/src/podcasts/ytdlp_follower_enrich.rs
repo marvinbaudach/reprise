@@ -36,14 +36,20 @@ impl YtDlp {
     }
 
     pub fn enrich_follower_counts(&self, channels: &mut [YtDlpChannel], cancelled: &AtomicBool) {
-        self.enrich_follower_counts_with_budget(channels, cancelled, FOLLOWER_ENRICHMENT_BUDGET);
+        self.enrich_follower_counts_with_budget_and_workers(
+            channels,
+            cancelled,
+            FOLLOWER_ENRICHMENT_BUDGET,
+            FOLLOWER_ENRICHMENT_WORKERS,
+        );
     }
 
-    pub(super) fn enrich_follower_counts_with_budget(
+    pub(super) fn enrich_follower_counts_with_budget_and_workers(
         &self,
         channels: &mut [YtDlpChannel],
         cancelled: &AtomicBool,
         budget: Duration,
+        worker_limit: usize,
     ) {
         let tasks = channels
             .iter()
@@ -59,7 +65,7 @@ impl YtDlp {
             .take(FOLLOWER_ENRICHMENT_MAX_CHANNELS)
             .map(|(index, channel)| (index, channel.url.clone()))
             .collect::<Vec<_>>();
-        let worker_count = tasks.len().min(FOLLOWER_ENRICHMENT_WORKERS);
+        let worker_count = tasks.len().min(worker_limit);
         let next = AtomicUsize::new(0);
         let deadline = Instant::now() + budget;
         let (sender, receiver) = mpsc::channel();

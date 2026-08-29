@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::follower_enrich::FOLLOWER_ENRICHMENT_BUDGET;
 use super::test_support::{fake_binary, short_timeouts};
 use super::{YtDlp, YtDlpChannel};
 
@@ -145,20 +146,25 @@ esac
 }
 
 #[test]
-fn follower_enrichment_returns_at_its_budget_and_leaves_timed_out_counts_absent() {
+fn follower_enrichment_rechecks_its_budget_before_dispatching_a_second_channel() {
     let directory = tempfile::tempdir().unwrap();
+    let log = directory.path().join("urls");
     let binary = fake_binary(
         directory.path(),
-        "sleep 5\nprintf '%s\\n' '{\"channel_follower_count\":99}'",
+        &format!(
+            "for argument in \"$@\"; do url=$argument; done\nprintf '%s\\n' \"$url\" >> '{}'\nsleep 5\nprintf '%s\\n' '{{\"channel_follower_count\":99}}'",
+            log.display()
+        ),
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
-    let mut channels = vec![channel("UC-slow")];
+    let mut channels = vec![channel("UC-slow-first"), channel("UC-never-started")];
     let started = Instant::now();
 
-    runner.enrich_follower_counts_with_budget(
+    runner.enrich_follower_counts_with_budget_and_workers(
         &mut channels,
         &AtomicBool::new(false),
         Duration::from_millis(120),
+        1,
     );
 
     assert!(
@@ -166,8 +172,18 @@ fn follower_enrichment_returns_at_its_budget_and_leaves_timed_out_counts_absent(
         "the whole pass must own its deadline: {:?}",
         started.elapsed()
     );
-    assert_eq!(channels[0].follower_count, None);
-    assert_eq!(channels[0].matching_video_count, 1);
+    assert!(channels
+        .iter()
+        .all(|channel| channel.follower_count.is_none()));
+    assert!(channels
+        .iter()
+        .all(|channel| channel.matching_video_count == 1));
+    assert_eq!(fs::read_to_string(log).unwrap().lines().count(), 1);
+}
+
+#[test]
+fn follower_enrichment_default_budget_is_twenty_seconds() {
+    assert_eq!(FOLLOWER_ENRICHMENT_BUDGET, Duration::from_secs(20));
 }
 
 #[test]

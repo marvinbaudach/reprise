@@ -154,6 +154,20 @@ impl YoutubeResults {
         self.largest_first.set_active(false);
         self.largest_first.set_sensitive(false);
     }
+
+    fn apply_if_current(
+        &self,
+        counts: &[(String, Option<u64>)],
+        cancelled: bool,
+        current_generation: u64,
+        request_generation: u64,
+    ) -> bool {
+        if cancelled || current_generation != request_generation {
+            return false;
+        }
+        self.apply(counts);
+        true
+    }
 }
 
 fn reorder(parent: &gtk4::Box, rows: &[RenderedCandidate], largest_first: bool) {
@@ -222,10 +236,12 @@ pub(super) fn start(
                 return;
             }
         };
-        if cancelled.load(Ordering::Acquire) || generation.get() != request_generation {
-            return;
-        }
-        results.apply(&counts);
+        results.apply_if_current(
+            &counts,
+            cancelled.load(Ordering::Acquire),
+            generation.get(),
+            request_generation,
+        );
     });
 }
 
@@ -379,5 +395,103 @@ esac
             highlighted_title,
             "the query mark must survive"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_second_search_discards_the_first_searchs_follower_result() {
+        gtk4::init().unwrap();
+        let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        let results = YoutubeResults::new(&parent, "YOUTUBE · audio only", Some("metal".into()));
+        let candidate = candidate(
+            "UC-stale",
+            "Stale Channel",
+            "https://www.youtube.com/channel/UC-stale",
+            3,
+        );
+        let row = super::super::add_dialog_rows::candidate_row(
+            &candidate.title,
+            &candidate.subtitle,
+            None,
+            Some("metal"),
+            PodcastKind::Youtube,
+            None,
+            false,
+        );
+        let subtitle = row.subtitle.clone();
+        results.push(candidate, row);
+
+        let applied = results.apply_if_current(&[("UC-stale".into(), Some(62_400))], false, 2, 1);
+
+        assert!(!applied);
+        assert_eq!(subtitle.text(), "3 matching videos · audio only");
+        assert!(!results.counts_ready.get());
+        assert_eq!(results.rows.borrow()[0].candidate.follower_count, None);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_23_pending_largest_first_reorders_once_when_counts_arrive() {
+        gtk4::init().unwrap();
+        let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        let results = YoutubeResults::new(&parent, "YOUTUBE · audio only", None);
+        let candidates = [
+            candidate(
+                "UC-missing",
+                "Missing",
+                "https://www.youtube.com/channel/UC-missing",
+                1,
+            ),
+            candidate(
+                "UC-largest",
+                "Largest",
+                "https://www.youtube.com/channel/UC-largest",
+                1,
+            ),
+            candidate(
+                "UC-smaller",
+                "Smaller",
+                "https://www.youtube.com/channel/UC-smaller",
+                1,
+            ),
+        ];
+        let mut roots = Vec::new();
+        for candidate in candidates {
+            let row = super::super::add_dialog_rows::candidate_row(
+                &candidate.title,
+                &candidate.subtitle,
+                None,
+                None,
+                PodcastKind::Youtube,
+                None,
+                false,
+            );
+            parent.append(&row.root);
+            roots.push(row.root.clone());
+            results.push(candidate, row);
+        }
+
+        results.largest_first.set_active(true);
+        assert_eq!(displayed_row_order(&parent, &roots), vec![0, 1, 2]);
+
+        results.apply(&[
+            ("UC-missing".into(), None),
+            ("UC-largest".into(), Some(200)),
+            ("UC-smaller".into(), Some(100)),
+        ]);
+
+        assert_eq!(displayed_row_order(&parent, &roots), vec![1, 2, 0]);
+    }
+
+    fn displayed_row_order(parent: &gtk4::Box, roots: &[gtk4::Widget]) -> Vec<usize> {
+        let mut order = Vec::new();
+        let mut child = parent.first_child();
+        while let Some(widget) = child {
+            if let Some(index) = roots.iter().position(|root| root == &widget) {
+                order.push(index);
+            }
+            child = widget.next_sibling();
+        }
+        order
     }
 }
