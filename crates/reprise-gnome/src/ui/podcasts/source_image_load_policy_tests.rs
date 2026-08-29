@@ -22,7 +22,7 @@ fn source_image_load_policy_controls_queue_registration() {
     let _deferred = SourceImage::new_with_dimensions_when(
         request("https://images.test/load-policy-deferred.png"),
         "audio-input-microphone-symbolic",
-        false,
+        ArtworkLoadPolicy::Defer,
     );
     assert_eq!(
         source_artwork_measurement::registration_count_for_test(),
@@ -33,7 +33,7 @@ fn source_image_load_policy_controls_queue_registration() {
     let _immediate = SourceImage::new_with_dimensions_when(
         request("https://images.test/load-policy-immediate.png"),
         "audio-input-microphone-symbolic",
-        true,
+        ArtworkLoadPolicy::Load,
     );
     assert_eq!(
         source_artwork_measurement::registration_count_for_test(),

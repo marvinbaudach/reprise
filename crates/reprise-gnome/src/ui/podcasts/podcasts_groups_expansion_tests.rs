@@ -48,9 +48,11 @@ fn render_with_counted_episode_artwork(
     let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let submissions_for_factory = submissions.clone();
     let artwork = Rc::new(
-        move |_: &EpisodeRow, images_allowed: bool, should_submit: bool| {
+        move |_: &EpisodeRow,
+              network_policy: ArtworkNetworkPolicy,
+              load_policy: ArtworkLoadPolicy| {
             let label = gtk4::Label::new(None);
-            if images_allowed && should_submit {
+            if network_policy.is_allowed() && matches!(load_policy, ArtworkLoadPolicy::Load) {
                 submissions_for_factory.set(submissions_for_factory.get() + 1);
                 label.add_css_class("test-episode-cover");
             }

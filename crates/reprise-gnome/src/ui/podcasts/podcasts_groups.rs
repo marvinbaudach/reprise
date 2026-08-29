@@ -29,6 +29,7 @@ use super::podcasts_selection::PodcastSelection;
 use super::podcasts_sync_row::{self, SyncRowWidgets};
 use super::podcasts_sync_state::SyncRowState;
 use super::podcasts_title::TitleParts;
+use super::source_image::{ArtworkLoadPolicy, ArtworkNetworkPolicy};
 use crate::ui::motion;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -60,8 +61,9 @@ pub(super) struct ChannelRowWidgets {
 }
 
 pub(super) type ArtworkRebind = Rc<dyn Fn(bool)>;
+type ArtworkWidget = (gtk4::Widget, crate::ui::source_row::MediaShape);
 type EpisodeArtworkFactory =
-    Rc<dyn Fn(&EpisodeRow, bool, bool) -> (gtk4::Widget, crate::ui::source_row::MediaShape)>;
+    Rc<dyn Fn(&EpisodeRow, ArtworkNetworkPolicy, ArtworkLoadPolicy) -> ArtworkWidget>;
 
 /// Everything `replace` hands back for later targeted updates.
 pub(super) struct RenderedRowWidgets {
@@ -565,8 +567,16 @@ fn episode_row_with_artwork(
         while let Some(child) = artwork_host.first_child() {
             artwork_host.remove(&child);
         }
-        let (artwork, shape) =
-            episode_artwork(&artwork_row, images_allowed, artwork_requested.get());
+        let load_policy = if artwork_requested.get() {
+            ArtworkLoadPolicy::Load
+        } else {
+            ArtworkLoadPolicy::Defer
+        };
+        let (artwork, shape) = episode_artwork(
+            &artwork_row,
+            ArtworkNetworkPolicy::from(images_allowed),
+            load_policy,
+        );
         artwork_host.append(&crate::ui::source_row::media(&artwork, shape));
     }) as ArtworkRebind;
     rebind(context.images_allowed);
