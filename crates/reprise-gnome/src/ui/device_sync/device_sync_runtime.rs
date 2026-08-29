@@ -372,12 +372,14 @@ impl DeviceSyncRuntime {
                 return Ok(());
             }
             if !device_sync_remembered::page_is_readable(device.connected, &device.session_state) {
+                let device_name = device.settings.device_name.clone();
+                let session_state = device.session_state.clone();
+                drop(devices);
                 tracing::debug!(
-                    device_id = %device.descriptor.id,
-                    device_name = %device.settings.device_name,
-                    connected = device.connected,
-                    session_state = ?device.session_state,
-                    "skipping stale device refresh because its page is not readable"
+                    %device_id,
+                    %device_name,
+                    ?session_state,
+                    "skipping stale device refresh because its page is neither connected nor remembered"
                 );
                 return Ok(());
             }
