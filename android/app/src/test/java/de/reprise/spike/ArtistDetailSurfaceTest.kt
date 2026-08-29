@@ -3,12 +3,14 @@ package de.reprise.spike
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -70,6 +72,52 @@ class ArtistDetailSurfaceTest {
 
         assertTrue(
             "a quarter turn changed no off-axis shimmer pixels",
+            before.offAxisDifference(after) > 40,
+        )
+    }
+
+    /**
+     * The disc's own turn, drawn without the film that now sits under it.
+     *
+     * [artistPortraitShimmerTurnsAQuarterTurn] renders the whole layer, and the film
+     * drifts on the same clock: it would go on changing off-axis pixels even if the
+     * disc had stopped turning, which is the one regression that test exists to
+     * catch. Here the disc is drawn alone, so a rotation that stops has nowhere to
+     * hide. The elapsed seconds are handed in rather than clocked, which is what
+     * makes the two frames a comparison of the angle and nothing else.
+     */
+    @Test
+    fun theDiscAloneTurnsAQuarterTurn() {
+        val bitmap = asymmetricArtwork()
+        val fog = prepareCoverFogBitmap(bitmap, android.graphics.Color.DKGRAY)
+        var elapsedSeconds by mutableStateOf(0.0)
+        compose.setContent {
+            Box(
+                Modifier
+                    .size(width = 300.dp, height = 500.dp)
+                    .background(Color.Black),
+            ) {
+                Canvas(Modifier.fillMaxSize().testTag("disc-only")) {
+                    drawNowPlayingShimmer(
+                        fog = fog,
+                        center = Offset(size.width / 2f, size.height * SHIMMER_CENTER_FRACTION),
+                        coverDiameterDp = 80f,
+                        elapsedSeconds = elapsedSeconds,
+                        swell = 0f,
+                        opacity = 1f,
+                        rotationsEnabled = true,
+                        alphaScale = NowPlayingShimmerSpec.ON_BARE_SURFACE_SCALE,
+                    )
+                }
+            }
+        }
+        val before = compose.onNodeWithTag("disc-only").captureToImage().toPixelMap()
+        elapsedSeconds = QUARTER_TURN_MS / 1_000.0
+        compose.waitForIdle()
+        val after = compose.onNodeWithTag("disc-only").captureToImage().toPixelMap()
+
+        assertTrue(
+            "a quarter turn changed no off-axis disc pixels",
             before.offAxisDifference(after) > 40,
         )
     }

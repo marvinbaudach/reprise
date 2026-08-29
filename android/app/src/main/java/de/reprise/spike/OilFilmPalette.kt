@@ -21,6 +21,16 @@ internal class OilFilmPalette(val clouds: List<Color>) {
     val brushes: List<Brush> = clouds.map(::cloudBrush)
 
     /**
+     * How bright the film will read, before a surface or a scrim is involved.
+     *
+     * Six clouds screen-blend, so a palette lifted off a near-white cover carries far
+     * more light onto the surface than one off a near-black cover does at the same
+     * alpha. A caller that has no scrim of its own to absorb that difference reads this
+     * and spends less alpha on the bright end.
+     */
+    val meanLuminance: Float = clouds.map(::luminance).average().toFloat()
+
+    /**
      * Reads as [other] once [fraction] reaches 1 — the cross-fade between two
      * palettes.
      *
