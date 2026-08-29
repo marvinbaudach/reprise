@@ -2,7 +2,7 @@
 slug: the-podcast-list-asks-for-every-cover-at-once
 worktree: /home/marvin/Projects/reprise-the-podcast-list-asks-for-every-cover-at-once
 branch: feature/the-podcast-list-asks-for-every-cover-at-once
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-29
 ---
