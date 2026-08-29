@@ -77,6 +77,7 @@ pub(in crate::ui) struct LyricsBatch {
     cancellation: ScanCancellation,
     enabled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
+    running: Cell<bool>,
     progress: Cell<LyricsBatchProgress>,
     subscribers: ProgressSubscribers<LyricsBatchProgress>,
 }
@@ -89,6 +90,7 @@ impl LyricsBatch {
             cancellation: ScanCancellation::default(),
             enabled: Arc::new(AtomicBool::new(network_allowed(conn))),
             generation: Arc::new(AtomicU64::new(0)),
+            running: Cell::new(false),
             progress: Cell::new(LyricsBatchProgress::idle()),
             subscribers: ProgressSubscribers::default(),
         })
@@ -167,6 +169,9 @@ impl LyricsBatch {
         self.cancellation.reset();
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         let progress = LyricsBatchProgress::running(summaries.len());
+        if progress.state == LyricsBatchState::Running {
+            self.running.set(true);
+        }
         self.set_progress(progress);
         if progress.state == LyricsBatchState::Complete {
             pass.record_completed_or_warn(&self.conn);
@@ -186,6 +191,7 @@ impl LyricsBatch {
             })
             .is_err()
         {
+            self.running.set(false);
             self.set_progress(failed_progress(progress));
             return;
         }
@@ -203,13 +209,20 @@ impl LyricsBatch {
                         batch.set_progress(progress);
                         if progress.state == LyricsBatchState::Complete {
                             pass.record_completed_or_warn(&batch.conn);
+                            batch.running.set(false);
                             return;
                         }
                     }
                     WorkerEvent::Cancelled => {
                         batch.set_progress(LyricsBatchProgress::idle());
+                        batch.running.set(false);
                         return;
                     }
+                }
+            }
+            if let Some(batch) = batch.upgrade() {
+                if batch.generation.load(Ordering::Relaxed) == generation {
+                    batch.running.set(false);
                 }
             }
         });
@@ -220,6 +233,9 @@ impl LyricsBatch {
         previous_session: &reprise_core::library::session::SessionState,
         current_library_root: &str,
     ) {
+        if self.running.get() {
+            return;
+        }
         let is_due = || {
             startup_tasks::should_run_time_window(
                 TimeWindowTask::Lyrics,

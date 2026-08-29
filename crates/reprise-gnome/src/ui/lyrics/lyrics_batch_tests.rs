@@ -19,6 +19,7 @@ fn controlled_batch(conn: &Rc<Db>) -> (Rc<LyricsBatch>, async_channel::Receiver<
         cancellation: ScanCancellation::default(),
         enabled: Arc::new(AtomicBool::new(true)),
         generation: Arc::new(AtomicU64::new(0)),
+        running: Cell::new(false),
         progress: Cell::new(LyricsBatchProgress::idle()),
         subscribers: ProgressSubscribers::default(),
     });
@@ -245,6 +246,11 @@ fn lyr_6_a_full_sweep_attempt_defers_the_next_one_by_the_full_interval() {
         batch.start();
         let full_request = requests.try_recv().unwrap();
         assert_eq!(full_request.tracks.len(), 2);
+        full_request
+            .events
+            .try_send(WorkerEvent::Cancelled)
+            .unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
 
         batch.start_automatically(
             &reprise_core::library::session::SessionState::default(),
@@ -254,10 +260,40 @@ fn lyr_6_a_full_sweep_attempt_defers_the_next_one_by_the_full_interval() {
         let request = requests.try_recv().unwrap();
         assert_eq!(request.tracks.len(), 1);
         assert_eq!(request.tracks[0].path.to_str(), Some("/music/new.flac"));
-        full_request
-            .events
-            .try_send(WorkerEvent::Cancelled)
-            .unwrap();
+        request.events.try_send(WorkerEvent::Cancelled).unwrap();
+        glib::timeout_future(Duration::from_millis(1)).await;
+    });
+}
+
+#[test]
+fn lyr_6_a_second_automatic_start_keeps_the_active_pass() {
+    run(async {
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let now = startup_tasks::now_unix();
+        set_lyrics_timestamps(
+            &conn,
+            100,
+            now - startup_tasks::LYRICS_FULL_SWEEP_INTERVAL_SECONDS,
+        );
+        insert_track(&conn, 1, "/music/old.flac", 100, 100);
+        insert_track(&conn, 2, "/music/new.flac", 101, 100);
+        let (batch, requests) = controlled_batch(&conn);
+
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+        let request = requests.try_recv().unwrap();
+        let generation = batch.generation_for_test();
+
+        batch.start_automatically(
+            &reprise_core::library::session::SessionState::default(),
+            "/music",
+        );
+
+        assert_eq!(batch.generation_for_test(), generation);
+        assert!(requests.is_empty());
+        assert!(!cancelled(&request));
         request.events.try_send(WorkerEvent::Cancelled).unwrap();
         glib::timeout_future(Duration::from_millis(1)).await;
     });
