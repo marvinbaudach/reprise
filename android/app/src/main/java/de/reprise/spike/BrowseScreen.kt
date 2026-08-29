@@ -656,6 +656,11 @@ internal fun BrowseScreen(
                                                 artistRequestedOffset = null
                                                 artistAlbumsRequestedOffset = null
                                                 browseError = null
+                                                surfaceState.closeSearch()
+                                                if (searchText.isNotEmpty()) {
+                                                    surfaceState.updateSearch("")
+                                                    loadedTabs = emptySet()
+                                                }
                                             }
                                             .onFailure { error ->
                                                 browseError = error.browseDetail("open the artist")

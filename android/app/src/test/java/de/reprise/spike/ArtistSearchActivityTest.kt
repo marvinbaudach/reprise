@@ -3,6 +3,7 @@ package de.reprise.spike
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -36,24 +37,22 @@ class ArtistSearchActivityTest {
     }
 
     @Test
-    fun artistSearchQueriesBothKindsAndOpensAnAlbumDirectly() {
+    fun openingAnArtistSearchResultClosesAndClearsTheSearch() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithContentDescription("Search library").performClick()
-        compose.onNodeWithText("Search albums and artists").performTextInput("artist 2")
+        compose.onNodeWithText("Search albums and artists").performTextInput("Artist 45")
         compose.waitForIdle()
 
-        val album = compose.onNodeWithText("Full Album 2")
-        val artist = compose.onNodeWithText("Artist 2")
-        album.assertIsDisplayed()
         compose.onNodeWithTag("library-artist-search-albums-list")
-            .performScrollToNode(hasText("Artist 2"))
-        artist.assertIsDisplayed()
-        compose.onNodeWithTag("library-artist-search-albums-list")
-            .performScrollToNode(hasText("Full Album 2"))
+            .performScrollToNode(hasText("Artist 45"))
+        compose.onAllNodesWithText("Artist 45")[1].performClick()
 
-        album.performClick()
+        compose.onNodeWithText("Search albums and artists").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.waitUntil {
+            compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
+        }
 
-        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
-        compose.onNodeWithText("Album Song 1").assertIsDisplayed()
+        compose.onNodeWithText("Artist 1").assertIsDisplayed()
     }
 }
