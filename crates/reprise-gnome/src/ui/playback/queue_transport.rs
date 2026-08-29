@@ -110,9 +110,7 @@ fn toggle_action(
     }
 }
 
-pub(super) fn restored_start_change(
-    restored_placement_intact: bool,
-) -> CurrentTrackChange {
+pub(super) fn restored_start_change(restored_placement_intact: bool) -> CurrentTrackChange {
     if restored_placement_intact {
         CurrentTrackChange::PlaybackStarted
     } else {
@@ -279,10 +277,13 @@ impl PlayerController {
     ) {
         let id = item.id();
         let playable = match item {
-            QueueItem::Track(id) => reprise_core::queries::query_live_track_ids(&self.conn)
-                .map(|ids| ids.contains(&id)),
-            QueueItem::Episode(id) => reprise_core::queries::query_available_episode_ids(&self.conn)
-                .map(|ids| ids.contains(&id)),
+            QueueItem::Track(id) => {
+                reprise_core::queries::query_live_track_ids(&self.conn).map(|ids| ids.contains(&id))
+            }
+            QueueItem::Episode(id) => {
+                reprise_core::queries::query_available_episode_ids(&self.conn)
+                    .map(|ids| ids.contains(&id))
+            }
         };
         match playable {
             Ok(true) => self.present_queue_item(

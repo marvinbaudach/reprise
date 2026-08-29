@@ -49,8 +49,7 @@ impl PlayerController {
         let mut policy = ResumePolicy::new(position_ms);
         let succeeded = self.seek_after_start(position_ms);
         policy.initial_seek_finished(succeeded);
-        *self.pending_local_seek.borrow_mut() =
-            (!succeeded && position_ms > 0).then_some(policy);
+        *self.pending_local_seek.borrow_mut() = (!succeeded && position_ms > 0).then_some(policy);
     }
 
     pub(in crate::ui) fn seek_after_start(&self, position_ms: i64) -> bool {

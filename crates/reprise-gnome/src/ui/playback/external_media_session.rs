@@ -73,10 +73,7 @@ fn restored_resume_request(state: &ExternalPlaybackState) -> Option<RestoredResu
     })
 }
 
-fn replace_podcast_resume_target(
-    state: &mut ExternalPlaybackState,
-    position_ms: i64,
-) -> bool {
+fn replace_podcast_resume_target(state: &mut ExternalPlaybackState, position_ms: i64) -> bool {
     let Some(ExternalSession::Podcast(session)) = state.session.as_mut() else {
         return false;
     };
@@ -207,10 +204,7 @@ impl PlayerController {
         if !waiting {
             return false;
         }
-        let replaced = replace_podcast_resume_target(
-            &mut self.external.borrow_mut(),
-            position_ms,
-        );
+        let replaced = replace_podcast_resume_target(&mut self.external.borrow_mut(), position_ms);
         if !replaced {
             return true;
         }
