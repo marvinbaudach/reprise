@@ -21,6 +21,7 @@ fn short_timeouts() -> YtDlpTimeouts {
         update: short,
         list: short,
         search: short,
+        channel_head: short,
         resolve: short,
         download: short,
     }

@@ -5814,9 +5814,14 @@ listening statistics.
   count as a compact addition ("62.4k subscribers", "1.2M subscribers") as soon
   as the channel publishes it. It is an optional addition and never replaces
   the existing hit count. Missing, hidden or malformed values are **omitted** —
-  never rendered as zero and never as "unknown". The number comes from the
-  search subprocess that already runs; there is no additional query per
-  channel.
+  never rendered as zero and never as "unknown". Results render before counts.
+  A second, bounded wave makes one playlist-head request per discovered
+  channel, with at most four requests in flight, a 15-second per-channel
+  timeout, a 20-second pass budget and at most 20 channels. The complete wave
+  patches the existing rows together instead of rebuilding or trickling them
+  in. A failed or timed-out request is deliberately indistinguishable from a
+  hidden count: the optional segment stays absent and search success remains
+  undisturbed.
 - **SRC-10** [active] [gtk] — The genuine "nothing added yet" empty state
   carries the same geometry for Podcasts, YouTube and Radio: the glyph of its
   own sidebar entry in a muted rounded tile, a title, a paragraph with one
@@ -6179,6 +6184,18 @@ listening statistics.
   matched, so the explanation names none. The marker keeps its space while the
   title ellipsizes and cannot widen the dialog (`SRC-8`). Country charts have
   no query and therefore no marker.
+- **SRC-23** [active] [gtk] — **Add Channel keeps relevance as its default and
+  offers explicit subscriber ordering.** A YouTube-only "Largest first" toggle
+  sits beside the result heading and resets for every submitted search. It
+  stays sensitive and focusable while subscriber counts are pending, so a user
+  can set and hear the intended state without losing the control from AT-SPI
+  traversal; no row moves until the complete count wave arrives. Active order
+  places published counts descending first, keeps provider relevance order for
+  equal counts, and appends every missing count in its original relevance
+  order — never treating absence as zero. Inactive order is provider relevance.
+  Either order moves the existing row roots without rebuilding them, so the
+  result list changes at most once when the wave arrives and never eats an
+  in-flight row action.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. Resume positions belong only to RSS

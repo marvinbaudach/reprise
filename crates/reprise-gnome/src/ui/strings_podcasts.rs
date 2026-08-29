@@ -122,6 +122,7 @@ pub const PODCAST_PREVIEW: &str = N_!("Preview");
 pub const PODCAST_SEARCHING: &str = N_!("Searching…");
 pub const PODCAST_APPLE_RESULTS: &str = N_!("PODCASTS · APPLE PODCASTS");
 pub const PODCAST_YOUTUBE_RESULTS: &str = N_!("YOUTUBE · audio only");
+pub const YOUTUBE_LARGEST_FIRST: &str = N_!("Largest first");
 /// `SRC-22`: Apple does not identify which hidden provider field matched, so
 /// the marker explains only the mismatch the row can prove.
 pub const PODCAST_SEARCH_MATCH_NOT_SHOWN: &str = N_!(

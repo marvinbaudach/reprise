@@ -22,7 +22,7 @@ pub fn detect(input: &str) -> InputKind {
     }
 }
 
-fn is_youtube_url(url: &url::Url) -> bool {
+pub(super) fn is_youtube_url(url: &url::Url) -> bool {
     let host = url
         .host_str()
         .unwrap_or_default()

@@ -1,7 +1,9 @@
 //! Podcast search-or-URL dialog.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -17,6 +19,7 @@ use crate::ui::one_shot_task;
 use crate::ui::strings;
 
 use super::add_dialog_chips::{chip_for, dialog_country, AddDialogChip};
+use super::add_dialog_followers::{self, YoutubeFollowerRequest, YoutubeResults};
 use super::add_dialog_input::{
     classify_input, dialog_hint, dialog_status_hint, dialog_title, primary_action_for_connectivity,
     submit_refusal, AddInput,
@@ -55,6 +58,7 @@ struct SearchContext<'a> {
     results: &'a gtk4::Box,
     conn: &'a Rc<Db>,
     on_added: &'a OnAdded,
+    follower_cancel: &'a Rc<RefCell<Option<Arc<AtomicBool>>>>,
     preferred_kind: PodcastKind,
 }
 
@@ -226,6 +230,7 @@ pub(super) fn present(
     let cancel = surface.cancel;
     let primary = surface.primary;
     let generation = Rc::new(Cell::new(0_u64));
+    let follower_cancel = Rc::new(RefCell::new(None::<Arc<AtomicBool>>));
     let submit: Rc<dyn Fn(String)> = Rc::new({
         let conn = conn.clone();
         let results = results.clone();
@@ -233,7 +238,11 @@ pub(super) fn present(
         let generation = generation.clone();
         let on_added = on_added.clone();
         let country = country.clone();
+        let follower_cancel = follower_cancel.clone();
         move |input: String| {
+            if let Some(cancelled) = follower_cancel.borrow_mut().take() {
+                cancelled.store(true, Ordering::Release);
+            }
             clear(&results);
             let next = generation.get().wrapping_add(1);
             generation.set(next);
@@ -259,6 +268,7 @@ pub(super) fn present(
                             results: &results,
                             conn: &conn,
                             on_added: &on_added,
+                            follower_cancel: &follower_cancel,
                             preferred_kind,
                         },
                     );
@@ -310,6 +320,7 @@ pub(super) fn present(
                 let results = results.clone();
                 let conn = conn.clone();
                 let on_added = on_added.clone();
+                let follower_cancel = follower_cancel.clone();
                 chip.connect_clicked(move |_| {
                     clear(&results);
                     let next = generation.get().wrapping_add(1);
@@ -324,6 +335,7 @@ pub(super) fn present(
                             results: &results,
                             conn: &conn,
                             on_added: &on_added,
+                            follower_cancel: &follower_cancel,
                             preferred_kind,
                         },
                     );
@@ -354,6 +366,12 @@ pub(super) fn present(
     cancel.connect_clicked(move |_| {
         if let Some(dialog) = dialog_for_cancel.upgrade() {
             dialog.close();
+        }
+    });
+    let follower_cancel_on_close = follower_cancel.clone();
+    dialog.connect_closed(move |_| {
+        if let Some(cancelled) = follower_cancel_on_close.borrow_mut().take() {
+            cancelled.store(true, Ordering::Release);
         }
     });
     dialog.present(Some(parent));
@@ -391,6 +409,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 Some(query),
                 auto_download_default,
                 empty_status,
+                None,
             );
         }
         PodcastKind::Youtube => {
@@ -404,6 +423,13 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
             }
             let ytdlp_path = config.as_ref().and_then(|value| value.ytdlp_path.clone());
             let youtube_browser = config.and_then(|value| value.youtube_browser);
+            let follower_cancel = Arc::new(AtomicBool::new(false));
+            *context.follower_cancel.borrow_mut() = Some(follower_cancel.clone());
+            let follower_request = YoutubeFollowerRequest {
+                ytdlp_path: ytdlp_path.clone(),
+                youtube_browser,
+                cancelled: follower_cancel,
+            };
             let query = terms.clone();
             let empty_status = strings::source_nothing_found(&query);
             let task = one_shot_task::spawn("reprise-youtube-search", move || {
@@ -424,6 +450,7 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 Some(query),
                 auto_download_default,
                 empty_status,
+                Some(follower_request),
             );
         }
     }
@@ -455,6 +482,7 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
         None,
         auto_download_default,
         empty_status,
+        None,
     );
 }
 
@@ -471,6 +499,7 @@ fn attach_candidates(
     query: Option<String>,
     auto_download_default: bool,
     empty_status: String,
+    follower_request: Option<YoutubeFollowerRequest>,
 ) {
     let generation = generation.clone();
     let status = status.clone();
@@ -500,16 +529,38 @@ fn attach_candidates(
                     status.set_text(&empty_status);
                     return;
                 }
-                append_heading(&results, &heading);
-                for candidate in rows {
-                    append_candidate(
-                        &results,
-                        candidate,
-                        query.as_deref(),
+                if let Some(follower_request) = follower_request {
+                    let youtube_results = YoutubeResults::new(&results, &heading, query.clone());
+                    for candidate in rows {
+                        let row = append_candidate(
+                            &results,
+                            candidate.clone(),
+                            query.as_deref(),
+                            &conn,
+                            &on_added,
+                            auto_download_default,
+                        );
+                        youtube_results.push(candidate, row);
+                    }
+                    add_dialog_followers::start(
+                        youtube_results,
+                        follower_request,
                         &conn,
-                        &on_added,
-                        auto_download_default,
+                        generation,
+                        request_generation,
                     );
+                } else {
+                    append_heading(&results, &heading);
+                    for candidate in rows {
+                        append_candidate(
+                            &results,
+                            candidate,
+                            query.as_deref(),
+                            &conn,
+                            &on_added,
+                            auto_download_default,
+                        );
+                    }
                 }
             }
             Err(error) => status.set_text(&error),
