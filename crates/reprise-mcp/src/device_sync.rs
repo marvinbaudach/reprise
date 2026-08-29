@@ -199,6 +199,9 @@ fn map_device(device: DeviceSnapshot) -> DeviceSyncDeviceDto {
             bytes_done: device.progress.bytes_done,
             bytes_total: device.progress.bytes_total,
             bytes_per_second: device.progress.bytes_per_second,
+            units_done: device.progress.units_done,
+            units_total: device.progress.units_total,
+            estimated_remaining_seconds: device.progress.estimated_remaining_seconds,
         },
         current_track: device.current_track,
         balance: balance_dto(&device.target),
@@ -424,6 +427,9 @@ mod tests {
         assert_eq!(dto.storage.after_sync.as_ref().unwrap().free_bytes, Some(0));
         assert!(dto.controls.can_cancel);
         assert_eq!(dto.progress.bytes_per_second, 10);
+        assert_eq!(dto.progress.units_done, 4);
+        assert_eq!(dto.progress.units_total, 12);
+        assert_eq!(dto.progress.estimated_remaining_seconds, Some(16));
         let json = serde_json::to_value(dto).unwrap();
         assert!(json.get("serial").is_none());
         assert!(!json.to_string().contains("source_path"));
