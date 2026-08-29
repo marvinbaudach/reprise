@@ -2,7 +2,7 @@
 slug: youtube-channel-size-and-sorting
 worktree: /home/marvin/Projects/reprise-youtube-channel-size-and-sorting
 branch: feature/youtube-channel-size-and-sorting
-phase: reviewed
+phase: refactored
 created: 2026-08-16
 reviewed: 2026-08-29
 ---
