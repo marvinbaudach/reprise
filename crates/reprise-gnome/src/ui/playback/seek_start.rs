@@ -79,3 +79,18 @@ impl PlayerController {
         self.pending_local_seek.borrow_mut().take();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ResumePolicy;
+
+    #[test]
+    fn local_start_seek_reuses_resume_policy_for_exactly_one_retry() {
+        let mut policy = ResumePolicy::new(30_000);
+        policy.initial_seek_finished(false);
+
+        assert_eq!(policy.position_tick(0), None);
+        assert_eq!(policy.position_tick(180_000), Some(30_000));
+        assert_eq!(policy.position_tick(180_000), None);
+    }
+}
