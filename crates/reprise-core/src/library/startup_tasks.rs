@@ -15,7 +15,10 @@ use crate::db::Db;
 
 const LIBRARY_SIGNATURE_KEY: &str = "startup_tasks.library_signature";
 const RECORD_PREFIX: &str = "startup_tasks.completed.";
+const LYRICS_WATERMARK_KEY: &str = "startup_tasks.lyrics_watermark";
+const LYRICS_FULL_SWEEP_KEY: &str = "startup_tasks.lyrics_full_sweep";
 pub const STARTUP_SCAN_WINDOW_SECONDS: i64 = 15 * 60;
+pub const LYRICS_FULL_SWEEP_INTERVAL_SECONDS: i64 = 30 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignatureTask {
@@ -46,6 +49,29 @@ impl SignatureTask {
 pub enum TimeWindowTask {
     LibraryScan,
     Lyrics,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LyricsScope {
+    Everything,
+    AddedSince(i64),
+}
+
+pub fn lyrics_scope(watermark: Option<i64>, last_full_sweep: Option<i64>, now: i64) -> LyricsScope {
+    let Some(watermark) = watermark else {
+        return LyricsScope::Everything;
+    };
+    let Some(last_full_sweep) = last_full_sweep else {
+        return LyricsScope::Everything;
+    };
+    let Some(age) = now.checked_sub(last_full_sweep) else {
+        return LyricsScope::Everything;
+    };
+    if !(0..LYRICS_FULL_SWEEP_INTERVAL_SECONDS).contains(&age) {
+        LyricsScope::Everything
+    } else {
+        LyricsScope::AddedSince(watermark)
+    }
 }
 
 impl TimeWindowTask {
@@ -141,6 +167,80 @@ pub enum DueDecision {
 pub struct ExactTaskPass {
     task: SignatureTask,
     signature: Option<LibrarySignature>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LyricsPass {
+    started_at: i64,
+    scope: LyricsScope,
+}
+
+impl LyricsPass {
+    pub fn scope(&self) -> LyricsScope {
+        self.scope
+    }
+
+    pub fn record_completed_or_warn(self, db: &Db) {
+        if let Err(error) = set_internal_setting_in(
+            db.conn(),
+            LYRICS_WATERMARK_KEY,
+            &self.started_at.to_string(),
+        ) {
+            tracing::warn!(%error, "could not persist lyrics startup-task completion");
+        }
+    }
+}
+
+pub fn begin_lyrics_pass(db: &Db, scope: LyricsScope) -> LyricsPass {
+    let started_at = now_unix();
+    if scope == LyricsScope::Everything {
+        if let Err(error) =
+            set_internal_setting_in(db.conn(), LYRICS_FULL_SWEEP_KEY, &started_at.to_string())
+        {
+            tracing::warn!(%error, "could not persist lyrics full-sweep attempt");
+        }
+    }
+    LyricsPass { started_at, scope }
+}
+
+pub fn lyrics_watermark(db: &Db) -> Option<i64> {
+    lyrics_timestamp(db, LYRICS_WATERMARK_KEY, "watermark")
+}
+
+pub fn lyrics_last_full_sweep(db: &Db) -> Option<i64> {
+    lyrics_timestamp(db, LYRICS_FULL_SWEEP_KEY, "full sweep")
+}
+
+fn lyrics_timestamp(db: &Db, key: &str, timestamp: &str) -> Option<i64> {
+    match crate::library::settings::get_setting_in(db.conn(), key) {
+        Ok(Some(value)) => match value.parse() {
+            Ok(value) => Some(value),
+            Err(error) => {
+                tracing::warn!(
+                    timestamp,
+                    value,
+                    %error,
+                    "invalid lyrics startup-task timestamp; running conservatively"
+                );
+                None
+            }
+        },
+        Ok(None) => {
+            tracing::warn!(
+                timestamp,
+                "lyrics startup-task timestamp is absent; running conservatively"
+            );
+            None
+        }
+        Err(error) => {
+            tracing::warn!(
+                timestamp,
+                %error,
+                "could not read lyrics startup-task timestamp; running conservatively"
+            );
+            None
+        }
+    }
 }
 
 impl ExactTaskPass {
@@ -377,7 +477,7 @@ fn set_internal_setting_in(
     Ok(())
 }
 
-fn now_unix() -> i64 {
+pub fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_secs() as i64)
@@ -524,6 +624,105 @@ mod tests {
         assert!(user_logs
             .joined()
             .contains("could not capture user-triggered task signature"));
+    }
+
+    #[test]
+    fn lyrics_timestamps_are_absent_until_a_pass_writes_them() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        assert_eq!(lyrics_watermark(&db), None);
+        assert_eq!(lyrics_last_full_sweep(&db), None);
+    }
+
+    #[test]
+    fn a_completed_full_lyrics_pass_round_trips_both_timestamps() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        let pass = begin_lyrics_pass(&db, LyricsScope::Everything);
+        let started_at = pass.started_at;
+        pass.record_completed_or_warn(&db);
+
+        assert_eq!(lyrics_last_full_sweep(&db), Some(started_at));
+        assert_eq!(lyrics_watermark(&db), Some(started_at));
+    }
+
+    #[test]
+    fn an_unparsable_lyrics_timestamp_warns_and_runs_conservatively() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        set_internal_setting_in(db.conn(), LYRICS_WATERMARK_KEY, "not-a-timestamp").unwrap();
+        let logs = crate::log_capture::CapturedLogs::default();
+
+        assert_eq!(logs.capture(|| lyrics_watermark(&db)), None);
+
+        let logs = logs.joined();
+        assert!(logs.contains("invalid lyrics startup-task timestamp"));
+        assert!(logs.contains("not-a-timestamp"));
+    }
+
+    #[test]
+    fn only_a_full_lyrics_pass_updates_the_full_sweep_attempt_clock() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        let full = begin_lyrics_pass(&db, LyricsScope::Everything);
+        let full_started_at = full.started_at;
+        assert_eq!(lyrics_last_full_sweep(&db), Some(full_started_at));
+
+        let narrow = begin_lyrics_pass(&db, LyricsScope::AddedSince(123));
+        assert_eq!(narrow.scope(), LyricsScope::AddedSince(123));
+        assert_eq!(lyrics_last_full_sweep(&db), Some(full_started_at));
+    }
+
+    #[test]
+    fn lyrics_timestamp_writes_do_not_disturb_signature_task_records() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        record_completed_at(&db, SignatureTask::CoverDownload, 321).unwrap();
+
+        let pass = begin_lyrics_pass(&db, LyricsScope::Everything);
+        pass.record_completed_or_warn(&db);
+
+        assert_eq!(
+            exact_signature_decision(&db, SignatureTask::CoverDownload).unwrap(),
+            DueDecision::Skip(DueReason::LibrarySignatureUnchanged {
+                completed_at: 321,
+                signature: LibrarySignature(0),
+            })
+        );
+    }
+
+    #[test]
+    fn lyrics_scope_is_full_until_coverage_is_known() {
+        assert_eq!(
+            lyrics_scope(None, Some(9_999), 10_000),
+            LyricsScope::Everything
+        );
+    }
+
+    #[test]
+    fn lyrics_scope_is_full_without_a_recent_full_sweep() {
+        let interval = LYRICS_FULL_SWEEP_INTERVAL_SECONDS;
+
+        assert_eq!(
+            lyrics_scope(Some(123), None, 10_000),
+            LyricsScope::Everything
+        );
+        assert_eq!(
+            lyrics_scope(Some(123), Some(10_000 - interval), 10_000),
+            LyricsScope::Everything
+        );
+        assert_eq!(
+            lyrics_scope(Some(123), Some(10_001), 10_000),
+            LyricsScope::Everything
+        );
+    }
+
+    #[test]
+    fn lyrics_scope_uses_the_completed_watermark_during_the_full_sweep_window() {
+        let interval = LYRICS_FULL_SWEEP_INTERVAL_SECONDS;
+
+        assert_eq!(
+            lyrics_scope(Some(123), Some(10_000 - interval + 1), 10_000),
+            LyricsScope::AddedSince(123)
+        );
     }
 
     #[test]
