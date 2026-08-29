@@ -2,7 +2,7 @@
 slug: the-sync-bar-counts-work-not-bytes
 worktree: /home/marvin/Projects/reprise-the-sync-bar-counts-work-not-bytes
 branch: feature/the-sync-bar-counts-work-not-bytes
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-29
 ---
