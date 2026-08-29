@@ -2,7 +2,7 @@
 slug: the-artist-page-clears-the-search-and-turns-the-cover
 worktree: /home/marvin/Projects/reprise-the-artist-page-clears-the-search-and-turns-the-cover
 branch: feature/the-artist-page-clears-the-search-and-turns-the-cover
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-29
 ---
