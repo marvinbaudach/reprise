@@ -9,6 +9,7 @@ use chrono::Local;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::connectivity::Connectivity;
+use reprise_core::db::Db;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
@@ -28,6 +29,7 @@ use super::podcasts_selection::PodcastSelection;
 use super::podcasts_sync_row::{self, SyncRowWidgets};
 use super::podcasts_sync_state::SyncRowState;
 use super::podcasts_title::TitleParts;
+use super::source_image::{ArtworkLoadPolicy, ArtworkNetworkPolicy};
 use crate::ui::motion;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -59,8 +61,9 @@ pub(super) struct ChannelRowWidgets {
 }
 
 pub(super) type ArtworkRebind = Rc<dyn Fn(bool)>;
+type ArtworkWidget = (gtk4::Widget, crate::ui::source_row::MediaShape);
 type EpisodeArtworkFactory =
-    Rc<dyn Fn(&EpisodeRow, bool, bool) -> (gtk4::Widget, crate::ui::source_row::MediaShape)>;
+    Rc<dyn Fn(&EpisodeRow, ArtworkNetworkPolicy, ArtworkLoadPolicy) -> ArtworkWidget>;
 
 /// Everything `replace` hands back for later targeted updates.
 pub(super) struct RenderedRowWidgets {
@@ -81,10 +84,11 @@ struct GroupRenderContext<'a> {
     query: &'a str,
     expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     download_states: &'a BTreeMap<i64, DownloadState>,
-    /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
-    /// &modules::ARTWORK_MODULE)`, computed once per render pass by
-    /// the caller — this module never reads settings itself.
+    /// `NET-1a` / `C1`: the caller's render-pass gate. A first expansion
+    /// recomputes it from `conn` because a retained hidden page can outlive
+    /// the value captured here.
     images_allowed: bool,
+    conn: &'a Rc<Db>,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &'a Rc<RefCell<PodcastSelection>>,
@@ -105,6 +109,14 @@ struct EpisodeRenderContext<'a> {
     query: &'a str,
 }
 
+#[derive(Clone)]
+struct EpisodeArtworkContext {
+    requested: Rc<Cell<bool>>,
+    allowed: Rc<Cell<bool>>,
+    group: Rc<RefCell<Vec<ArtworkRebind>>>,
+    factory: EpisodeArtworkFactory,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn replace(
     container: &gtk4::Box,
@@ -114,6 +126,7 @@ pub(super) fn replace(
     expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
     images_allowed: bool,
+    conn: &Rc<Db>,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &Rc<RefCell<PodcastSelection>>,
@@ -127,6 +140,7 @@ pub(super) fn replace(
         expanded_episode_sources,
         download_states,
         images_allowed,
+        conn,
         connectivity,
         unavailable_episode,
         selection,
@@ -144,44 +158,36 @@ pub(super) fn replace_with_sync(
     expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
     images_allowed: bool,
+    conn: &Rc<Db>,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &Rc<RefCell<PodcastSelection>>,
     query: &str,
     syncing: &HashMap<i64, SyncRowState>,
 ) -> RenderedRowWidgets {
-    replace_with_sync_and_artwork(
-        container,
-        groups,
+    let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
+    let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
+        query,
         expanded_episode_sources,
         download_states,
         images_allowed,
+        conn,
         connectivity,
         unavailable_episode,
         selection,
-        query,
+        paths: &paths,
         syncing,
-        Rc::new(episode_thumbnail),
-    )
+        episode_artwork: Rc::new(episode_thumbnail),
+    };
+    replace_with_sync_and_artwork(container, groups, &context)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn replace_with_sync_and_artwork(
     container: &gtk4::Box,
     groups: &[RenderedSourceGroup],
-    playing_episode: Option<EpisodeMark>,
-    expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
-    expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
-    download_states: &BTreeMap<i64, DownloadState>,
-    images_allowed: bool,
-    connectivity: Connectivity,
-    unavailable_episode: Option<i64>,
-    selection: &Rc<RefCell<PodcastSelection>>,
-    query: &str,
-    syncing: &HashMap<i64, SyncRowState>,
-    episode_artwork: EpisodeArtworkFactory,
+    context: &GroupRenderContext<'_>,
 ) -> RenderedRowWidgets {
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -193,23 +199,8 @@ fn replace_with_sync_and_artwork(
         syncs: BTreeMap::new(),
         artwork: Vec::new(),
     };
-    let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
-    let context = GroupRenderContext {
-        playing_episode,
-        expanded_sources,
-        query,
-        expanded_episode_sources,
-        download_states,
-        images_allowed,
-        connectivity,
-        unavailable_episode,
-        selection,
-        paths: &paths,
-        syncing,
-        episode_artwork,
-    };
     for rendered in groups {
-        container.append(&build_group(rendered, &context, &mut widgets));
+        container.append(&build_group(rendered, context, &mut widgets));
     }
     super::source_image::record_render_pass(
         &REPLACE_PASSES,
@@ -267,8 +258,8 @@ fn build_group(
     let expansion_locked = sync_loading;
     let expanded_sources = context.expanded_sources.clone();
     let requested_for_notify = artwork_requested.clone();
-    let allowed_for_notify = artwork_allowed.clone();
     let artwork_for_notify = group_artwork.clone();
+    let conn_for_notify = context.conn.clone();
     expander.connect_expanded_notify(move |expander| {
         if expansion_locked {
             if expander.is_expanded() {
@@ -278,11 +269,19 @@ fn build_group(
         }
         if expander.is_expanded() {
             expanded_sources.borrow_mut().insert(subscription_id);
-            if !requested_for_notify.replace(true) {
-                let images_allowed = allowed_for_notify.get();
+            if !requested_for_notify.get() {
+                let images_allowed = reprise_core::online_sources::network_allowed(
+                    &conn_for_notify,
+                    &reprise_core::modules::ARTWORK_MODULE,
+                )
+                .unwrap_or(false);
+                requested_for_notify.set(true);
                 let rebinds = artwork_for_notify.borrow().clone();
                 for rebind in rebinds {
                     rebind(images_allowed);
+                }
+                if !images_allowed {
+                    requested_for_notify.set(false);
                 }
             }
         } else {
@@ -348,10 +347,12 @@ fn build_group(
                 unavailable_episode: context.unavailable_episode,
                 query: context.query,
             },
-            artwork_requested.clone(),
-            artwork_allowed.clone(),
-            &group_artwork,
-            context.episode_artwork.clone(),
+            &EpisodeArtworkContext {
+                requested: artwork_requested.clone(),
+                allowed: artwork_allowed.clone(),
+                group: group_artwork.clone(),
+                factory: context.episode_artwork.clone(),
+            },
         ));
     }
     if visible_count < group.episodes.len() {
@@ -490,28 +491,21 @@ fn episode_row(
     widgets: &mut RenderedRowWidgets,
     context: &EpisodeRenderContext<'_>,
 ) -> gtk4::Widget {
-    episode_row_with_artwork(
-        row,
-        title_parts,
-        widgets,
-        context,
-        Rc::new(Cell::new(true)),
-        Rc::new(Cell::new(context.images_allowed)),
-        &Rc::new(RefCell::new(Vec::new())),
-        Rc::new(episode_thumbnail),
-    )
+    let artwork = EpisodeArtworkContext {
+        requested: Rc::new(Cell::new(true)),
+        allowed: Rc::new(Cell::new(context.images_allowed)),
+        group: Rc::new(RefCell::new(Vec::new())),
+        factory: Rc::new(episode_thumbnail),
+    };
+    episode_row_with_artwork(row, title_parts, widgets, context, &artwork)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn episode_row_with_artwork(
     row: &EpisodeRow,
     title_parts: &TitleParts,
     widgets: &mut RenderedRowWidgets,
     context: &EpisodeRenderContext<'_>,
-    artwork_requested: Rc<Cell<bool>>,
-    artwork_allowed: Rc<Cell<bool>>,
-    group_artwork: &Rc<RefCell<Vec<ArtworkRebind>>>,
-    episode_artwork: EpisodeArtworkFactory,
+    artwork: &EpisodeArtworkContext,
 ) -> gtk4::Widget {
     let loaded = context.mark.is_some();
     let playing = context.mark.is_some_and(|mark| mark.playing);
@@ -544,17 +538,28 @@ fn episode_row_with_artwork(
     }
     let artwork_host = skeleton.media.clone();
     let artwork_row = row.clone();
+    let artwork_requested = artwork.requested.clone();
+    let artwork_allowed = artwork.allowed.clone();
+    let episode_artwork = artwork.factory.clone();
     let rebind = Rc::new(move |images_allowed| {
         artwork_allowed.set(images_allowed);
         while let Some(child) = artwork_host.first_child() {
             artwork_host.remove(&child);
         }
-        let (artwork, shape) =
-            episode_artwork(&artwork_row, images_allowed, artwork_requested.get());
+        let load_policy = if artwork_requested.get() {
+            ArtworkLoadPolicy::Load
+        } else {
+            ArtworkLoadPolicy::Defer
+        };
+        let (artwork, shape) = episode_artwork(
+            &artwork_row,
+            ArtworkNetworkPolicy::from(images_allowed),
+            load_policy,
+        );
         artwork_host.append(&crate::ui::source_row::media(&artwork, shape));
     }) as ArtworkRebind;
     rebind(context.images_allowed);
-    group_artwork.borrow_mut().push(rebind.clone());
+    artwork.group.borrow_mut().push(rebind.clone());
     widgets.artwork.push(rebind);
     let marker = playing_marker::build();
     playing_marker::set_playing(&marker, playing);

@@ -446,6 +446,7 @@ impl PodcastsView {
             &self.expanded_episode_sources,
             &download_states,
             images_allowed,
+            &self.conn,
             self.connectivity.get(),
             self.unavailable_episode.get(),
             &self.selection,

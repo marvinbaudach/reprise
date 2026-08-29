@@ -294,6 +294,8 @@ pub(super) fn queue(
     cache_scope: CacheScope,
     context: Option<RegistrationContext>,
 ) -> ArtworkResponse {
+    #[cfg(test)]
+    source_artwork_measurement::record_registration_for_test();
     static QUEUE: OnceLock<ArtworkQueue> = OnceLock::new();
     QUEUE
         .get_or_init(ArtworkQueue::start)

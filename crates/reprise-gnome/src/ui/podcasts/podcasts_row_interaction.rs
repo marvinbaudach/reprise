@@ -8,8 +8,8 @@ use super::podcasts_selection::SelectMode;
 
 pub(super) fn episode_thumbnail(
     row: &EpisodeRow,
-    images_allowed: bool,
-    should_load: bool,
+    network_policy: super::source_image::ArtworkNetworkPolicy,
+    load_policy: super::source_image::ArtworkLoadPolicy,
 ) -> (gtk4::Widget, crate::ui::source_row::MediaShape) {
     let shape = match row.kind {
         PodcastKind::Rss => crate::ui::source_row::MediaShape::Square,
@@ -21,7 +21,7 @@ pub(super) fn episode_thumbnail(
             row.image_url.as_deref(),
             row.show_image_url.as_deref(),
             (width, height),
-            images_allowed,
+            network_policy.is_allowed(),
             reprise_core::remote_image::CacheScope::Persistent,
             super::source_image::StartupTiming::AfterQuiet,
         )
@@ -30,7 +30,7 @@ pub(super) fn episode_thumbnail(
             PodcastKind::Rss => "audio-input-microphone-symbolic",
             PodcastKind::Youtube => "video-x-generic-symbolic",
         },
-        should_load,
+        load_policy,
     );
     source
         .widget()
