@@ -54,14 +54,18 @@ fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
         assert_eq!(backend.state.copy_attempts.get(), 2);
         gtk4::glib::timeout_future(Duration::from_millis(10)).await;
 
-        assert!(matches!(
-            runtime.devices()[0].sync_phase,
-            PlannedSyncPhase::Syncing {
-                unit_bytes_done: 50,
-                unit_bytes_total: 85_636,
-                ..
-            }
-        ));
+        assert!(
+            matches!(
+                runtime.devices()[0].sync_phase,
+                PlannedSyncPhase::Syncing {
+                    unit_bytes_done: 50,
+                    unit_bytes_total: 100,
+                    ..
+                }
+            ),
+            "replacement phase: {:?}",
+            runtime.devices()[0].sync_phase
+        );
         settle().await;
     });
 }

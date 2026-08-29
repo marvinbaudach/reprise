@@ -441,7 +441,7 @@ mod tests {
         let mut device = view(PlannedSyncPhase::Syncing {
             step: crate::ui::device_sync_runtime::SyncStep::Copying,
             done: 1_046,
-            total: 1_047,
+            total: 1_062,
             current_track: "Last transfer".into(),
             unit_bytes_done: 1,
             unit_bytes_total: 1,
@@ -457,8 +457,8 @@ mod tests {
 
         device.sync_phase = PlannedSyncPhase::Syncing {
             step: crate::ui::device_sync_runtime::SyncStep::WritingPlaylists,
-            done: 0,
-            total: 3,
+            done: 1_047,
+            total: 1_062,
             current_track: "Road".into(),
             unit_bytes_done: 1,
             unit_bytes_total: 1,
@@ -470,8 +470,8 @@ mod tests {
 
         device.sync_phase = PlannedSyncPhase::Syncing {
             step: crate::ui::device_sync_runtime::SyncStep::Removing,
-            done: 11,
-            total: 12,
+            done: 1_061,
+            total: 1_062,
             current_track: "old.mp3".into(),
             unit_bytes_done: 1,
             unit_bytes_total: 1,
