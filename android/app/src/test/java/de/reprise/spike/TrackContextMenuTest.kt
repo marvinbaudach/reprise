@@ -104,9 +104,11 @@ class TrackContextMenuTest {
                         surfaceLayout = SurfaceLayout.STACKED,
                         surfaceState = MobileSurfaceViewModel(),
                         artists = LibraryWindow.empty(),
-                        albumResults = LibraryWindow(1, listOf(album), false),
-                        searchText = "whole",
-                        selectedArtist = null,
+                        searchText = "",
+                        selectedArtist = ArtistTrackList(
+                            artist = LibraryArtist("Album Artist", 3, 1, "content://artist"),
+                            albums = LibraryWindow(1, listOf(album), false),
+                        ),
                         playback = PlaybackUiState().libraryPlayback(),
                         openArtist = {},
                         openAlbum = {},
@@ -122,7 +124,7 @@ class TrackContextMenuTest {
         }
 
         compose.onNodeWithText("Whole Album").performTouchInput { longClick() }
-        compose.onNodeWithText("Play").performClick()
+        compose.onAllNodesWithText("Play")[1].performClick()
 
         assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
         assertEquals(0, controls.playedStartIndex)

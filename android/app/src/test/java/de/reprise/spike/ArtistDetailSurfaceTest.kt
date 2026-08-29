@@ -87,6 +87,8 @@ class ArtistDetailSurfaceTest {
         assertEquals(listOf(target), opened)
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Dinosaur Act").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
     }
 
     @Test
@@ -167,55 +169,35 @@ class ArtistDetailSurfaceTest {
     }
 
     @Test
-    fun artistSearchShowsAlbumsBeforeArtistsInSeparateSections() {
+    fun nonBlankArtistSearchShowsArtistsWithoutAnAlbumSection() {
         showArtistSearch(
-            albums = listOf(album("The Great Destroyer", 2005)),
             artists = listOf(LibraryArtist("Low", 4, 2, "content://low")),
         )
 
-        val albumHeading = compose.onNodeWithText("Albums").getUnclippedBoundsInRoot().top
-        val artistHeading = compose.onNodeWithText("Artists").getUnclippedBoundsInRoot().top
-        assertTrue(albumHeading < artistHeading)
-        compose.onNodeWithText("The Great Destroyer").assertIsDisplayed()
         compose.onNodeWithText("Low").assertIsDisplayed()
-    }
-
-    @Test
-    fun artistSearchAlbumOpensTheAlbumPageDirectly() {
-        showArtistSearch(
-            albums = listOf(album("The Curtain Hits the Cast", 1996)),
-            openedAlbumTracks = listOf(track("Over the Ocean")),
-        )
-
-        compose.onNodeWithText("The Curtain Hits the Cast").performClick()
-
-        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
-        compose.onNodeWithText("Over the Ocean").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Back to artists").assertDoesNotExist()
+        compose.onNodeWithText("Albums").assertDoesNotExist()
     }
 
     @Test
     fun emptyArtistSearchShowsArtistsWithoutAnAlbumSection() {
         showArtistSearch(
-            albums = listOf(album("Ones and Sixes", 2015)),
             artists = listOf(LibraryArtist("Low", 4, 2, "content://low")),
             searchText = "",
         )
 
         compose.onNodeWithText("Low").assertIsDisplayed()
         compose.onNodeWithText("Albums").assertDoesNotExist()
-        compose.onNodeWithText("Ones and Sixes").assertDoesNotExist()
     }
 
     @Test
-    fun artistSearchFieldNamesAlbumsAndArtists() {
+    fun artistSearchFieldNamesArtists() {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 LibrarySearchField(BrowseTab.ARTISTS, "", {}, {})
             }
         }
 
-        compose.onNodeWithText("Search albums and artists").assertIsDisplayed()
+        compose.onNodeWithText("Search artists").assertIsDisplayed()
     }
 
     private fun showArtist(
@@ -259,29 +241,20 @@ class ArtistDetailSurfaceTest {
     }
 
     private fun showArtistSearch(
-        albums: List<LibraryAlbum>,
         artists: List<LibraryArtist> = emptyList(),
-        openedAlbumTracks: List<LibraryTrack> = emptyList(),
         searchText: String = "low",
     ) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
-                var selectedAlbum by remember { mutableStateOf<AlbumTrackList?>(null) }
                 ArtistsTab(
                     surfaceLayout = SurfaceLayout.STACKED,
                     surfaceState = MobileSurfaceViewModel(),
                     artists = window(artists),
-                    albumResults = window(albums),
                     searchText = searchText,
                     selectedArtist = null,
-                    selectedAlbum = selectedAlbum,
                     playback = PlaybackUiState().libraryPlayback(),
                     openArtist = {},
-                    openAlbum = { album ->
-                        selectedAlbum = AlbumTrackList(album, window(openedAlbumTracks))
-                    },
                     closeArtist = {},
-                    closeAlbum = { selectedAlbum = null },
                     play = {},
                     lastRequestedOffset = null,
                     artistRequestedOffset = null,

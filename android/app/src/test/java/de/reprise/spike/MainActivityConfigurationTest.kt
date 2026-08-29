@@ -19,6 +19,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -27,6 +28,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
@@ -106,13 +108,15 @@ class MainActivityConfigurationTest {
     }
 
     @Test
-    fun artistSearchFiltersAlbumsAndClosingItRestoresTheArtistCatalog() {
+    fun artistSearchFiltersArtistsAndClosingItRestoresTheArtistCatalog() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-summary-search").performClick()
-        compose.onNodeWithText("Search albums and artists").performTextInput("full")
+        compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
 
-        compose.onNodeWithText("Full Album 2").assertIsDisplayed()
+        compose.onNode(
+            hasText("Artist 45") and hasText("45 tracks", substring = true),
+        ).assertIsDisplayed()
         compose.onNodeWithText("Artist 2").assertDoesNotExist()
 
         // The open field owns the way out: clear the query, then close it. The
@@ -123,8 +127,9 @@ class MainActivityConfigurationTest {
         compose.onNodeWithContentDescription("Close search").performClick()
         compose.waitForIdle()
 
+        compose.onNodeWithTag("library-artists-list").performScrollToNode(hasText("Artist 2"))
         compose.onNodeWithText("Artist 2").assertIsDisplayed()
-        compose.onNodeWithText("Full Album 2").assertDoesNotExist()
+        compose.onNodeWithText("Albums").assertDoesNotExist()
     }
 
     @Test
@@ -139,20 +144,20 @@ class MainActivityConfigurationTest {
     }
 
     @Test
-    fun filteredAlbumPaginationAndItsSearchSurviveRecreation() {
+    fun filteredArtistPaginationAndItsSearchSurviveRecreation() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-summary-search").performClick()
-        compose.onNodeWithText("Search albums and artists").performTextInput("full")
+        compose.onNodeWithText("Search artists").performTextInput("Artist")
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artist-search-albums-list").performScrollToIndex(200)
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artist-search-albums-list").performScrollToIndex(210)
-        compose.onNodeWithText("Full Album 212").assertIsDisplayed()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(211)
+        compose.onNodeWithText("Artist 212").assertIsDisplayed()
 
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithText("Search albums and artists").assertTextContains("full")
-        compose.onNodeWithText("Full Album 212").assertIsDisplayed()
+        compose.onNodeWithText("Search artists").assertTextContains("Artist")
+        compose.onNodeWithText("Artist 212").assertIsDisplayed()
     }
 
     /**
@@ -668,12 +673,6 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
             searchTitles = { query, range ->
                 tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
                     .window(range)
-            },
-            searchAlbums = { query, range ->
-                albums.filter { album ->
-                    album.title.contains(query, ignoreCase = true) ||
-                        album.artist.contains(query, ignoreCase = true)
-                }.window(range)
             },
             listArtists = { range ->
                 artistWindowRequests += range

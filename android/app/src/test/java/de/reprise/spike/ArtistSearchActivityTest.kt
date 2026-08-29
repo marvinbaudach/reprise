@@ -40,14 +40,18 @@ class ArtistSearchActivityTest {
     fun openingAnArtistSearchResultClosesAndClearsTheSearch() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithContentDescription("Search library").performClick()
-        compose.onNodeWithText("Search albums and artists").performTextInput("Artist 45")
+        compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
 
-        compose.onNodeWithTag("library-artist-search-albums-list")
+        compose.onNodeWithText("Albums").assertDoesNotExist()
+        compose.onNodeWithText("Full Album 45").assertDoesNotExist()
+        compose.onNodeWithTag("library-artists-list")
             .performScrollToNode(hasText("Artist 45"))
-        compose.onAllNodesWithText("Artist 45")[1].performClick()
+        compose.onNode(
+            hasText("Artist 45") and hasText("45 tracks", substring = true),
+        ).performClick()
 
-        compose.onNodeWithText("Search albums and artists").assertDoesNotExist()
+        compose.onNodeWithText("Search artists").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.waitUntil {
             compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()

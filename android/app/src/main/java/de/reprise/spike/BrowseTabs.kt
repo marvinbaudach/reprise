@@ -96,11 +96,7 @@ internal fun LibrarySearchField(
         onValueChange = search,
         label = {
             Text(
-                if (tab == BrowseTab.ARTISTS) {
-                    "Search albums and artists"
-                } else {
-                    "Search ${tab.label.lowercase()}"
-                },
+                "Search ${tab.label.lowercase()}",
             )
         },
         leadingIcon = { MaterialSymbol("search", "") },
@@ -177,7 +173,6 @@ internal fun ArtistsTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     artists: LibraryWindow<LibraryArtist>,
-    albumResults: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
     searchText: String,
     selectedArtist: ArtistTrackList?,
     selectedAlbum: AlbumTrackList? = null,
@@ -277,27 +272,6 @@ internal fun ArtistsTab(
         return
     }
 
-    if (searchText.isNotBlank()) {
-        val hasAlbums = albumResults.rows.isNotEmpty()
-        val hasArtists = artists.rows.isNotEmpty()
-        if (!hasAlbums && !hasArtists) {
-            Text("No matching albums or artists.", modifier = Modifier.padding(16.dp))
-            return
-        }
-        ArtistSearchSections(
-            surfaceState = surfaceState,
-            albums = albumResults,
-            artists = artists,
-            albumsRequestedOffset = artistAlbumsRequestedOffset,
-            artistsRequestedOffset = lastRequestedOffset,
-            openAlbum = openAlbum,
-            openArtist = openArtist,
-            loadMoreAlbums = loadMoreArtistAlbums,
-            loadMoreArtists = loadMoreArtists,
-        )
-        return
-    }
-
     if (artists.rows.isEmpty()) {
         Text(BrowseTab.ARTISTS.emptyMessage(searchText), modifier = Modifier.padding(16.dp))
         return
@@ -388,61 +362,6 @@ private fun ArtistDetailSections(
                     queueActions = null,
                     rowCount = untaggedTracks.rows.size,
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ArtistSearchSections(
-    surfaceState: MobileSurfaceViewModel,
-    albums: LibraryWindow<LibraryAlbum>,
-    artists: LibraryWindow<LibraryArtist>,
-    albumsRequestedOffset: Long?,
-    artistsRequestedOffset: Long?,
-    openAlbum: (LibraryAlbum) -> Unit,
-    openArtist: (LibraryArtist) -> Unit,
-    loadMoreAlbums: (LibraryWindowRange) -> Unit,
-    loadMoreArtists: (LibraryWindowRange) -> Unit,
-) {
-    val key = LibraryListKey.ARTIST_SEARCH_ALBUMS
-    val albumContinuation = albums.nextRequest(albumsRequestedOffset)
-    val artistContinuation = artists.nextRequest(artistsRequestedOffset)
-    val albumItemCount = albums.rows.size + if (albums.rows.isEmpty()) 0 else 1
-    val artistItemCount = artists.rows.size + if (artists.rows.isEmpty()) 0 else 1
-    val itemCount = albumItemCount + artistItemCount +
-        (if (albumContinuation == null) 0 else 1) +
-        (if (artistContinuation == null) 0 else 1)
-    val anchor = surfaceState.scrollPosition(key).within(itemCount)
-    val listState = rememberLibraryListState(anchor)
-    ObserveLibraryListAnchor(key, listState, surfaceState)
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().testTag(key.testTag()),
-    ) {
-        if (albums.rows.isNotEmpty()) {
-            item(key = "search-albums-heading") { SectionHeading("Albums") }
-            items(
-                albums.rows,
-                key = { album -> "search-album-${album.artist}\u0000${album.title}" },
-            ) { album -> AlbumRow(album, openAlbum) }
-            albumContinuation?.let { request ->
-                item(key = "search-albums-load-${request.offset}") {
-                    LaunchedEffect(request.offset) { loadMoreAlbums(request) }
-                    LoadingWindowRow()
-                }
-            }
-        }
-        if (artists.rows.isNotEmpty()) {
-            item(key = "search-artists-heading") { SectionHeading("Artists") }
-            items(artists.rows, key = { artist -> "search-artist-${artist.name}" }) { artist ->
-                ArtistRow(artist, openArtist)
-            }
-            artistContinuation?.let { request ->
-                item(key = "search-artists-load-${request.offset}") {
-                    LaunchedEffect(request.offset) { loadMoreArtists(request) }
-                    LoadingWindowRow()
-                }
             }
         }
     }
