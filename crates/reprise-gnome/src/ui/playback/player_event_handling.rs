@@ -189,12 +189,12 @@ impl PlayerController {
                 );
                 self.max_position_ms
                     .set(self.max_position_ms.get().max(position_ms));
-                self.handle_external_position(position_ms, duration_ms);
                 self.sync_position(position_ms, duration_ms);
                 // Stage 3 Task 10: keeps MPRIS's `Position` current between
                 // `update_mpris_mirror` rebuilds — see `update_mpris_
                 // position`'s doc comment.
                 self.update_mpris_position(position_ms);
+                self.handle_external_position(position_ms, duration_ms);
                 self.retry_pending_local_seek(duration_ms);
             }
             PlayerEvent::Buffering {

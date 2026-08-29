@@ -16,6 +16,7 @@ use crate::ui::scrobble_runtime::ScrobbleRuntime;
 #[derive(Default)]
 struct PlaybackCalls {
     played_paths: RefCell<Vec<String>>,
+    played_uris: RefCell<Vec<String>>,
     sought_positions: RefCell<Vec<i64>>,
 }
 
@@ -29,7 +30,8 @@ impl PlaybackBackend for TestPlayback {
         Ok(())
     }
 
-    fn play_uri(&self, _: &str) -> Result<(), PlaybackError> {
+    fn play_uri(&self, uri: &str) -> Result<(), PlaybackError> {
+        self.calls.played_uris.borrow_mut().push(uri.to_owned());
         Ok(())
     }
 
@@ -133,4 +135,63 @@ fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
 
     assert_eq!(calls.played_paths.borrow().as_slice(), ["/music/restored.flac"]);
     assert_eq!(calls.sought_positions.borrow().as_slice(), [30_000]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn restored_episode_starts_at_the_clicked_position_not_its_saved_resume() {
+    use reprise_core::library::session::{SessionEpisode, SessionEpisodeOrigin};
+    use reprise_core::podcasts::feed::ParsedEpisode;
+    use reprise_core::podcasts::store::{self, NewSubscription};
+    use reprise_core::podcasts::PodcastKind;
+
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    let subscription_id = store::add_or_restore(
+        &controller.conn,
+        &NewSubscription {
+            kind: PodcastKind::Rss,
+            feed_url: "https://podcast.test/feed.xml".into(),
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let episode_id = store::upsert_episode(
+        &controller.conn,
+        subscription_id,
+        &ParsedEpisode {
+            guid: "episode-1".into(),
+            title: "Restored episode".into(),
+            image_url: None,
+            audio_url: "https://podcast.test/episode.mp3".into(),
+            page_url: None,
+            published_at: Some(1),
+            duration_secs: Some(3_600),
+        },
+        1,
+    )
+    .unwrap()
+    .unwrap()
+    .episode_id;
+    store::save_position(&controller.conn, episode_id, 22_000).unwrap();
+    assert!(controller.restore_session_episode(Some(&SessionEpisode {
+        episode_id,
+        origin: SessionEpisodeOrigin::Direct,
+        neighbour_episode_ids: vec![episode_id],
+    })));
+
+    controller.seek_or_start(30_000);
+
+    assert_eq!(
+        calls.played_uris.borrow().as_slice(),
+        ["https://podcast.test/episode.mp3"]
+    );
+    assert_eq!(calls.sought_positions.borrow().last(), Some(&30_000));
 }

@@ -11,6 +11,9 @@ use super::queue_transport::restored_start_change;
 
 impl PlayerController {
     pub(in crate::ui) fn seek_or_start(self: &Rc<Self>, position_ms: i64) {
+        if self.seek_restored_episode_at(position_ms) {
+            return;
+        }
         let status = self
             .mpris_state
             .lock()
@@ -44,7 +47,7 @@ impl PlayerController {
             (!succeeded && position_ms > 0).then_some(policy);
     }
 
-    fn seek_after_start(&self, position_ms: i64) -> bool {
+    pub(in crate::ui) fn seek_after_start(&self, position_ms: i64) -> bool {
         match self.player.seek_to(position_ms) {
             Ok(()) => {
                 self.update_mpris_position(position_ms);
