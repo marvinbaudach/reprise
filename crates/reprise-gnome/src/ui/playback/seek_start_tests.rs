@@ -42,10 +42,7 @@ impl PlaybackBackend for TestPlayback {
     }
 
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError> {
-        self.calls
-            .sought_positions
-            .borrow_mut()
-            .push(position_ms);
+        self.calls.sought_positions.borrow_mut().push(position_ms);
         let failed_seeks_remaining = self.calls.failed_seeks_remaining.get();
         if failed_seeks_remaining > 0 {
             self.calls
@@ -82,11 +79,7 @@ impl WaveformBackend for TestWaveform {
 impl RenderDataBackend for TestWaveform {}
 
 fn controller(calls: Rc<PlaybackCalls>, test_root: &Path) -> Rc<PlayerController> {
-    controller_with_db(
-        calls,
-        test_root,
-        Rc::new(crate::test_db::open().unwrap()),
-    )
+    controller_with_db(calls, test_root, Rc::new(crate::test_db::open().unwrap()))
 }
 
 fn controller_with_db(
@@ -158,7 +151,10 @@ fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
 
     controller.seek_or_start(30_000);
 
-    assert_eq!(calls.played_paths.borrow().as_slice(), ["/music/restored.flac"]);
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/restored.flac"]
+    );
     assert_eq!(calls.sought_positions.borrow().as_slice(), [30_000]);
 }
 

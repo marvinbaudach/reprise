@@ -268,7 +268,8 @@ pub struct PlayerController {
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// One state owner for preview, podcast, and live-radio playback.
     pub(in crate::ui) external: RefCell<super::external_media::ExternalPlaybackState>,
-    pub(in crate::ui) pending_local_seek: RefCell<Option<super::external_media_state::ResumePolicy>>,
+    pub(in crate::ui) pending_local_seek:
+        RefCell<Option<super::external_media_state::ResumePolicy>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
     pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
