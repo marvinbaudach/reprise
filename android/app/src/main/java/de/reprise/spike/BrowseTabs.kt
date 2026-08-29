@@ -36,8 +36,6 @@ import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 
-private const val ARTIST_PORTRAIT_DIAMETER_DP = 210f
-
 internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText.isNotBlank()) {
     "No matching ${label.lowercase()}."
 } else {
@@ -326,14 +324,14 @@ private fun ArtistDetailSections(
     val metrics = libraryFrameMetrics(surfaceLayout)
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val portraitCenterFraction = if (maxHeight.value > 0f) {
-            (ARTIST_PORTRAIT_DIAMETER_DP / 2f / maxHeight.value).coerceIn(0f, 1f)
+            (ARTIST_PORTRAIT_DIAMETER_DP.toFloat() / 2f / maxHeight.value).coerceIn(0f, 1f)
         } else {
             0f
         }
         ArtistPortraitShimmer(
             visual = head,
             playing = playback.state == AndroidPlaybackState.PLAYING,
-            coverDiameterDp = ARTIST_PORTRAIT_DIAMETER_DP,
+            coverDiameterDp = ARTIST_PORTRAIT_DIAMETER_DP.toFloat(),
             centerFraction = portraitCenterFraction,
             modifier = Modifier.fillMaxSize(),
         )
