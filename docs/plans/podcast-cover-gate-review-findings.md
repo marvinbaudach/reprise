@@ -2,7 +2,7 @@
 slug: podcast-cover-gate-review-findings
 worktree: /home/marvin/Projects/reprise-podcast-cover-gate-review-findings
 branch: feature/podcast-cover-gate-review-findings
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-29
 ---
