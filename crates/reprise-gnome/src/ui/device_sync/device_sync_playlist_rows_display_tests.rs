@@ -102,6 +102,43 @@ fn the_selection_summary_still_names_its_count() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn playlist_selection_explains_and_enforces_its_locked_state() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK test display");
+
+    let mut locked = device();
+    locked.page.controls.editable = false;
+    let (surface, _root) = DeviceSyncPage::new(&locked, page_actions(), &no_op_content_actions());
+    let reason = device_sync_strings::playlist_selection_tooltip(true);
+
+    assert!(surface.playlist_card.locked_reason.is_visible());
+    assert_eq!(surface.playlist_card.locked_reason.text(), reason);
+    assert!(!surface.playlist_card.choose.is_sensitive());
+    assert_eq!(
+        surface.playlist_card.choose.tooltip_text().as_deref(),
+        Some(reason.as_str())
+    );
+    assert!(surface.playlist_card.rows.borrow().iter().all(|row| {
+        !row.button.is_sensitive() && row.button.tooltip_text().as_deref() == Some(reason.as_str())
+    }));
+
+    let mut editable = locked;
+    editable.page.controls.editable = true;
+    surface.update(&editable);
+
+    assert!(!surface.playlist_card.locked_reason.is_visible());
+    assert!(surface.playlist_card.choose.is_sensitive());
+    assert_eq!(surface.playlist_card.choose.tooltip_text(), None);
+    assert!(surface
+        .playlist_card
+        .rows
+        .borrow()
+        .iter()
+        .all(|row| row.button.is_sensitive() && row.button.tooltip_text().is_none()));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn remembered_rows_verification_and_preview_render_without_live_measurement_claims() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().expect("GTK test display");

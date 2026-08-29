@@ -81,6 +81,9 @@ pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
 /// deliberately names the files in a separate translation unit.
 pub const SYNCING_FILE_COUNT: &str = N_!("Syncing · {completed} / {total}");
 pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
+const PLAYLIST_SELECTION_LOCKED: &str = N_!(
+    "Playlist selection is locked while this device is synchronizing; cancel the synchronization to change it."
+);
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
 pub const PLAYLISTS: &str = N_!("Playlists");
@@ -96,6 +99,14 @@ pub const KEEP_SMART_PLAYLISTS_UPDATED: &str = N_!("Keep smart playlists up to d
 pub const UNAVAILABLE_PLAYLIST: &str = N_!("Unavailable playlist");
 pub const PICKER_FOOTER: &str = N_!("{selected} selected · {content} · {size}");
 pub const TRACKS: &str = N_!("{count} tracks");
+
+pub fn playlist_selection_tooltip(locked: bool) -> String {
+    text(if locked {
+        PLAYLIST_SELECTION_LOCKED
+    } else {
+        CHOOSE_PLAYLISTS
+    })
+}
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
