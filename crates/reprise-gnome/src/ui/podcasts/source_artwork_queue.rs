@@ -59,23 +59,30 @@ impl MeasurementState {
 pub(super) struct RegistrationContext {
     pub(super) row_id: u64,
     pub(super) visible: bool,
+    pub(super) startup_gate_open_at_request: bool,
 }
 
 pub(super) fn registration_context(
     row_id: u64,
     widget: &gtk4::glib::WeakRef<gtk4::Widget>,
     retained_is_startup_visible: bool,
+    startup_gate_open_at_request: bool,
 ) -> RegistrationContext {
     if !measurement_enabled() {
         return RegistrationContext {
             row_id: 0,
             visible: false,
+            startup_gate_open_at_request,
         };
     }
     let visible = widget.upgrade().is_some_and(|widget| {
         visible_in_viewport(&widget) || (retained_is_startup_visible && !widget.is_mapped())
     });
-    RegistrationContext { row_id, visible }
+    RegistrationContext {
+        row_id,
+        visible,
+        startup_gate_open_at_request,
+    }
 }
 
 fn visible_in_viewport(widget: &gtk4::Widget) -> bool {
@@ -103,6 +110,7 @@ struct RequestMeasurement {
     request_id: u64,
     row_id: u64,
     visible: bool,
+    startup_gate_open_at_request: bool,
     jobs_ahead: usize,
     queued_at: Instant,
 }
@@ -193,11 +201,13 @@ impl ArtworkQueue {
             let context = context.unwrap_or(RegistrationContext {
                 row_id: 0,
                 visible: false,
+                startup_gate_open_at_request: false,
             });
             RequestMeasurement {
                 request_id: state.next_request_id.fetch_add(1, Ordering::Relaxed),
                 row_id: context.row_id,
                 visible: context.visible,
+                startup_gate_open_at_request: context.startup_gate_open_at_request,
                 jobs_ahead: state.queued_jobs.load(Ordering::Relaxed),
                 queued_at: Instant::now(),
             }
@@ -299,10 +309,11 @@ fn record_measurement(phase: &str, measurement: Option<RequestMeasurement>) {
         return;
     };
     eprintln!(
-        "source-artwork-measure phase={phase} request={} row={} visible={} jobs_ahead={} wait_us={}",
+        "source-artwork-measure phase={phase} request={} row={} visible={} startup_gate_open_at_request={} jobs_ahead={} wait_us={}",
         measurement.request_id,
         measurement.row_id,
         measurement.visible,
+        measurement.startup_gate_open_at_request,
         measurement.jobs_ahead,
         measurement.queued_at.elapsed().as_micros()
     );
@@ -517,6 +528,7 @@ mod tests {
             Some(super::RegistrationContext {
                 row_id: 17,
                 visible: true,
+                startup_gate_open_at_request: false,
             }),
         );
 
@@ -528,6 +540,7 @@ mod tests {
             Some(super::RegistrationContext {
                 row_id: 18,
                 visible: false,
+                startup_gate_open_at_request: true,
             }),
         );
 
@@ -535,7 +548,9 @@ mod tests {
         let second_measurement = second.measurement().expect("measurement is enabled");
         assert_eq!(first_measurement.row_id, 17);
         assert!(first_measurement.visible);
+        assert!(!first_measurement.startup_gate_open_at_request);
         assert_eq!(first_measurement.jobs_ahead, 0);
+        assert!(second_measurement.startup_gate_open_at_request);
         assert_eq!(second_measurement.jobs_ahead, 1);
     }
 

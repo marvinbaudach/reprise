@@ -76,6 +76,11 @@ pub(crate) fn run_after_quiet(work: impl FnOnce() + 'static) {
     }
 }
 
+/// Whether work submitted through [`run_after_quiet`] would run immediately.
+pub(crate) fn is_open() -> bool {
+    GATE.with_borrow(|gate| gate.open)
+}
+
 /// Defers automatic construction until startup is quiet while preserving an
 /// immediate path for explicit user work.
 pub(crate) fn deferred_after_quiet<T: 'static>(
@@ -157,6 +162,16 @@ fn reset_for_test() {
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
+
+    #[test]
+    fn gate_state_reports_whether_after_quiet_work_will_wait() {
+        super::reset_for_test();
+        assert!(!super::is_open());
+
+        super::release();
+
+        assert!(super::is_open());
+    }
 
     #[test]
     fn automatic_work_waits_for_one_release_then_later_work_runs_immediately() {

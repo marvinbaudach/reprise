@@ -422,6 +422,7 @@ fn load_texture(
     // task. A later Preferences change can therefore close `GATE_OPEN` while
     // the task waits, and the worker's fetch-time read below remains final.
     GATE_OPEN.store(request.images_allowed, Ordering::Relaxed);
+    let startup_gate_open_at_request = crate::ui::startup_quiet::is_open();
     let current = current.clone();
     let start = move || {
         if current.get() != generation {
@@ -435,6 +436,7 @@ fn load_texture(
                 target.row_id,
                 &target.widget,
                 request.retained_is_startup_visible,
+                startup_gate_open_at_request,
             )
         });
         let receiver = source_artwork_queue::queue(
