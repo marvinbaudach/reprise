@@ -97,11 +97,11 @@ impl PlaylistCard {
     pub(super) fn update(&self, device: &DeviceView) {
         self.updating.set(true);
         let editable = device.page.controls.editable;
-        let locked_reason = device_sync_strings::playlist_selection_tooltip(true);
+        let locked_reason =
+            (!editable).then(|| device_sync_strings::playlist_selection_tooltip(true));
         self.locked_reason.set_visible(!editable);
         self.choose.set_sensitive(editable);
-        self.choose
-            .set_tooltip_text((!editable).then_some(locked_reason.as_str()));
+        self.choose.set_tooltip_text(locked_reason.as_deref());
         let sources = device
             .page
             .playlists
@@ -195,8 +195,7 @@ impl PlaylistCard {
             row.button
                 .update_property(&[gtk4::accessible::Property::Label(name)]);
             row.button.set_sensitive(editable);
-            row.button
-                .set_tooltip_text((!editable).then_some(locked_reason.as_str()));
+            row.button.set_tooltip_text(locked_reason.as_deref());
         }
         self.summary.set_label(&format!(
             "{} · {} on device",
