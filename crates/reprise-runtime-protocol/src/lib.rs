@@ -136,7 +136,9 @@ impl std::fmt::Display for ProtocolVersion {
 /// Minor 3 adds typed queue-item windows beside the legacy track-only id
 /// projections. Existing `*_track_ids` fields deliberately keep their exact
 /// meaning; episodes appear only in the new item fields.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 3 };
+/// Minor 4 adds work-unit progress and an ETA beside the retained byte
+/// counters for device synchronization.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 4 };
 
 #[cfg(test)]
 mod tests {
@@ -170,6 +172,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "4.3");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "4.4");
     }
 }

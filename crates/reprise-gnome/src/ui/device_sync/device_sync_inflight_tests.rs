@@ -54,14 +54,18 @@ fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
         assert_eq!(backend.state.copy_attempts.get(), 2);
         gtk4::glib::timeout_future(Duration::from_millis(10)).await;
 
-        assert!(matches!(
-            runtime.devices()[0].sync_phase,
-            PlannedSyncPhase::Syncing {
-                bytes_done: 50,
-                bytes_total: 85_636,
-                ..
-            }
-        ));
+        assert!(
+            matches!(
+                runtime.devices()[0].sync_phase,
+                PlannedSyncPhase::Syncing {
+                    unit_bytes_done: 50,
+                    unit_bytes_total: 100,
+                    ..
+                }
+            ),
+            "replacement phase: {:?}",
+            runtime.devices()[0].sync_phase
+        );
         settle().await;
     });
 }
@@ -222,5 +226,47 @@ fn mtp_60_every_copy_restarts_the_transfer_rate_baseline() {
             "the second copy must be measured against its own baseline"
         );
         settle().await;
+    });
+}
+
+#[test]
+fn a_last_step_failure_keeps_each_successful_playlists_verified_timestamp() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "INSERT INTO playlists (id, name, position) VALUES (11, 'Night', 1);
+                 INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (11, 2, 0);",
+            )
+            .unwrap();
+        let mut settings =
+            reprise_core::device_sync::settings::load_or_create_settings(&conn, "a", "Phone a")
+                .unwrap();
+        settings.selection = DeviceSelection::Sources(vec![
+            SelectionSource::Playlist(10),
+            SelectionSource::Playlist(11),
+        ]);
+        save_settings(&conn, &settings).unwrap();
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 1)
+                .with_track_metadata_replace_error("injected final-step failure"),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        assert!(runtime.devices()[0]
+            .sync_error
+            .as_ref()
+            .is_some_and(|error| error.message.contains("injected final-step failure")));
+        let playlists =
+            reprise_core::device_sync::settings::load_device_playlists(&conn, "a").unwrap();
+        assert_eq!(playlists.len(), 2);
+        assert!(playlists
+            .iter()
+            .all(|playlist| playlist.last_synced_at.is_some()));
     });
 }

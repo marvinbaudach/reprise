@@ -74,7 +74,9 @@ const FINISHING_SUBTITLE: &str = N_!("Refreshing the device inventory");
 const REMOVING_TITLE: &str = N_!("Removing · {done} of {total}");
 const CONVERTING_TITLE: &str = N_!("Converting · {done} of {total}");
 const COPYING_TITLE: &str = N_!("Copying · {done} of {total}");
+const WRITING_ANALYSIS_TITLE: &str = N_!("Writing analysis · {done} of {total}");
 const WRITING_PLAYLISTS_TITLE: &str = N_!("Writing playlists · {done} of {total}");
+const WRITING_TRACK_METADATA_TITLE: &str = N_!("Writing track metadata · {done} of {total}");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageActionCopy {
@@ -352,23 +354,30 @@ pub fn transfer_progress_copy(
             done,
             total,
             current_track,
-            bytes_done,
-            bytes_total,
+            unit_bytes_done,
+            unit_bytes_total,
         } => {
             let title = match step {
                 SyncStep::Removing => REMOVING_TITLE,
                 SyncStep::Transcoding => CONVERTING_TITLE,
                 SyncStep::Copying => COPYING_TITLE,
+                SyncStep::WritingAnalysis => WRITING_ANALYSIS_TITLE,
                 SyncStep::WritingPlaylists => WRITING_PLAYLISTS_TITLE,
+                SyncStep::WritingTrackMetadata => WRITING_TRACK_METADATA_TITLE,
             };
-            let fraction = if *bytes_total > 0 {
-                *bytes_done as f64 / *bytes_total as f64
-            } else if *total > 0 {
-                f64::from(*done) / f64::from(*total)
+            let unit_fraction = if *unit_bytes_total > 0 {
+                *unit_bytes_done as f64 / *unit_bytes_total as f64
             } else {
                 0.0
             };
-            let speed = if step == &SyncStep::Copying && bytes_per_second > 0 {
+            let fraction = if *total > 0 {
+                (f64::from(*done) + unit_fraction) / f64::from(*total)
+            } else {
+                0.0
+            };
+            let speed = if matches!(step, SyncStep::Copying | SyncStep::WritingAnalysis)
+                && bytes_per_second > 0
+            {
                 ProgressSpeed::BytesPerSecond(bytes_per_second)
             } else {
                 ProgressSpeed::Unavailable
@@ -436,8 +445,8 @@ mod tests {
                 done: 1,
                 total: 2,
                 current_track: "Immortal — Lorna Shore".into(),
-                bytes_done: 50,
-                bytes_total: 100,
+                unit_bytes_done: 50,
+                unit_bytes_total: 100,
             },
             2 * 1_024 * 1_024,
         )
@@ -453,7 +462,7 @@ mod tests {
                 },
                 subtitle: ProgressSubtitle::CurrentTrack("Immortal — Lorna Shore".into()),
                 speed: ProgressSpeed::BytesPerSecond(2 * 1_024 * 1_024),
-                fraction: 0.5,
+                fraction: 0.75,
             }
         );
     }

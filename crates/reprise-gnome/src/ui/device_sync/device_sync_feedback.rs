@@ -175,10 +175,19 @@ fn sync_tooltip(device: &DeviceView) -> String {
 fn phase_percent(phase: &PlannedSyncPhase) -> u64 {
     match phase {
         PlannedSyncPhase::Syncing {
-            bytes_done,
-            bytes_total,
+            done,
+            total,
+            unit_bytes_done,
+            unit_bytes_total,
             ..
-        } if *bytes_total > 0 => bytes_done.saturating_mul(100) / bytes_total,
+        } if *total > 0 => {
+            let completed = u64::from(*done).saturating_mul(100);
+            let interpolated = unit_bytes_done
+                .saturating_mul(100)
+                .checked_div(*unit_bytes_total)
+                .unwrap_or(0);
+            completed.saturating_add(interpolated) / u64::from(*total)
+        }
         PlannedSyncPhase::Finishing => 100,
         _ => 0,
     }

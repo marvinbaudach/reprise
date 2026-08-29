@@ -89,6 +89,9 @@ fn populated_device() -> DeviceSnapshot {
             bytes_done: 52_428_800,
             bytes_total: 104_857_600,
             bytes_per_second: 5_242_880,
+            units_done: 7,
+            units_total: 14,
+            estimated_remaining_seconds: Some(90),
         },
         current_track: "Ghosts".into(),
         last_synced_at: Some(1_753_600_000),
@@ -254,6 +257,9 @@ fn populated_device_run() -> DeviceRunSnapshot {
             bytes_done: 104_857_600,
             bytes_total: 3_221_225_472,
             bytes_per_second: 8_388_608,
+            units_done: 20,
+            units_total: 20,
+            estimated_remaining_seconds: None,
         },
         current_track: "Ghosts".into(),
         failed_track_ids: vec![41, 42],
@@ -580,7 +586,7 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 4);
-    assert_eq!(PROTOCOL_VERSION.minor, 3);
+    assert_eq!(PROTOCOL_VERSION.minor, 4);
 }
 
 /// The effects facet, pinned like the others: a client decodes by name, so a

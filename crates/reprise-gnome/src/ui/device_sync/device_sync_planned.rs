@@ -8,7 +8,6 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use reprise_core::device_sync::settings::{
@@ -75,7 +74,6 @@ struct PlannedWork {
     /// A session-only device still transfers and records its run, but writes
     /// no identity-bound inventory under its volatile URI.
     persist_device_state: bool,
-    initiator: SyncInitiator,
     machine: Rc<RefCell<DeviceSyncMachine>>,
     playlists_path: String,
     playlists_storage: Option<StorageId>,
@@ -173,18 +171,6 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
             return;
         };
         if let Effect::Finished(outcome) = effect {
-            let outcome = run_analysis_phase(&runtime, &mut work, outcome).await;
-            let mut outcome = outcome;
-            if matches!(outcome, SyncOutcome::Completed { .. })
-                && work.initiator == SyncInitiator::Listener
-            {
-                if let Err(error) = effects::write_track_metadata_list(&runtime, &work).await {
-                    outcome = SyncOutcome::Failed {
-                        terminal_error: Some(error),
-                        failed_tracks: Vec::new(),
-                    };
-                }
-            }
             finish_sync(&runtime, &work, outcome);
             return;
         }
@@ -192,56 +178,22 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
         if !is_current_run(&runtime, &work) {
             return;
         }
+        let before = work.machine.borrow().units_done();
         work.pending = work.machine.borrow_mut().dispatch(event);
+        let after = work.machine.borrow().units_done();
+        if after > before {
+            let now = Instant::now();
+            if let Some(device) = runtime
+                .device_states
+                .borrow_mut()
+                .iter_mut()
+                .find(|device| device.descriptor.id == work.device_id)
+            {
+                device.mtp_rate.complete_units(after - before, now);
+            }
+        }
         publish_phase(&runtime, &work);
     }
-}
-
-async fn run_analysis_phase(
-    runtime: &Rc<DeviceSyncRuntime>,
-    work: &mut PlannedWork,
-    outcome: SyncOutcome,
-) -> SyncOutcome {
-    if !matches!(outcome, SyncOutcome::Completed { .. }) {
-        return outcome;
-    }
-    let writes = work.machine.borrow().plan().analysis_writes.clone();
-    let analysis_bytes = writes
-        .iter()
-        .map(|write| write.size_bytes)
-        .fold(0_u64, u64::saturating_add);
-    let mut bytes_done = work
-        .machine
-        .borrow()
-        .plan()
-        .transfer_bytes
-        .saturating_sub(analysis_bytes);
-    for (index, write) in writes.iter().enumerate() {
-        if !is_current_run(runtime, work)
-            || work.machine.borrow().is_cancelled()
-            || work.cancelled.load(Ordering::SeqCst)
-            || work.cancellable.is_cancelled()
-        {
-            return SyncOutcome::Cancelled;
-        }
-        content_transfer::set_content_phase(
-            runtime,
-            work,
-            content_transfer::syncing_phase(
-                SyncStep::Copying,
-                index,
-                writes.len(),
-                write.device_path.clone(),
-                bytes_done,
-                work.machine.borrow().plan().transfer_bytes,
-            ),
-        );
-        if effects::copy_analysis_sidecar(runtime, work, write).await {
-            work.log.copied(write.size_bytes);
-        }
-        bytes_done = bytes_done.saturating_add(write.size_bytes);
-    }
-    outcome
 }
 
 /// Whether this run still owns its device.
@@ -279,11 +231,13 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
                 if matches!(
                     phase,
                     PlannedSyncPhase::Syncing {
-                        step: SyncStep::Copying,
+                        step: SyncStep::Copying | SyncStep::WritingAnalysis,
                         ..
                     }
                 ) {
                     device.mtp_rate.begin_copy(Instant::now());
+                } else {
+                    device.mtp_rate.stop_copy();
                 }
                 device.sync_phase = phase;
             }
@@ -318,6 +272,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
     if let SyncOutcome::Completed { verified_sources } = outcome {
         runtime.notify();
         runtime.refresh_contents_after_sync(&work.device_id, verified_sources);
+        cleanup_staging_if_idle(runtime);
         return;
     }
 
@@ -351,6 +306,18 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
     }
     runtime.notify();
     runtime.refresh_contents(&work.device_id);
+    cleanup_staging_if_idle(runtime);
+}
+
+fn cleanup_staging_if_idle(runtime: &DeviceSyncRuntime) {
+    let another_run_is_active = runtime
+        .device_states
+        .borrow()
+        .iter()
+        .any(|device| device.machine.is_some());
+    if !another_run_is_active {
+        reprise_core::device_sync::staging::cleanup_process_files();
+    }
 }
 
 impl DeviceSyncRuntime {
@@ -513,10 +480,14 @@ impl DeviceSyncRuntime {
                         return Err(error);
                     }
                 }
-                let machine = Rc::new(RefCell::new(DeviceSyncMachine::new(
-                    device_id.to_string(),
-                    device.mirror_plan.clone(),
-                )));
+                let machine =
+                    DeviceSyncMachine::new(device_id.to_string(), device.mirror_plan.clone());
+                let machine = if initiator == SyncInitiator::Listener {
+                    machine.with_track_metadata_list()
+                } else {
+                    machine
+                };
+                let machine = Rc::new(RefCell::new(machine));
                 // The run opens synchronously, so a caller that starts a sync sees
                 // the device busy the moment `sync_now` returns rather than one
                 // main-loop turn later.
@@ -530,6 +501,7 @@ impl DeviceSyncRuntime {
                 device.active_initiator = Some(initiator);
                 device.sync_error = None;
                 device.mtp_rate.reset();
+                device.mtp_rate.begin_run(Instant::now());
                 let target = device.target.clone();
                 let persist_device_state = device.descriptor.persistent_id.is_some();
                 let planned = u32::try_from(
@@ -543,7 +515,6 @@ impl DeviceSyncRuntime {
                     device_id: device_id.to_string(),
                     root_uri: device.descriptor.root_uri.clone(),
                     persist_device_state,
-                    initiator,
                     machine,
                     playlists_path: target.path,
                     playlists_storage: target.storage_id,
@@ -578,8 +549,6 @@ impl DeviceSyncRuntime {
     }
 }
 
-#[path = "device_sync_content_transfer.rs"]
-mod content_transfer;
 #[path = "device_sync_effects.rs"]
 mod effects;
 #[path = "device_sync_run_log.rs"]

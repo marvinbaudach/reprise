@@ -594,6 +594,7 @@ fn answer(effect: &reprise_core::device_sync::machine::Effect) -> DeviceEvent {
         Effect::Transcode { .. } => DeviceEvent::Transcoded(Ok(1)),
         Effect::CopyTrack { bytes, .. } => DeviceEvent::TrackCopied(Ok(*bytes)),
         Effect::RecordFile { .. } => DeviceEvent::FileRecorded(Ok(())),
+        Effect::WriteAnalysis { .. } => DeviceEvent::AnalysisWritten(Ok(1)),
         Effect::WritePlaylist { .. } => DeviceEvent::PlaylistWritten(Ok(())),
         Effect::RecordPlaylist { .. } => DeviceEvent::PlaylistRecorded(Ok(())),
         Effect::RemoveTrack { .. } => DeviceEvent::TrackRemoved(Ok(())),
@@ -601,6 +602,7 @@ fn answer(effect: &reprise_core::device_sync::machine::Effect) -> DeviceEvent {
         Effect::RemoveReplacedFile { .. } => DeviceEvent::ReplacedFileRemoved(Ok(())),
         Effect::RemovePlaylist { .. } => DeviceEvent::PlaylistRemoved(Ok(())),
         Effect::ForgetPlaylist { .. } => DeviceEvent::PlaylistForgotten(Ok(())),
+        Effect::WriteTrackMetadataList => DeviceEvent::TrackMetadataListWritten(Ok(())),
         Effect::Finished(_) => unreachable!("the runtime consumes Finished itself"),
     }
 }

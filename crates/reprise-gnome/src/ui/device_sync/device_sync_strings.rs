@@ -133,16 +133,17 @@ pub fn track_progress(completed: usize, total: usize) -> String {
     )
 }
 
-/// Rough USB throughput used for the remaining-time hint — the same
-/// assumption the delta card's estimate is built on, so both agree.
-const ESTIMATED_BYTES_PER_SECOND: u64 = 5 * 1_024 * 1_024;
-
 /// `98 %` — kept in its own label (never folded into the subtitle) so the
 /// track text beside it cannot make the number jump around.
-pub fn sync_percent(bytes_done: u64, bytes_total: u64) -> String {
-    let percent = bytes_done
+pub fn sync_percent(done: u32, total: u32, unit_bytes_done: u64, unit_bytes_total: u64) -> String {
+    let completed = u64::from(done).saturating_mul(100);
+    let interpolated = unit_bytes_done
         .saturating_mul(100)
-        .checked_div(bytes_total)
+        .checked_div(unit_bytes_total)
+        .unwrap_or(0);
+    let percent = completed
+        .saturating_add(interpolated)
+        .checked_div(u64::from(total))
         .unwrap_or(0)
         .min(100);
     formatted(N_!("{percent} %"), &[("percent", &percent.to_string())])
@@ -163,6 +164,7 @@ pub fn sync_tooltip(
     total: u32,
     bytes_done: u64,
     bytes_total: u64,
+    remaining: Option<std::time::Duration>,
     current_track: &str,
 ) -> String {
     let mut parts = vec![
@@ -175,33 +177,13 @@ pub fn sync_tooltip(
             ],
         ),
     ];
-    if let Some(remaining) = remaining_hint(bytes_done, bytes_total) {
-        parts.push(remaining);
+    if let Some(remaining) = remaining {
+        parts.push(rate_and_remaining(0, Some(remaining)));
     }
     if !current_track.is_empty() {
         parts.push(current_track.to_string());
     }
     parts.join(" · ")
-}
-
-fn remaining_hint(bytes_done: u64, bytes_total: u64) -> Option<String> {
-    let remaining = bytes_total
-        .checked_sub(bytes_done)
-        .filter(|left| *left > 0)?;
-    let seconds = remaining.div_ceil(ESTIMATED_BYTES_PER_SECOND);
-    let text = if seconds >= 60 {
-        let minutes = seconds.div_ceil(60);
-        formatted(
-            N_!("~{minutes} min left"),
-            &[("minutes", &minutes.to_string())],
-        )
-    } else {
-        formatted(
-            N_!("~{seconds} s left"),
-            &[("seconds", &seconds.max(1).to_string())],
-        )
-    };
-    Some(text)
 }
 
 pub fn file_size(bytes: u64) -> String {

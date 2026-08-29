@@ -80,8 +80,8 @@ fn nav_18_a_sync_progress_update_keeps_the_open_device_marked() {
         done: 1,
         total: 4,
         current_track: "Song".into(),
-        bytes_done: 256,
-        bytes_total: 1_024,
+        unit_bytes_done: 256,
+        unit_bytes_total: 1_024,
         step: SyncStep::Copying,
     };
     let cards = cards.borrow();

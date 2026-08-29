@@ -137,6 +137,26 @@ impl DeviceState {
     }
 
     fn view(&self) -> DeviceView {
+        let (units_done, units_total) = match self.sync_phase {
+            PlannedSyncPhase::Syncing { done, total, .. } => (done, total),
+            PlannedSyncPhase::Finishing => self
+                .machine
+                .as_ref()
+                .map(|machine| {
+                    let machine = machine.borrow();
+                    (machine.units_done(), machine.units_total())
+                })
+                .unwrap_or_default(),
+            _ => (0, 0),
+        };
+        let (bytes_done, bytes_total) = self
+            .machine
+            .as_ref()
+            .map(|machine| {
+                let machine = machine.borrow();
+                (machine.bytes_done(), machine.bytes_total())
+            })
+            .unwrap_or_default();
         let mut page = self.page.clone();
         page.update_controls(
             self.connected && self.session_state.opens_session(),
@@ -185,7 +205,12 @@ impl DeviceState {
             verified_managed_track_count: self.verified_managed_track_count,
             size_on_device_bytes: self.size_on_device_bytes,
             managed_track_count: self.managed_track_count,
+            bytes_done,
+            bytes_total,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
+            units_done,
+            units_total,
+            estimated_remaining: self.mtp_rate.remaining(units_done, units_total),
             page,
             contents_state: project_contents_state(
                 self.scanning,
