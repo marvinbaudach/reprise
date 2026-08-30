@@ -1,6 +1,12 @@
+use std::fs::{OpenOptions, TryLockError};
+use std::io::{ErrorKind, Read};
+
 use rusqlite::Connection;
 
-use super::tag_write_lock::claim_tag_write_slot;
+use super::tag_write_lock::{
+    attempt_after_try_lock, claim_tag_write_slot, TagWriteLiveness, TagWriteLock,
+    TagWriteLockAttempt,
+};
 use super::TagWriteBusy;
 
 #[derive(Debug, thiserror::Error)]
@@ -55,4 +61,70 @@ fn a_failing_query_reports_the_database_error_instead_of_claiming_busy() {
         matches!(error, ClaimOutcome::Database(_)),
         "expected the database error to surface, got {error:?}"
     );
+}
+
+#[test]
+fn acquired_lock_identifies_its_process_and_blocks_a_second_handle() {
+    let directory = tempfile::tempdir().unwrap();
+    let held = TagWriteLock::acquire(directory.path()).unwrap();
+
+    assert!(matches!(held, TagWriteLockAttempt::Held(_)));
+    assert!(matches!(
+        TagWriteLock::acquire(directory.path()).unwrap(),
+        TagWriteLockAttempt::Busy
+    ));
+
+    let mut diagnostics = String::new();
+    OpenOptions::new()
+        .read(true)
+        .open(directory.path().join("tag-write.lock"))
+        .unwrap()
+        .read_to_string(&mut diagnostics)
+        .unwrap();
+    assert_eq!(diagnostics, format!("pid={}\n", std::process::id()));
+}
+
+#[test]
+fn probe_uses_a_separate_handle_and_sees_this_process_as_live() {
+    let directory = tempfile::tempdir().unwrap();
+    let held = TagWriteLock::acquire(directory.path()).unwrap();
+    assert!(matches!(held, TagWriteLockAttempt::Held(_)));
+
+    assert_eq!(
+        TagWriteLock::probe(directory.path()),
+        TagWriteLiveness::Live
+    );
+}
+
+#[test]
+fn dropping_the_guard_makes_liveness_absent() {
+    let directory = tempfile::tempdir().unwrap();
+    let held = TagWriteLock::acquire(directory.path()).unwrap();
+    assert!(matches!(held, TagWriteLockAttempt::Held(_)));
+    drop(held);
+
+    assert_eq!(
+        TagWriteLock::probe(directory.path()),
+        TagWriteLiveness::Absent
+    );
+}
+
+#[test]
+fn unsupported_advisory_locks_remain_a_third_attempt_outcome() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(directory.path().join("tag-write.lock"))
+        .unwrap();
+
+    let attempt = attempt_after_try_lock(
+        file,
+        Err(TryLockError::Error(ErrorKind::Unsupported.into())),
+    )
+    .unwrap();
+
+    assert!(matches!(attempt, TagWriteLockAttempt::Unenforceable));
 }
