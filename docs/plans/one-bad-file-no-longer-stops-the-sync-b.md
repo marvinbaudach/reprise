@@ -2,7 +2,7 @@
 slug: one-bad-file-no-longer-stops-the-sync-b
 worktree: /home/marvin/Projects/reprise-one-bad-file-no-longer-stops-the-sync-b
 branch: feature/one-bad-file-no-longer-stops-the-sync-b
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-30
 ---
@@ -31,6 +31,10 @@ mother plan's decision 2 says why they are safe together.
 - `crates/reprise-runtime/src/devices_tests.rs`
 - `crates/reprise-runtime/src/runtime_tests.rs`
 - `docs/ux-rules.md`
+- `crates/reprise-gnome/src/ui/device_sync/device_sync_compact_tests.rs`
+  (granted during the code phase 2026-08-30: it asserts the pre-amendment
+  MTP-19 contract `writes.get() == 0`, which decision 1 of the mother plan
+  replaces. Unowned by strand A, so the cut stays disjoint.)
 
 Touch nothing under `crates/reprise-platform-linux/`.
 
