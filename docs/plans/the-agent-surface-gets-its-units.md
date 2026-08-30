@@ -2,7 +2,7 @@
 slug: the-agent-surface-gets-its-units
 worktree: /home/marvin/Projects/reprise-the-agent-surface-gets-its-units
 branch: feature/the-agent-surface-gets-its-units
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-08-29
 ---
