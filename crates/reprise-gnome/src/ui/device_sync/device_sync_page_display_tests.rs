@@ -424,6 +424,7 @@ fn mtp_64_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
         unit_bytes_total: 100,
     };
     device.bytes_per_second = 2 * 1_024 * 1_024;
+    device.estimated_remaining = Some(std::time::Duration::from_secs(1));
     surface.update(&device);
     assert_eq!(
         surface.dashboard.dock.detail.label(),
@@ -433,7 +434,7 @@ fn mtp_64_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
         surface.dashboard.dock.metrics.label(),
         "2.0 MiB/s · 1 s left"
     );
-    assert_eq!(surface.dashboard.dock.progress.fraction(), 0.5);
+    assert_eq!(surface.dashboard.dock.progress.fraction(), 0.75);
 
     device.page.controls = SyncPageControls {
         editable: false,
