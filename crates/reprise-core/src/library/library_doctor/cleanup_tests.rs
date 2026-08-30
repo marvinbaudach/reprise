@@ -148,6 +148,70 @@ fn doc_10a_undo_reverts_the_quiet_and_the_reviewed_job_of_one_scan() {
 }
 
 #[test]
+fn doc_10a_real_lock_stays_live_across_a_multi_job_revert() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = vec![
+        fixture(dir.path(), "quiet-locked.flac", " Quiet "),
+        fixture(dir.path(), "reviewed-locked.flac", " Reviewed "),
+    ];
+    let db = crate::db::Db::open_migrated(Some(&dir.path().join("reprise.db"))).unwrap();
+    apply_pair(&db, &paths);
+    let lock_attempt = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    assert!(matches!(
+        &lock_attempt,
+        crate::library::TagWriteLockAttempt::Held(_)
+    ));
+    let attack = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let contender_dir = dir.path().to_owned();
+    let contender_attack = attack.clone();
+    let contender_stop = stop.clone();
+    let contender = std::thread::spawn(move || {
+        while !contender_stop.load(std::sync::atomic::Ordering::Acquire) {
+            if contender_attack.load(std::sync::atomic::Ordering::Acquire) {
+                match crate::library::TagWriteLock::acquire(&contender_dir).unwrap() {
+                    crate::library::TagWriteLockAttempt::Held(lock) => {
+                        while !contender_stop.load(std::sync::atomic::Ordering::Acquire) {
+                            std::thread::yield_now();
+                        }
+                        drop(lock);
+                        return;
+                    }
+                    crate::library::TagWriteLockAttempt::Busy => {}
+                    crate::library::TagWriteLockAttempt::Unenforceable => {
+                        panic!("the test filesystem must enforce the tag-write lock")
+                    }
+                }
+            }
+            std::thread::yield_now();
+        }
+    });
+    let mut observed_progress = Vec::new();
+
+    let cleanup = LibraryDoctor::new(&db).revert_last_cleanup_with_lock(lock_attempt, |progress| {
+        assert_eq!(
+            crate::library::TagWriteLock::probe(dir.path()),
+            crate::library::TagWriteLiveness::Live
+        );
+        observed_progress.push((progress.completed_tracks, progress.total_tracks));
+        if progress.completed_tracks == 1 {
+            attack.store(true, std::sync::atomic::Ordering::Release);
+        }
+        DoctorWriteControl::Continue
+    });
+    stop.store(true, std::sync::atomic::Ordering::Release);
+    contender.join().unwrap();
+    let cleanup = cleanup.unwrap().unwrap();
+
+    assert_eq!(cleanup.reports.len(), 2);
+    assert_eq!(observed_progress, vec![(0, 2), (1, 2), (1, 2), (2, 2)]);
+    assert_eq!(
+        crate::library::TagWriteLock::probe(dir.path()),
+        crate::library::TagWriteLiveness::Absent
+    );
+}
+
+#[test]
 fn doc_10a_undo_works_when_only_the_quiet_job_exists() {
     let dir = tempfile::tempdir().unwrap();
     let path = fixture(dir.path(), "quiet-only.flac", " Quiet ");
