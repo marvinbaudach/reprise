@@ -324,6 +324,12 @@ impl PlayerController {
             self.fetch_youtube(generation, episode_id);
             return Ok(());
         }
+        // `AC-26`: an episode already on disk never passes the download path
+        // again, so this is its only chance to learn a category. The request
+        // runs beside playback, not before it.
+        if row.is_some_and(reprise_core::podcasts::needs_classification) {
+            self.classify_youtube_episode(generation, episode_id);
+        }
         self.start_podcast_source(generation, episode_id, source)
     }
 

@@ -368,12 +368,20 @@ pub(in crate::ui) struct ExternalPlaybackSnapshot {
 
 impl ExternalPlaybackSnapshot {
     /// AC-26's single decision point for Song Visuals and spectrum capture.
+    ///
+    /// A YouTube episode needs a stored `Music` category — nothing else earns
+    /// the bars, an absent category least of all. The looser reading (anything
+    /// not recognisably speech) is what made the Visual tab come and go across
+    /// one channel: the category is empty until an extraction fills it, so the
+    /// same channel showed the tab on the unclassified item and hid it on the
+    /// classified one. Strict here, and the resolution path fills the category
+    /// in so that "unknown" is a brief startup state rather than a verdict.
     pub(in crate::ui) fn carries_music(&self) -> bool {
         match self.podcast_kind {
             Some(PodcastKind::Rss) => false,
-            Some(PodcastKind::Youtube) => !matches!(
+            Some(PodcastKind::Youtube) => matches!(
                 character_from_category(self.media_category.as_deref()),
-                MediaCharacter::Speech
+                MediaCharacter::Music
             ),
             None => matches!(self.media, ExternalMedia::Radio { .. }),
         }

@@ -78,6 +78,14 @@ pub trait YoutubeFetcher {
         self.download_with_progress(url, destination, on_progress)
             .map(|_| super::ytdlp::YoutubeDownloadMetadata::default())
     }
+
+    /// `AC-26`: an extraction spent on the episode's category alone, for the
+    /// episodes the download path can no longer reach. A fetcher that knows
+    /// no categories answers "nothing learned" rather than failing — an
+    /// unclassified episode is a normal outcome here, not an error.
+    fn classify(&self, _url: &str) -> Result<super::classify::EpisodeClassification, PodcastError> {
+        Ok(super::classify::EpisodeClassification::default())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -142,6 +150,17 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
         on_progress: &mut dyn FnMut(DownloadProgress),
     ) -> Result<super::ytdlp::YoutubeDownloadMetadata, PodcastError> {
         super::ytdlp::YtDlp::download_with_progress(self, url, destination, on_progress)
+    }
+
+    fn classify(&self, url: &str) -> Result<super::classify::EpisodeClassification, PodcastError> {
+        let resolved = super::ytdlp::YtDlp::resolve(self, url)?;
+        Ok(super::classify::EpisodeClassification {
+            media_category: resolved
+                .categories
+                .into_iter()
+                .find(|category| !category.trim().is_empty()),
+            duration_secs: resolved.duration_secs,
+        })
     }
 }
 

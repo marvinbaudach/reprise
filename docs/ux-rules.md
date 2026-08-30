@@ -4387,18 +4387,27 @@ STYLE-1).
   with its audio-reactive bars, and the cover
   bloom and drifting clouds driven by the session's own artwork — one load, shared
   with the cover it already shows, never a second request for the same image.
-  A YouTube episode follows YouTube's own stored category: `Music` receives
-  that same treatment, while `News & Politics`, `Education` and the other
-  unambiguously spoken categories do not. A category that is absent or
-  ambiguous, including `Entertainment` and `Film & Animation`, keeps the
-  existing YouTube default and receives Song Visuals; unknown is not guessed
-  into speech. Reprise learns and stores the raw category only from the full
-  extraction that playback or download already performs — it never makes a
-  request solely to classify an episode, and existing unclassified episodes
-  remain unchanged until one of those operations naturally extracts them.
+  A YouTube episode earns that treatment only through a stored `Music`
+  category. Every other answer withholds it, an absent category included:
+  `News & Politics` and the other spoken categories, ambiguous ones such as
+  `Entertainment` and `Film & Animation`, and an episode nothing has
+  classified yet. The looser reading — anything not recognisably speech — is
+  what made the Visual tab come and go across a single channel, because the
+  category is empty until an extraction fills it and each episode is filled
+  separately. Reprise learns and stores the raw category from the full extraction
+  a download already performs, and — for an episode already on disk, which no
+  download will pass again — from one extraction spent on the classification
+  alone, at the moment that episode is played. That is the only request made
+  for a category's own sake: one episode, never a sweep over a library, never
+  for an episode that already carries a category, and never for RSS. It runs
+  beside playback and never delays it; an extraction that fails or knows no
+  category leaves the episode unclassified, which simply means no bars. A
+  category that arrives for the episode still playing takes effect at once —
+  the Visual tab appears and **the spectrum starts at the source** — while a
+  late answer for a session the listener has already left changes nothing.
   An RSS podcast is speech, not music: speech has no spectrum worth drawing,
-  so the bars would flicker around a voice instead of answering it. While an
-  episode plays, the whole audio-reactive chain behaves as though the "Song
+  so the bars would flicker around a voice instead of answering it. While such
+  an episode plays, the whole audio-reactive chain behaves as though the "Song
   Visuals" plugin (AC-23) were off: **the spectrum stops at the source**, the
   Visual tab disappears from the panel, the reactive light of AC-24 rests
   without a cover, and **the bar's bass layers settle instead of freezing at
@@ -6589,8 +6598,8 @@ listening statistics.
   in rendered order, without wrapping. The neighbour list is frozen when
   playback starts. Radio has no neighbours. While any external session is
   active the lyrics tab is hidden; the Visual tab is hidden for whatever
-  AC-26 does not count as music — every RSS podcast, and a YouTube episode
-  whose own category says it is speech. The panel header shows the episode
+  AC-26 does not count as music — every RSS podcast, and every YouTube
+  episode without a stored `Music` category. The panel header shows the episode
   instead of "Nothing playing".
 - **POD-22** [active] [core] [gtk] — When yt-dlp classifies a YouTube
   failure as requiring verification, the failed episode row keeps its normal
