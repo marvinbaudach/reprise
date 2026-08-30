@@ -138,6 +138,7 @@ pub fn summarize(outcome: &SyncOutcome, counters: RunCounters, finished_at: i64)
         SyncOutcome::Failed {
             terminal_error,
             failed_tracks,
+            ..
         } => (
             RunOutcome::Failed,
             terminal_error.clone().or_else(|| {

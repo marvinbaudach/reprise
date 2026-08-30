@@ -9,7 +9,9 @@ use reprise_core::device_sync::{
 
 struct FailingCopyBackend {
     device: DeviceDescriptor,
+    failed_relative_target: String,
     playlist_writes: Rc<Cell<usize>>,
+    playlist_contents: Rc<RefCell<Vec<Vec<u8>>>>,
 }
 
 impl DeviceBackend for FailingCopyBackend {
@@ -44,12 +46,19 @@ impl DeviceBackend for FailingCopyBackend {
         _target_path: String,
         _storage_id: Option<reprise_core::device_sync::StorageId>,
         _source_path: PathBuf,
-        _relative_target: String,
+        relative_target: String,
         _expected_size: u64,
         _cancellable: gio::Cancellable,
         _progress: Rc<dyn Fn(u64, u64)>,
     ) -> TestFuture<CopyOutcome> {
-        Box::pin(async { Err("injected copy failure".into()) })
+        let should_fail = relative_target == self.failed_relative_target;
+        Box::pin(async move {
+            if should_fail {
+                Err("injected copy failure".into())
+            } else {
+                Ok(CopyOutcome::Copied)
+            }
+        })
     }
 
     fn replace_playlist(
@@ -59,11 +68,13 @@ impl DeviceBackend for FailingCopyBackend {
         _target_path: String,
         _storage_id: Option<reprise_core::device_sync::StorageId>,
         _name: String,
-        _contents: Vec<u8>,
+        contents: Vec<u8>,
     ) -> TestFuture<()> {
-        let writes = self.playlist_writes.clone();
+        let playlist_writes = self.playlist_writes.clone();
+        let playlist_contents = self.playlist_contents.clone();
         Box::pin(async move {
-            writes.set(writes.get() + 1);
+            playlist_writes.set(playlist_writes.get() + 1);
+            playlist_contents.borrow_mut().push(contents);
             Ok(())
         })
     }
@@ -664,23 +675,28 @@ fn successful_playlist_rename_writes_inventory_before_removing_the_old_m3u() {
 }
 
 #[test]
-fn a_failed_track_copy_does_not_publish_a_playlist_with_dead_new_paths() {
+fn a_failed_track_copy_publishes_the_playlist_without_dead_new_paths() {
     run(async {
         let (temp, conn) = fixture();
-        let mp3 = temp.path().join("copy.mp3");
-        std::fs::write(&mp3, vec![1_u8; 100]).unwrap();
-        crate::test_db::connection(&conn)
-            .execute(
-                "UPDATE tracks SET path = ?1, bitrate_kbps = 128 WHERE id = 1",
-                [mp3.to_string_lossy().as_ref()],
-            )
-            .unwrap();
-        add_playlist(&conn, 10, "Road", &[1]);
+        for track_id in [1, 2] {
+            let mp3 = temp.path().join(format!("copy-{track_id}.mp3"));
+            std::fs::write(&mp3, vec![track_id as u8; 100]).unwrap();
+            crate::test_db::connection(&conn)
+                .execute(
+                    "UPDATE tracks SET path = ?1, bitrate_kbps = 128 WHERE id = ?2",
+                    rusqlite::params![mp3.to_string_lossy().as_ref(), track_id],
+                )
+                .unwrap();
+        }
+        add_playlist(&conn, 10, "Road", &[1, 2]);
         save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
-        let writes = Rc::new(Cell::new(0));
+        let playlist_writes = Rc::new(Cell::new(0));
+        let playlist_contents = Rc::new(RefCell::new(Vec::new()));
         let backend = Rc::new(FailingCopyBackend {
             device: descriptor("a", true),
-            playlist_writes: writes.clone(),
+            failed_relative_target: "Artist/Unknown Album/00 Track 1.mp3".into(),
+            playlist_writes: playlist_writes.clone(),
+            playlist_contents: playlist_contents.clone(),
         });
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
@@ -688,7 +704,17 @@ fn a_failed_track_copy_does_not_publish_a_playlist_with_dead_new_paths() {
         runtime.sync_now("a").unwrap();
         settle().await;
 
-        assert_eq!(writes.get(), 0);
+        assert_eq!(playlist_writes.get(), 1);
+        let writes = playlist_contents.borrow();
+        let contents = String::from_utf8(writes[0].clone()).unwrap();
+        assert!(
+            !contents.contains("Track 1.mp3"),
+            "the published playlist must not name the track that failed to copy: {contents}"
+        );
+        assert!(
+            contents.contains("Track 2.mp3"),
+            "the successfully copied entry must survive the re-render: {contents}"
+        );
         assert!(runtime.devices()[0].sync_error.is_some());
     });
 }

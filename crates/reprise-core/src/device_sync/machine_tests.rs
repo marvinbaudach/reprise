@@ -118,6 +118,21 @@ fn start(plan: MirrorPlan) -> (DeviceSyncMachine, Vec<Effect>) {
     (machine, effects)
 }
 
+fn write_playlist(index: usize, omitted: &[&str]) -> Effect {
+    Effect::WritePlaylist {
+        index,
+        omit_relative_paths: omitted.iter().map(|path| (*path).into()).collect(),
+    }
+}
+
+fn failed(failed_tracks: &[i64], verified_sources: &[SelectionSource]) -> Effect {
+    Effect::Finished(SyncOutcome::Failed {
+        terminal_error: None,
+        failed_tracks: failed_tracks.to_vec(),
+        verified_sources: verified_sources.to_vec(),
+    })
+}
+
 #[test]
 fn mtp_18_a_run_opens_on_the_step_that_actually_runs_first() {
     let mut plan = empty_plan();
@@ -212,7 +227,7 @@ fn a_clean_run_copies_then_writes_playlists_then_removes_then_verifies() {
     );
     assert_eq!(
         machine.dispatch(Event::FileRecorded(Ok(()))),
-        vec![Effect::WritePlaylist { index: 0 }]
+        vec![write_playlist(0, &[])]
     );
     assert_eq!(
         machine.dispatch(Event::PlaylistWritten(Ok(()))),
@@ -238,7 +253,7 @@ fn a_clean_run_copies_then_writes_playlists_then_removes_then_verifies() {
 }
 
 #[test]
-fn mtp_19_a_failed_track_suppresses_only_the_playlists_that_reference_it() {
+fn mtp_19_a_failed_track_is_omitted_only_from_the_playlists_that_reference_it() {
     let mut plan = empty_plan();
     plan.copy
         .push(desired(1, TransferAction::CopyOriginal, 100));
@@ -251,8 +266,14 @@ fn mtp_19_a_failed_track_suppresses_only_the_playlists_that_reference_it() {
 
     assert_eq!(
         machine.dispatch(Event::TrackCopied(Err("device is full".into()))),
-        vec![Effect::WritePlaylist { index: 1 }],
-        "playlist 7 would point at the track that never arrived; playlist 8 would not"
+        vec![write_playlist(0, &["Reprise/1.opus"])],
+        "playlist 7 is published without the track that never arrived"
+    );
+    machine.dispatch(Event::PlaylistWritten(Ok(())));
+    assert_eq!(
+        machine.dispatch(Event::PlaylistRecorded(Ok(()))),
+        vec![write_playlist(1, &[])],
+        "playlist 8 loses nothing and remains byte-identical"
     );
 }
 
@@ -276,12 +297,13 @@ fn mtp_19_a_failed_track_alone_does_not_block_the_removals() {
 }
 
 #[test]
-fn mtp_19_a_playlist_held_back_by_a_failed_track_keeps_its_previous_file() {
+fn mtp_19_a_playlist_covering_a_failed_track_is_published_without_that_track() {
     let mut plan = empty_plan();
     plan.copy
         .push(desired(1, TransferAction::CopyOriginal, 100));
     plan.playlist_writes.push(playlist_write_covering(7, &[1]));
-    plan.playlist_removals.push(playlist_record(7));
+    plan.remove
+        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
     plan.transfer_bytes = 100;
 
     let (mut machine, _) = start(plan);
@@ -289,11 +311,22 @@ fn mtp_19_a_playlist_held_back_by_a_failed_track_keeps_its_previous_file() {
 
     assert_eq!(
         machine.dispatch(Event::TrackCopied(Err("device is full".into()))),
-        vec![Effect::Finished(SyncOutcome::Failed {
-            terminal_error: None,
-            failed_tracks: vec![1],
-        })],
-        "the playlist was never rewritten, so its old file must survive"
+        vec![write_playlist(0, &["Reprise/1.opus"])],
+        "the playlist is still published, but cannot name the lost track"
+    );
+    assert_eq!(
+        machine.dispatch(Event::PlaylistWritten(Ok(()))),
+        vec![Effect::RecordPlaylist { index: 0 }]
+    );
+    assert_eq!(
+        machine.dispatch(Event::PlaylistRecorded(Ok(()))),
+        vec![Effect::RemoveTrack { index: 0 }],
+        "publishing the safe playlist opens the removal gate"
+    );
+    machine.dispatch(Event::TrackRemoved(Ok(())));
+    assert_eq!(
+        machine.dispatch(Event::FileForgotten(Ok(()))),
+        vec![failed(&[1], &[SelectionSource::Playlist(7)])]
     );
 }
 
@@ -310,6 +343,7 @@ fn a_failed_partial_cleanup_ends_the_run_before_any_transfer() {
         vec![Effect::Finished(SyncOutcome::Failed {
             terminal_error: Some("could not clean partial sync files: stale handle".into()),
             failed_tracks: Vec::new(),
+            verified_sources: Vec::new(),
         })]
     );
 }
@@ -440,10 +474,7 @@ fn a_failed_inventory_row_fails_the_track_and_keeps_the_old_file() {
 
     assert_eq!(
         machine.dispatch(Event::FileRecorded(Err("database is locked".into()))),
-        vec![Effect::Finished(SyncOutcome::Failed {
-            terminal_error: None,
-            failed_tracks: vec![1],
-        })],
+        vec![failed(&[1], &[])],
         "the replaced file stays until its inventory row exists"
     );
 }
@@ -624,10 +655,7 @@ fn a_still_mirrored_playlist_keeps_its_file_when_its_write_failed() {
 
     assert_eq!(
         after_failed_write,
-        vec![Effect::Finished(SyncOutcome::Failed {
-            terminal_error: None,
-            failed_tracks: vec![-1],
-        })],
+        vec![failed(&[-1], &[])],
         "the stale playlist file survives a failed rewrite"
     );
 }
@@ -724,10 +752,7 @@ fn mtp_19_a_playlist_that_could_not_be_rewritten_holds_every_removal_back() {
 
     assert_eq!(
         machine.dispatch(Event::PlaylistWritten(Err("read-only".into()))),
-        vec![Effect::Finished(SyncOutcome::Failed {
-            terminal_error: None,
-            failed_tracks: vec![-1],
-        })],
+        vec![failed(&[-1], &[])],
         "the device still holds the old playlist, which may reference the file"
     );
 }
@@ -766,10 +791,7 @@ fn mtp_19_a_playlist_that_could_not_be_deleted_holds_every_removal_back() {
 
     assert_eq!(
         machine.dispatch(Event::PlaylistRemoved(Err("device is busy".into()))),
-        vec![Effect::Finished(SyncOutcome::Failed {
-            terminal_error: None,
-            failed_tracks: vec![-1],
-        })],
+        vec![failed(&[-1], &[])],
         "the obsolete playlist is still on the device and may name the file"
     );
 }

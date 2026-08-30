@@ -218,6 +218,7 @@ impl DeviceRuns {
             run.outcome = Some(SyncOutcome::Failed {
                 terminal_error: Some("device_planning".into()),
                 failed_tracks: Vec::new(),
+                verified_sources: Vec::new(),
             });
             return true;
         };

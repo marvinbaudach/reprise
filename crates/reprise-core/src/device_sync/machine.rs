@@ -88,6 +88,7 @@ pub enum Effect {
     },
     WritePlaylist {
         index: usize,
+        omit_relative_paths: Vec<String>,
     },
     /// Write the inventory row for a written playlist.
     RecordPlaylist {
@@ -129,6 +130,8 @@ pub enum SyncOutcome {
         /// business, so a run that merely lost tracks reports only their ids.
         terminal_error: Option<String>,
         failed_tracks: Vec<i64>,
+        /// Playlist sources that were still safely published during the run.
+        verified_sources: Vec<SelectionSource>,
     },
 }
 
@@ -194,9 +197,9 @@ pub struct DeviceSyncMachine {
     cancelled: bool,
     terminal_error: Option<String>,
     failures: Vec<i64>,
-    /// Device paths whose transfer failed. A playlist that would point at one
-    /// of them must not be published.
-    failed_device_paths: HashSet<String>,
+    /// Device paths absent because their transfer never published a file. A
+    /// playlist that would point at one of them must omit that entry.
+    absent_device_paths: HashSet<String>,
     ledger: WorkLedger,
     writes_track_metadata_list: bool,
     copied_bytes: Option<u64>,
@@ -227,7 +230,7 @@ impl DeviceSyncMachine {
             cancelled: false,
             terminal_error: None,
             failures: Vec::new(),
-            failed_device_paths: HashSet::new(),
+            absent_device_paths: HashSet::new(),
             ledger,
             writes_track_metadata_list: false,
             copied_bytes: None,
@@ -328,7 +331,7 @@ impl DeviceSyncMachine {
                     self.start_copy(index)
                 }
                 Err(_) => {
-                    self.fail_transfer(index);
+                    self.fail_unpublished_transfer(index);
                     self.ledger.complete_unit(0);
                     self.advance_past_transfer(index)
                 }
@@ -343,7 +346,7 @@ impl DeviceSyncMachine {
                     // A copy that fails because the run was cancelled is not a
                     // failure of the track.
                     if !self.cancelled {
-                        self.fail_transfer(index);
+                        self.fail_unpublished_transfer(index);
                     }
                     self.ledger.complete_unit(0);
                     self.advance_past_transfer(index)
@@ -570,19 +573,19 @@ impl DeviceSyncMachine {
         self.enter_playlist_writes(0)
     }
 
-    /// Whether a planned playlist would point at a track that never arrived.
+    /// Paths a planned playlist must omit because their tracks never arrived.
     ///
     /// This is the whole reason a failed transfer touches playlists at all: a
     /// published playlist must not reference a file that is not on the device.
-    /// Playlists that reference nothing lost are unaffected.
-    fn playlist_references_a_failed_transfer(&self, index: usize) -> bool {
-        if self.failed_device_paths.is_empty() {
-            return false;
-        }
+    /// Playlists that reference nothing lost receive an empty set and keep
+    /// their pre-rendered contents byte-identical.
+    fn failed_paths_in_playlist(&self, index: usize) -> Vec<String> {
         self.plan.playlist_writes[index]
             .entries
             .iter()
-            .any(|entry| self.failed_device_paths.contains(&entry.relative_path))
+            .filter(|entry| self.absent_device_paths.contains(&entry.relative_path))
+            .map(|entry| entry.relative_path.clone())
+            .collect()
     }
 
     fn enter_playlist_writes(&mut self, from: usize) -> Vec<Effect> {
@@ -592,10 +595,7 @@ impl DeviceSyncMachine {
         let Some(write) = self.plan.playlist_writes.get(from) else {
             return self.enter_playlist_removals(0);
         };
-        if self.playlist_references_a_failed_transfer(from) {
-            self.ledger.complete_unit(0);
-            return self.enter_playlist_writes(from + 1);
-        }
+        let omit_relative_paths = self.failed_paths_in_playlist(from);
         self.ledger.begin_unit(0);
         self.phase = phase_transitions::syncing(
             &self.ledger,
@@ -603,7 +603,10 @@ impl DeviceSyncMachine {
             write.source_name.clone(),
         );
         self.awaiting = Awaiting::WritePlaylist(from);
-        vec![Effect::WritePlaylist { index: from }]
+        vec![Effect::WritePlaylist {
+            index: from,
+            omit_relative_paths,
+        }]
     }
 
     fn enter_playlist_removals(&mut self, from: usize) -> Vec<Effect> {
@@ -636,11 +639,10 @@ impl DeviceSyncMachine {
     ///
     /// A removal is safe only once no playlist that could name the file is
     /// still on the device in an outdated form. That covers two cases: a
-    /// planned playlist that was not rewritten — because its write failed, or
-    /// because it was held back for pointing at a track that never arrived —
-    /// and an obsolete playlist whose deletion failed. The machine does not
-    /// know any of their contents, so it holds every removal back rather than
-    /// guess.
+    /// planned playlist whose write failed, and an obsolete playlist whose
+    /// deletion failed. The machine does not know any of their contents, so it
+    /// holds every removal back rather than guess. A playlist covering a lost
+    /// track is republished without that entry and therefore opens the gate.
     ///
     /// A failed transfer that holds back no playlist therefore does not block
     /// the removals, which is where this differs from the blanket
@@ -727,6 +729,7 @@ impl DeviceSyncMachine {
         vec![Effect::Finished(SyncOutcome::Failed {
             terminal_error: self.terminal_error.clone(),
             failed_tracks: self.failures.clone(),
+            verified_sources: self.verified_sources(),
         })]
     }
 
@@ -749,12 +752,14 @@ impl DeviceSyncMachine {
         self.failures.push(track_id);
     }
 
-    /// Records a failed transfer under both the track that was lost and the
-    /// device path that will therefore not exist.
     fn fail_transfer(&mut self, index: usize) {
-        let desired = &self.transfers[index].desired;
-        self.failures.push(desired.track.id);
-        self.failed_device_paths.insert(desired.device_path.clone());
+        self.failures.push(self.transfers[index].desired.track.id);
+    }
+
+    fn fail_unpublished_transfer(&mut self, index: usize) {
+        let device_path = self.transfers[index].desired.device_path.clone();
+        self.fail_transfer(index);
+        self.absent_device_paths.insert(device_path);
     }
 
     /// A playlist failure has no track to blame, so it is recorded under the
