@@ -1755,16 +1755,20 @@ msgid "Reverting tags…"
 msgstr "Tags werden zurückgesetzt…"
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:76
+msgid "Saving tags…"
+msgstr "Tags werden gespeichert…"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
 msgid "Library Doctor progress"
 msgstr "Library-Doctor-Fortschritt"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:78
 msgid "Locked while a Library Doctor job is running"
 msgstr "Gesperrt, während ein Library-Doctor-Vorgang läuft"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:78
-msgid "Another tag-writing job is already running"
-msgstr "Ein anderer Tag-Schreibvorgang läuft bereits"
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:79
+msgid "Another tag-writing job is running. See its progress in the sidebar."
+msgstr "Ein anderer Tag-Schreibvorgang läuft. Sein Fortschritt wird in der Seitenleiste angezeigt."
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
 msgid "Applied"
