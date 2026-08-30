@@ -196,6 +196,24 @@ fn main() -> glib::ExitCode {
     tracing::info!("database ready");
     ui::startup_report::mark("database migrated");
 
+    match path.parent() {
+        Some(db_dir) => match library::TagWriteLock::acquire(db_dir) {
+            Ok(lock_attempt) => {
+                if let Err(error) = library::library_doctor::LibraryDoctor::new(&conn)
+                    .finalize_incomplete_writes(lock_attempt)
+                {
+                    tracing::warn!(%error, "could not recover interrupted tag writes at startup");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not acquire the tag-write recovery lock at startup");
+            }
+        },
+        None => tracing::warn!(
+            "could not recover interrupted tag writes: database has no parent directory"
+        ),
+    }
+
     // Single-threaded UI: the database handle is shared via Rc, not Arc/Mutex.
     // Core owns the connection and exposes named operations; scans open their
     // own handle over the same path instead of sharing this one across threads.

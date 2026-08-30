@@ -8,6 +8,7 @@ use crate::library::tag_mutation::WriteErrorKind;
 use crate::library::tag_write_job::{
     recover_incomplete_tag_write_fields, RecoveryState, TagWriteFieldRecovery, TagWriteJobKind,
 };
+use crate::library::TagWriteLockAttempt;
 
 fn outcome(state: RecoveryState) -> &'static str {
     match state {
@@ -152,16 +153,29 @@ fn finalize_job(
 impl LibraryDoctor<'_> {
     /// Finalizes only journal state after a crash. It performs no tag write,
     /// retry, reconciliation scan, or automatic rollback.
-    pub fn finalize_incomplete_writes(&mut self) -> Result<Vec<DoctorWriteReport>, DoctorError> {
+    pub fn finalize_incomplete_writes(
+        &mut self,
+        lock_attempt: TagWriteLockAttempt,
+    ) -> Result<Vec<DoctorWriteReport>, DoctorError> {
+        let _lock = match lock_attempt {
+            TagWriteLockAttempt::Held(lock) => lock,
+            TagWriteLockAttempt::Busy => {
+                tracing::info!(
+                    "tag-write recovery skipped because another live writer holds the lock"
+                );
+                return Ok(Vec::new());
+            }
+            TagWriteLockAttempt::Unenforceable => {
+                tracing::warn!(
+                    "tag-write recovery skipped because advisory locking is unenforceable"
+                );
+                return Ok(Vec::new());
+            }
+        };
         let fields = recover_incomplete_tag_write_fields(self.conn)?;
         let mut jobs = BTreeMap::<i64, Vec<TagWriteFieldRecovery>>::new();
         for field in fields {
-            if matches!(
-                field.job_kind,
-                TagWriteJobKind::DoctorApply | TagWriteJobKind::DoctorRevert
-            ) {
-                jobs.entry(field.job_id).or_default().push(field);
-            }
+            jobs.entry(field.job_id).or_default().push(field);
         }
         let mut reports = Vec::with_capacity(jobs.len());
         for (job_id, fields) in jobs {
