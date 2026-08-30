@@ -22,6 +22,7 @@ use reprise_core::device_sync::{
 
 use super::*;
 pub(in crate::ui::device_sync) use run_log::{now_seconds, RunLog};
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui::device_sync) enum SyncInitiator {
@@ -149,6 +150,7 @@ pub(in crate::ui::device_sync) fn record_rejected_start(
             SyncOutcome::Failed {
                 terminal_error: Some(error.to_string()),
                 failed_tracks: Vec::new(),
+                verified_sources: Vec::new(),
             }
         }
     };
@@ -253,6 +255,13 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
     publish_phase(runtime, work);
     work.log.close(runtime, &outcome, now_seconds());
     let successful = matches!(outcome, SyncOutcome::Completed { .. });
+    let verified_sources = match &outcome {
+        SyncOutcome::Completed { verified_sources } => Some(verified_sources.clone()),
+        SyncOutcome::Failed {
+            verified_sources, ..
+        } if !verified_sources.is_empty() => Some(verified_sources.clone()),
+        SyncOutcome::Cancelled | SyncOutcome::Failed { .. } => None,
+    };
     {
         let mut devices = runtime.device_states.borrow_mut();
         if let Some(device) = devices
@@ -269,9 +278,9 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
             }
         }
     }
-    if let SyncOutcome::Completed { verified_sources } = outcome {
+    if successful {
         runtime.notify();
-        runtime.refresh_contents_after_sync(&work.device_id, verified_sources);
+        runtime.refresh_contents_after_sync(&work.device_id, verified_sources.unwrap_or_default());
         cleanup_staging_if_idle(runtime);
         return;
     }
@@ -280,6 +289,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
         SyncOutcome::Failed {
             terminal_error,
             failed_tracks,
+            ..
         } => (terminal_error, failed_tracks),
         _ => (None, Vec::new()),
     };
@@ -292,6 +302,10 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
             (!failed_tracks.is_empty())
                 .then(|| format!("{} synchronization items failed", failed_tracks.len()))
         });
+    let failure = message.map(|message| SyncFailure {
+        message,
+        failed_tracks,
+    });
     if let Some(device) = runtime
         .device_states
         .borrow_mut()
@@ -299,14 +313,61 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
         .find(|device| device.descriptor.id == work.device_id)
     {
         device.sync_phase = PlannedSyncPhase::Idle;
-        device.sync_error = message.map(|message| SyncFailure {
-            message,
-            failed_tracks,
-        });
+        device.sync_error = failure.clone();
     }
     runtime.notify();
-    runtime.refresh_contents(&work.device_id);
+    if let Some(verified_sources) = verified_sources {
+        runtime.refresh_contents_after_sync(&work.device_id, verified_sources);
+        restore_failed_sync_error_after_refresh(runtime, &work.device_id, failure);
+    } else {
+        runtime.refresh_contents(&work.device_id);
+    }
     cleanup_staging_if_idle(runtime);
+}
+
+/// Verification owns the playlist timestamp, but a successful inspection must
+/// not turn the failed run into a successful one. Wait until that inspection
+/// settles, then restore the exact failure unless a queued resume already
+/// started another run for the device.
+fn restore_failed_sync_error_after_refresh(
+    runtime: &Rc<DeviceSyncRuntime>,
+    device_id: &str,
+    failure: Option<SyncFailure>,
+) {
+    let weak = Rc::downgrade(runtime);
+    let device_id = device_id.to_owned();
+    gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
+        loop {
+            let Some(runtime) = weak.upgrade() else {
+                return;
+            };
+            let state = runtime
+                .device_states
+                .borrow()
+                .iter()
+                .find(|device| device.descriptor.id == device_id)
+                .map(|device| (device.scanning, device.machine.is_some()));
+            match state {
+                None | Some((_, true)) => return,
+                Some((false, false)) => {
+                    {
+                        let mut devices = runtime.device_states.borrow_mut();
+                        if let Some(device) = devices
+                            .iter_mut()
+                            .find(|device| device.descriptor.id == device_id)
+                        {
+                            device.sync_error = failure;
+                        }
+                    }
+                    runtime.notify();
+                    return;
+                }
+                Some((true, false)) => {
+                    gtk4::glib::timeout_future(Duration::from_millis(1)).await;
+                }
+            }
+        }
+    });
 }
 
 fn cleanup_staging_if_idle(runtime: &DeviceSyncRuntime) {

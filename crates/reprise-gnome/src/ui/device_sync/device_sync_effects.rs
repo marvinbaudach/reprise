@@ -245,10 +245,24 @@ pub(super) async fn perform(
             let planned = work.machine.borrow().plan().analysis_writes[index].clone();
             Event::AnalysisWritten(copy_analysis_sidecar(runtime, work, &planned).await)
         }
-        Effect::WritePlaylist { index } => {
+        Effect::WritePlaylist {
+            index,
+            omit_relative_paths,
+        } => {
             let playlist = playlist_write(work, index);
             let name = playlist_stem(&playlist.device_path, &playlist.source_name);
             let playlist_device_path = playlist.device_path.clone();
+            let contents = if omit_relative_paths.is_empty() {
+                playlist.contents
+            } else {
+                let entries = playlist
+                    .entries
+                    .iter()
+                    .filter(|entry| !omit_relative_paths.contains(&entry.relative_path))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                reprise_core::device_sync::m3u::render_named_playlist(&entries)
+            };
             let result = runtime
                 .backend
                 .replace_playlist(
@@ -257,7 +271,7 @@ pub(super) async fn perform(
                     work.playlists_path.clone(),
                     work.playlists_storage,
                     name.clone(),
-                    playlist.contents.as_bytes().to_vec(),
+                    contents.into_bytes(),
                 )
                 .await;
             Event::PlaylistWritten(result.map_err(|error| {

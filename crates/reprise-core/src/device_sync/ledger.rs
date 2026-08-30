@@ -96,7 +96,10 @@ mod tests {
         machine.dispatch(Event::Start);
         assert_eq!(
             machine.dispatch(Event::PartialsCleaned(Ok(()))),
-            vec![Effect::WritePlaylist { index: 0 }]
+            vec![Effect::WritePlaylist {
+                index: 0,
+                omit_relative_paths: Vec::new(),
+            }]
         );
         machine.dispatch(Event::PlaylistWritten(Ok(())));
         machine.dispatch(Event::PlaylistRecorded(Ok(())));

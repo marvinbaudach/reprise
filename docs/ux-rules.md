@@ -658,10 +658,12 @@ result.
   visible work — its first transfer, or its playlists, or its removals —
   never on a step scheduled for later.
 - **MTP-19** [active] [core] — A failed track holds back only what depends
-  on it. A playlist is left unwritten exactly when it would point at a track
-  that never arrived; every other playlist is published. Removals wait until
-  every planned playlist has been rewritten, because an older playlist left
-  on the device may still reference a file that is about to be deleted.
+  on it. A playlist that would point at a track that never arrived is
+  published without that entry, so a published playlist names only files the
+  device really has; the lost track returns on the next run that delivers it.
+  Removals wait until every planned playlist has been rewritten, because an
+  older playlist left on the device may still reference a file that is about
+  to be deleted.
 - **MTP-20** [active] [core] [gtk] — Every synchronization run is recorded,
   so what a past run did can be answered afterwards instead of guessed. The
   entry opens when the run starts and names the device, the transfer profile
