@@ -165,6 +165,27 @@ class OilFilmPaletteTest {
         assertTrue("halfway must sit between the two", abs(middle.blue - expected) < 0.005f)
     }
 
+    /**
+     * The artist page spends alpha on this, so it has to separate the two ends.
+     *
+     * A white cover and a black one both come out of the lift with a floor and a
+     * ceiling on them, and a caller that dims the film by this number needs the
+     * gap between them to survive that clamping — otherwise every artwork asks
+     * for the same alpha and the reduction does nothing.
+     */
+    @Test
+    fun a_bright_cover_reads_brighter_than_a_dark_one() {
+        val bright = spreadOilFilmClouds(extractOilFilmQuadrants(solid(Color.WHITE)))
+        val dark = spreadOilFilmClouds(extractOilFilmQuadrants(solid(Color.BLACK)))
+
+        assertTrue(
+            "a white cover must carry more light than a black one",
+            bright.meanLuminance > dark.meanLuminance + 0.3f,
+        )
+        assertTrue("luminance is a fraction", dark.meanLuminance >= 0f)
+        assertTrue("luminance is a fraction", bright.meanLuminance <= 1f)
+    }
+
     private fun solid(colour: Int): Bitmap =
         Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply { eraseColor(colour) }
 }

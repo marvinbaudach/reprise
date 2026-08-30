@@ -46,6 +46,21 @@ internal fun ArtistPortraitShimmer(
         swell.animateTo(if (playing) 1f else 0f)
     }
     Canvas(modifier) {
+        // The film first, the disc over it — the played view's own order.
+        //
+        // Only the film itself is borrowed, not `drawNowPlayingFog`: that one
+        // follows the clouds with the legibility scrims, a surface-wide vignette
+        // and two edge gradients tuned to hold a title over a full-bleed cover.
+        // Drawn here they would black out the album rows behind nothing.
+        fog?.let { prepared ->
+            drawNowPlayingOilFilm(
+                palette = prepared.palette,
+                horizontalShiftPx = 0f,
+                seconds = if (rotationsEnabled) elapsedSeconds.doubleValue.toFloat() else 0f,
+                level = swell.value,
+                opacity = filmOpacity(prepared.palette.meanLuminance),
+            )
+        }
         drawNowPlayingShimmer(
             fog = fog,
             center = Offset(size.width / 2f, size.height * centerFraction.coerceIn(0f, 1f)),
@@ -54,8 +69,26 @@ internal fun ArtistPortraitShimmer(
             swell = swell.value,
             opacity = 1f,
             rotationsEnabled = rotationsEnabled,
+            alphaScale = NowPlayingShimmerSpec.ON_BARE_SURFACE_SCALE,
         )
     }
 }
 
 private const val NANOS_PER_SECOND = 1_000_000_000.0
+
+/**
+ * How much of the played view's film the artist page keeps, per artwork.
+ *
+ * Two reductions, and they answer different things. The first is flat: the clouds are
+ * read here without the scrims that sit over them in the played view, and at full
+ * strength the film crowded the portrait rather than lighting it, so a tenth comes off. The second follows the palette, because the flat one alone still left a
+ * near-white portrait pulling the eye away from the covers — six clouds lifted off a
+ * bright artwork carry far more light at the same alpha than the same six off a dark
+ * one. So the bright end spends about half of what the dark end does, and the film stays an
+ * accent on both.
+ */
+private fun filmOpacity(meanLuminance: Float): Float =
+    FILM_OPACITY * (1f - BRIGHT_FALLOFF * meanLuminance.coerceIn(0f, 1f))
+
+private const val FILM_OPACITY = 0.9f
+private const val BRIGHT_FALLOFF = 0.7f
