@@ -2,7 +2,7 @@
 slug: the-write-slot-says-who-holds-it
 worktree: /home/marvin/Projects/reprise-the-write-slot-says-who-holds-it
 branch: feature/the-write-slot-says-who-holds-it
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-29
 ---
