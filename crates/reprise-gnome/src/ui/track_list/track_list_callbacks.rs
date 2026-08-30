@@ -65,3 +65,4 @@ pub(in crate::ui) type OnScanQueuePurgeIds = Rc<dyn Fn() -> Vec<i64>>;
 /// Successful tag-edit callback. Paths let the player invalidate only the
 /// currently displayed cover while the window refreshes sidebar metadata.
 pub(in crate::ui) type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;
+pub(in crate::ui) type OnTagWriteStarted = Rc<dyn Fn()>;

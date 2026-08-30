@@ -302,12 +302,18 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
             .map(tag_editor::BrowseSnapshot::ids)
             .unwrap_or_default(),
     };
+    let on_write_started = shared
+        .on_tag_write_started
+        .borrow()
+        .clone()
+        .unwrap_or_else(|| Rc::new(|| {}));
     tag_editor::present(
         &window,
         &conn,
         tracks,
         bitrates,
         browse,
+        on_write_started,
         move |writes, report| {
             finish_apply(
                 &shared_for_saved,
@@ -345,12 +351,18 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         tags: seed.tags,
         rating: seed.rating,
     };
+    let on_write_started = shared
+        .on_tag_write_started
+        .borrow()
+        .clone()
+        .unwrap_or_else(|| Rc::new(|| {}));
     tag_editor::present(
         &window,
         &conn,
         vec![session_track],
         &[seed.bitrate_kbps],
         None,
+        on_write_started,
         move |writes, report| {
             finish_apply(
                 &shared_for_saved,
@@ -387,6 +399,7 @@ pub(in crate::ui) fn spawn_save(
     conn: &Rc<Db>,
     widgets: SaveProgressWidgets,
     writes: Vec<TrackWrite>,
+    on_write_started: &Rc<dyn Fn()>,
     on_finished: impl Fn(Vec<TrackWrite>, TagBatchReport) + 'static,
 ) {
     let SaveProgressWidgets {
@@ -446,6 +459,7 @@ pub(in crate::ui) fn spawn_save(
             return;
         }
     };
+    on_write_started();
 
     let progress_button = save_button.clone();
     glib::spawn_future_local(async move {
