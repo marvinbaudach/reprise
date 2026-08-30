@@ -2,7 +2,7 @@
 slug: the-doctor-always-scans-the-whole-library
 worktree: /home/marvin/Projects/reprise-the-doctor-always-scans-the-whole-library
 branch: feature/the-doctor-always-scans-the-whole-library
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-30
 ---

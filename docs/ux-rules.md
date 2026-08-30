@@ -4503,6 +4503,13 @@ means deterministic and high-confidence, never „without review".
   only after full completion. Cheap staleness checking flags changed
   rows on reopening, exact revalidation follows before writing. Newly
   added tracks are not retroactively taken into the snapshot.
+  *Amended 2026-08-30: the start page can no longer produce an invalid
+  invocation context, because every scan it starts is Whole Library. A
+  Selection scan from "Unify spellings" can still lose its tracks between the
+  click and the freeze; that run ends and visibly says the tracks are gone
+  instead of falling back to a whole-library scan nobody asked for.
+  `ScopeFallbackRequired` remains a Core outcome reported to its caller, and
+  the agent surface still turns every non-`Completed` outcome into an error.*
 
 - **DOC-2b** [active] [gtk] — **The result page is a summary of three
   meanings, never a write surface.** After a scan the Doctor shows at most
@@ -4798,13 +4805,21 @@ means deterministic and high-confidence, never „without review".
   `doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view`,
   `doc_7c_the_doctor_uses_the_shared_window_chrome`,
   `doc_7c_the_review_page_carries_no_provider_toggle`,
-  `doc_7c_a_second_review_session_replaces_the_first`.
+  `doc_7c_a_second_review_session_replaces_the_first`,
+  `doc_7c_the_start_page_offers_no_scope_choice`,
+  `doc_7c_unify_spellings_scans_its_group_without_the_start_page`.
   *Amended 2026-08-15: the search action is the single exception to both
   sentences above. It stays hidden on Start and Result and is revealed on
   Review, which is searchable per DOC-12a, so the clause "Review places only
   its 'All' and 'None' actions there" reads "only its selection actions and
   its search action". The Library-only source title and the scan action stay
   hidden on every Doctor page.*
+  *Amended 2026-08-30: the start page owns no scope choice. It owns the remote
+  switch, "Run Scan Now" and the only "Revert Last Cleanup", and every scan it
+  starts covers the whole library; the clause "Scope is not persistent" is
+  void. Selection survives without a selector: "Unify spellings" in My Stats
+  scans exactly that group's tracks and goes straight to the running screen,
+  never through Start. `music_scan_tags` keeps all three scopes per DOC-2a.*
 
 - **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
   the noun.** The global ⋮ menu is the only way to start a scan. While a
