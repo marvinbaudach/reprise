@@ -657,10 +657,12 @@ result.
   actually performing. The run opens on the step that will do the first
   visible work — its first transfer, or its playlists, or its removals —
   never on a step scheduled for later.
-- **MTP-19** [active] [core] — A failed track holds back only what depends
-  on it. A playlist that would point at a track that never arrived is
+- **MTP-19** [active] [core] — A track whose file did not reach the device
+  holds back only what depends on it. A playlist that would point at it is
   published without that entry, so a published playlist names only files the
   device really has; the lost track returns on the next run that delivers it.
+  A later inventory failure still fails the run but keeps the entry for the
+  file already published on the device.
   Removals wait until every planned playlist has been rewritten, because an
   older playlist left on the device may still reference a file that is about
   to be deleted.

@@ -124,7 +124,7 @@ fn a_live_transfer_writes_a_running_log_row_with_its_final_planned_count() {
 }
 
 #[test]
-fn a_failed_track_is_omitted_when_the_runtime_publishes_its_playlist() {
+fn a_failed_inventory_write_keeps_the_present_track_in_its_playlist() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);
@@ -149,8 +149,8 @@ fn a_failed_track_is_omitted_when_the_runtime_publishes_its_playlist() {
         assert_eq!(playlists.len(), 1);
         let contents = String::from_utf8(playlists[0].2.clone()).unwrap();
         assert!(
-            !contents.contains("Track 1.opus"),
-            "the failed track must not remain in the published m3u: {contents}"
+            contents.contains("Track 1.opus"),
+            "the track reached the device, so its playlist entry must remain: {contents}"
         );
         assert!(
             contents.contains("Track 2.opus"),
