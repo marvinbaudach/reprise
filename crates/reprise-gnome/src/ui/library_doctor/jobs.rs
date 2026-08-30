@@ -40,7 +40,7 @@ pub(super) struct JobFailure {
 impl JobFailure {
     pub(super) fn user_message(&self) -> String {
         if self.busy {
-            crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY)
+            crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY_SEE_PROGRESS)
         } else {
             crate::ui::strings::text(crate::ui::strings::DOCTOR_JOB_FAILED)
         }
@@ -154,10 +154,12 @@ pub(super) fn run_apply(
     plan: &DoctorApplyPlan,
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
-) -> Result<Option<DoctorWriteReport>, String> {
-    let lock_attempt = acquire_tag_write_lock(db_path).map_err(|error| error.to_string())?;
-    let conn =
-        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+) -> Result<Option<DoctorWriteReport>, JobFailure> {
+    let lock_attempt = acquire_tag_write_lock(db_path).map_err(|error| JobFailure {
+        busy: false,
+        detail: error.to_string(),
+    })?;
+    let conn = reprise_core::db::Db::open_migrated(Some(db_path))?;
     LibraryDoctor::new(&conn)
         .apply_review_plan(plan, lock_attempt, |progress| {
             publish(progress);
@@ -168,17 +170,19 @@ pub(super) fn run_apply(
             }
         })
         .map(Some)
-        .map_err(|error| error.to_string())
+        .map_err(JobFailure::from)
 }
 
 pub(super) fn run_revert(
     db_path: &Path,
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
-) -> Result<Option<DoctorCleanupReport>, String> {
-    let lock_attempt = acquire_tag_write_lock(db_path).map_err(|error| error.to_string())?;
-    let conn =
-        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+) -> Result<Option<DoctorCleanupReport>, JobFailure> {
+    let lock_attempt = acquire_tag_write_lock(db_path).map_err(|error| JobFailure {
+        busy: false,
+        detail: error.to_string(),
+    })?;
+    let conn = reprise_core::db::Db::open_migrated(Some(db_path))?;
     LibraryDoctor::new(&conn)
         .revert_last_cleanup(lock_attempt, |progress| {
             publish(progress);
@@ -188,5 +192,5 @@ pub(super) fn run_revert(
                 DoctorWriteControl::Continue
             }
         })
-        .map_err(|error| error.to_string())
+        .map_err(JobFailure::from)
 }

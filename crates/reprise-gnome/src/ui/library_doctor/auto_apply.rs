@@ -79,6 +79,9 @@ impl LibraryDoctorCoordinator {
                         detail = %failure.detail,
                         "Library Doctor automatic apply failed"
                     );
+                    if failure.busy {
+                        coordinator.refresh_tag_write_slot();
+                    }
                     coordinator.abandon_auto_apply(&failure.user_message());
                 }
                 Err(error) => {

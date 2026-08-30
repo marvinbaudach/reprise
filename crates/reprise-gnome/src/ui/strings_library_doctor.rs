@@ -76,7 +76,8 @@ pub const DOCTOR_REVERTING_TAGS: &str = N_!("Reverting tags…");
 pub const TAG_EDITOR_SAVING: &str = N_!("Saving tags…");
 pub const DOCTOR_PROGRESS: &str = N_!("Library Doctor progress");
 pub const DOCTOR_CONTROLS_LOCKED: &str = N_!("Locked while a Library Doctor job is running");
-pub const TAG_WRITE_BUSY: &str = N_!("Another tag-writing job is already running");
+pub const TAG_WRITE_BUSY_SEE_PROGRESS: &str =
+    N_!("Another tag-writing job is running. See its progress in the sidebar.");
 pub const DOCTOR_DETAILS: &str = N_!("Details");
 pub const DOCTOR_STATUS_APPLIED: &str = N_!("Applied");
 pub const DOCTOR_STATUS_REVERTED: &str = N_!("Reverted");

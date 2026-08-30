@@ -17,7 +17,7 @@ use reprise_core::library_doctor::{
     DoctorApplyPlan, DoctorCleanupReport, DoctorWriteProgress, DoctorWriteReport, LibraryDoctor,
 };
 
-use super::jobs::{run_apply, run_revert};
+use super::jobs::{run_apply, run_revert, JobFailure};
 use super::progress_card::DoctorJobKind;
 use super::LibraryDoctorCoordinator;
 
@@ -48,6 +48,10 @@ impl LibraryDoctorCoordinator {
             Err(error) => {
                 self.finish_write_job();
                 tracing::error!(%error, "could not start Library Doctor apply worker");
+                crate::ui::toasts::show(
+                    &self.toast_overlay,
+                    &crate::ui::strings::text(crate::ui::strings::DOCTOR_JOB_FAILED),
+                );
                 return;
             }
         };
@@ -94,7 +98,10 @@ impl LibraryDoctorCoordinator {
             Err(error) => {
                 self.finish_write_job();
                 tracing::error!(%error, "could not start Library Doctor revert worker");
-                crate::ui::toasts::show(&self.toast_overlay, &error.to_string());
+                crate::ui::toasts::show(
+                    &self.toast_overlay,
+                    &crate::ui::strings::text(crate::ui::strings::DOCTOR_JOB_FAILED),
+                );
                 return;
             }
         };
@@ -105,7 +112,7 @@ impl LibraryDoctorCoordinator {
         self: &Rc<Self>,
         kind: DoctorJobKind,
         progress: async_channel::Receiver<DoctorWriteProgress>,
-        result: async_channel::Receiver<Result<Option<DoctorWriteReport>, String>>,
+        result: async_channel::Receiver<Result<Option<DoctorWriteReport>, JobFailure>>,
     ) {
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
@@ -129,15 +136,21 @@ impl LibraryDoctorCoordinator {
             match received {
                 Ok(Ok(Some(report))) => coordinator.handle_write_report(kind, &report),
                 Ok(Ok(None)) => coordinator.page.end_job(),
-                Ok(Err(error)) => {
-                    tracing::error!(%error, "Library Doctor write failed");
+                Ok(Err(failure)) => {
+                    tracing::error!(error = %failure.detail, "Library Doctor write failed");
                     coordinator.page.end_job();
-                    crate::ui::toasts::show(&coordinator.toast_overlay, &error);
+                    if failure.busy {
+                        coordinator.refresh_tag_write_slot();
+                    }
+                    crate::ui::toasts::show(&coordinator.toast_overlay, &failure.user_message());
                 }
                 Err(error) => {
                     tracing::error!(%error, "Library Doctor write worker disappeared");
                     coordinator.page.end_job();
-                    crate::ui::toasts::show(&coordinator.toast_overlay, &error.to_string());
+                    crate::ui::toasts::show(
+                        &coordinator.toast_overlay,
+                        &crate::ui::strings::text(crate::ui::strings::DOCTOR_JOB_FAILED),
+                    );
                 }
             }
         });
