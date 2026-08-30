@@ -425,11 +425,23 @@ pub(in crate::ui) fn spawn_save(
     let writes_for_result = writes.clone();
     let spawned = one_shot_task::spawn_with_progress("reprise-tag-save", move |publish| {
         let _tag_write_lease = tag_write_lease;
-        reprise_core::db::Db::open_migrated(Some(&db_path)).map(|worker_conn| {
-            apply_track_writes(&worker_conn, &writes, &mut |done, done_total| {
-                publish((done, done_total));
+        let db_dir = db_path
+            .parent()
+            .ok_or_else(|| "database path has no parent directory".to_owned())?;
+        let lock_attempt = reprise_core::library::TagWriteLock::acquire(db_dir)
+            .map_err(|error| error.to_string())?;
+        reprise_core::db::Db::open_migrated(Some(&db_path))
+            .map_err(|error| error.to_string())
+            .map(|worker_conn| {
+                apply_track_writes(
+                    &worker_conn,
+                    &writes,
+                    lock_attempt,
+                    &mut |done, done_total| {
+                        publish((done, done_total));
+                    },
+                )
             })
-        })
     });
     let (progress_rx, result_rx) = match spawned {
         Ok(channels) => channels,
@@ -662,8 +674,20 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
             anchor: capture_reload_anchor(&shared),
             view_ids: shared.current_view_ids(),
         };
-        let report = reprise_core::db::Db::open_migrated(Some(&db_path))
-            .map(|worker_conn| apply_track_writes(&worker_conn, &writes, &mut |_, _| {}));
+        let report = db_path
+            .parent()
+            .ok_or_else(|| "database path has no parent directory".to_owned())
+            .and_then(|db_dir| {
+                reprise_core::library::TagWriteLock::acquire(db_dir)
+                    .map_err(|error| error.to_string())
+            })
+            .and_then(|lock_attempt| {
+                reprise_core::db::Db::open_migrated(Some(&db_path))
+                    .map_err(|error| error.to_string())
+                    .map(|worker_conn| {
+                        apply_track_writes(&worker_conn, &writes, lock_attempt, &mut |_, _| {})
+                    })
+            });
         match report {
             Ok(report) => {
                 finish_apply(

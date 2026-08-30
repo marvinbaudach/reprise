@@ -4,10 +4,20 @@ use lofty::prelude::*;
 
 use super::{
     execute_tag_write_file, prepare_tag_write_job, recover_incomplete_tag_write_jobs,
-    RecoveryState, TagWriteJobSpec,
+    RecoveryState, TagWriteJobLock, TagWriteJobSpec,
 };
 use crate::library::tag_edit::{read_editable_tags, TagPatch};
 use crate::library::tag_mutation::{apply_tag_patch_to_file, prepare_tag_mutation};
+use crate::library::TagWriteLockAttempt;
+
+#[test]
+fn only_busy_refuses_a_tag_write_job() {
+    assert!(TagWriteJobLock::from_attempt(TagWriteLockAttempt::Busy).is_err());
+    assert!(matches!(
+        TagWriteJobLock::from_attempt(TagWriteLockAttempt::Unenforceable),
+        Ok(TagWriteJobLock::Unenforceable)
+    ));
+}
 
 fn fixture_copy(dir: &Path, name: &str) -> PathBuf {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");

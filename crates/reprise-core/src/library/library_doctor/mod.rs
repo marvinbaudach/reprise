@@ -12,6 +12,7 @@ mod scope;
 mod store;
 mod types;
 mod write;
+mod write_auto;
 mod write_recovery;
 mod write_types;
 

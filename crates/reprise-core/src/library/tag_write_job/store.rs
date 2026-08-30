@@ -7,7 +7,10 @@ use super::super::tag_mutation::{
     reconcile_prepared_tag_mutation, validate_registered_track, write_prepared_tag_mutation,
     PreparedTagMutation, TagMutationFailure, WriteErrorKind,
 };
-use super::types::{JournaledTagMutation, PreparedTagWriteJob, TagWriteJobError, TagWriteJobSpec};
+use super::types::{
+    JournaledTagMutation, PreparedTagWriteJob, TagWriteJobError, TagWriteJobLock, TagWriteJobSpec,
+};
+use crate::library::TagWriteLockAttempt;
 
 #[derive(Debug)]
 struct JournalEntry {
@@ -51,11 +54,13 @@ fn journal_entries(before: &EditableTags, patch: &TagPatch) -> Vec<JournalEntry>
     .collect()
 }
 
-pub(crate) fn prepare_tag_write_job(
+pub(crate) fn prepare_tag_write_job_with_lock(
     conn: &Connection,
+    lock_attempt: TagWriteLockAttempt,
     spec: TagWriteJobSpec,
     mutations: &[(usize, PreparedTagMutation)],
 ) -> Result<PreparedTagWriteJob, TagWriteJobError> {
+    let lock = TagWriteJobLock::from_attempt(lock_attempt)?;
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     crate::library::tag_write_lock::claim_tag_write_slot::<TagWriteJobError>(&transaction)?;
     let created_at = SystemTime::now()
@@ -117,7 +122,20 @@ pub(crate) fn prepare_tag_write_job(
         });
     }
     transaction.commit()?;
-    Ok(PreparedTagWriteJob { id: job_id, files })
+    Ok(PreparedTagWriteJob {
+        id: job_id,
+        files,
+        _lock: lock,
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn prepare_tag_write_job(
+    conn: &Connection,
+    spec: TagWriteJobSpec,
+    mutations: &[(usize, PreparedTagMutation)],
+) -> Result<PreparedTagWriteJob, TagWriteJobError> {
+    prepare_tag_write_job_with_lock(conn, TagWriteLockAttempt::Unenforceable, spec, mutations)
 }
 
 fn error_kind_name(kind: WriteErrorKind) -> &'static str {

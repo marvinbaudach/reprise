@@ -2,6 +2,8 @@
 use super::tag_edit::TrackEditPatch;
 #[cfg(test)]
 use super::tag_edit_write_pipeline::apply_track_writes_inner;
+#[cfg(test)]
+pub use super::tag_edit_write_pipeline::apply_track_writes_with_lock;
 pub use super::tag_edit_write_pipeline::{apply_track_writes, TrackWrite};
 #[cfg(test)]
 use super::tag_mutation::WriteErrorKind;

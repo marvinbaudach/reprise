@@ -13,7 +13,8 @@ use crate::library::tag_mutation::{
     classify_write_error, commit_guarded_tag_changes, read_tag_field_values, GuardedTagChange,
     GuardedTagField, TagMutationFailure, WriteErrorKind,
 };
-use crate::library::tag_write_job::TagWriteRecovery;
+use crate::library::tag_write_job::{TagWriteJobLock, TagWriteRecovery};
+use crate::library::TagWriteLockAttempt;
 
 #[derive(Debug, Clone)]
 pub(super) struct InputChange {
@@ -49,6 +50,19 @@ pub(super) struct ExecutableFile {
     track_id: i64,
     path: PathBuf,
     changes: Vec<GuardedTagChange>,
+}
+
+#[derive(Debug)]
+pub(super) struct PreparedDoctorWriteJob {
+    id: i64,
+    files: Vec<ExecutableFile>,
+    lock: TagWriteJobLock,
+}
+
+impl PreparedDoctorWriteJob {
+    pub(super) fn into_lock_attempt(self) -> TagWriteLockAttempt {
+        self.lock.into_attempt()
+    }
 }
 
 pub(super) fn now() -> i64 {
@@ -286,13 +300,15 @@ fn insert_file(
     }))
 }
 
-pub(super) fn prepare_job(
+pub(super) fn prepare_job_with_lock(
     conn: &Connection,
+    lock_attempt: TagWriteLockAttempt,
     kind: &'static str,
     source_job_id: Option<i64>,
     scan_id: Option<i64>,
     changes: &[InputChange],
-) -> Result<(i64, Vec<ExecutableFile>), DoctorError> {
+) -> Result<PreparedDoctorWriteJob, DoctorError> {
+    let lock = TagWriteJobLock::from_attempt(lock_attempt)?;
     let files = prepare_files(conn, changes)?;
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     crate::library::tag_write_lock::claim_tag_write_slot::<DoctorError>(&transaction)?;
@@ -316,7 +332,29 @@ pub(super) fn prepare_job(
         }
     }
     transaction.commit()?;
-    Ok((job_id, executable))
+    Ok(PreparedDoctorWriteJob {
+        id: job_id,
+        files: executable,
+        lock,
+    })
+}
+
+#[cfg(test)]
+pub(super) fn prepare_job(
+    conn: &Connection,
+    kind: &'static str,
+    source_job_id: Option<i64>,
+    scan_id: Option<i64>,
+    changes: &[InputChange],
+) -> Result<PreparedDoctorWriteJob, DoctorError> {
+    prepare_job_with_lock(
+        conn,
+        TagWriteLockAttempt::Unenforceable,
+        kind,
+        source_job_id,
+        scan_id,
+        changes,
+    )
 }
 
 pub(super) fn error_kind(kind: WriteErrorKind) -> &'static str {
@@ -541,11 +579,12 @@ fn complete_job(conn: &Connection, job_id: i64) -> Result<(), DoctorError> {
 
 pub(super) fn run_job(
     conn: &Connection,
-    job_id: i64,
-    files: &[ExecutableFile],
+    job: &PreparedDoctorWriteJob,
     source_job_id: Option<i64>,
     mut progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
 ) -> Result<DoctorWriteReport, DoctorError> {
+    let job_id = job.id;
+    let files = &job.files;
     let total = conn.query_row(
         "SELECT total_tracks FROM tag_write_jobs WHERE id=?1",
         [job_id],
@@ -677,20 +716,41 @@ fn apply_inputs(plan: &DoctorApplyPlan) -> Vec<InputChange> {
 }
 
 impl LibraryDoctor<'_> {
-    pub fn apply_review_plan(
+    pub fn apply_review_plan_with_lock(
         &mut self,
         plan: &DoctorApplyPlan,
+        lock_attempt: TagWriteLockAttempt,
         progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
     ) -> Result<DoctorWriteReport, DoctorError> {
         let inputs = apply_inputs(plan);
-        let (job_id, files) = prepare_job(
+        let job = prepare_job_with_lock(
             self.conn,
+            lock_attempt,
             "doctor_apply",
             None,
             Some(plan.scan_id()),
             &inputs,
         )?;
-        run_job(self.conn, job_id, &files, None, progress)
+        run_job(self.conn, &job, None, progress)
+    }
+
+    #[cfg(not(test))]
+    pub fn apply_review_plan(
+        &mut self,
+        plan: &DoctorApplyPlan,
+        lock_attempt: TagWriteLockAttempt,
+        progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
+    ) -> Result<DoctorWriteReport, DoctorError> {
+        self.apply_review_plan_with_lock(plan, lock_attempt, progress)
+    }
+
+    #[cfg(test)]
+    pub fn apply_review_plan(
+        &mut self,
+        plan: &DoctorApplyPlan,
+        progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
+    ) -> Result<DoctorWriteReport, DoctorError> {
+        self.apply_review_plan_with_lock(plan, TagWriteLockAttempt::Unenforceable, progress)
     }
 
     pub fn recover_incomplete_writes(&self) -> Result<Vec<TagWriteRecovery>, DoctorError> {
