@@ -79,8 +79,7 @@ impl DeviceMonitor {
         self.callbacks.borrow_mut().push(callback);
     }
 
-    /// Ejects or unmounts the matching MTP device. Returns `false` when the
-    /// device disappeared between the UI action and this lookup.
+    /// Ejects or unmounts the matching MTP device. Returns `false` when the device disappeared between the UI action and this lookup.
     pub async fn eject(&self, id: &str) -> Result<bool, DeviceIoError> {
         let mount = self.monitor.mounts().into_iter().find(|mount| {
             descriptor_from_mount(mount).is_some_and(|descriptor| descriptor.id == id)
@@ -115,17 +114,14 @@ impl Default for DeviceMonitor {
     }
 }
 
-/// Enumerates MTP devices **volume-first**, the way GNOME apps are expected to: GVfs models a
-/// phone as a `GProxyVolume` ("Pixel 10 Pro XL", themed `[phone]` icon,
-/// `activation_root=mtp://…`) whose mount is a `GProxyShadowMount` attached to the volume, while
-/// the underlying `GDaemonMount` is a top-level mount named just "mtp" with a multimedia-player
-/// icon and the SHADOWED flag set. Enumerating raw mounts is therefore order-dependent: depending
-/// on when the proxy monitor registers, `monitor.mounts()` can contain both entries (the shadowed
-/// one used to win and label a Pixel "mtp"), or only the shadowed daemon mount (filtering it left
-/// zero devices). At startup, the volume-to-mount link and shadow flag can both arrive after the
-/// volume and mount themselves. Their matching root URIs are available immediately, so that stable
-/// relationship decides ownership. The volume remains the source of identity, name, and icon;
-/// unshadowed `mtp://` mounts with no matching volume root remain a fallback for exotic backends.
+/// Enumerates MTP devices **volume-first**, the way GNOME apps are expected to: GVfs models a phone as a `GProxyVolume` ("Pixel 10 Pro XL",
+/// themed `[phone]` icon, `activation_root=mtp://…`) whose mount is a `GProxyShadowMount` attached to the volume, while the underlying
+/// `GDaemonMount` is a top-level mount named just "mtp" with a multimedia-player icon and the SHADOWED flag set. Enumerating raw mounts is
+/// therefore order-dependent: depending on when the proxy monitor registers, `monitor.mounts()` can contain both entries (the shadowed one
+/// used to win and label a Pixel "mtp"), or only the shadowed daemon mount (filtering it left zero devices). At startup, the volume-to-mount
+/// link and shadow flag can both arrive after the volume and mount themselves. Their matching root URIs are available immediately, so that
+/// stable relationship decides ownership. The volume remains the source of identity, name, and icon; unshadowed `mtp://` mounts with no
+/// matching volume root remain a fallback for exotic backends.
 fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
     let mut volume_projections = Vec::new();
     let mut volume_descriptors = Vec::new();
@@ -237,6 +233,28 @@ pub enum CopyOutcome {
     Copied,
 }
 
+/// Which step of a managed write produced the failure underneath.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WriteStep {
+    ResolveStorage,
+    CreateDirectories,
+    CopyPartial,
+    VerifyPartial,
+    Publish,
+}
+
+impl fmt::Display for WriteStep {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::ResolveStorage => "resolving the target storage",
+            Self::CreateDirectories => "creating the destination directory",
+            Self::CopyPartial => "copying the partial file",
+            Self::VerifyPartial => "verifying the partial file",
+            Self::Publish => "publishing the destination file",
+        })
+    }
+}
+
 #[derive(Debug)]
 pub enum DeviceIoError {
     InvalidRelativePath,
@@ -247,16 +265,18 @@ pub enum DeviceIoError {
     PublishNotApplied {
         name: String,
     },
+    DuringWrite {
+        step: WriteStep,
+        source: Box<DeviceIoError>,
+    },
     Io(gio::glib::Error),
-    /// Design 7d: the chosen `StorageId` no longer matches any storage
-    /// volume at the device root — e.g. an SD card was removed since the
-    /// browser last listed storages.
+    /// Design 7d: the chosen `StorageId` no longer matches any storage volume at the device root —
+    /// e.g. an SD card was removed since the browser last listed storages.
     StorageNotFound,
-    /// Design 7d's "New folder": a folder with that name already exists at
-    /// the chosen location.
+    /// Design 7d's "New folder": a folder with that name already exists at the chosen location.
     FolderAlreadyExists,
-    /// Design 7d's root-creation error path: the device refused to create
-    /// a folder directly at a storage volume's own top level.
+    /// Design 7d's root-creation error path: the device refused to create a folder directly at a
+    /// storage volume's own top level.
     CannotCreateAtStorageRoot(gio::glib::Error),
 }
 
@@ -264,14 +284,13 @@ impl fmt::Display for DeviceIoError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidRelativePath => formatter.write_str("invalid managed device path"),
-            Self::SizeMismatch { expected, actual } => write!(
-                formatter,
+            Self::SizeMismatch { expected, actual } => formatter.write_fmt(format_args!(
                 "partial device file has {actual} bytes, expected {expected}"
-            ),
-            Self::PublishNotApplied { name } => write!(
-                formatter,
+            )),
+            Self::PublishNotApplied { name } => formatter.write_fmt(format_args!(
                 "the device acknowledged publishing {name} but the file never appeared"
-            ),
+            )),
+            Self::DuringWrite { step, source } => write!(formatter, "{step} failed: {source}"),
             Self::Io(error) => write!(formatter, "device I/O failed: {error}"),
             Self::StorageNotFound => {
                 formatter.write_str("the selected storage is no longer available on this device")
@@ -279,15 +298,23 @@ impl fmt::Display for DeviceIoError {
             Self::FolderAlreadyExists => {
                 formatter.write_str("a folder with that name already exists here")
             }
-            Self::CannotCreateAtStorageRoot(error) => write!(
-                formatter,
+            Self::CannotCreateAtStorageRoot(error) => formatter.write_fmt(format_args!(
                 "this device does not allow creating folders directly in the storage root: {error}"
-            ),
+            )),
         }
     }
 }
 
 impl std::error::Error for DeviceIoError {}
+
+impl DeviceIoError {
+    fn during(self, step: WriteStep) -> Self {
+        Self::DuringWrite {
+            step,
+            source: self.into(),
+        }
+    }
+}
 
 impl From<gio::glib::Error> for DeviceIoError {
     fn from(error: gio::glib::Error) -> Self {
@@ -298,8 +325,7 @@ impl From<gio::glib::Error> for DeviceIoError {
 #[derive(Clone)]
 pub struct DeviceStorage {
     root: gio::File,
-    /// Cached result of [`Self::storage_root`] — resolving it enumerates the
-    /// device root, which is a round-trip worth doing once per instance.
+    /// Cached result of [`Self::storage_root`] — resolving it enumerates the device root, which is a round-trip worth doing once per instance.
     storage: RefCell<Option<gio::File>>,
 }
 
@@ -317,17 +343,13 @@ impl DeviceStorage {
 
     /// The directory that holds `Music/Reprise`.
     ///
-    /// Android MTP does not expose a filesystem at the device root: the root
-    /// lists *storage volumes* ("Internal shared storage", plus an SD card on
-    /// some devices) and is itself read-only, so creating `Music` there fails
-    /// with "Cannot make directory in this location" — which made every copy
-    /// fail. The managed folder must live inside a storage volume, which is
-    /// also where every other app (and the phone's own media scanner) expects
-    /// `Music/` to be.
+    /// Android MTP does not expose a filesystem at the device root: the root lists *storage volumes* ("Internal shared storage", plus an SD
+    /// card on some devices) and is itself read-only, so creating `Music` there fails with "Cannot make directory in this location" — which
+    /// made every copy fail. The managed folder must live inside a storage volume, which is also where every other app (and the phone's own
+    /// media scanner) expects `Music/` to be.
     ///
-    /// Only `mtp://` roots are resolved this way; other roots (the local
-    /// directories the tests use) already are the storage and are returned
-    /// unchanged.
+    /// Only `mtp://` roots are resolved this way; other roots (the local directories the tests use)
+    /// already are the storage and are returned unchanged.
     async fn storage_root(&self) -> Result<gio::File, DeviceIoError> {
         if let Some(cached) = self.storage.borrow().clone() {
             return Ok(cached);
@@ -375,16 +397,11 @@ impl DeviceStorage {
         Ok(resolved)
     }
 
-    /// The storage volume one sync target's I/O actually runs against
-    /// (`MTP-23`): the explicit `storage_id` the folder browser resolved and
-    /// persisted for it (`MTP-31`/`MTP-32`), re-resolved fresh — MTP handles
-    /// are not stable across reconnects, see the module docs — or, for a
-    /// target that has never been repointed (`storage_id` still `None`),
-    /// the same "prefer internal, else the only volume" default
-    /// [`Self::storage_root`] always used before the folder browser
-    /// existed. Every transfer and inspection call routes through this so a
-    /// target's persisted choice is what receives the bytes, not whatever
-    /// the default would guess.
+    /// The storage volume one sync target's I/O actually runs against (`MTP-23`): the explicit `storage_id` the folder browser resolved and
+    /// persisted for it (`MTP-31`/`MTP-32`), re-resolved fresh — MTP handles are not stable across reconnects, see the module docs — or, for a
+    /// target that has never been repointed (`storage_id` still `None`), the same "prefer internal, else the only volume" default
+    /// [`Self::storage_root`] always used before the folder browser existed. Every transfer and inspection call routes through this so a
+    /// target's persisted choice is what receives the bytes, not whatever the default would guess.
     async fn resolve_target_storage(
         &self,
         storage_id: Option<StorageId>,
@@ -395,10 +412,8 @@ impl DeviceStorage {
         }
     }
 
-    /// Removes transfer remnants left by a disconnect or process exit under
-    /// the sync target's folder (`target_path`, `MTP-23`). Only files below
-    /// that folder with the dedicated `.part` suffix are touched; every other
-    /// file on the device remains outside our ownership.
+    /// Removes transfer remnants left by a disconnect or process exit under the sync target's folder (`target_path`, `MTP-23`). Only files
+    /// below that folder with the dedicated `.part` suffix are touched; every other file on the device remains outside our ownership.
     pub async fn cleanup_partials_in(
         &self,
         storage_id: Option<StorageId>,
@@ -448,9 +463,7 @@ impl DeviceStorage {
         Ok(removed)
     }
 
-    /// Deletes one file under a sync target's folder (`target_path`,
-    /// `MTP-23`). A missing target is already in the desired state and is
-    /// reported as `false`.
+    /// Deletes one file under a sync target's folder (`target_path`, `MTP-23`). A missing target is already in the desired state and is reported as `false`.
     pub async fn delete_managed(
         &self,
         storage_id: Option<StorageId>,
@@ -467,8 +480,7 @@ impl DeviceStorage {
         }
     }
 
-    /// Copies (or overwrites) one file under a sync target's folder
-    /// (`target_path`, `MTP-23`), always replacing any existing file at the
+    /// Copies (or overwrites) one file under a sync target's folder (`target_path`, `MTP-23`), always replacing any existing file at the
     /// destination even when its byte count happens to be unchanged.
     #[allow(clippy::too_many_arguments)]
     pub async fn replace_managed<P>(
@@ -485,9 +497,13 @@ impl DeviceStorage {
         P: FnMut(u64, u64) + 'static,
     {
         let components = safe_relative_components(relative_path)?;
-        let storage = self.resolve_target_storage(storage_id).await?;
+        let storage = self
+            .resolve_target_storage(storage_id)
+            .await
+            .map_err(|error| error.during(WriteStep::ResolveStorage))?;
         self.ensure_managed_directories(&storage, target_path, &components[..components.len() - 1])
-            .await?;
+            .await
+            .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let target = Self::managed_child(&storage, target_path, &components)?;
         let target_name = components.last().expect("validated nonempty path");
         let partial_components = components[..components.len() - 1]
@@ -514,18 +530,22 @@ impl DeviceStorage {
         let copied = receiver
             .recv()
             .await
-            .map_err(|_| DeviceIoError::InvalidRelativePath)?;
+            .map_err(|_| DeviceIoError::InvalidRelativePath.during(WriteStep::CopyPartial))?;
         if let Err(error) = copied {
             delete_if_present(&partial).await;
-            return Err(error.into());
+            return Err(DeviceIoError::from(error).during(WriteStep::CopyPartial));
         }
-        let actual_size = target_size(&partial).await?.unwrap_or(0);
+        let actual_size = target_size(&partial)
+            .await
+            .map_err(|error| error.during(WriteStep::VerifyPartial))?
+            .unwrap_or(0);
         if actual_size != expected_size {
             delete_if_present(&partial).await;
             return Err(DeviceIoError::SizeMismatch {
                 expected: expected_size,
                 actual: actual_size,
-            });
+            }
+            .during(WriteStep::VerifyPartial));
         }
         publish(&partial, &target, expected_size).await?;
         (progress.borrow_mut())(expected_size, expected_size);
@@ -540,9 +560,13 @@ impl DeviceStorage {
         contents: Vec<u8>,
     ) -> Result<(), DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
-        let storage = self.resolve_target_storage(storage_id).await?;
+        let storage = self
+            .resolve_target_storage(storage_id)
+            .await
+            .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         self.ensure_managed_directories(&storage, target_path, &[])
-            .await?;
+            .await
+            .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let final_file = Self::managed_child(&storage, target_path, &[format!("{playlist}.m3u8")])?;
         let partial = Self::managed_child(
             &storage,
@@ -558,7 +582,7 @@ impl DeviceStorage {
                 gio::FileCreateFlags::REPLACE_DESTINATION,
             )
             .await
-            .map_err(|(_, error)| DeviceIoError::Io(error))?;
+            .map_err(|(_, error)| DeviceIoError::Io(error).during(WriteStep::Publish))?;
         // A rewritten playlist always overwrites its predecessor, so this is
         // the path that meets the broken rename on every single run.
         publish(&partial, &final_file, expected_size).await
@@ -603,10 +627,9 @@ impl DeviceStorage {
         Ok(())
     }
 
-    /// `<storage>/<target_path>/<relative…>`, e.g.
-    /// `<storage>/Music/Selected/<relative…>`. Takes the storage root
-    /// resolved by [`Self::storage_root`] rather than reaching for
-    /// `self.root`, which on MTP is the (unwritable) volume list.
+    /// `<storage>/<target_path>/<relative…>`, e.g. `<storage>/Music/Selected/<relative…>`. Takes the
+    /// storage root resolved by [`Self::storage_root`] rather than reaching for `self.root`, which on
+    /// MTP is the (unwritable) volume list.
     fn managed_child(
         storage: &gio::File,
         target_path: &str,
@@ -633,56 +656,38 @@ fn choose_storage_volume(volumes: &[String]) -> Option<String> {
         .cloned()
 }
 
-/// Splits a [`reprise_core::device_sync::SyncTarget`] path (e.g.
-/// `/Music/Selected`, `MTP-23`) into path components for building a
-/// `gio::File` under the resolved storage volume. Unlike
-/// [`safe_relative_components`], a single leading `Component::RootDir` is
-/// accepted and dropped — sync target paths are written as absolute-looking
-/// device paths, but every one of them is still resolved relative to the
-/// storage volume returned by [`DeviceStorage::storage_root`].
+/// Splits a [`reprise_core::device_sync::SyncTarget`] path (e.g. `/Music/Selected`, `MTP-23`) into path components for building a `gio::File`
+/// under the resolved storage volume. Unlike [`safe_relative_components`], a single leading `Component::RootDir` is accepted and dropped —
+/// sync target paths are written as absolute-looking device paths, but every one of them is still resolved relative to the storage volume
+/// returned by [`DeviceStorage::storage_root`].
 fn safe_target_components(path: &str) -> Result<Vec<String>, DeviceIoError> {
-    if path.is_empty() || path.chars().any(char::is_control) {
-        return Err(DeviceIoError::InvalidRelativePath);
-    }
-    let components = Path::new(path)
-        .components()
-        .filter(|component| !matches!(component, Component::RootDir))
-        .map(|component| match component {
-            Component::Normal(value) => value
-                .to_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .ok_or(DeviceIoError::InvalidRelativePath),
-            _ => Err(DeviceIoError::InvalidRelativePath),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    if components.is_empty() {
-        Err(DeviceIoError::InvalidRelativePath)
-    } else {
-        Ok(components)
-    }
+    safe_components(path, true)
 }
 
 fn safe_relative_components(path: &str) -> Result<Vec<String>, DeviceIoError> {
+    safe_components(path, false)
+}
+
+fn safe_components(path: &str, allow_root: bool) -> Result<Vec<String>, DeviceIoError> {
     if path.is_empty() || path.chars().any(char::is_control) {
         return Err(DeviceIoError::InvalidRelativePath);
     }
     let components = Path::new(path)
         .components()
-        .map(|component| match component {
-            Component::Normal(value) => value
-                .to_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .ok_or(DeviceIoError::InvalidRelativePath),
-            _ => Err(DeviceIoError::InvalidRelativePath),
+        .filter_map(|component| match component {
+            Component::RootDir if allow_root => None,
+            Component::Normal(value) => Some(
+                value
+                    .to_str()
+                    .map(str::to_string)
+                    .ok_or(DeviceIoError::InvalidRelativePath),
+            ),
+            _ => Some(Err(DeviceIoError::InvalidRelativePath)),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if components.is_empty() {
-        Err(DeviceIoError::InvalidRelativePath)
-    } else {
-        Ok(components)
-    }
+    (!components.is_empty())
+        .then_some(components)
+        .ok_or(DeviceIoError::InvalidRelativePath)
 }
 
 async fn target_size(file: &gio::File) -> Result<Option<u64>, DeviceIoError> {
@@ -702,16 +707,12 @@ async fn target_size(file: &gio::File) -> Result<Option<u64>, DeviceIoError> {
 
 /// Moves a finished `.part` file onto its final name and proves it landed.
 ///
-/// Both steps exist because of how MTP answers an overwriting rename: gvfs
-/// reports success, drops the previous file, and never applies the new name.
-/// Measured over a phone, a run whose targets already existed stranded 33 of
-/// 120 transfers that way, against 0 of 120 when the targets were new — so the
-/// existing file is removed first, which keeps this a plain rename. The proof
-/// afterwards covers whatever else may acknowledge work it did not do: without
-/// it the audio sits under a `.part` name no media scanner reads while the
-/// inventory records the track as delivered, and the next run sees nothing to
-/// repair. On failure the partial is cleared so the run leaves no debris and
-/// the missing track is simply copied again next time.
+/// Both steps exist because of how MTP answers an overwriting rename: gvfs reports success, drops the previous file, and never applies the new
+/// name. Measured over a phone, a run whose targets already existed stranded 33 of 120 transfers that way, against 0 of 120 when the targets
+/// were new — so the existing file is removed first, which keeps this a plain rename. The proof afterwards covers whatever else may
+/// acknowledge work it did not do: without it the audio sits under a `.part` name no media scanner reads while the inventory records the
+/// track as delivered, and the next run sees nothing to repair. On failure the partial is cleared so the run leaves no debris and the missing
+/// track is simply copied again next time.
 async fn publish(
     partial: &gio::File,
     target: &gio::File,
@@ -728,7 +729,7 @@ async fn publish(
         .await
     {
         delete_if_present(partial).await;
-        return Err(error.into());
+        return Err(DeviceIoError::from(error).during(WriteStep::Publish));
     }
     if let Err(error) = verify_published(target, expected_size).await {
         delete_if_present(partial).await;
@@ -739,19 +740,21 @@ async fn publish(
 
 /// Confirms that a published file is on the device with the bytes we sent.
 async fn verify_published(file: &gio::File, expected_size: u64) -> Result<(), DeviceIoError> {
-    match target_size(file).await? {
-        Some(actual) if actual == expected_size => Ok(()),
-        Some(actual) => Err(DeviceIoError::SizeMismatch {
+    match target_size(file).await {
+        Ok(Some(actual)) if actual == expected_size => Ok(()),
+        Ok(Some(actual)) => Err(DeviceIoError::SizeMismatch {
             expected: expected_size,
             actual,
         }),
-        None => Err(DeviceIoError::PublishNotApplied {
+        Ok(None) => Err(DeviceIoError::PublishNotApplied {
             name: file.basename().map_or_else(
                 || "the device file".to_owned(),
                 |name| name.to_string_lossy().into_owned(),
             ),
         }),
+        Err(error) => Err(error),
     }
+    .map_err(|error| error.during(WriteStep::Publish))
 }
 
 async fn delete_if_present(file: &gio::File) {
@@ -783,17 +786,14 @@ fn is_audio_file(name: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "device_sync_tests.rs"]
-mod tests;
-
+#[path = "device_sync_browser_tests.rs"]
+mod browser_tests;
 #[cfg(test)]
 #[path = "device_sync_identity_tests.rs"]
 mod identity_tests;
-
 #[cfg(test)]
 #[path = "device_sync_projection_tests.rs"]
 mod projection_tests;
-
 #[cfg(test)]
-#[path = "device_sync_browser_tests.rs"]
-mod browser_tests;
+#[path = "device_sync_tests.rs"]
+mod tests;

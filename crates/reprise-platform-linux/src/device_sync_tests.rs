@@ -202,6 +202,41 @@ fn copy_creates_managed_directories_and_reports_progress() {
 }
 
 #[test]
+fn managed_write_names_destination_directory_creation_failures() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        return;
+    }
+    let managed_root = temp.path().join("Music/Reprise");
+    fs::create_dir_all(&managed_root).unwrap();
+    fs::write(temp.path().join("source.flac"), b"audio").unwrap();
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o500)).unwrap();
+
+    let result = run(storage.replace_managed(
+        None,
+        "/Music/Reprise",
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Blocked/song.flac",
+        5,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ));
+
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(matches!(
+        &result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CreateDirectories,
+            ..
+        })
+    ));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .starts_with("creating the destination directory failed: device I/O failed:"));
+}
+
+#[test]
 fn mtp_17_same_size_untracked_destination_is_overwritten() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
@@ -276,12 +311,18 @@ fn replacement_verifies_the_partial_size_before_overwriting_the_final_file() {
     ));
 
     assert!(matches!(
-        result,
-        Err(DeviceIoError::SizeMismatch {
-            expected: 6,
-            actual: 5,
+        &result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::VerifyPartial,
+            source,
+        }) if matches!(source.as_ref(), DeviceIoError::SizeMismatch {
+            expected: 6, actual: 5
         })
     ));
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "verifying the partial file failed: partial device file has 5 bytes, expected 6"
+    );
     assert_eq!(fs::read(final_path).unwrap(), b"known-good");
     assert!(!temp
         .path()
@@ -337,9 +378,11 @@ fn mtp_21_a_published_file_is_proven_by_its_expected_byte_count() {
     assert!(run(verify_published(&published, 6)).is_ok());
     assert!(matches!(
         run(verify_published(&published, 9)),
-        Err(DeviceIoError::SizeMismatch {
-            expected: 9,
-            actual: 6,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::Publish,
+            source,
+        }) if matches!(source.as_ref(), DeviceIoError::SizeMismatch {
+            expected: 9, actual: 6
         })
     ));
 }
@@ -349,10 +392,18 @@ fn mtp_21_a_rename_that_left_nothing_behind_is_reported_not_believed() {
     let (temp, _storage) = fixture();
     let missing = gio::File::for_path(temp.path().join("never-arrived.opus"));
 
+    let result = run(verify_published(&missing, 6));
     assert!(matches!(
-        run(verify_published(&missing, 6)),
-        Err(DeviceIoError::PublishNotApplied { .. })
+        &result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::Publish,
+            source,
+        }) if matches!(source.as_ref(), DeviceIoError::PublishNotApplied { .. })
     ));
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "publishing the destination file failed: the device acknowledged publishing never-arrived.opus but the file never appeared"
+    );
 }
 
 #[test]
@@ -422,7 +473,17 @@ fn pre_cancelled_copy_leaves_no_partial_file() {
         &cancellable,
         |_copied, _total| {},
     ));
-    assert!(result.is_err());
+    assert!(matches!(
+        &result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CopyPartial,
+            ..
+        })
+    ));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .starts_with("copying the partial file failed: device I/O failed:"));
     assert!(!temp
         .path()
         .join("Music/Reprise/Road/1-source.flac.part")
