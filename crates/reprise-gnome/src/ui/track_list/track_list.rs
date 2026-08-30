@@ -81,7 +81,7 @@ pub(in crate::ui) use super::track_list_callbacks::{
     OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
     OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds,
     OnSearchRestored, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
-    OnTagsMutated,
+    OnTagWriteStarted, OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
@@ -347,7 +347,7 @@ pub(in crate::ui) struct Shared {
     /// Kept separate from `on_library_mutated`: editing tags must never purge
     /// otherwise valid tracks from the playback queue.
     pub(in crate::ui) on_tags_mutated: RefCell<Option<OnTagsMutated>>,
-    pub(in crate::ui) tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
+    pub(in crate::ui) on_tag_write_started: RefCell<Option<OnTagWriteStarted>>,
     /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
     /// mutate `import_errors` — injected via `TrackList::set_on_import_
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the

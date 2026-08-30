@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use reprise_core::library::{TagWriteLock, TagWriteLockAttempt};
 use reprise_core::library_doctor::{
     group_review_rows, scan_summary, DoctorError, DoctorReviewDisplayRow, DoctorReviewFilter,
     DoctorReviewSession, DoctorScan, DoctorScanOptions, DoctorScanOutcome, DoctorScanRequest,
@@ -17,6 +18,16 @@ use crate::doctor_dto::{
 
 const DEFAULT_REVIEW_LIMIT: usize = 50;
 const MAX_REVIEW_LIMIT: usize = 200;
+
+fn acquire_tag_write_lock(db: &reprise_core::db::Db) -> Result<TagWriteLockAttempt, DataError> {
+    let db_path = db
+        .path()
+        .ok_or_else(|| DataError::Internal("database has no path".to_owned()))?;
+    let db_dir = db_path
+        .parent()
+        .ok_or_else(|| DataError::Internal("database path has no parent directory".to_owned()))?;
+    TagWriteLock::acquire(db_dir).map_err(|error| DataError::Internal(error.to_string()))
+}
 
 pub fn scan_tags(
     path: &Path,
@@ -52,8 +63,9 @@ pub fn scan_tags(
     };
     let summary = scan_summary(&scan, remote_enabled);
     let applied = if apply_safe {
+        let lock_attempt = acquire_tag_write_lock(&db)?;
         doctor
-            .apply_auto_tier(&scan, |_| DoctorWriteControl::Continue)
+            .apply_auto_tier(&scan, lock_attempt, |_| DoctorWriteControl::Continue)
             .map_err(map_doctor_error)?
             .map_or(0, |report| {
                 report
@@ -203,7 +215,9 @@ fn apply_session(
         ));
     }
     let report = LibraryDoctor::new(db)
-        .apply_review_plan(&plan, |_| DoctorWriteControl::Continue)
+        .apply_review_plan(&plan, acquire_tag_write_lock(db)?, |_| {
+            DoctorWriteControl::Continue
+        })
         .map_err(map_doctor_error)?;
     Ok(result_from_reports(
         action,
@@ -216,7 +230,9 @@ fn revert_cleanup(db: &reprise_core::db::Db) -> Result<ApplyTagsResult, DataErro
     let scan = LibraryDoctor::new(db)
         .last_complete_scan()
         .map_err(map_doctor_error)?;
-    let outcome = LibraryDoctor::new(db).revert_last_cleanup(|_| DoctorWriteControl::Continue);
+    let outcome = LibraryDoctor::new(db).revert_last_cleanup(acquire_tag_write_lock(db)?, |_| {
+        DoctorWriteControl::Continue
+    });
     let (report, incomplete_error) = match outcome {
         Ok(Some(report)) => (report, None),
         Ok(None) => {

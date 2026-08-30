@@ -122,7 +122,6 @@ pub(crate) mod table_column_widths;
 mod table_columns;
 mod table_selection;
 mod tag_edit;
-mod tag_write_gate;
 #[cfg(test)]
 pub(crate) mod test_main_context;
 #[cfg(test)]

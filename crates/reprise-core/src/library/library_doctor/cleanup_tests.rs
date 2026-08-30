@@ -148,6 +148,70 @@ fn doc_10a_undo_reverts_the_quiet_and_the_reviewed_job_of_one_scan() {
 }
 
 #[test]
+fn doc_10a_real_lock_stays_live_across_a_multi_job_revert() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = vec![
+        fixture(dir.path(), "quiet-locked.flac", " Quiet "),
+        fixture(dir.path(), "reviewed-locked.flac", " Reviewed "),
+    ];
+    let db = crate::db::Db::open_migrated(Some(&dir.path().join("reprise.db"))).unwrap();
+    apply_pair(&db, &paths);
+    let lock_attempt = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    assert!(matches!(
+        &lock_attempt,
+        crate::library::TagWriteLockAttempt::Held(_)
+    ));
+    let attack = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let contender_dir = dir.path().to_owned();
+    let contender_attack = attack.clone();
+    let contender_stop = stop.clone();
+    let contender = std::thread::spawn(move || {
+        while !contender_stop.load(std::sync::atomic::Ordering::Acquire) {
+            if contender_attack.load(std::sync::atomic::Ordering::Acquire) {
+                match crate::library::TagWriteLock::acquire(&contender_dir).unwrap() {
+                    crate::library::TagWriteLockAttempt::Held(lock) => {
+                        while !contender_stop.load(std::sync::atomic::Ordering::Acquire) {
+                            std::thread::yield_now();
+                        }
+                        drop(lock);
+                        return;
+                    }
+                    crate::library::TagWriteLockAttempt::Busy => {}
+                    crate::library::TagWriteLockAttempt::Unenforceable => {
+                        panic!("the test filesystem must enforce the tag-write lock")
+                    }
+                }
+            }
+            std::thread::yield_now();
+        }
+    });
+    let mut observed_progress = Vec::new();
+
+    let cleanup = LibraryDoctor::new(&db).revert_last_cleanup_with_lock(lock_attempt, |progress| {
+        assert_eq!(
+            crate::library::TagWriteLock::probe(dir.path()),
+            crate::library::TagWriteLiveness::Live
+        );
+        observed_progress.push((progress.completed_tracks, progress.total_tracks));
+        if progress.completed_tracks == 1 {
+            attack.store(true, std::sync::atomic::Ordering::Release);
+        }
+        DoctorWriteControl::Continue
+    });
+    stop.store(true, std::sync::atomic::Ordering::Release);
+    contender.join().unwrap();
+    let cleanup = cleanup.unwrap().unwrap();
+
+    assert_eq!(cleanup.reports.len(), 2);
+    assert_eq!(observed_progress, vec![(0, 2), (1, 2), (1, 2), (2, 2)]);
+    assert_eq!(
+        crate::library::TagWriteLock::probe(dir.path()),
+        crate::library::TagWriteLiveness::Absent
+    );
+}
+
+#[test]
 fn doc_10a_undo_works_when_only_the_quiet_job_exists() {
     let dir = tempfile::tempdir().unwrap();
     let path = fixture(dir.path(), "quiet-only.flac", " Quiet ");
@@ -408,7 +472,7 @@ fn doc_10b_a_second_tag_write_job_is_refused_while_one_is_prepared_or_running() 
 fn doc_10b_a_finalized_interrupted_job_does_not_hold_the_lock() {
     let dir = tempfile::tempdir().unwrap();
     let path = fixture(dir.path(), "interrupted.flac", " Artist ");
-    let db = crate::db::Db::open_in_memory().unwrap();
+    let db = crate::db::Db::open_migrated(Some(&dir.path().join("reprise.db"))).unwrap();
     let track_id = seed(&db, std::slice::from_ref(&path))[0];
     let plan = auto_plan(&db, track_id);
     let change = &plan.changes()[0];
@@ -428,14 +492,98 @@ fn doc_10b_a_finalized_interrupted_job_does_not_hold_the_lock() {
     )
     .unwrap();
 
+    let lock_attempt = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
     let recovered = LibraryDoctor::new(&db)
-        .finalize_incomplete_writes()
+        .finalize_incomplete_writes(lock_attempt)
         .unwrap();
     assert_eq!(recovered.len(), 1);
     let report = LibraryDoctor::new(&db)
         .apply_review_plan(&plan, |_| DoctorWriteControl::Continue)
         .unwrap();
     assert_eq!(report.updated_tracks, 1);
+}
+
+#[test]
+fn recovery_changes_nothing_until_an_enforced_lock_is_held_and_is_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "recovery-lock.flac", " Artist ");
+    let db = crate::db::Db::open_migrated(Some(&dir.path().join("reprise.db"))).unwrap();
+    let track_id = seed(&db, std::slice::from_ref(&path))[0];
+    let plan = auto_plan(&db, track_id);
+    let change = &plan.changes()[0];
+    super::write::prepare_job(
+        db.conn(),
+        "doctor_apply",
+        None,
+        Some(plan.scan_id()),
+        &[super::write::InputChange {
+            row_id: Some(change.row_id),
+            track: change.track.clone(),
+            field: change.field,
+            expected: change.expected.clone(),
+            proposed: change.proposed.clone(),
+        }],
+    )
+    .unwrap();
+
+    let held = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    let busy = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    assert!(matches!(busy, crate::library::TagWriteLockAttempt::Busy));
+    assert!(LibraryDoctor::new(&db)
+        .finalize_incomplete_writes(busy)
+        .unwrap()
+        .is_empty());
+    assert!(LibraryDoctor::new(&db)
+        .finalize_incomplete_writes(crate::library::TagWriteLockAttempt::Unenforceable)
+        .unwrap()
+        .is_empty());
+    let state: String = db
+        .conn()
+        .query_row("SELECT state FROM tag_write_jobs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(state, "prepared");
+
+    drop(held);
+    let enforced = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    assert_eq!(
+        LibraryDoctor::new(&db)
+            .finalize_incomplete_writes(enforced)
+            .unwrap()
+            .len(),
+        1
+    );
+    let enforced_again = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    assert!(LibraryDoctor::new(&db)
+        .finalize_incomplete_writes(enforced_again)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn enforced_recovery_finalizes_an_orphaned_tag_editor_job_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "tag-editor-orphan.flac", "Artist");
+    let db = crate::db::Db::open_migrated(Some(&dir.path().join("reprise.db"))).unwrap();
+    let track_id = seed(&db, std::slice::from_ref(&path))[0];
+    let job_id = prepared_tag_editor_job(&db, track_id, &path);
+
+    let enforced = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    assert_eq!(
+        LibraryDoctor::new(&db)
+            .finalize_incomplete_writes(enforced)
+            .unwrap()
+            .len(),
+        1
+    );
+    let state: String = db
+        .conn()
+        .query_row(
+            "SELECT state FROM tag_write_jobs WHERE id=?1",
+            [job_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(state, "cancelled");
 }
 
 #[test]

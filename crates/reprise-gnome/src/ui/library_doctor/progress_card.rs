@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
-use reprise_core::library_doctor::DoctorScanPhase;
+use reprise_core::library_doctor::{DoctorScanPhase, TagWriteJobKind, TagWriteSlotOwner};
 
 use crate::ui::strings;
 
@@ -12,6 +12,7 @@ pub(super) enum DoctorJobKind {
     Scan,
     Apply,
     Revert,
+    TagEditor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,9 +37,18 @@ fn progress_presentation(
             DoctorJobKind::Scan => strings::DOCTOR_SCANNING,
             DoctorJobKind::Apply => strings::DOCTOR_UPDATING_TAGS,
             DoctorJobKind::Revert => strings::DOCTOR_REVERTING_TAGS,
+            DoctorJobKind::TagEditor => strings::TAG_EDITOR_SAVING,
         }),
         detail: strings::doctor_track_progress(completed, total),
         percent: (fraction * 100.0).round() as u32,
+    }
+}
+
+fn slot_job_kind(kind: TagWriteJobKind) -> DoctorJobKind {
+    match kind {
+        TagWriteJobKind::TagEditor => DoctorJobKind::TagEditor,
+        TagWriteJobKind::DoctorApply => DoctorJobKind::Apply,
+        TagWriteJobKind::DoctorRevert => DoctorJobKind::Revert,
     }
 }
 
@@ -210,14 +220,20 @@ impl DoctorProgressCard {
 
     pub(super) fn show(&self, kind: DoctorJobKind, completed: usize, total: usize) {
         let presentation = progress_presentation(kind, completed, total);
-        self.show_presentation(&presentation);
+        self.show_presentation(&presentation, true);
+    }
+
+    pub(super) fn show_slot(&self, owner: &TagWriteSlotOwner, cancellable: bool) {
+        let kind = slot_job_kind(owner.kind);
+        let presentation = progress_presentation(kind, owner.completed_tracks, owner.total_tracks);
+        self.show_presentation(&presentation, cancellable);
     }
 
     pub(super) fn show_scan(&self, phase: DoctorScanPhase, completed: usize, total: usize) {
-        self.show_presentation(&scan_progress_presentation(phase, completed, total));
+        self.show_presentation(&scan_progress_presentation(phase, completed, total), true);
     }
 
-    fn show_presentation(&self, presentation: &ProgressPresentation) {
+    fn show_presentation(&self, presentation: &ProgressPresentation, cancellable: bool) {
         self.title.set_label(&presentation.title);
         self.detail.set_label(&presentation.detail);
         self.percent
@@ -229,7 +245,7 @@ impl DoctorProgressCard {
             gtk4::accessible::Property::Description(&presentation.detail),
         ]);
         self.spinner.set_spinning(true);
-        self.cancel.set_visible(true);
+        self.cancel.set_visible(cancellable);
         self.revealer.set_reveal_child(true);
     }
 
@@ -253,10 +269,10 @@ mod tests {
     use gtk4::prelude::*;
 
     use super::{
-        card_body_activates, progress_presentation, scan_progress_presentation, DoctorJobKind,
-        DoctorProgressCard,
+        card_body_activates, progress_presentation, scan_progress_presentation, slot_job_kind,
+        DoctorJobKind, DoctorProgressCard,
     };
-    use reprise_core::library_doctor::DoctorScanPhase;
+    use reprise_core::library_doctor::{DoctorScanPhase, TagWriteJobKind};
 
     /// NPP-1: the sidebar is 240px, and the card is a passenger in it.
     const SIDEBAR_WIDTH: i32 = 240;
@@ -335,6 +351,26 @@ mod tests {
         assert_eq!(revert.title, "Reverting tags…");
         assert_eq!(revert.detail, "3/4 tracks");
         assert_eq!(revert.percent, 75);
+    }
+
+    #[test]
+    fn tag_editor_slot_owner_gets_its_own_card_title() {
+        assert_eq!(
+            slot_job_kind(TagWriteJobKind::TagEditor),
+            DoctorJobKind::TagEditor
+        );
+        assert_eq!(
+            slot_job_kind(TagWriteJobKind::DoctorApply),
+            DoctorJobKind::Apply
+        );
+        assert_eq!(
+            slot_job_kind(TagWriteJobKind::DoctorRevert),
+            DoctorJobKind::Revert
+        );
+        let tag_editor = progress_presentation(DoctorJobKind::TagEditor, 18, 275);
+        assert_eq!(tag_editor.title, "Saving tags…");
+        assert_eq!(tag_editor.detail, "18/275 tracks");
+        assert_eq!(tag_editor.percent, 7);
     }
 
     #[test]

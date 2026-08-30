@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use rusqlite::Connection;
 
 use crate::db::Db;
+use crate::library::TagWriteLockAttempt;
 
 use super::tag_edit::{TagBatchReport, TrackEditPatch};
 use super::tag_edit_write_report::{apply_rating_only, push_failure};
@@ -29,8 +30,8 @@ use super::tag_mutation::{
     prepare_tag_mutation, validate_registered_track, PreparedTagMutation, WriteErrorKind,
 };
 use super::tag_write_job::{
-    begin_tag_write_file, complete_tag_write_file, finish_tag_write_job, prepare_tag_write_job,
-    validate_tag_write_file, TagWriteJobSpec,
+    begin_tag_write_file, complete_tag_write_file, finish_tag_write_job,
+    prepare_tag_write_job_with_lock, validate_tag_write_file, TagWriteJobSpec,
 };
 
 /// One track's write request: the effective patch to apply plus enough
@@ -45,18 +46,32 @@ pub struct TrackWrite {
 /// Applies each of `writes` in order, reporting `(processed, total)` via
 /// `progress` after every one — success, no-op skip, or failure alike, so a
 /// caller streaming "Saving… x/N" always reaches `total` at the end.
+pub fn apply_track_writes_with_lock(
+    db: &Db,
+    writes: &[TrackWrite],
+    lock_attempt: TagWriteLockAttempt,
+    progress: &mut dyn FnMut(usize, usize),
+) -> TagBatchReport {
+    let conn = db.conn();
+    apply_track_writes_inner_with_lock(conn, writes, lock_attempt, progress, &mut |_, _, _| {})
+}
+
+#[cfg(not(test))]
+pub use apply_track_writes_with_lock as apply_track_writes;
+
+#[cfg(test)]
 pub fn apply_track_writes(
     db: &Db,
     writes: &[TrackWrite],
     progress: &mut dyn FnMut(usize, usize),
 ) -> TagBatchReport {
-    let conn = db.conn();
-    apply_track_writes_inner(conn, writes, progress, &mut |_, _, _| {})
+    apply_track_writes_with_lock(db, writes, TagWriteLockAttempt::Unenforceable, progress)
 }
 
-pub(super) fn apply_track_writes_inner(
+pub(super) fn apply_track_writes_inner_with_lock(
     conn: &Connection,
     writes: &[TrackWrite],
+    lock_attempt: TagWriteLockAttempt,
     progress: &mut dyn FnMut(usize, usize),
     before_save: &mut dyn FnMut(&Connection, i64, i64),
 ) -> TagBatchReport {
@@ -95,7 +110,12 @@ pub(super) fn apply_track_writes_inner(
     let job = if prepared.is_empty() {
         None
     } else {
-        match prepare_tag_write_job(conn, TagWriteJobSpec::tag_editor(), &prepared) {
+        match prepare_tag_write_job_with_lock(
+            conn,
+            lock_attempt,
+            TagWriteJobSpec::tag_editor(),
+            &prepared,
+        ) {
             Ok(job) => Some(job),
             Err(error) => {
                 for (position, _) in &prepared {
@@ -209,4 +229,20 @@ pub(super) fn apply_track_writes_inner(
         }
     }
     report
+}
+
+#[cfg(test)]
+pub(super) fn apply_track_writes_inner(
+    conn: &Connection,
+    writes: &[TrackWrite],
+    progress: &mut dyn FnMut(usize, usize),
+    before_save: &mut dyn FnMut(&Connection, i64, i64),
+) -> TagBatchReport {
+    apply_track_writes_inner_with_lock(
+        conn,
+        writes,
+        TagWriteLockAttempt::Unenforceable,
+        progress,
+        before_save,
+    )
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use rusqlite::{params_from_iter, Connection, OptionalExtension};
 
-use super::write::{decoded, prepare_job, run_job, InputChange};
+use super::write::{decoded, prepare_job_with_lock, run_job, InputChange};
 use super::{
     DoctorCleanup, DoctorCleanupReport, DoctorError, DoctorField, DoctorReviewRowId,
     DoctorTrackRef, DoctorWriteControl, DoctorWriteProgress, LibraryDoctor,
@@ -155,8 +155,9 @@ impl LibraryDoctor<'_> {
         }))
     }
 
-    pub fn revert_last_cleanup(
+    pub fn revert_last_cleanup_with_lock(
         &mut self,
+        lock_attempt: crate::library::TagWriteLockAttempt,
         mut progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
     ) -> Result<Option<DoctorCleanupReport>, DoctorError> {
         let Some(cleanup) = self.last_cleanup()? else {
@@ -180,9 +181,11 @@ impl LibraryDoctor<'_> {
         let mut completed_tracks = 0;
         let mut cancelled = false;
         let mut reports = Vec::new();
+        let mut lock_attempt = lock_attempt;
         for (source_job_id, inputs, track_count) in jobs {
-            let (job_id, files) = match prepare_job(
+            let job = match prepare_job_with_lock(
                 self.conn,
+                lock_attempt,
                 "doctor_revert",
                 Some(source_job_id),
                 Some(cleanup.scan_id),
@@ -193,25 +196,20 @@ impl LibraryDoctor<'_> {
                     return Err(preserve_partial_cleanup(error, reports, cancelled));
                 }
             };
-            let report = match run_job(
-                self.conn,
-                job_id,
-                &files,
-                Some(source_job_id),
-                |job_progress| {
-                    let control = progress(DoctorWriteProgress {
-                        completed_tracks: completed_tracks + job_progress.completed_tracks,
-                        total_tracks,
-                    });
-                    cancelled |= control == DoctorWriteControl::Cancel;
-                    control
-                },
-            ) {
+            let report = match run_job(self.conn, &job, Some(source_job_id), |job_progress| {
+                let control = progress(DoctorWriteProgress {
+                    completed_tracks: completed_tracks + job_progress.completed_tracks,
+                    total_tracks,
+                });
+                cancelled |= control == DoctorWriteControl::Cancel;
+                control
+            }) {
                 Ok(report) => report,
                 Err(error) => {
                     return Err(preserve_partial_cleanup(error, reports, cancelled));
                 }
             };
+            lock_attempt = job.into_lock_attempt();
             reports.push(report);
             completed_tracks += track_count;
             if cancelled {
@@ -219,5 +217,25 @@ impl LibraryDoctor<'_> {
             }
         }
         Ok(Some(cleanup_report(reports, cancelled)))
+    }
+
+    #[cfg(not(test))]
+    pub fn revert_last_cleanup(
+        &mut self,
+        lock_attempt: crate::library::TagWriteLockAttempt,
+        progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
+    ) -> Result<Option<DoctorCleanupReport>, DoctorError> {
+        self.revert_last_cleanup_with_lock(lock_attempt, progress)
+    }
+
+    #[cfg(test)]
+    pub fn revert_last_cleanup(
+        &mut self,
+        progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
+    ) -> Result<Option<DoctorCleanupReport>, DoctorError> {
+        self.revert_last_cleanup_with_lock(
+            crate::library::TagWriteLockAttempt::Unenforceable,
+            progress,
+        )
     }
 }

@@ -175,6 +175,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         },
     );
     super::startup_report::mark("LibraryDoctorLauncher::new");
+    library_doctor.observe_tag_writes_from(track_list);
     {
         let library_doctor = Rc::downgrade(&library_doctor);
         stats_view.on_materialized(move |stats| {
