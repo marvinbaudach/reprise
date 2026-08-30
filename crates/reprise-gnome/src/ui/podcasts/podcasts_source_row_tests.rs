@@ -69,6 +69,7 @@ fn render_single_group(kind: PodcastKind) -> RenderedEpisode {
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
         false,
+        &Rc::new(crate::test_db::open().unwrap()),
         Connectivity::Online,
         None,
         &Rc::new(RefCell::new(PodcastSelection::default())),

@@ -178,7 +178,6 @@ class ComposeBehaviorTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
-                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
@@ -282,7 +281,6 @@ class ComposeBehaviorTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
-                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
@@ -376,7 +374,6 @@ class ComposeBehaviorTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
-                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
@@ -580,7 +577,6 @@ class ComposeBehaviorTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
-                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
@@ -637,7 +633,6 @@ class ComposeBehaviorTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
-                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
@@ -747,22 +742,22 @@ class ComposeBehaviorTest {
             uri = "content://provider/document/found.flac",
             title = "Loud Song Two",
         )
-        val slowAlbum = testAlbumNamed("Slow Album")
-        val loudAlbum = testAlbumNamed("Loud Album")
+        val slowArtist = LibraryArtist("Slow Artist", 1, 0, "content://slow")
+        val loudArtist = LibraryArtist("Loud Artist", 1, 0, "content://loud")
         var songs by mutableStateOf(listOf(slowSong, loudSong))
 
         fun matching(text: String) = songs
             .filter { text.isBlank() || it.title.contains(text, ignoreCase = true) }
             .let { LibraryWindow(total = it.size.toLong(), rows = it, hasMore = false) }
 
-        fun matchingAlbums(text: String) = listOf(slowAlbum, loudAlbum)
-            .filter { text.isBlank() || it.title.contains(text, ignoreCase = true) }
+        fun matchingArtists(text: String) = listOf(slowArtist, loudArtist)
+            .filter { text.isBlank() || it.name.contains(text, ignoreCase = true) }
             .let { LibraryWindow(total = it.size.toLong(), rows = it, hasMore = false) }
 
         var browse by mutableStateOf(
             LibraryScreenState.Browse(
                 titles = matching(""),
-                artists = LibraryWindow.empty(),
+                artists = matchingArtists(""),
             ),
         )
         compose.setContent {
@@ -780,8 +775,8 @@ class ComposeBehaviorTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { text, _ -> matching(text) },
-                    searchAlbums = { text, _ -> matchingAlbums(text) },
-                    listArtists = { LibraryWindow.empty() },
+                    listArtists = { matchingArtists("") },
+                    searchArtists = { text, _ -> matchingArtists(text) },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
                     loadTrack = { _, deliver -> deliver(null) },
@@ -803,14 +798,14 @@ class ComposeBehaviorTest {
 
         compose.onNodeWithText("Artists").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Slow Album").assertIsDisplayed()
-        compose.onNodeWithText("Loud Album").assertDoesNotExist()
+        compose.onNodeWithText("Slow Artist").assertIsDisplayed()
+        compose.onNodeWithText("Loud Artist").assertDoesNotExist()
 
         // The scan lands while Artists search is on screen.
         songs = listOf(slowSong, loudSong, foundSong)
         browse = LibraryScreenState.Browse(
             titles = matching(""),
-            artists = LibraryWindow.empty(),
+            artists = matchingArtists(""),
         )
         compose.waitForIdle()
 

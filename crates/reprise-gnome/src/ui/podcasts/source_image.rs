@@ -35,8 +35,14 @@ mod source_artwork_measurement;
 #[path = "source_artwork_queue.rs"]
 mod source_artwork_queue;
 pub(super) use source_artwork_measurement::record_render_pass;
+#[cfg(test)]
+#[path = "source_image_load_policy_tests.rs"]
+mod load_policy_tests;
 #[path = "source_image_fallback.rs"]
 mod source_image_fallback;
+#[path = "source_image_policy.rs"]
+mod source_image_policy;
+pub(crate) use source_image_policy::{ArtworkLoadPolicy, ArtworkNetworkPolicy};
 #[path = "source_image_texture.rs"]
 mod source_image_texture;
 
@@ -210,7 +216,7 @@ impl SourceImage {
         images_allowed: bool,
         cache_scope: CacheScope,
     ) -> SourceImage {
-        Self::new_with_dimensions(
+        Self::new_with_dimensions_when(
             ArtworkRequest::new(
                 image_url,
                 None,
@@ -220,6 +226,7 @@ impl SourceImage {
                 StartupTiming::Immediate,
             ),
             fallback_icon,
+            ArtworkLoadPolicy::Load,
         )
     }
 
@@ -247,17 +254,10 @@ impl SourceImage {
         image
     }
 
-    pub(crate) fn new_with_dimensions(
-        request: ArtworkRequest<'_>,
-        fallback_icon: &str,
-    ) -> SourceImage {
-        Self::new_with_dimensions_when(request, fallback_icon, true)
-    }
-
     pub(crate) fn new_with_dimensions_when(
         request: ArtworkRequest<'_>,
         fallback_icon: &str,
-        should_load: bool,
+        load_policy: ArtworkLoadPolicy,
     ) -> SourceImage {
         let (width, height) = request.dimensions;
         let image = Self::build(
@@ -265,7 +265,7 @@ impl SourceImage {
             width,
             height,
         );
-        if should_load {
+        if matches!(load_policy, ArtworkLoadPolicy::Load) {
             image.set_urls(request, |_| {});
         }
         image

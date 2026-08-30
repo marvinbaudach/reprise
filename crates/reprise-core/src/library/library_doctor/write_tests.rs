@@ -702,8 +702,9 @@ fn doctor_apply_crash_finalization_is_db_only_and_preserves_revert_reachability(
     let before_finalize = std::fs::read(&path).unwrap();
 
     let reopened = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    let lock_attempt = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
     let reports = LibraryDoctor::new(&reopened)
-        .finalize_incomplete_writes()
+        .finalize_incomplete_writes(lock_attempt)
         .unwrap();
 
     assert_eq!(std::fs::read(&path).unwrap(), before_finalize);
@@ -748,8 +749,9 @@ fn doctor_revert_crash_finalization_consumes_source_without_rewriting_file() {
     let before_finalize = std::fs::read(&path).unwrap();
 
     let reopened = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    let lock_attempt = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
     let reports = LibraryDoctor::new(&reopened)
-        .finalize_incomplete_writes()
+        .finalize_incomplete_writes(lock_attempt)
         .unwrap();
 
     assert_eq!(std::fs::read(&path).unwrap(), before_finalize);

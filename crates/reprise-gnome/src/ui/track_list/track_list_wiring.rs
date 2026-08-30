@@ -86,8 +86,8 @@ impl TrackList {
         *self.shared.on_tags_mutated.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn tag_write_gate(&self) -> crate::ui::tag_write_gate::TagWriteGate {
-        self.shared.tag_write_gate.clone()
+    pub fn set_on_tag_write_started(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_tag_write_started.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the callback invoked after the ImportErrors panel's own

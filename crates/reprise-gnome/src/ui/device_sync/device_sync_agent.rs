@@ -140,7 +140,7 @@ fn agent_state(state: DeviceSyncState) -> AgentDeviceSyncState {
 }
 
 fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
-    let (phase, bytes_done, bytes_total, current_track) = agent_phase(device.sync_phase);
+    let (phase, current_track) = agent_phase(device.sync_phase.clone());
     let page = device.page;
     AgentDeviceSyncDevice {
         name: device.name,
@@ -191,9 +191,16 @@ fn agent_device(device: DeviceView) -> AgentDeviceSyncDevice {
             can_eject: page.controls.can_eject,
         },
         phase,
-        bytes_done,
-        bytes_total,
+        bytes_done: device.bytes_done,
+        bytes_total: device.bytes_total,
         bytes_per_second: device.bytes_per_second,
+        units_done: device.units_done,
+        units_total: device.units_total,
+        estimated_remaining_seconds: device.estimated_remaining.map(|remaining| {
+            remaining
+                .as_secs()
+                .saturating_add(u64::from(remaining.subsec_nanos() > 0))
+        }),
         current_track,
         target: AgentDeviceSyncTarget {
             target_path: device.content_row.target_path,
@@ -268,28 +275,24 @@ fn agent_warnings(warnings: Vec<SyncPageWarning>) -> Vec<AgentDeviceSyncWarning>
     projected
 }
 
-fn agent_phase(phase: PlannedSyncPhase) -> (AgentDeviceSyncPhase, u64, u64, String) {
+fn agent_phase(phase: PlannedSyncPhase) -> (AgentDeviceSyncPhase, String) {
     match phase {
-        PlannedSyncPhase::Idle => (AgentDeviceSyncPhase::Idle, 0, 0, String::new()),
-        PlannedSyncPhase::ComputingDelta => {
-            (AgentDeviceSyncPhase::ComputingDelta, 0, 0, String::new())
-        }
-        PlannedSyncPhase::Finishing => (AgentDeviceSyncPhase::Finishing, 0, 0, String::new()),
+        PlannedSyncPhase::Idle => (AgentDeviceSyncPhase::Idle, String::new()),
+        PlannedSyncPhase::ComputingDelta => (AgentDeviceSyncPhase::ComputingDelta, String::new()),
+        PlannedSyncPhase::Finishing => (AgentDeviceSyncPhase::Finishing, String::new()),
         PlannedSyncPhase::Syncing {
             step,
             current_track,
-            bytes_done,
-            bytes_total,
             ..
         } => (
             match step {
                 SyncStep::Removing => AgentDeviceSyncPhase::Removing,
                 SyncStep::Transcoding => AgentDeviceSyncPhase::Transcoding,
                 SyncStep::Copying => AgentDeviceSyncPhase::Copying,
+                SyncStep::WritingAnalysis => AgentDeviceSyncPhase::WritingAnalysis,
                 SyncStep::WritingPlaylists => AgentDeviceSyncPhase::WritingPlaylists,
+                SyncStep::WritingTrackMetadata => AgentDeviceSyncPhase::WritingTrackMetadata,
             },
-            bytes_done,
-            bytes_total,
             current_track,
         ),
     }

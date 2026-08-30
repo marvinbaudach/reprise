@@ -28,6 +28,8 @@ pub(super) struct PlaylistCard {
     root: libadwaita::Bin,
     pub(super) list: gtk4::ListBox,
     summary: gtk4::Label,
+    pub(super) locked_reason: gtk4::Label,
+    pub(super) choose: gtk4::Button,
     pub(super) rows: RefCell<Vec<PlaylistRowWidgets>>,
     updating: Rc<Cell<bool>>,
     actions: PlaylistCardActions,
@@ -54,6 +56,13 @@ impl PlaylistCard {
         header.append(&summary);
         header.append(&choose);
 
+        let locked_reason = label(
+            &device_sync_strings::playlist_selection_locked_reason(),
+            "dim-label",
+        );
+        locked_reason.set_wrap(true);
+        locked_reason.set_visible(false);
+
         let list = gtk4::ListBox::new();
         list.set_show_separators(true);
         list.set_selection_mode(gtk4::SelectionMode::None);
@@ -63,6 +72,7 @@ impl PlaylistCard {
         content.set_margin_start(18);
         content.set_margin_end(18);
         content.append(&header);
+        content.append(&locked_reason);
         content.append(&list);
         let root = libadwaita::Bin::builder().child(&content).build();
         root.add_css_class("card");
@@ -72,6 +82,8 @@ impl PlaylistCard {
             root,
             list,
             summary,
+            locked_reason,
+            choose,
             rows: RefCell::new(Vec::new()),
             updating: Rc::new(Cell::new(false)),
             actions,
@@ -84,6 +96,11 @@ impl PlaylistCard {
 
     pub(super) fn update(&self, device: &DeviceView) {
         self.updating.set(true);
+        let editable = device.page.controls.editable;
+        let locked_reason = (!editable).then(device_sync_strings::playlist_selection_locked_reason);
+        self.locked_reason.set_visible(!editable);
+        self.choose.set_sensitive(editable);
+        self.choose.set_tooltip_text(locked_reason.as_deref());
         let sources = device
             .page
             .playlists
@@ -176,7 +193,8 @@ impl PlaylistCard {
                 .set_label(if playlist.selected { "☑" } else { "☐" });
             row.button
                 .update_property(&[gtk4::accessible::Property::Label(name)]);
-            row.button.set_sensitive(device.page.controls.editable);
+            row.button.set_sensitive(editable);
+            row.button.set_tooltip_text(locked_reason.as_deref());
         }
         self.summary.set_label(&format!(
             "{} · {} on device",

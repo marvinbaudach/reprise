@@ -337,7 +337,6 @@ class ArtistPhotoProgressBarTest {
                     chooseFolder = {},
                     rescan = {},
                     searchTitles = { _, _ -> LibraryWindow.empty() },
-                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { LibraryWindow.empty() },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },

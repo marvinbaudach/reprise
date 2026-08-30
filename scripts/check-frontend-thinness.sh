@@ -39,7 +39,11 @@ shared_view=crates/reprise-view/src
 # The artist portrait leading the concert row (#600) added an eighth entry:
 # ConcertColumn::Cover, its name arm, its leading pin and the two layout
 # contracts that hold the default order — six production lines.
-view_floor=2128
+# The sync bar counting work units instead of bytes gave the progress copy the
+# unit fields it needs — done, total and the running unit's bytes replacing the
+# run-wide byte pair, plus the units and estimated remaining time the agent
+# surface reads: nine production lines.
+view_floor=2137
 
 echo "== Frontend thinness =="
 

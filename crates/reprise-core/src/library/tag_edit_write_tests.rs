@@ -604,3 +604,58 @@ fn adapter_commits_and_claims_journal_before_first_save() {
     assert_eq!(report.updated_ids, vec![id]);
     assert_eq!(read_editable_tags(&path).unwrap().title, "After hook");
 }
+
+#[test]
+fn tag_write_lock_brackets_the_journal_from_prepare_through_finalization() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture_copy(dir.path(), "locked-job.flac");
+    seed_full_tag(&path);
+    let database = dir.path().join("reprise.db");
+    let db = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    crate::library::scanner::scan_folder(&db, &path).unwrap();
+    let id = db
+        .conn()
+        .query_row(
+            "SELECT id FROM tracks WHERE path=?1",
+            [path.to_string_lossy().as_ref()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let attempt = crate::library::TagWriteLock::acquire(dir.path()).unwrap();
+    let mut observed_live = false;
+
+    let report = apply_track_writes_with_lock(
+        &db,
+        &[TrackWrite {
+            id,
+            path,
+            patch: TrackEditPatch {
+                tags: TagPatch {
+                    title: Some("Held through completion".into()),
+                    ..TagPatch::default()
+                },
+                rating: None,
+            },
+        }],
+        attempt,
+        &mut |_, _| {
+            observed_live = true;
+            assert_eq!(
+                crate::library::TagWriteLock::probe(dir.path()),
+                crate::library::TagWriteLiveness::Live
+            );
+        },
+    );
+
+    assert!(report.failures.is_empty());
+    assert!(observed_live);
+    assert_eq!(
+        crate::library::TagWriteLock::probe(dir.path()),
+        crate::library::TagWriteLiveness::Absent
+    );
+    let state: String = db
+        .conn()
+        .query_row("SELECT state FROM tag_write_jobs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(state, "completed");
+}

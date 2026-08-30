@@ -40,6 +40,7 @@ use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
 use crate::ui::tag_edit::tag_reload_anchor::{post_save_reload_anchor, OpenedReloadState};
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
+use crate::ui::tag_edit::tag_write_admission;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
@@ -302,13 +303,18 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
             .map(tag_editor::BrowseSnapshot::ids)
             .unwrap_or_default(),
     };
+    let on_write_started = shared
+        .on_tag_write_started
+        .borrow()
+        .clone()
+        .unwrap_or_else(|| Rc::new(|| {}));
     tag_editor::present(
         &window,
         &conn,
         tracks,
         bitrates,
         browse,
-        shared.tag_write_gate.clone(),
+        on_write_started,
         move |writes, report| {
             finish_apply(
                 &shared_for_saved,
@@ -346,13 +352,18 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         tags: seed.tags,
         rating: seed.rating,
     };
+    let on_write_started = shared
+        .on_tag_write_started
+        .borrow()
+        .clone()
+        .unwrap_or_else(|| Rc::new(|| {}));
     tag_editor::present(
         &window,
         &conn,
         vec![session_track],
         &[seed.bitrate_kbps],
         None,
-        shared.tag_write_gate.clone(),
+        on_write_started,
         move |writes, report| {
             finish_apply(
                 &shared_for_saved,
@@ -389,7 +400,7 @@ pub(in crate::ui) fn spawn_save(
     conn: &Rc<Db>,
     widgets: SaveProgressWidgets,
     writes: Vec<TrackWrite>,
-    tag_write_gate: &crate::ui::tag_write_gate::TagWriteGate,
+    on_write_started: &Rc<dyn Fn()>,
     on_finished: impl Fn(Vec<TrackWrite>, TagBatchReport) + 'static,
 ) {
     let SaveProgressWidgets {
@@ -400,11 +411,6 @@ pub(in crate::ui) fn spawn_save(
         error_label,
     } = widgets;
 
-    let Some(tag_write_lease) = tag_write_gate.try_acquire() else {
-        error_label.set_label(&strings::text(strings::TAG_WRITE_BUSY));
-        error_label.set_visible(true);
-        return;
-    };
     let total = writes.len();
     save_button.set_sensitive(false);
     cancel_button.set_sensitive(false);
@@ -421,15 +427,32 @@ pub(in crate::ui) fn spawn_save(
         error_label.set_visible(true);
         return;
     };
-
+    let lock_attempt = match tag_write_admission::acquire(&db_path) {
+        Ok(attempt) => attempt,
+        Err(failure) => {
+            tracing::warn!(detail = %failure.detail, "tag-edit save could not acquire write slot");
+            save_button.set_sensitive(true);
+            cancel_button.set_sensitive(true);
+            content.set_sensitive(true);
+            error_label.set_label(&failure.user_message());
+            error_label.set_visible(true);
+            return;
+        }
+    };
     let writes_for_result = writes.clone();
     let spawned = one_shot_task::spawn_with_progress("reprise-tag-save", move |publish| {
-        let _tag_write_lease = tag_write_lease;
-        reprise_core::db::Db::open_migrated(Some(&db_path)).map(|worker_conn| {
-            apply_track_writes(&worker_conn, &writes, &mut |done, done_total| {
-                publish((done, done_total));
+        reprise_core::db::Db::open_migrated(Some(&db_path))
+            .map_err(|error| error.to_string())
+            .map(|worker_conn| {
+                apply_track_writes(
+                    &worker_conn,
+                    &writes,
+                    lock_attempt,
+                    &mut |done, done_total| {
+                        publish((done, done_total));
+                    },
+                )
             })
-        })
     });
     let (progress_rx, result_rx) = match spawned {
         Ok(channels) => channels,
@@ -443,6 +466,7 @@ pub(in crate::ui) fn spawn_save(
             return;
         }
     };
+    on_write_started();
 
     let progress_button = save_button.clone();
     glib::spawn_future_local(async move {
@@ -662,8 +686,16 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
             anchor: capture_reload_anchor(&shared),
             view_ids: shared.current_view_ids(),
         };
-        let report = reprise_core::db::Db::open_migrated(Some(&db_path))
-            .map(|worker_conn| apply_track_writes(&worker_conn, &writes, &mut |_, _| {}));
+        let report = tag_write_admission::acquire(&db_path).and_then(|lock_attempt| {
+            reprise_core::db::Db::open_migrated(Some(&db_path))
+                .map_err(|error| tag_write_admission::TagWriteAdmissionFailure {
+                    busy: false,
+                    detail: error.to_string(),
+                })
+                .map(|worker_conn| {
+                    apply_track_writes(&worker_conn, &writes, lock_attempt, &mut |_, _| {})
+                })
+        });
         match report {
             Ok(report) => {
                 finish_apply(
@@ -674,7 +706,9 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
                     Some(opened_reload),
                 );
             }
-            Err(error) => tracing::warn!(%error, "tag-edit smoke: could not open database"),
+            Err(failure) => {
+                tracing::warn!(detail = %failure.detail, "tag-edit smoke: write did not start");
+            }
         }
     });
 }

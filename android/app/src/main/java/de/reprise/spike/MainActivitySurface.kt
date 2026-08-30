@@ -20,7 +20,6 @@ internal data class MainActivitySurfaceDependencies(
     val chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     val rescan: ((LibraryScreenState) -> Unit) -> Unit,
     val searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    val searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     val listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     val searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     val openAlbum: (LibraryAlbum) -> AlbumTrackList,

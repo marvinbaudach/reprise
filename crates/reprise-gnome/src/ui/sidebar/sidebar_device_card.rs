@@ -332,24 +332,32 @@ impl DeviceCard {
                 done,
                 total,
                 current_track,
-                bytes_done,
-                bytes_total,
+                unit_bytes_done,
+                unit_bytes_total,
                 ..
             } => {
                 self.suffix_stack.set_visible_child_name("progress");
                 self.percent.set_text(&device_sync_strings::sync_percent(
-                    *bytes_done,
-                    *bytes_total,
+                    *done,
+                    *total,
+                    *unit_bytes_done,
+                    *unit_bytes_total,
                 ));
                 self.progress_revealer.set_visible(true);
                 self.progress_revealer.set_reveal_child(true);
-                self.animate_progress(sync_fraction(*bytes_done, *bytes_total));
+                self.animate_progress(sync_fraction(
+                    *done,
+                    *total,
+                    *unit_bytes_done,
+                    *unit_bytes_total,
+                ));
                 self.surface
                     .set_tooltip_text(Some(&device_sync_strings::sync_tooltip(
                         *done,
                         *total,
-                        *bytes_done,
-                        *bytes_total,
+                        device.bytes_done,
+                        device.bytes_total,
+                        device.estimated_remaining,
                         current_track,
                     )));
             }
@@ -463,11 +471,16 @@ fn idle_tooltip(device: &DeviceView) -> Option<String> {
         .then(|| sidebar_device_card_text::tooltip_text(&balance))
 }
 
-fn sync_fraction(bytes_done: u64, bytes_total: u64) -> f64 {
-    if bytes_total == 0 {
+fn sync_fraction(done: u32, total: u32, unit_bytes_done: u64, unit_bytes_total: u64) -> f64 {
+    if total == 0 {
         0.0
     } else {
-        (bytes_done as f64 / bytes_total as f64).clamp(0.0, 1.0)
+        let unit_fraction = if unit_bytes_total == 0 {
+            0.0
+        } else {
+            unit_bytes_done as f64 / unit_bytes_total as f64
+        };
+        ((f64::from(done) + unit_fraction) / f64::from(total)).clamp(0.0, 1.0)
     }
 }
 
@@ -495,6 +508,10 @@ pub(super) mod tests {
     use super::*;
 
     pub(in crate::ui::sidebar) fn view(phase: PlannedSyncPhase) -> DeviceView {
+        let (units_done, units_total) = match &phase {
+            PlannedSyncPhase::Syncing { done, total, .. } => (*done, *total),
+            _ => (0, 0),
+        };
         DeviceView {
             id: "pixel".into(),
             name: "Pixel 8".into(),
@@ -521,7 +538,12 @@ pub(super) mod tests {
             verified_managed_track_count: None,
             size_on_device_bytes: None,
             managed_track_count: 0,
+            bytes_done: 0,
+            bytes_total: 0,
             bytes_per_second: 0,
+            units_done,
+            units_total,
+            estimated_remaining: None,
             contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
             content_row: crate::ui::device_sync_runtime::empty_content_row(),
             target_reading: crate::ui::device_sync_runtime::empty_target_reading(),

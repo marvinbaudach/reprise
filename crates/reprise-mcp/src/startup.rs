@@ -50,8 +50,23 @@ pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
         }
         Err(other) => return Err(StartupError::Open(other)),
     };
-    reprise_core::library::tag_write_job::recover_incomplete_tag_write_jobs(&db)
-        .map_err(StartupError::Query)?;
+    match db_path.parent() {
+        Some(db_dir) => match reprise_core::library::TagWriteLock::acquire(db_dir) {
+            Ok(lock_attempt) => {
+                if let Err(error) = reprise_core::library_doctor::LibraryDoctor::new(&db)
+                    .finalize_incomplete_writes(lock_attempt)
+                {
+                    tracing::warn!(%error, "could not recover interrupted tag writes at startup");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not acquire the tag-write recovery lock at startup");
+            }
+        },
+        None => tracing::warn!(
+            "could not recover interrupted tag writes: database has no parent directory"
+        ),
+    }
     Ok(StartupCaps {
         playlist_create: capability::playlist_create_granted(&db).map_err(StartupError::Query)?,
         playlist_manage: capability::playlist_manage_granted(&db).map_err(StartupError::Query)?,

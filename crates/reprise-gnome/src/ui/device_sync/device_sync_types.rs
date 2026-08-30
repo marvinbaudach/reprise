@@ -161,7 +161,12 @@ pub struct DeviceView {
     /// remembered device this is history, not a live storage reading.
     pub size_on_device_bytes: Option<u64>,
     pub managed_track_count: usize,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
     pub bytes_per_second: u64,
+    pub units_done: u32,
+    pub units_total: u32,
+    pub estimated_remaining: Option<std::time::Duration>,
     pub page: SyncPageState,
     /// `MTP-26` (design 7a): whether this device's on-device contents have
     /// ever been successfully inspected this session.

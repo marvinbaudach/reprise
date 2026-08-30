@@ -50,6 +50,6 @@ pub mod tag_write_job;
 mod tag_write_lock;
 #[cfg(test)]
 mod tag_write_lock_tests;
-pub use tag_write_lock::TagWriteBusy;
+pub use tag_write_lock::{TagWriteBusy, TagWriteLiveness, TagWriteLock, TagWriteLockAttempt};
 pub mod trash_tracks;
 pub mod watcher;

@@ -9,5 +9,9 @@ use super::device_sync_runtime::DeviceView;
 /// the dashboard remains readable. Plan E replaces this narrow body with the
 /// remembered-state projection without reopening the page controller.
 pub(super) fn apply(_dashboard: &DeviceDashboard, device: &DeviceView) -> bool {
-    device.connected || device.session_state == DeviceSessionState::Remembered
+    page_is_readable(device.connected, &device.session_state)
+}
+
+pub(super) fn page_is_readable(connected: bool, session_state: &DeviceSessionState) -> bool {
+    connected || *session_state == DeviceSessionState::Remembered
 }

@@ -43,6 +43,21 @@ class NowPlayingShimmerTest {
     }
 
     @Test
+    fun `the disc on a bare surface keeps the desktop alphas`() {
+        val scale = NowPlayingShimmerSpec.ON_BARE_SURFACE_SCALE
+        val rest = NowPlayingShimmerSpec.alpha(swell = 0f, opacity = 1f, scale = scale)
+        val peak = NowPlayingShimmerSpec.alpha(swell = 0.70f, opacity = 1f, scale = scale)
+
+        assertEquals(0.34f, rest, FLOAT_TOLERANCE)
+        assertEquals(0.64f, peak, FLOAT_TOLERANCE)
+        assertEquals(
+            rest,
+            NowPlayingShimmerSpec.alpha(0f, 1f, NowPlayingShimmerSpec.OVER_FOG_SCALE) * 3f,
+            FLOAT_TOLERANCE,
+        )
+    }
+
+    @Test
     fun shimmer_diameter_keeps_the_desktop_520_to_168_cover_ratio() {
         val coverDiameterDp = 272f
         val shimmerDiameterDp = NowPlayingShimmerSpec.diameterDp(coverDiameterDp)

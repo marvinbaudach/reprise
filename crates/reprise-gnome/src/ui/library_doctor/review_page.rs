@@ -59,6 +59,7 @@ struct ReviewState {
     select_all: gtk4::CheckButton,
     select_all_handler: RefCell<Option<glib::SignalHandlerId>>,
     controls_locked: Cell<bool>,
+    write_slot_busy: Cell<bool>,
     full_refresh_only: bool,
     layout: Rc<Cell<ReviewLayout>>,
     column_groups: ReviewColumnGroups,
@@ -185,7 +186,11 @@ impl ReviewState {
         let query = self.query.borrow().clone();
         self.apply
             .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
-        self.apply.set_sensitive(summary.tag_change_count > 0);
+        self.apply.set_sensitive(apply_is_sensitive(
+            summary.tag_change_count,
+            self.controls_locked.get(),
+            self.write_slot_busy.get(),
+        ));
         self.change_summary.set_label(&review_footer_summary(
             summary,
             self.category.get(),
@@ -598,6 +603,7 @@ impl LibraryDoctorReviewPage {
             select_all: header.select_all.clone(),
             select_all_handler: RefCell::new(None),
             controls_locked: Cell::new(false),
+            write_slot_busy: Cell::new(false),
             full_refresh_only,
             layout,
             column_groups: header.groups.clone(),
@@ -739,8 +745,30 @@ impl LibraryDoctorReviewPage {
         }
     }
 
+    pub(super) fn set_write_slot_busy(&self, busy: bool) {
+        self.state.write_slot_busy.set(busy);
+        self.state
+            .refresh_action_summary(self.state.ready_count.get());
+    }
+
     pub(super) fn set_write_report(&self, report: &DoctorWriteReport) {
         self.state.apply_report(report);
+    }
+}
+
+fn apply_is_sensitive(change_count: usize, controls_locked: bool, write_slot_busy: bool) -> bool {
+    change_count > 0 && !controls_locked && !write_slot_busy
+}
+
+#[cfg(test)]
+mod slot_sensitivity_tests {
+    use super::apply_is_sensitive;
+
+    #[test]
+    fn a_free_write_slot_leaves_apply_sensitive() {
+        assert!(apply_is_sensitive(3, false, false));
+        assert!(!apply_is_sensitive(3, false, true));
+        assert!(!apply_is_sensitive(3, true, false));
     }
 }
 
