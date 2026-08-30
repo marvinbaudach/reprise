@@ -115,21 +115,17 @@ impl Default for DeviceMonitor {
     }
 }
 
-/// Enumerates MTP devices **volume-first**, the way GNOME apps are expected
-/// to: GVfs models a phone as a `GProxyVolume` ("Pixel 10 Pro XL", themed
-/// `[phone]` icon, `activation_root=mtp://…`) whose mount is a
-/// `GProxyShadowMount` attached to the volume, while the underlying
-/// `GDaemonMount` is a top-level mount named just "mtp" with a
-/// multimedia-player icon and the SHADOWED flag set. Enumerating raw mounts
-/// is therefore order-dependent: depending on when the proxy monitor
-/// registers, `monitor.mounts()` can contain both entries (the shadowed one
-/// used to win and label a Pixel "mtp"), or only the shadowed daemon mount
-/// (filtering it left zero devices). At startup, the volume-to-mount link and
-/// shadow flag can both arrive after the volume and mount themselves. Their
-/// matching root URIs are available immediately, so that stable relationship
-/// decides ownership. The volume remains the source of identity, name, and
-/// icon; unshadowed `mtp://` mounts with no matching volume root remain a
-/// fallback for exotic backends.
+/// Enumerates MTP devices **volume-first**, the way GNOME apps are expected to: GVfs models a
+/// phone as a `GProxyVolume` ("Pixel 10 Pro XL", themed `[phone]` icon,
+/// `activation_root=mtp://…`) whose mount is a `GProxyShadowMount` attached to the volume, while
+/// the underlying `GDaemonMount` is a top-level mount named just "mtp" with a multimedia-player
+/// icon and the SHADOWED flag set. Enumerating raw mounts is therefore order-dependent: depending
+/// on when the proxy monitor registers, `monitor.mounts()` can contain both entries (the shadowed
+/// one used to win and label a Pixel "mtp"), or only the shadowed daemon mount (filtering it left
+/// zero devices). At startup, the volume-to-mount link and shadow flag can both arrive after the
+/// volume and mount themselves. Their matching root URIs are available immediately, so that stable
+/// relationship decides ownership. The volume remains the source of identity, name, and icon;
+/// unshadowed `mtp://` mounts with no matching volume root remain a fallback for exotic backends.
 fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
     let mut volume_projections = Vec::new();
     let mut volume_descriptors = Vec::new();
@@ -437,8 +433,14 @@ impl DeviceStorage {
                     if info.file_type() == gio::FileType::Directory {
                         pending.push_back(child);
                     } else if info.name().to_string_lossy().ends_with(PARTIAL_SUFFIX) {
-                        child.delete_future(gio::glib::Priority::DEFAULT).await?;
-                        removed = removed.saturating_add(1);
+                        match child.delete_future(gio::glib::Priority::DEFAULT).await {
+                            Ok(()) => removed = removed.saturating_add(1),
+                            Err(error) => tracing::warn!(
+                                path = %child.uri(),
+                                error = %error,
+                                "device sync: could not delete partial file"
+                            ),
+                        }
                     }
                 }
             }

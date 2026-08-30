@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::fs;
 use std::future::Future;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::rc::Rc;
 
 use reprise_core::device_sync::{DeviceStorageAccess, StorageId, SyncTarget, DEFAULT_TARGET_PATH};
@@ -457,6 +458,46 @@ fn cleanup_partials_removes_only_orphaned_part_files_under_the_managed_root() {
         .join("Music/Reprise/Road/finished.opus")
         .exists());
     assert!(temp.path().join("Music/outside.part").exists());
+}
+
+#[test]
+fn cleanup_partials_continues_after_one_delete_fails() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        return;
+    }
+    let protected = temp.path().join("Music/Reprise/Protected");
+    let writable = temp.path().join("Music/Reprise/Writable");
+    fs::create_dir_all(&protected).unwrap();
+    fs::create_dir_all(&writable).unwrap();
+    let protected_partial = protected.join("left-behind.opus.part");
+    let writable_partial = writable.join("removed.opus.part");
+    fs::write(&protected_partial, b"partial").unwrap();
+    fs::write(&writable_partial, b"partial").unwrap();
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o500)).unwrap();
+
+    let result = run(storage.cleanup_partials_in(None, "/Music/Reprise"));
+
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(result.as_ref().ok(), Some(&1));
+    assert!(protected_partial.exists());
+    assert!(!writable_partial.exists());
+}
+
+#[test]
+fn cleanup_partials_still_fails_when_a_directory_cannot_be_enumerated() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        return;
+    }
+    let unreadable = temp.path().join("Music/Reprise/Unreadable");
+    fs::create_dir_all(&unreadable).unwrap();
+    fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let result = run(storage.cleanup_partials_in(None, "/Music/Reprise"));
+
+    fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err());
 }
 
 #[test]
