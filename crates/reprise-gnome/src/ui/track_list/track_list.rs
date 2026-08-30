@@ -347,7 +347,6 @@ pub(in crate::ui) struct Shared {
     /// Kept separate from `on_library_mutated`: editing tags must never purge
     /// otherwise valid tracks from the playback queue.
     pub(in crate::ui) on_tags_mutated: RefCell<Option<OnTagsMutated>>,
-    pub(in crate::ui) tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
     /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
     /// mutate `import_errors` — injected via `TrackList::set_on_import_
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the

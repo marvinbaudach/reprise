@@ -308,7 +308,6 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
         tracks,
         bitrates,
         browse,
-        shared.tag_write_gate.clone(),
         move |writes, report| {
             finish_apply(
                 &shared_for_saved,
@@ -352,7 +351,6 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         vec![session_track],
         &[seed.bitrate_kbps],
         None,
-        shared.tag_write_gate.clone(),
         move |writes, report| {
             finish_apply(
                 &shared_for_saved,
@@ -389,7 +387,6 @@ pub(in crate::ui) fn spawn_save(
     conn: &Rc<Db>,
     widgets: SaveProgressWidgets,
     writes: Vec<TrackWrite>,
-    tag_write_gate: &crate::ui::tag_write_gate::TagWriteGate,
     on_finished: impl Fn(Vec<TrackWrite>, TagBatchReport) + 'static,
 ) {
     let SaveProgressWidgets {
@@ -400,11 +397,6 @@ pub(in crate::ui) fn spawn_save(
         error_label,
     } = widgets;
 
-    let Some(tag_write_lease) = tag_write_gate.try_acquire() else {
-        error_label.set_label(&strings::text(strings::TAG_WRITE_BUSY));
-        error_label.set_visible(true);
-        return;
-    };
     let total = writes.len();
     save_button.set_sensitive(false);
     cancel_button.set_sensitive(false);
@@ -424,7 +416,6 @@ pub(in crate::ui) fn spawn_save(
 
     let writes_for_result = writes.clone();
     let spawned = one_shot_task::spawn_with_progress("reprise-tag-save", move |publish| {
-        let _tag_write_lease = tag_write_lease;
         let db_dir = db_path
             .parent()
             .ok_or_else(|| "database path has no parent directory".to_owned())?;

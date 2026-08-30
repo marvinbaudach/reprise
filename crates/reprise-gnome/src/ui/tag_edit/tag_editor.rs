@@ -82,7 +82,6 @@ pub(in crate::ui) fn present(
     tracks: Vec<SessionTrack>,
     bitrates: &[Option<u32>],
     browse: Option<BrowseSnapshot>,
-    tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
     on_saved: impl Fn(Vec<TrackWrite>, TagBatchReport) + Clone + 'static,
 ) {
     let Some(mode) = EditorMode::new(tracks.len()) else {
@@ -190,7 +189,6 @@ pub(in crate::ui) fn present(
                 &conn_for_save,
                 save_progress_widgets.clone(),
                 batch,
-                &tag_write_gate,
                 on_saved.clone(),
             );
         },

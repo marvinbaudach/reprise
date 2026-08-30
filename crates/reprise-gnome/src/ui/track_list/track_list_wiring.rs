@@ -86,10 +86,6 @@ impl TrackList {
         *self.shared.on_tags_mutated.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn tag_write_gate(&self) -> crate::ui::tag_write_gate::TagWriteGate {
-        self.shared.tag_write_gate.clone()
-    }
-
     /// Injects the callback invoked after the ImportErrors panel's own
     /// Retry/Dismiss actions mutate `import_errors` (Stage 3 Task 8) — see
     /// the `Shared::on_import_errors_mutated` doc comment. `window.rs` wires

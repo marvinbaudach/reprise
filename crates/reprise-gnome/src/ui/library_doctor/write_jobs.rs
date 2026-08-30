@@ -26,13 +26,6 @@ impl LibraryDoctorCoordinator {
         if plan.track_count() == 0 || self.running.get() || self.scan_controls.is_scanning() {
             return;
         }
-        let Some(tag_write_lease) = self.tag_write_gate.try_acquire() else {
-            crate::ui::toasts::show(
-                &self.toast_overlay,
-                &crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY),
-            );
-            return;
-        };
         let total = plan.track_count();
         let cancellation = Arc::new(AtomicBool::new(false));
         self.cancellation.borrow_mut().replace(cancellation.clone());
@@ -48,10 +41,7 @@ impl LibraryDoctorCoordinator {
         let db_path = self.db_path.clone();
         let spawned = crate::ui::one_shot_task::spawn_with_progress(
             "reprise-library-doctor-apply",
-            move |publish| {
-                let _tag_write_lease = tag_write_lease;
-                run_apply(&db_path, &plan, &cancellation, publish)
-            },
+            move |publish| run_apply(&db_path, &plan, &cancellation, publish),
         );
         let (progress, result) = match spawned {
             Ok(channels) => channels,
@@ -79,13 +69,6 @@ impl LibraryDoctorCoordinator {
         let Some(total) = total else {
             return;
         };
-        let Some(tag_write_lease) = self.tag_write_gate.try_acquire() else {
-            crate::ui::toasts::show(
-                &self.toast_overlay,
-                &crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY),
-            );
-            return;
-        };
         let cancellation = Arc::new(AtomicBool::new(false));
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
@@ -102,7 +85,6 @@ impl LibraryDoctorCoordinator {
         let spawned = crate::ui::one_shot_task::spawn_with_progress(
             "reprise-library-doctor-revert",
             move |publish| {
-                let _tag_write_lease = tag_write_lease;
                 run_revert(&db_path, &cancellation, publish)
                     .map(|report| report.map(combined_cleanup_report))
             },

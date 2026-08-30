@@ -25,12 +25,6 @@ impl LibraryDoctorCoordinator {
             self.sidebar.refresh("Library Doctor scan completed");
             return;
         }
-        let Some(tag_write_lease) = self.tag_write_gate.try_acquire() else {
-            self.abandon_auto_apply(&crate::ui::strings::text(
-                crate::ui::strings::TAG_WRITE_BUSY,
-            ));
-            return;
-        };
         let cancellation = Arc::new(AtomicBool::new(false));
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
@@ -41,10 +35,7 @@ impl LibraryDoctorCoordinator {
         let db_path = self.db_path.clone();
         let spawned = super::super::one_shot_task::spawn_with_progress(
             "reprise-library-doctor-auto-apply",
-            move |publish| {
-                let _tag_write_lease = tag_write_lease;
-                run_auto_apply(&db_path, &scan, &cancellation, publish)
-            },
+            move |publish| run_auto_apply(&db_path, &scan, &cancellation, publish),
         );
         let (progress, result) = match spawned {
             Ok(channels) => channels,
