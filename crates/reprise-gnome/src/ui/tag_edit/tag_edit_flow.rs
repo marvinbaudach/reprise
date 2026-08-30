@@ -40,6 +40,7 @@ use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
 use crate::ui::tag_edit::tag_reload_anchor::{post_save_reload_anchor, OpenedReloadState};
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
+use crate::ui::tag_edit::tag_write_admission;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
@@ -426,14 +427,20 @@ pub(in crate::ui) fn spawn_save(
         error_label.set_visible(true);
         return;
     };
-
+    let lock_attempt = match tag_write_admission::acquire(&db_path) {
+        Ok(attempt) => attempt,
+        Err(failure) => {
+            tracing::warn!(detail = %failure.detail, "tag-edit save could not acquire write slot");
+            save_button.set_sensitive(true);
+            cancel_button.set_sensitive(true);
+            content.set_sensitive(true);
+            error_label.set_label(&failure.user_message());
+            error_label.set_visible(true);
+            return;
+        }
+    };
     let writes_for_result = writes.clone();
     let spawned = one_shot_task::spawn_with_progress("reprise-tag-save", move |publish| {
-        let db_dir = db_path
-            .parent()
-            .ok_or_else(|| "database path has no parent directory".to_owned())?;
-        let lock_attempt = reprise_core::library::TagWriteLock::acquire(db_dir)
-            .map_err(|error| error.to_string())?;
         reprise_core::db::Db::open_migrated(Some(&db_path))
             .map_err(|error| error.to_string())
             .map(|worker_conn| {
@@ -679,20 +686,16 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
             anchor: capture_reload_anchor(&shared),
             view_ids: shared.current_view_ids(),
         };
-        let report = db_path
-            .parent()
-            .ok_or_else(|| "database path has no parent directory".to_owned())
-            .and_then(|db_dir| {
-                reprise_core::library::TagWriteLock::acquire(db_dir)
-                    .map_err(|error| error.to_string())
-            })
-            .and_then(|lock_attempt| {
-                reprise_core::db::Db::open_migrated(Some(&db_path))
-                    .map_err(|error| error.to_string())
-                    .map(|worker_conn| {
-                        apply_track_writes(&worker_conn, &writes, lock_attempt, &mut |_, _| {})
-                    })
-            });
+        let report = tag_write_admission::acquire(&db_path).and_then(|lock_attempt| {
+            reprise_core::db::Db::open_migrated(Some(&db_path))
+                .map_err(|error| tag_write_admission::TagWriteAdmissionFailure {
+                    busy: false,
+                    detail: error.to_string(),
+                })
+                .map(|worker_conn| {
+                    apply_track_writes(&worker_conn, &writes, lock_attempt, &mut |_, _| {})
+                })
+        });
         match report {
             Ok(report) => {
                 finish_apply(
@@ -703,7 +706,9 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
                     Some(opened_reload),
                 );
             }
-            Err(error) => tracing::warn!(%error, "tag-edit smoke: could not open database"),
+            Err(failure) => {
+                tracing::warn!(detail = %failure.detail, "tag-edit smoke: write did not start");
+            }
         }
     });
 }
