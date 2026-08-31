@@ -4,7 +4,7 @@ pub(in crate::ui) enum SelectMode {
     // non-Shift selection directly while the capture seam only observes it.
     #[allow(dead_code)]
     Only,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // GTK handles non-Shift toggles before this resolver.
     Toggle,
     Range,
     RangeAdditive,

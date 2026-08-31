@@ -59,7 +59,7 @@ pub(in crate::ui) const MICRO_CSS_EASING: &str = "ease-out";
 // tests; no CSS rule consumes the standard/ambient curve yet.
 #[allow(dead_code)]
 pub(in crate::ui) const STANDARD_CSS_EASING: &str = "cubic-bezier(0.16, 1, 0.3, 1)";
-#[allow(dead_code)]
+#[allow(dead_code)] // Complete CSS token set; currently pinned by tests only.
 pub(in crate::ui) const AMBIENT_CSS_EASING: &str = STANDARD_CSS_EASING;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,7 +76,7 @@ pub(in crate::ui) const STANDARD: MotionToken = MotionToken {
     duration_ms: STANDARD_MS,
     easing: STANDARD_EASING,
 };
-#[allow(dead_code)]
+#[allow(dead_code)] // Complete motion token set; currently pinned by tests only.
 pub(in crate::ui) const AMBIENT: MotionToken = MotionToken {
     duration_ms: AMBIENT_MS,
     easing: AMBIENT_EASING,
