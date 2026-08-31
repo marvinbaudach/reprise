@@ -31,12 +31,10 @@ pub(super) fn row_link_presentation(row: &ConcertRow) -> RowLinkPresentation {
     }
 }
 
-pub(super) fn apply_row_link_presentation<W>(widget: &W, row: &ConcertRow)
+pub(super) fn apply_row_link_accessibility<W>(widget: &W, presentation: &RowLinkPresentation)
 where
     W: IsA<gtk4::Widget> + IsA<gtk4::Accessible>,
 {
-    let presentation = row_link_presentation(row);
-    widget.set_tooltip_text(Some(&presentation.tooltip));
     widget.update_property(&[gtk4::accessible::Property::Description(
         &presentation.accessible_description,
     )]);
@@ -71,6 +69,8 @@ fn ticket_presentation(availability: TicketAvailability) -> TicketPresentation {
 
 pub(super) fn ticket_column(view: &gtk4::ColumnView) {
     let factory = gtk4::SignalListItemFactory::new();
+    let tooltips = crate::ui::lazy_tooltip::ListItemTooltips::default();
+    let tooltips_for_setup = tooltips.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -81,8 +81,10 @@ pub(super) fn ticket_column(view: &gtk4::ColumnView) {
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         label.add_css_class("reprise-concert-ticket-tag");
+        tooltips_for_setup.install(item, &label);
         item.set_child(Some(&label));
     });
+    let tooltips_for_bind = tooltips.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -104,11 +106,10 @@ pub(super) fn ticket_column(view: &gtk4::ColumnView) {
         let tooltip = presentation
             .tooltip
             .map_or_else(|| row_link.tooltip.clone(), strings::text);
-        label.set_tooltip_text(Some(&tooltip));
-        label.update_property(&[gtk4::accessible::Property::Description(
-            &row_link.accessible_description,
-        )]);
+        tooltips_for_bind.set_text(item, &label, Some(tooltip));
+        apply_row_link_accessibility(&label, &row_link);
     });
+    let tooltips_for_unbind = tooltips;
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -117,7 +118,7 @@ pub(super) fn ticket_column(view: &gtk4::ColumnView) {
             return;
         };
         label.set_label("");
-        label.set_tooltip_text(None);
+        tooltips_for_unbind.set_text(item, &label, None);
     });
     let column = gtk4::ColumnViewColumn::builder()
         .id(ConcertColumn::Tickets.as_str())
@@ -131,6 +132,8 @@ pub(super) fn ticket_column(view: &gtk4::ColumnView) {
 
 pub(super) fn source_column(view: &gtk4::ColumnView) {
     let factory = gtk4::SignalListItemFactory::new();
+    let tooltips = crate::ui::lazy_tooltip::ListItemTooltips::default();
+    let tooltips_for_setup = tooltips.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -139,8 +142,10 @@ pub(super) fn source_column(view: &gtk4::ColumnView) {
             .xalign(0.0)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
+        tooltips_for_setup.install(item, &label);
         item.set_child(Some(&label));
     });
+    let tooltips_for_bind = tooltips.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -153,8 +158,11 @@ pub(super) fn source_column(view: &gtk4::ColumnView) {
         };
         let row = object.row();
         label.set_label(source_name(&row));
-        apply_row_link_presentation(&label, &row);
+        let presentation = row_link_presentation(&row);
+        tooltips_for_bind.set_text(item, &label, Some(presentation.tooltip.clone()));
+        apply_row_link_accessibility(&label, &presentation);
     });
+    let tooltips_for_unbind = tooltips;
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -163,7 +171,7 @@ pub(super) fn source_column(view: &gtk4::ColumnView) {
             return;
         };
         label.set_label("");
-        label.set_tooltip_text(None);
+        tooltips_for_unbind.set_text(item, &label, None);
     });
     let column = gtk4::ColumnViewColumn::builder()
         .id(ConcertColumn::Source.as_str())
@@ -193,6 +201,8 @@ pub(super) fn distance_column(
     radius_source: &RadiusSource,
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
+    let tooltips = crate::ui::lazy_tooltip::ListItemTooltips::default();
+    let tooltips_for_setup = tooltips.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -203,9 +213,11 @@ pub(super) fn distance_column(
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         label.add_css_class("numeric");
+        tooltips_for_setup.install(item, &label);
         item.set_child(Some(&label));
     });
     let radius_source = radius_source.clone();
+    let tooltips_for_bind = tooltips;
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -227,7 +239,9 @@ pub(super) fn distance_column(
             label.remove_css_class(class);
         }
         label.add_css_class(distance_class(row.distance_km, radius_source()));
-        apply_row_link_presentation(&label, &row);
+        let presentation = row_link_presentation(&row);
+        tooltips_for_bind.set_text(item, &label, Some(presentation.tooltip.clone()));
+        apply_row_link_accessibility(&label, &presentation);
     });
     let column = gtk4::ColumnViewColumn::builder()
         .id(ConcertColumn::Distance.as_str())
