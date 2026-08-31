@@ -9,13 +9,14 @@ const filmDir = join(showroomRoot, 'public', 'media', 'showreel');
 /** The cut, to the frame. Every caption cue has to land inside it. */
 const FILM_SECONDS = 60.0;
 
-test('CH.03 carries the film where the screenshot mosaic used to be', async () => {
+test('CH.03 carries the film beside the screenshot mosaic', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const chapter = html.match(/<section id="ch-03"[\s\S]+?<section id="ch-04"/)?.[0];
   assert.ok(chapter);
 
   assert.match(chapter, /data-showcase="showreel-film"/);
-  assert.doesNotMatch(chapter, /data-layout="design-mosaic"/);
+  assert.match(chapter, /data-layout="design-mosaic"/);
+  assert.match(chapter, /<video[^>]*\bpreload="none"/);
 
   // Both codecs, both ladder steps, and the small step offered first so the
   // element picks it before it ever considers the 1080 file.
@@ -37,12 +38,25 @@ test('CH.03 carries the film where the screenshot mosaic used to be', async () =
   assert.match(chapter, /<video[^>]*\bmuted\b/);
   assert.match(chapter, /Sound on/);
   assert.match(chapter, /Play the film|>Play</);
+  assert.match(chapter, /Captions on/);
 
   // Nothing here may be eager: the page-wide count of two belongs to the hero.
   assert.doesNotMatch(chapter, /loading="eager"/);
 
   assert.match(chapter, /poster="[^"]*showreel-poster\.webp"/);
   assert.match(chapter, /kind="captions"/);
+});
+
+test('the film never starts itself', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'ShowreelFilm.tsx'),
+    'utf8',
+  );
+
+  // A self-start is a client-side effect, and the prerenderer never runs
+  // effects, so the built page cannot expose this regression.
+  assert.doesNotMatch(source, /IntersectionObserver/);
+  assert.doesNotMatch(source, /useEffect/);
 });
 
 test('every file the film section names is actually shipped', async () => {
