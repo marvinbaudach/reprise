@@ -26,26 +26,30 @@ published and marked latest:
 - `Reprise-Android-<android-version>.apk`
 - `Reprise-Android-<android-version>.apk.sha256`
 
-The release tag also fixes the source archive consumed by the distribution
-Flatpak manifest. At tag time, create the tag from the exact verified release
-commit, push it, download GitHub's immutable tag archive, and print its hash:
+The automated CI and GitHub release jobs build
+`io.github.marvinbaudach.Reprise.yml` from the checked-out tree. That root
+manifest deliberately uses `type: dir` and `path: .`, so it remains buildable
+before the release tag exists. The separate
+`flatpak/io.github.marvinbaudach.Reprise.yml` is the Flathub submission
+manifest and pins its source to the release tag archive.
+
+After the automated release has pushed the tag, download GitHub's immutable
+tag archive and print its hash:
 
 ```sh
 release_version=$(scripts/bump-version.sh current)
-release_commit=$(git rev-parse HEAD)
-git tag -a "v${release_version}" -m "Reprise ${release_version}" "${release_commit}"
-git push origin "v${release_version}"
 curl --fail --location \
   --output "reprise-${release_version}.tar.gz" \
   "https://github.com/marvinbaudach/reprise/archive/refs/tags/v${release_version}.tar.gz"
 sha256sum "reprise-${release_version}.tar.gz"
 ```
 
-Replace the manifest URL's version and
+Replace the Flathub manifest URL's version and
 `REPLACE_WITH_TAG_ARCHIVE_SHA256` with those exact tag and hash values before
-the distribution manifest is submitted. A placeholder is intentional until
-the corresponding release tag exists; never calculate the hash from a branch
-archive or a locally generated tarball.
+submission. Do not put the archive source or hash into the root manifest. A
+placeholder is intentional in the Flathub manifest until the corresponding
+release tag exists; never calculate the hash from a branch archive or a
+locally generated tarball.
 
 The full English release body comes from the matching dated section in
 `CHANGELOG.md`. Software centres use the matching bilingual `<release>` entry
