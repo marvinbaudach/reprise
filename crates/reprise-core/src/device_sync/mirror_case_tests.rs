@@ -235,6 +235,29 @@ fn equal_directory_counts_plan_neither_arrival_analysis_nor_removal() {
 }
 
 #[test]
+fn ambiguous_directory_keeps_a_track_at_its_distinct_inventory_path() {
+    let wanted = case_track(9, "Tie Artist", "Tie Album", "Track 9");
+    let inventory_path = "Former Artist/Former Album/09 Track 9.mp3";
+    let mut mirror_input = selected_input(wanted.clone());
+    mirror_input
+        .inventory
+        .push(inventory(&wanted, inventory_path, "copy-original-v1"));
+    mirror_input.managed_files = vec![
+        managed(inventory_path),
+        managed("TIE ARTIST/Tie Album/01 Resident.mp3"),
+        managed("Tie Artist/TIE ALBUM/02 Resident.mp3"),
+    ];
+
+    let plan = plan_mirror(mirror_input);
+
+    assert_eq!(plan.desired_files[0].device_path, inventory_path);
+    assert!(!plan.remove.iter().any(|removal| match removal {
+        ManagedRemoval::Inventory(file) => file.track_id == wanted.id,
+        ManagedRemoval::Orphan(_) => false,
+    }));
+}
+
+#[test]
 fn unavailable_track_keeps_its_minority_inventory_spelling() {
     let source = SelectionSource::Playlist(10);
     let mut entries = vec![unavailable(9)];
