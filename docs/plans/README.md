@@ -10,6 +10,8 @@ work; the retention rules below govern what remains here.
 - Finished plans that code or a script cites by path. `scripts/check-architecture.sh`
   fails the build when a `docs/…` path named from `crates/` or `scripts/` does not
   resolve, so these are load-bearing and are deleted only together with the citation.
+- Maintained implementation records that later work still follows:
+  `android-sync.md` and `ux-rules-acceptance-tests.md`.
 - Contracts that were never plans — `docs/ux-rules.md` and the ADRs — which live
   outside this directory and outrank the code.
 
