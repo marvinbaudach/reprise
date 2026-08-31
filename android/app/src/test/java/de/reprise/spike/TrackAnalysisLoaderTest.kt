@@ -101,6 +101,34 @@ class TrackAnalysisLoaderTest {
     }
 
     @Test
+    fun firstSeekBarRequestWarmsBarsForTheRetainedWindowAtTheRealCount() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val readsFinished = CountDownLatch(5)
+        val reads = mutableMapOf<Long, Int>()
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {},
+            readBars = { trackId, count ->
+                assertEquals(64, count)
+                reads[trackId] = reads.getOrDefault(trackId, 0) + 1
+                readsFinished.countDown()
+                emptyList()
+            },
+            onMainThread = mainHops::add,
+        )
+
+        loader.retain(setOf(1, 2, 3, 4, 5))
+        loader.prefetch(listOf(1, 2, 3, 4, 5))
+        loader.loadBars(3, 64) {}
+
+        assertTrue("the retained bar window did not load", readsFinished.await(2, TimeUnit.SECONDS))
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        assertEquals((1L..5L).associateWith { 1 }, reads)
+        assertTrue((1L..5L).all { trackId -> loader.warmth(trackId).bars })
+    }
+
+    @Test
     fun importAndBarReadShareOneOffMainThreadLaneInThatOrder() {
         val caller = Thread.currentThread()
         val operations = mutableListOf<String>()

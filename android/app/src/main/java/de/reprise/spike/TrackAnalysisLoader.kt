@@ -88,6 +88,10 @@ internal class TrackAnalysisLoader(
     private var retainedTrackIds: Set<Long>? = null
     private var preferredBarCount: Int? = null
 
+    init {
+        registerActive(this)
+    }
+
     override var revision by mutableLongStateOf(0L)
         private set
 
@@ -105,9 +109,10 @@ internal class TrackAnalysisLoader(
     override fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit) {
         val key = BarCacheKey(trackId, count)
         val cached = synchronized(cacheLock) {
+            val firstKnownBarCount = preferredBarCount == null
             preferredBarCount = count
             if (barCache.containsKey(key)) {
-                true to barCache[key]
+                Triple(true, barCache[key], firstKnownBarCount)
             } else {
                 val waiters = barWaiters[key]
                 if (waiters != null) {
@@ -115,11 +120,12 @@ internal class TrackAnalysisLoader(
                     return
                 }
                 barWaiters[key] = mutableListOf(deliver)
-                false to null
+                Triple(false, null, firstKnownBarCount)
             }
         }
         if (cached.first) {
             deliver(cached.second)
+            if (cached.third) warmRetainedBars(count)
             return
         }
         val submitted = submit("load analysis for track $trackId") {
@@ -131,6 +137,7 @@ internal class TrackAnalysisLoader(
         if (!submitted) {
             finishBarLoad(key, bars = null, cache = false)
         }
+        if (cached.third) warmRetainedBars(count)
     }
 
     override fun loadSpectrogram(trackId: Long, deliver: (SpectrogramFrames?) -> Unit) {
@@ -174,7 +181,7 @@ internal class TrackAnalysisLoader(
 
     override fun retain(trackIds: Set<Long>) {
         synchronized(cacheLock) {
-            retainedTrackIds = trackIds
+            retainedTrackIds = trackIds.toSet()
             barCache.keys.removeAll { key -> key.trackId !in trackIds }
             spectrogramCache.keys.retainAll(trackIds)
         }
@@ -224,6 +231,11 @@ internal class TrackAnalysisLoader(
         }
     }
 
+    private fun warmRetainedBars(count: Int) {
+        val trackIds = synchronized(cacheLock) { retainedTrackIds.orEmpty() }
+        trackIds.forEach { trackId -> loadBars(trackId, count) {} }
+    }
+
     private fun submit(description: String, work: () -> Unit): Boolean = try {
         worker.execute(work)
         true
@@ -242,11 +254,29 @@ internal class TrackAnalysisLoader(
             false
         }
         if (!drained) worker.shutdownNow()
+        unregisterActive(this)
         return drained
     }
 
     internal fun shutdownForTest() {
         check(shutdown()) { "analysis worker did not drain" }
+    }
+
+    companion object {
+        private val activeLock = Any()
+        private var active: TrackAnalysisLoader? = null
+
+        internal fun activePort(): TrackAnalysisPort? = synchronized(activeLock) { active }
+
+        private fun registerActive(loader: TrackAnalysisLoader) {
+            synchronized(activeLock) { active = loader }
+        }
+
+        private fun unregisterActive(loader: TrackAnalysisLoader) {
+            synchronized(activeLock) {
+                if (active === loader) active = null
+            }
+        }
     }
 }
 

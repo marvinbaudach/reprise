@@ -22,9 +22,11 @@ import uniffi.reprise_android_ffi.AndroidRepeatMode
 @Config(sdk = [36])
 class MobileSurfaceStateTest {
     @Test
-    fun aNewCurrentTrackPrefetchesTheFollowingTwoCoversAndFogTextures() {
+    fun aNewCurrentTrackWarmsArtworkAndBothAnalysesForTheSymmetricWindowOnce() {
         val cache = ArtworkCache()
-        val tracks = listOf(prefetchTrack(2), prefetchTrack(3))
+        val currentTrackId = 3L
+        val tracks = (1L..5L).map(::prefetchTrack)
+        var windowReads = 0
         val controls = object : PlaybackControls {
             override fun togglePause() = Unit
             override fun next() = Unit
@@ -38,8 +40,26 @@ class MobileSurfaceStateTest {
                 window: LibraryWindowRange,
                 report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
             ) {
-                assertEquals(LibraryWindowRange(0, 2), window)
-                report(Result.success(LibraryWindow(2, tracks, hasMore = false)))
+                windowReads += 1
+                assertEquals(LibraryWindowRange(-3, 5), window)
+                report(Result.success(LibraryWindow(5, tracks, hasMore = false)))
+            }
+        }
+        var retained = emptySet<Long>()
+        var prefetched = emptyList<Long>()
+        val analysis = object : TrackAnalysisPort {
+            override val revision = 0L
+            override fun prepare(trackId: Long) = Unit
+            override fun loadBars(
+                trackId: Long,
+                count: Int,
+                deliver: (List<SpectralBar>?) -> Unit,
+            ) = deliver(null)
+            override fun retain(trackIds: Set<Long>) {
+                retained = trackIds
+            }
+            override fun prefetch(trackIds: List<Long>) {
+                prefetched = trackIds
             }
         }
         val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
@@ -52,26 +72,84 @@ class MobileSurfaceStateTest {
         val state = MobileSurfaceViewModel()
 
         try {
-            state.prefetchUpcomingArtwork(currentTrackId = 1, controls, artwork)
+            state.prefetchUpcomingArtwork(currentTrackId, controls, artwork, analysis)
+            state.prefetchUpcomingArtwork(currentTrackId, controls, artwork, analysis)
 
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (
-                tracks.any { track ->
-                    val visual = cache.artwork(prefetchRequest(track))
+                tracks.filterNot { it.id == currentTrackId }.any { track ->
+                    val visual = cache.seedArtwork(prefetchRequest(track))
                     visual == null || cache.fog(visual.image) == null
                 } &&
                 System.nanoTime() < deadline
             ) {
                 Thread.yield()
             }
-            tracks.forEach { track ->
-                val visual = cache.artwork(prefetchRequest(track))
+            tracks.filterNot { it.id == currentTrackId }.forEach { track ->
+                val visual = cache.seedArtwork(prefetchRequest(track))
                 assertNotNull(visual)
                 assertNotNull(cache.fog(checkNotNull(visual).image))
             }
+            assertEquals(1, windowReads)
+            assertEquals(tracks.map { it.id }.toSet(), retained)
+            assertEquals(tracks.map { it.id }, prefetched)
         } finally {
             artwork.shutdown()
         }
+    }
+
+    @Test
+    fun twoRapidTrackChangesLoadTheSecondNeighbourBeforeItBecomesVisible() {
+        val queue = (1L..6L).map(::prefetchTrack)
+        var currentIndex = 2
+        val requestedWindows = mutableListOf<LibraryWindowRange>()
+        val prefetchedWindows = mutableListOf<List<Long>>()
+        val controls = object : PlaybackControls {
+            override fun togglePause() = Unit
+            override fun next() = Unit
+            override fun previous() = Unit
+            override fun seekTo(positionMs: Long) = Unit
+            override fun setShuffle(enabled: Boolean) = Unit
+            override fun setRepeat(mode: AndroidRepeatMode) = Unit
+            override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) =
+                report(null)
+            override fun loadUpcomingTracks(
+                window: LibraryWindowRange,
+                report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
+            ) {
+                requestedWindows += window
+                val upcomingStart = currentIndex + 1
+                val start = (upcomingStart + window.offset.toInt()).coerceAtLeast(0)
+                val rows = queue.drop(start).take(window.limit.toInt())
+                report(Result.success(LibraryWindow(queue.size.toLong(), rows, hasMore = false)))
+            }
+        }
+        val analysis = object : TrackAnalysisPort {
+            override val revision = 0L
+            override fun prepare(trackId: Long) = Unit
+            override fun loadBars(
+                trackId: Long,
+                count: Int,
+                deliver: (List<SpectralBar>?) -> Unit,
+            ) = deliver(null)
+            override fun prefetch(trackIds: List<Long>) {
+                prefetchedWindows += trackIds
+            }
+        }
+        val state = MobileSurfaceViewModel()
+
+        state.prefetchUpcomingArtwork(queue[currentIndex].id, controls, artwork = null, analysis)
+        currentIndex += 1
+        state.prefetchUpcomingArtwork(queue[currentIndex].id, controls, artwork = null, analysis)
+
+        assertEquals(
+            listOf(LibraryWindowRange(-3, 5), LibraryWindowRange(-3, 5)),
+            requestedWindows,
+        )
+        assertEquals(
+            listOf(listOf(1L, 2L, 3L, 4L, 5L), listOf(2L, 3L, 4L, 5L, 6L)),
+            prefetchedWindows,
+        )
     }
 
     @Test
