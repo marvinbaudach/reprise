@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import './showreel.css';
 
 const BASE_URL = import.meta.env?.BASE_URL ?? '/reprise/';
@@ -11,65 +11,20 @@ const FILM_BASE = `${BASE_URL}media/showreel/`;
  */
 const SMALL_VIEWPORT = '(max-width: 900px)';
 
-/** Enough of the plate on screen to be worth starting. */
-const PLAY_THRESHOLD = 0.45;
-
-interface ShowreelFilmProps {
-  readonly reducedMotion: boolean;
-}
-
 /**
- * The film, in the slot the screenshot mosaic used to hold.
+ * The film beside the screenshot gallery.
  *
- * It starts itself when it scrolls into view and stops when it leaves, because
- * a page that loads ten megabytes for a reader who never reaches the section
- * has spent someone else's bandwidth. The moment the reader touches a control
- * that hand-off ends: from then on the film is theirs, and scrolling does not
- * overrule it.
- *
- * It starts muted and says so. Every browser blocks an unmuted autoplay anyway,
- * but that is not the reason — a landing page that makes noise at a reader who
- * did not ask for it has already lost them.
+ * It costs nothing until the reader asks it to play. It starts muted because a
+ * landing page does not make noise at a reader who did not ask for it.
  */
-export function ShowreelFilm({ reducedMotion }: ShowreelFilmProps) {
+export function ShowreelFilm() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const claimed = useRef(false);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // The preference can flip while the page is open, so this is a reaction to
-    // the current value rather than a decision taken once at mount.
-    if (reducedMotion) {
-      video.pause();
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry || claimed.current) return;
-        if (entry.isIntersecting) {
-          // A rejected play() is the browser exercising its autoplay policy,
-          // not a fault: the poster and the control are already in place.
-          void video.play().catch(() => undefined);
-        } else {
-          video.pause();
-        }
-      },
-      { threshold: PLAY_THRESHOLD },
-    );
-    observer.observe(video);
-    return () => observer.disconnect();
-  }, [reducedMotion]);
 
   const toggle = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    claimed.current = true;
     if (video.paused) {
       void video.play().catch(() => undefined);
     } else {
@@ -80,7 +35,6 @@ export function ShowreelFilm({ reducedMotion }: ShowreelFilmProps) {
   const toggleSound = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    claimed.current = true;
     const next = !video.muted;
     video.muted = next;
     setMuted(next);
@@ -103,7 +57,7 @@ export function ShowreelFilm({ reducedMotion }: ShowreelFilmProps) {
           ref={videoRef}
           className="film__video"
           poster={`${FILM_BASE}showreel-poster.webp`}
-          preload="metadata"
+          preload="none"
           playsInline
           loop
           muted

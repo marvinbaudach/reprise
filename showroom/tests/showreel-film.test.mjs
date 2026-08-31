@@ -9,13 +9,15 @@ const filmDir = join(showroomRoot, 'public', 'media', 'showreel');
 /** The cut, to the frame. Every caption cue has to land inside it. */
 const FILM_SECONDS = 60.0;
 
-test('CH.03 carries the film where the screenshot mosaic used to be', async () => {
+test('CH.03 carries the film beside the screenshot mosaic', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const chapter = html.match(/<section id="ch-03"[\s\S]+?<section id="ch-04"/)?.[0];
   assert.ok(chapter);
 
   assert.match(chapter, /data-showcase="showreel-film"/);
-  assert.doesNotMatch(chapter, /data-layout="design-mosaic"/);
+  assert.match(chapter, /data-layout="design-mosaic"/);
+  assert.match(chapter, /<video[^>]*\bpreload="none"/);
+  assert.doesNotMatch(chapter, /\bautoplay\b/);
 
   // Both codecs, both ladder steps, and the small step offered first so the
   // element picks it before it ever considers the 1080 file.
