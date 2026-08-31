@@ -90,9 +90,14 @@ def main():
     bpm, strength = estimate_tempo(flux)
     offset, punch = best_phase(flux, bpm)
 
-    # atempo speeds up when the factor is above one, so the measured tempo goes
-    # in the numerator: a track at 101 BPM has to be slowed to reach 100.
-    factor = bpm / target_bpm
+    # atempo speeds up when the factor is above one, so the target goes in the
+    # numerator: a track at 101 BPM has to be slowed to reach 100, which is a
+    # factor below one. With the ratio the other way round every track near 100
+    # BPM was corrected in the wrong direction by a fraction of a percent -- too
+    # small to hear, which is why it stood -- and a 133 BPM take was sped up to
+    # 177 and ran out of material at 45 s, after which score.sh padded the film
+    # with fifteen seconds of silence.
+    factor = target_bpm / bpm
     # After the stretch the downbeat moves with everything else.
     trim = offset / factor
 

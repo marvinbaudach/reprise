@@ -49,20 +49,53 @@ def quietest_block(window):
     return 20 * np.log10((usable.min() + 1e-12) / (np.median(usable) + 1e-12))
 
 
-def target_arc(seconds, rate):
-    """The film's own dynamic shape, in the same units as the envelope.
+def arc_steps(seconds):
+    """The film's own dynamic shape, as (second, level) breakpoints.
 
     Read off the shot list in cut-film.sh, and it has to be re-read whenever
-    that list changes — the numbers below were the 31.2 s cut's until the film
-    was recut to 60.0 s, and a window scored against the wrong shape is a
-    measurement of nothing.
+    that list changes — these were the 31.2 s cut's, then the 60.0 s cut's, and
+    a window scored against the wrong shape is a measurement of nothing.
 
-    The 60.0 s edit: the intro card holds for three seconds, the hook lands,
-    the desktop run carries to 34.2, the agent shot pulls back, the handover
-    to the phone at 39.0 is the break, the phone section stands alone from
-    41.4, and the end card falls away from 56.4."""
-    steps = [(0.0, 0.35), (3.0, 0.72), (7.2, 1.0), (34.2, 0.75),
-             (39.0, 0.32), (41.4, 1.0), (56.4, 0.30), (seconds, 0.22)]
+    The 58.2 s edit: the intro card holds for three seconds, the hook lands at
+    8.4, the desktop run carries to 24.6, the last page pulls back, the handover
+    at 30.0 is the break, the phone section stands alone from 37.8, and the end
+    card falls away from 54.6.
+
+    Library Doctor left and the five desk shots that remain hold 5.4 s, so the
+    desk run ends at 30.0 rather than 31.8. The 1.8 s went into the handover's
+    desk half, which is why the slide is still at 36.6 and the bed did not have
+    to be re-spliced: `spliced-58s.wav` has the same A segment as the 51 s one
+    (36.5162 s), so the bass still lands at 36.5.
+
+    Shorter than the 66.6 s edit because four shots left it, not because anything
+    was tightened: the search shot showed the Music page a second time, two of
+    the four phone shots were Android navigation the desktop half already makes
+    the case for, and the agent shot asked more reading than four seconds buys.
+
+    The break is longer than it was. The handover used to be 2.4 s and the slam
+    came at 43.8; the device-sync page now holds 6.2 s of it, so the recovery
+    runs from the break at 41.4 up to the slide at 47.4 and the film arrives on
+    the phone at full level. `score.sh` reads the breakpoint after the dip as the
+    drop's release, so that one number is also where the filter opens again —
+    moving 43.8 to 47.4 is what keeps the drop on the cut to the phone instead
+    of leaving it three seconds early, in the middle of the sync page.
+
+    The phone section holds. It used to interpolate straight from the handover's
+    slam down to the end card's 0.30, which is a fifteen-second fade across the
+    whole phone half — every phone shot quieter than the one before it, for no
+    reason in the picture. The breakpoint at 63.0 is what makes it a hold and
+    then a fall, which is what the sentence above always said it was.
+
+    `arc-gain.py` reads these too, so the shape a window is chosen for and the
+    shape it is then given on the fader are the same one.
+    """
+    return [(0.0, 0.35), (3.0, 0.72), (8.4, 1.0), (24.6, 0.85),
+            (30.0, 0.32), (36.6, 1.0), (54.6, 0.95), (seconds, 0.22)]
+
+
+def target_arc(seconds, rate):
+    """The shape above, sampled at the envelope's own rate."""
+    steps = arc_steps(seconds)
     times = np.arange(int(seconds * rate)) / rate
     return np.interp(times, [t for t, _ in steps], [v for _, v in steps])
 

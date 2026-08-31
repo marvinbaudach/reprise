@@ -11,6 +11,7 @@ task: the model knows who sounds like Lorna Shore, the library knows which of
 them it holds, and the server does the writing. Each side does what only it can.
 """
 import json
+import os
 import subprocess
 import sys
 
@@ -19,14 +20,30 @@ import sys
 # name below was checked against it, and the ones it does not hold drop out on
 # their own rather than being pruned here.
 SEED = 'Lorna Shore'
-NEIGHBOURS = [
-    'Immortal Disfigurement', 'Shadow of Intent', 'Chelsea Grin',
-    'Carnifex', 'Emmure', 'Distant',
-    'Signs of the Swarm', 'Brand of Sacrifice', "Humanity's Last Breath",
-    'Make Them Suffer', 'Whitechapel', 'Thy Art Is Murder', 'Ingested',
-    'Kublai Khan', 'Bodysnatcher', 'Slaughter To Prevail',
-]
-TARGET = 100
+NEIGHBOURS = {
+    'Lorna Shore': [
+        'Immortal Disfigurement', 'Shadow of Intent', 'Chelsea Grin',
+        'Carnifex', 'Emmure', 'Distant',
+        'Signs of the Swarm', 'Brand of Sacrifice', "Humanity's Last Breath",
+        'Make Them Suffer', 'Whitechapel', 'Thy Art Is Murder', 'Ingested',
+        'Kublai Khan', 'Bodysnatcher', 'Slaughter To Prevail',
+    ],
+    # A second seed, because the first one's playlist is already in the library
+    # and on the phone: a shot of a row appearing must not appear beside a row
+    # that reads almost the same. This one is melodic where the other is
+    # deathcore, so the two are also audibly different answers.
+    'Bring Me The Horizon': [
+        'Asking Alexandria', 'A Day to Remember', 'Bury Tomorrow',
+        'Blessthefall', 'Motionless In White', 'Falling in Reverse',
+        'We Came As Romans', 'Miss May I', 'The Devil Wears Prada',
+        'Wage War', 'Currents', 'Annisokay', 'Killswitch Engage',
+        'Caliban', 'Our Last Night', 'The Word Alive', 'Electric Callboy',
+    ],
+}
+# How many tracks the answer holds. Small is a virtue in the film: the shot is
+# the row arriving, not the length of the list, and a short playlist is written
+# and read back in a moment instead of holding the take open.
+TARGET = int(os.environ.get('SHOWREEL_MCP_TARGET', '100'))
 
 
 class Server:
@@ -81,7 +98,11 @@ class Server:
 def main():
     binary = sys.argv[1]
     db = sys.argv[2]
-    name = sys.argv[3] if len(sys.argv) > 3 else f'Like {SEED}'
+    seed = sys.argv[4] if len(sys.argv) > 4 else SEED
+    if seed not in NEIGHBOURS:
+        raise SystemExit(f'no neighbours known for {seed!r} — '
+                         f'have {sorted(NEIGHBOURS)}')
+    name = sys.argv[3] if len(sys.argv) > 3 else f'Like {seed}'
 
     server = Server(binary, db)
     server.call('initialize', {
@@ -92,7 +113,7 @@ def main():
     server.notify('notifications/initialized')
 
     pools = {}
-    for artist in [SEED] + NEIGHBOURS:
+    for artist in [seed] + NEIGHBOURS[seed]:
         found = server.tool('music_search_tracks', {'query': artist, 'limit': 120})
         tracks = found.get('tracks', found if isinstance(found, list) else [])
         picked = [t['id'] for t in tracks if str(t.get('artist', '')).lower() == artist.lower()]

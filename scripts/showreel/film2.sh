@@ -103,6 +103,42 @@ film2_callout() { # line sub duration
   fi
 }
 
+# Two captions over one uninterrupted shot.
+#
+# The phone half used to be two 4.8 s shots, and it could not stay that way: the
+# app draws the cover and the spectrum into the same square and swaps them on a
+# tap, so a take with the spectrum on shows one picture, not two. Cutting it in
+# half would have put a cut where nothing changes — the worst kind, because the
+# viewer looks for what moved and finds nothing. So the picture runs on and the
+# band changes under it. The dash wipes a second time when the second caption
+# arrives, which is the film's own way of saying a caption has landed.
+film2_callout_pair() { # line1 sub1 line2 sub2 duration
+  local l1=$1 s1=$2 l2=$3 s2=$4 dur=$5 half a1 a2 f=$FILM2_FADE
+  half=$(python3 -c "print(f'{${dur}/2:.4f}')")
+  printf 'drawbox=x=0:y=%s:w=iw:h=2:color=%s@0.07:t=fill' "$FILM2_BAND_TOP" "$FILM2_INK"
+  printf ',drawbox=x=112:y=1028:w=28*min(1\,max(0\,if(lt(t\,%s)\,t\,t-%s))/0.22):h=3:color=%s:t=fill' \
+    "$half" "$half" "$FILM2_TEAL"
+  a1="if(lt(t,$f),t/$f,if(lt(t,$half-$f),1,max(0,($half-t)/$f)))"
+  a2="if(lt(t,$half),0,if(lt(t,$half+$f),(t-$half)/$f,if(lt(t,$dur-$f),1,max(0,($dur-t)/$f))))"
+  film2_caption_layer "$l1" "$s1" "$a1"
+  film2_caption_layer "$l2" "$s2" "$a2"
+}
+
+# The two lines of one caption at a given alpha. Shared so the pair above and
+# the single callout cannot drift apart in size or position.
+film2_caption_layer() { # line sub alpha
+  local line=$1 sub=$2 alpha=$3
+  if [[ -n $sub ]]; then
+    printf ',drawtext=fontfile=%s:text=%s:fontsize=44:fontcolor=%s:x=158:y=996:alpha=%s' \
+      "'$FILM2_FONT'" "'$(film2_escape "$line")'" "$FILM2_INK" "'$alpha'"
+    printf ',drawtext=fontfile=%s:text=%s:fontsize=26:fontcolor=%s@0.62:x=158:y=1046:alpha=%s' \
+      "'$FILM2_FONT'" "'$(film2_escape "$sub")'" "$FILM2_INK" "'$alpha'"
+  else
+    printf ',drawtext=fontfile=%s:text=%s:fontsize=48:fontcolor=%s:x=158:y=1012:alpha=%s' \
+      "'$FILM2_FONT'" "'$(film2_escape "$line")'" "$FILM2_INK" "'$alpha'"
+  fi
+}
+
 # One word, hard in, no fade — the 1.2 s shots have no time for a ramp.
 film2_burst() { # word duration
   local word=$1

@@ -7,10 +7,12 @@
 #
 # Two things distinguish this cut from the 32 s one it replaces.
 #
-# Nothing runs under 3.0 s. The short cut had 1.2 s bursts and a floor of 1.8 s,
+# Every feature runs 4.8 s. The short cut had 1.2 s bursts and a floor of 1.8 s,
 # which is enough to register that a screen changed and not enough to read
-# either the caption or the screen — the film went past faster than it could be
-# taken in.
+# either the caption or the screen. 3.0 to 4.2 was the next answer and it was
+# still too quick: a shot has to carry a caption, a page and whatever the page
+# is doing, and the ones at 3.0 went past before the third of those registered.
+# One length for all of them, so no feature reads as the minor one.
 #
 # And every shot holds. The short cut pushed two to four percent into every
 # single shot, alternating in and out, which is what made it restless: at that
@@ -30,10 +32,12 @@ source scripts/showreel/film2.sh
 
 IN1="$SHOWREEL_DIR/roh-gnome-tour.mp4"
 IN2="$SHOWREEL_DIR/roh-gnome-pickup.mp4"
-# take 2, not take 1: the first phone take predates the visualiser fix (#701
-# landed 2026-08-26 00:01, that take was recorded 25.08 22:05) and never had an
-# artist view in it at all.
-INA="${SHOWREEL_ANDROID_TAKE:-$SHOWREEL_DIR/roh-android-take2.mp4}"
+# The bed take, not take 2: this is the only phone take shot while the handset
+# played the film's own music, which is what lets the bars be claimed to move
+# in time with it. Takes 1 and 2 were shot against whatever was in the library
+# and are kept only as fallbacks — take 1 also predates the visualiser fix
+# (#701, 2026-08-26 00:01, that take was recorded 25.08 22:05).
+INA="${SHOWREEL_ANDROID_TAKE:-$SHOWREEL_DIR/roh-android-bed.mp4}"
 # The MCP take, shot by take-mcp.sh. Optional on purpose: the rest of the film
 # has to stay renderable when that take is missing or has to be reshot.
 INM="${SHOWREEL_MCP_TAKE:-$SHOWREEL_DIR/roh-gnome-mcp.mp4}"
@@ -43,18 +47,34 @@ INM="${SHOWREEL_MCP_TAKE:-$SHOWREEL_DIR/roh-gnome-mcp.mp4}"
 # disk and the shot lines below stay in the history, so putting either flow
 # back is a matter of restoring two lines, not shooting again.
 OUT="${1:-$SHOWREEL_DIR/reprise-showreel-cut.mp4}"
-showreel_require "$IN1" "$IN2" "$INA"
+showreel_require "$IN1" "$INA"
 
 SHELL="$SHOWREEL_WORK/phone-shell.png"
 # 830 px of screen plus bezel and the room the shadow needs comes to exactly
 # the 960 px stage, so the whole handset is in frame with nothing clipped.
+#
+# The width follows the recording rather than the other way round. The take is
+# 1080x2400; the frame used to be built for 1080x2240 and the cut threw away
+# 80 px at each end to make it fit, which sliced the status bar off the top of
+# every phone shot. 830 * 1080 / 2400 = 373.
 read -r SHELL_W SHELL_H SHELL_X SHELL_Y SHELL_SCREEN_W SHELL_SCREEN_H < <(
-  python3 scripts/showreel/device-frame.py "$SHELL" 400 830
+  python3 scripts/showreel/device-frame.py "$SHELL" 373 830
 )
 
 O="$SHOWREEL_WORK/cut35"
 LIST="$O/list.txt"
 mkdir -p -- "$O"
+# Two runs sharing $O do not collide loudly, which is the problem. The second
+# one deletes list.txt while the first is still appending to it, so the concat
+# that follows can succeed — right duration, playable file, shots in the wrong
+# order. It cost one render that came out with the end card first. A lock is
+# better than a check for a running process because it also covers the run that
+# is started a second later, while the check is still deciding.
+exec 9>"$O/.lock"
+flock -n 9 || {
+  echo "another cut-film.sh holds $O — let it finish, or point SHOWREEL_WORK elsewhere" >&2
+  exit 1
+}
 rm -f -- "$O"/s-*.mp4 "$LIST"
 
 CROP="crop=2880:1747:0:53"
@@ -96,7 +116,7 @@ phone() { # name start dur dir zoom over [dip] [ease] [fx] [fy]
   ffmpeg -v error -ss "$start" -t "$dur" -i "$INA" -loop 1 -framerate 30 -i "$SHELL" \
     -filter_complex "[0:v]fps=30,split[b][f];\
 [b]scale=1920:-2,boxblur=64:3,crop=1920:${FILM2_STAGE_H},eq=brightness=-0.16:saturation=0.7[bg];\
-[f]crop=1080:2240:0:80,scale=${SHELL_SCREEN_W}:${SHELL_SCREEN_H},\
+[f]scale=${SHELL_SCREEN_W}:${SHELL_SCREEN_H},\
 pad=${SHELL_W}:${SHELL_H}:${SHELL_X}:${SHELL_Y}:color=black@0[scr];\
 [scr][1:v]overlay=0:0:format=auto[fg];\
 [bg][fg]overlay=(W-w)/2:(H-h)/2,$(film2_push "$(frames "$dur")" "$dir" "$zoom" 1920 "$FILM2_STAGE_H" 0.5 0.5),\
@@ -107,23 +127,67 @@ pad=1920:1080:0:0:color=$FILM2_GROUND,$over,$(film2_bug)$(film2_dip "$dip" "$dur
 
 # The handover from desktop to phone, as one segment.
 #
-# The desktop dives into its own visualiser and the phone slides in already
-# showing the same picture, so the two platforms are joined by what is on screen
-# instead of announced by a caption. That is why the statement that used to sit
-# here is gone: the match is the claim.
+# The visualiser is in the film exactly once, and it is the handover: the
+# desktop pushes into its own visualiser, the phone pulls back out of the same
+# picture. The two platforms are joined by what is on screen instead of
+# announced by a caption — that is why the statement that used to sit here is
+# gone. The match is the claim.
 #
-# 1.3 s + 1.3 s with a 0.2 s slide between them lands on 2.4 s exactly, which is
-# one bar. The halves are aimed by hand: the desktop visualiser sits at 0.92,
-# 0.54 of the stage and the phone's at 0.50, 0.375 of the composed frame.
+# This is the only camera move in the film, and it lands because nothing else
+# moves. It used to dive into the bottom of the desktop frame, which is the
+# seek bar's waveform — a teal squiggle in the player chrome, not the visualiser
+# at all. The visualiser is the panel on the right of the window, and take 1 has
+# it open from 110 s to 121 s.
+#
+# The push ends at z=3.2, which is where the visualiser's own height fills the
+# frame: 1747 / 3.2 = 546, against the 545 px from its tab bar to the bottom of
+# its readings. fy=0.574 centres that band; fx=1.0 is the window's right edge,
+# which is the edge the panel sits against.
+#
+# The two halves are not the same length any more. At 1.3 s the device page was
+# gone before it had been read: the eye arrives, finds a window it has never
+# seen, and the slide is already taking it away. The sync tab is a claim that
+# needs its furniture read — MTP connected, the playlists, the transfer counting
+# up — so the desk half now holds 6.2 s and the phone half stays short, because
+# the phone gets two whole shots of its own straight after.
+#
+# 5.0 + 1.2 - 0.2 = 6.0 s, ten beats. The slide starts 4.8 s in, which puts it
+# on the 0.6 s grid at 41.4 s in the film — where the arc's recovery is set in
+# arc_steps().
 bridge() { # name deskstart phonestart
   local name=$1 dstart=$2 pstart=$3
-  local half=1.3 xf=0.2 dur=2.4
+  # The desk half took the 1.8 s that Library Doctor left. It is the shot the
+  # user asked to be readable, it is the only one whose subject is time passing,
+  # and lengthening it here is also what keeps the slide where the music wants
+  # it: the slide starts at dhalf - xf into the bridge, so with the desk run
+  # ending at 30.0 the bass at 36.5 and the slide at 36.6 still meet.
+  local dhalf=${SHOWREEL_BRIDGE_DESK:-6.8} phalf=1.2 xf=0.2
+  local dur=$(python3 -c "print(round($dhalf + $phalf - $xf, 3))")
   LIST_OFF=1
-  desk T1 "$name-a" "$dstart" "$half" in 2.0 0.55 1.00 null "" accel
-  phone "$name-b" "$pstart" "$half" out 1.5 null "" decel 0.50 0.375
+  case ${SHOWREEL_BRIDGE:-devicesync} in
+    # The visualiser panel, at the right edge of the window.
+    visualizer) desk T1 "$name-a" "$dstart" "$dhalf" in 2.2 1.00 0.574 null "" accel ;;
+    # No push at all. The device page carries the claim in its own furniture —
+    # MTP connected, the playlists, and at the bottom the transfer actually
+    # running — and a push to 1.4 towards the top takes the transfer out of the
+    # frame in the second half of the shot. The handover shows the whole window
+    # and the whole handset; the slide between them is the move.
+    # The device page: the desktop is syncing to the very phone that is about
+    # to fill the screen, and says so in words — MTP connected, last synced,
+    # 743 Reprise tracks on device. A rhyme between two spectra is decoration;
+    # this is the claim the handover is there to make.
+    #
+    # The caption announces the Android app and names what it shares. The page
+    # under it already says the mechanical half — MTP connected, the playlists,
+    # the transfer counting up — so the words are spent on the claim the picture
+    # cannot make on its own: it is not a companion app, it is the same core.
+    *)          desk T1 "$name-a" "$dstart" "$dhalf" hold 0.00 0.50 0.50 \
+                     "$(film2_callout 'A second frontend' 'the same core, now on Android' "$dhalf")" ;;
+  esac
+  phone "$name-b" "$pstart" "$phalf" hold 0.00 null ""
   LIST_OFF=
   ffmpeg -v error -i "$O/s-$name-a.mp4" -i "$O/s-$name-b.mp4" \
-    -filter_complex "[0:v][1:v]xfade=transition=slideleft:duration=$xf:offset=$(python3 -c "print(round($half - $xf, 3))"),format=yuv420p[v]" \
+    -filter_complex "[0:v][1:v]xfade=transition=slideleft:duration=$xf:offset=$(python3 -c "print(round($dhalf - $xf, 3))"),format=yuv420p[v]" \
     -map '[v]' "${ENC[@]}" -frames:v "$(frames "$dur")" -y "$O/s-$name.mp4"
   listed "$name"
 }
@@ -136,7 +200,7 @@ mcp() { # name start_ask start_result
     return 0
   }
   LIST_OFF=1
-  desk TM "$name-a" "$ask" "$half" hold 0.06 0.50 0.50 \
+  desk TM "$name-a" "$ask" "$half" hold 0.00 0.50 0.50 \
     "$(film2_prompt 'Build me a playlist like Lorna Shore.' 'asked of an agent, over Reprise MCP' "$half")"
   # The row is the whole payoff of the shot and it is fourteen pixels tall in a
   # 1920-wide frame. Two and a half seconds is not long enough to find it
@@ -145,8 +209,8 @@ mcp() { # name start_ask start_result
   # chrome, one that lands reads as an answer. Coordinates are measured off the
   # finished frame, which is what $over sees: it runs after $PAD, so they are
   # 1920x1080 coordinates and they move if this shot is ever reframed.
-  desk TM "$name-b" "$result" "$half" hold 0.10 0.16 0.40 \
-    "$(film2_callout 'The agent wrote it' 'MCP, straight into the library' "$half"),drawbox=x=158:y=290:w=228:h=44:color=0x49C9D2@0.95:t=3:enable='gte(t,0.4)'"
+  desk TM "$name-b" "$result" "$half" hold 0.00 0.50 0.50 \
+    "$(film2_callout 'The agent wrote it' 'MCP, straight into the library' "$half"),drawbox=x=171:y=298:w=214:h=40:color=0x49C9D2@0.95:t=3:enable='gte(t,0.4)'"
   LIST_OFF=
   ffmpeg -v error -i "$O/s-$name-a.mp4" -i "$O/s-$name-b.mp4" \
     -filter_complex "[0:v][1:v]xfade=transition=fade:duration=$xf:offset=$(python3 -c "print(round($half - $xf, 3))"),format=yuv420p[v]" \
@@ -167,37 +231,61 @@ card() { # script name
 card introcard 00-intro
 
 # ------------------------------------------------------------------ the desktop
-# The zoom column is a framing, not a move: `hold` holds it for the whole shot.
+# An in-point is measured, not chosen. Four shots used to open on the page
+# before them and navigate a second into their own running time, with the
+# caption already naming the page that had not arrived yet — the hook opened on
+# Library Doctor, releases on the library, concerts on releases, the doctor on
+# the device page. `settle.py` finds the moment by comparing the window title
+# against the strip from the end of the shot, where the page is right. It has to
+# compare the title at full size: downscaled, "Music" and "Releases" differ by
+# less than the noise floor and every page reports as already settled.
+# Every page shot holds the whole application at 1:1. The film has exactly one
+# camera move, the handover, and it lands because nothing else moves.
 #
-# What a framing may cut is the whole rule here. The sidebar and the right-hand
-# panel are bounded objects — half of one reads as a broken screenshot, so a
-# shot either contains it or starts past it. A track list is not bounded; it is
-# meant to continue past the frame, so cutting a row off the bottom costs
-# nothing. That is why every region shot below sits at fx=1.0: at these amounts
-# the left edge lands in the list's own padding, clear of the sidebar, and the
-# right edge is the window's.
+# The rule this replaces claimed that at 0.20, fx=1.0 "the left edge lands in
+# the list's own padding, clear of the sidebar". It does not. The window fills
+# the recording from column 10 to column 2879, so 0.20 takes 480 px off the
+# left and that lands on the Sort button — the film shipped with it sliced in
+# half. There is no amount that reframes a full-bleed window without cutting
+# something off it, so a page shot does not try: it shows the window.
+# The shots run in sidebar order, top to bottom: Music, Podcasts, Releases,
+# Concerts, My Stats, Library Doctor. They used to run hook, releases, concerts,
+# podcasts, doctor, stats — which reads as a tour that has lost its place,
+# because the selected row jumps back up the sidebar twice while the captions
+# claim a guided walk. The one inversion left is deliberate: the device page
+# sits above Library Doctor in the sidebar, and it is last here because it is
+# the handover and nothing can follow it.
 #
-# The hook is the exception and holds the whole application at 1:1. It is the
-# establishing shot — the sidebar with its counts is the thing being
-# established, and every shot after it is allowed to be a region because this
-# one showed the whole.
-desk T1 01-hook    104.0 4.2 hold 0.00 0.50 0.50 "$(film2_statement 'One player. Everything you listen to.' 0.4 4.2)"
-desk T2 02-search   36.3 4.8 hold 0.20 1.00 0.00 "$(film2_callout 'Instant search' 'every field, as you type' 4.8)"
-# Held at the same amount as the rest rather than pushed in on the lyrics
-# pane: anything tighter has to start inside the track list, and there is no
-# x where that edge does not land in the middle of a word. The shot wants a
-# layout with the lyrics given the width — that is a thing to record, not a
-# thing to crop.
-desk T2 03-lyrics   50.5 4.2 hold 0.17 1.00 0.00 "$(film2_callout 'Lyrics, in time' '' 4.2)"
-desk T1 04-releases 39.8 3.0 hold 0.20 1.00 0.00 "$(film2_callout 'New releases' 'from the artists you keep' 3.0)"
-desk T1 05-concerts 49.5 3.6 hold 0.20 1.00 0.00 "$(film2_callout 'Concerts nearby' 'for the same artists' 3.6)"
-desk T1 06-podcasts 62.8 4.2 hold 0.20 1.00 0.00 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 4.2)"
-desk T1 07-doctor   93.0 4.2 hold 0.20 1.00 0.00 "$(film2_callout 'Library Doctor' 'finds what is broken' 4.2)"
-desk T1 08-stats   137.0 3.0 hold 0.15 1.00 0.00 "$(film2_callout 'Your listening, counted' '' 3.0)"
-# In-points are provisional until the take is shot; take-mcp.sh holds the
-# library for four seconds before the write and six after the row is selected.
-mcp 08b-agent       4.0 15.0
-bridge 09-handover 106.0 46.0
+# Every desk in-point below is a station mark from timeline-roh-gnome-tour.tsv
+# plus 0.3 s. They are not chosen numbers: the take writes down when it aimed at
+# each row, and the shot is that moment plus the reach, the click and the page.
+# Library Doctor is out and the five that are left hold 5.4 s instead of 4.8 —
+# dropping a station buys time, and the shots are what should get it. Intro plus
+# desk still comes to 30.0, and the 1.8 s the missing station left goes into the
+# handover rather than the title card, whose animation is choreographed to its
+# own 3.0 s and would only sit still for longer.
+#
+# In-points are placeholders until they are measured on the take that is
+# actually cut. `find-page-turns.py TAKE TIMELINE` gives the moment each page
+# turns; the in-point is that moment minus 1.9 s, which is the lead the six
+# in-points of the 2026-08-29 11:11 take all sit at (median 1.90, spread 1.55
+# to 1.98). Do not carry the old `+0.3` over: it was the mark plus a constant
+# from a take script that wrote its mark at a different moment.
+desk T1 01-hook   "${SHOWREEL_IN_HOOK:-7.2}"      5.4 hold 0.00 0.50 0.50 "$(film2_statement 'One player. Everything you listen to.' 0.4 5.4)"
+desk T1 02-podcasts "${SHOWREEL_IN_PODCASTS:-19.2}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 5.4)"
+desk T1 03-releases "${SHOWREEL_IN_RELEASES:-71.5}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'New releases' 'from the artists you keep' 5.4)"
+desk T1 04-concerts "${SHOWREEL_IN_CONCERTS:-84.8}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Concerts nearby' 'for the same artists' 5.4)"
+desk T1 05-stats    "${SHOWREEL_IN_STATS:-97.1}"    5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Your listening, counted' '' 5.4)"
+# The agent shot is out. It asked the viewer to read a prompt, a page and a
+# highlighted fourteen-pixel row inside four and a half seconds, and what it
+# actually delivered was two screens of text going past. What MCP does is worth
+# a film of its own; it is not worth the last shot before the handover. mcp()
+# stays below, and putting the shot back is this one line.
+# The in-point follows the choice: in the 2026-08-29 tour the device row is
+# clicked at 123.3 and the page is up from about 124.5, with a sync already
+# running on it — the phone auto-syncs when it is plugged in, so the tour
+# arrived to find the transfer under way rather than starting one.
+bridge 09-handover "${SHOWREEL_BRIDGE_IN:-125.0}" "${SHOWREEL_PHONE_IN:-45.2}"
 
 # -------------------------------------------------------------------- the phone
 # The phone shots hold at nothing at all, and that is not laziness.
@@ -207,12 +295,68 @@ bridge 09-handover 106.0 46.0
 # So any amount above zero crops the device itself, which is why the handset
 # looked shaved off top and bottom. The framing for these shots already
 # happened, in device-frame.py; the cut has nothing to add to it.
-phone 10-search      11.0 4.2 hold 0.00 "$(film2_callout 'Reprise on Android' 'search, grouped by albums and artists' 4.2)"
-# Held slower than anything else in the film on purpose: this page is meant to
-# be read, not glanced at.
-phone 11-artist      18.6 3.6 hold 0.00 "$(film2_callout 'Straight to the artist' '' 3.6)"
-phone 12-play        30.0 3.6 hold 0.00 "$(film2_callout 'Play the newest album' '' 3.6)"
-phone 13-visuals     48.6 3.6 hold 0.00 "$(film2_callout 'The same visuals' '' 3.6)" out
+# Two shots, not four. The phone used to run search, artist, play and visuals at
+# 4.8 s each — nineteen seconds of Android navigation in a film whose claim is
+# that the library is the same everywhere. The navigation is the desktop's job;
+# what the phone has to show is that the music actually plays there and that the
+# visualiser is the same one. So: the cover, and then the bars moving to the
+# track you can hear. 7.2 s each, which is the length at which a visualiser
+# reads as following the music rather than as an animation.
+#
+# In-points are provisional until the take is reshot against the finished mix —
+# the bars only land on the beat if the phone was playing the film's own bed
+# while it was recorded.
+# One shot, not two, and the take is what decided it. The app draws the cover
+# and the spectrum into the same square and swaps them when the square is
+# tapped (NowPlayingSheet's onTap, guarded by coverBounds), and this take was
+# recorded with the spectrum already chosen — so it holds one picture for its
+# whole length, not a cover followed by a visualiser. Two shots would have put
+# a cut where nothing changes, which is the one cut a viewer notices and cannot
+# explain. So the picture runs on for 9.6 s and the caption band changes under
+# it, which is also closer to what was asked for: the phone shows the library
+# playing, and the bars are already moving to the beat while it does.
+#
+# The in-point is measured, and it took three renders because the arithmetic
+# had the sign backwards.
+#
+# The take plays the 55.8 s bed while the film runs on the 51 s one; both
+# rejoin the original track at 66.0 and only their A segments differ (41.518
+# against 36.516), so film time t sits at t + 5.002 in the take's bed for
+# everything after the bass, which is the whole phone half. Reading bed time 0
+# off the on-screen clock gave 4.2 and put this shot at 47.0.
+#
+# Then the finished cut was measured: the spectrum's own bar heights against
+# the film's own audio, band for band — the cyan third against 40-160 Hz, the
+# magenta third against 1-3.5 kHz, RMS per frame on both sides. The bars ran
+# 0.6 s AHEAD of the sound. The shot was moved 0.6 s later to compensate and
+# the lead went to 1.2 s, because a later in-point shows a further-advanced
+# moment of the handset's playback at every film second — it adds to the lead
+# rather than cancelling it. Two renders, slope +1.0, so zero lag is at 46.4.
+#
+# The lesson is the render, not the reasoning: the clock says one thing, the
+# picture says another, and only the picture is watching what the viewer will
+# watch. Re-measure after any change to the shot or the bed.
+# Two shots again, and this time the take can carry them. The single 9.6 s
+# picture above was forced by a take recorded with the spectrum already chosen —
+# cover and spectrum share one square and swap on a tap, so that take could not
+# show a cover followed by a visualiser. The reshoot is driven: titles, albums,
+# artist, play in one continuous gesture, and only then the square tapped over
+# to the spectrum. So the navigation is one shot with no cut inside it, which is
+# what keeps it reading as 'the same library, in your hand' rather than as a
+# second tour of an app the desktop half has already toured.
+#
+# BOTH IN-POINTS ARE UNMEASURED. The bars only sit on the beat if the handset
+# was playing this film's own bed while it was recorded, and the on-screen clock
+# is not good enough to find the offset: aligning by it once put the visualiser
+# 0.6 s ahead and the readout gave no hint. Measure on the finished cut, by
+# correlating the spectrum square's own bar heights against the film's audio in
+# two bands — cyan third against 40-160 Hz, magenta third against 1-3.5 kHz. A
+# later in-point makes a leading picture lead more, so take the slope over two
+# renders rather than reasoning about the direction.
+phone 12-android-nav "${SHOWREEL_PHONE_NAV_IN:-46.4}" 9.6 hold 0.00 \
+  "$(film2_callout 'Reprise on Android' 'the same library, in your hand' 9.6)"
+phone 13-android-vis "${SHOWREEL_PHONE_VIS_IN:-56.0}" 7.2 hold 0.00 \
+  "$(film2_callout 'The same visuals' 'in time with the music' 7.2)" out
 
 card endcard 14-end
 
