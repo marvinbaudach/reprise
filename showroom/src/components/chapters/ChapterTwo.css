@@ -313,6 +313,7 @@
 
 .gate-cluster__marks {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
 }
 
@@ -458,12 +459,11 @@
 }
 
 /*
- * A touch-sized tick is 44px wide, and there are 27 of them: four clusters
- * across a phone gives each cluster ~70px to hold up to seven of those, so the
- * marks ran 37px past the viewport and took the whole page sideways with them.
- * Wide enough, the fixed 44px still fits four across and stays.
+ * The 44px floor is unconditional on touch. When a cluster cannot hold all of
+ * its marks on one line, the marks wrap inside that cluster instead of
+ * overlapping the next one or being clipped at the viewport edge.
  */
-@media (hover: none) and (min-width: 46.0625rem) {
+@media (hover: none) {
   .gate-strip__tick {
     min-width: 44px;
   }
@@ -480,9 +480,7 @@
   .gate-cluster {
     flex-basis: calc(50% - var(--gap-tight));
   }
-}
 
-@media (max-width: 46rem) {
   .pipeline {
     flex-direction: column;
     align-items: stretch;

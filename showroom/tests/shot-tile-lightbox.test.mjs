@@ -123,11 +123,10 @@ test('the Lightbox inerts the page behind it and forgets its zoom with the pictu
   const cleanup = source.match(/removeAttribute\('aria-hidden'\)[\s\S]*?returnFocus\.focus\(\)/);
   assert.ok(cleanup, 'returnFocus must be restored after the inert attributes are dropped');
 
-  // The zoom belongs to one picture, not to a bare boolean — and to the picture
-  // that is on screen, which lags the requested index while the next file
-  // decodes. Tying it to `activeIndex` would apply an origin measured on the
-  // outgoing shot to the incoming one.
-  assert.match(source, /zoom\.index === shownIndex/);
+  // The zoom belongs to one picture, not to a bare boolean. Its display follows
+  // the requested index so the outgoing shot settles before the incoming one
+  // replaces it.
+  assert.match(source, /zoom\.index === activeIndex/);
   assert.match(source, /setZoom\(\{\s*index: shownIndex/);
   // ...and the origin outlives the zoom itself: dropping the state outright
   // would snap the origin back to the centre while the picture is still
