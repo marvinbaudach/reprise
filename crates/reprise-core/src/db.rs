@@ -761,6 +761,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::library::settings::migrate_v79(conn)?;
     crate::library::settings::migrate_v80(conn)?;
     crate::db_sync_log::migrate_v81(conn)?;
+    crate::db_sort_indexes::migrate_v81(conn)?;
     Ok(())
 }
 
