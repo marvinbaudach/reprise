@@ -254,19 +254,26 @@ fn build_plan(
             })
             .collect::<Vec<_>>();
     desired_files.sort_by_key(|file| file.track.id);
-    let desired_by_id = desired_files
-        .iter()
-        .cloned()
-        .map(|file| (file.track.id, file))
-        .collect::<HashMap<_, _>>();
     let inventory_by_id = inventory
         .iter()
         .cloned()
         .map(|file| (file.track_id, file))
         .collect::<HashMap<_, _>>();
+    let mut desired_by_id = desired_files
+        .drain(..)
+        .map(|file| (file.track.id, file))
+        .collect::<HashMap<_, _>>();
+    super::device_case::rewrite_desired_paths(
+        &mut desired_by_id,
+        &inventory,
+        &inventory_by_id,
+        &managed_files,
+    );
+    desired_files = desired_by_id.values().cloned().collect();
+    desired_files.sort_by_key(|file| file.track.id);
     let managed_paths = managed_files
         .iter()
-        .map(|file| file.relative_path.as_str())
+        .map(|file| file.relative_path.to_lowercase())
         .collect::<HashSet<_>>();
 
     let mut plan = MirrorPlan {
@@ -420,7 +427,7 @@ fn plan_file_changes(
     inventory_by_id: &HashMap<i64, DeviceFileRecord>,
     unavailable: &HashMap<i64, UnavailableTrack>,
     managed_files_scanned: bool,
-    managed_paths: &HashSet<&str>,
+    managed_paths: &HashSet<String>,
     plan: &mut MirrorPlan,
 ) {
     let mut desired_ids = desired.keys().copied().collect::<Vec<_>>();
@@ -432,7 +439,7 @@ fn plan_file_changes(
             Some(existing)
                 if inventory_matches(existing, file)
                     && managed_files_scanned
-                    && !managed_paths.contains(existing.device_path.as_str()) =>
+                    && !managed_paths.contains(&existing.device_path.to_lowercase()) =>
             {
                 plan.copy.push(file.clone());
             }
@@ -511,9 +518,14 @@ fn plan_orphan_removals(
     plan: &mut MirrorPlan,
 ) {
     let mut seen_physical = HashSet::new();
+    let known_folded_paths = known_paths
+        .iter()
+        .map(|path| path.to_lowercase())
+        .collect::<HashSet<_>>();
     for file in managed_files {
         if !seen_physical.insert(file.relative_path.as_str())
             || known_paths.contains(&file.relative_path)
+            || known_folded_paths.contains(&file.relative_path.to_lowercase())
         {
             continue;
         }

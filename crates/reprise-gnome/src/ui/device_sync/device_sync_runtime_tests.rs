@@ -296,6 +296,8 @@ fn save_road_settings(conn: &Rc<Db>, device_id: &str) {
 
 #[path = "device_sync_analysis_metadata_tests.rs"]
 mod analysis_metadata_tests;
+#[path = "device_sync_analysis_planning_warning_tests.rs"]
+mod analysis_planning_warning_tests;
 #[path = "device_sync_auto_start_tests.rs"]
 mod auto_start_tests;
 #[path = "device_sync_compact_tests.rs"]

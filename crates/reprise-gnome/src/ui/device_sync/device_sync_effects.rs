@@ -243,7 +243,17 @@ pub(super) async fn perform(
         }
         Effect::WriteAnalysis { index } => {
             let planned = work.machine.borrow().plan().analysis_writes[index].clone();
-            Event::AnalysisWritten(copy_analysis_sidecar(runtime, work, &planned).await)
+            let result = copy_analysis_sidecar(runtime, work, &planned).await;
+            if let Err(error) = &result {
+                work.log.note(
+                    runtime,
+                    DeviationKind::AnalysisFailed,
+                    Some(planned.track_id),
+                    &planned.device_path,
+                    error.clone(),
+                );
+            }
+            Event::AnalysisWritten(result)
         }
         Effect::WritePlaylist {
             index,
