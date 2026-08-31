@@ -34,6 +34,8 @@ modules:
       - -Dprofile=release
       - -Dstem_backend=false
     sources:
-      - type: dir
-        path: .
+      # RELEASING.md defines how the release tag and this archive hash are produced.
+      - type: archive
+        url: https://github.com/marvinbaudach/reprise/archive/refs/tags/v0.1.111.tar.gz
+        sha256: REPLACE_WITH_TAG_ARCHIVE_SHA256
       - flatpak/cargo-sources.json
