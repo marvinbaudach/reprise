@@ -46,7 +46,7 @@ if ((requireReleaseSigning || hasAnyReleaseSigningValue) && !hasReleaseSigningCo
 }
 
 android {
-    namespace = "de.reprise.spike"
+    namespace = "io.github.marvinbaudach.reprise"
     // AndroidX 1.19 refuses anything below 37, so the spike compiles against
     // the same API level the test device actually runs.
     compileSdk = 37

@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source_root=${ANDROID_THEME_SOURCE_ROOT:-"$repo_root/android/app/src/main/java"}
-theme_file=${ANDROID_THEME_FILE:-"$source_root/de/reprise/spike/ui/theme/NocturneTheme.kt"}
+theme_file=${ANDROID_THEME_FILE:-"$source_root/io/github/marvinbaudach/reprise/ui/theme/NocturneTheme.kt"}
 theme_directory=${ANDROID_THEME_DIRECTORY:-"$(dirname "$theme_file")"}
 
 if [[ ! -d "$source_root" ]]; then
