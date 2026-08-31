@@ -177,7 +177,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Flatpak tooling and GNOME 50 SDK
+      - name: Install Flatpak tooling and add Flathub
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -185,6 +185,34 @@ jobs:
           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak --version
           ostree --version
+
+      - name: Reclaim disk for the Flatpak build
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          {
+            echo "### Flatpak disk headroom"
+            echo ""
+            echo "**After runner cleanup (Flatpak build baseline)**"
+            echo '```text'
+            df -h /
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore cached Flatpak runtimes
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-user-org.gnome.Platform-50-org.gnome.Sdk-50-org.freedesktop.Sdk.Extension.rust-stable-25.08
+
+      - name: Install GNOME 50 SDK
+        run: |
+          set -euo pipefail
           retry_delays=(20 40 60 120)
           for attempt in 1 2 3 4 5; do
             # A Flathub edge mirror can resolve the ref but miss a static-delta object
@@ -312,6 +340,21 @@ jobs:
             sleep "$delay"
           done
 
+      - name: Verify restored Flatpak runtimes
+        run: |
+          set -euo pipefail
+          installed_refs=$(flatpak --user list --columns=application,branch | \
+            awk -F '\t' '{ print $1 "//" $2 }')
+          for required_ref in \
+            org.gnome.Platform//50 \
+            org.gnome.Sdk//50 \
+            org.freedesktop.Sdk.Extension.rust-stable//25.08; do
+            if ! grep --fixed-strings --line-regexp --quiet "$required_ref" <<< "$installed_refs"; then
+              echo "Missing required Flatpak runtime after cache restore and install: $required_ref" >&2
+              exit 1
+            fi
+          done
+
       - name: Upload Flatpak runtime install log
         if: failure()
         uses: actions/upload-artifact@v7
@@ -320,24 +363,6 @@ jobs:
           path: ${{ runner.temp }}/flatpak-runtime-install.log
           if-no-files-found: ignore
           retention-days: 14
-
-      - name: Reclaim disk for the Flatpak build
-        run: |
-          set -euo pipefail
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /opt/ghc || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
-          sudo docker image prune --all --force || true
-          {
-            echo "### Flatpak disk headroom"
-            echo ""
-            echo "**After runner cleanup (Flatpak build baseline)**"
-            echo '```text'
-            df -h /
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build the Flatpak repository
         env:
