@@ -64,16 +64,23 @@ for directory, dirs, files in os.walk(root):
             continue
         skipping = False
         depth = None
+        nesting = 0
         with open(path, encoding="utf-8") as source:
             for number, line in enumerate(source, 1):
                 if not skipping and cfg_test.match(line):
                     skipping = True
                     depth = None
+                    nesting = 0
                     continue
                 if skipping:
                     code = quoted.sub("", line.split("//", 1)[0])
                     if depth is None:
-                        if ";" in code and "{" not in code:
+                        nesting += code.count("(") + code.count("[")
+                        nesting -= code.count(")") + code.count("]")
+                        single_item = nesting == 0 and (
+                            ";" in code or code.rstrip().endswith(",")
+                        )
+                        if single_item and "{" not in code:
                             skipping = False
                             continue
                         if "{" not in code:
