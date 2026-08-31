@@ -10,10 +10,28 @@ fn index_exists(conn: &Connection, name: &str) -> bool {
         > 0
 }
 
+fn create_v45_sync_events(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE sync_events (
+           run_id       INTEGER NOT NULL,
+           kind         TEXT NOT NULL
+             CHECK (kind IN (
+               'skipped','failed','deleted',
+               'conversion_fallback','playlist_write_failed'
+             )),
+           track_id     INTEGER,
+           device_path  TEXT NOT NULL,
+           detail       TEXT NOT NULL
+         );
+         CREATE INDEX idx_sync_events_run ON sync_events(run_id);",
+    )
+    .unwrap();
+}
+
 #[test]
 fn migrate_v81_preserves_existing_sync_events() {
     let conn = Connection::open_in_memory().unwrap();
-    migrate_v45(&conn).unwrap();
+    create_v45_sync_events(&conn);
     conn.execute(
         "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail)
          VALUES (1, 'failed', 1666, 'Artist/Album/Track.opus', 'copy failed')",
@@ -50,6 +68,20 @@ fn migrate_v81_preserves_existing_sync_events() {
         )
     );
     assert!(index_exists(&conn, "idx_sync_events_run"));
+    conn.execute(
+        "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail)
+         VALUES (1, 'analysis_failed', 1667, 'Artist/Album/Track.reprise-analysis',
+                 'analysis copy failed')",
+        [],
+    )
+    .unwrap();
+}
+
+#[test]
+fn migrate_v45_declares_the_current_analysis_failure_kind() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate_v45(&conn).unwrap();
+
     conn.execute(
         "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail)
          VALUES (1, 'analysis_failed', 1667, 'Artist/Album/Track.reprise-analysis',

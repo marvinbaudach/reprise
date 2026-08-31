@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC, i
 CREATE TABLE IF NOT EXISTS sync_events (
   run_id       INTEGER NOT NULL,
   kind         TEXT NOT NULL
-    CHECK (kind IN ('skipped','failed','deleted','conversion_fallback','playlist_write_failed')),
+    CHECK (kind IN ('skipped','failed','analysis_failed','deleted','conversion_fallback','playlist_write_failed')),
   track_id     INTEGER,
   device_path  TEXT NOT NULL,
   detail       TEXT NOT NULL
