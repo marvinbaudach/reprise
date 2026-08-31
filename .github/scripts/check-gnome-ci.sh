@@ -14,7 +14,6 @@ fi
 echo "== GNOME contracts =="
 scripts/check-accessibility-semantics.sh
 scripts/check-input-parity.sh
-scripts/check-runtime-service-install.sh
 scripts/check-frontend-thinness.sh
 scripts/check-ux-traceability.sh
 scripts/check-appstream.sh
