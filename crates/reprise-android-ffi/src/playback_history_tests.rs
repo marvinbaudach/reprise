@@ -61,6 +61,20 @@ fn queue_order_previous_and_history_previous_diverge_after_a_direct_jump() {
 }
 
 #[test]
+fn gnome_previous_still_routes_to_playback_history() {
+    let queue_transport = include_str!("../../reprise-gnome/src/ui/playback/queue_transport.rs");
+    let up_next_transport =
+        include_str!("../../reprise-gnome/src/ui/playback/up_next_transport.rs");
+
+    assert!(queue_transport.contains(
+        "pub(in crate::ui) fn previous(self: &Rc<Self>) {\n        self.previous_with_up_next();"
+    ));
+    assert!(up_next_transport.contains(
+        "pub(in crate::ui) fn previous_with_up_next(self: &std::rc::Rc<Self>) {\n        self.previous_from_history();"
+    ));
+}
+
+#[test]
 fn play_14_previous_returns_to_what_actually_played_under_shuffle() {
     let fixture = play_three_tracks();
     fixture.session.set_shuffle(true).unwrap();
