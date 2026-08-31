@@ -112,10 +112,10 @@ gate "Architecture" -- scripts/check-architecture.sh
 gate "Device-sync GStreamer" -- scripts/check-device-sync-gstreamer.sh
 gate "Accessibility semantics" -- scripts/check-accessibility-semantics.sh
 gate "Input parity" -- scripts/check-input-parity.sh
-gate "Runtime service install" -- scripts/check-runtime-service-install.sh
 gate "Frontend thinness" -- scripts/check-frontend-thinness.sh
 gate "UX traceability" -- scripts/check-ux-traceability.sh
 gate "AppStream" -- scripts/check-appstream.sh
+gate "Release metadata" -- scripts/check-release-metadata.sh
 gate "Flatpak manifest" -- scripts/check-flatpak-manifest.sh
 gate "GNOME idioms" -- scripts/check-gnome-idioms.sh
 gate "AI hygiene" -- scripts/check-ai-hygiene.sh
