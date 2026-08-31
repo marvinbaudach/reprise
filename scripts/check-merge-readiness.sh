@@ -50,11 +50,27 @@ fi
 # of guessing which lines are checks. The preparation steps above stay outside
 # it deliberately: they are preconditions, not checks, and counting them would
 # inflate the number the page shows.
+skipped_here=()
+
+is_skipped() {
+  local name=$1 entry
+  [[ -n ${MERGE_READINESS_SKIP_GATES:-} ]] || return 1
+  while IFS= read -r entry; do
+    [[ $entry == "$name" ]] && return 0
+  done <<<"${MERGE_READINESS_SKIP_GATES}"
+  return 1
+}
+
 gate() {
   local name=$1
   shift
   if [[ ${1:-} == -- ]]; then
     shift
+  fi
+  if is_skipped "$name"; then
+    echo "== $name (skipped here; runs in another CI job) =="
+    skipped_here+=("$name")
+    return 0
   fi
   echo "== $name =="
   "$@"
@@ -134,3 +150,7 @@ gate "Runtime service bus tests" -- dbus-run-session -- cargo test --locked -p r
 gate "Dependency audit" -- run_audit
 
 echo "Merge-readiness checks passed against $base_ref"
+
+if (( ${#skipped_here[@]} > 0 )); then
+  echo "Skipped here, covered by another CI job: ${skipped_here[*]}"
+fi

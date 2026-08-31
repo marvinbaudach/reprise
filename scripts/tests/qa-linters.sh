@@ -97,6 +97,10 @@ require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings'
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
 require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
+require_pattern '^skipped_here=\(\)$' scripts/check-merge-readiness.sh
+require_pattern '^is_skipped\(\) \{$' scripts/check-merge-readiness.sh
+require_pattern 'MERGE_READINESS_SKIP_GATES' scripts/check-merge-readiness.sh
+require_pattern 'Skipped here, covered by another CI job:' scripts/check-merge-readiness.sh
 # Both calls moved into the `gate "<name>" -- <command>` form, so neither path
 # starts its own line any more. The assertion follows the call rather than the
 # layout: the gate must still name the project-quality wrapper, and it must
