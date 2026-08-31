@@ -17,7 +17,6 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source scripts/showreel/common.sh
 
-APP=io.github.marvinbaudach.reprise
 timeline="$SHOWREEL_WORK/timeline-android2.tsv"
 t0=$(date +%s.%N)
 : >"$timeline"
