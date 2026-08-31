@@ -278,6 +278,31 @@ fn managed_write_names_destination_directory_creation_failures() {
 }
 
 #[test]
+fn managed_write_names_target_storage_resolution_failures() {
+    let (temp, storage) = fixture();
+    let source = temp.path().join("source.flac");
+    fs::write(&source, b"audio").unwrap();
+
+    let result = run(storage.replace_managed(
+        Some(StorageId(u32::MAX)),
+        "/Music/Reprise",
+        &gio::File::for_path(source),
+        "Road/song.flac",
+        5,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::ResolveStorage,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn mtp_17_same_size_untracked_destination_is_overwritten() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
@@ -647,6 +672,15 @@ fn cleanup_partials_still_fails_before_the_walk_when_storage_cannot_be_resolved(
     let result = run(storage.cleanup_partials_in(Some(StorageId(u32::MAX)), "/Music/Reprise"));
 
     assert!(matches!(result, Err(DeviceIoError::StorageNotFound)));
+}
+
+#[test]
+fn cleanup_partials_still_fails_before_the_walk_when_the_target_path_is_invalid() {
+    let (_temp, storage) = fixture();
+
+    let result = run(storage.cleanup_partials_in(None, "../outside"));
+
+    assert!(matches!(result, Err(DeviceIoError::InvalidRelativePath)));
 }
 
 #[test]
