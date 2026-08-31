@@ -13,8 +13,8 @@
 # Logs
 *.log
 
-# Session scratch (not part of the repo)
-.superpowers/
+# Session scratch (not part of the published tree)
+/.superpowers/
 
 # Git worktrees (local development)
 .worktrees/

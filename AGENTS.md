@@ -34,20 +34,16 @@ successor. **Nine-crate** Cargo workspace:
 
 `scripts/check-architecture.sh` enforces the dependency direction between all nine.
 
-## Where we are RIGHT NOW — read these two, in order
+## Where we are RIGHT NOW
 
-1. **`.superpowers/sdd/progress.md`** — the authoritative ledger. Append-only history of
-   every task: which are complete (with commit hashes), what was fixed, deferred minors,
-   and incidents. **Tasks marked `complete` are DONE — do not redo them.** The last lines
-   tell you which stage/task is in flight.
-2. **`git log --oneline -20`** — cross-check the ledger against reality. Commits are the
-   ground truth; only committed work exists. Active work lives on a dedicated branch and is
-   published through the GitHub flow below.
+Read **`git log --oneline -20`** before starting. Commits are the authoritative record of
+what is done; only committed work exists. Cross-check the current branch and any maintained
+plan named by those commits before deciding which task is genuinely unfinished. Active work
+lives on a dedicated branch and is published through the GitHub flow below.
 
-Throwaway per-stage implementation plans are not kept in the repo — the
-`.superpowers/sdd/progress.md` ledger plus `git log` are the authoritative record of what is
-done and in flight. Work new features via the brainstorm → spec → plan → TDD method below,
-holding any working spec/plan in the session rather than committing it.
+Throwaway per-stage implementation plans are not kept in the repo. Work new features via the
+brainstorm → spec → plan → TDD method below, holding any short-lived working spec or plan in
+the session rather than committing it.
 
 The exception is a plan that outlives its own execution because later work has to follow it:
 those live in `docs/plans/` and are maintained, not archived (`docs/plans/android-sync.md`,
