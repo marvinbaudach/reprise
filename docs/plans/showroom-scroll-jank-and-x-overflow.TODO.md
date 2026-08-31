@@ -48,8 +48,9 @@ a desktop browser looked clean.
 Both arms built from the same tree (`origin/dev` at 4982f4f47b vs. the fix),
 served as static builds, Chromium 151 headless, one page per viewport width,
 scrolled top to bottom first so every reveal has run. The number is the
-document's own width against the viewport it was given, with the
-`overflow-x: clip` backstop lifted so nothing hides the geometry:
+document's own width against the viewport it was given. It establishes whether
+the page itself widens; it does not establish that every descendant stays
+inside its own layout box:
 
 | viewport | before: page width | over | after: page width | over |
 |---|---|---|---|---|
@@ -66,23 +67,56 @@ document's own width against the viewport it was given, with the
 
 Headless Chromium answers `(hover: none)` whether or not touch is emulated, so
 every row above is the touch branch of those media queries — the branch a phone
-takes, and the one the report is about. Re-measured at 320/390/412/640 as a
-narrow desktop window the page also comes out at zero, with the tick's computed
-`min-width` at `0px` below 737px and `44px` above it, which is what the rewrite
-intends.
+takes, and the one the report is about. The page-width result remains useful:
+the document no longer grows at those widths. The original element probe was
+not a containment proof, however, because it counted descendants of
+`body { overflow-x: clip }` as contained even when they painted outside their
+own cluster.
 
-Counting the elements instead of the page: before, every width up to 768 had
-in-flow boxes reaching past the viewport edge that nothing contained — ten of
-them at 412px, the widest 210px out. After, there are none at any width except
-the 768px case below.
+At **844×390** with touch emulation, four 44px ticks needed **176px** inside a
+**73px** `.gate-cluster__marks` box: the ticks ended at x=397 while the box
+ended at x=296. Seven ticks needed **308px** inside a **154px** box: the ticks
+ended at x=528 while the box ended at x=377. That is up to **151px** of spill
+over the following cluster even though the document itself stayed at the
+viewport width. The final fix keeps the page-width result and removes that
+element-level overlap by wrapping the marks inside each cluster.
+
+### Measured again after the wrap
+
+Same harness, the built branch, touch emulation, page walked top to bottom
+first. `minTick` is the narrowest tick anywhere on the page, `spill` the
+furthest any tick reaches past its own `.gate-cluster__marks` box, and the last
+column is the document width against the viewport with the `overflow-x: clip`
+backstop lifted:
+
+| viewport | minTick | spill | ticks overlapping | page over |
+|---|---|---|---|---|
+| 320 | 60.3 | 0 | 0 | 0 |
+| 360 | 46.6 | 0 | 0 | 0 |
+| 390 | 51.2 | 0 | 0 | 0 |
+| 412 | 54.8 | 0 | 0 | 0 |
+| 430 | 57.5 | 0 | 0 | 0 |
+| 540 | 44.8 | 0 | 0 | 0 |
+| 640 | 45.0 | 0 | 0 | 0 |
+| 736 | 44.9 | 0 | 0 | +2 |
+| 737 | 66.7 | 0 | 0 | +2 |
+| 768 | 76.3 | 0 | 0 | +3 |
+| 844 | 51.2 | 0 | 0 | 0 |
+| 900 | 43.9 | 0 | 0 | 0 |
+| 1024 | 46.6 | 0 | 0 | 0 |
+
+No tick is narrower than its 44px floor anywhere (the 43.9 at 900px is the
+fractional layout box of a 44px `min-width`, not a shorter target), nothing
+leaves its cluster, and the only page-level overflow left is the hero overhang
+named below.
 
 ### The fix
 
 `showroom/src/components/chapters/ChapterTwo.css`
 
-- The 44px floor now applies only where there is room for it:
-  `@media (hover: none) and (min-width: 46.0625rem)`. Below that the tick goes
-  back to dividing the space it has, which is what the base rule always did.
+- The 44px floor applies at every touch width. `.gate-cluster__marks` wraps, so
+  a cluster that cannot hold its marks on one line takes another line instead
+  of letting the ticks paint over the next cluster.
 - Narrow, `.gate-cluster` takes `flex-basis: calc(50% - var(--gap-tight))`, so
   the clusters go two to a row instead of four or five and each tick gets a
   usable share of half the figure rather than a seventh of a fifth.
@@ -91,19 +125,21 @@ the 768px case below.
 
 - `overflow-x: clip` on `html, body` replaces `overflow-x: hidden` on `body`.
   `clip` creates no scroll container at all, so a sub-pixel remainder can never
-  become an axis to drag. It is a backstop and nothing more: the table above was
-  measured with it lifted, and the cause is gone underneath it.
+  become an axis to drag. It is a backstop and nothing more: the page-width
+  table records that axis outcome, while the 844×390 box measurements above
+  expose the overlap that clipping hid.
 
-### Two things this knowingly leaves
+### Two boundary details
 
-- **The touch-target floor below 737px.** A phone tick is now as wide as its
-  share of the cluster, not 44px. The 44px *height* is untouched, so the target
-  still clears the minimum vertically, and the marks are a group control that a
-  reader taps to read a gate, not a primary action. Widening them costs the page
-  its width; this is the side of that trade the fix takes.
-- **+3px at exactly 768px.** `.hero-product__phone` is placed `right: -5%` on
-  purpose — the phone plate overhangs the desktop plate. At 768px that overhang
-  clears the page's inline padding by 2.5px. It is present in `origin/dev` too,
+- **The touch-target floor.** The 44px floor is back at every touch width. The
+  marks wrap inside a narrow cluster rather than buying page width by shrinking
+  the targets below that floor; the 23px-wide ticks measured at 390–412px no
+  longer fall below WCAG 2.5.8's 24px minimum.
+- **+2 to +3px between 736 and 768px.** `.hero-product__phone` is placed
+  `right: -5%` on purpose — the phone plate overhangs the desktop plate. Across
+  that band the overhang clears the page's inline padding: +2.0px at 736 and
+  737, +2.5px at 768. It is the only offender left at any width, it is present
+  in `origin/dev` too,
   it is the only offender left at any width, and it is not what the report was
   about.
 
