@@ -317,19 +317,6 @@ impl LyricsView {
         *self.on_retry.borrow_mut() = Some(Rc::new(callback));
     }
 
-    #[allow(dead_code)]
-    pub(in crate::ui) fn retry(&self) {
-        let callback = self.on_retry.borrow().clone();
-        if let Some(callback) = callback {
-            callback();
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(in crate::ui) fn set_on_status_changed(&self, callback: impl Fn() + 'static) {
-        *self.on_status_changed.borrow_mut() = Some(Rc::new(callback));
-    }
-
     pub(in crate::ui) fn set_on_footer_changed(&self, callback: impl Fn() + 'static) {
         *self.on_footer_changed.borrow_mut() = Some(Rc::new(callback));
     }
@@ -371,16 +358,6 @@ impl LyricsView {
 
     pub(in crate::ui) fn footer_text(&self) -> String {
         self.footer_text.borrow().clone()
-    }
-
-    #[allow(dead_code)]
-    pub(in crate::ui) fn is_loading(&self) -> bool {
-        self.loading.get()
-    }
-
-    #[allow(dead_code)]
-    pub(in crate::ui) fn can_retry(&self) -> bool {
-        self.can_retry.get()
     }
 
     pub(in crate::ui) fn smoke_snapshot(
