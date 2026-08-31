@@ -21,6 +21,7 @@ export function ShowreelFilm() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [captionsShowing, setCaptionsShowing] = useState(false);
 
   const toggle = useCallback(() => {
     const video = videoRef.current;
@@ -41,6 +42,16 @@ export function ShowreelFilm() {
     // Turning the sound on is the clearest statement of intent there is, so it
     // also starts the film if it happens to be sitting still.
     if (!next && video.paused) void video.play().catch(() => undefined);
+  }, []);
+
+  const toggleCaptions = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const track = video.textTracks[0];
+    if (!track) return;
+    const next = track.mode !== 'showing';
+    track.mode = next ? 'showing' : 'hidden';
+    setCaptionsShowing(next);
   }, []);
 
   return (
@@ -81,6 +92,10 @@ export function ShowreelFilm() {
           <button type="button" className="film__control" onClick={toggleSound}>
             <span aria-hidden="true">{muted ? '🔇' : '🔊'}</span>
             {muted ? 'Sound on' : 'Sound off'}
+          </button>
+          <button type="button" className="film__control" onClick={toggleCaptions}>
+            <span aria-hidden="true">CC</span>
+            {captionsShowing ? 'Captions off' : 'Captions on'}
           </button>
         </div>
 
