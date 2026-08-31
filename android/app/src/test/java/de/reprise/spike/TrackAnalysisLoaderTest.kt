@@ -10,6 +10,97 @@ import org.junit.Test
 
 class TrackAnalysisLoaderTest {
     @Test
+    fun finishedBarsAreWarmAcrossRecompositionWithoutAnotherRead() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val answerQueued = CountDownLatch(1)
+        var reads = 0
+        val expected = listOf(SpectralBar(false, 0.75f, 0.1, 0.2, 0.3))
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {},
+            readBars = { _, _ ->
+                reads += 1
+                expected
+            },
+            onMainThread = { work ->
+                mainHops.add(work)
+                answerQueued.countDown()
+            },
+        )
+
+        loader.loadBars(41, 64) {}
+        assertTrue("the bar answer was never queued", answerQueued.await(2, TimeUnit.SECONDS))
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        var delivered: List<SpectralBar>? = null
+        loader.loadBars(41, 64) { delivered = it }
+        loader.shutdownForTest()
+
+        assertEquals(expected, delivered)
+        assertTrue(loader.warmth(41).bars)
+        assertEquals(1, reads)
+    }
+
+    @Test
+    fun aPrefetchedSpectrogramIsWarmAcrossRecompositionWithoutAnotherRead() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val readStarted = CountDownLatch(1)
+        var reads = 0
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {},
+            readBars = { _, _ -> null },
+            readSpectrogram = {
+                reads += 1
+                readStarted.countDown()
+                null
+            },
+            onMainThread = mainHops::add,
+        )
+
+        loader.prefetch(listOf(41))
+        assertTrue("the prefetch never reached FFI", readStarted.await(2, TimeUnit.SECONDS))
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        var delivered = false
+        loader.loadSpectrogram(41) { delivered = true }
+
+        assertTrue(delivered)
+        assertTrue(loader.warmth(41).spectrogram)
+        assertEquals(1, reads)
+    }
+
+    @Test
+    fun retainingTheFiveTrackWindowEvictsAnalysisOutsideIt() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val firstReads = CountDownLatch(5)
+        val evictedRead = CountDownLatch(1)
+        val reads = mutableMapOf<Long, Int>()
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {},
+            readBars = { _, _ -> null },
+            readSpectrogram = { trackId ->
+                reads[trackId] = reads.getOrDefault(trackId, 0) + 1
+                if (reads[trackId] == 1) firstReads.countDown() else evictedRead.countDown()
+                null
+            },
+            onMainThread = mainHops::add,
+        )
+
+        loader.prefetch(listOf(1, 2, 3, 4, 5))
+        assertTrue("the initial window did not load", firstReads.await(2, TimeUnit.SECONDS))
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+        loader.retain(setOf(2, 3, 4, 5, 6))
+
+        loader.loadSpectrogram(2) {}
+        loader.loadSpectrogram(1) {}
+
+        assertTrue("the evicted track was not read again", evictedRead.await(2, TimeUnit.SECONDS))
+        loader.shutdownForTest()
+        assertEquals(1, reads[2])
+        assertEquals(2, reads[1])
+    }
+
+    @Test
     fun importAndBarReadShareOneOffMainThreadLaneInThatOrder() {
         val caller = Thread.currentThread()
         val operations = mutableListOf<String>()
