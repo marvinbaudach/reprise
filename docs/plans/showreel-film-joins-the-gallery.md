@@ -2,7 +2,7 @@
 slug: showreel-film-joins-the-gallery
 worktree: /home/marvin/Projects/reprise-showreel-film-joins-the-gallery
 branch: feature/showreel-film-joins-the-gallery
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-31
 ---
