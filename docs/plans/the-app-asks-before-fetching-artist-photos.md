@@ -2,7 +2,7 @@
 slug: the-app-asks-before-fetching-artist-photos
 worktree: /home/marvin/Projects/reprise-the-app-asks-before-fetching-artist-photos
 branch: feature/the-app-asks-before-fetching-artist-photos
-phase: shipped
+phase: coded
 codex_session:
 created: 2026-08-30
 ---
