@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -86,6 +87,10 @@ internal fun NowPlayingSheet(
     val horizontalOffset = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
     val gestureScope = rememberCoroutineScope()
+    var swipeWidthPx by remember { mutableFloatStateOf(0f) }
+    var outgoingTrack by remember { mutableStateOf<LibraryTrack?>(null) }
+    var exitFinished by remember { mutableStateOf(false) }
+    val displayedTrack = outgoingTrack ?: track
     var seekMarker by remember { mutableStateOf<String?>(null) }
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -117,6 +122,14 @@ internal fun NowPlayingSheet(
         delay(600)
         seekMarker = null
     }
+    LaunchedEffect(track.id, exitFinished, outgoingTrack?.id) {
+        val capturedTrack = outgoingTrack ?: return@LaunchedEffect
+        if (exitFinished && track.id != capturedTrack.id) {
+            horizontalOffset.snapTo(0f)
+            outgoingTrack = null
+            exitFinished = false
+        }
+    }
     PredictiveBackHandler {
         try {
             it.collect { event -> backProgress = event.progress }
@@ -130,6 +143,7 @@ internal fun NowPlayingSheet(
         modifier = Modifier
             .fillMaxSize()
             .testTag("now-playing-gestures")
+            .onSizeChanged { size -> swipeWidthPx = size.width.toFloat() }
             .nowPlayingGestures(
                 animationsEnabled = motion.sceneAnimationsEnabled,
                 onHorizontalOffset = { offset ->
@@ -139,15 +153,37 @@ internal fun NowPlayingSheet(
                     gestureScope.launch { verticalOffset.snapTo(offset) }
                 },
                 onSettle = { decision ->
-                    when (decision) {
-                        PlayGestureDecision.NEXT -> controls.next()
-                        PlayGestureDecision.PREVIOUS -> controls.previous()
-                        PlayGestureDecision.DISMISS -> close()
-                        PlayGestureDecision.SPRING_BACK -> Unit
-                    }
-                    gestureScope.launch {
-                        horizontalOffset.animateTo(0f, spring())
-                        verticalOffset.animateTo(0f, spring())
+                    val advancesTrack = decision == PlayGestureDecision.NEXT ||
+                        decision == PlayGestureDecision.PREVIOUS
+                    if (advancesTrack && motion.sceneAnimationsEnabled && swipeWidthPx > 0f) {
+                        outgoingTrack = track
+                        exitFinished = false
+                        gestureScope.launch {
+                            val exitOffset = if (decision == PlayGestureDecision.NEXT) {
+                                -swipeWidthPx
+                            } else {
+                                swipeWidthPx
+                            }
+                            horizontalOffset.animateTo(exitOffset, spring())
+                            if (decision == PlayGestureDecision.NEXT) {
+                                controls.next()
+                            } else {
+                                controls.previous()
+                            }
+                            exitFinished = true
+                            verticalOffset.animateTo(0f, spring())
+                        }
+                    } else {
+                        when (decision) {
+                            PlayGestureDecision.NEXT -> controls.next()
+                            PlayGestureDecision.PREVIOUS -> controls.previous()
+                            PlayGestureDecision.DISMISS -> close()
+                            PlayGestureDecision.SPRING_BACK -> Unit
+                        }
+                        gestureScope.launch {
+                            horizontalOffset.animateTo(0f, spring())
+                            verticalOffset.animateTo(0f, spring())
+                        }
                     }
                 },
                 onDoubleTap = { leftHalf ->
@@ -209,7 +245,7 @@ internal fun NowPlayingSheet(
         } else {
             Box(Modifier.fillMaxSize().testTag("now-playing-content")) {
                 NowPlayingScene(
-                    track = track,
+                    track = displayedTrack,
                     playback = playback,
                     surfaceState = surfaceState,
                     horizontalOffsetPx = horizontalOffset.value,
