@@ -2,7 +2,7 @@
 slug: android-swipe-discards-the-whole-card
 worktree: /home/marvin/Projects/reprise-android-swipe-discards-the-whole-card
 branch: feature/android-swipe-discards-the-whole-card
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-31
 ---
@@ -141,7 +141,7 @@ lands*. It is a regression pin, not a reproduction of real device latency.
 **Then the phone**, same swipe, animations on: no frame in which a displaced card
 shows the incoming track.
 
-## Parallelität
+## Parallel execution
 
 **No cut. One strand.** Tasks 1 and 2 are one compile in one file
 (`NowPlayingSheet.kt`) plus the draw slot it feeds, and task 2 exists precisely to
