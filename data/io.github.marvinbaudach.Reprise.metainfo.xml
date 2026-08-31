@@ -64,7 +64,7 @@
       pistas que reproduces se envían a LRCLIB el título, el artista, el álbum y
       la duración para buscar letras; no se envían las rutas de archivo ni el
       resto de la biblioteca. ListenBrainz y Last.fm están desactivados de forma
-      predeterminada; las credenciales permanecen en el llavero del sistema y
+      predeterminada; las credenciales permanecen en el depósito de claves del sistema y
       cada servicio tiene su propia cola local sin conexión. Last.fm requiere las
       credenciales de API del usuario.
     </p>
