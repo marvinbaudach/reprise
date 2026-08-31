@@ -2880,8 +2880,6 @@ dependencies = [
  "pangocairo",
  "reprise-core",
  "reprise-platform-linux",
- "reprise-runtime-client",
- "reprise-runtime-protocol",
  "reprise-view",
  "rusqlite",
  "serde",
@@ -2922,37 +2920,10 @@ dependencies = [
  "gstreamer-app",
  "lofty",
  "reprise-core",
- "reprise-runtime",
- "reprise-runtime-client",
  "reprise-runtime-protocol",
- "rustix",
- "serde",
  "tempfile",
  "tracing",
- "tracing-subscriber",
  "trash",
- "zbus",
- "zvariant",
-]
-
-[[package]]
-name = "reprise-runtime"
-version = "0.1.114"
-dependencies = [
- "reprise-core",
- "reprise-runtime-protocol",
- "rusqlite",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "reprise-runtime-client"
-version = "0.1.114"
-dependencies = [
- "async-channel",
- "reprise-runtime-protocol",
- "tracing",
  "zbus",
 ]
 

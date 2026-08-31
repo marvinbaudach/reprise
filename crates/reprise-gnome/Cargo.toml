@@ -18,12 +18,6 @@ default = []
 test-fixtures = ["reprise-core/test-fixtures"]
 
 [dependencies]
-# The frontend is becoming a client of the headless runtime (plan §9.1). It
-# takes the client and the contract, and deliberately not the *service*: the
-# runtime is a separate process, and a surface that could link its innards
-# would be able to drift back into owning them.
-reprise-runtime-client = { path = "../reprise-runtime-client" }
-reprise-runtime-protocol = { path = "../reprise-runtime-protocol" }
 reprise-core = { path = "../reprise-core" }
 reprise-view = { path = "../reprise-view" }
 reprise-platform-linux = { path = "../reprise-platform-linux" }
