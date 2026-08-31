@@ -4,6 +4,7 @@
   <name>Reprise</name>
   <summary>Play and organize your music</summary>
   <summary xml:lang="de">Musik abspielen und verwalten</summary>
+  <summary xml:lang="es">Reproduce y organiza tu música</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <developer id="io.github.marvinbaudach">
@@ -29,6 +30,14 @@
       ListenBrainz- und Last.fm-Scrobbling kann nach ausdrücklicher Kontoeinrichtung
       abgeschlossene Wiedergaben melden.
     </p>
+    <p xml:lang="es">
+      Reprise es un reproductor de música nativo para GNOME con una biblioteca
+      rápida basada en columnas, listas de reproducción, cola de reproducción,
+      carátulas, letras sincronizadas para la pista en curso, edición de etiquetas
+      e integración con MPRIS para las teclas multimedia y la pantalla de bloqueo.
+      El scrobbling opcional de ListenBrainz y Last.fm puede informar de las
+      reproducciones completadas después de configurar una cuenta expresamente.
+    </p>
     <p>
       Your library stays local. Reprise changes music files only after an
       explicit tag-edit or move-to-trash confirmation. Missing covers are retrieved
@@ -47,6 +56,17 @@
       Last.fm sind standardmäßig aus. Zugangsdaten bleiben im System-Schlüsselbund;
       beide Dienste haben getrennte Offline-Warteschlangen. Last.fm erfordert eigene
       API-Zugangsdaten.
+    </p>
+    <p xml:lang="es">
+      Tu biblioteca permanece local. Reprise solo modifica archivos de música
+      después de confirmar expresamente la edición de etiquetas o el traslado a
+      la papelera. Las carátulas que faltan se obtienen automáticamente. Para las
+      pistas que reproduces se envían a LRCLIB el título, el artista, el álbum y
+      la duración para buscar letras; no se envían las rutas de archivo ni el
+      resto de la biblioteca. ListenBrainz y Last.fm están desactivados de forma
+      predeterminada; las credenciales permanecen en el llavero del sistema y
+      cada servicio tiene su propia cola local sin conexión. Last.fm requiere las
+      credenciales de API del usuario.
     </p>
   </description>
   <launchable type="desktop-id">io.github.marvinbaudach.Reprise.desktop</launchable>
@@ -75,6 +95,9 @@
     <keyword xml:lang="de">Musik</keyword>
     <keyword xml:lang="de">Sammlung</keyword>
     <keyword xml:lang="de">Wiedergabeliste</keyword>
+    <keyword xml:lang="es">música</keyword>
+    <keyword xml:lang="es">biblioteca</keyword>
+    <keyword xml:lang="es">lista de reproducción</keyword>
   </keywords>
   <supports>
     <control>touch</control>

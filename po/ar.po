@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-30 22:23+0200\n"
+"POT-Creation-Date: 2026-08-31 22:25+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Arabic\n"
@@ -1222,6 +1222,7 @@ msgid "1 removed"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:46
+#: crates/reprise-view/src/device_sync.rs:40
 #, rust-format
 msgid "{count} removed"
 msgstr ""
@@ -2314,6 +2315,114 @@ msgstr ""
 msgid "{count} fixes are hidden by search “{query}” and the {category} filter."
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_location.rs:9
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:50
+msgid "Location"
+msgstr "الموقع"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:11
+msgid ""
+"One place, used by everything that asks \"near you\". Set once — no plugin "
+"owns it."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:12
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:16
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
+msgid "City"
+msgstr "المدينة"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:13
+msgid "Not set"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:14
+msgid "Edit city"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:15
+msgid "Set city"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:16
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
+msgid "Use current location"
+msgstr "استخدام الموقع الحالي"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:17
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
+msgid "Clear location"
+msgstr "مسح الموقع"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:18
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
+msgid "Current location"
+msgstr "الموقع الحالي"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:19
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
+msgid "Could not find that place"
+msgstr "تعذر العثور على هذا المكان"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:20
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
+msgid "Default radius"
+msgstr "نصف القطر الافتراضي"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:21
+msgid "Used by"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:23
+msgid "Upcoming shows within the radius, for artists in your library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:24
+msgid "Radio · Near you"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:26
+msgid "Stations from your country and city in Add Station"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:27
+#, rust-format
+msgid "Podcasts · Popular in {country}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:28
+msgid "Apple's country chart in Add Podcast"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:30
+msgid ""
+"Clearing the location only stops these three. Switching a plugin off never "
+"removes it."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:31
+msgid "Location · not set"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:32
+msgid "Set location →"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:33
+msgid "Change in Location →"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:40
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:194
+#, rust-format
+msgid "{radius} km"
+msgstr "{radius} كم"
+
+#: crates/reprise-gnome/src/ui/strings_location.rs:49
+#, rust-format
+msgid "Location · {name}, within {radius} km"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_news.rs:10
 msgid "Information"
 msgstr "معلومات"
@@ -2636,6 +2745,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:200
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:51
+#: crates/reprise-view/src/device_sync.rs:38
 #, rust-format
 msgid "{count} new"
 msgstr ""
@@ -2930,11 +3040,6 @@ msgstr "عرض الحفلات القادمة لفناني المكتبة · يت
 msgid "Date"
 msgstr "التاريخ"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:16
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
-msgid "City"
-msgstr "المدينة"
-
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:17
 msgid "Venue"
 msgstr "المكان"
@@ -3057,30 +3162,6 @@ msgstr ""
 msgid "No ticket or event link available"
 msgstr "لا يوجد رابط تذاكر أو فعالية متاح"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:50
-msgid "Location"
-msgstr "الموقع"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
-msgid "Use current location"
-msgstr "استخدام الموقع الحالي"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
-msgid "Clear location"
-msgstr "مسح الموقع"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
-msgid "Current location"
-msgstr "الموقع الحالي"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
-msgid "Could not find that place"
-msgstr "تعذر العثور على هذا المكان"
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
-msgid "Default radius"
-msgstr "نصف القطر الافتراضي"
-
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:57
 msgid "Consider artists played in the last N days"
 msgstr "اعتبار الفنانين الذين تم تشغيلهم خلال آخر N يوم"
@@ -3158,11 +3239,6 @@ msgid ""
 "End of results — {hidden} concerts hidden by the {radius} km radius around "
 "{city}"
 msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:194
-#, rust-format
-msgid "{radius} km"
-msgstr "{radius} كم"
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:11
 msgid "Releases"
@@ -4514,6 +4590,42 @@ msgid ""
 "will be skipped."
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_scan.rs:14
+msgid "Scanning"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:15
+msgid "Library up to date"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:16
+msgid "Library unavailable"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:17
+msgid "Cancel library scan"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:21
+#, rust-format
+msgid "Scanning · {percent}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:26
+#, rust-format
+msgid "Fetching · {percent}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:32
+#, rust-format
+msgid "{title} · {percent}%"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scan.rs:38
+#, rust-format
+msgid "Library scan status: {status}"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:12
 msgid "Scrobble completed listens to ListenBrainz (network; off by default)"
 msgstr ""
@@ -5716,6 +5828,7 @@ msgid "{done} of {total}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:198
+#: crates/reprise-view/src/device_sync.rs:72
 msgid "Finishing synchronization…"
 msgstr ""
 
@@ -5788,6 +5901,7 @@ msgid "Scan the device to see what's already there before syncing."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:386
+#: crates/reprise-view/src/device_sync.rs:47
 msgid "Verifying device contents…"
 msgstr ""
 
@@ -5835,10 +5949,12 @@ msgid ""
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:400
+#: crates/reprise-view/src/device_sync.rs:69
 msgid "_Sync now"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:401
+#: crates/reprise-view/src/device_sync.rs:68
 msgid "_Cancel"
 msgstr ""
 
@@ -6239,6 +6355,231 @@ msgstr ""
 
 #: crates/reprise-view/src/strings/lyrics.rs:29
 msgid "Enable in Settings"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:23
+msgid "Opus · 160 kbit/s (Recommended)"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:24
+msgid "MP3 · 256 kbit/s (Compatibility)"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:25
+msgid "Original files (no conversion)"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:26
+msgid "Playlist no longer exists — deselect it to continue"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:27
+msgid "Smart snapshot"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:28
+#, rust-format
+msgid "{count} entry"
+msgid_plural "{count} entries"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:29
+#, rust-format
+msgid "{count} unique track"
+msgid_plural "{count} unique tracks"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:31
+#, rust-format
+msgid "{count} unavailable track"
+msgid_plural "{count} unavailable tracks"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:32
+#, rust-format
+msgid "{size} · No verified sync time"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:33
+#, rust-format
+msgid "{size} · Verified sync time unavailable"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:34
+#, rust-format
+msgid "{size} · Last synced {timestamp}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:35
+msgid "Never synchronized"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:36
+#, rust-format
+msgid "Last synced {timestamp}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:37
+#, rust-format
+msgid "{size} on device when last verified"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:39
+#, rust-format
+msgid "{count} updated"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:41
+#, rust-format
+msgid "{count} unavailable kept"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:43
+#, rust-format
+msgid "{count} playlist written"
+msgid_plural "{count} playlists written"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:45
+#, rust-format
+msgid "{count} playlist removed"
+msgid_plural "{count} playlists removed"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:46
+#, rust-format
+msgid "{size} transferred"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:49
+#, rust-format
+msgid "Verified · {count} Reprise track on device"
+msgid_plural "Verified · {count} Reprise tracks on device"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:52
+msgid "Verified after synchronization"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:53
+msgid "Not verified in this session"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:54
+msgid "Select at least one playlist to synchronize."
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:56
+#, rust-format
+msgid "{count} selected playlist no longer exists"
+msgid_plural "{count} selected playlists no longer exist"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:60
+#, rust-format
+msgid "{count} playlist is selected twice"
+msgid_plural "{count} playlists are selected twice"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:64
+#, rust-format
+msgid ""
+"{count} track will be skipped because it is unavailable and not already on "
+"the device."
+msgid_plural ""
+"{count} tracks will be skipped because they are unavailable and not already "
+"on the device."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-view/src/device_sync.rs:67
+msgid "An unsafe managed path will be left untouched."
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:70
+msgid "Checking device…"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:71
+msgid "Reading storage and preparing the mirror plan"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:73
+msgid "Refreshing the device inventory"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:74
+#, rust-format
+msgid "Removing · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:75
+#, rust-format
+msgid "Converting · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:76
+#, rust-format
+msgid "Copying · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:77
+#, rust-format
+msgid "Writing analysis · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:78
+#, rust-format
+msgid "Writing playlists · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:79
+#, rust-format
+msgid "Writing track metadata · {done} of {total}"
 msgstr ""
 
 #: crates/reprise-view/src/queue.rs:21
