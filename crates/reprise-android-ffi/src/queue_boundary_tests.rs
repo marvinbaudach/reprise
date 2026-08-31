@@ -266,17 +266,40 @@ fn upcoming_window_excludes_the_current_track_and_counts_beyond_the_page() {
 }
 
 #[test]
-fn negative_upcoming_offset_is_the_first_page_not_an_empty_contradiction() {
+fn signed_window_reaches_both_sides_and_clamps_without_shifting_at_the_ends() {
     let directory = tempfile::tempdir().unwrap();
-    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let tracks = seed_tracks(directory.path(), &["Zero", "One", "Two", "Three", "Four"]);
     let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
     let ordered = [
-        track("Current"),
-        track("First"),
-        track("Second"),
-        track("Third"),
+        track("Zero"),
+        track("One"),
+        track("Two"),
+        track("Three"),
+        track("Four"),
     ];
     let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            2,
+        )
+        .unwrap();
+
+    let middle = session
+        .upcoming_tracks(WindowRange {
+            // Offsets stay relative to the upcoming boundary. The current
+            // row is -1, so -3 begins two positions before the cursor.
+            offset: -3,
+            limit: 5,
+        })
+        .unwrap();
+    assert_eq!(
+        middle.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        ordered.iter().map(|track| track.id).collect::<Vec<_>>(),
+    );
+    assert_eq!(session.snapshot().unwrap().current_index, Some(2));
+
     session
         .play_tracks(
             ordered.iter().map(|track| track.id).collect(),
@@ -284,20 +307,63 @@ fn negative_upcoming_offset_is_the_first_page_not_an_empty_contradiction() {
             0,
         )
         .unwrap();
-
-    let window = session
+    let first = session
         .upcoming_tracks(WindowRange {
-            offset: -1,
-            limit: 2,
+            offset: -3,
+            limit: 5,
         })
         .unwrap();
-
-    assert_eq!(window.total, 3);
     assert_eq!(
-        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
-        vec![track("First").id, track("Second").id],
+        first.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Zero").id, track("One").id, track("Two").id],
+        "clamping the left edge must not pull extra rows in from the right",
     );
-    assert!(window.has_more);
+
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            4,
+        )
+        .unwrap();
+    let last = session
+        .upcoming_tracks(WindowRange {
+            offset: -3,
+            limit: 5,
+        })
+        .unwrap();
+    assert_eq!(
+        last.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Two").id, track("Three").id, track("Four").id],
+    );
+}
+
+#[test]
+fn signed_window_and_current_index_follow_the_same_shuffled_order() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Zero", "One", "Two", "Three", "Four"]);
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            tracks.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+    session.set_shuffle(true).unwrap();
+    session.next().unwrap();
+    session.next().unwrap();
+
+    let snapshot = session.snapshot().unwrap();
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: -3,
+            limit: 5,
+        })
+        .unwrap();
+    let ids = window.rows.iter().map(|row| row.id).collect::<Vec<_>>();
+
+    assert_eq!(ids.get(2).copied(), snapshot.current_track_id);
 }
 
 #[test]
