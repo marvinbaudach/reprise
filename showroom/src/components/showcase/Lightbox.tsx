@@ -58,10 +58,10 @@ export function Lightbox({
   const capture = captures[shownIndex];
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  // Tied to the picture it was measured on, so the next arrow key cannot flash
-  // the following screenshot at 2.1x around the previous one's origin.
+  // Display follows the requested index, so an arrow press settles the outgoing
+  // picture before the decoded incoming picture replaces it at 1x.
   const [zoom, setZoom] = useState<ZoomState | null>(null);
-  const frameZoom = zoom && zoom.index === shownIndex ? zoom : null;
+  const frameZoom = zoom && zoom.index === activeIndex ? zoom : null;
   const activeZoom = frameZoom?.zoomed ? frameZoom : null;
   const swapping = activeIndex !== shownIndex;
 
