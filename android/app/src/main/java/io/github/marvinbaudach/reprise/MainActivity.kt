@@ -38,6 +38,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import io.github.marvinbaudach.reprise.ui.theme.AmbientTrueBlack
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -332,6 +333,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        if (usesProductionSurface) {
+            lifecycleScope.launchLibraryRestore(
+                dispatcher = Dispatchers.IO,
+                restore = {
+                    restoreLibraryState(session, surface.initialStoredDestination.toBrowseTab())
+                },
+                report = surfaceState::updateLibraryState,
+            )
+        }
     }
 
     private fun collectPlaybackServiceState() {
@@ -370,10 +380,9 @@ class MainActivity : ComponentActivity() {
 
     private fun productionSurface(): MainActivitySurfaceDependencies {
         val initialStoredDestination = restoreStoredDestination()
-        val initialBrowseTab = initialStoredDestination.toBrowseTab()
         return MainActivitySurfaceDependencies(
             initialTheme = restoreTheme(),
-            initialState = restoreLibrary(initialBrowseTab),
+            initialState = LibraryScreenState.Scanning(),
             initialStoredDestination = initialStoredDestination,
             rememberBrowseTab = ::rememberBrowseTab,
             artwork = { artwork },
@@ -526,15 +535,6 @@ class MainActivity : ComponentActivity() {
             artistPortraitPrefetchDelegate.value.shutdown()
         }
         super.onDestroy()
-    }
-
-    private fun restoreLibrary(selectedTab: BrowseTab): LibraryScreenState = runCatching {
-        session.restore(selectedTab)
-    }.getOrElse { error ->
-        val message = "Could not load the saved library: ${error.detail()}"
-        Log.e(TAG, message, error)
-        runCatching { session.stateAfterFailure(message) }
-            .getOrDefault(LibraryScreenState.NoFolder(message))
     }
 
     private fun chooseTree(treeUri: Uri, report: (LibraryScreenState) -> Unit) {
