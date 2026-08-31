@@ -2,7 +2,7 @@
 slug: the-sync-keeps-the-name-the-phone-already-has
 worktree: /home/marvin/Projects/reprise-the-sync-keeps-the-name-the-phone-already-has
 branch: feature/the-sync-keeps-the-name-the-phone-already-has
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-08-31
 ---
