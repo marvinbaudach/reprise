@@ -1,7 +1,6 @@
 //! Android's Core-owned playback queue and transport surface.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use reprise_core::playback::{PlaybackBackend, PlayerEvent, StreamEvent, StreamGeneration};
@@ -286,12 +285,11 @@ fn index_tracks(track_ids: &[i64]) -> HashMap<i64, usize> {
 /// out of the state it also updates.
 struct SessionInner {
     state: Mutex<SessionState>,
-    database: Mutex<reprise_core::db::Db>,
+    library: Arc<crate::MusicLibrary>,
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Arc<dyn AndroidPlaybackListener>,
     plays: PlayRecorder,
     listen_exports: ListenExportRecorder,
-    database_path: PathBuf,
 }
 
 impl SessionInner {
@@ -311,10 +309,10 @@ impl SessionInner {
 
     fn persist_queue(&self, queue: &Queue) -> Result<(), AndroidPlaybackError> {
         let database = self
-            .database
-            .lock()
-            .map_err(|_| AndroidPlaybackError::Backend {
-                detail: "playback queue database was poisoned".to_owned(),
+            .library
+            .writer()
+            .map_err(|error| AndroidPlaybackError::Backend {
+                detail: error.to_string(),
             })?;
         queue_persistence::save(&database, queue).map_err(|error| AndroidPlaybackError::Backend {
             detail: format!("could not save the playback queue: {error}"),
@@ -519,17 +517,16 @@ pub struct AndroidPlaybackSession {
 #[uniffi::export]
 impl AndroidPlaybackSession {
     #[uniffi::constructor]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(
-        app_private_directory: &str,
+        library: Arc<crate::MusicLibrary>,
         port: Box<dyn AndroidPlaybackPort>,
         listener: Box<dyn AndroidPlaybackListener>,
     ) -> Result<Self, AndroidPlaybackError> {
-        let database_path = Path::new(&app_private_directory).join(crate::DATABASE_FILE_NAME);
-        let database =
-            reprise_core::db::Db::open_migrated(Some(&database_path)).map_err(|error| {
-                AndroidPlaybackError::Backend {
-                    detail: format!("could not open playback statistics database: {error}"),
-                }
+        let database = library
+            .reader()
+            .map_err(|error| AndroidPlaybackError::Backend {
+                detail: format!("could not read the playback database: {error}"),
             })?;
         let restored = queue_persistence::restore(&database).map_err(|error| {
             AndroidPlaybackError::Backend {
@@ -545,19 +542,24 @@ impl AndroidPlaybackSession {
                     detail: format!("could not read playback statistics journal state: {error}"),
                 }
             })?;
+        drop(database);
         let listener: Arc<dyn AndroidPlaybackListener> = Arc::from(listener);
         let report_listener = Arc::clone(&listener);
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::from_restored(restored)),
-            database: Mutex::new(database),
+            library: Arc::clone(&library),
             backend: OnceLock::new(),
             listener,
-            plays: PlayRecorder::spawn(database_path.clone(), applied_play_sequence),
+            plays: PlayRecorder::spawn(
+                library.database_path.clone(),
+                library.writer_handle(),
+                applied_play_sequence,
+            ),
             listen_exports: ListenExportRecorder::spawn(
-                database_path.clone(),
+                library.database_path.clone(),
+                library.reader_handle(),
                 Arc::new(move || report_listener.on_listen_report_changed()),
             ),
-            database_path,
         });
         let weak = Arc::downgrade(&inner);
         let backend = AndroidPlaybackBackend::new(
@@ -697,7 +699,7 @@ impl AndroidPlaybackSession {
         acknowledgement: Option<Vec<u8>>,
     ) -> Result<Vec<u8>, AndroidPlaybackError> {
         crate::listen_export_journal::prepare_report(
-            &self.inner.database_path,
+            &self.inner.library.database_path,
             acknowledgement.as_deref(),
         )
         .map_err(|error| AndroidPlaybackError::Backend {
@@ -748,11 +750,12 @@ impl AndroidPlaybackSession {
     /// Re-reads authored settings after an explicit UI write and applies them.
     pub fn reload_playback_settings(&self) -> Result<(), AndroidPlaybackError> {
         let database =
-            reprise_core::db::Db::open_ready(&self.inner.database_path).map_err(|error| {
-                AndroidPlaybackError::Backend {
+            self.inner
+                .library
+                .reader()
+                .map_err(|error| AndroidPlaybackError::Backend {
                     detail: format!("could not reload playback settings: {error}"),
-                }
-            })?;
+                })?;
         let playback_settings = crate::AndroidPlaybackSettings::load(&database);
         let transition = reprise_core::library::settings::get_track_transition(&database);
         let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);

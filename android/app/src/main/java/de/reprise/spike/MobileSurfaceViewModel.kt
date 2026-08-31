@@ -130,7 +130,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
     private var refreshedArtistPortraitDone = 0L
     @Volatile
     private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
-    private var retainedLibrary: MusicLibrary? = null
     val libraryScanMonitor = Any()
     private var reportLibraryState: ((LibraryScreenState) -> Unit)? = null
     private var pendingLibraryState: LibraryScreenState? = null
@@ -165,9 +164,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
     fun updateLibraryState(state: LibraryScreenState) {
         reportLibraryState?.invoke(state) ?: run { pendingLibraryState = state }
     }
-
-    fun retainLibrary(open: () -> MusicLibrary): MusicLibrary =
-        retainedLibrary ?: open().also { retainedLibrary = it }
 
     fun bindArtistPhotoBackfill(
         snapshot: () -> ArtistPhotoProgress,
@@ -420,7 +416,5 @@ internal class MobileSurfaceViewModel : ViewModel() {
         val backfill = artistPhotoBackfillBinding
         artistPhotoBackfillBinding = null
         backfill?.cancel?.invoke()
-        retainedLibrary?.close()
-        retainedLibrary = null
     }
 }

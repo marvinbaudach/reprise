@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
-use super::test_support::{PortCall, RecordingListener, RecordingPort};
+use super::test_support::{library_in, PortCall, RecordingListener, RecordingPort};
 use crate::playback::PlaybackEventBridge;
 use crate::AndroidPlaybackSession;
 
@@ -50,7 +50,7 @@ fn an_id_without_a_live_path_is_skipped_and_the_start_still_names_its_track() {
     let vanished = tracks.iter().map(|track| track.id).max().unwrap() + 10_000;
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
@@ -92,7 +92,7 @@ fn tapping_a_track_that_no_longer_resolves_is_refused_rather_than_shifted() {
     let vanished = tracks.iter().map(|track| track.id).max().unwrap() + 10_000;
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
@@ -125,7 +125,7 @@ fn id_only_play_resolves_live_paths_and_preserves_the_requested_start() {
     let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),

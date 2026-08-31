@@ -82,20 +82,18 @@ impl AndroidPlaybackSession {
                     .collect::<Vec<_>>();
                 (ids, total, has_more)
             };
-            let metadata = {
-                let database =
-                    self.inner
-                        .database
-                        .lock()
-                        .map_err(|_| AndroidPlaybackError::Backend {
-                            detail: "playback queue database was poisoned".to_owned(),
-                        })?;
-                queries::query_queue_item_window(&database, &ids, 0, window.limit.max(0)).map_err(
-                    |error| AndroidPlaybackError::Backend {
-                        detail: format!("could not load the playback queue: {error}"),
-                    },
-                )?
-            };
+            let metadata =
+                {
+                    let database = self.inner.library.reader().map_err(|error| {
+                        AndroidPlaybackError::Backend {
+                            detail: error.to_string(),
+                        }
+                    })?;
+                    queries::query_queue_item_window(&database, &ids, 0, window.limit.max(0))
+                        .map_err(|error| AndroidPlaybackError::Backend {
+                            detail: format!("could not load the playback queue: {error}"),
+                        })?
+                };
             let resolved = metadata
                 .iter()
                 .map(QueueItemMetadata::item)
@@ -259,13 +257,13 @@ impl AndroidPlaybackSession {
         requested_ids: Vec<i64>,
         error_context: &str,
     ) -> Result<Vec<(usize, i64, String)>, AndroidPlaybackError> {
-        let database = self
-            .inner
-            .database
-            .lock()
-            .map_err(|_| AndroidPlaybackError::Backend {
-                detail: "playback queue database was poisoned".to_owned(),
-            })?;
+        let database =
+            self.inner
+                .library
+                .reader()
+                .map_err(|error| AndroidPlaybackError::Backend {
+                    detail: error.to_string(),
+                })?;
         requested_ids
             .into_iter()
             .enumerate()

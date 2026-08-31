@@ -48,7 +48,6 @@ import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
 import uniffi.reprise_android_ffi.AndroidEqualizerPreset
 import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
-import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
 import uniffi.reprise_android_ffi.TrashAction
@@ -62,9 +61,7 @@ class MainActivity : ComponentActivity() {
     // directory that does not exist here.
     private val surfaceState by viewModels<MobileSurfaceViewModel>()
     private val library by lazy {
-        surfaceState.retainLibrary {
-            MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
-        }
+        sharedMusicLibrary()
     }
     private var usesProductionSurface = false
     private val equalizerPresets by lazy(::equalizerPresetUi)

@@ -146,7 +146,11 @@ open class ReprisePlaybackService : MediaSessionService() {
      * message rather than a crash.
      */
     internal open fun openCoreSession(port: Media3PlaybackPort): AndroidPlaybackSession? =
-        AndroidPlaybackSession(filesDir.absolutePath, port, coreListener)
+        AndroidPlaybackSession(
+            sharedMusicLibrary(),
+            port,
+            coreListener,
+        )
 
     override fun onBind(intent: Intent): IBinder? =
         if (intent.action == LOCAL_BIND_ACTION) localBinder else super.onBind(intent)
