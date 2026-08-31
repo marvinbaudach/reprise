@@ -28,7 +28,20 @@ body {
   font-variation-settings:
     "wdth" 88,
     "wght" 350;
-  overflow-x: hidden;
+}
+
+/*
+ * `clip`, not `hidden`, and on both elements. `overflow-x: hidden` on the body
+ * propagates to the viewport and makes it a scroll container that merely has
+ * its scrollbar suppressed — a touch drag can still pan it, which is how a
+ * sideways overflow reads as "the page scrolls sideways" on a phone while a
+ * desktop browser looks clean. `clip` creates no scroll container at all, so a
+ * sub-pixel remainder can never become an axis to drag. It is a backstop: the
+ * overflow itself is fixed where it is caused, never here.
+ */
+html,
+body {
+  overflow-x: clip;
 }
 
 h1,

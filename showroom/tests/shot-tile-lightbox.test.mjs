@@ -123,8 +123,12 @@ test('the Lightbox inerts the page behind it and forgets its zoom with the pictu
   const cleanup = source.match(/removeAttribute\('aria-hidden'\)[\s\S]*?returnFocus\.focus\(\)/);
   assert.ok(cleanup, 'returnFocus must be restored after the inert attributes are dropped');
 
-  // The zoom belongs to one picture, not to a bare boolean.
-  assert.match(source, /zoom\.index === activeIndex/);
+  // The zoom belongs to one picture, not to a bare boolean — and to the picture
+  // that is on screen, which lags the requested index while the next file
+  // decodes. Tying it to `activeIndex` would apply an origin measured on the
+  // outgoing shot to the incoming one.
+  assert.match(source, /zoom\.index === shownIndex/);
+  assert.match(source, /setZoom\(\{\s*index: shownIndex/);
   // ...and the origin outlives the zoom itself: dropping the state outright
   // would snap the origin back to the centre while the picture is still
   // travelling, swinging it across the viewport instead of letting it settle.
@@ -134,6 +138,38 @@ test('the Lightbox inerts the page behind it and forgets its zoom with the pictu
   // Neither the closing backdrop nor any other tabindex="-1" node is a tab stop.
   assert.match(source, /className="lightbox__backdrop"[\s\S]*?tabIndex=\{-1\}/);
   assert.match(source, /button:not\(\[disabled\]\):not\(\[tabindex="-1"\]\)/);
+});
+
+test('the full view holds its frame until the next picture has decoded', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'Lightbox.tsx'),
+    'utf8',
+  );
+
+  // The frame's ratio comes from the capture it draws, and the image inside it
+  // is `object-fit: contain`. Advancing the ratio on the press re-letterboxes
+  // the picture that is still on screen — the outgoing shot visibly rescales
+  // for as long as the next file takes to arrive, which on a cold phone is
+  // seconds. So the frame draws a picture that lags the request.
+  assert.match(source, /const \[shownIndex, setShownIndex\] = useState\(activeIndex\)/);
+  assert.match(source, /const capture = captures\[shownIndex\]/);
+  assert.match(source, /'--lb-ratio': capture\.width \/ capture\.height/);
+
+  // The gate waits for pixels, not bytes, and survives a file it cannot decode.
+  assert.match(source, /new Image\(\)/);
+  assert.match(source, /preload\.decode\(\)\.then\(commit, commit\)/);
+  assert.match(source, /preload\.onerror = commit/);
+
+  // A second press must supersede the first preload rather than race it: a
+  // stale resolution landing late would send the reader back a picture.
+  assert.match(source, /let superseded = false/);
+  const supersede = source.match(
+    /if \(!superseded\) setShownIndex\(activeIndex\)[\s\S]*?return \(\) => \{\s*superseded = true;/,
+  );
+  assert.ok(supersede, 'the preload effect must mark itself superseded on cleanup');
+
+  // The press still needs an answer while the frame holds.
+  assert.match(source, /data-swapping=\{swapping \? 'true' : 'false'\}/);
 });
 
 test('the full view carries the live plate for the capture that has one', async () => {
