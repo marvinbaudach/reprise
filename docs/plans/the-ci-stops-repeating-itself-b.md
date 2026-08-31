@@ -46,8 +46,8 @@ flatpak --user install --noninteractive --or-update --no-static-deltas flathub \
 
 Add `actions/cache` around it, keyed on the three ref strings so the key changes
 exactly when a runtime is bumped and never otherwise. Keep the install step: on
-a cache hit `--or-update` becomes a fast no-op, and it is what repairs a
-partially restored tree.
+a cache hit `--or-update` becomes a fast no-op, and it re-fetches when a ref has
+moved; it compares commits rather than repairing corrupt checked-out files.
 
 ### No warm-up job is needed — and one would not have worked
 
@@ -84,8 +84,9 @@ carrying the SDK, where the cost is a registry pull. **Do not** implement both.
    run populates, the second must show a cache hit and a `Install Flatpak
    tooling and GNOME 50 SDK` step well under 11.1 min. Compare against the 21.8
    min baseline for the whole job.
-3. `flatpak --user list` after the restore shows all three refs — a hit that
-   restores a broken tree must fail loudly here, not during `flatpak-builder`.
+3. `flatpak --user list` after the restore shows all three refs. This asserts
+   ref presence; a corrupt-but-registered tree is not caught here and surfaces
+   later in `flatpak-builder`.
 4. The bundle still builds: `Create the single-file bundle` succeeds and the
    uploaded artifact is non-empty.
 

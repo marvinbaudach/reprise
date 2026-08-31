@@ -31,12 +31,6 @@ def named_step(job_name, step_name):
     raise AssertionError(f"{job_name} job has no {step_name!r} step")
 
 flatpak_steps = jobs["flatpak"].get("steps", [])
-flatpak_step_names = [step.get("name") for step in flatpak_steps]
-flatpak_runtime_refs = (
-    "org.gnome.Platform//50",
-    "org.gnome.Sdk//50",
-    "org.freedesktop.Sdk.Extension.rust-stable//25.08",
-)
 
 flatpak_tooling = named_step("flatpak", "Install Flatpak tooling and add Flathub")
 flatpak_tooling_run = flatpak_tooling.get("run", "")
@@ -59,15 +53,15 @@ assert flatpak_tooling_run.count("ostree --version") == 1, (
 
 flatpak_cache = named_step("flatpak", "Restore cached Flatpak runtimes")
 assert flatpak_cache.get("uses") == "actions/cache@v6"
+assert flatpak_cache.get("continue-on-error", False) is False, (
+    "restoring cached Flatpak runtimes must fail the release job"
+)
+assert "if" not in flatpak_cache, (
+    "restoring cached Flatpak runtimes must run on the normal success path"
+)
 flatpak_cache_with = flatpak_cache.get("with", {})
 assert flatpak_cache_with.get("path") == "~/.local/share/flatpak", (
     "only the user Flatpak installation may be cached"
-)
-expected_flatpak_cache_key = "flatpak-user-" + "-".join(
-    runtime_ref.replace("//", "-") for runtime_ref in flatpak_runtime_refs
-)
-assert flatpak_cache_with.get("key") == expected_flatpak_cache_key, (
-    "the exact cache key must be mechanically derived from all three pinned runtime refs"
 )
 assert "restore-keys" not in flatpak_cache_with, (
     "a prefix fallback could restore a stale or partial OSTree tree"
@@ -79,8 +73,28 @@ assert "set -euo pipefail" in flatpak_install_run, "Flatpak installation must fa
 assert "apt-get" not in flatpak_install_run, (
     "apt tooling must stay outside the cached runtime installation"
 )
-for runtime_ref in flatpak_runtime_refs:
-    assert runtime_ref in flatpak_install_run, f"installation must pin {runtime_ref}"
+primary_install = re.search(
+    r"^\s*if flatpak --user install .*? flathub \\\n(?P<refs>.*?); then$",
+    flatpak_install_run,
+    flags=re.MULTILINE | re.DOTALL,
+)
+assert primary_install, "the retried Flatpak install command must be recognizable"
+flatpak_runtime_refs = tuple(
+    re.findall(
+        r"\borg\.[A-Za-z0-9_.-]+//[A-Za-z0-9_.-]+\b",
+        primary_install.group("refs"),
+    )
+)
+assert flatpak_runtime_refs, "the retried Flatpak install command must name runtime refs"
+assert len(flatpak_runtime_refs) == len(set(flatpak_runtime_refs)), (
+    "the retried Flatpak install command must not repeat runtime refs"
+)
+expected_flatpak_cache_key = "flatpak-user-" + "-".join(
+    runtime_ref.replace("//", "-") for runtime_ref in flatpak_runtime_refs
+)
+assert flatpak_cache_with.get("key") == expected_flatpak_cache_key, (
+    "the exact cache key must be mechanically derived from every installed runtime ref"
+)
 assert "for attempt in 1 2 3 4 5; do" in flatpak_install_run, (
     "Flatpak runtime installation must make exactly five bounded attempts"
 )
@@ -163,6 +177,12 @@ assert "re-run once Flathub republishes the ref" in flatpak_install_run, (
 assert "exit 1" in flatpak_install_run, "exhausted Flatpak installation must fail the job"
 
 flatpak_verify = named_step("flatpak", "Verify restored Flatpak runtimes")
+assert flatpak_verify.get("continue-on-error", False) is False, (
+    "runtime presence verification must fail the release job"
+)
+assert "if" not in flatpak_verify, (
+    "runtime presence verification must run on the normal success path"
+)
 flatpak_verify_run = flatpak_verify.get("run", "")
 assert "set -euo pipefail" in flatpak_verify_run, "runtime verification must fail closed"
 assert "flatpak --user list --columns=application,branch" in flatpak_verify_run, (
@@ -197,8 +217,11 @@ for earlier, later in zip(
         "Install GNOME 50 SDK",
         "Verify restored Flatpak runtimes",
     ),
+    strict=True,
 ):
-    assert flatpak_step_names.index(earlier) < flatpak_step_names.index(later), (
+    earlier_step = named_step("flatpak", earlier)
+    later_step = named_step("flatpak", later)
+    assert flatpak_steps.index(earlier_step) < flatpak_steps.index(later_step), (
         f"{earlier!r} must run before {later!r}"
     )
 
@@ -229,7 +252,9 @@ for path in (
 assert "docker image prune --all --force || true" in flatpak_cleanup_run, (
     "Flatpak cleanup must discard preloaded Docker images without failing the job"
 )
-assert "After runner cleanup (Flatpak build baseline)" in flatpak_cleanup_run
+assert "After runner cleanup (before Flatpak runtime restore)" in flatpak_cleanup_run, (
+    "the cleanup summary must identify its pre-runtime-restore measurement point"
+)
 assert "df -h /" in flatpak_cleanup_run
 assert '>> "$GITHUB_STEP_SUMMARY"' in flatpak_cleanup_run
 

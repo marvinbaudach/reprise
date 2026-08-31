@@ -198,7 +198,7 @@ jobs:
           {
             echo "### Flatpak disk headroom"
             echo ""
-            echo "**After runner cleanup (Flatpak build baseline)**"
+            echo "**After runner cleanup (before Flatpak runtime restore)**"
             echo '```text'
             df -h /
             echo '```'
@@ -340,6 +340,11 @@ jobs:
             sleep "$delay"
           done
 
+      # `flatpak --user list` reads ref/deploy bookkeeping. After the install exits 0,
+      # this cheaply asserts the three expected names are registered; it does not
+      # checksum restored object files. A corrupt-but-registered checkout surfaces in
+      # flatpak-builder, and comparing recorded commits would not detect tampering under
+      # a deployment's <commit>/files/ directory.
       - name: Verify restored Flatpak runtimes
         run: |
           set -euo pipefail
