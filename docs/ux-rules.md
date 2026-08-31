@@ -4509,7 +4509,14 @@ means deterministic and high-confidence, never „without review".
   click and the freeze; that run ends and visibly says the tracks are gone
   instead of falling back to a whole-library scan nobody asked for.
   `ScopeFallbackRequired` remains a Core outcome reported to its caller, and
-  the agent surface still turns every non-`Completed` outcome into an error.*
+  the agent surface still turns every non-`Completed` outcome into an error.
+  The clause "An invalid or emptied invocation context visibly falls back to
+  Whole Library" is void; every caller now treats `ScopeFallbackRequired` as a
+  terminal, user-visible outcome.* *Tests:*
+  `doc_2a_scope_freezes_present_track_ids`,
+  `doc_2a_last_complete_scan_survives_restart`,
+  `doc_2a_a_stored_selection_scan_still_names_its_scope`,
+  `doc_2a_a_scope_fallback_ends_the_job_without_retrying`.
 
 - **DOC-2b** [active] [gtk] — **The result page is a summary of three
   meanings, never a write surface.** After a scan the Doctor shows at most
@@ -4746,7 +4753,10 @@ means deterministic and high-confidence, never „without review".
   repeated Doctor entry during a running job navigates to that job
   instead of starting a second one. Scope, remote toggle, and scan
   action are locked during the job and explain the running job; Cancel
-  lives exclusively on its progress surface.
+  lives exclusively on its progress surface. *Amended 2026-08-31: the start
+  page no longer has a scope control. The locking clause now reads: remote
+  toggle and scan action are locked during the job and explain the running
+  job.*
 
 - **DOC-7a** [replaced by DOC-7c] [gtk] — **Local checks are an available tool;
   network stays opt-in.** Library Doctor has no main switch and its
@@ -4888,7 +4898,10 @@ means deterministic and high-confidence, never „without review".
   sheet. "Run Scan Now" is the single primary action, with a track count and
   rough duration beside it. Below a separator, and only while a revertible
   cleanup exists, are the last-scan line and the only "Revert Last Cleanup"
-  action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
+  action. *Amended 2026-08-31: the segmented-control sentence is void. The
+  start page is composed of the remote toggle, "Run Scan Now", and the
+  conditional "Revert Last Cleanup" line.* *Tests:*
+  `doc_8c_start_page_carries_remote_run_and_the_only_revert`,
   `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`,
   `doc_8c_every_count_on_the_start_page_inflects`.
 

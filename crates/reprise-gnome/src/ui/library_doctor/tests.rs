@@ -70,10 +70,48 @@ fn doc_7c_unify_spellings_scans_its_group_without_the_start_page() {
         .and_then(|tail| tail.split("\n    fn open_available").next())
         .expect("selection entry point body");
     assert!(entry.contains("self.start_selection_scan(ids);"));
+    let preference_sync = entry
+        .find("self.page.sync_remote_preference(&self.conn);")
+        .expect("selection scans must refresh the persisted remote preference");
+    let scan_start = entry
+        .find("self.start_selection_scan(ids);")
+        .expect("selection scan start");
+    assert!(preference_sync < scan_start);
     assert!(!entry.contains("self.open_available()"));
     assert!(!entry.contains("self.open_root_page()"));
 
     assert!(super::selection_scan_request(Vec::new(), false).is_none());
+}
+
+#[test]
+fn doc_8c_run_scan_now_starts_only_a_whole_library_scan() {
+    let coordinator = include_str!("mod.rs");
+    let connect_run = coordinator
+        .split("coordinator.page.connect_run(move ||")
+        .nth(1)
+        .and_then(|tail| tail.split("coordinator.progress.set_on_cancel").next())
+        .expect("Run Scan Now connection body");
+
+    assert!(connect_run.contains("coordinator.start_whole_library_scan();"));
+    assert!(!connect_run.contains("start_selection_scan"));
+    assert!(!connect_run.contains("selection_scan_request"));
+    assert!(!connect_run.contains("selection_override"));
+}
+
+#[test]
+fn doc_2a_a_scope_fallback_ends_the_job_without_retrying() {
+    let coordinator = include_str!("mod.rs");
+    let fallback = coordinator
+        .split("Ok(Ok(DoctorScanOutcome::ScopeFallbackRequired)) =>")
+        .nth(1)
+        .and_then(|tail| tail.split("Ok(Err(error))").next())
+        .expect("scope fallback outcome branch");
+
+    assert!(fallback.contains("coordinator.page.end_job();"));
+    assert!(fallback.contains("coordinator.track_list.toast"));
+    assert!(fallback.contains("DOCTOR_SCOPE_FALLBACK"));
+    assert!(!fallback.contains("start_whole_library_scan"));
+    assert!(!fallback.contains("start_scan"));
 }
 
 /// The first-aid kit ships with the app, but the app can run against a theme

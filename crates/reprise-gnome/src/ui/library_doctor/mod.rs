@@ -146,7 +146,6 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     toast_overlay: adw::ToastOverlay,
     refresh_views: Rc<dyn Fn()>,
     sidebar: Rc<Sidebar>,
-    selection_override: RefCell<Option<Vec<i64>>>,
     on_search_query_changed: SearchQueryChangedSlot,
     slot_poll: RefCell<Option<glib::SourceId>>,
     slot_busy: Cell<bool>,
@@ -343,7 +342,6 @@ impl LibraryDoctorCoordinator {
                 toast_overlay: toast_overlay.clone(),
                 refresh_views,
                 sidebar: sidebar.clone(),
-                selection_override: RefCell::new(None),
                 on_search_query_changed,
                 slot_poll: RefCell::new(None),
                 slot_busy: Cell::new(false),
@@ -448,7 +446,6 @@ impl LibraryDoctorCoordinator {
             self.refresh_tag_write_slot();
             return;
         }
-        self.selection_override.borrow_mut().take();
         self.open_available();
         self.refresh_tag_write_slot();
     }
@@ -464,22 +461,24 @@ impl LibraryDoctorCoordinator {
             self.refresh_tag_write_slot();
             return;
         }
-        self.selection_override.borrow_mut().take();
         self.page.sync_remote_preference(&self.conn);
         self.open_review();
         self.refresh_tag_write_slot();
     }
 
     pub(in crate::ui) fn open_for_selection(self: &Rc<Self>, ids: Vec<i64>) {
-        if ids.is_empty() {
-            return;
-        }
+        // Stats resolves the group immediately and invokes this callback only
+        // for a non-empty variant group.
+        debug_assert!(
+            !ids.is_empty(),
+            "Stats must not open an empty spelling group"
+        );
         if self.running.get() {
             self.open_running_job();
             self.refresh_tag_write_slot();
             return;
         }
-        self.selection_override.borrow_mut().replace(ids.clone());
+        self.page.sync_remote_preference(&self.conn);
         self.start_selection_scan(ids);
         self.refresh_tag_write_slot();
     }
@@ -525,7 +524,6 @@ impl LibraryDoctorCoordinator {
     }
 
     fn start_whole_library_scan(self: &Rc<Self>) {
-        self.selection_override.borrow_mut().take();
         self.start_scan(DoctorScanRequest {
             scope: DoctorScopeRequest::WholeLibrary,
             options: reprise_core::library_doctor::DoctorScanOptions {
