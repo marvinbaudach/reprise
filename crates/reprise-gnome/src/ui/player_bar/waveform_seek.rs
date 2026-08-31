@@ -17,7 +17,7 @@ use libadwaita::prelude::AnimationExt;
 use super::waveform_primitives::BAR_GAP;
 use super::waveform_primitives::{
     bar_played, bar_slot_width, fraction_at, frame_clock_stalled, keyboard_seek_target,
-    position_step, resolve_bar_count, rounded_bar, should_redraw, update_accessible_value,
+    position_step, resolve_bar_count, rounded_bar, should_redraw_on_tick, update_accessible_value,
     velocity_between, RedrawSnapshot, BAR_RADIUS, MINI_BAR_COUNT, MINI_BAR_GAP, MINI_BAR_RADIUS,
 };
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
@@ -731,13 +731,14 @@ impl WaveformSeek {
                         hover_fraction: s.last_drawn_hover_fraction,
                         drag_fraction: s.last_drawn_drag_fraction,
                     });
-            let redraw = should_redraw(last_drawn, current_draw, animation_running);
             let settled = (s.fraction - s.target_fraction).abs() < 0.001
                 && s.build_progress >= 1.0
                 && s.crossfade_progress >= 1.0
                 && s.head_colour.is_some_and(|colour| {
                     colour_near(colour, s.head_colour_target.unwrap_or(colour), 1.0 / 512.0)
                 });
+            let redraw =
+                should_redraw_on_tick(last_drawn, current_draw, animation_running, settled);
             drop(s);
 
             if redraw {
