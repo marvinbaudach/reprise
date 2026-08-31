@@ -1,17 +1,19 @@
 use super::*;
-use crate::db::Db;
+
+fn index_exists(conn: &Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+        [name],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap()
+        > 0
+}
 
 #[test]
 fn migrate_v81_preserves_existing_sync_events() {
-    let db = Db::open_in_memory().unwrap();
-    let conn = db.conn();
-    conn.execute(
-        "INSERT INTO sync_runs (
-           id, device_serial, device_name, transfer_profile, started_at, outcome
-         ) VALUES (1, 'pixel', 'Pixel', 'original', 1, 'failed')",
-        [],
-    )
-    .unwrap();
+    let conn = Connection::open_in_memory().unwrap();
+    migrate_v45(&conn).unwrap();
     conn.execute(
         "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail)
          VALUES (1, 'failed', 1666, 'Artist/Album/Track.opus', 'copy failed')",
@@ -20,7 +22,7 @@ fn migrate_v81_preserves_existing_sync_events() {
     .unwrap();
     conn.pragma_update(None, "user_version", 80).unwrap();
 
-    migrate_v81(conn).unwrap();
+    migrate_v81(&conn).unwrap();
 
     let event: (i64, String, Option<i64>, String, String) = conn
         .query_row(
@@ -47,4 +49,12 @@ fn migrate_v81_preserves_existing_sync_events() {
             "copy failed".into(),
         )
     );
+    assert!(index_exists(&conn, "idx_sync_events_run"));
+    conn.execute(
+        "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail)
+         VALUES (1, 'analysis_failed', 1667, 'Artist/Album/Track.reprise-analysis',
+                 'analysis copy failed')",
+        [],
+    )
+    .unwrap();
 }
