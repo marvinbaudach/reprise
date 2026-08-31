@@ -35,7 +35,7 @@ fn all_settings(conn: &Connection) -> Vec<(String, String)> {
 }
 
 #[test]
-fn v80_clears_persisted_list_geometry_and_records_the_version() {
+fn v80_clears_persisted_list_geometry_on_the_way_to_the_current_version() {
     let conn = open_v79_database();
     set(&conn, "ui.row_height", "30");
     set(&conn, "ui.section_header_height", "36");
@@ -47,7 +47,7 @@ fn v80_clears_persisted_list_geometry_and_records_the_version() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 80);
+    assert_eq!(version, super::SUPPORTED_SCHEMA_VERSION);
 }
 
 #[test]

@@ -109,6 +109,28 @@ fn mtp_20_a_successful_file_leaves_no_entry_behind() {
 }
 
 #[test]
+fn analysis_failed_deviation_round_trips() {
+    let conn = database();
+    let run = start_run(&conn, &start()).unwrap();
+    let expected = Deviation {
+        kind: DeviationKind::AnalysisFailed,
+        track_id: Some(1666),
+        device_path: "Until We Die/Count Your Blessings/04 A Lot Like Vegas.reprise-analysis"
+            .into(),
+        detail: "could not send object info".into(),
+    };
+
+    note_deviation(&conn, run, &expected).unwrap();
+
+    let found = deviations(&conn, run).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].kind, expected.kind);
+    assert_eq!(found[0].track_id, expected.track_id);
+    assert_eq!(found[0].device_path, expected.device_path);
+    assert_eq!(found[0].detail, expected.detail);
+}
+
+#[test]
 fn mtp_20_starting_a_run_does_not_interrupt_another_devices_live_run() {
     let conn = database();
     let mut first_start = start();

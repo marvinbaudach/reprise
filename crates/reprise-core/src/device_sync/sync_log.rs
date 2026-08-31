@@ -64,6 +64,7 @@ impl RunOutcome {
 pub enum DeviationKind {
     Skipped,
     Failed,
+    AnalysisFailed,
     Deleted,
     ConversionFallback,
     PlaylistWriteFailed,
@@ -74,6 +75,7 @@ impl DeviationKind {
         match self {
             Self::Skipped => "skipped",
             Self::Failed => "failed",
+            Self::AnalysisFailed => "analysis_failed",
             Self::Deleted => "deleted",
             Self::ConversionFallback => "conversion_fallback",
             Self::PlaylistWriteFailed => "playlist_write_failed",
@@ -83,6 +85,7 @@ impl DeviationKind {
     fn from_str(value: &str) -> Self {
         match value {
             "failed" => Self::Failed,
+            "analysis_failed" => Self::AnalysisFailed,
             "deleted" => Self::Deleted,
             "conversion_fallback" => Self::ConversionFallback,
             "playlist_write_failed" => Self::PlaylistWriteFailed,

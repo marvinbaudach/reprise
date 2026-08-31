@@ -285,7 +285,13 @@ fn desktop_analysis_sizes(
             conn, track_id,
         ) {
             Ok(Some(sidecar)) => sidecar,
-            Ok(None) => continue,
+            Ok(None) => {
+                tracing::warn!(
+                    track_id,
+                    "analysis sidecar data is unavailable during planning"
+                );
+                continue;
+            }
             Err(error) => {
                 tracing::warn!(track_id, %error, "could not load analysis sidecar data");
                 continue;
