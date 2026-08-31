@@ -1,10 +1,8 @@
 # Plans
 
-`AGENTS.md` sets the rule this directory follows: throwaway per-stage
-implementation plans do not live in the repository. `.superpowers/sdd/progress.md`
-plus `git log` are the authoritative record of what is done and in flight. What
-stays here is the exception — a plan that outlives its own execution because
-later work has to follow it.
+This directory keeps only plans that outlive their own execution because later
+work must follow them. Git history is the authoritative record of completed
+work; the retention rules below govern what remains here.
 
 ## What is kept
 
