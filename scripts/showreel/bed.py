@@ -20,6 +20,7 @@ a filter, and shaping level to picture is the honest way to make a generated
 cue track the edit rather than merely resemble it in spirit.
 """
 import sys
+import wave
 
 import numpy as np
 from scipy.signal import butter, fftconvolve, sosfilt
@@ -382,7 +383,6 @@ stereo = stereo / peak * 0.89 if peak > 0 else stereo
 
 out = sys.argv[1] if len(sys.argv) > 1 else 'bed.wav'
 raw = (np.clip(stereo, -1.0, 1.0) * 32767).astype('<i2')
-import wave
 with wave.open(out, 'wb') as w:
     w.setnchannels(2)
     w.setsampwidth(2)

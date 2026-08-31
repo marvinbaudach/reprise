@@ -6,7 +6,8 @@ strip is cropped tight around the title and NOT downscaled — a downscaled stri
 makes 'Music' and 'Releases' differ by less than the noise floor, which is how
 the first version of this reported that every page was already settled.
 """
-import subprocess, sys
+import subprocess
+import sys
 import numpy as np
 
 CROP = 'crop=2880:1747:0:53,crop=560:44:1160:4'

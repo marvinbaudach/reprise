@@ -26,7 +26,6 @@ corner and a single delta from there lands within the cursor hotspot of the
 asked-for point — so relative motion is 1:1 here, and one known origin turns it
 into absolute positioning.
 """
-import os
 import time
 
 from gi.repository import Gio, GLib
