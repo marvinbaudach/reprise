@@ -122,6 +122,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     private var artistPhotoProgress by mutableStateOf<ArtistPhotoProgress?>(null)
     private var dismissedArtistPhotoRunId by mutableStateOf<Long?>(null)
+    private var refreshArtistPortraits: () -> Unit = {}
+    private var refreshedArtistPortraitRunId = 0L
+    private var refreshedArtistPortraitDone = 0L
     @Volatile
     private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
     private var retainedLibrary: MusicLibrary? = null
@@ -179,6 +182,10 @@ internal class MobileSurfaceViewModel : ViewModel() {
         postToMain { acceptArtistPhotoProgress(initial) }
     }
 
+    fun bindArtistPortraitRefresh(refresh: () -> Unit) {
+        refreshArtistPortraits = refresh
+    }
+
     fun startArtistPhotoBackfill() {
         val binding = artistPhotoBackfillBinding ?: return
         binding.start { update ->
@@ -194,6 +201,14 @@ internal class MobileSurfaceViewModel : ViewModel() {
     }
 
     fun acceptArtistPhotoProgress(update: ArtistPhotoProgress) {
+        if (update.runId != refreshedArtistPortraitRunId) {
+            refreshedArtistPortraitRunId = update.runId
+            refreshedArtistPortraitDone = 0
+        }
+        if (update.done > refreshedArtistPortraitDone) {
+            refreshArtistPortraits()
+            refreshedArtistPortraitDone = update.done
+        }
         artistPhotoProgress = update
     }
 

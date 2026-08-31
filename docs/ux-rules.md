@@ -2979,6 +2979,15 @@ property is set and yet nothing happens.
   shut and writes no module; clearing every source behind an open gate closes
   it and writes those three modules off. An existing library never sees the
   wizard and keeps the banner.
+- **NET-4b** [active] [android] — On Android the artist-photo question is asked
+  by exactly one dismissible banner in the Library, shown whenever the global
+  gate is off, the question has not been settled, and the library holds at
+  least one artist. It carries "Download artist photos" and "Not now"; either
+  one settles the question for good, and the permanent path stays Settings →
+  Online sources. It is never a modal or a toast, and never appears while the
+  gate is already on. Unlike the `NET-4` banner it enables directly instead of
+  pointing at the settings page, because Android has a single online switch
+  and the banner already names what is sent.
 - **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
   gate is open and the device is online immediately starts exactly one fresh
   cover pass through the same Preferences transition used by Plugins and the

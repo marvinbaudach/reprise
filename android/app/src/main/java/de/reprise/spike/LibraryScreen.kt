@@ -39,6 +39,7 @@ internal fun LibraryScreen(
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     onlineSourcesEnabled: Boolean,
     setOnlineSourcesEnabled: (Boolean) -> Unit,
+    artistPhotoOffer: ArtistPhotoOfferState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
 ) {
@@ -92,6 +93,11 @@ internal fun LibraryScreen(
             setGaplessEnabled = setGaplessEnabled,
             onlineSourcesEnabled = onlineSourcesEnabled,
             setOnlineSourcesEnabled = setOnlineSourcesEnabled,
+            artistPhotoOfferSettled = artistPhotoOffer.settled,
+            downloadArtistPhotos = {
+                artistPhotoOffer.downloadArtistPhotos { setOnlineSourcesEnabled(true) }
+            },
+            declineArtistPhotos = artistPhotoOffer::notNow,
             themeSelection = themeSelection,
             selectTheme = selectTheme,
         )

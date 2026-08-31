@@ -1,6 +1,7 @@
 package de.reprise.spike
 
 import android.app.Application
+import android.content.Context
 import android.os.Looper
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
@@ -122,6 +123,23 @@ class MainActivitySettingsNavigationTest {
         }
         assertEquals(listOf(true, false), application.onlineSourcesWrites.toList())
         toggle.assertIsOff()
+    }
+
+    @Test
+    fun net_4b_downloadUsesTheSettingsEnablePathAndSettlesBeforeTheWrite() {
+        compose.onNodeWithText("Show artist photos?").assertIsDisplayed()
+
+        compose.onNodeWithText("Download artist photos").performClick()
+
+        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.onlineSourcesWrites == listOf(true)
+        }
+        assertTrue(application.onlineSourcesEnabled)
+        assertTrue(
+            application.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getBoolean(ARTIST_PHOTO_OFFER_SETTLED, false),
+        )
     }
 
     @Test

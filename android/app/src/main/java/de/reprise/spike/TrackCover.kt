@@ -49,6 +49,9 @@ internal class TrackArtwork(
         Handler(Looper.getMainLooper()).post(work)
     },
 ) {
+    var artistPortraitRevision by mutableStateOf(0L)
+        private set
+
     /**
      * Resolves `request` and delivers the image on the main thread — but only
      * while `gate` still admits it. The gate is checked before the work as
@@ -145,6 +148,12 @@ internal class TrackArtwork(
     /** Immediate composition seed: cached source first, generated cover otherwise. */
     fun seedVisual(request: ArtworkRequest): ArtworkVisual =
         cache.seedArtwork(request) ?: generatedVisual(request, resolved = false)
+
+    /** Drops artist-only resolved entries after the portrait worker writes files. */
+    fun artistPortraitsChanged() {
+        cache.invalidateArtistArtwork()
+        artistPortraitRevision += 1
+    }
 
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
         if (!request.refreshesArtistPortrait()) {
