@@ -100,7 +100,8 @@ require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
 require_pattern '^skipped_here=\(\)$' scripts/check-merge-readiness.sh
 require_pattern '^is_skipped\(\) \{$' scripts/check-merge-readiness.sh
 require_pattern 'MERGE_READINESS_SKIP_GATES' scripts/check-merge-readiness.sh
-require_pattern 'Skipped here, covered by another CI job:' scripts/check-merge-readiness.sh
+require_pattern 'skipped_summary\+=", \$name"' scripts/check-merge-readiness.sh
+require_pattern 'echo "Skipped here, covered by another CI job: \$skipped_summary"' scripts/check-merge-readiness.sh
 require_pattern 'MERGE_READINESS_SKIP_GATES' scripts/ci-quality.sh
 # Both calls moved into the `gate "<name>" -- <command>` form, so neither path
 # starts its own line any more. The assertion follows the call rather than the
@@ -127,6 +128,12 @@ require_pattern 'scripts/tests/worktree-gc\.sh' .github/workflows/ci.yml
 require_pattern 'scripts/tests/worktree-gc-schedule\.sh' .github/workflows/ci.yml
 require_pattern 'Run the script self-tests' .github/workflows/ci.yml
 require_pattern 'scripts/tests/qa-linters\.sh' .github/workflows/ci.yml
+require_pattern '^          scripts/check-shell\.sh$' .github/workflows/ci.yml
+require_pattern '^        run: scripts/check-project-quality\.sh --project --showroom$' .github/workflows/ci.yml
+require_pattern '^          scripts/check-architecture\.sh$' .github/workflows/ci.yml
+require_pattern_order 'Verify worktree hygiene' 'Verify project source quality' .github/workflows/ci.yml
+require_pattern_order 'Run the script self-tests' 'Verify project source quality' .github/workflows/ci.yml
+require_pattern_order 'Verify repository and workflow contracts' 'Verify project source quality' .github/workflows/ci.yml
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
 reject_pattern 'scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh

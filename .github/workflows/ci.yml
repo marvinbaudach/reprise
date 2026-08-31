@@ -94,9 +94,6 @@ jobs:
         with:
           version: "0.12.3"
 
-      - name: Verify project source quality
-        run: scripts/check-project-quality.sh --project --showroom
-
       - name: Verify worktree hygiene
         run: |
           scripts/tests/worktree-gc.sh
@@ -113,6 +110,9 @@ jobs:
           for contract in .github/tests/*.sh; do
             GITHUB_ACTIONS=false "$contract"
           done
+
+      - name: Verify project source quality
+        run: scripts/check-project-quality.sh --project --showroom
 
   android-unit-suite:
     name: Android JVM unit suite

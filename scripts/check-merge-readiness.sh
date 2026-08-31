@@ -152,5 +152,9 @@ gate "Dependency audit" -- run_audit
 echo "Merge-readiness checks passed against $base_ref"
 
 if (( ${#skipped_here[@]} > 0 )); then
-  echo "Skipped here, covered by another CI job: ${skipped_here[*]}"
+  skipped_summary=${skipped_here[0]}
+  for name in "${skipped_here[@]:1}"; do
+    skipped_summary+=", $name"
+  done
+  echo "Skipped here, covered by another CI job: $skipped_summary"
 fi
