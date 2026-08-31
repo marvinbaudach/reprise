@@ -2,7 +2,7 @@
 slug: the-ci-stops-repeating-itself-a1
 worktree: /home/marvin/Projects/reprise-the-ci-stops-repeating-itself-a1
 branch: feature/the-ci-stops-repeating-itself-a1
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-31
 ---
