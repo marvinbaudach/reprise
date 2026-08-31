@@ -2,7 +2,7 @@
 slug: the-waveform-click-sets-the-start-point
 worktree: /home/marvin/Projects/reprise-the-waveform-click-sets-the-start-point
 branch: feature/the-waveform-click-sets-the-start-point
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-08-31
 ---
