@@ -21,6 +21,7 @@ internal data class PlaybackUiState(
 
 @Immutable
 internal data class LibraryPlayback(
+    val currentIndex: Int? = null,
     val currentTrackId: Long? = null,
     val currentTrackUri: String? = null,
     val state: AndroidPlaybackState = AndroidPlaybackState.STOPPED,
@@ -28,6 +29,7 @@ internal data class LibraryPlayback(
 )
 
 internal fun PlaybackUiState.libraryPlayback() = LibraryPlayback(
+    currentIndex = currentIndex,
     currentTrackId = currentTrackId,
     currentTrackUri = currentTrackUri,
     state = state,

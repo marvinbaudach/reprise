@@ -78,6 +78,7 @@ fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     ).toUiState()
 
     assertEquals(2, state.currentIndex)
+    assertEquals(2, state.libraryPlayback().currentIndex)
     assertEquals(41L, state.currentTrackId)
     assertEquals("content://provider/playing.flac", state.currentTrackUri)
     assertEquals(1_250L, state.positionMs)
