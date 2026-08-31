@@ -112,12 +112,22 @@ impl PlayerController {
         start: StartPlayback,
         change: crate::ui::current_track_selection::CurrentTrackChange,
     ) {
+        self.present_queue_item_with_start_mark(item, start, change, None);
+    }
+
+    pub(in crate::ui) fn present_queue_item_with_start_mark(
+        self: &std::rc::Rc<Self>,
+        item: QueueItem,
+        start: StartPlayback,
+        change: crate::ui::current_track_selection::CurrentTrackChange,
+        start_position_ms: Option<i64>,
+    ) {
         match item {
             QueueItem::Track(id) => self.present_track(id, start, change),
             QueueItem::Episode(id) => {
                 debug_assert_eq!(start, StartPlayback::Yes);
                 self.player.set_next(None);
-                self.play_queued_episode(id);
+                self.play_queued_episode(id, start_position_ms);
             }
         }
     }

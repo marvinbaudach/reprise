@@ -255,6 +255,9 @@ pub struct PlayerController {
     /// `present_track`, which is the moment any placement stops being the
     /// startup one.
     pub(in crate::ui) restored_placement_intact: Cell<bool>,
+    /// A waveform position selected before playback starts, bound to the
+    /// exact queue item that may consume it on the next start attempt.
+    pub(in crate::ui) pending_start_mark: Cell<Option<(QueueItem, i64)>>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<QueueItem>>,
     /// PLAY-14 runtime playback history and navigation one-shot flag.
@@ -460,6 +463,7 @@ impl PlayerController {
             queue: RefCell::new(Queue::new()),
             library_has_tracks: Cell::new(library_has_tracks),
             restored_placement_intact: Cell::new(false),
+            pending_start_mark: Cell::new(None),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
             history: RefCell::default(),

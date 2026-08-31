@@ -218,7 +218,11 @@ impl PlayerController {
         *self.now_playing.borrow_mut() = None;
     }
 
-    pub(in crate::ui) fn play_queued_episode(self: &Rc<Self>, episode_id: i64) {
+    pub(in crate::ui) fn play_queued_episode(
+        self: &Rc<Self>,
+        episode_id: i64,
+        start_position_ms: Option<i64>,
+    ) {
         let neighbours = {
             let pending = self.up_next.borrow();
             NeighbourContext::for_manual_queue(
@@ -229,8 +233,14 @@ impl PlayerController {
         let episode = reprise_core::podcasts::store::episode(&self.conn, episode_id);
         match episode {
             Ok(Some(episode)) => {
+                let mut media = media_from_episode(&episode);
+                if let (Some(position_ms), ExternalMedia::Podcast { resume_ms, .. }) =
+                    (start_position_ms, &mut media)
+                {
+                    *resume_ms = position_ms;
+                }
                 if let Err(error) = self.play_external_with_context_and_origin(
-                    media_from_episode(&episode),
+                    media,
                     neighbours,
                     None,
                     PodcastOrigin::ManualQueue,

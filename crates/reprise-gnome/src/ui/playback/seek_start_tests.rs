@@ -76,7 +76,7 @@ fn controller(calls: Rc<PlaybackCalls>, test_root: &Path) -> Rc<PlayerController
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
+fn stopped_restored_track_marks_the_clicked_waveform_position_until_play() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let test_root = tempfile::tempdir().unwrap();
@@ -109,6 +109,11 @@ fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
 
     controller.seek_or_start(30_000);
 
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
+
     assert_eq!(
         calls.played_paths.borrow().as_slice(),
         ["/music/restored.flac"]
@@ -118,7 +123,7 @@ fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn restored_episode_starts_at_the_clicked_position_not_its_saved_resume() {
+fn restored_episode_marks_the_clicked_position_until_play() {
     use reprise_core::library::session::{SessionEpisode, SessionEpisodeOrigin};
     use reprise_core::podcasts::feed::ParsedEpisode;
     use reprise_core::podcasts::store::{self, NewSubscription};
@@ -168,6 +173,11 @@ fn restored_episode_starts_at_the_clicked_position_not_its_saved_resume() {
 
     controller.seek_or_start(30_000);
 
+    assert!(calls.played_uris.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
+
     assert_eq!(
         calls.played_uris.borrow().as_slice(),
         ["https://podcast.test/episode.mp3"]
@@ -205,6 +215,10 @@ fn stopped_restored_track_retries_the_clicked_position_once_after_preroll() {
     );
 
     controller.seek_or_start(30_000);
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
     controller.apply_event(PlayerEvent::Position {
         position_ms: 0,
         duration_ms: 120_000,
@@ -269,6 +283,10 @@ fn restored_episode_retries_only_the_clicked_position_once_after_preroll() {
     })));
 
     controller.seek_or_start(30_000);
+    assert!(calls.played_uris.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
     controller.apply_event(PlayerEvent::Position {
         position_ms: 0,
         duration_ms: 3_600_000,
@@ -338,7 +356,13 @@ fn restored_youtube_episode_keeps_the_clicked_position_until_delayed_source_star
     })));
 
     controller.seek_or_start(30_000);
+    assert!(calls.played_paths.borrow().is_empty());
     assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
     let generation = controller.external.borrow().generation;
     controller
         .start_podcast_source(
@@ -357,7 +381,7 @@ fn restored_youtube_episode_keeps_the_clicked_position_until_delayed_source_star
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stopped_queued_episode_does_not_drop_the_clicked_position() {
+fn stopped_queued_episode_marks_the_clicked_position_until_play() {
     use reprise_core::podcasts::feed::ParsedEpisode;
     use reprise_core::podcasts::store::{self, NewSubscription};
     use reprise_core::podcasts::PodcastKind;
@@ -402,6 +426,11 @@ fn stopped_queued_episode_does_not_drop_the_clicked_position() {
         .set(Some(QueueItem::Episode(episode_id)));
 
     controller.seek_or_start(30_000);
+
+    assert!(calls.played_uris.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
 
     assert_eq!(
         calls.played_uris.borrow().as_slice(),

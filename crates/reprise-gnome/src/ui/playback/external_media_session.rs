@@ -197,18 +197,24 @@ impl PlayerController {
     }
 
     pub(super) fn seek_restored_episode_at(self: &Rc<Self>, position_ms: i64) -> bool {
-        let waiting = {
+        let duration_ms = {
             let external = self.external.borrow();
-            restored_resume_request(&external).is_some()
+            let Some(ExternalSession::Podcast(session)) = external.session.as_ref() else {
+                return false;
+            };
+            if !session.restored {
+                return false;
+            }
+            match &session.media {
+                ExternalMedia::Podcast { duration_ms, .. } => duration_ms.unwrap_or(0),
+                ExternalMedia::Radio { .. } => return false,
+            }
         };
-        if !waiting {
-            return false;
-        }
         let replaced = replace_podcast_resume_target(&mut self.external.borrow_mut(), position_ms);
         if !replaced {
             return true;
         }
-        self.resume_restored_episode();
+        self.sync_position(position_ms, duration_ms);
         true
     }
 }
