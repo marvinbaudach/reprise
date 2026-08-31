@@ -452,7 +452,7 @@ finished in every case. The fields were stale, not the work.
 | --- | --- | --- | --- |
 | `docs/plans/motion-player.md` | planned | **shipped** | MOT-5 `[active]`; `waveform_seek.rs` carries `crossfade_progress`/`desaturation_progress`, `player_bar.rs` carries `animate_play_pulse()` |
 | `docs/plans/ux-rules-motion.md` | reviewed | **shipped** | both phases merged; `ui/motion.rs` exists with the planned tokens; `check-motion-tokens.sh` has an empty phase-two allowlist |
-| `docs/plans/list-views-fixes.md` | refactored | **shipped** | every measure verified in code (cover centring, duration format, episode window of 10, title tail dedup, `image_url` migration) |
+| List-view fixes | refactored | **shipped** | every measure verified in code (cover centring, duration format, episode window of 10, title tail dedup, `image_url` migration) |
 | `docs/plans/audio-character-mcp.md` | ready-for-review | **reverted** | shipped 2026-07-19/20, then removed wholesale by `eda0edaebb`; migration v27 drops its tables. No production code remains |
 
 `reverted` is a new value in the pipeline's status vocabulary. It was

@@ -133,11 +133,11 @@ One thing the model gives up, recorded so nobody rediscovers it as a surprise:
 `dev` snapshot. The emergency path above says what to do instead, and why
 attempting the isolated repair anyway is unrecoverable.
 
-The squash commit message is the pull request title in the project's
-conventional-commit form (`fix(sync): name the running step`); GitHub appends
-the `(#N)` reference. Trim the auto-collected list of branch commits out of the
-body and leave the explanation instead. No attribution footer, as everywhere
-else in this repository.
+The squash commit message takes the pull request's short narrative title;
+GitHub appends the `(#N)` reference. A title says what changed in the product
+or project, for example `The queue keeps its place after filtering`. Trim the
+auto-collected list of branch commits out of the body and leave the reason,
+verification, and limitations instead. Do not add attribution footers.
 
 Two consequences of squashing, both of which bite silently:
 
@@ -157,7 +157,7 @@ project's review checklist, which does not belong in the permanent history.
 
 ## What actually enforces this
 
-Three repository rulesets are active, verified live on 2026-08-17:
+Three repository rulesets enforce the branch boundary:
 
 - `dev-pr-boundary` (`20937610`) requires a pull request, squash merging, an
   up-to-date `Quality gate`, and rejects deletion and non-fast-forward updates.

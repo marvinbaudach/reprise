@@ -6,11 +6,11 @@ manual GNOME checklist remain in [RELEASING.md](RELEASING.md).
 
 ## Current automated baseline
 
-At performance close-out commit `a41c53f`, the isolated workspace suite
-contains 1,482 passing tests: 758 in `reprise-core`, 669 in `reprise-gnome`,
-and 55 in `reprise-platform-linux`. Another 139 tests are deliberately
-separated from the default run: one ignored core probe and 138 GNOME tests
-whose display or host contracts require controlled execution.
+The current automated baseline is the result reported by
+`scripts/check-merge-readiness.sh` on the exact commit being reviewed. The
+suite changes too frequently for a hand-maintained test count here to remain
+useful. The gate runs the workspace tests and the standing rule-named display
+set; broader host-dependent display and hardware checks remain separate.
 
 The repository also has focused pointer-driven smoke tests, a synchronized-
 lyrics smoke, release/package validation, an architecture/frontend linter, and
