@@ -1,4 +1,62 @@
 use super::*;
+use std::sync::{Arc, Mutex};
+use tracing::field::{Field, Visit};
+use tracing::span::{Attributes, Id, Record};
+use tracing::{Event, Metadata, Subscriber};
+
+#[derive(Clone, Default)]
+struct CapturedCaseWarnings(Arc<Mutex<Vec<CapturedCaseWarning>>>);
+
+#[derive(Default)]
+struct CapturedCaseWarning {
+    track_id: Option<i64>,
+    first_spelling: Option<String>,
+    second_spelling: Option<String>,
+}
+
+impl Visit for CapturedCaseWarning {
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        if field.name() == "track_id" {
+            self.track_id = Some(value);
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        match field.name() {
+            "first_spelling" => self.first_spelling = Some(value.to_owned()),
+            "second_spelling" => self.second_spelling = Some(value.to_owned()),
+            _ => {}
+        }
+    }
+
+    fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
+}
+
+impl Subscriber for CapturedCaseWarnings {
+    fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, _span: &Attributes<'_>) -> Id {
+        Id::from_u64(1)
+    }
+
+    fn record(&self, _span: &Id, _values: &Record<'_>) {}
+
+    fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+
+    fn event(&self, event: &Event<'_>) {
+        let mut warning = CapturedCaseWarning::default();
+        event.record(&mut warning);
+        if *event.metadata().level() == tracing::Level::WARN && warning.track_id.is_some() {
+            self.0.lock().unwrap().push(warning);
+        }
+    }
+
+    fn enter(&self, _span: &Id) {}
+
+    fn exit(&self, _span: &Id) {}
+}
 
 fn case_track(id: i64, album_artist: &str, album: &str, title: &str) -> SyncTrack {
     let mut value = track(id, &format!("/music/{id}.mp3"), Some(192), 10_000, 240_000);
@@ -155,13 +213,25 @@ fn equal_directory_counts_plan_neither_arrival_analysis_nor_removal() {
         size_bytes: 123,
     });
 
-    let plan = plan_mirror(mirror_input);
+    let captured = CapturedCaseWarnings::default();
+    let plan = tracing::subscriber::with_default(captured.clone(), || plan_mirror(mirror_input));
 
     assert!(plan.copy.is_empty());
     assert!(plan.replace.is_empty());
     assert!(plan.analysis_writes.is_empty());
     assert!(plan.remove.is_empty());
     assert!(!plan.desired_files.iter().any(|file| file.track.id == 9));
+    let warnings = captured.0.lock().unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].track_id, Some(9));
+    assert_eq!(
+        warnings[0].first_spelling.as_deref(),
+        Some("TIE ARTIST/Tie Album")
+    );
+    assert_eq!(
+        warnings[0].second_spelling.as_deref(),
+        Some("Tie Artist/TIE ALBUM")
+    );
 }
 
 #[test]
