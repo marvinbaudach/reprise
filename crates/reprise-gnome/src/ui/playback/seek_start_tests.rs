@@ -123,6 +123,78 @@ fn stopped_restored_track_marks_the_clicked_waveform_position_until_play() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn stopped_track_mark_applies_when_the_same_track_starts_directly() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/marked.flac', 'Marked', 'Artist', 120000, 0)",
+            [],
+        )
+        .unwrap();
+    controller.current_up_next.set(Some(QueueItem::Track(7)));
+
+    controller.seek_or_start(30_000);
+
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.play_track_id(7);
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/marked.flac"]
+    );
+    assert_eq!(calls.sought_positions.borrow().as_slice(), [30_000]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stopped_track_mark_cannot_survive_a_different_direct_start() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/marked.flac', 'Marked', 'Artist', 120000, 0);
+             INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (8, '/music/other.flac', 'Other', 'Artist', 120000, 0);",
+        )
+        .unwrap();
+    controller.current_up_next.set(Some(QueueItem::Track(7)));
+
+    controller.seek_or_start(30_000);
+
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.play_track_id(8);
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/other.flac"]
+    );
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.reset_to_stopped();
+    controller.toggle_pause();
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/other.flac", "/music/marked.flac"]
+    );
+    assert!(calls.sought_positions.borrow().is_empty());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn restored_episode_marks_the_clicked_position_until_play() {
     use reprise_core::library::session::{SessionEpisode, SessionEpisodeOrigin};
     use reprise_core::podcasts::feed::ParsedEpisode;

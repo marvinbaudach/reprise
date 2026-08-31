@@ -275,10 +275,6 @@ impl PlayerController {
         item: QueueItem,
         change: CurrentTrackChange,
     ) {
-        let start_position_ms = self
-            .pending_start_mark
-            .take()
-            .and_then(|(marked_item, position_ms)| (marked_item == item).then_some(position_ms));
         let id = item.id();
         let playable = match item {
             QueueItem::Track(id) => {
@@ -291,24 +287,20 @@ impl PlayerController {
         };
         match playable {
             Ok(true) => {
-                self.present_queue_item_with_start_mark(
+                self.present_queue_item(
                     item,
                     crate::ui::player_controller::StartPlayback::Yes,
                     change,
-                    start_position_ms,
                 );
-                self.apply_local_start_mark(item, start_position_ms);
             }
             Ok(false) => self.advance_playback(AdvanceReason::Manual),
             Err(error) => {
                 tracing::error!(%error, id, "could not validate restored current track; trying it directly");
-                self.present_queue_item_with_start_mark(
+                self.present_queue_item(
                     item,
                     crate::ui::player_controller::StartPlayback::Yes,
                     change,
-                    start_position_ms,
                 );
-                self.apply_local_start_mark(item, start_position_ms);
             }
         }
     }

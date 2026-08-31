@@ -129,13 +129,14 @@ through the mechanism that already exists: `start_pending_seek(position_ms)`
 via `ResumePolicy` and `retry_pending_local_seek`
 (`player_event_handling.rs:198`).
 
-**The consumption site is `start_current_item` (`queue_transport.rs:273`)** —
-not the `toggle_pause` arm above it. Every start of the current item passes
-through here, including `advance_playback`, which is what makes the `take()`
-unconditional and therefore safe: a mark that does not match the item being
-started is dropped rather than left lying for a later auto-advance onto the same
-item (repeat-one, or a queue whose next entry is the same track). Take once,
-compare, then branch on the item type — local track as above, episode per task 5.
+**The consumption sites are the actual presentation funnels:** `present_track`
+for local tracks and `prepare_external_playback` for episodes and radio.
+`start_current_item` is only one caller; direct selection, up-next activation,
+and automatic or gapless advance bypass it. Each presentation attempt takes the
+mark unconditionally, applies it only when its item identity matches, and drops
+it otherwise. A mark therefore cannot survive a different start and later fire
+when the marked item returns (repeat-one, or a queue whose next entry is the
+same track).
 
 **4 — Restored episode: mark, don't resume.** `seek_restored_episode_at`
 (`external_media_session.rs:199`) already writes the clicked position into the
@@ -158,14 +159,12 @@ Verified, so the task can be trusted:
 **5 — Queued (not restored) episode.** Its start position comes from the
 `resume_ms` field of `ExternalMedia::Podcast`, which `play_queued_episode`
 (`external_media.rs:221`) builds itself via `media_from_episode(&episode)` at
-`:233` before calling `play_external_with_context_and_origin`. Override
-`resume_ms` on that value before the call.
+`:233` before calling `play_external_with_context_and_origin`.
 
-The position arrives as a new parameter on `play_queued_episode` — it has
-exactly one caller (`up_next_transport.rs:120`, inside `present_queue_item`'s
-episode arm), so passing the value the task-3 `take()` produced is a two-line
-change and keeps the mark's lifetime explicit instead of hiding a second slot
-read deep in the call tree.
+`play_queued_episode` enters the same `prepare_external_playback` funnel as
+every other episode start. That funnel takes the item-bound mark and returns a
+matching position to place in `resume_ms` before `begin_podcast`; a
+non-matching mark is discarded before the external session begins.
 
 Nothing is written to the database: a DB write would let a click near the end
 mark the episode complete through `resume_rules::is_complete`, which is why the

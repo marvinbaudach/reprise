@@ -617,6 +617,7 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        let start_position_ms = self.take_pending_start_mark(Some(QueueItem::Track(id)));
         self.clear_pending_local_seek();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -748,6 +749,7 @@ impl PlayerController {
                         // Pre-feed the following track so the backend can hand
                         // off to it gaplessly when this one is about to finish.
                         self.feed_next();
+                        self.apply_local_start_mark(QueueItem::Track(id), start_position_ms);
                     }
                     Err(error) => {
                         tracing::error!(%error, path = %summary.path, track_id = id, "failed to start playback");

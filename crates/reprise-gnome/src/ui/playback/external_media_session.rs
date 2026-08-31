@@ -210,10 +210,7 @@ impl PlayerController {
                 ExternalMedia::Radio { .. } => return false,
             }
         };
-        let replaced = replace_podcast_resume_target(&mut self.external.borrow_mut(), position_ms);
-        if !replaced {
-            return true;
-        }
+        replace_podcast_resume_target(&mut self.external.borrow_mut(), position_ms);
         self.sync_position(position_ms, duration_ms);
         true
     }

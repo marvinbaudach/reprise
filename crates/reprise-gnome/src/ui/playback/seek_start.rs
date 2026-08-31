@@ -37,7 +37,7 @@ impl PlayerController {
         self.seek(position_ms);
     }
 
-    pub(in crate::ui) fn start_pending_seek(&self, position_ms: i64) {
+    fn start_pending_seek(&self, position_ms: i64) {
         let mut policy = ResumePolicy::new(position_ms);
         let succeeded = self.seek_after_start(position_ms);
         policy.initial_seek_finished(succeeded);
@@ -59,6 +59,14 @@ impl PlayerController {
         {
             self.start_pending_seek(position_ms);
         }
+    }
+
+    pub(in crate::ui) fn take_pending_start_mark(&self, item: Option<QueueItem>) -> Option<i64> {
+        self.pending_start_mark
+            .take()
+            .and_then(|(marked_item, position_ms)| {
+                (Some(marked_item) == item).then_some(position_ms)
+            })
     }
 
     pub(in crate::ui) fn seek_after_start(&self, position_ms: i64) -> bool {
