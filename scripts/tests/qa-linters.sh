@@ -101,6 +101,7 @@ require_pattern '^skipped_here=\(\)$' scripts/check-merge-readiness.sh
 require_pattern '^is_skipped\(\) \{$' scripts/check-merge-readiness.sh
 require_pattern 'MERGE_READINESS_SKIP_GATES' scripts/check-merge-readiness.sh
 require_pattern 'Skipped here, covered by another CI job:' scripts/check-merge-readiness.sh
+require_pattern 'MERGE_READINESS_SKIP_GATES' scripts/ci-quality.sh
 # Both calls moved into the `gate "<name>" -- <command>` form, so neither path
 # starts its own line any more. The assertion follows the call rather than the
 # layout: the gate must still name the project-quality wrapper, and it must
@@ -121,6 +122,11 @@ require_pattern '^scripts/check-flatpak-cargo-sources\.sh$' scripts/check-releas
 require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
 require_pattern 'scripts/check-release-metadata\.sh --gate' .github/workflows/ci.yml
 require_pattern 'scripts/check-flatpak-cargo-sources\.sh' .github/workflows/ci.yml
+require_pattern 'Verify worktree hygiene' .github/workflows/ci.yml
+require_pattern 'scripts/tests/worktree-gc\.sh' .github/workflows/ci.yml
+require_pattern 'scripts/tests/worktree-gc-schedule\.sh' .github/workflows/ci.yml
+require_pattern 'Run the script self-tests' .github/workflows/ci.yml
+require_pattern 'scripts/tests/qa-linters\.sh' .github/workflows/ci.yml
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
 reject_pattern 'scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh

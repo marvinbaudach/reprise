@@ -97,6 +97,14 @@ jobs:
       - name: Verify project source quality
         run: scripts/check-project-quality.sh --project --showroom
 
+      - name: Verify worktree hygiene
+        run: |
+          scripts/tests/worktree-gc.sh
+          scripts/tests/worktree-gc-schedule.sh
+
+      - name: Run the script self-tests
+        run: scripts/tests/qa-linters.sh
+
       - name: Verify repository and workflow contracts
         run: |
           scripts/check-architecture.sh
