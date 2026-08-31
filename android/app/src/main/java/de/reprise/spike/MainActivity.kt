@@ -55,8 +55,6 @@ import uniffi.reprise_android_ffi.TrashAction
 import uniffi.reprise_android_ffi.standardEqualizerPresets
 
 private const val TAG = "RepriseScan"
-private const val PREFERENCES_NAME = "reprise_android"
-private const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
 internal const val PLAYBACK_BIND_WATCHDOG_MS = 2_000L
 internal const val PLAYBACK_BIND_FAILURE_LOG = "Playback service bind did not connect"
 class MainActivity : ComponentActivity() {
@@ -208,6 +206,7 @@ class MainActivity : ComponentActivity() {
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: run {
             usesProductionSurface = true
+            surfaceState.bindArtistPortraitRefresh(artwork::artistPortraitsChanged)
             surfaceState.connectArtistPhotoBackfill(library) { work -> runOnUiThread(work) }
             productionSurface().also { surfaceState.startArtistPhotoBackfill() }
         }
@@ -217,6 +216,9 @@ class MainActivity : ComponentActivity() {
             var onlineSourcesEnabled by remember {
                 mutableStateOf(surface.onlineSourcesEnabled())
             }
+            val artistPhotoOffer = rememberArtistPhotoOffer(
+                getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
+            )
             val onlineSourcesIntent = remember { PendingToggleIntent() }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val libraryPlayback by remember { derivedStateOf { playbackState.value.libraryPlayback() } }
@@ -288,6 +290,7 @@ class MainActivity : ComponentActivity() {
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
                                 setGaplessEnabled = surface.setGaplessEnabled,
                                 onlineSourcesEnabled = onlineSourcesEnabled,
+                                artistPhotoOffer = artistPhotoOffer,
                                 setOnlineSourcesEnabled = {
                                     val enabled = onlineSourcesIntent.next(onlineSourcesEnabled)
                                     libraryWrites.submitAnswered(
@@ -749,7 +752,6 @@ class MainActivity : ComponentActivity() {
         runCatching { service.command() }
             .onFailure { error -> reportError("Could not $action: ${error.detail()}") }
     }
-
 }
 
 internal fun equalizerPresetUi(): List<EqualizerPresetUi> =

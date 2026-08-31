@@ -161,6 +161,18 @@ internal class ArtworkCache(
     }
 
     @Synchronized
+    fun invalidateArtistArtwork() {
+        visualShelves.values.forEach { visuals ->
+            visuals.keys.removeAll { key ->
+                key is TrackArtworkKey && key.kind == ArtworkKind.ARTIST
+            }
+        }
+        resolvedFallbackShelves.values.forEach { fallbacks ->
+            fallbacks.keys.removeAll { key -> key.kind == ArtworkKind.ARTIST }
+        }
+    }
+
+    @Synchronized
     fun generated(request: ArtworkRequest): ArtworkVisual? =
         visuals(request.size)[request.generatedKey()]
 

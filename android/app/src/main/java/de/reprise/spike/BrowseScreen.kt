@@ -126,6 +126,9 @@ internal fun BrowseScreen(
     selectTheme: (MobileTheme) -> Unit,
     onlineSourcesEnabled: Boolean = false,
     setOnlineSourcesEnabled: (Boolean) -> Unit = {},
+    artistPhotoOfferSettled: Boolean = true,
+    downloadArtistPhotos: () -> Unit = {},
+    declineArtistPhotos: () -> Unit = {},
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
@@ -576,14 +579,17 @@ internal fun BrowseScreen(
                         rescan = rescan,
                         openSettings = ::openSettings,
                     )
-                    // Both of these are state rather than acknowledgements, so both
-                    // stand until something supersedes them — see TransientMessage
-                    // for the distinction and for the third kind.
+                    // Re-readable state, not timed acknowledgements; see TransientMessage.
                     browseError?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
-                    ArtistPhotoProgressBar(
+                    ArtistPhotoLibraryStatus(
+                        offerVisible = shouldOfferArtistPhotos(
+                            onlineSourcesEnabled, artistPhotoOfferSettled, state.artists.total,
+                        ),
+                        downloadArtistPhotos = downloadArtistPhotos,
+                        declineArtistPhotos = declineArtistPhotos,
                         progress = surfaceState.visibleArtistPhotoProgress,
-                        dismiss = surfaceState::dismissArtistPhotoProgress,
+                        dismissProgress = surfaceState::dismissArtistPhotoProgress,
                     )
                     HorizontalPager(
                         state = pagerState,

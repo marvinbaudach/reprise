@@ -359,6 +359,36 @@ class ArtistPhotoProgressBarTest {
         compose.onNodeWithTag("library-destination-pager").assertIsDisplayed()
     }
 
+    @Test
+    fun net_4b_browseShowsTheArtistPhotoOfferAndNotNowRemovesIt() {
+        val settled = mutableStateOf(false)
+        showBrowseWithArtistOffer(settled) { settled.value = true }
+
+        compose.onNodeWithText("Show artist photos?").assertIsDisplayed()
+        compose.onNodeWithText("Not now").performClick()
+
+        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
+        compose.onNodeWithTag("library-destination-pager").assertIsDisplayed()
+    }
+
+    @Test
+    fun net_4b_downloadingArtistPhotosRemovesTheOfferBeforeProgressCanReplaceIt() {
+        val settled = mutableStateOf(false)
+        var downloads = 0
+        showBrowseWithArtistOffer(
+            settled = settled,
+            download = {
+                settled.value = true
+                downloads += 1
+            },
+        )
+
+        compose.onNodeWithText("Download artist photos").performClick()
+
+        assertEquals(1, downloads)
+        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
+    }
+
     private fun show(
         initial: ArtistPhotoProgress?,
         dismiss: () -> Unit = {},
@@ -367,6 +397,47 @@ class ArtistPhotoProgressBarTest {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 ArtistPhotoProgressBar(progress = state.value, dismiss = dismiss)
+            }
+        }
+    }
+
+    private fun showBrowseWithArtistOffer(
+        settled: androidx.compose.runtime.MutableState<Boolean>,
+        notNow: () -> Unit = { settled.value = true },
+        download: () -> Unit = { settled.value = true },
+    ) {
+        val artist = LibraryArtist("Slowdive", 12, 4, "content://slowdive")
+        val browse = LibraryScreenState.Browse(
+            titles = LibraryWindow.empty(),
+            artists = LibraryWindow(total = 1, rows = listOf(artist), hasMore = false),
+        )
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                BrowseScreen(
+                    state = browse,
+                    playback = PlaybackUiState().libraryPlayback(),
+                    playbackSettingsRevision = 0,
+                    surfaceState = MobileSurfaceViewModel(),
+                    chooseFolder = {},
+                    rescan = {},
+                    searchTitles = { _, _ -> LibraryWindow.empty() },
+                    listArtists = { browse.artists },
+                    openAlbum = { error("Album navigation is outside this test") },
+                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrack = { _, deliver -> deliver(null) },
+                    playTracks = { _, _ -> },
+                    loadPlaybackSettings = { PlaybackSettingsUiState(false, true, emptyList()) },
+                    setEqualizerEnabled = { PlaybackSettingsUiState(it, true, emptyList()) },
+                    replaceEqualizerCurve = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setGaplessEnabled = { PlaybackSettingsUiState(false, it, emptyList()) },
+                    themeSelection = theme,
+                    selectTheme = {},
+                    artistPhotoOfferSettled = settled.value,
+                    downloadArtistPhotos = download,
+                    declineArtistPhotos = notNow,
+                )
             }
         }
     }
