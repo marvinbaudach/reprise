@@ -254,16 +254,23 @@ fn build_plan(
             })
             .collect::<Vec<_>>();
     desired_files.sort_by_key(|file| file.track.id);
-    let desired_by_id = desired_files
-        .iter()
-        .cloned()
-        .map(|file| (file.track.id, file))
-        .collect::<HashMap<_, _>>();
     let inventory_by_id = inventory
         .iter()
         .cloned()
         .map(|file| (file.track_id, file))
         .collect::<HashMap<_, _>>();
+    let mut desired_by_id = desired_files
+        .drain(..)
+        .map(|file| (file.track.id, file))
+        .collect::<HashMap<_, _>>();
+    super::device_case::rewrite_desired_paths(
+        &mut desired_by_id,
+        &inventory,
+        &inventory_by_id,
+        &managed_files,
+    );
+    desired_files = desired_by_id.values().cloned().collect();
+    desired_files.sort_by_key(|file| file.track.id);
     let managed_paths = managed_files
         .iter()
         .map(|file| file.relative_path.as_str())
@@ -511,9 +518,14 @@ fn plan_orphan_removals(
     plan: &mut MirrorPlan,
 ) {
     let mut seen_physical = HashSet::new();
+    let known_folded_paths = known_paths
+        .iter()
+        .map(|path| path.to_lowercase())
+        .collect::<HashSet<_>>();
     for file in managed_files {
         if !seen_physical.insert(file.relative_path.as_str())
             || known_paths.contains(&file.relative_path)
+            || known_folded_paths.contains(&file.relative_path.to_lowercase())
         {
             continue;
         }
