@@ -4,6 +4,8 @@ mod test_db;
 mod ui;
 
 use std::cell::RefCell;
+use std::fmt;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
@@ -100,6 +102,87 @@ fn init_logging() {
         .init();
 }
 
+fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let payload = panic_info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| {
+                panic_info
+                    .payload()
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+            })
+            .unwrap_or("non-string panic payload");
+        let location = panic_info
+            .location()
+            .map_or_else(|| "unknown location".to_owned(), ToString::to_string);
+        tracing::error!(panic_payload = payload, panic_location = location, "panic");
+        previous(panic_info);
+    }));
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DatabaseOpenFailure {
+    path: String,
+    error: String,
+}
+
+impl DatabaseOpenFailure {
+    const HEADING: &'static str = "Reprise could not open the database";
+    const BODY: &'static str = "Database: {path}\n\nError: {error}";
+
+    fn body(&self, template: &str) -> String {
+        i18n::format_message(template, &[("path", &self.path), ("error", &self.error)])
+    }
+}
+
+fn database_open_result<T, E>(
+    path: &Path,
+    open: impl FnOnce() -> Result<T, E>,
+) -> Result<T, DatabaseOpenFailure>
+where
+    E: fmt::Display,
+{
+    open().map_err(|error| DatabaseOpenFailure {
+        path: path.display().to_string(),
+        error: error.to_string(),
+    })
+}
+
+fn report_database_open_failure(
+    app: &adw::Application,
+    failure: DatabaseOpenFailure,
+) -> glib::ExitCode {
+    app.connect_activate(move |app| {
+        let heading = i18n::gettext(DatabaseOpenFailure::HEADING);
+        let body = failure.body(&i18n::gettext(DatabaseOpenFailure::BODY));
+        let window = adw::ApplicationWindow::builder()
+            .application(app)
+            .title("Reprise")
+            .default_width(480)
+            .default_height(240)
+            .build();
+        let dialog = adw::AlertDialog::builder()
+            .heading(heading)
+            .body(body)
+            .close_response("close")
+            .build();
+        dialog.add_response("close", &i18n::gettext("Close"));
+        let weak_app = app.downgrade();
+        window.present();
+        dialog.choose(Some(&window), gio::Cancellable::NONE, move |_| {
+            if let Some(app) = weak_app.upgrade() {
+                app.quit();
+            }
+        });
+    });
+    let _ = app.run();
+    glib::ExitCode::FAILURE
+}
+
 /// Backs the `REPRISE_SMOKE_SEED_PLAYLIST` hook (see `SEED_PLAYLIST_ENV_VAR`'s
 /// doc comment for why descending title order): reads every track id
 /// currently in the library, then creates `name` with them via `library::
@@ -146,6 +229,7 @@ fn main() -> glib::ExitCode {
     register_app_resources();
     ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();
+    install_panic_hook();
     ui::startup_report::mark("logging initialised");
     i18n::init();
     ui::startup_report::mark("i18n initialised");
@@ -191,7 +275,17 @@ fn main() -> glib::ExitCode {
 
     let path = db::default_path();
     tracing::info!(db_path = %path.display(), "opening database");
-    let conn = db::Db::open_migrated(Some(&path)).expect("failed to open or migrate database");
+    let conn = match database_open_result(&path, || db::Db::open_migrated(Some(&path))) {
+        Ok(conn) => conn,
+        Err(failure) => {
+            tracing::error!(
+                db_path = %path.display(),
+                error = %failure.error,
+                "could not open or migrate database"
+            );
+            return report_database_open_failure(&app, failure);
+        }
+    };
     ui::startup_report::mark("database opened");
     tracing::info!("database ready");
     ui::startup_report::mark("database migrated");
@@ -365,6 +459,22 @@ mod app_identity_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn database_open_failure_becomes_a_presentable_message() {
+        let path = std::path::Path::new("/unopenable/reprise.db");
+        let failure = database_open_result(path, || Err::<(), _>("database is locked"))
+            .expect_err("the fixture must exercise the error branch");
+
+        assert_eq!(
+            DatabaseOpenFailure::HEADING,
+            "Reprise could not open the database"
+        );
+        assert_eq!(
+            failure.body(DatabaseOpenFailure::BODY),
+            "Database: /unopenable/reprise.db\n\nError: database is locked"
+        );
+    }
 
     #[test]
     fn application_accepts_forwarded_file_open_requests() {
