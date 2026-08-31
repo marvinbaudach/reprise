@@ -40,18 +40,24 @@ fn a_job_keeps_its_own_row_when_the_other_one_stops() {
 }
 
 #[test]
-fn nothing_running_shows_no_badge_and_no_notice() {
+fn nothing_running_hides_the_whole_footer() {
     let state = bar_state(&[None, None], true);
 
     assert!(state.rows.is_empty());
     assert_eq!(state.count_badge, None);
     assert_eq!(state.empty_notice, None);
+    assert!(!state.visible);
+
+    let disabled = bar_state(&[None, None], false);
+    assert!(!disabled.visible);
+    assert_eq!(disabled.empty_notice, None);
 }
 
 #[test]
-fn the_gate_being_off_replaces_every_row_with_one_reason() {
+fn the_gate_being_off_replaces_activity_with_one_reason() {
     let state = bar_state(&[Some(artwork(0.91)), Some(lyrics(0.12))], false);
 
+    assert!(state.visible);
     assert!(state.rows.is_empty());
     assert_eq!(state.count_badge, None);
     assert_eq!(
@@ -153,6 +159,19 @@ fn a_cancel_button_only_cancels_its_own_job() {
     buttons[1].emit_clicked();
 
     assert_eq!(*cancelled.borrow(), vec![JobOwner::OnlineLyrics]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_idle_footer_widget_is_hidden_until_activity_arrives() {
+    gtk4::init().unwrap();
+    let bar = BackgroundBar::new();
+
+    assert!(!bar.widget().is_visible());
+    bar.publish(JobOwner::Artwork, Some(artwork(0.25)));
+    assert!(bar.widget().is_visible());
+    bar.publish(JobOwner::Artwork, None);
+    assert!(!bar.widget().is_visible());
 }
 
 #[test]

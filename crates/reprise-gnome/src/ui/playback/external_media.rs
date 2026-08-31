@@ -63,11 +63,11 @@ impl PlayerController {
 
     /// Registers a listener for "an episode was marked played".
     ///
-    /// This is deliberately separate from `add_on_queue_changed`: a queue
-    /// change is playback state and moves no database-backed count, which is
-    /// what lets that path patch a single badge instead of rebuilding. Marking
-    /// an episode played *does* move one — the unplayed counts behind the
-    /// Podcasts and YouTube rows — so it needs a signal of its own.
+    /// This is deliberately separate from `add_on_queue_changed`: the played
+    /// mark is database state the open Podcasts and YouTube views render per
+    /// row, so those views have to hear about it even when the queue did not
+    /// change. It moves no sidebar count — under `SRC-1a` those name
+    /// subscriptions — and therefore triggers no rebuild.
     pub(in crate::ui) fn add_on_episode_played(&self, callback: impl Fn(i64) + 'static) {
         self.external
             .borrow_mut()
@@ -175,14 +175,20 @@ impl PlayerController {
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
         match media {
-            media @ ExternalMedia::Podcast { episode_id, .. } => {
+            mut media @ ExternalMedia::Podcast { episode_id, .. } => {
                 let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
                     .map_err(|error| PlaybackError::Backend(error.to_string()))?;
-                self.prepare_external_playback();
+                let start_position_ms =
+                    self.prepare_external_playback(Some(QueueItem::Episode(episode_id)));
+                if let (Some(position_ms), ExternalMedia::Podcast { resume_ms, .. }) =
+                    (start_position_ms, &mut media)
+                {
+                    *resume_ms = position_ms;
+                }
                 self.begin_podcast(media, row.as_ref(), neighbours, automatic_advance, origin)
             }
             media @ ExternalMedia::Radio { station_id, .. } => {
-                self.prepare_external_playback();
+                self.prepare_external_playback(None);
                 self.begin_radio(media, station_id);
                 Ok(())
             }
@@ -196,8 +202,14 @@ impl PlayerController {
         automatic_advance: AutomaticAdvance,
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
-        let media = media_from_episode(episode);
-        self.prepare_external_playback();
+        let mut media = media_from_episode(episode);
+        let start_position_ms =
+            self.prepare_external_playback(Some(QueueItem::Episode(episode.id)));
+        if let (Some(position_ms), ExternalMedia::Podcast { resume_ms, .. }) =
+            (start_position_ms, &mut media)
+        {
+            *resume_ms = position_ms;
+        }
         self.begin_podcast(
             media,
             Some(episode),
@@ -207,7 +219,9 @@ impl PlayerController {
         )
     }
 
-    fn prepare_external_playback(&self) {
+    fn prepare_external_playback(&self, item: Option<QueueItem>) -> Option<i64> {
+        let start_position_ms = self.take_pending_start_mark(item);
+        self.clear_pending_local_seek();
         self.persist_external_position();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -215,6 +229,7 @@ impl PlayerController {
         self.max_position_ms.set(0);
         self.player.set_next(None);
         *self.now_playing.borrow_mut() = None;
+        start_position_ms
     }
 
     pub(in crate::ui) fn play_queued_episode(self: &Rc<Self>, episode_id: i64) {
@@ -228,8 +243,9 @@ impl PlayerController {
         let episode = reprise_core::podcasts::store::episode(&self.conn, episode_id);
         match episode {
             Ok(Some(episode)) => {
+                let media = media_from_episode(&episode);
                 if let Err(error) = self.play_external_with_context_and_origin(
-                    media_from_episode(&episode),
+                    media,
                     neighbours,
                     None,
                     PodcastOrigin::ManualQueue,
@@ -304,10 +320,10 @@ impl PlayerController {
         self.notify_external_changed();
 
         if needs_ytdlp {
-            self.fetch_youtube(generation, episode_id, resume_ms);
+            self.fetch_youtube(generation, episode_id);
             return Ok(());
         }
-        self.start_podcast_source(generation, episode_id, source, resume_ms)
+        self.start_podcast_source(generation, episode_id, source)
     }
 
     pub(super) fn start_podcast_source(
@@ -315,7 +331,6 @@ impl PlayerController {
         generation: u64,
         episode_id: i64,
         source: EpisodeSource,
-        resume_ms: i64,
     ) -> Result<(), PlaybackError> {
         if !self.external_generation_matches_podcast(generation) {
             return Ok(());
@@ -329,7 +344,7 @@ impl PlayerController {
             return Err(error);
         }
         self.flush_episode_skip_toast();
-        let should_seek = {
+        let resume_ms = {
             let mut external = self.external.borrow_mut();
             let Some(ExternalSession::Podcast(session)) = external.session.as_mut() else {
                 return Ok(());
@@ -341,9 +356,12 @@ impl PlayerController {
             // `play_uri` only accepts the local URI; transport failures still
             // arrive asynchronously. Keep the advance chain until playback
             // actually moves in `handle_external_position`.
-            resume_ms > 0
+            let ExternalMedia::Podcast { resume_ms, .. } = &session.media else {
+                unreachable!("podcast session contains radio media");
+            };
+            *resume_ms
         };
-        if should_seek {
+        if resume_ms > 0 {
             let succeeded = self.player.seek_to(resume_ms).is_ok();
             let mut external = self.external.borrow_mut();
             if external.generation == generation {
@@ -527,6 +545,7 @@ impl PlayerController {
     /// queue-takeover path is [`Self::leave_external_for_queue`], which leaves
     /// the loaded track alone.
     pub(in crate::ui) fn stop_external(&self) {
+        self.clear_pending_local_seek();
         self.persist_external_position();
         {
             let mut external = self.external.borrow_mut();

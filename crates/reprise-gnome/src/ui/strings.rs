@@ -148,7 +148,7 @@ pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
 pub const COLUMN_LAYOUT: &str = N_!("Column layout");
 pub const COLUMNS_FOLDED: &str = N_!("Some columns were folded to fit the window");
 pub const SHOW_COLUMNS: &str = N_!("Show columns");
-pub const SIDE_PANELS_CLOSED: &str = N_!("Side panels were closed to fit the window");
+pub const INFO_PANEL_CLOSED: &str = N_!("The info panel was closed to fit the window");
 pub const UNDO: &str = N_!("Undo");
 
 #[path = "strings_rhythmbox.rs"]
@@ -231,7 +231,7 @@ pub fn excluded_files_subtitle(count: usize) -> String {
     )
 }
 pub const RESTART_REQUIRED: &str = N_!("Restart required");
-pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
+pub const CUSTOMIZE_TABLE: &str = N_!("Customize table…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
 pub const DRAG_TO_REORDER: &str = N_!("Drag to reorder");
@@ -406,11 +406,11 @@ pub const COLUMN_YEAR: &str = N_!("Year");
 pub const COLUMN_ADDED: &str = N_!("Added");
 pub const COLUMN_LENGTH: &str = N_!("Length");
 pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
-pub const SORT: &str = N_!("Sort");
 pub const SORT_BY: &str = N_!("Sort by");
 pub const SORT_DIRECTION: &str = N_!("Direction");
 pub const SORT_ASCENDING: &str = N_!("Ascending");
 pub const SORT_DESCENDING: &str = N_!("Descending");
+pub const PLAYLIST_ORDER: &str = N_!("Playlist order");
 // The Rating column's header reuses `RATING` below rather than having its
 // own `COLUMN_RATING` const — the column header and the `RatingWidget`
 // tooltip (src/ui/rating.rs) are the same word, so one const serves both.

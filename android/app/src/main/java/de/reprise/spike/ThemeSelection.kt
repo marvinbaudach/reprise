@@ -46,7 +46,10 @@ internal class AndroidThemeSettingsPort(
 ) : ThemeSettingsPort {
     override fun appearanceSettings(): AndroidAppearanceSettings = library.appearanceSettings()
 
-    override fun setTheme(theme: AndroidThemeChoice) = library.setTheme(theme)
+    override fun setTheme(theme: AndroidThemeChoice) {
+        requireOffMainThread("Theme preference")
+        library.setTheme(theme)
+    }
 }
 
 /** Resolves shared settings into what this Android device can render. */

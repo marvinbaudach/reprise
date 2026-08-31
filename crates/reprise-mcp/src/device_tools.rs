@@ -14,8 +14,9 @@ impl RepriseServer {
             state from the running Reprise app: manual and smart playlist rows, \
             verified device and playlist sync times, transfer profile, deduplicated \
             target totals, change summary, storage access, current and \
-            projected storage composition, blockers, warnings, controls, progress, \
-            current title and effective bytes per second. Also reads the single \
+            projected storage composition, blockers, warnings, controls, progress \
+            as units_done and units_total, estimated remaining seconds, current title \
+            and effective bytes per second. Also reads the single \
             playlists sync target: its device folder, whether it is active on this \
             device, its size on the device, and its diff reading — the only \
             reading there is — plus the matching balance of files and bytes to \

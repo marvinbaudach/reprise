@@ -338,6 +338,7 @@ fn mtp_20_a_failed_run_keeps_the_reason_it_failed_for() {
         &SyncOutcome::Failed {
             terminal_error: Some("device disconnected".into()),
             failed_tracks: vec![1, 2],
+            verified_sources: Vec::new(),
         },
         counters(),
         99,
@@ -355,6 +356,7 @@ fn mtp_20_a_run_that_only_lost_tracks_says_so_instead_of_staying_silent() {
         &SyncOutcome::Failed {
             terminal_error: None,
             failed_tracks: vec![1, 2, 3],
+            verified_sources: Vec::new(),
         },
         counters(),
         99,

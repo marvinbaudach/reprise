@@ -70,6 +70,7 @@ fn centering_tolerance(track_list: &TrackList) -> f64 {
         .column_view
         .vadjustment()
         .expect("a realized track list has a vertical adjustment");
+    // Range-derived height only bounds permissible error; it is not the target oracle.
     adjustment.upper() / f64::from(track_list.shared.model.n_items()) / 2.0
 }
 

@@ -41,7 +41,6 @@ class SettingsMenuTest {
                     themeSelection = nocturneForTests,
                     selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
-                    searchAlbums = { _, _ -> LibraryWindow.empty() },
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },

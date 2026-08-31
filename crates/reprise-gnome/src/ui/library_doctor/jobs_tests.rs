@@ -18,8 +18,8 @@ fn doc_5c_a_busy_write_slot_stays_distinguishable_from_a_broken_one() {
     assert_ne!(busy.user_message(), broken.user_message());
     assert_eq!(
         busy.user_message(),
-        strings::text(strings::TAG_WRITE_BUSY),
-        "the busy case has a translated sentence of its own"
+        strings::text(strings::TAG_WRITE_BUSY_SEE_PROGRESS),
+        "the busy case points at the shared progress card"
     );
 }
 

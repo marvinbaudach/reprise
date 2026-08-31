@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
+internal const val ARTIST_PORTRAIT_DIAMETER_DP = 210
+
 @Composable
 internal fun rememberArtistArtworkVisual(
     name: String,
@@ -26,14 +28,15 @@ internal fun rememberArtistArtworkVisual(
     allowFetch: Boolean,
 ): ArtworkVisual? {
     val artwork = LocalTrackArtwork.current
+    val refreshRevision = if (allowFetch) 0L else artwork?.artistPortraitRevision ?: 0L
     val gate = remember { ArtworkRequestGate() }
-    val request = remember(name, representativeUri, artworkSize, allowFetch) {
+    val request = remember(name, representativeUri, artworkSize, allowFetch, refreshRevision) {
         artistArtworkRequest(name, representativeUri, artworkSize, allowFetch)
     }
-    var visual by remember(request, artwork) {
+    var visual by remember(request, artwork, refreshRevision) {
         mutableStateOf(artwork?.seedVisual(request))
     }
-    DisposableEffect(request, artwork) {
+    DisposableEffect(request, artwork, refreshRevision) {
         val admitted = gate.begin(
             trackUri = representativeUri,
             size = artworkSize,
@@ -76,7 +79,7 @@ internal fun ArtistPortraitHeader(
     ) {
         ArtworkCover(
             visual = visual,
-            size = 210,
+            size = ARTIST_PORTRAIT_DIAMETER_DP,
             modifier = Modifier.testTag("artist-portrait-head-image"),
             shape = MaterialTheme.shapes.extraLarge,
             decorative = true,

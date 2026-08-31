@@ -449,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn src_1_podcasts_default_off_and_radio_defaults_on() {
+    fn src_1a_podcasts_default_off_and_radio_defaults_on() {
         let db = migrated_db();
 
         assert!(!is_enabled(&db, &PODCASTS_MODULE).unwrap());

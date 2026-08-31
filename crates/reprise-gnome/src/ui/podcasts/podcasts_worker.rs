@@ -7,7 +7,7 @@ use std::rc::Rc;
 use reprise_core::db::Db;
 use reprise_core::podcasts;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(in crate::ui) enum PodcastsOperation {
     Refresh {
         policy: podcasts::refresh::RefreshPolicy,
@@ -20,13 +20,17 @@ pub(in crate::ui) enum PodcastsOperation {
     Download {
         episode_id: i64,
     },
+    SyncSubscription {
+        subscription_id: i64,
+        abort: podcasts::pipeline::SyncAbort,
+    },
     /// Brings every subscription up to its `keep_downloaded` target after a
     /// refresh, without making the refresh wait for a potentially large
     /// first-run backlog.
     FillDownloads,
 }
 
-pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsOperation) -> u64 {
+pub(in crate::ui) const fn request_generation(current: u64, operation: &PodcastsOperation) -> u64 {
     match operation {
         PodcastsOperation::Refresh { .. } | PodcastsOperation::LoadMore { .. } => {
             current.wrapping_add(1)
@@ -34,7 +38,9 @@ pub(in crate::ui) const fn request_generation(current: u64, operation: PodcastsO
         // Neither is allowed to cancel a refresh/load-more already in
         // flight, and both are themselves allowed to keep running alongside
         // one — same non-cancelling treatment `Download` already has.
-        PodcastsOperation::Download { .. } | PodcastsOperation::FillDownloads => current,
+        PodcastsOperation::Download { .. }
+        | PodcastsOperation::SyncSubscription { .. }
+        | PodcastsOperation::FillDownloads => current,
     }
 }
 
@@ -54,7 +60,6 @@ pub(in crate::ui) struct PodcastsResponse {
 #[derive(Debug)]
 pub(in crate::ui) struct PodcastsResponseChannel {
     sender: async_channel::Sender<PodcastsResponse>,
-    stale: async_channel::Receiver<PodcastsResponse>,
 }
 
 pub(in crate::ui) fn podcasts_response_channel() -> (
@@ -62,31 +67,18 @@ pub(in crate::ui) fn podcasts_response_channel() -> (
     async_channel::Receiver<PodcastsResponse>,
 ) {
     let (sender, receiver) = async_channel::bounded(1);
-    (
-        PodcastsResponseChannel {
-            sender,
-            stale: receiver.clone(),
-        },
-        receiver,
-    )
+    (PodcastsResponseChannel { sender }, receiver)
 }
 
 impl PodcastsResponseChannel {
     fn publish_latest(&self, response: PodcastsResponse) {
-        match self.sender.try_send(response) {
-            Ok(()) => {}
-            Err(async_channel::TrySendError::Full(response)) => {
-                let _ = self.stale.try_recv();
-                if let Err(error) = self.sender.try_send(response) {
-                    tracing::debug!(%error, "podcast worker response receiver is unavailable");
-                }
-            }
-            Err(async_channel::TrySendError::Closed(_)) => {}
+        if let Err(error) = self.sender.force_send(response) {
+            tracing::debug!(%error, "podcast worker response receiver is unavailable");
         }
     }
 
     fn publish_terminal(&self, response: PodcastsResponse) {
-        if let Err(error) = self.sender.send_blocking(response) {
+        if let Err(error) = self.sender.force_send(response) {
             tracing::debug!(%error, "podcast worker response receiver is unavailable");
         }
     }
@@ -102,6 +94,10 @@ pub(in crate::ui) enum PodcastsWorkerResult {
     DownloadState {
         episode_id: i64,
         state: podcasts::download_state::DownloadState,
+    },
+    SyncProgress {
+        subscription_id: i64,
+        progress: podcasts::pipeline::SyncProgress,
     },
     Filled(podcasts::fill_downloads::FillSummary),
 }
@@ -301,7 +297,7 @@ fn process_request(
         send_response(request, Err(error));
         return;
     };
-    match request.operation {
+    match &request.operation {
         PodcastsOperation::Refresh { policy, kind } => {
             let result = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
@@ -313,7 +309,10 @@ fn process_request(
                         &podcasts::pipeline::HttpFeedFetcher,
                         &ytdlp,
                         chrono::Utc::now().timestamp(),
-                        podcasts::refresh::RefreshRequest { policy, kind },
+                        podcasts::refresh::RefreshRequest {
+                            policy: *policy,
+                            kind: *kind,
+                        },
                     )
                     .map(PodcastsWorkerResult::Refreshed)
                     .map_err(|error| error.to_string())
@@ -332,20 +331,55 @@ fn process_request(
                     podcasts::pipeline::load_more_youtube(
                         conn,
                         &ytdlp,
-                        subscription_id,
-                        end,
+                        *subscription_id,
+                        *end,
                         chrono::Utc::now().timestamp(),
                     )
                     .map(|_| PodcastsWorkerResult::LoadedMore {
-                        subscription_id,
-                        end,
+                        subscription_id: *subscription_id,
+                        end: *end,
                     })
                     .map_err(|error| error.to_string())
                 });
             send_response(request, result);
         }
         PodcastsOperation::Download { episode_id } => {
-            download_episode(conn, request, episode_id);
+            download_episode(conn, request, *episode_id);
+        }
+        PodcastsOperation::SyncSubscription {
+            subscription_id,
+            abort,
+        } => {
+            let config = match podcasts::config::load(conn) {
+                Ok(config) => config,
+                Err(error) => {
+                    send_response(request, Err(error.to_string()));
+                    return;
+                }
+            };
+            let ytdlp = super::metadata_ytdlp(config.ytdlp_path.as_deref(), config.youtube_browser);
+            let result = podcasts::pipeline::sync_subscription(
+                conn,
+                &podcasts::pipeline::HttpFeedFetcher,
+                &ytdlp,
+                chrono::Utc::now().timestamp(),
+                *subscription_id,
+                abort,
+                &mut |progress| {
+                    send_response(
+                        request,
+                        Ok(PodcastsWorkerResult::SyncProgress {
+                            subscription_id: *subscription_id,
+                            progress,
+                        }),
+                    );
+                },
+            );
+            if let Err(error) = result {
+                if !abort.is_cancelled() {
+                    tracing::debug!(%error, subscription_id, "podcast subscription sync ended with an error");
+                }
+            }
         }
         PodcastsOperation::FillDownloads => {
             let result = podcasts::config::load(conn)
@@ -376,19 +410,7 @@ fn process_request(
 }
 
 fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult, String>) {
-    let terminal = match &result {
-        Err(_)
-        | Ok(
-            PodcastsWorkerResult::Refreshed(_)
-            | PodcastsWorkerResult::LoadedMore { .. }
-            | PodcastsWorkerResult::Filled(_),
-        ) => true,
-        Ok(PodcastsWorkerResult::DownloadState { state, .. }) => matches!(
-            state,
-            podcasts::download_state::DownloadState::Downloaded { .. }
-                | podcasts::download_state::DownloadState::Failed { .. }
-        ),
-    };
+    let terminal = result.as_ref().map_or(true, worker_result_is_terminal);
     let response = PodcastsResponse {
         generation: request.generation,
         result,
@@ -397,6 +419,23 @@ fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult,
         request.response.publish_terminal(response);
     } else {
         request.response.publish_latest(response);
+    }
+}
+
+fn worker_result_is_terminal(result: &PodcastsWorkerResult) -> bool {
+    match result {
+        PodcastsWorkerResult::Refreshed(_)
+        | PodcastsWorkerResult::LoadedMore { .. }
+        | PodcastsWorkerResult::Filled(_) => true,
+        PodcastsWorkerResult::DownloadState { state, .. } => matches!(
+            state,
+            podcasts::download_state::DownloadState::Downloaded { .. }
+                | podcasts::download_state::DownloadState::Failed { .. }
+        ),
+        PodcastsWorkerResult::SyncProgress { progress, .. } => matches!(
+            progress,
+            podcasts::pipeline::SyncProgress::Done(_) | podcasts::pipeline::SyncProgress::Failed(_)
+        ),
     }
 }
 

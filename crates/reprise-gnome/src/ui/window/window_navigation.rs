@@ -221,14 +221,12 @@ pub(in crate::ui) fn wire_sidebar_toggle(
     {
         let sidebar_toggle = sidebar_toggle.clone();
         let sidebar_page = sidebar_page.clone();
-        let manually_hidden = manually_hidden.clone();
         let updating = updating.clone();
         split_view.connect_collapsed_notify(move |split_view| {
-            if !sidebar_page.is_visible() || manually_hidden.get() {
-                split_view.set_show_sidebar(false);
-            } else {
-                split_view.set_show_sidebar(!split_view.is_collapsed());
-            }
+            // Visibility is owned by the user toggle and
+            // responsive_side_panels. A collapse transition only changes
+            // pinned-vs-overlay presentation, so this handler merely mirrors
+            // the already-set visibility and cannot emit show-sidebar again.
             sync_sidebar_toggle(&sidebar_toggle, split_view, &sidebar_page, &updating);
         });
     }
@@ -443,6 +441,7 @@ mod tests {
             .sidebar_position(gtk4::PackType::Start)
             .collapsed(false)
             .show_sidebar(true)
+            .pin_sidebar(true)
             .build();
         let info_sidebar = adw::ToolbarView::new();
         let info_content = gtk4::Label::new(Some("Info content"));
@@ -481,19 +480,28 @@ mod tests {
         assert!(split.shows_sidebar());
         split.set_collapsed(true);
         assert!(
-            !split.shows_sidebar(),
-            "the narrow breakpoint shows content"
+            split.shows_sidebar(),
+            "the narrow breakpoint changes presentation, not visibility"
         );
 
-        button.set_active(true);
-        assert!(split.shows_sidebar(), "the narrow toggle opens the overlay");
         show_content_callback(&split, &content_navigation)();
         assert!(!split.shows_sidebar());
 
-        split.set_collapsed(false);
+        button.set_active(true);
         assert!(
             split.shows_sidebar(),
-            "a responsive hide reopens on the wide breakpoint"
+            "the narrow toggle opens the sidebar overlay"
+        );
+        button.set_active(false);
+        assert!(
+            !split.shows_sidebar(),
+            "the narrow toggle dismisses the sidebar overlay"
+        );
+
+        split.set_collapsed(false);
+        assert!(
+            !split.shows_sidebar(),
+            "the breakpoint cannot undo a navigation-driven close"
         );
         window.close();
     }
@@ -514,6 +522,7 @@ mod tests {
             .sidebar_position(gtk4::PackType::Start)
             .show_sidebar(true)
             .collapsed(false)
+            .pin_sidebar(true)
             .build();
         let button = gtk4::ToggleButton::builder()
             .icon_name("sidebar-show-symbolic")

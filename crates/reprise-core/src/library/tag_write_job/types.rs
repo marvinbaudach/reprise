@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use super::super::tag_mutation::PreparedTagMutation;
+use super::super::{TagWriteBusy, TagWriteLock, TagWriteLockAttempt};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TagWriteJobError {
@@ -8,6 +9,29 @@ pub(crate) enum TagWriteJobError {
     Database(#[from] rusqlite::Error),
     #[error(transparent)]
     Busy(#[from] crate::library::TagWriteBusy),
+}
+
+#[derive(Debug)]
+pub(crate) enum TagWriteJobLock {
+    Held(TagWriteLock),
+    Unenforceable,
+}
+
+impl TagWriteJobLock {
+    pub(crate) fn from_attempt(attempt: TagWriteLockAttempt) -> Result<Self, TagWriteBusy> {
+        match attempt {
+            TagWriteLockAttempt::Held(lock) => Ok(Self::Held(lock)),
+            TagWriteLockAttempt::Busy => Err(TagWriteBusy),
+            TagWriteLockAttempt::Unenforceable => Ok(Self::Unenforceable),
+        }
+    }
+
+    pub(crate) fn into_attempt(self) -> TagWriteLockAttempt {
+        match self {
+            Self::Held(lock) => TagWriteLockAttempt::Held(lock),
+            Self::Unenforceable => TagWriteLockAttempt::Unenforceable,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +89,7 @@ pub(crate) struct JournaledTagMutation {
 pub(crate) struct PreparedTagWriteJob {
     pub(crate) id: i64,
     pub(crate) files: Vec<JournaledTagMutation>,
+    pub(crate) _lock: TagWriteJobLock,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

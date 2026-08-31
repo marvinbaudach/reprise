@@ -35,7 +35,7 @@ mod artwork_permission_wiring;
 #[path = "window_deferred_source_wiring.rs"]
 mod deferred_source_wiring;
 #[path = "window_external_changes_wiring.rs"]
-mod external_changes_wiring;
+pub(in crate::ui) mod external_changes_wiring;
 #[path = "window_playing_source_wiring.rs"]
 mod playing_source_wiring;
 
@@ -66,6 +66,8 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) radio_view:
         &'a super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     pub(in crate::ui) podcasts_runtime: &'a Rc<crate::ui::podcasts::PodcastsRuntime>,
+    pub(in crate::ui) device_sync:
+        &'a Rc<crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
     pub(in crate::ui) library_doctor_navigation: &'a adw::NavigationView,
     pub(in crate::ui) doctor_chrome: &'a Rc<super::library_chrome::DoctorChrome>,
@@ -112,6 +114,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         youtube_view,
         radio_view,
         podcasts_runtime,
+        device_sync,
         content_stack,
         library_doctor_navigation,
         doctor_chrome,
@@ -172,6 +175,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         },
     );
     super::startup_report::mark("LibraryDoctorLauncher::new");
+    library_doctor.observe_tag_writes_from(track_list);
     {
         let library_doctor = Rc::downgrade(&library_doctor);
         stats_view.on_materialized(move |stats| {
@@ -612,7 +616,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         watcher_state,
     );
     super::startup_report::mark("start_persisted_watcher");
-    external_changes_wiring::start_external_changes_refresh(db_path, track_list, sidebar);
+    external_changes_wiring::start_external_changes_refresh(
+        db_path,
+        track_list,
+        sidebar,
+        device_sync,
+    );
     super::startup_report::mark("start_external_changes_refresh");
     wire_queue_episode_marker(track_list, player.as_ref());
     super::mounts::install(&super::mounts::MountWiring {

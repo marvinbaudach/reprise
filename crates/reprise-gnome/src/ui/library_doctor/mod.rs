@@ -16,6 +16,7 @@ mod review_row;
 mod review_snapshot;
 mod review_summary;
 mod running_page;
+mod slot_monitor;
 mod start_page;
 mod start_page_css;
 mod summary_cards;
@@ -32,9 +33,8 @@ use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::fingerprint::{FingerprintBackend, FingerprintCapability};
 use reprise_core::library_doctor::{
-    DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest, DoctorViewSnapshot, LibraryDoctor,
+    DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest, LibraryDoctor,
 };
-use reprise_core::view_source::ViewSource;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -49,6 +49,19 @@ use navigation::DoctorNavigation;
 use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
+
+pub(super) fn selection_scan_request(
+    track_ids: Vec<i64>,
+    remote_enabled: bool,
+) -> Option<DoctorScanRequest> {
+    if track_ids.is_empty() {
+        return None;
+    }
+    Some(DoctorScanRequest {
+        scope: DoctorScopeRequest::Selection { track_ids },
+        options: reprise_core::library_doctor::DoctorScanOptions { remote_enabled },
+    })
+}
 
 #[cfg(test)]
 pub(in crate::ui) fn doctor_job_card_for_test() -> gtk4::Revealer {
@@ -131,11 +144,11 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     job_kind: Cell<Option<DoctorJobKind>>,
     progress: DoctorProgressCard,
     toast_overlay: adw::ToastOverlay,
-    tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
     refresh_views: Rc<dyn Fn()>,
     sidebar: Rc<Sidebar>,
-    selection_override: RefCell<Option<Vec<i64>>>,
     on_search_query_changed: SearchQueryChangedSlot,
+    slot_poll: RefCell<Option<glib::SourceId>>,
+    slot_busy: Cell<bool>,
     _doctor_chrome: Rc<crate::ui::window::library_chrome::DoctorChrome>,
 }
 
@@ -251,6 +264,19 @@ impl LibraryDoctorLauncher {
     pub(in crate::ui) fn open_for_selection(&self, ids: Vec<i64>) {
         self.coordinator.get().open_for_selection(ids);
     }
+
+    pub(in crate::ui) fn observe_tag_write_start(&self) {
+        self.coordinator.get().observe_tag_write_start();
+    }
+
+    pub(in crate::ui) fn observe_tag_writes_from(self: &Rc<Self>, track_list: &TrackList) {
+        let launcher = Rc::downgrade(self);
+        track_list.set_on_tag_write_started(move || {
+            if let Some(launcher) = launcher.upgrade() {
+                launcher.observe_tag_write_start();
+            }
+        });
+    }
 }
 
 impl LibraryDoctorCoordinator {
@@ -314,11 +340,11 @@ impl LibraryDoctorCoordinator {
                 job_kind: Cell::new(None),
                 progress: progress.clone(),
                 toast_overlay: toast_overlay.clone(),
-                tag_write_gate: track_list.tag_write_gate(),
                 refresh_views,
                 sidebar: sidebar.clone(),
-                selection_override: RefCell::new(None),
                 on_search_query_changed,
+                slot_poll: RefCell::new(None),
+                slot_busy: Cell::new(false),
                 _doctor_chrome: doctor_chrome,
             }
         });
@@ -329,7 +355,7 @@ impl LibraryDoctorCoordinator {
             let weak = Rc::downgrade(&coordinator);
             coordinator.page.connect_run(move || {
                 if let Some(coordinator) = weak.upgrade() {
-                    coordinator.start_scan();
+                    coordinator.start_whole_library_scan();
                 }
             });
         }
@@ -354,6 +380,7 @@ impl LibraryDoctorCoordinator {
             coordinator.progress.set_on_activate(move || {
                 if let Some(coordinator) = weak.upgrade() {
                     coordinator.open_running_job();
+                    coordinator.refresh_tag_write_slot();
                 }
             });
         }
@@ -409,18 +436,18 @@ impl LibraryDoctorCoordinator {
             .navigation
             .add_root(coordinator.page.navigation_page());
         coordinator.install_tag_edit_observer();
+        coordinator.refresh_tag_write_slot();
         coordinator
     }
 
-    pub(in crate::ui) fn open(&self) {
+    pub(in crate::ui) fn open(self: &Rc<Self>) {
         if self.running.get() {
             self.open_running_job();
+            self.refresh_tag_write_slot();
             return;
         }
-        self.selection_override.borrow_mut().take();
-        let view = current_view_snapshot(&self.track_list);
-        self.page.set_selected_scope(suggested_scope(&view));
         self.open_available();
+        self.refresh_tag_write_slot();
     }
 
     /// Opens the findings themselves, for the sidebar's `ISSUES` entry.
@@ -431,21 +458,29 @@ impl LibraryDoctorCoordinator {
     pub(in crate::ui) fn open_findings(self: &Rc<Self>) {
         if self.running.get() {
             self.open_running_job();
+            self.refresh_tag_write_slot();
             return;
         }
-        self.selection_override.borrow_mut().take();
         self.page.sync_remote_preference(&self.conn);
         self.open_review();
+        self.refresh_tag_write_slot();
     }
 
-    pub(in crate::ui) fn open_for_selection(&self, ids: Vec<i64>) {
+    pub(in crate::ui) fn open_for_selection(self: &Rc<Self>, ids: Vec<i64>) {
+        // Stats resolves the group immediately and invokes this callback only
+        // for a non-empty variant group.
+        debug_assert!(
+            !ids.is_empty(),
+            "Stats must not open an empty spelling group"
+        );
         if self.running.get() {
             self.open_running_job();
+            self.refresh_tag_write_slot();
             return;
         }
-        self.selection_override.borrow_mut().replace(ids);
-        self.page.set_selected_scope(2);
-        self.open_available();
+        self.page.sync_remote_preference(&self.conn);
+        self.start_selection_scan(ids);
+        self.refresh_tag_write_slot();
     }
 
     fn open_available(&self) {
@@ -488,28 +523,26 @@ impl LibraryDoctorCoordinator {
             })
     }
 
-    fn start_scan(self: &Rc<Self>) {
-        if self.running.get() || self.scan_controls.is_scanning() {
-            return;
-        }
-        let scope = self.page.selected_scope();
-        let selection = if scope == 2 {
-            self.selection_override
-                .borrow_mut()
-                .take()
-                .unwrap_or_else(|| {
-                    super::track_list_context_menu::current_selection_ids(&self.track_list.shared)
-                })
-        } else {
-            self.selection_override.borrow_mut().take();
-            Vec::new()
-        };
-        let request = DoctorScanRequest {
-            scope: scope_request(scope, current_view_snapshot(&self.track_list), selection),
+    fn start_whole_library_scan(self: &Rc<Self>) {
+        self.start_scan(DoctorScanRequest {
+            scope: DoctorScopeRequest::WholeLibrary,
             options: reprise_core::library_doctor::DoctorScanOptions {
                 remote_enabled: self.page.remote_active(),
             },
+        });
+    }
+
+    fn start_selection_scan(self: &Rc<Self>, track_ids: Vec<i64>) {
+        let Some(request) = selection_scan_request(track_ids, self.page.remote_active()) else {
+            return;
         };
+        self.start_scan(request);
+    }
+
+    fn start_scan(self: &Rc<Self>, request: DoctorScanRequest) {
+        if self.running.get() || self.scan_controls.is_scanning() {
+            return;
+        }
         let cancellation = Arc::new(AtomicBool::new(false));
         let generation = self.scan_generation.get().wrapping_add(1);
         self.scan_generation.set(generation);
@@ -521,6 +554,7 @@ impl LibraryDoctorCoordinator {
             review.set_running(true);
         }
         self.page.begin_job(DoctorJobKind::Scan, 0);
+        self.open_root_page();
         self.progress.show_scan(
             reprise_core::library_doctor::DoctorScanPhase::ReadingTags,
             0,
@@ -593,11 +627,10 @@ impl LibraryDoctorCoordinator {
                 }
                 Ok(Ok(DoctorScanOutcome::Cancelled { .. })) => coordinator.page.end_job(),
                 Ok(Ok(DoctorScanOutcome::ScopeFallbackRequired)) => {
-                    coordinator.page.set_selected_scope(0);
+                    coordinator.page.end_job();
                     coordinator.track_list.toast(&crate::ui::strings::text(
                         crate::ui::strings::DOCTOR_SCOPE_FALLBACK,
                     ));
-                    coordinator.start_scan();
                 }
                 Ok(Err(error)) => {
                     tracing::error!(%error, "Library Doctor scan failed");
@@ -695,15 +728,11 @@ impl LibraryDoctorCoordinator {
                 let rescan_track_ids = scan.track_ids.clone();
                 page.connect_rescan(move || {
                     if let Some(coordinator) = weak.upgrade() {
-                        let choice = scope_choice(&rescan_scope);
-                        coordinator.page.set_selected_scope(choice);
-                        if choice == 2 {
-                            coordinator
-                                .selection_override
-                                .borrow_mut()
-                                .replace(rescan_track_ids.clone());
+                        if rescan_scope == "whole_library" {
+                            coordinator.start_whole_library_scan();
+                        } else {
+                            coordinator.start_selection_scan(rescan_track_ids.clone());
                         }
-                        coordinator.start_scan();
                     }
                 });
             }
@@ -730,7 +759,9 @@ impl LibraryDoctorCoordinator {
     fn open_running_job(&self) {
         match self.job_kind.get() {
             Some(DoctorJobKind::Apply) => self.open_review_page(),
-            Some(DoctorJobKind::Revert | DoctorJobKind::Scan) | None => self.open_root_page(),
+            Some(DoctorJobKind::Revert | DoctorJobKind::Scan | DoctorJobKind::TagEditor) | None => {
+                self.open_root_page();
+            }
         }
     }
 
@@ -747,53 +778,4 @@ fn accepts_scan_progress(
     job_kind: Option<DoctorJobKind>,
 ) -> bool {
     current_generation == expected_generation && running && job_kind == Some(DoctorJobKind::Scan)
-}
-
-fn current_view_snapshot(track_list: &TrackList) -> DoctorViewSnapshot {
-    let shared = &track_list.shared;
-    let source = shared.source.borrow().clone();
-    let sort = shared.sort.borrow().clone();
-    let queue_ids = if source == ViewSource::Queue {
-        shared.current_view_ids()
-    } else {
-        Vec::new()
-    };
-    DoctorViewSnapshot {
-        source,
-        sort_field: sort.field,
-        sort_dir: sort.dir,
-        filter: shared.filter.borrow().clone(),
-        browse: shared.browse_filter.borrow().clone(),
-        queue_ids,
-    }
-}
-
-fn suggested_scope(view: &DoctorViewSnapshot) -> u32 {
-    if view.filter.is_empty() && view.browse.is_empty() {
-        0
-    } else {
-        1
-    }
-}
-
-fn scope_choice(scope_kind: &str) -> u32 {
-    match scope_kind {
-        "current_view" => 1,
-        "selection" => 2,
-        _ => 0,
-    }
-}
-
-fn scope_request(
-    choice: u32,
-    current_view: DoctorViewSnapshot,
-    selection: Vec<i64>,
-) -> DoctorScopeRequest {
-    match choice {
-        1 => DoctorScopeRequest::CurrentView(Box::new(current_view)),
-        2 => DoctorScopeRequest::Selection {
-            track_ids: selection,
-        },
-        _ => DoctorScopeRequest::WholeLibrary,
-    }
 }

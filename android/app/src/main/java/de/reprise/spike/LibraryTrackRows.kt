@@ -1,6 +1,5 @@
 package de.reprise.spike
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -236,7 +235,6 @@ internal fun LibraryListKey.testTag(): String = when (this) {
     LibraryListKey.ARTISTS -> "library-artists-list"
     LibraryListKey.ALBUM_TRACKS -> "library-album-tracks-list"
     LibraryListKey.ARTIST_ALBUMS -> "library-artist-albums-list"
-    LibraryListKey.ARTIST_SEARCH_ALBUMS -> "library-artist-search-albums-list"
     LibraryListKey.ARTIST_TRACKS -> "library-artist-tracks-list"
     LibraryListKey.UPCOMING -> "now-playing-queue"
 }
@@ -562,21 +560,16 @@ private fun queueRowColor(
     slot: Int,
     lift: Float,
 ): Color {
-    val flash = remember { Animatable(0f) }
-    val owed = reorder.flashSlot == slot
-    LaunchedEffect(reorder.flashToken, owed) {
-        if (!owed) {
-            return@LaunchedEffect
-        }
-        flash.snapTo(1f)
-        flash.animateTo(0f, tween(QUEUE_DRAG_FLASH_MS, easing = QueueDragEasing))
-        reorder.clearFlash(slot)
-    }
     val held = lerp(resting, MaterialTheme.colorScheme.surface, lift)
+    if (reorder.flashSlot != slot) {
+        return held
+    }
+    // Only the one flashing row observes this per-frame animation value.
+    val flash = reorder.flashFraction
     return lerp(
         held,
         MaterialTheme.colorScheme.primary,
-        QUEUE_DRAG_FLASH_ALPHA * flash.value,
+        QUEUE_DRAG_FLASH_ALPHA * flash,
     )
 }
 

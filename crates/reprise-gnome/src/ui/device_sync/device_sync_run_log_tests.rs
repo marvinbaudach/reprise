@@ -74,6 +74,7 @@ fn an_unrememberable_device_run_records_start_outcome_and_deviation() {
             &reprise_core::device_sync::SyncOutcome::Failed {
                 terminal_error: Some("device disconnected".into()),
                 failed_tracks: vec![7],
+                verified_sources: Vec::new(),
             },
             4_100,
         );
@@ -119,6 +120,63 @@ fn a_live_transfer_writes_a_running_log_row_with_its_final_planned_count() {
 
         releases["a"].send(()).await.unwrap();
         settle().await;
+    });
+}
+
+#[test]
+fn a_failed_inventory_write_keeps_the_present_track_in_its_playlist() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1, 2]);
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "CREATE TRIGGER reject_first_device_file
+                 BEFORE INSERT ON device_files
+                 WHEN NEW.track_id = 1
+                 BEGIN
+                   SELECT RAISE(FAIL, 'injected inventory failure');
+                 END;",
+            )
+            .unwrap();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let playlists = backend.state.playlists.borrow();
+        assert_eq!(playlists.len(), 1);
+        let contents = String::from_utf8(playlists[0].2.clone()).unwrap();
+        assert!(
+            contents.contains("Track 1.opus"),
+            "the track reached the device, so its playlist entry must remain: {contents}"
+        );
+        assert!(
+            contents.contains("Track 2.opus"),
+            "the other playlist entries must survive: {contents}"
+        );
+        assert_eq!(
+            reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+                .unwrap()
+                .remove(0)
+                .outcome,
+            reprise_core::device_sync::sync_log::RunOutcome::Failed,
+            "publishing a safe subset does not turn the run into a success"
+        );
+        assert!(
+            runtime.devices()[0].sync_error.is_some(),
+            "the failed run remains reported as failed after verification"
+        );
+        assert!(
+            reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
+                .unwrap()
+                .into_iter()
+                .find(|playlist| playlist.source == SelectionSource::Playlist(10))
+                .and_then(|playlist| playlist.last_synced_at)
+                .is_some(),
+            "the republished source is stamped even though the run lost a track"
+        );
     });
 }
 

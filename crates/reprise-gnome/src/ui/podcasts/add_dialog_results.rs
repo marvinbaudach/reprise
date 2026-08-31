@@ -28,6 +28,20 @@ pub(super) fn youtube_subtitle(matching_videos: usize, followers: Option<u64>) -
     }
 }
 
+/// `SRC-23`: published counts sort descending; ties and every missing count
+/// retain provider relevance order. A real published zero therefore remains
+/// ahead of a hidden count instead of becoming indistinguishable from it.
+pub(super) fn subscriber_order(counts: &[Option<u64>]) -> Vec<usize> {
+    let mut order = (0..counts.len()).collect::<Vec<_>>();
+    order.sort_by(|left, right| match (counts[*left], counts[*right]) {
+        (Some(left), Some(right)) => right.cmp(&left),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    order
+}
+
 pub(super) fn last_episode_segment(last_episode: Option<i64>, now: i64) -> Option<String> {
     let last_episode = last_episode?;
     let days = last_episode_age_days(last_episode, now);
@@ -149,18 +163,25 @@ pub(super) fn rss_candidate(row: podcasts::itunes::SearchResult) -> Candidate {
         image_url: row.image_url,
         url: row.feed_url,
         identity_guids: Vec::new(),
+        follower_count: None,
+        channel_id: None,
+        matching_video_count: None,
     }
 }
 
 pub(super) fn youtube_candidate(row: podcasts::ytdlp::YtDlpChannel) -> Candidate {
+    let follower_count = row.follower_count;
     Candidate {
         kind: PodcastKind::Youtube,
         title: row.title,
-        subtitle: youtube_subtitle(row.matching_video_count, row.follower_count),
+        subtitle: youtube_subtitle(row.matching_video_count, follower_count),
         author: None,
         image_url: row.image_url,
         url: row.url,
         identity_guids: row.matching_video_ids,
+        follower_count,
+        channel_id: Some(row.id),
+        matching_video_count: Some(row.matching_video_count),
     }
 }
 
@@ -387,6 +408,23 @@ mod tests {
     }
 
     #[test]
+    fn src_9_youtube_candidates_keep_the_stable_channel_join_key_and_count() {
+        let candidate = youtube_candidate(podcasts::ytdlp::YtDlpChannel {
+            id: "UC-stable".into(),
+            title: "Visible".into(),
+            url: "https://www.youtube.com/channel/UC-stable".into(),
+            image_url: None,
+            matching_video_count: 3,
+            matching_video_ids: vec!["video-1".into()],
+            follower_count: Some(62_400),
+        });
+
+        assert_eq!(candidate.channel_id.as_deref(), Some("UC-stable"));
+        assert_eq!(candidate.follower_count, Some(62_400));
+        assert!(candidate.subtitle.contains("62.4k"));
+    }
+
+    #[test]
     fn src_9_subscriber_counts_are_compact_and_keep_their_magnitude() {
         assert_eq!(strings::podcast_subscriber_count(487), "487 subscribers");
         assert_eq!(
@@ -398,5 +436,12 @@ mod tests {
             strings::podcast_subscriber_count(1_200_000),
             "1.2M subscribers"
         );
+    }
+
+    #[test]
+    fn src_23_largest_first_keeps_ties_and_missing_counts_in_relevance_order() {
+        let counts = [None, Some(50), Some(100), Some(50), None, Some(0)];
+
+        assert_eq!(subscriber_order(&counts), [2, 1, 3, 5, 0, 4]);
     }
 }

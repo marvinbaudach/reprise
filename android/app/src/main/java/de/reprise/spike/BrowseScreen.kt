@@ -26,6 +26,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -38,16 +39,40 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.settings.SettingsNavigation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 /**
  * One answered request for the playing track's row, carrying the id it was
  * asked for. The id says whether the retained row still describes the track
  * the session reports as playing, so actions can be disabled during a change.
  */
+/**
+ * How long the screen has to have been still before a tab nobody is looking at
+ * is fetched. Long enough for the opening composition to be done with the main
+ * thread, short enough to be over before a first swipe can plausibly land.
+ */
+internal const val NEIGHBOUR_PREFETCH_IDLE_MS = 400L
+
 private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
+
+/**
+ * One tab's freshly fetched windows, carried out of the IO dispatcher.
+ *
+ * A tab fills a different set of windows than its neighbours, and a window it
+ * does not fill is `null` rather than empty: an empty window is a real answer
+ * — "no artists match this" — and assigning one where nothing was asked for
+ * would blank a list that had rows.
+ */
+private data class LoadedTab(
+    val titles: LibraryWindow<LibraryTrack>? = null,
+    val artists: LibraryWindow<LibraryArtist>? = null,
+)
 
 internal enum class BrowseTab(val label: String, val symbol: String) {
     TITLES("Titles", "library_music"),
@@ -76,7 +101,6 @@ internal fun BrowseScreen(
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist> =
         { _, range -> listArtists(range) },
@@ -102,6 +126,9 @@ internal fun BrowseScreen(
     selectTheme: (MobileTheme) -> Unit,
     onlineSourcesEnabled: Boolean = false,
     setOnlineSourcesEnabled: (Boolean) -> Unit = {},
+    artistPhotoOfferSettled: Boolean = true,
+    downloadArtistPhotos: () -> Unit = {},
+    declineArtistPhotos: () -> Unit = {},
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
@@ -123,21 +150,17 @@ internal fun BrowseScreen(
     val shape = state.catalogShape()
     val restored = remember(state) { surfaceState.loadedWindows(shape) }
     var visibleTitles by remember(state) { mutableStateOf(restored?.titles ?: state.titles) }
-    var visibleArtistSearchAlbums by remember(state) {
-        mutableStateOf(restored?.artistSearchAlbums ?: LibraryWindow.empty())
-    }
     var visibleArtists by remember(state) { mutableStateOf(restored?.artists ?: state.artists) }
     var loadedTabs by remember(state) {
         mutableStateOf(restored?.loadedTabs ?: state.loadedTabs)
     }
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
-    var openAlbumOrigin by remember(state) { mutableStateOf(restored?.openAlbumOrigin) }
     var browseError by remember(state) { mutableStateOf(state.message) }
-    var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
-    var artistSearchAlbumsRequestedOffset by remember(state, searchText) {
-        mutableStateOf<Long?>(null)
+    var visibleLoadRetryRevision by remember(state, searchText, selectedTab) {
+        mutableIntStateOf(0)
     }
+    var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var artistsRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
     var artistRequestedOffset by remember(state, selectedArtist?.artist) {
@@ -153,6 +176,20 @@ internal fun BrowseScreen(
         initialPage = selectedTab.ordinal,
         pageCount = { BrowseTab.entries.size },
     )
+    // What the bar marks and what the header counts is the page the gesture has
+    // already committed to — not the one it settled on. `settledPage`, which the
+    // state below is driven from, holds its old value for the whole drag *and*
+    // the whole fling, so a bar reading it cannot move until everything has come
+    // to rest: the pill sits under the tab being left while the tab being
+    // entered is already filling the screen. `targetPage` turns over the moment
+    // a swipe passes the point of no return, and at once on a tap.
+    //
+    // Handed on as a function, never as a value. Read here it would put a
+    // mid-swipe invalidation on this whole composable; read where it is
+    // rendered it invalidates the pill and the count line alone.
+    val shownTab: () -> BrowseTab = remember(pagerState) {
+        { BrowseTab.entries[pagerState.targetPage] }
+    }
 
     fun selectDestination(tab: BrowseTab) {
         if (tab != selectedTab) {
@@ -217,11 +254,10 @@ internal fun BrowseScreen(
         playTracks(selection) { message -> browseError = message }
     }
 
-    fun openAlbumDetail(album: LibraryAlbum, origin: OpenAlbumOrigin) {
+    fun openAlbumDetail(album: LibraryAlbum) {
         runCatching { openAlbum(album) }
             .onSuccess { detail ->
                 selectedAlbum = detail
-                openAlbumOrigin = origin
                 albumRequestedOffset = null
                 browseError = null
             }
@@ -250,13 +286,7 @@ internal fun BrowseScreen(
                 }
                 BrowseTab.ARTISTS -> {
                     visibleArtists = artistsFor(text, firstLibraryWindow())
-                    visibleArtistSearchAlbums = if (text.isBlank()) {
-                        LibraryWindow.empty()
-                    } else {
-                        searchAlbums(text, firstLibraryWindow())
-                    }
                     artistsRequestedOffset = null
-                    artistSearchAlbumsRequestedOffset = null
                 }
                 // The queue is an order, not a view of the library, so there is
                 // nothing here for a filter to narrow. Selecting it closes the
@@ -290,12 +320,10 @@ internal fun BrowseScreen(
     val loaded = LoadedLibraryWindows(
         titles = visibleTitles,
         artists = visibleArtists,
-        artistSearchAlbums = visibleArtistSearchAlbums,
         loadedTabs = loadedTabs,
         searchText = searchText,
         openAlbum = selectedAlbum,
         openArtist = selectedArtist,
-        openAlbumOrigin = openAlbumOrigin,
     )
     SideEffect { surfaceState.keepLoadedWindows(shape, loaded) }
 
@@ -309,28 +337,63 @@ internal fun BrowseScreen(
         }
     }
 
-    LaunchedEffect(selectedTab, state, loadedTabs, searchText) {
-        if (selectedTab == BrowseTab.QUEUE || selectedTab in loadedTabs) return@LaunchedEffect
+    // The tab on screen first, then whatever is still unfetched behind it.
+    //
+    // Opening the library fills rows for the tab it opens on and no other:
+    // `LibrarySession.browseState` hands the rest back through `withoutRows()`,
+    // carrying a total but no rows. A swipe draws the next page as soon as it
+    // begins and only settles afterwards, so a tab whose rows are still absent
+    // is drawn *empty* for the length of the gesture and fills once it lands —
+    // "0 of 65 artists loaded", then 65. Fetching the tab next door while the
+    // pager stands still closes that gap before anyone swipes into it.
+    //
+    // Keyed on `loadedTabs`, so this re-enters after each fetch and works
+    // through what is left one tab at a time rather than firing them at once.
+    // A prefetch stays silent: it must not clear an error the visible tab is
+    // still showing, nor raise one for a tab nobody has asked for. A failed
+    // hidden prefetch remains outside `loadedTabs` and is fetched when selected.
+    // A visible failure gets one immediate re-attempt; a second failure leaves
+    // the error standing without restarting this effect again.
+    val pendingTab = (listOf(selectedTab) + BrowseTab.entries)
+        .firstOrNull { it != BrowseTab.QUEUE && it !in loadedTabs }
+    // `selectedTab` is a key as well as a component of `pendingTab`: selecting a
+    // tab whose prefetch is already waiting out the idle period leaves
+    // `pendingTab` unchanged, and without the restart the wait would run on
+    // under a tab someone is looking at.
+    LaunchedEffect(pendingTab, selectedTab, state, searchText, visibleLoadRetryRevision) {
+        if (pendingTab == null) return@LaunchedEffect
+        val visible = pendingTab == selectedTab
+        if (!visible) {
+            // A prefetch exists to be invisible, so it waits for a moment when
+            // nothing is on the line: not the opening frames, where it would
+            // compete with the first composition, and not a gesture, where a
+            // query landing mid-swipe trades an empty list for a dropped frame.
+            delay(NEIGHBOUR_PREFETCH_IDLE_MS)
+            snapshotFlow { pagerState.isScrollInProgress }.first { !it }
+        }
         runCatching {
-            when (selectedTab) {
-                BrowseTab.TITLES -> searchTitles(searchText, firstLibraryWindow())
-                    .also { visibleTitles = it }
-                BrowseTab.ARTISTS -> {
-                    visibleArtists = artistsFor(searchText, firstLibraryWindow())
-                    if (searchText.isNotBlank()) {
-                        visibleArtistSearchAlbums = searchAlbums(
-                            searchText,
-                            firstLibraryWindow(),
-                        )
-                    }
+            // The rows come off a blocking JNI + SQLite call; only the handover
+            // to Compose belongs on the main thread.
+            withContext(Dispatchers.IO) {
+                when (pendingTab) {
+                    BrowseTab.TITLES -> LoadedTab(titles = searchTitles(searchText, firstLibraryWindow()))
+                    BrowseTab.ARTISTS -> LoadedTab(
+                        artists = artistsFor(searchText, firstLibraryWindow()),
+                    )
+                    BrowseTab.QUEUE -> LoadedTab()
                 }
-                BrowseTab.QUEUE -> Unit
             }
-        }.onSuccess {
-            loadedTabs = loadedTabs + selectedTab
-            browseError = null
+        }.onSuccess { loaded ->
+            loaded.titles?.let { visibleTitles = it }
+            loaded.artists?.let { visibleArtists = it }
+            loadedTabs = loadedTabs + pendingTab
+            if (visible) browseError = null
         }.onFailure { error ->
-            browseError = error.browseDetail("load ${selectedTab.label.lowercase()}")
+            if (error is CancellationException) throw error
+            if (visible) {
+                browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
+                if (visibleLoadRetryRevision == 0) visibleLoadRetryRevision = 1
+            }
         }
     }
 
@@ -343,19 +406,6 @@ internal fun BrowseScreen(
                 browseError = null
             }
             .onFailure { error -> browseError = error.browseDetail("load more titles") }
-    }
-
-    fun loadMoreArtistSearchAlbums(request: LibraryWindowRange) {
-        if (visibleArtistSearchAlbums.nextRequest(artistSearchAlbumsRequestedOffset) != request) {
-            return
-        }
-        artistSearchAlbumsRequestedOffset = request.offset
-        runCatching { searchAlbums(searchText, request) }
-            .onSuccess { continuation ->
-                visibleArtistSearchAlbums = visibleArtistSearchAlbums.append(continuation)
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("load more albums") }
     }
 
     fun loadMoreArtists(request: LibraryWindowRange) {
@@ -445,18 +495,38 @@ internal fun BrowseScreen(
     val lastAnsweredTrack = answeredTrack
     val shownTrack = if (playingTrackId == null) null else lastAnsweredTrack?.track
     val shownTrackIsStale = lastAnsweredTrack != null && lastAnsweredTrack.id != playingTrackId
-    val summary = when (selectedTab) {
-        BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
-        BrowseTab.ARTISTS -> selectedAlbum?.tracks
-            ?.visibleCountLabel("track", "tracks")
-            ?: selectedArtist?.let { detail ->
-                val albums = detail.albums.total
-                val otherTitles = detail.untaggedTracks.total
-                "$albums ${if (albums == 1L) "album" else "albums"} · " +
-                    "$otherTitles ${if (otherTitles == 1L) "other title" else "other titles"}"
+    val summary: () -> String = remember(
+        shownTab,
+        loadedTabs,
+        selectedTab,
+        visibleTitles,
+        selectedAlbum,
+        selectedArtist,
+        visibleArtists,
+    ) {
+        {
+            // The bar may already mark a tab whose window has not been fetched yet:
+            // the fetch waits for the page to settle, and counting an unfetched
+            // window prints a nought that reads as an answer — "0 of 65 artists"
+            // where the truth is "not asked yet". Until the marked tab is loaded
+            // the line keeps answering for the one that is.
+            val counted = shownTab()
+                .takeIf { it == BrowseTab.QUEUE || it in loadedTabs }
+                ?: selectedTab
+            when (counted) {
+                BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
+                BrowseTab.ARTISTS -> selectedAlbum?.tracks
+                    ?.visibleCountLabel("track", "tracks")
+                    ?: selectedArtist?.let { detail ->
+                        val albums = detail.albums.total
+                        val otherTitles = detail.untaggedTracks.total
+                        "$albums ${if (albums == 1L) "album" else "albums"} · " +
+                            "$otherTitles ${if (otherTitles == 1L) "other title" else "other titles"}"
+                    }
+                    ?: visibleArtists.visibleCountLabel("artist", "artists")
+                BrowseTab.QUEUE -> "Queue"
             }
-            ?: visibleArtists.visibleCountLabel("artist", "artists")
-        BrowseTab.QUEUE -> "Queue"
+        }
     }
     val frameMetrics = libraryFrameMetrics(surfaceLayout)
     val nowPlayingFrameModifier = when (surfaceLayout) {
@@ -482,7 +552,7 @@ internal fun BrowseScreen(
                         currentTrack = shownTrack,
                         playback = playback,
                         progress = playbackProgress,
-                        selectedTab = selectedTab,
+                        shownTab = shownTab,
                         selectTab = ::selectDestination,
                         openNowPlaying = { surfaceState.showNowPlaying(true) },
                         nowPlayingExpanded = nowPlayingExpanded,
@@ -509,14 +579,17 @@ internal fun BrowseScreen(
                         rescan = rescan,
                         openSettings = ::openSettings,
                     )
-                    // Both of these are state rather than acknowledgements, so both
-                    // stand until something supersedes them — see TransientMessage
-                    // for the distinction and for the third kind.
+                    // Re-readable state, not timed acknowledgements; see TransientMessage.
                     browseError?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
-                    ArtistPhotoProgressBar(
+                    ArtistPhotoLibraryStatus(
+                        offerVisible = shouldOfferArtistPhotos(
+                            onlineSourcesEnabled, artistPhotoOfferSettled, state.artists.total,
+                        ),
+                        downloadArtistPhotos = downloadArtistPhotos,
+                        declineArtistPhotos = declineArtistPhotos,
                         progress = surfaceState.visibleArtistPhotoProgress,
-                        dismiss = surfaceState::dismissArtistPhotoProgress,
+                        dismissProgress = surfaceState::dismissArtistPhotoProgress,
                     )
                     HorizontalPager(
                         state = pagerState,
@@ -548,7 +621,6 @@ internal fun BrowseScreen(
                                     surfaceLayout = surfaceLayout,
                                     surfaceState = surfaceState,
                                     artists = visibleArtists,
-                                    albumResults = visibleArtistSearchAlbums,
                                     searchText = searchText,
                                     selectedArtist = selectedArtist,
                                     selectedAlbum = selectedAlbum,
@@ -560,19 +632,17 @@ internal fun BrowseScreen(
                                                 artistRequestedOffset = null
                                                 artistAlbumsRequestedOffset = null
                                                 browseError = null
+                                                surfaceState.closeSearch()
+                                                if (searchText.isNotEmpty()) {
+                                                    surfaceState.updateSearch("")
+                                                    loadedTabs = emptySet()
+                                                }
                                             }
                                             .onFailure { error ->
                                                 browseError = error.browseDetail("open the artist")
                                             }
                                     },
-                                    openAlbum = { album ->
-                                        val origin = if (selectedArtist == null) {
-                                            OpenAlbumOrigin.ARTIST_SEARCH
-                                        } else {
-                                            OpenAlbumOrigin.ARTIST_DETAIL
-                                        }
-                                        openAlbumDetail(album, origin)
-                                    },
+                                    openAlbum = ::openAlbumDetail,
                                     closeArtist = {
                                         selectedAlbum = null
                                         selectedArtist = null
@@ -588,19 +658,11 @@ internal fun BrowseScreen(
                                     },
                                     lastRequestedOffset = artistsRequestedOffset,
                                     artistRequestedOffset = artistRequestedOffset,
-                                    artistAlbumsRequestedOffset = if (selectedArtist == null) {
-                                        artistSearchAlbumsRequestedOffset
-                                    } else {
-                                        artistAlbumsRequestedOffset
-                                    },
+                                    artistAlbumsRequestedOffset = artistAlbumsRequestedOffset,
                                     albumRequestedOffset = albumRequestedOffset,
                                     loadMoreArtists = ::loadMoreArtists,
                                     loadMoreArtistTracks = ::loadMoreArtistTracks,
-                                    loadMoreArtistAlbums = if (selectedArtist == null) {
-                                        ::loadMoreArtistSearchAlbums
-                                    } else {
-                                        ::loadMoreArtistAlbums
-                                    },
+                                    loadMoreArtistAlbums = ::loadMoreArtistAlbums,
                                     loadMoreAlbumTracks = ::loadMoreAlbumTracks,
                                 )
                                 BrowseTab.QUEUE -> NowPlayingQueuePage(
@@ -619,7 +681,7 @@ internal fun BrowseScreen(
                 Row(modifier = Modifier.fillMaxSize()) {
                     LibraryNavigationRail(
                         surfaceLayout = surfaceLayout,
-                        selectedTab = selectedTab,
+                        shownTab = shownTab,
                         selectTab = ::selectDestination,
                     )
                     libraryScaffold(Modifier.weight(1f))
@@ -725,13 +787,4 @@ internal fun BrowseScreen(
             }
         }
     }
-}
-
-@Composable
-private fun BrowseErrorLine(message: String) {
-    Text(
-        text = message,
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-    )
 }

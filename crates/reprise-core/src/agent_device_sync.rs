@@ -28,6 +28,9 @@ pub struct AgentDeviceSyncDevice {
     pub bytes_done: u64,
     pub bytes_total: u64,
     pub bytes_per_second: u64,
+    pub units_done: u32,
+    pub units_total: u32,
+    pub estimated_remaining_seconds: Option<u64>,
     pub current_track: String,
     /// The playlists target and its `MTP-22` reading.
     pub target: AgentDeviceSyncTarget,
@@ -142,7 +145,9 @@ pub enum AgentDeviceSyncPhase {
     Removing,
     Transcoding,
     Copying,
+    WritingAnalysis,
     WritingPlaylists,
+    WritingTrackMetadata,
     Finishing,
 }
 
@@ -257,6 +262,9 @@ mod tests {
                 bytes_done: 20,
                 bytes_total: 60,
                 bytes_per_second: 10,
+                units_done: 4,
+                units_total: 12,
+                estimated_remaining_seconds: Some(16),
                 current_track: "Sun//Eater — Lorna Shore".into(),
                 target: AgentDeviceSyncTarget {
                     target_path: "/Music/Reprise".into(),
@@ -296,6 +304,8 @@ mod tests {
         );
         assert!(device.controls.can_cancel);
         assert_eq!(device.bytes_per_second, 10);
+        assert_eq!((device.units_done, device.units_total), (4, 12));
+        assert_eq!(device.estimated_remaining_seconds, Some(16));
         assert_eq!(device.current_track, "Sun//Eater — Lorna Shore");
         assert_eq!(device.target.target_path, "/Music/Reprise");
         assert_eq!(

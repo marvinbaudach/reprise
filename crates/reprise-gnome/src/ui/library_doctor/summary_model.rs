@@ -470,6 +470,16 @@ mod tests {
     }
 
     #[test]
+    fn doc_2a_a_stored_selection_scan_still_names_its_scope() {
+        let mut scan = scan(Vec::new(), 0);
+        scan.scope_kind = "selection".into();
+
+        let blocks = SummaryBlocks::from_scan(&scan, false, &QuietOutcome::Applied(None));
+
+        assert!(blocks.facts.label().starts_with("Selection"));
+    }
+
+    #[test]
     fn doc_9a_scan_facts_stay_silent_about_zero_skipped_tracks() {
         let blocks =
             SummaryBlocks::from_scan(&scan(Vec::new(), 0), false, &QuietOutcome::Applied(None));

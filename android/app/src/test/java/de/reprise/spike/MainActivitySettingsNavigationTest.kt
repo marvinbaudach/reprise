@@ -1,6 +1,7 @@
 package de.reprise.spike
 
 import android.app.Application
+import android.content.Context
 import android.os.Looper
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -48,6 +50,7 @@ class MainActivitySettingsNavigationTest {
 
     @After
     fun releaseTheService() {
+        application.releaseOnlineSourcesWrites()
         application.releaseService()
     }
 
@@ -99,6 +102,44 @@ class MainActivitySettingsNavigationTest {
         compose.onNode(hasText("Download artist photos") and isToggleable()).assertIsOff()
         compose.onNodeWithContentDescription("Back to Settings").performClick()
         compose.onNodeWithText("Off").assertIsDisplayed()
+    }
+
+    @Test
+    fun aSecondOnlineSourcesTapSubmitsTheOppositeTargetWithoutMovingEarly() {
+        application.blockOnlineSourcesWrites()
+        openSettings()
+        compose.onNodeWithContentDescription("Open Online sources").performClick()
+        val toggle = compose.onNode(hasText("Download artist photos") and isToggleable())
+
+        toggle.performClick()
+        assertTrue(application.awaitOnlineSourcesWrite())
+        toggle.assertIsOff()
+        toggle.performClick()
+        toggle.assertIsOff()
+
+        application.releaseOnlineSourcesWrites()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.onlineSourcesWrites.size == 2
+        }
+        assertEquals(listOf(true, false), application.onlineSourcesWrites.toList())
+        toggle.assertIsOff()
+    }
+
+    @Test
+    fun net_4b_downloadUsesTheSettingsEnablePathAndSettlesBeforeTheWrite() {
+        compose.onNodeWithText("Show artist photos?").assertIsDisplayed()
+
+        compose.onNodeWithText("Download artist photos").performClick()
+
+        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.onlineSourcesWrites == listOf(true)
+        }
+        assertTrue(application.onlineSourcesEnabled)
+        assertTrue(
+            application.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getBoolean(ARTIST_PHOTO_OFFER_SETTLED, false),
+        )
     }
 
     @Test

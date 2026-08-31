@@ -14,7 +14,7 @@ fn is_header_click(y: f64, header_height: i32) -> bool {
     header_height > 0 && y <= f64::from(header_height)
 }
 
-fn build_header_popover(model: &Rc<dyn EditorModel>) -> (gtk4::Popover, gtk4::ListBox) {
+pub(super) fn build_header_popover(model: &Rc<dyn EditorModel>) -> (gtk4::Popover, gtk4::ListBox) {
     let surface = editor::build_surface(model, false);
     let content = gtk4::Frame::builder()
         .width_request(360)
@@ -28,6 +28,7 @@ fn build_header_popover(model: &Rc<dyn EditorModel>) -> (gtk4::Popover, gtk4::Li
         .build();
     popover.add_css_class("menu");
     popover.add_css_class("reprise-column-header-popover");
+    editor::wire_popover_escape(&popover);
     (popover, surface.list)
 }
 

@@ -116,8 +116,8 @@ impl PlayerController {
         {
             tracing::error!(%error, episode_id, "could not mark queued podcast played");
         } else {
-            // The unplayed counts and the completed source row just changed.
-            // The queue-changed path below only patches the Queue badge.
+            // The completed row just changed in both source views, and the
+            // queue-changed path below only patches the Queue badge.
             self.notify_episode_played(episode_id);
         }
         self.external.borrow_mut().clear_session();
@@ -192,19 +192,18 @@ mod tests {
         assert!(super::automatic_completion_target(&final_youtube).is_none());
     }
 
-    /// Marking an episode played lowers the unplayed counts behind the
-    /// Podcasts and YouTube sidebar rows. Those counts are only recomputed by a
-    /// full sidebar rebuild, and the queue-changed path deliberately no longer
-    /// triggers one — it patches a single badge instead, which is what keeps a
+    /// Marking an episode played is the only thing that repaints its row in
+    /// an open Podcasts or YouTube view, and the queue-changed path does not
+    /// carry it — that path patches a single badge, which is what keeps a
     /// track change off the database. So every `mark_played` here has to
-    /// announce itself, or the badge silently keeps the old number until some
-    /// unrelated rebuild happens to fire.
+    /// announce itself, or the row keeps its old marker until the view is
+    /// rebuilt for some unrelated reason.
     ///
     /// Checked against the source because the alternative needs a live
     /// `PlayerController` with a GTK window; the coupling this guards is
     /// exactly "these two calls stay together".
     #[test]
-    fn every_mark_played_announces_the_changed_sidebar_count() {
+    fn every_mark_played_announces_itself_to_the_source_views() {
         let completion = include_str!("external_media_completion.rs")
             .split("#[cfg(test)]")
             .next()
@@ -259,8 +258,11 @@ mod tests {
         assert!(source.contains("self.notify_episode_position(episode_id, 0);"));
     }
 
+    /// SRC-1a: the completed ID reaches the two views and nothing else. The
+    /// negative half is the point — the sidebar counters count subscriptions,
+    /// so a finished episode must not cost a full rebuild.
     #[test]
-    fn completed_episode_ids_reach_both_source_views_and_the_sidebar() {
+    fn completed_episode_ids_reach_both_source_views_and_not_the_sidebar() {
         let completion = include_str!("external_media_completion.rs")
             .split("#[cfg(test)]")
             .next()
@@ -268,6 +270,13 @@ mod tests {
         let callbacks = include_str!("external_media.rs");
         let window = include_str!("../window/window.rs");
         let source_views = include_str!("../window/source_views.rs");
+        let wiring = source_views
+            .split("fn wire_episode_played")
+            .nth(1)
+            .unwrap()
+            .split("fn wire_episode_position")
+            .next()
+            .unwrap();
 
         assert_eq!(
             completion
@@ -277,18 +286,16 @@ mod tests {
         );
         assert!(callbacks.contains("callback: impl Fn(i64) + 'static"));
         assert!(callbacks.contains("fn notify_episode_played(&self, episode_id: i64)"));
-        assert!(window.contains("source_views.wire_episode_played(player, &sidebar)"));
-        assert!(source_views.contains("player.add_on_episode_played(move |episode_id|"));
-        assert!(source_views.contains("sidebar.refresh(\"episode played\")"));
+        assert!(window.contains("source_views.wire_episode_played(player)"));
+        assert!(wiring.contains("player.add_on_episode_played(move |episode_id|"));
+        assert!(!wiring.contains("sidebar.refresh"));
         assert_eq!(
-            source_views
-                .matches("update_played_state(episode_id)")
-                .count(),
+            wiring.matches("update_played_state(episode_id)").count(),
             1,
             "the Podcasts and YouTube views must both receive the completed ID"
         );
-        assert!(source_views.contains("[self.podcasts.clone(), self.youtube.clone()]"));
-        assert!(source_views.contains("page.if_materialized"));
+        assert!(wiring.contains("[self.podcasts.clone(), self.youtube.clone()]"));
+        assert!(wiring.contains("page.if_materialized"));
     }
 
     #[test]

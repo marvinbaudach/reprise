@@ -54,14 +54,18 @@ fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
         assert_eq!(backend.state.copy_attempts.get(), 2);
         gtk4::glib::timeout_future(Duration::from_millis(10)).await;
 
-        assert!(matches!(
-            runtime.devices()[0].sync_phase,
-            PlannedSyncPhase::Syncing {
-                bytes_done: 50,
-                bytes_total: 85_636,
-                ..
-            }
-        ));
+        assert!(
+            matches!(
+                runtime.devices()[0].sync_phase,
+                PlannedSyncPhase::Syncing {
+                    unit_bytes_done: 50,
+                    unit_bytes_total: 100,
+                    ..
+                }
+            ),
+            "replacement phase: {:?}",
+            runtime.devices()[0].sync_phase
+        );
         settle().await;
     });
 }
@@ -95,6 +99,50 @@ fn settings_updates_are_rejected_before_persistence_while_syncing() {
 }
 
 #[test]
+fn unrelated_presence_events_do_not_reproject_a_device_mid_transfer() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        disable_auto_start(&conn, "b");
+        let backend = Rc::new(FakeBackend::new(
+            vec![descriptor("a", true), descriptor("b", true)],
+            0,
+        ));
+        let (started, releases) = backend.gate_copies(&["a"]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+        runtime.sync_now("a").unwrap();
+        assert_eq!(started.recv().await.unwrap(), "a");
+
+        let before = runtime
+            .devices()
+            .into_iter()
+            .find(|device| device.id == "a")
+            .unwrap();
+        reprise_core::library::playlist_membership::add_unique_tracks(&conn, 10, &[2]).unwrap();
+
+        backend.set_devices(&[descriptor("a", true)]);
+
+        let after = runtime
+            .devices()
+            .into_iter()
+            .find(|device| device.id == "a")
+            .unwrap();
+        assert_eq!(after.page, before.page);
+        assert_eq!(after.managed_track_count, before.managed_track_count);
+        assert_eq!(after.size_on_device_bytes, before.size_on_device_bytes);
+        assert_eq!(
+            after.verified_managed_track_count,
+            before.verified_managed_track_count
+        );
+
+        runtime.cancel_current("a");
+        releases["a"].send(()).await.unwrap();
+        settle().await;
+    });
+}
+
+#[test]
 fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
     run(async {
         let (_temp, conn) = fixture();
@@ -115,6 +163,11 @@ fn mtp_5_reconnect_resumes_planned_sync_from_the_remaining_delta() {
         gtk4::glib::timeout_future(Duration::from_millis(30)).await;
         assert!(!runtime.devices()[0].connected);
         assert!(runtime.devices()[0].last_sync.is_none());
+        assert_eq!(
+            runtime.devices()[0].storage,
+            DeviceStorageSnapshot::default(),
+            "unplug must clear measurements without losing the resumable run"
+        );
 
         backend.set_devices(&[descriptor("a", true)]);
         settle().await;
@@ -173,5 +226,47 @@ fn mtp_60_every_copy_restarts_the_transfer_rate_baseline() {
             "the second copy must be measured against its own baseline"
         );
         settle().await;
+    });
+}
+
+#[test]
+fn a_last_step_failure_keeps_each_successful_playlists_verified_timestamp() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "INSERT INTO playlists (id, name, position) VALUES (11, 'Night', 1);
+                 INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (11, 2, 0);",
+            )
+            .unwrap();
+        let mut settings =
+            reprise_core::device_sync::settings::load_or_create_settings(&conn, "a", "Phone a")
+                .unwrap();
+        settings.selection = DeviceSelection::Sources(vec![
+            SelectionSource::Playlist(10),
+            SelectionSource::Playlist(11),
+        ]);
+        save_settings(&conn, &settings).unwrap();
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 1)
+                .with_track_metadata_replace_error("injected final-step failure"),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        assert!(runtime.devices()[0]
+            .sync_error
+            .as_ref()
+            .is_some_and(|error| error.message.contains("injected final-step failure")));
+        let playlists =
+            reprise_core::device_sync::settings::load_device_playlists(&conn, "a").unwrap();
+        assert_eq!(playlists.len(), 2);
+        assert!(playlists
+            .iter()
+            .all(|playlist| playlist.last_synced_at.is_some()));
     });
 }

@@ -1,10 +1,13 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
+use libadwaita::prelude::*;
 
 pub(in crate::ui) const PANEL_WIDTH: i32 = 300;
+pub(in crate::ui) const INFO_PANEL_COLLAPSE_WIDTH: i32 = 799;
 
 #[derive(Clone)]
 pub(in crate::ui) struct NowPlayingColumn {
+    root: adw::BreakpointBin,
     split: adw::OverlaySplitView,
 }
 
@@ -43,12 +46,37 @@ impl NowPlayingColumn {
             .sidebar_position(gtk4::PackType::End)
             .show_sidebar(visible)
             .collapsed(false)
+            .pin_sidebar(true)
             .min_sidebar_width(f64::from(PANEL_WIDTH))
             .max_sidebar_width(f64::from(PANEL_WIDTH))
             .sidebar_width_unit(adw::LengthUnit::Px)
             .build();
 
-        Self { split }
+        // This bin is allocated inside the library split's content pane, so
+        // the threshold measures the pane, not the window: the library sidebar
+        // is a pinned column at every width and never hands its 240 px back.
+        // The `ui/window/responsive_side_panels.rs::CONSTRAINED_WIDTH` closes
+        // this panel long before the bin gets that narrow; raising PANEL_WIDTH
+        // or relaxing that constraint invalidates this threshold. Pin-sidebar
+        // keeps the breakpoint from changing visibility behind the constraint
+        // owner.
+        let condition = adw::BreakpointCondition::new_length(
+            adw::BreakpointConditionLengthType::MaxWidth,
+            f64::from(INFO_PANEL_COLLAPSE_WIDTH),
+            adw::LengthUnit::Px,
+        );
+        let breakpoint = adw::Breakpoint::new(condition);
+        breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
+        let root = adw::BreakpointBin::new();
+        root.set_size_request(1, 1);
+        root.set_child(Some(&split));
+        root.add_breakpoint(breakpoint);
+
+        Self { root, split }
+    }
+
+    pub(in crate::ui) fn root(&self) -> &adw::BreakpointBin {
+        &self.root
     }
 
     pub(in crate::ui) fn widget(&self) -> &adw::OverlaySplitView {
@@ -84,7 +112,7 @@ mod tests {
         let player = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         player.set_height_request(86);
         let shell = crate::ui::library_player_bar::LibraryPlayerBarShell::new(
-            column.widget(),
+            column.root(),
             Some(player.upcast_ref()),
             PlayerBarPosition::Bottom,
         );

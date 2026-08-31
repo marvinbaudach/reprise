@@ -46,8 +46,8 @@ fn card_detail_mode_only_distinguishes_delta_and_progress() {
         done: 0,
         total: 1,
         current_track: "Track".into(),
-        bytes_done: 0,
-        bytes_total: 1,
+        unit_bytes_done: 0,
+        unit_bytes_total: 1,
     };
     assert_eq!(detail_mode(&pending), DetailMode::Progress);
     assert_eq!(
@@ -63,8 +63,8 @@ fn mtp_63_sidebar_keeps_free_space_visible_during_sync() {
         done: 1,
         total: 2,
         current_track: "Track A".into(),
-        bytes_done: 1,
-        bytes_total: 2,
+        unit_bytes_done: 1,
+        unit_bytes_total: 2,
     });
     copying.name = "Phone A".into();
     copying.bytes_per_second = 2 * 1_024 * 1_024;
@@ -99,8 +99,8 @@ fn syncing_without_storage_names_the_activity_without_a_placeholder() {
         done: 0,
         total: 1,
         current_track: "Track A".into(),
-        bytes_done: 0,
-        bytes_total: 1,
+        unit_bytes_done: 0,
+        unit_bytes_total: 1,
     });
     device.bytes_per_second = 2 * 1_024 * 1_024;
 

@@ -15,22 +15,24 @@ use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::device_view::{
     project_category_content_row, project_contents_state, project_device_music_reading,
 };
-use reprise_core::device_sync::settings::{
-    forget_device, mark_device_playlists_synced, record_device_verification, save_settings,
-};
+use reprise_core::device_sync::settings::{forget_device, save_settings};
 use reprise_core::device_sync::sync_log;
 use reprise_core::device_sync::{
-    aggregate_balance, should_auto_start, AutoStartFacts, DeviceSelection, DeviceSessionState,
-    DeviceSettings, DeviceStorageInspection, DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan,
-    MusicDiff, MusicReading, SelectionSource, StorageId, SyncPageState, SyncTarget,
+    DeviceSelection, DeviceSessionState, DeviceSettings, DeviceStorageInspection,
+    DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, MusicDiff, MusicReading, SelectionSource,
+    StorageId, SyncPageState, SyncTarget,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
 
 use crate::ui::device_sync_strings;
 
+use super::device_sync_remembered;
+
 #[path = "device_sync_rate.rs"]
 pub(super) mod rate;
+#[path = "device_sync_runtime_refresh.rs"]
+mod refresh;
 #[path = "device_sync_types.rs"]
 mod types;
 
@@ -65,10 +67,12 @@ struct DeviceState {
     resume_initiator: Option<planned::SyncInitiator>,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
     verified_managed_track_count: Option<usize>,
+    last_verified_size_bytes: Option<u64>,
     size_on_device_bytes: Option<u64>,
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
     keep_smart_playlists_updated: bool,
+    library_dirty: bool,
     page: SyncPageState,
 }
 
@@ -106,10 +110,12 @@ impl DeviceState {
             resume_initiator: None,
             last_sync: None,
             verified_managed_track_count: None,
+            last_verified_size_bytes: None,
             size_on_device_bytes: None,
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
             keep_smart_playlists_updated: true,
+            library_dirty: false,
             page: SyncPageState::default(),
         }
     }
@@ -126,15 +132,32 @@ impl DeviceState {
         state.last_sync = memory
             .last_verified_at
             .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0));
-        state.size_on_device_bytes = memory.size_on_device_bytes;
+        state.last_verified_size_bytes = memory.size_on_device_bytes;
         state
     }
 
     fn view(&self) -> DeviceView {
+        let (units_done, units_total) = match self.sync_phase {
+            PlannedSyncPhase::Syncing { done, total, .. } => (done, total),
+            PlannedSyncPhase::Finishing => self
+                .machine
+                .as_ref()
+                .map(|machine| {
+                    let machine = machine.borrow();
+                    (machine.units_done(), machine.units_total())
+                })
+                .unwrap_or_default(),
+            _ => (0, 0),
+        };
+        let (bytes_done, bytes_total) = self
+            .machine
+            .as_ref()
+            .map(|machine| {
+                let machine = machine.borrow();
+                (machine.bytes_done(), machine.bytes_total())
+            })
+            .unwrap_or_default();
         let mut page = self.page.clone();
-        if !self.session_state.shows_diff() {
-            page.changes = Default::default();
-        }
         page.update_controls(
             self.connected && self.session_state.opens_session(),
             !self.scanning
@@ -150,11 +173,19 @@ impl DeviceState {
         } else {
             project_device_music_reading(MusicDiff::default())
         };
-        let content_row = project_category_content_row(
-            &self.target,
-            self.managed_files.len(),
-            compact::verified_track_bytes(&self.managed_files),
-        );
+        let content_row = if self.session_state.shows_diff() {
+            project_category_content_row(
+                &self.target,
+                self.managed_files.len(),
+                compact::verified_track_bytes(&self.managed_files),
+            )
+        } else {
+            project_category_content_row(
+                &self.target,
+                self.managed_track_count,
+                self.size_on_device_bytes.unwrap_or(0),
+            )
+        };
         DeviceView {
             id: self.descriptor.id.clone(),
             name: self.settings.device_name.clone(),
@@ -165,6 +196,7 @@ impl DeviceState {
                 .then(device_sync_strings::unrememberable_device_status),
             session_state: self.session_state.clone(),
             storage: self.storage.clone(),
+            storage_measured: self.ever_inspected,
             scan_error: self.scan_error.clone(),
             settings: self.settings.clone(),
             sync_phase: self.sync_phase.clone(),
@@ -173,12 +205,18 @@ impl DeviceState {
             verified_managed_track_count: self.verified_managed_track_count,
             size_on_device_bytes: self.size_on_device_bytes,
             managed_track_count: self.managed_track_count,
+            bytes_done,
+            bytes_total,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
+            units_done,
+            units_total,
+            estimated_remaining: self.mtp_rate.remaining(units_done, units_total),
             page,
             contents_state: project_contents_state(
                 self.scanning,
                 self.scan_error.as_deref(),
                 self.ever_inspected,
+                self.last_sync,
             ),
             content_row,
             target_reading,
@@ -217,7 +255,7 @@ impl DeviceSyncRuntime {
         )
     }
 
-    /// Reprojects library playlists for every connected idle device.
+    /// Reprojects library playlists for every idle device.
     ///
     /// Playlist CRUD and membership changes are local database work, so this
     /// deliberately uses the non-toasting projection path and not a device
@@ -240,7 +278,7 @@ impl DeviceSyncRuntime {
             .device_states
             .borrow()
             .iter()
-            .filter(|device| device.connected && !device.is_busy())
+            .filter(|device| !device.is_busy())
             .map(|device| {
                 (
                     device.descriptor.id.clone(),
@@ -271,9 +309,10 @@ impl DeviceSyncRuntime {
             }
             if selection_changed {
                 let mut device_states = self.device_states.borrow_mut();
-                let Some(device) = device_states.iter_mut().find(|device| {
-                    device.descriptor.id == device_id && device.connected && !device.is_busy()
-                }) else {
+                let Some(device) = device_states
+                    .iter_mut()
+                    .find(|device| device.descriptor.id == device_id && !device.is_busy())
+                else {
                     continue;
                 };
                 device.settings = settings;
@@ -334,6 +373,55 @@ impl DeviceSyncRuntime {
             .map(DeviceState::view)
             .collect::<Vec<_>>();
         devices
+    }
+
+    pub(in crate::ui) fn mark_all_devices_stale(&self) {
+        for device in self.device_states.borrow_mut().iter_mut() {
+            device.library_dirty = true;
+        }
+    }
+
+    pub(in crate::ui) fn recompute_if_stale(
+        self: &Rc<Self>,
+        device_id: &str,
+    ) -> Result<(), String> {
+        {
+            let mut devices = self.device_states.borrow_mut();
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+            else {
+                return Ok(());
+            };
+            if !device.library_dirty {
+                return Ok(());
+            }
+            if !device_sync_remembered::page_is_readable(device.connected, &device.session_state) {
+                let device_name = device.settings.device_name.clone();
+                let session_state = device.session_state.clone();
+                drop(devices);
+                tracing::debug!(
+                    %device_id,
+                    %device_name,
+                    ?session_state,
+                    "skipping stale device refresh because its page is neither connected nor remembered"
+                );
+                return Ok(());
+            }
+            device.library_dirty = false;
+        }
+        let result = self.recompute_delta(device_id);
+        if result.is_err() {
+            if let Some(device) = self
+                .device_states
+                .borrow_mut()
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+            {
+                device.library_dirty = true;
+            }
+        }
+        result
     }
 
     pub fn cancel_current(self: &Rc<Self>, device_id: &str) {
@@ -400,267 +488,6 @@ impl DeviceSyncRuntime {
                 false
             }
         }
-    }
-
-    /// Same as [`Self::refresh_contents`], except this refresh is the first
-    /// one after the device connected (`apply_devices`, both a brand-new
-    /// device and a reconnect) — the only refresh `MTP-30`'s auto-start
-    /// decision is allowed to fire from. A manual "Refresh" click or the
-    /// post-sync verify refresh must never re-trigger it.
-    fn refresh_contents_on_connect(self: &Rc<Self>, device_id: &str) {
-        self.refresh_contents_with_delta(device_id, true, RefreshPurpose::Normal, true);
-    }
-
-    fn refresh_contents_after_sync(
-        self: &Rc<Self>,
-        device_id: &str,
-        sources: Vec<SelectionSource>,
-    ) {
-        self.refresh_contents_with_delta(
-            device_id,
-            true,
-            RefreshPurpose::VerifySync(sources),
-            false,
-        );
-    }
-
-    fn refresh_contents_with_delta(
-        self: &Rc<Self>,
-        device_id: &str,
-        recompute_delta: bool,
-        purpose: RefreshPurpose,
-        just_connected: bool,
-    ) {
-        let target = self
-            .device_states
-            .borrow()
-            .iter()
-            .find(|device| device.descriptor.id == device_id)
-            .map(|device| device.target.clone());
-        let Some(target) = target else {
-            return;
-        };
-        let request = {
-            let mut devices = self.device_states.borrow_mut();
-            let Some(device) = devices
-                .iter_mut()
-                .find(|device| device.descriptor.id == device_id)
-            else {
-                return;
-            };
-            if !device.connected || !device.session_state.opens_session() {
-                return;
-            }
-            device.scan_generation = device.scan_generation.saturating_add(1);
-            device.scanning = true;
-            device.scan_error = None;
-            Some((device.descriptor.root_uri.clone(), device.scan_generation))
-        };
-        self.notify();
-        let Some((root_uri, generation)) = request else {
-            return;
-        };
-        let backend = self.backend.clone();
-        let weak = self.weak_self.borrow().clone();
-        let id = device_id.to_string();
-        gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-            let result = backend.inspect(root_uri, target).await;
-            let Some(runtime) = weak.upgrade() else {
-                return;
-            };
-            let verified_track_count = result
-                .as_ref()
-                .ok()
-                .map(|inspection| {
-                    inspection
-                        .managed_files
-                        .iter()
-                        .filter(|file| compact::is_verified_track_file(file))
-                        .count()
-                });
-            let inspection_error = result.as_ref().err().cloned();
-            {
-                let mut devices = runtime.device_states.borrow_mut();
-                if let Some(device) = devices.iter_mut().find(|device| device.descriptor.id == id) {
-                    if device.scan_generation != generation {
-                        return;
-                    }
-                    device.scanning = false;
-                    match result {
-                        Ok(DeviceStorageInspection {
-                            snapshot,
-                            managed_files,
-                        }) => {
-                            device.storage = snapshot;
-                            device.managed_files = managed_files;
-                            device.scan_error = None;
-                            device.ever_inspected = true;
-                        }
-                        Err(error) => device.scan_error = Some(error),
-                    }
-                }
-            }
-            if !recompute_delta {
-                runtime.notify();
-            } else {
-                let planning_error = runtime.recompute_delta_silent(&id).err();
-                let mut playlist_timestamp_error = None;
-                let verified_at = match &purpose {
-                    RefreshPurpose::VerifySync(sources)
-                        if inspection_error.is_none() && planning_error.is_none() =>
-                    {
-                        let verified_at = chrono::Utc::now();
-                        let rememberable = runtime
-                            .device_states
-                            .borrow()
-                            .iter()
-                            .find(|device| device.descriptor.id == id)
-                            .is_some_and(|device| device.descriptor.persistent_id.is_some());
-                        if rememberable {
-                            let size_on_device = runtime
-                                .device_states
-                                .borrow()
-                                .iter()
-                                .find(|device| device.descriptor.id == id)
-                                .map_or(0, |device| {
-                                    compact::verified_track_bytes(&device.managed_files)
-                                });
-                            if let Err(error) = mark_device_playlists_synced(
-                                &runtime.conn,
-                                &id,
-                                sources,
-                                verified_at.timestamp(),
-                            ) {
-                                playlist_timestamp_error = Some(format!(
-                                    "could not record verified playlist synchronization: {error}"
-                                ));
-                                None
-                            } else if let Err(error) = record_device_verification(
-                                &runtime.conn,
-                                &id,
-                                verified_at.timestamp(),
-                                size_on_device,
-                            ) {
-                                playlist_timestamp_error = Some(format!(
-                                    "could not remember verified device state: {error}"
-                                ));
-                                None
-                            } else {
-                                Some(verified_at)
-                            }
-                        } else {
-                            Some(verified_at)
-                        }
-                    }
-                    _ => None,
-                };
-                if let Some(device) = runtime
-                    .device_states
-                    .borrow_mut()
-                    .iter_mut()
-                    .find(|device| device.descriptor.id == id)
-                {
-                    match &purpose {
-                        RefreshPurpose::VerifySync(sources)
-                            if inspection_error.is_none()
-                                && planning_error.is_none()
-                                && playlist_timestamp_error.is_none() =>
-                        {
-                            if let Some(verified_at) = verified_at {
-                                for row in &mut device.page.playlists {
-                                    if sources.contains(&row.source) {
-                                        row.last_synced_at = Some(verified_at.timestamp());
-                                    }
-                                }
-                                device.last_sync = Some(verified_at);
-                                device.verified_managed_track_count = verified_track_count;
-                                device.size_on_device_bytes =
-                                    Some(compact::verified_track_bytes(&device.managed_files));
-                                device.sync_error = None;
-                            }
-                        }
-                        RefreshPurpose::VerifySync(_) => {
-                            device.sync_phase = PlannedSyncPhase::Idle;
-                            device.sync_error = Some(SyncFailure {
-                                message: inspection_error.clone().map_or_else(
-                                    || {
-                                        planning_error.clone().unwrap_or_else(|| {
-                                            playlist_timestamp_error.clone().unwrap_or_else(|| {
-                                                "device content verification failed".into()
-                                            })
-                                        })
-                                    },
-                                    |error| {
-                                        format!(
-                                            "could not verify device contents after synchronization: {error}"
-                                        )
-                                    },
-                                ),
-                                failed_tracks: Vec::new(),
-                            });
-                        }
-                        RefreshPurpose::Normal => {
-                            if let Some(error) = planning_error.clone() {
-                                device.sync_phase = PlannedSyncPhase::Idle;
-                                device.sync_error = Some(SyncFailure {
-                                    message: error,
-                                    failed_tracks: Vec::new(),
-                                });
-                            }
-                        }
-                    }
-                }
-                runtime.notify();
-                let resume_initiator = {
-                    let mut devices = runtime.device_states.borrow_mut();
-                    devices
-                        .iter_mut()
-                        .find(|device| device.descriptor.id == id)
-                        .and_then(|device| {
-                            let resume = device.resume_initiator.is_some()
-                                && device.connected
-                                && !device.is_active();
-                            if resume {
-                                device.resume_initiator.take()
-                            } else {
-                                None
-                            }
-                        })
-                };
-                if let Some(initiator) = resume_initiator {
-                    if let Err(error) = runtime.start_sync(&id, initiator) {
-                        tracing::warn!(device_id = id, %error, "could not resume device synchronization");
-                    }
-                } else if just_connected {
-                    // `MTP-30`: gather every fact from one short borrow, drop
-                    // it, and only then decide — same discipline as
-                    // `should_resume` above. A refused or failed automatic
-                    // start is silent apart from this log: the user did not
-                    // press anything, so it must never raise a modal or an
-                    // error banner.
-                    let facts = {
-                        let devices = runtime.device_states.borrow();
-                        devices
-                            .iter()
-                            .find(|device| device.descriptor.id == id)
-                            .map(|device| AutoStartFacts {
-                                just_connected,
-                                sync_automatically: device.settings.sync_automatically,
-                                scan_ok: device.scan_error.is_none(),
-                                planning_ok: planning_error.is_none(),
-                                device_connected: device.connected,
-                                device_busy: device.is_busy(),
-                                balance: aggregate_balance(&[device.target_reading()]),
-                            })
-                    };
-                    if facts.is_some_and(should_auto_start) {
-                        if let Err(error) = runtime.sync_automatically(&id) {
-                            tracing::warn!(device_id = id, %error, "could not start automatic device synchronization");
-                        }
-                    }
-                }
-            }
-        });
     }
 
     pub fn subscribe(self: &Rc<Self>, callback: StateCallback) -> Subscription {

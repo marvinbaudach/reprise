@@ -73,6 +73,17 @@ fn restored_resume_request(state: &ExternalPlaybackState) -> Option<RestoredResu
     })
 }
 
+fn replace_podcast_resume_target(state: &mut ExternalPlaybackState, position_ms: i64) -> bool {
+    let Some(ExternalSession::Podcast(session)) = state.session.as_mut() else {
+        return false;
+    };
+    if let ExternalMedia::Podcast { resume_ms, .. } = &mut session.media {
+        *resume_ms = position_ms;
+    }
+    session.resume = ResumePolicy::new(position_ms);
+    true
+}
+
 impl ExternalPlaybackState {
     pub(in crate::ui) fn session_episode(&self) -> Option<SessionEpisode> {
         let ExternalSession::Podcast(session) = self.session.as_ref()? else {
@@ -182,6 +193,25 @@ impl PlayerController {
             tracing::error!(%error, "restored episode playback failed");
             self.show_toast(&error.to_string());
         }
+        true
+    }
+
+    pub(super) fn seek_restored_episode_at(self: &Rc<Self>, position_ms: i64) -> bool {
+        let duration_ms = {
+            let external = self.external.borrow();
+            let Some(ExternalSession::Podcast(session)) = external.session.as_ref() else {
+                return false;
+            };
+            if !session.restored {
+                return false;
+            }
+            match &session.media {
+                ExternalMedia::Podcast { duration_ms, .. } => duration_ms.unwrap_or(0),
+                ExternalMedia::Radio { .. } => return false,
+            }
+        };
+        replace_podcast_resume_target(&mut self.external.borrow_mut(), position_ms);
+        self.sync_position(position_ms, duration_ms);
         true
     }
 }
@@ -343,5 +373,28 @@ mod tests {
         };
         session.restored = false;
         assert!(restored_resume_request(&state).is_none());
+    }
+
+    #[test]
+    fn clicked_position_replaces_the_restored_episode_resume_target() {
+        let saved = SessionEpisode {
+            episode_id: 7,
+            origin: SessionEpisodeOrigin::Direct,
+            neighbour_episode_ids: vec![7],
+        };
+        let session = restored_session(&saved, &episode(), &[]).unwrap();
+        let mut state = ExternalPlaybackState::default();
+        state.begin_session(ExternalSession::Podcast(session));
+
+        assert!(replace_podcast_resume_target(&mut state, 30_000));
+
+        let Some(ExternalSession::Podcast(session)) = state.session.as_ref() else {
+            panic!("expected podcast session");
+        };
+        assert_eq!(session.resume, ResumePolicy::new(30_000));
+        let ExternalMedia::Podcast { resume_ms, .. } = session.media else {
+            panic!("expected podcast media");
+        };
+        assert_eq!(resume_ms, 30_000);
     }
 }

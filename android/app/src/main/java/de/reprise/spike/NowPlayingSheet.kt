@@ -100,6 +100,7 @@ internal fun NowPlayingSheet(
                 .showsSpectrum(),
         )
     }
+    val visualizerIntent = remember(visualizerPreference) { PendingToggleIntent() }
     val visualizerOpacity = remember(visualizerPreference) {
         Animatable(if (visualizerVisible.value) 1f else 0f)
     }
@@ -157,20 +158,25 @@ internal fun NowPlayingSheet(
                 },
                 onTap = { position ->
                     if (!coverBounds.value.contains(position)) return@nowPlayingGestures
-                    val showSpectrum = !visualizerVisible.value
-                    runCatching {
-                        visualizerPreference.setVisualizer(
-                            if (showSpectrum) {
-                                AndroidVisualizerChoice.SPECTRUM
-                            } else {
-                                AndroidVisualizerChoice.COVER
-                            },
-                        )
-                    }.onSuccess {
-                        visualizerVisible.value = showSpectrum
-                    }.onFailure { error ->
-                        Log.e(NOW_PLAYING_VISUALIZER_TAG, "Could not save the visualizer choice", error)
-                    }
+                    val showSpectrum = visualizerIntent.next(visualizerVisible.value)
+                    visualizerPreference.setVisualizer(
+                        choice = if (showSpectrum) {
+                            AndroidVisualizerChoice.SPECTRUM
+                        } else {
+                            AndroidVisualizerChoice.COVER
+                        },
+                        report = { outcome ->
+                            outcome.onSuccess { visualizerVisible.value = showSpectrum }
+                                .onFailure { error ->
+                                    Log.e(
+                                        NOW_PLAYING_VISUALIZER_TAG,
+                                        "Could not save the visualizer choice",
+                                        error,
+                                    )
+                                }
+                            visualizerIntent.answered(showSpectrum)
+                        },
+                    )
                 },
             )
             .graphicsLayer {

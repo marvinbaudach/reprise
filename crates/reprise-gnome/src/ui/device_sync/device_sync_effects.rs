@@ -241,10 +241,28 @@ pub(super) async fn perform(
                 error.to_string()
             }))
         }
-        Effect::WritePlaylist { index } => {
+        Effect::WriteAnalysis { index } => {
+            let planned = work.machine.borrow().plan().analysis_writes[index].clone();
+            Event::AnalysisWritten(copy_analysis_sidecar(runtime, work, &planned).await)
+        }
+        Effect::WritePlaylist {
+            index,
+            omit_relative_paths,
+        } => {
             let playlist = playlist_write(work, index);
             let name = playlist_stem(&playlist.device_path, &playlist.source_name);
             let playlist_device_path = playlist.device_path.clone();
+            let contents = if omit_relative_paths.is_empty() {
+                playlist.contents
+            } else {
+                let entries = playlist
+                    .entries
+                    .iter()
+                    .filter(|entry| !omit_relative_paths.contains(&entry.relative_path))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                reprise_core::device_sync::m3u::render_named_playlist(&entries)
+            };
             let result = runtime
                 .backend
                 .replace_playlist(
@@ -253,7 +271,7 @@ pub(super) async fn perform(
                     work.playlists_path.clone(),
                     work.playlists_storage,
                     name.clone(),
-                    playlist.contents.as_bytes().to_vec(),
+                    contents.into_bytes(),
                 )
                 .await;
             Event::PlaylistWritten(result.map_err(|error| {
@@ -278,7 +296,7 @@ pub(super) async fn perform(
                 source: playlist.source.clone(),
                 source_name: playlist.source_name.clone(),
                 device_path: playlist.device_path.clone(),
-                last_synced_at: None,
+                last_synced_at: Some(now_seconds()),
             };
             let result = upsert_device_playlist(&runtime.conn, &record);
             Event::PlaylistRecorded(result.map_err(|error| {
@@ -419,31 +437,34 @@ pub(super) async fn perform(
                 error
             }))
         }
+        Effect::WriteTrackMetadataList => {
+            Event::TrackMetadataListWritten(write_track_metadata_list(runtime, work).await)
+        }
     }
 }
 
 pub(super) async fn copy_analysis_sidecar(
     runtime: &Rc<DeviceSyncRuntime>,
-    work: &PlannedWork,
+    work: &mut PlannedWork,
     planned: &reprise_core::device_sync::AnalysisSidecarWrite,
-) -> bool {
+) -> Result<u64, String> {
     let track_id = planned.track_id;
     let sidecar = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
         &runtime.conn,
         track_id,
     ) {
         Ok(Some(sidecar)) => sidecar,
-        Ok(None) => return false,
+        Ok(None) => return Err("analysis data disappeared before it could be written".into()),
         Err(error) => {
             tracing::warn!(track_id, %error, "could not load analysis sidecar data");
-            return false;
+            return Err(format!("could not load analysis sidecar data: {error}"));
         }
     };
     let bytes = match sidecar.encode() {
         Ok(bytes) => bytes,
         Err(error) => {
             tracing::warn!(track_id, %error, "could not encode analysis sidecar data");
-            return false;
+            return Err(format!("could not encode analysis sidecar data: {error}"));
         }
     };
     let temporary_path = match reprise_core::device_sync::staging::stage_bytes(
@@ -455,7 +476,7 @@ pub(super) async fn copy_analysis_sidecar(
         Ok(path) => path,
         Err(error) => {
             tracing::warn!(track_id, %error, "could not stage analysis sidecar data");
-            return false;
+            return Err(error.to_string());
         }
     };
     let result = runtime
@@ -469,15 +490,16 @@ pub(super) async fn copy_analysis_sidecar(
             planned.device_path.clone(),
             bytes.len() as u64,
             work.cancellable.clone(),
-            Rc::new(|_, _| {}),
+            copy_progress(runtime, work),
         )
         .await;
     reprise_core::device_sync::staging::discard(&temporary_path);
     if let Err(error) = result {
         tracing::warn!(track_id, device_path = planned.device_path, %error, "could not copy analysis sidecar to device");
-        return false;
+        return Err(format!("could not copy analysis sidecar: {error}"));
     }
-    true
+    work.log.copied(bytes.len() as u64);
+    Ok(bytes.len() as u64)
 }
 
 pub(super) async fn write_track_metadata_list(
@@ -511,7 +533,7 @@ pub(super) async fn write_track_metadata_list(
         "track-metadata",
         &bytes,
     )
-    .map_err(|error| format!("could not stage track metadata list: {error}"))?;
+    .map_err(|error| error.to_string())?;
     let result = runtime
         .backend
         .replace_track(

@@ -29,7 +29,20 @@ internal object NowPlayingShimmerSpec {
      * disc. Full desktop shimmer alpha lifted a measured near-white surround by 18 brightness
      * levels, so one factor reduces every term while preserving their tuned proportions.
      */
-    private const val PHONE_FOG_ALPHA_SCALE = 1f / 3f
+    const val OVER_FOG_SCALE = 1f / 3f
+
+    /**
+     * The disc over the artist portrait, which keeps the desktop's own terms.
+     *
+     * A film drifts below it there too, so the reduction above is not wrong about what
+     * is underneath. What differs is everything the played view puts on top: that one
+     * follows its film with a surface-wide vignette and two edge gradients, and the disc
+     * is read through them. The artist page draws no scrims — the album rows would go
+     * with them — so the same alpha arrives on screen at a third of the weight. Measured
+     * on a real phone at [OVER_FOG_SCALE] it read as a faint tint, near-white artwork
+     * included.
+     */
+    const val ON_BARE_SURFACE_SCALE = 1f
 
     private const val TURN_SECONDS = 60.0
     private const val DEGREES_PER_TURN = 360.0
@@ -48,10 +61,10 @@ internal object NowPlayingShimmerSpec {
         return (DEGREES_PER_TURN * wrappedTurns).toFloat()
     }
 
-    fun alpha(swell: Float, opacity: Float): Float =
+    fun alpha(swell: Float, opacity: Float, scale: Float = OVER_FOG_SCALE): Float =
         (
             REST_ALPHA + SWELL_ALPHA * NowPlayingFogSpec.normalizedSwell(swell)
-            ) * PHONE_FOG_ALPHA_SCALE * opacity.coerceIn(0f, 1f)
+            ) * scale * opacity.coerceIn(0f, 1f)
 }
 
 /** Draws the already masked texture; no artwork or mask work enters a frame. */
@@ -63,9 +76,10 @@ internal fun DrawScope.drawNowPlayingShimmer(
     swell: Float,
     opacity: Float,
     rotationsEnabled: Boolean,
+    alphaScale: Float = NowPlayingShimmerSpec.OVER_FOG_SCALE,
 ) {
     val prepared = fog ?: return
-    val alpha = NowPlayingShimmerSpec.alpha(swell, opacity)
+    val alpha = NowPlayingShimmerSpec.alpha(swell, opacity, alphaScale)
     if (alpha <= 0f) return
     val side = (NowPlayingShimmerSpec.diameterDp(coverDiameterDp) * density).roundToInt()
     val offset = IntOffset(

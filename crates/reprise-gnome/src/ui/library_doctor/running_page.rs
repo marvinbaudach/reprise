@@ -158,6 +158,7 @@ fn running_heading(kind: DoctorJobKind, phase: Option<DoctorScanPhase>) -> Strin
         (DoctorJobKind::Scan, None) => strings::DOCTOR_SCANNING,
         (DoctorJobKind::Apply, _) => strings::DOCTOR_UPDATING_TAGS,
         (DoctorJobKind::Revert, _) => strings::DOCTOR_REVERTING_TAGS,
+        (DoctorJobKind::TagEditor, _) => strings::TAG_EDITOR_SAVING,
     })
 }
 

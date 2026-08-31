@@ -309,7 +309,8 @@ result.
   from outside it.
 - **PLAY-3b** [active] [gtk] — Changing the filter afterward does not
   touch an already-built queue (the queue is a snapshot; visible in
-  "Queue").
+  "Queue"), except when completely clearing a filtered Music library
+  refinement rebinds it under PLAY-15.
 - **PLAY-4a** [active] [core] — Missing in lists: list playback and
   queue advance skip Missing silently.
 - **PLAY-4b** [active] [gtk] — Double-click on a concrete Missing row:
@@ -354,10 +355,11 @@ result.
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
   running item nor a snapshot that still has titles ahead of it; the
-  exhausted case belongs to PLAY-11. After the last context track, playback
-  ends with Repeat off unless an explicit manual entry or PLAY-11's new
-  full-library continuation follows; queue hygiene is governed by
-  PLAY-5a/5b/5c.
+  exhausted case belongs to PLAY-11, and completely clearing a filtered Music
+  library refinement is PLAY-15's narrow exception. After the last context
+  track, playback ends with Repeat off unless an explicit manual entry or
+  PLAY-11's new full-library continuation follows; queue hygiene is governed
+  by PLAY-5a/5b/5c.
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable
@@ -371,21 +373,21 @@ result.
   player placeholder, never a broken-image state.
 - **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
   while it still has titles ahead of it.** Later navigation, search, facets,
-  and clearing a filter never rewrite a snapshot with a future. Exception once
-  it is exhausted — nothing left ahead of the cursor: if the snapshot
-  originated in a search- or facet-filtered Music library and Music is now
-  completely unfiltered, Reprise continues from all existing library titles in
-  random order. **While a title is still playing, that continuation is bound in
-  at once**, the moment Music becomes unfiltered, so the queue stops reading
-  empty for the rest of the title; the running title keeps the cursor, is never
-  restarted or re-ordered, and every other library title follows it exactly
-  once. If the final title has already ended instead, a new random snapshot
-  starts on a title other than the one just finished — which may occur later in
-  it, but never starts it. Missing and deleted titles are excluded. If the
-  filter is still active, the origin was not the Music library, the visible list
-  is not the complete library, or no other title exists, playback ends as
-  before. Explicit Play Next entries retain priority and Repeat One/All
-  retain their existing queue behavior.
+  and clearing a filter never rewrite a snapshot with a future, except as
+  PLAY-15 provides. Exception once it is exhausted — nothing left ahead of the
+  cursor: if the snapshot originated in a search- or facet-filtered Music
+  library and Music is now completely unfiltered, Reprise continues from all
+  existing library titles in random order. **While a title is still playing,
+  that continuation is bound in at once**, the moment Music becomes unfiltered,
+  so the queue stops reading empty for the rest of the title; the running title
+  keeps the cursor, is never restarted or re-ordered, and every other library
+  title follows it exactly once. If the final title has already ended instead,
+  a new random snapshot starts on a title other than the one just finished —
+  which may occur later in it, but never starts it. Missing and deleted titles
+  are excluded. If the filter is still active, the origin was not the Music
+  library, the visible list is not the complete library, or no other title
+  exists, playback ends as before. Explicit Play Next entries retain priority
+  and Repeat One/All retain their existing queue behavior.
 - **PLAY-12** [active] [gtk] — **The player bar and the Now Playing panel have
   no dead surfaces.** The title, channel/artist line, and cover are links in
   every playback mode. What is playing is findable: each of the three surfaces
@@ -418,6 +420,21 @@ result.
   no predecessor. Rewinding is a seek, not a pipeline restart. After stepping
   back, Next returns to the item the jump left. History exists only at runtime
   and starts empty after launch.
+- **PLAY-15** [active] [gtk] — A snapshot born in a filtered Music library is
+  rebound the moment that view becomes completely unfiltered again, even while
+  it still has titles ahead. The running title keeps the cursor and is never
+  restarted; the now-unfiltered visible list follows it — in the view's own
+  order, or freshly shuffled behind the running title when shuffle is on. The
+  exhausted case stays PLAY-11's. Any other filter change — narrowing, swapping
+  a facet, typing in the search field — leaves the snapshot alone, as PLAY-3b
+  and PLAY-8 require. Repeat One/All are never rebound; Missing and deleted
+  titles are excluded.
+- **PLAY-16** [active] [gtk] — The play button in the player bar and the mini
+  player paints the playback accent with a white glyph. It is the playback
+  identity shared with the running marker and the equalizer bars, and is
+  deliberately exempt from the 3:1 that CONTRAST-5a would otherwise impose on
+  a non-text accent-surface control. The app-accent pairing measures 1.69:1;
+  the exemption records that cost rather than hiding it.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
@@ -640,11 +657,15 @@ result.
   actually performing. The run opens on the step that will do the first
   visible work — its first transfer, or its playlists, or its removals —
   never on a step scheduled for later.
-- **MTP-19** [active] [core] — A failed track holds back only what depends
-  on it. A playlist is left unwritten exactly when it would point at a track
-  that never arrived; every other playlist is published. Removals wait until
-  every planned playlist has been rewritten, because an older playlist left
-  on the device may still reference a file that is about to be deleted.
+- **MTP-19** [active] [core] — A track whose file did not reach the device
+  holds back only what depends on it. A playlist that would point at it is
+  published without that entry, so a published playlist names only files the
+  device really has; the lost track returns on the next run that delivers it.
+  A later inventory failure still fails the run but keeps the entry for the
+  file already published on the device.
+  Removals wait until every planned playlist has been rewritten, because an
+  older playlist left on the device may still reference a file that is about
+  to be deleted.
 - **MTP-20** [active] [core] [gtk] — Every synchronization run is recorded,
   so what a past run did can be answered afterwards instead of guessed. The
   entry opens when the run starts and names the device, the transfer profile
@@ -1307,8 +1328,11 @@ result.
   The footer costs the dialog height, never width, and the fixed columns are
   budgeted so the description states its count in full instead of truncating
   to the plugin name it already sits next to.
-  A row's cancel stops that job and nothing else. While the online-content gate
-  is off the bar lists no rows and says so instead. The main window's own scan
+  A row's cancel stops that job and nothing else. While no job runs, the whole
+  footer is hidden; it never leaves a title-only placeholder. While the
+  online-content gate is off, the bar replaces activity that would otherwise
+  be visible with one reason, but an idle gate-off state still hides the whole
+  footer. The main window's own scan
   card stays where it is, in its own layer under the dialog, and is never
   reparented into it (`docs/plans/plugins-online-content-master-hierarchy.md`).
 - **FB-1** [planned] [core] — Two-class toasts (pill, bottom-centered,
@@ -1421,6 +1445,13 @@ result.
   Continuous gear rotation and indeterminate pulsing obey the central
   reduced-motion gate and remain statically legible when animations are
   disabled.
+  Narrow initial-sync exception: a newly added source row may grow from its
+  resting height to a fixed-height, three-line account of that source's first
+  sync. Its height stays unchanged across every progress and failure state and,
+  on completion, returns to the resting row height with the Standard 250 ms
+  shrink rather than jumping. With reduced motion it swaps immediately. This
+  exception applies only while the row is being established; it does not permit
+  later jobs or variable detail lists to reflow an existing row.
   Named exception: the shared source-error banner of NR-21, CONC-11,
   POD-19, RAD-2 and NET-3 may still be inserted above a populated view and
   removed again when the next refresh succeeds. This is a documented
@@ -1468,6 +1499,25 @@ result.
   action completed without naming the action, leaving any adjacent Undo
   without a subject. The measured trigger was a YouTube title containing `&`
   on 2026-08-23.
+- **FB-12** [planned] [gtk] — Every wait that the user started has a visible
+  owner that names what is being loaded. When the wait belongs to one row,
+  card or entry, that element carries it (FB-9 (3)); a global status line is
+  the fallback for work that belongs to no single element, never the primary
+  answer. A placeholder that shows a resting value while its real value is
+  still being fetched is prohibited: "0 episodes" while the feed is being
+  read is a false statement, not a neutral default. This rule binds all future
+  network-backed lists.
+  Named exception: NR-2a's cover tile. The Updates feed and the Releases and
+  Concerts tables deliberately show one muted initials tile for both a
+  permanently missing cover and one still being fetched
+  (`updates/release_cover.rs`), naming neither. That is a shipped, tested
+  `[active]` behaviour and a considered choice — an immediate tile beats a
+  spinner for a cover that usually resolves within a frame — not an oversight
+  this rule may quietly overrule. It is carried the way FB-9 carries its five
+  banners: as a documented deviation, not a second sanctioned pattern. Before
+  this rule may be promoted to `[active]`, the conflict is settled explicitly —
+  either NR-2a distinguishes its two states, or this exception is written into
+  the promoted rule. No new surface may cite it.
 
 ## H. File association & OS integration
 
@@ -2929,6 +2979,15 @@ property is set and yet nothing happens.
   shut and writes no module; clearing every source behind an open gate closes
   it and writes those three modules off. An existing library never sees the
   wizard and keeps the banner.
+- **NET-4b** [active] [android] — On Android the artist-photo question is asked
+  by exactly one dismissible banner in the Library, shown whenever the global
+  gate is off, the question has not been settled, and the library holds at
+  least one artist. It carries "Download artist photos" and "Not now"; either
+  one settles the question for good, and the permanent path stays Settings →
+  Online sources. It is never a modal or a toast, and never appears while the
+  gate is already on. Unlike the `NET-4` banner it enables directly instead of
+  pointing at the settings page, because Android has a single online switch
+  and the banner already names what is sent.
 - **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
   gate is open and the device is online immediately starts exactly one fresh
   cover pass through the same Preferences transition used by Plugins and the
@@ -3117,7 +3176,14 @@ property is set and yet nothing happens.
   library after the cover batch, after completed library scans, and the moment
   the module is switched on — switching it on starts the run once; a further
   settings change while it is already on never restarts a run in progress, and
-  switching it off only stops one. Tracks
+  switching it off only stops one. An automatic run covers only tracks added to
+  the library or changed on disk since the last **completed** run; a library
+  that has never completed one, a library whose last full sweep is more than
+  30 days old, and every run started by switching the module on cover the
+  present library in full. A run that is cancelled or fails does not advance
+  that mark, so its unreached tracks belong to the next run; a full sweep
+  defers the next scheduled one from the moment it starts, whether or not it
+  finishes. Tracks
   with local lyrics, complete positive cache entries, or fresh negative
   entries are skipped; a cached plain result is retried for synchronized text
   at most once per seven-day negative-TTL window. Provider requests keep at
@@ -3273,15 +3339,19 @@ property is set and yet nothing happens.
   order, or widths nor the sort. "Show columns" restores the user's
   configuration in the narrow window; additional width is then scrolled
   exclusively horizontally within the table.
-- **STYLE-7** [active] [gtk] — If the library window is shrunk or snapped
-  to a width where both flanks visibly displace the main content, the left
-  library sidebar and the right Now Playing panel close together in the
-  same responsive transition. A 10s undo toast restores exactly the state
-  of both flanks before the shrinking; later widening also restores this
-  state, provided the user did not change the flanks themselves in the
-  narrow window. Responsive changes never overwrite a stored sidebar or
-  panel preference, and both header toggles remain reachable for manual
-  reopening.
+- **STYLE-7** [active] [gtk] — The left library sidebar is a structural
+  column, not a responsive one: no window width closes it, hides it, or
+  turns it into an overlay over the content. If the library window is
+  shrunk or snapped to a width where the flanks visibly displace the main
+  content, only the right Now Playing panel closes. A 10s undo toast
+  restores exactly the state of both flanks before the shrinking; later
+  widening also restores this state, provided the user did not change the
+  flanks themselves in the narrow window. Unless the user has undone the
+  constraint in that narrow window, the exclusion runs one way: opening the
+  sidebar closes the Now Playing panel, while opening the Now Playing panel
+  leaves the sidebar exactly where the user left it. Responsive changes never
+  overwrite a stored sidebar or panel preference, and both header toggles
+  remain reachable for manual reopening.
 - **STYLE-8** [active] [gtk] — Reprise has one effective accent color for
   every accent role. Appearance offers exactly two sources between Theme and
   Color Scheme: the Reprise app accent `#4FDBD4`, which is the default, and
@@ -3309,8 +3379,8 @@ property is set and yet nothing happens.
   learned in the music library is the same behaviour in Releases, Concerts
   and Radio — a user does not experience a missing editor there as an absent
   feature but as the app forgetting what it taught them. The same editor is
-  reachable without a pointer through the primary menu's "Edit column
-  layout…", which addresses the table of the active view and is insensitive
+  reachable without a pointer through the primary menu's "Customize
+  table…", which addresses the table of the active view and is insensitive
   where no table is shown. Order, visibility and header-dragged widths are
   stored per table and survive a restart. A table may declare fixed columns
   — a leading artwork column, a trailing action column on a surface without
@@ -3373,21 +3443,23 @@ property is set and yet nothing happens.
   indicator is invisible while its width stays reserved, so headers do not
   jump. A header without a sort field carries no sorter and therefore does not
   appear clickable; a sortable header orders its own column. **Issue #404:**
-  sorting is also reachable without a pointer through a labelled control in
-  the browse bar. Its field and direction choices are labelled, keyboard
-  navigable, and expose the current choice as state. The browse-bar control
-  and the sortable column headers drive the same `ColumnView` sorter; neither
-  writes or owns a second sort state. **Test rule:**
+  sorting is also reachable without a pointer through the labelled table
+  customization surface, reached from the primary menu and by right-clicking
+  the header band. It covers every table with sortable columns. Its field and
+  direction choices are labelled, keyboard navigable, and expose the current
+  choice as state. The customization surface and the sortable column headers
+  drive the same `ColumnView` sorter; neither writes or owns a second sort
+  state. **Test rule:**
   one rule-named display test per table, plus a measured filler test. Tests:
-  `style_13_browse_sort_and_header_click_converge_and_reload_once`
-  and `style_13_header_sort_is_marked_when_the_sort_popover_opens`
+  `style_13_table_customization_sort_and_header_click_converge_and_reload_once`
+  and `style_13_header_sort_is_marked_when_table_customization_opens`
   (`ui/track_list/track_list_sort.rs`),
   `style_13_sort_choices_match_every_accepted_table_sort_field`,
   `style_13_sort_choices_are_keyboard_radio_actions`, and
   `style_13_sort_popover_closes_on_escape`
-  (`ui/browse/browse_bar_tests.rs`),
+  (`ui/table_columns/editor.rs`),
   `style_13_hiding_the_sorted_column_keeps_a_visible_sort_indicator`
-  (`ui/table_columns/registry.rs`),
+  (`ui/table_columns/registry_sort_tests.rs`),
   `nr_39_the_column_editor_lists_status_and_link_and_hides_them` and
   `two_release_sorts_leave_one_indicator`
   (`ui/releases/releases_view_tests.rs`),
@@ -3429,12 +3501,27 @@ property is set and yet nothing happens.
   translucent content respectively. Artist, time, search field, and header
   actions are active content; only disabled or purely decorative elements
   are allowed to fall below that.
-- **CONTRAST-5** [active] [gtk] — An accent used as a text or glyph foreground
-  reaches at least 4.5:1 against the critical surface of the current light or
-  dark appearance. The foreground is derived from the effective app or system
-  accent by adjusting OKLab lightness; themes and feature CSS never type their
-  own accent foreground. Accent-colored surfaces are outside this rule and
+- **CONTRAST-5** [replaced by CONTRAST-5a] — An accent used as a text or glyph
+  foreground reaches at least 4.5:1 against the critical surface of the current
+  light or dark appearance. The foreground is derived from the effective app or
+  system accent by adjusting OKLab lightness; themes and feature CSS never type
+  their own accent foreground. Accent-colored surfaces are outside this rule and
   continue to pair with `accent_fg_color`.
+- **CONTRAST-5a** [active] [gtk] — As CONTRAST-5, and the critical surface is
+  pinned: it is the palette surface tinted by `tokens::ACCENT_TINT_CEILING`, the
+  **heaviest accent-tinted background any rule in the app may paint**. "Critical
+  surface" left as a judgement call is what let the checked player-bar toggle
+  ship at 2.97:1 with the whole contrast suite green — the role was derived
+  against the filter chip's tint while the toggle filled almost twice as far.
+  Two obligations follow, and both are enforced rather than reviewed. A fill
+  louder than the ceiling is a bug in the fill, not in the ceiling: the fill
+  yields, the accent stays itself. And the ceiling itself is bounded from above
+  — past it, a heavy tint of a near-white system accent lifts a dark surface to
+  mid-grey, the lightness search leaves the sRGB gamut, and the monochrome
+  fallback silently drops the brand hue app-wide while every ratio still passes.
+  PLAY-16 is the explicit exception: the play buttons keep the playback accent
+  and white glyph as product identity, with their measured 1.69:1 cost recorded
+  there rather than claimed as this rule's accent-surface carve-out.
 - **NAV-10** [replaced by NAV-10a] — The running context stays visible in
   all views with a shared playback-accent marker; on first entry into a
   view it is revealed once, later switches restore NAV-5's remembered
@@ -3995,6 +4082,13 @@ STYLE-1).
   big Play/Pause button is the primary action and may respond more
   visibly on press than its neighbors: an additional ring in the playback
   accent.
+- **BTN-5** [active] [gtk] — A **primary action that cannot be taken drops its
+  accent surface** instead of dimming it. Dimming a filled button leaves the
+  near-black accent foreground on a mid-dark tint of the accent — measured at
+  about 2.5:1, and the reason an insensitive "Sync now" was unreadable. The
+  missing surface is the state signal, so the label stays at the secondary text
+  level and readable. Disabled controls are exempt from CONTRAST-3's ratio;
+  that exemption is not a licence to make them illegible.
 - **BTN-4** [active] [gtk] — Hover, Active and Focus are defined **once**
   (`ui/style/buttons.rs`) and applied everywhere, via class or — where
   Adwaita builds the buttons internally — via selector from the same
@@ -4418,6 +4512,20 @@ means deterministic and high-confidence, never „without review".
   only after full completion. Cheap staleness checking flags changed
   rows on reopening, exact revalidation follows before writing. Newly
   added tracks are not retroactively taken into the snapshot.
+  *Amended 2026-08-30: the start page can no longer produce an invalid
+  invocation context, because every scan it starts is Whole Library. A
+  Selection scan from "Unify spellings" can still lose its tracks between the
+  click and the freeze; that run ends and visibly says the tracks are gone
+  instead of falling back to a whole-library scan nobody asked for.
+  `ScopeFallbackRequired` remains a Core outcome reported to its caller, and
+  the agent surface still turns every non-`Completed` outcome into an error.
+  The clause "An invalid or emptied invocation context visibly falls back to
+  Whole Library" is void; every caller now treats `ScopeFallbackRequired` as a
+  terminal, user-visible outcome.* *Tests:*
+  `doc_2a_scope_freezes_present_track_ids`,
+  `doc_2a_last_complete_scan_survives_restart`,
+  `doc_2a_a_stored_selection_scan_still_names_its_scope`,
+  `doc_2a_a_scope_fallback_ends_the_job_without_retrying`.
 
 - **DOC-2b** [active] [gtk] — **The result page is a summary of three
   meanings, never a write surface.** After a scan the Doctor shows at most
@@ -4654,7 +4762,10 @@ means deterministic and high-confidence, never „without review".
   repeated Doctor entry during a running job navigates to that job
   instead of starting a second one. Scope, remote toggle, and scan
   action are locked during the job and explain the running job; Cancel
-  lives exclusively on its progress surface.
+  lives exclusively on its progress surface. *Amended 2026-08-31: the start
+  page no longer has a scope control. The locking clause now reads: remote
+  toggle and scan action are locked during the job and explain the running
+  job.*
 
 - **DOC-7a** [replaced by DOC-7c] [gtk] — **Local checks are an available tool;
   network stays opt-in.** Library Doctor has no main switch and its
@@ -4713,13 +4824,21 @@ means deterministic and high-confidence, never „without review".
   `doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view`,
   `doc_7c_the_doctor_uses_the_shared_window_chrome`,
   `doc_7c_the_review_page_carries_no_provider_toggle`,
-  `doc_7c_a_second_review_session_replaces_the_first`.
+  `doc_7c_a_second_review_session_replaces_the_first`,
+  `doc_7c_the_start_page_offers_no_scope_choice`,
+  `doc_7c_unify_spellings_scans_its_group_without_the_start_page`.
   *Amended 2026-08-15: the search action is the single exception to both
   sentences above. It stays hidden on Start and Result and is revealed on
   Review, which is searchable per DOC-12a, so the clause "Review places only
   its 'All' and 'None' actions there" reads "only its selection actions and
   its search action". The Library-only source title and the scan action stay
   hidden on every Doctor page.*
+  *Amended 2026-08-30: the start page owns no scope choice. It owns the remote
+  switch, "Run Scan Now" and the only "Revert Last Cleanup", and every scan it
+  starts covers the whole library; the clause "Scope is not persistent" is
+  void. Selection survives without a selector: "Unify spellings" in My Stats
+  scans exactly that group's tracks and goes straight to the running screen,
+  never through Start. `music_scan_tags` keeps all three scopes per DOC-2a.*
 
 - **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
   the noun.** The global ⋮ menu is the only way to start a scan. While a
@@ -4788,7 +4907,10 @@ means deterministic and high-confidence, never „without review".
   sheet. "Run Scan Now" is the single primary action, with a track count and
   rough duration beside it. Below a separator, and only while a revertible
   cleanup exists, are the last-scan line and the only "Revert Last Cleanup"
-  action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
+  action. *Amended 2026-08-31: the segmented-control sentence is void. The
+  start page is composed of the remote toggle, "Run Scan Now", and the
+  conditional "Revert Last Cleanup" line.* *Tests:*
+  `doc_8c_start_page_carries_remote_run_and_the_only_revert`,
   `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`,
   `doc_8c_every_count_on_the_start_page_inflects`.
 
@@ -5647,13 +5769,21 @@ grammar for location, filtering, adding, and reversible removal.
 External media remains structurally outside the track queue and the
 listening statistics.
 
-- **SRC-1** [active] [gtk] — Podcasts and radio sit in the LIBRARY
-  section between Music and Queue and appear only when the module is
-  active. The podcast counter shows unplayed episodes, the radio
-  counter shows favorites; zero stays invisible. Radio is active by
-  default because it only transmits on user action; the binding
-  condition is a radio empty state with exactly one directly reachable
-  "Add station" action.
+- **SRC-1** [replaced by SRC-1a] [gtk] — Original rule; its counter half
+  read the podcast number as unplayed episodes, which made two of the
+  three sibling rows count something the third one does not.
+- **SRC-1a** [active] [gtk] — Podcasts, YouTube and radio sit in the
+  LIBRARY section between Music and Queue and appear only when the
+  module is active. Each of the three counters shows its own inventory:
+  how many shows are subscribed, how many channels are followed, how
+  many stations are favorites — never how much is still unheard. A
+  number that also falls when something is played reads as a backlog the
+  user never asked for, and the three rows would then answer three
+  different questions with the same badge; the unplayed count stays
+  where it is usable, in the view's Unplayed filter (`SRC-2`). Zero
+  stays invisible. Radio is active by default because it only transmits
+  on user action; the binding condition is a radio empty state with
+  exactly one directly reachable "Add station" action.
 - **SRC-2** [active] [gtk] — Adding uses a tinted rectangular button
   with a label and radius 8 in both sources, never the chip shape. The plus was
   never rendered on the podcast side because setting its label replaced the
@@ -5725,9 +5855,14 @@ listening statistics.
   count as a compact addition ("62.4k subscribers", "1.2M subscribers") as soon
   as the channel publishes it. It is an optional addition and never replaces
   the existing hit count. Missing, hidden or malformed values are **omitted** —
-  never rendered as zero and never as "unknown". The number comes from the
-  search subprocess that already runs; there is no additional query per
-  channel.
+  never rendered as zero and never as "unknown". Results render before counts.
+  A second, bounded wave makes one playlist-head request per discovered
+  channel, with at most four requests in flight, a 15-second per-channel
+  timeout, a 20-second pass budget and at most 20 channels. The complete wave
+  patches the existing rows together instead of rebuilding or trickling them
+  in. A failed or timed-out request is deliberately indistinguishable from a
+  hidden count: the optional segment stays absent and search success remains
+  undisturbed.
 - **SRC-10** [active] [gtk] — The genuine "nothing added yet" empty state
   carries the same geometry for Podcasts, YouTube and Radio: the glyph of its
   own sidebar entry in a muted rounded tile, a title, a paragraph with one
@@ -6090,6 +6225,18 @@ listening statistics.
   matched, so the explanation names none. The marker keeps its space while the
   title ellipsizes and cannot widen the dialog (`SRC-8`). Country charts have
   no query and therefore no marker.
+- **SRC-23** [active] [gtk] — **Add Channel keeps relevance as its default and
+  offers explicit subscriber ordering.** A YouTube-only "Largest first" toggle
+  sits beside the result heading and resets for every submitted search. It
+  stays sensitive and focusable while subscriber counts are pending, so a user
+  can set and hear the intended state without losing the control from AT-SPI
+  traversal; no row moves until the complete count wave arrives. Active order
+  places published counts descending first, keeps provider relevance order for
+  equal counts, and appends every missing count in its original relevance
+  order — never treating absence as zero. Inactive order is provider relevance.
+  Either order moves the existing row roots without rebuilding them, so the
+  result list changes at most once when the wave arrives and never eats an
+  in-flight row action.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. Resume positions belong only to RSS
@@ -6411,6 +6558,27 @@ listening statistics.
   channel tail the row deliberately dims (POD-15) remains part of the stored
   and searched episode title, so a hit inside that tail is accented too while
   the surrounding tail stays dim.
+- **POD-26** [active] [gtk] — A newly added podcast or YouTube channel owns its
+  initial-sync status in its source row, never in the shared footer. Each
+  subscription has its own row and the row always carries exactly three lines:
+  source added, feed reading with the live episode count, and artwork fetching.
+  Done, active, pending and failed states change those fixed lines in place;
+  failure replaces the active feed line with "Couldn't read feed" and offers
+  Retry rather than adding a fourth line. The fixed 40 x 40 cover in its
+  64 x 40 slot admits that artwork is pending with the source glyph, shimmer
+  and pulse. The row uses the current accent roles for its border and gradient,
+  stays collapsed and cannot be expanded during sync, and Cancel aborts the
+  per-subscription pipeline before that removed subscription can commit
+  episodes. Completion crossfades the progress to the facts line for 250 ms,
+  then animates the row back to the shared 56 px minimum over 250 ms. Reduced
+  motion uses static indicators, no shimmer, pulse, spin or shrink animation,
+  and swaps immediately.
+  Tests: `pod_26_each_loading_row_names_three_stable_steps_and_owns_its_failure`,
+  `pod_26_completion_crossfades_before_the_row_shrinks_to_the_shared_height`,
+  `pod_26_reduced_motion_uses_a_static_indicator_and_no_cover_motion`, and
+  `pod_26_the_rows_cancel_action_trips_the_core_abort_handle`
+  (`ui/podcasts/podcasts_sync_row_display_tests.rs` and
+  `ui/podcasts/tests/podcasts_view_sync_tests.rs`).
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

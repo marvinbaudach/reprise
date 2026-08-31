@@ -235,6 +235,32 @@ A Flathub build gets none of this: Flathub builds from the public manifest
 rather than from this workflow, so that channel falls back to per-user
 credentials. See issue #622.
 
+## Bundled AcoustID credential
+
+The Library Doctor's audio fingerprinting looks recordings up at
+`https://api.acoustid.org/v2/lookup` with an application key compiled in the
+same way (`crates/reprise-core/src/library/library_doctor/remote/network.rs`).
+
+**Unlike Last.fm, there is no per-user fallback.** `acoustid_request` returns
+`RemoteProviderError::Unavailable` outright when `BUNDLED_ACOUSTID_CLIENT_KEY`
+is `None`, and the start page then reports "AcoustID Unavailable". A build
+without this key ships with fingerprinting off and no way for the user to turn
+it on, so dropping it silently is worse here than it is for Last.fm.
+
+The Actions repository secret is named exactly `REPRISE_ACOUSTID_CLIENT_KEY`,
+and it travels the same route as the Last.fm pair above: `release.yml` passes it
+to the Flatpak build step, `scripts/inject-build-credentials.py` writes it into
+the checked-out manifest's `build-options.env`, and everything said about
+sandboxes, anchors, caching and log hygiene applies unchanged.
+
+Register the application at <https://acoustid.org/new-application> (sign in with
+a MusicBrainz, Google or OpenID account). Take the *application* API key, not
+the user API key from <https://acoustid.org/api-key> — that one is only for
+submitting fingerprints, and Reprise only performs lookups.
+
+Flathub is affected the same way and more sharply: it builds from the public
+manifest, so fingerprinting stays off there with no user-side remedy.
+
 ## Bundled Ticketmaster credential
 
 To bundle a Ticketmaster Discovery API key in a local release, inject it into

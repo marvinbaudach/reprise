@@ -190,6 +190,7 @@ fn nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one() {
         samples.len() >= MIN_SAMPLES,
         "the sampler did not cover the delete/follow journey; {sample_report}"
     );
+    // Range-derived height only bounds the jump; it is not the target oracle.
     let row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
     assert!(
         minimum > playing_centre - row_height * 2.0,

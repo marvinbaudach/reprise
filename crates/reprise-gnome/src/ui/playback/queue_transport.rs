@@ -100,17 +100,21 @@ fn toggle_action(
 ) -> ToggleAction {
     match (status, current_track, has_pending) {
         (MprisPlaybackStatus::Stopped, Some(_), _) => {
-            ToggleAction::StartCurrent(if restored_placement_intact {
-                CurrentTrackChange::PlaybackStarted
-            } else {
-                CurrentTrackChange::ExplicitTransport
-            })
+            ToggleAction::StartCurrent(restored_start_change(restored_placement_intact))
         }
         (MprisPlaybackStatus::Stopped, None, true) => ToggleAction::StartPending,
         (MprisPlaybackStatus::Stopped, None, false) => ToggleAction::StartRandom,
         (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _, _) => {
             ToggleAction::TogglePipeline
         }
+    }
+}
+
+pub(super) fn restored_start_change(restored_placement_intact: bool) -> CurrentTrackChange {
+    if restored_placement_intact {
+        CurrentTrackChange::PlaybackStarted
+    } else {
+        CurrentTrackChange::ExplicitTransport
     }
 }
 
@@ -266,6 +270,41 @@ impl PlayerController {
         self.feed_next();
     }
 
+    pub(in crate::ui) fn start_current_item(
+        self: &Rc<Self>,
+        item: QueueItem,
+        change: CurrentTrackChange,
+    ) {
+        let id = item.id();
+        let playable = match item {
+            QueueItem::Track(id) => {
+                reprise_core::queries::query_live_track_ids(&self.conn).map(|ids| ids.contains(&id))
+            }
+            QueueItem::Episode(id) => {
+                reprise_core::queries::query_available_episode_ids(&self.conn)
+                    .map(|ids| ids.contains(&id))
+            }
+        };
+        match playable {
+            Ok(true) => {
+                self.present_queue_item(
+                    item,
+                    crate::ui::player_controller::StartPlayback::Yes,
+                    change,
+                );
+            }
+            Ok(false) => self.advance_playback(AdvanceReason::Manual),
+            Err(error) => {
+                tracing::error!(%error, id, "could not validate restored current track; trying it directly");
+                self.present_queue_item(
+                    item,
+                    crate::ui::player_controller::StartPlayback::Yes,
+                    change,
+                );
+            }
+        }
+    }
+
     /// Starts the restored queue's current track while stopped; otherwise
     /// toggles the already-loaded pipeline. Shared by the bar, Space, and
     /// MPRIS PlayPause, without ever introducing startup autoplay.
@@ -291,35 +330,7 @@ impl PlayerController {
         ) {
             ToggleAction::StartCurrent(change) => {
                 if let Some(item) = current {
-                    let id = item.id();
-                    let playable = {
-                        match item {
-                            QueueItem::Track(id) => {
-                                reprise_core::queries::query_live_track_ids(&self.conn)
-                                    .map(|ids| ids.contains(&id))
-                            }
-                            QueueItem::Episode(id) => {
-                                reprise_core::queries::query_available_episode_ids(&self.conn)
-                                    .map(|ids| ids.contains(&id))
-                            }
-                        }
-                    };
-                    match playable {
-                        Ok(true) => self.present_queue_item(
-                            item,
-                            crate::ui::player_controller::StartPlayback::Yes,
-                            change,
-                        ),
-                        Ok(false) => self.advance_playback(AdvanceReason::Manual),
-                        Err(error) => {
-                            tracing::error!(%error, id, "could not validate restored current track; trying it directly");
-                            self.present_queue_item(
-                                item,
-                                crate::ui::player_controller::StartPlayback::Yes,
-                                change,
-                            );
-                        }
-                    }
+                    self.start_current_item(item, change);
                 }
             }
             ToggleAction::StartPending => self.advance_playback(AdvanceReason::Manual),

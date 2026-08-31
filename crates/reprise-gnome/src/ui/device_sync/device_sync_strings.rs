@@ -29,6 +29,8 @@ pub(super) const JUST_NOW: &str = N_!("just now");
 pub(super) const MINUTES_AGO: &str = N_!("{minutes} min ago");
 pub(super) const HOURS_AGO: &str = N_!("{hours} h ago");
 pub(super) const DAYS_AGO: &str = N_!("{days} d ago");
+const UNDATED_DEVICE_INVENTORY: &str =
+    N_!("{size} in the saved device inventory · Verification time unavailable for these counts");
 
 /// Spinner tooltip while syncing, e.g. "Syncing Pixel 8 · 42%".
 pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {
@@ -55,6 +57,11 @@ pub fn rename_requires_durable_identity() -> String {
     text(RENAME_REQUIRES_DURABLE_IDENTITY)
 }
 
+pub fn undated_device_inventory(size_bytes: u64) -> String {
+    let size = file_size(size_bytes);
+    formatted(UNDATED_DEVICE_INVENTORY, &[("size", &size)])
+}
+
 /// TIP-2a: a disabled eject keeps its tooltip and appends the reason.
 pub fn eject_tooltip(syncing: bool) -> String {
     text(if syncing {
@@ -74,6 +81,9 @@ pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
 /// deliberately names the files in a separate translation unit.
 pub const SYNCING_FILE_COUNT: &str = N_!("Syncing · {completed} / {total}");
 pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
+const PLAYLIST_SELECTION_LOCKED: &str = N_!(
+    "Playlist selection is locked while this device is synchronizing; wait for synchronization to finish before changing it."
+);
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
 pub const PLAYLISTS: &str = N_!("Playlists");
@@ -89,6 +99,10 @@ pub const KEEP_SMART_PLAYLISTS_UPDATED: &str = N_!("Keep smart playlists up to d
 pub const UNAVAILABLE_PLAYLIST: &str = N_!("Unavailable playlist");
 pub const PICKER_FOOTER: &str = N_!("{selected} selected · {content} · {size}");
 pub const TRACKS: &str = N_!("{count} tracks");
+
+pub fn playlist_selection_locked_reason() -> String {
+    text(PLAYLIST_SELECTION_LOCKED)
+}
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
@@ -119,16 +133,17 @@ pub fn track_progress(completed: usize, total: usize) -> String {
     )
 }
 
-/// Rough USB throughput used for the remaining-time hint — the same
-/// assumption the delta card's estimate is built on, so both agree.
-const ESTIMATED_BYTES_PER_SECOND: u64 = 5 * 1_024 * 1_024;
-
 /// `98 %` — kept in its own label (never folded into the subtitle) so the
 /// track text beside it cannot make the number jump around.
-pub fn sync_percent(bytes_done: u64, bytes_total: u64) -> String {
-    let percent = bytes_done
+pub fn sync_percent(done: u32, total: u32, unit_bytes_done: u64, unit_bytes_total: u64) -> String {
+    let completed = u64::from(done).saturating_mul(100);
+    let interpolated = unit_bytes_done
         .saturating_mul(100)
-        .checked_div(bytes_total)
+        .checked_div(unit_bytes_total)
+        .unwrap_or(0);
+    let percent = completed
+        .saturating_add(interpolated)
+        .checked_div(u64::from(total))
         .unwrap_or(0)
         .min(100);
     formatted(N_!("{percent} %"), &[("percent", &percent.to_string())])
@@ -149,6 +164,7 @@ pub fn sync_tooltip(
     total: u32,
     bytes_done: u64,
     bytes_total: u64,
+    remaining: Option<std::time::Duration>,
     current_track: &str,
 ) -> String {
     let mut parts = vec![
@@ -161,33 +177,13 @@ pub fn sync_tooltip(
             ],
         ),
     ];
-    if let Some(remaining) = remaining_hint(bytes_done, bytes_total) {
-        parts.push(remaining);
+    if let Some(remaining) = remaining {
+        parts.push(rate_and_remaining(0, Some(remaining)));
     }
     if !current_track.is_empty() {
         parts.push(current_track.to_string());
     }
     parts.join(" · ")
-}
-
-fn remaining_hint(bytes_done: u64, bytes_total: u64) -> Option<String> {
-    let remaining = bytes_total
-        .checked_sub(bytes_done)
-        .filter(|left| *left > 0)?;
-    let seconds = remaining.div_ceil(ESTIMATED_BYTES_PER_SECOND);
-    let text = if seconds >= 60 {
-        let minutes = seconds.div_ceil(60);
-        formatted(
-            N_!("~{minutes} min left"),
-            &[("minutes", &minutes.to_string())],
-        )
-    } else {
-        formatted(
-            N_!("~{seconds} s left"),
-            &[("seconds", &seconds.max(1).to_string())],
-        )
-    };
-    Some(text)
 }
 
 pub fn file_size(bytes: u64) -> String {
@@ -409,6 +405,10 @@ const DEVICE_POLICY_FROZEN: &str =
 const STORAGE_LEGEND: &str =
     N_!("Reprise music {music} · this run +{this_run} · Other {other} · {free} free");
 const STORAGE_INSUFFICIENT: &str = N_!("Not enough space · {free} free · {shortfall} more needed");
+const NEXT_CONNECTION_PREVIEW: &str =
+    N_!("Next connection: {copies} · {replacements} · {playlists} · {size} to transfer");
+const OFFLINE_REMOVAL_NOTE: &str =
+    N_!("Files to remove are settled when the device is next inspected.");
 
 pub fn legacy_media_notice(path: &str) -> String {
     formatted(LEGACY_MEDIA_NOTICE, &[("path", path)])
@@ -425,6 +425,43 @@ pub fn device_balance(playlists: usize, tracks: &str, size: &str) -> String {
             ("size", size),
         ],
     )
+}
+
+pub fn offline_change_preview(
+    additions: usize,
+    replacements: usize,
+    playlist_writes: usize,
+    transfer_bytes: u64,
+) -> String {
+    let copies = plural(
+        "{count} file to copy",
+        "{count} files to copy",
+        additions,
+        &[("count", &additions.to_string())],
+    );
+    let replacements = plural(
+        "{count} replacement",
+        "{count} replacements",
+        replacements,
+        &[("count", &replacements.to_string())],
+    );
+    let playlist_writes = plural(
+        "{count} playlist write",
+        "{count} playlist writes",
+        playlist_writes,
+        &[("count", &playlist_writes.to_string())],
+    );
+    let size = file_size(transfer_bytes);
+    let preview = formatted(
+        NEXT_CONNECTION_PREVIEW,
+        &[
+            ("copies", &copies),
+            ("replacements", &replacements),
+            ("playlists", &playlist_writes),
+            ("size", &size),
+        ],
+    );
+    format!("{preview} · {}", text(OFFLINE_REMOVAL_NOTE))
 }
 
 fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -> String {

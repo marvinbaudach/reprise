@@ -228,6 +228,65 @@ impl FeedFetcher for UnavailableOfficialFeed {
     }
 }
 
+struct UnchangedOfficialFeed;
+
+impl FeedFetcher for UnchangedOfficialFeed {
+    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
+        panic!("YouTube refresh must not use the subscription fetch boundary")
+    }
+
+    fn fetch_url(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> Result<Response, PodcastError> {
+        Err(PodcastError::NotModified)
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+#[test]
+fn resolved_handle_is_adopted_when_the_official_feed_is_not_modified() {
+    let conn = conn();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://www.youtube.com/@show".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+
+    let summary = refresh_to_root(
+        &conn,
+        &UnchangedOfficialFeed,
+        &HandleYoutube,
+        10,
+        R::force(),
+        directory.path(),
+    )
+    .unwrap();
+
+    assert_eq!(summary.not_modified, 1);
+    assert_eq!(
+        store::subscription(&conn, subscription_id)
+            .unwrap()
+            .unwrap()
+            .feed_url,
+        "https://www.youtube.com/channel/UCresolved"
+    );
+}
+
 struct DatedFlatPlaylist;
 
 impl YoutubeFetcher for DatedFlatPlaylist {

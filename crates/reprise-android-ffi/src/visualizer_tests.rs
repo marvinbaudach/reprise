@@ -218,7 +218,9 @@ fn stereo_pcm_is_averaged_to_mono_instead_of_summed() {
     let mono = AndroidVisualEngine::with_clock(mono_clock.clone());
     mono.set_playing(true);
     let mono_pcm = stereo_pcm
-        .chunks_exact(2 * size_of::<i16>())
+        .as_chunks::<{ 2 * size_of::<i16>() }>()
+        .0
+        .iter()
         .flat_map(|frame| frame[..size_of::<i16>()].iter().copied())
         .collect::<Vec<_>>();
     ingest_one_live_mono_block(&mono, &mono_clock, &mono_pcm, 48_000);

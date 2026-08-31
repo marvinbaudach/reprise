@@ -195,6 +195,30 @@ apk_download = named_step("publish", "Download universal APK")
 assert apk_download.get("with", {}).get("name") == (
     "reprise-apk-${{ needs.gate.outputs.android_version }}"
 ), "APK download artifact name must match the versioned upload"
+
+decision_run = named_step(
+    "gate", "Wait for the exact Quality gate and check tag absence"
+).get("run", "")
+conclusion_case = decision_run.split('case "$conclusion" in', 1)[1].split("esac", 1)[0]
+for conclusion in ("skipped", "*"):
+    branch = re.search(
+        rf"^\s*{re.escape(conclusion)}\)\n(?P<body>.*?)(?=^\s*(?:\w+|\*)\)|\Z)",
+        conclusion_case,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert branch, f"release decision has no {conclusion!r} conclusion branch"
+    body = branch.group("body")
+    assert ">&2" in body, f"{conclusion} conclusion must be visible on stderr"
+    assert "exit 1" in body, f"{conclusion} conclusion must fail the release run"
+
+cancelled = re.search(
+    r"^\s*cancelled\)\n(?P<body>.*?)(?=^\s*(?:\w+|\*)\))",
+    conclusion_case,
+    flags=re.MULTILINE | re.DOTALL,
+)
+assert cancelled and "exit 0" in cancelled.group("body"), (
+    "a superseded promotion must remain a successful no-op"
+)
 PY
 
 require() {

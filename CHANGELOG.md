@@ -4,7 +4,18 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
-## [0.1.71] - 2026-08-25
+## [0.1.84] - 2026-08-27
+
+### Android
+
+- The navigation mark and the header count follow the swipe while it happens,
+  instead of waiting for the gesture to come to rest.
+- Swiping to the tab next door no longer lands on an empty list: it is filled
+  while the screen is still, before anyone reaches it.
+- Browse queries run off the main thread, and a load that was cancelled by
+  navigating away no longer raises an error banner.
+
+## [0.1.83] - 2026-08-27
 
 ### Playback and presentation
 
@@ -12,12 +23,24 @@ messages.
 - Made track sorting reachable from the keyboard, without a pointer.
 - Steadied the library while it scrolls: the columns no longer shift as rows
   change, and the player bar centres the playing track in a single landing.
+- Clearing the filter hands a running queue the whole library again, instead of
+  waiting for the queue to run dry.
+- The track table follows the music again, and source lists stay where you
+  scrolled them.
+- A library that stored a wrong row height clears it on the next launch.
 
 ### Discovery
 
 - Added multi-selection, a row menu, and reversible hiding to new releases.
 - Concert discovery no longer asks for a Bandsintown application id; builds
   carry their own.
+
+### Podcasts and online sources
+
+- The Podcasts and YouTube badges count the shows you follow rather than their
+  unplayed episodes.
+- Source artwork loads from a cached thumbnail instead of decoding the original
+  every time it comes into view.
 
 ### Preferences
 
@@ -26,11 +49,26 @@ messages.
 - Each build offers one primary Last.fm setup path rather than several, and
   Flatpak builds carry their own Last.fm credentials.
 
+### Android
+
+- A queue row moves under the thumb instead of one tap per slot, and TalkBack
+  gets the same move.
+- The visualizer's bars follow playback time instead of updating four times a
+  second.
+- Reloading artist photos shows its progress.
+- The Now Playing haze became a slower, theme-matched oil film that no longer
+  flashes on every beat.
+
 ### Fixes
 
+- Deleting a playlist clears it from the device page immediately, instead of
+  leaving a stale row behind while the remaining playlists pile up under it.
+  The playlist summary names its track count again.
+- Filled buttons, the checked shuffle toggle, and disabled actions carry
+  readable labels again.
 - A toast always carries its message.
-- Refreshed the translation catalogues for the sort menu's new strings.
 - The showroom lightbox fits and zooms on a phone.
+- Refreshed the translation catalogues for the sort menu's new strings.
 
 ## [0.1.45] - 2026-08-21
 

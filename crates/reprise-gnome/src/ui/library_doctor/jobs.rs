@@ -9,11 +9,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use reprise_core::fingerprint::FingerprintBackend;
+use reprise_core::library::{TagWriteLock, TagWriteLockAttempt};
 use reprise_core::library_doctor::{
     DoctorApplyPlan, DoctorCleanupReport, DoctorError, DoctorScan, DoctorScanOutcome,
     DoctorScanProgress, DoctorScanRequest, DoctorWriteControl, DoctorWriteProgress,
     DoctorWriteReport, LibraryDoctor, ScanControl,
 };
+
+fn acquire_tag_write_lock(db_path: &Path) -> std::io::Result<TagWriteLockAttempt> {
+    let db_dir = db_path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "database path has no parent directory",
+        )
+    })?;
+    TagWriteLock::acquire(db_dir)
+}
 
 /// A worker failure, split into the one distinction the surface acts on.
 ///
@@ -29,7 +40,7 @@ pub(super) struct JobFailure {
 impl JobFailure {
     pub(super) fn user_message(&self) -> String {
         if self.busy {
-            crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY)
+            crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY_SEE_PROGRESS)
         } else {
             crate::ui::strings::text(crate::ui::strings::DOCTOR_JOB_FAILED)
         }
@@ -121,9 +132,13 @@ pub(super) fn run_auto_apply(
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
 ) -> Result<Option<DoctorWriteReport>, JobFailure> {
+    let lock_attempt = acquire_tag_write_lock(db_path).map_err(|error| JobFailure {
+        busy: false,
+        detail: error.to_string(),
+    })?;
     let conn = reprise_core::db::Db::open_migrated(Some(db_path))?;
     LibraryDoctor::new(&conn)
-        .apply_auto_tier(scan, |progress| {
+        .apply_auto_tier(scan, lock_attempt, |progress| {
             publish(progress);
             if cancellation.load(Ordering::Relaxed) {
                 DoctorWriteControl::Cancel
@@ -139,11 +154,14 @@ pub(super) fn run_apply(
     plan: &DoctorApplyPlan,
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
-) -> Result<Option<DoctorWriteReport>, String> {
-    let conn =
-        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+) -> Result<Option<DoctorWriteReport>, JobFailure> {
+    let lock_attempt = acquire_tag_write_lock(db_path).map_err(|error| JobFailure {
+        busy: false,
+        detail: error.to_string(),
+    })?;
+    let conn = reprise_core::db::Db::open_migrated(Some(db_path))?;
     LibraryDoctor::new(&conn)
-        .apply_review_plan(plan, |progress| {
+        .apply_review_plan(plan, lock_attempt, |progress| {
             publish(progress);
             if cancellation.load(Ordering::Relaxed) {
                 DoctorWriteControl::Cancel
@@ -152,18 +170,21 @@ pub(super) fn run_apply(
             }
         })
         .map(Some)
-        .map_err(|error| error.to_string())
+        .map_err(JobFailure::from)
 }
 
 pub(super) fn run_revert(
     db_path: &Path,
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
-) -> Result<Option<DoctorCleanupReport>, String> {
-    let conn =
-        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+) -> Result<Option<DoctorCleanupReport>, JobFailure> {
+    let lock_attempt = acquire_tag_write_lock(db_path).map_err(|error| JobFailure {
+        busy: false,
+        detail: error.to_string(),
+    })?;
+    let conn = reprise_core::db::Db::open_migrated(Some(db_path))?;
     LibraryDoctor::new(&conn)
-        .revert_last_cleanup(|progress| {
+        .revert_last_cleanup(lock_attempt, |progress| {
             publish(progress);
             if cancellation.load(Ordering::Relaxed) {
                 DoctorWriteControl::Cancel
@@ -171,5 +192,5 @@ pub(super) fn run_revert(
                 DoctorWriteControl::Continue
             }
         })
-        .map_err(|error| error.to_string())
+        .map_err(JobFailure::from)
 }

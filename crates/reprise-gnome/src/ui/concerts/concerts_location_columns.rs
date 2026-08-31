@@ -27,6 +27,18 @@ impl EditorModel for LocationAwareEditorModel {
             .collect()
     }
 
+    fn sortable_columns(&self) -> Vec<ColumnDescriptor> {
+        EditorModel::sortable_columns(self.registry.as_ref())
+    }
+
+    fn sort(&self) -> Option<(String, gtk4::SortType)> {
+        EditorModel::sort(self.registry.as_ref())
+    }
+
+    fn set_sort(&self, id: &str, order: gtk4::SortType) {
+        EditorModel::set_sort(self.registry.as_ref(), id, order);
+    }
+
     fn is_visible(&self, id: &str) -> bool {
         if id == ConcertColumn::Distance.as_str() && !self.has_location.get() {
             return false;

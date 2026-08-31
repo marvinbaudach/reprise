@@ -80,6 +80,26 @@ fn play_9_idle_play_is_reachable_without_enabling_queue_navigation() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn position_ticks_refresh_waveform_sensitivity_only_when_length_availability_changes() {
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+    bar.set_transport_enabled(true, false);
+    bar.set_state(PlaybackState::Stopped);
+
+    bar.set_position(0, 120_000);
+    assert!(bar.waveform.widget().is_sensitive());
+
+    bar.waveform.widget().set_sensitive(false);
+    bar.set_position(500, 120_000);
+
+    assert!(
+        !bar.waveform.widget().is_sensitive(),
+        "a non-crossing position tick refreshed sensitivity"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
     use crate::ui::playback::external_media::{
         EpisodeSource, ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, RadioPresentation,

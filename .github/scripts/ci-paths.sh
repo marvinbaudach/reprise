@@ -56,13 +56,18 @@ case "${1:-}" in
         emit_routes "$@"
         ;;
     --diff)
-        if (( $# != 4 )); then
-            echo "usage: $0 --diff EVENT BASE_SHA HEAD_SHA" >&2
+        if (( $# != 5 )); then
+            echo "usage: $0 --diff EVENT REF BASE_SHA HEAD_SHA" >&2
             exit 64
         fi
         event=$2
-        base_sha=$3
-        head_sha=$4
+        ref=$3
+        base_sha=$4
+        head_sha=$5
+        if [[ $event == schedule || $event == push && $ref == refs/heads/main ]]; then
+            printf 'android=true\ngnome=true\ncore=true\n'
+            exit 0
+        fi
         if [[ $event == workflow_dispatch || -z $base_sha || $base_sha =~ ^0+$ ]] || \
             ! git cat-file -e "$base_sha^{commit}" 2>/dev/null || \
             ! git cat-file -e "$head_sha^{commit}" 2>/dev/null; then
@@ -101,7 +106,7 @@ case "${1:-}" in
         fi
         ;;
     *)
-        echo "usage: $0 --paths [PATH ...] | --diff EVENT BASE_SHA HEAD_SHA | --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA" >&2
+        echo "usage: $0 --paths [PATH ...] | --diff EVENT REF BASE_SHA HEAD_SHA | --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA" >&2
         exit 64
         ;;
 esac

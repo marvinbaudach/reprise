@@ -22,7 +22,6 @@ internal fun LibraryScreen(
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    searchAlbums: (String, LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
@@ -40,6 +39,7 @@ internal fun LibraryScreen(
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     onlineSourcesEnabled: Boolean,
     setOnlineSourcesEnabled: (Boolean) -> Unit,
+    artistPhotoOffer: ArtistPhotoOfferState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
 ) {
@@ -77,7 +77,6 @@ internal fun LibraryScreen(
             chooseFolder = launchFolderPicker,
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,
-            searchAlbums = searchAlbums,
             listArtists = listArtists,
             searchArtists = searchArtists,
             openAlbum = openAlbum,
@@ -94,6 +93,11 @@ internal fun LibraryScreen(
             setGaplessEnabled = setGaplessEnabled,
             onlineSourcesEnabled = onlineSourcesEnabled,
             setOnlineSourcesEnabled = setOnlineSourcesEnabled,
+            artistPhotoOfferSettled = artistPhotoOffer.settled,
+            downloadArtistPhotos = {
+                artistPhotoOffer.downloadArtistPhotos { setOnlineSourcesEnabled(true) }
+            },
+            declineArtistPhotos = artistPhotoOffer::notNow,
             themeSelection = themeSelection,
             selectTheme = selectTheme,
         )

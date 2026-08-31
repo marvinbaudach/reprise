@@ -105,12 +105,10 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         let Some(controller) = weak.upgrade() else {
             return;
         };
-        // Stage 3 Task 10: routed through the same `seek` every
-        // MPRIS-initiated seek uses, so the bar's own seeks also trigger
-        // `Seeked` (the spec requires it for "app-internal" seeks too — see
-        // `seek`'s doc comment in `mpris_mirror.rs`) rather than calling
-        // `Player::seek_to` directly the way this closure used to.
-        controller.seek(position_ms);
+        // A loaded pipeline delegates to the same `seek` every MPRIS command
+        // uses. A restored item starts first, then performs the same MPRIS and
+        // lyrics post-seek work through `seek_or_start`.
+        controller.seek_or_start(position_ms);
     });
 
     let weak = Rc::downgrade(controller);
@@ -241,7 +239,7 @@ pub(in crate::ui) fn wire_compact_controls(controller: &Rc<PlayerController>) {
     let weak = Rc::downgrade(controller);
     controller.compact_player.connect_seek(move |position_ms| {
         if let Some(controller) = weak.upgrade() {
-            controller.seek(position_ms);
+            controller.seek_or_start(position_ms);
         }
     });
 

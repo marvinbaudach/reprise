@@ -228,10 +228,11 @@ pub(super) fn reveal_position(
         return false;
     }
     let generation = shared.model.generation();
+    let view = shared.column_view.clone();
     let shared = Rc::downgrade(shared);
-    gtk4::glib::idle_add_local_once(move || {
+    view.add_tick_callback(move |_, _| {
         let Some(shared) = shared.upgrade() else {
-            return;
+            return gtk4::glib::ControlFlow::Break;
         };
         // A model swap invalidates the row index this attempt carries, and the
         // centering arithmetic cannot tell a stale index from a live one — it
@@ -239,9 +240,10 @@ pub(super) fn reveal_position(
         // per round in [`reveal`]; here the honest answer is to stop, because
         // whoever replaced the model owns the viewport now.
         if shared.model.generation() != generation {
-            return;
+            return gtk4::glib::ControlFlow::Break;
         }
         reveal_position(&shared, position, attempts - 1, motion);
+        gtk4::glib::ControlFlow::Break
     });
     false
 }

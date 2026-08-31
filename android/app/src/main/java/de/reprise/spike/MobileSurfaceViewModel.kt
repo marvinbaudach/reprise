@@ -31,14 +31,8 @@ internal enum class LibraryListKey {
     ARTISTS,
     ALBUM_TRACKS,
     ARTIST_ALBUMS,
-    ARTIST_SEARCH_ALBUMS,
     ARTIST_TRACKS,
     UPCOMING,
-}
-
-internal enum class OpenAlbumOrigin {
-    ARTIST_SEARCH,
-    ARTIST_DETAIL,
 }
 
 /**
@@ -59,7 +53,6 @@ internal enum class OpenAlbumOrigin {
 internal data class LoadedLibraryWindows(
     val titles: LibraryWindow<LibraryTrack>,
     val artists: LibraryWindow<LibraryArtist>,
-    val artistSearchAlbums: LibraryWindow<LibraryAlbum> = LibraryWindow.empty(),
     val loadedTabs: Set<BrowseTab> = BrowseTab.entries.toSet(),
     val searchText: String = "",
     /**
@@ -70,7 +63,6 @@ internal data class LoadedLibraryWindows(
      */
     val openAlbum: AlbumTrackList?,
     val openArtist: ArtistTrackList? = null,
-    val openAlbumOrigin: OpenAlbumOrigin? = null,
 )
 
 /**
@@ -130,6 +122,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     private var artistPhotoProgress by mutableStateOf<ArtistPhotoProgress?>(null)
     private var dismissedArtistPhotoRunId by mutableStateOf<Long?>(null)
+    private var refreshArtistPortraits: () -> Unit = {}
+    private var refreshedArtistPortraitRunId = 0L
+    private var refreshedArtistPortraitDone = 0L
     @Volatile
     private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
     private var retainedLibrary: MusicLibrary? = null
@@ -187,6 +182,10 @@ internal class MobileSurfaceViewModel : ViewModel() {
         postToMain { acceptArtistPhotoProgress(initial) }
     }
 
+    fun bindArtistPortraitRefresh(refresh: () -> Unit) {
+        refreshArtistPortraits = refresh
+    }
+
     fun startArtistPhotoBackfill() {
         val binding = artistPhotoBackfillBinding ?: return
         binding.start { update ->
@@ -202,6 +201,14 @@ internal class MobileSurfaceViewModel : ViewModel() {
     }
 
     fun acceptArtistPhotoProgress(update: ArtistPhotoProgress) {
+        if (update.runId != refreshedArtistPortraitRunId) {
+            refreshedArtistPortraitRunId = update.runId
+            refreshedArtistPortraitDone = 0
+        }
+        if (update.done > refreshedArtistPortraitDone) {
+            refreshArtistPortraits()
+            refreshedArtistPortraitDone = update.done
+        }
         artistPhotoProgress = update
     }
 
@@ -351,7 +358,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
             ?.let { windows ->
                 if (
                     selectedTab == BrowseTab.ARTISTS &&
-                    windows.openAlbumOrigin == OpenAlbumOrigin.ARTIST_DETAIL &&
                     windows.openAlbum != null &&
                     windows.openArtist == null
                 ) {
@@ -390,7 +396,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        artistPhotoBackfillBinding?.cancel?.invoke()
+        val backfill = artistPhotoBackfillBinding
+        artistPhotoBackfillBinding = null
+        backfill?.cancel?.invoke()
         retainedLibrary?.close()
         retainedLibrary = null
     }

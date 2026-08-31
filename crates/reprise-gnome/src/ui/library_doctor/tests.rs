@@ -7,9 +7,7 @@ use reprise_core::fingerprint::{
     FingerprintBackend, FingerprintCapability, FingerprintControl, FingerprintError,
     FingerprintOutcome, FingerprintProgress,
 };
-use reprise_core::library_doctor::{DoctorScopeRequest, DoctorViewSnapshot};
-use reprise_core::queries::BrowseFilter;
-use reprise_core::view_source::ViewSource;
+use reprise_core::library_doctor::DoctorScopeRequest;
 
 struct NeverFingerprint;
 
@@ -29,15 +27,91 @@ impl FingerprintBackend for NeverFingerprint {
     }
 }
 
-fn snapshot() -> DoctorViewSnapshot {
-    DoctorViewSnapshot {
-        source: ViewSource::Library,
-        sort_field: "artist".into(),
-        sort_dir: "asc".into(),
-        filter: String::new(),
-        browse: BrowseFilter::default(),
-        queue_ids: Vec::new(),
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_7c_the_start_page_offers_no_scope_choice() {
+    if gtk4::init().is_err() {
+        return;
     }
+    let conn = std::rc::Rc::new(crate::test_db::open().unwrap());
+    let parent = adw::ApplicationWindow::builder().build();
+    let page =
+        super::start_page::DoctorStartPage::new(&conn, &parent, false, std::rc::Rc::new(|_| {}));
+    let mut pending = vec![page.widget().clone().upcast::<gtk4::Widget>()];
+
+    while let Some(widget) = pending.pop() {
+        assert!(
+            !widget.is::<adw::ToggleGroup>(),
+            "the start page must not offer a scope selector"
+        );
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            pending.push(current.clone());
+            child = current.next_sibling();
+        }
+    }
+}
+
+#[test]
+fn doc_7c_unify_spellings_scans_its_group_without_the_start_page() {
+    let request = super::selection_scan_request(vec![7, 11], false)
+        .expect("a non-empty spelling group must start a scan");
+    assert_eq!(
+        request.scope,
+        DoctorScopeRequest::Selection {
+            track_ids: vec![7, 11]
+        }
+    );
+
+    let coordinator = include_str!("mod.rs");
+    let entry = coordinator
+        .split("pub(in crate::ui) fn open_for_selection(self: &Rc<Self>, ids: Vec<i64>)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n    fn open_available").next())
+        .expect("selection entry point body");
+    assert!(entry.contains("self.start_selection_scan(ids);"));
+    let preference_sync = entry
+        .find("self.page.sync_remote_preference(&self.conn);")
+        .expect("selection scans must refresh the persisted remote preference");
+    let scan_start = entry
+        .find("self.start_selection_scan(ids);")
+        .expect("selection scan start");
+    assert!(preference_sync < scan_start);
+    assert!(!entry.contains("self.open_available()"));
+    assert!(!entry.contains("self.open_root_page()"));
+
+    assert!(super::selection_scan_request(Vec::new(), false).is_none());
+}
+
+#[test]
+fn doc_8c_run_scan_now_starts_only_a_whole_library_scan() {
+    let coordinator = include_str!("mod.rs");
+    let connect_run = coordinator
+        .split("coordinator.page.connect_run(move ||")
+        .nth(1)
+        .and_then(|tail| tail.split("coordinator.progress.set_on_cancel").next())
+        .expect("Run Scan Now connection body");
+
+    assert!(connect_run.contains("coordinator.start_whole_library_scan();"));
+    assert!(!connect_run.contains("start_selection_scan"));
+    assert!(!connect_run.contains("selection_scan_request"));
+    assert!(!connect_run.contains("selection_override"));
+}
+
+#[test]
+fn doc_2a_a_scope_fallback_ends_the_job_without_retrying() {
+    let coordinator = include_str!("mod.rs");
+    let fallback = coordinator
+        .split("Ok(Ok(DoctorScanOutcome::ScopeFallbackRequired)) =>")
+        .nth(1)
+        .and_then(|tail| tail.split("Ok(Err(error))").next())
+        .expect("scope fallback outcome branch");
+
+    assert!(fallback.contains("coordinator.page.end_job();"));
+    assert!(fallback.contains("coordinator.track_list.toast"));
+    assert!(fallback.contains("DOCTOR_SCOPE_FALLBACK"));
+    assert!(!fallback.contains("start_whole_library_scan"));
+    assert!(!fallback.contains("start_scan"));
 }
 
 /// The first-aid kit ships with the app, but the app can run against a theme
@@ -51,44 +125,6 @@ fn doc_8d_the_start_page_icon_falls_back_when_the_theme_lacks_it() {
         "io.github.marvinbaudach.Reprise-first-aid-symbolic"
     );
     assert_eq!(super::doctor_glyph_for(false), "system-search-symbolic");
-}
-
-#[test]
-fn doc_2a_scope_choice_freezes_the_requested_input_shape() {
-    assert!(matches!(
-        super::scope_request(0, snapshot(), vec![7]),
-        DoctorScopeRequest::WholeLibrary
-    ));
-    assert!(matches!(
-        super::scope_request(1, snapshot(), vec![7]),
-        DoctorScopeRequest::CurrentView(_)
-    ));
-    assert_eq!(
-        super::scope_request(2, snapshot(), vec![7, 8]),
-        DoctorScopeRequest::Selection {
-            track_ids: vec![7, 8]
-        }
-    );
-}
-
-#[test]
-fn review_rescan_restores_the_scanned_scope_choice() {
-    assert_eq!(super::scope_choice("whole_library"), 0);
-    assert_eq!(super::scope_choice("current_view"), 1);
-    assert_eq!(super::scope_choice("selection"), 2);
-}
-
-#[test]
-fn doc_7c_entry_scope_defaults_to_library_and_suggests_filtered_view() {
-    assert_eq!(super::suggested_scope(&snapshot()), 0);
-
-    let mut filtered = snapshot();
-    filtered.filter = "needle".into();
-    assert_eq!(super::suggested_scope(&filtered), 1);
-
-    let mut browsed = snapshot();
-    browsed.browse.genre = Some("Jazz".into());
-    assert_eq!(super::suggested_scope(&browsed), 1);
 }
 
 #[test]

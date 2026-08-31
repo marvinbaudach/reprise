@@ -651,7 +651,11 @@ impl YoutubeChannelDetail {
             while let Some(child) = host_for_rebind.first_child() {
                 host_for_rebind.remove(&child);
             }
-            let (artwork, shape) = episode_thumbnail(&artwork_episode, images_allowed);
+            let (artwork, shape) = episode_thumbnail(
+                &artwork_episode,
+                super::source_image::ArtworkNetworkPolicy::from(images_allowed),
+                super::source_image::ArtworkLoadPolicy::Load,
+            );
             host_for_rebind.append(&crate::ui::source_row::media(&artwork, shape));
         }) as podcasts_groups::ArtworkRebind;
         rebind(self.images_allowed.get());

@@ -1,5 +1,11 @@
 use super::tests::view;
 use super::*;
+use reprise_core::device_sync::{
+    AnalysisSidecarWrite, DesiredManagedFile, DeviceFileRecord, DevicePlaylistRecord,
+    DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan, PlaylistWrite, SelectionSource,
+    SyncTrack, TransferAction,
+};
+use std::path::PathBuf;
 
 fn no_cancel() -> CancelCallback {
     Rc::new(|_| {})
@@ -309,8 +315,8 @@ fn device_card_contrast_ladder_visual_fixture() {
         done: 214,
         total: 1047,
         current_track: "Immortal — Lorna Shore".into(),
-        bytes_done: 214,
-        bytes_total: 1047,
+        unit_bytes_done: 214,
+        unit_bytes_total: 1047,
     });
     active.name = "Pixel 8 · syncing".into();
     let mut connected = view(PlannedSyncPhase::Idle);
@@ -360,9 +366,185 @@ fn mtp_64_sidebar_device_card_delegates_to_the_main_window_page() {
 
 #[test]
 fn byte_progress_fraction_is_bounded_and_handles_an_unknown_total() {
-    assert_eq!(sync_fraction(50, 100), 0.5);
-    assert_eq!(sync_fraction(150, 100), 1.0);
-    assert_eq!(sync_fraction(50, 0), 0.0);
+    assert_eq!(sync_fraction(0, 1, 50, 100), 0.5);
+    assert_eq!(sync_fraction(1, 1, 50, 100), 1.0);
+    assert_eq!(sync_fraction(0, 0, 50, 100), 0.0);
+}
+
+#[test]
+fn displayed_fraction_is_monotonic_across_every_kind_of_planned_work() {
+    let mut plan = MirrorPlan::default();
+    plan.copy.push(desired_track());
+    plan.analysis_writes.push(AnalysisSidecarWrite {
+        track_id: 1,
+        device_path: "Reprise/1.reprise-analysis".into(),
+        size_bytes: 10,
+        existing_size_bytes: None,
+    });
+    plan.playlist_writes.push(playlist_write(7));
+    plan.playlist_removals.push(playlist_record(8));
+    plan.remove
+        .push(ManagedRemoval::Inventory(existing_track()));
+    plan.transfer_bytes = 110;
+
+    let mut machine = DeviceSyncMachine::new("serial-1".into(), plan);
+    let mut effects = machine.dispatch(Event::Start);
+    let mut phases = vec![machine.phase().clone()];
+    while let Some(effect) = effects.pop() {
+        let Some(event) = successful_event(&mut machine, &mut phases, effect) else {
+            break;
+        };
+        effects = machine.dispatch(event);
+        phases.push(machine.phase().clone());
+    }
+
+    let syncing = phases
+        .iter()
+        .filter_map(|phase| match phase {
+            PlannedSyncPhase::Syncing {
+                done,
+                total,
+                unit_bytes_done,
+                unit_bytes_total,
+                ..
+            } => Some((
+                *done,
+                *total,
+                sync_fraction(*done, *total, *unit_bytes_done, *unit_bytes_total),
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let displayed_fractions = phases
+        .iter()
+        .filter_map(|phase| match phase {
+            PlannedSyncPhase::Syncing {
+                done,
+                total,
+                unit_bytes_done,
+                unit_bytes_total,
+                ..
+            } => Some(sync_fraction(
+                *done,
+                *total,
+                *unit_bytes_done,
+                *unit_bytes_total,
+            )),
+            PlannedSyncPhase::Finishing => Some(1.0),
+            PlannedSyncPhase::Idle | PlannedSyncPhase::ComputingDelta => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        displayed_fractions
+            .windows(2)
+            .all(|pair| pair[0] <= pair[1]),
+        "displayed fractions moved backwards: {displayed_fractions:?}"
+    );
+    assert_eq!(
+        displayed_fractions
+            .iter()
+            .filter(|fraction| **fraction == 1.0)
+            .count(),
+        1,
+        "the displayed fraction must reach exactly 1.0 exactly once: {displayed_fractions:?}"
+    );
+    assert!(
+        syncing.iter().all(|(_, total, _)| *total == 5),
+        "the run-wide total changed: {syncing:?}"
+    );
+    assert!(
+        syncing.windows(2).all(|pair| pair[0].0 <= pair[1].0),
+        "done moved backwards: {syncing:?}"
+    );
+}
+
+fn successful_event(
+    machine: &mut DeviceSyncMachine,
+    phases: &mut Vec<PlannedSyncPhase>,
+    effect: Effect,
+) -> Option<Event> {
+    Some(match effect {
+        Effect::CleanPartials => Event::PartialsCleaned(Ok(())),
+        Effect::CopyTrack { bytes, .. } => {
+            machine.dispatch(Event::CopyProgress { copied: bytes / 2 });
+            phases.push(machine.phase().clone());
+            Event::TrackCopied(Ok(bytes))
+        }
+        Effect::RecordFile { .. } => Event::FileRecorded(Ok(())),
+        Effect::WriteAnalysis { index } => {
+            machine.dispatch(Event::CopyProgress {
+                copied: machine.plan().analysis_writes[index].size_bytes / 2,
+            });
+            phases.push(machine.phase().clone());
+            Event::AnalysisWritten(Ok(machine.plan().analysis_writes[index].size_bytes))
+        }
+        Effect::WritePlaylist { .. } => Event::PlaylistWritten(Ok(())),
+        Effect::RecordPlaylist { .. } => Event::PlaylistRecorded(Ok(())),
+        Effect::RemovePlaylist { .. } => Event::PlaylistRemoved(Ok(())),
+        Effect::ForgetPlaylist { .. } => Event::PlaylistForgotten(Ok(())),
+        Effect::RemoveTrack { .. } => Event::TrackRemoved(Ok(())),
+        Effect::ForgetFile { .. } => Event::FileForgotten(Ok(())),
+        Effect::Finished(_) => return None,
+        unexpected => panic!("unexpected effect: {unexpected:?}"),
+    })
+}
+
+fn desired_track() -> DesiredManagedFile {
+    DesiredManagedFile {
+        track: SyncTrack {
+            id: 1,
+            source_path: PathBuf::from("/music/1.flac"),
+            original_name: "1.flac".into(),
+            title: "Track 1".into(),
+            artist: "Artist".into(),
+            album: "Album".into(),
+            album_artist: "Artist".into(),
+            track_number: Some(1),
+            duration_ms: 180_000,
+            bitrate_kbps: Some(1000),
+            size_bytes: 100,
+            source_mtime: 0,
+        },
+        device_path: "Reprise/1.opus".into(),
+        target_bytes: 100,
+        profile_fingerprint: "fingerprint".into(),
+        action: TransferAction::CopyOriginal,
+    }
+}
+
+fn playlist_write(id: i64) -> PlaylistWrite {
+    PlaylistWrite {
+        source: SelectionSource::Playlist(id),
+        source_name: format!("Playlist {id}"),
+        device_path: format!("Reprise/Playlist {id}.m3u8"),
+        entries: Vec::new(),
+        contents: "#EXTM3U\n".into(),
+    }
+}
+
+fn playlist_record(id: i64) -> DevicePlaylistRecord {
+    DevicePlaylistRecord {
+        device_serial: "serial-1".into(),
+        source: SelectionSource::Playlist(id),
+        source_name: format!("Playlist {id}"),
+        device_path: format!("Reprise/Playlist {id}.m3u8"),
+        last_synced_at: None,
+    }
+}
+
+fn existing_track() -> DeviceFileRecord {
+    DeviceFileRecord {
+        device_serial: "serial-1".into(),
+        track_id: 9,
+        source_path: "/music/9.flac".into(),
+        source_size: 10,
+        source_mtime: 0,
+        device_path: "Reprise/9.opus".into(),
+        device_size: 10,
+        profile_fingerprint: "old".into(),
+        pinned: false,
+    }
 }
 
 #[test]
@@ -472,8 +654,8 @@ fn mot_7_disabled_animations_apply_progress_and_state_changes_immediately() {
         done: 0,
         total: 1,
         current_track: "Track".into(),
-        bytes_done: 50,
-        bytes_total: 100,
+        unit_bytes_done: 50,
+        unit_bytes_total: 100,
     });
     let on_open: OpenCallback = Rc::new(|_, _| {});
     let card = DeviceCard::new(&device, &on_open, &no_cancel());
@@ -523,8 +705,8 @@ fn enabled_animations_interpolate_progress_to_the_latest_fraction() {
         done: 0,
         total: 1,
         current_track: "Track".into(),
-        bytes_done: 50,
-        bytes_total: 100,
+        unit_bytes_done: 50,
+        unit_bytes_total: 100,
     });
 
     card.update(&syncing);

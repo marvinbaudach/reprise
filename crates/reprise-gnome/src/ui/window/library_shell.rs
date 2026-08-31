@@ -5,7 +5,6 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::db::Db;
 
 use super::artist_news_worker::ArtistNewsRuntime;
@@ -18,8 +17,6 @@ use super::strings;
 use super::track_list::TrackList;
 use crate::ui::nav_history::NavPlace;
 use reprise_core::view_source::ViewSource;
-
-pub(in crate::ui) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
 
 pub(in crate::ui) struct LibraryShell {
     pub sidebar_page: adw::NavigationPage,
@@ -282,11 +279,13 @@ pub(in crate::ui) fn wire_source_routing(
     arm_smoke_detail_view(sidebar);
 }
 
-/// Builds the library split view in its collapsed default. It starts with the
-/// sidebar hidden rather than expanded: the wide breakpoint (and its
-/// `collapsed`-notify wiring) reveals the sidebar column once the window is at
-/// least [`SIDEBAR_BREAKPOINT_WIDTH`] wide, so a narrow restored width simply
-/// leaves the sidebar closed instead of overlaying the content underneath it.
+/// Builds the library split as a pinned column that never collapses.
+///
+/// The sidebar is a structural column, not a responsive one: no breakpoint
+/// flips `collapsed`, so narrowing the window never turns the column into an
+/// overlay and never hides it behind the header toggle. Visibility stays
+/// where the user (or the persisted preference) put it — see
+/// `window_navigation::apply_sidebar_visibility`.
 fn build_split_view(
     sidebar_page: &adw::NavigationPage,
     content_nav: &adw::NavigationView,
@@ -297,7 +296,8 @@ fn build_split_view(
         .content(content_nav)
         .sidebar_position(gtk4::PackType::Start)
         .show_sidebar(false)
-        .collapsed(true)
+        .collapsed(false)
+        .pin_sidebar(true)
         .build();
     split.add_css_class("reprise-library-split");
     split
@@ -431,7 +431,7 @@ fn scope_title(source: &ViewSource) -> String {
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn build(
-    window: &adw::ApplicationWindow,
+    _window: &adw::ApplicationWindow,
     conn: &Rc<Db>,
     sidebar: &Sidebar,
     content: &impl IsA<gtk4::Widget>,
@@ -458,14 +458,6 @@ pub(in crate::ui) fn build(
     );
     let split_view = build_split_view(&sidebar_page, &content_nav);
     super::sidebar_presentation::style_overlay_split_view(&split_view);
-    let condition = adw::BreakpointCondition::new_length(
-        adw::BreakpointConditionLengthType::MinWidth,
-        f64::from(SIDEBAR_BREAKPOINT_WIDTH),
-        adw::LengthUnit::Px,
-    );
-    let breakpoint = adw::Breakpoint::new(condition);
-    breakpoint.add_setter(&split_view, "collapsed", Some(&false.to_value()));
-    window.add_breakpoint(breakpoint);
     LibraryShell {
         sidebar_page,
         split_view,
@@ -478,6 +470,27 @@ pub(in crate::ui) fn build(
 mod tests {
 
     use super::*;
+
+    fn window_attached_collapsed_setters(source: &str) -> Vec<String> {
+        let compact: String = source
+            .chars()
+            .filter(|char| !char.is_whitespace())
+            .collect();
+        compact
+            .split(';')
+            .filter(|statement| {
+                statement.contains(".add_setter(") && statement.contains("\"collapsed\"")
+            })
+            .filter_map(|statement| {
+                let prefix = statement.split_once(".add_setter(")?.0;
+                prefix
+                    .rsplit(|char: char| !(char.is_ascii_alphanumeric() || char == '_'))
+                    .next()
+                    .map(str::to_owned)
+            })
+            .filter(|breakpoint| compact.contains(&format!("window.add_breakpoint({breakpoint})")))
+            .collect()
+    }
 
     #[test]
     fn browse_1_music_builds_only_the_canonical_track_surface() {
@@ -498,6 +511,48 @@ mod tests {
         assert!(
             !chrome.contains("InlineViewSwitcher"),
             "the global header must not expose parallel Tracks/Albums/Artists modes"
+        );
+    }
+
+    #[test]
+    fn window_breakpoints_never_own_split_view_collapse() {
+        for (name, source) in [
+            ("library shell", include_str!("library_shell.rs")),
+            (
+                "responsive side panels",
+                include_str!("responsive_side_panels.rs"),
+            ),
+            (
+                "compact mode suggestion",
+                include_str!("../compact/compact_mode_suggestion.rs"),
+            ),
+        ] {
+            let offenders = window_attached_collapsed_setters(source);
+            assert!(
+                offenders.is_empty(),
+                "{name} attaches collapsed-setter breakpoints {offenders:?} to the window"
+            );
+        }
+    }
+
+    #[test]
+    fn breakpoint_guard_recognizes_a_multiline_collapsed_setter() {
+        let broken = concat!(
+            "legacy.add_setter(&split_view, \"collapsed\", Some(&false.to_value()));\n",
+            "window.",
+            "add_breakpoint(legacy);\n",
+            "breakpoint.add_setter(\n",
+            "    &split_view,\n",
+            "    \"collapsed\",\n",
+            "    Some(&false.to_value()),\n",
+            ");\n",
+            "window.",
+            "add_breakpoint(breakpoint);\n",
+        );
+
+        assert_eq!(
+            window_attached_collapsed_setters(broken),
+            ["legacy", "breakpoint"]
         );
     }
 
@@ -572,23 +627,87 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn sidebar_split_view_starts_closed_so_narrow_restores_never_overlay_content() {
+    fn style_7_sidebar_reserves_a_real_slot_at_1024_px() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let sidebar_page = adw::NavigationPage::builder()
             .title("Sidebar")
             .child(&gtk4::Label::new(Some("Sidebar")))
             .build();
+        let content_label = gtk4::Label::new(Some("Content"));
         let content = adw::NavigationView::new();
+        content.add(
+            &adw::NavigationPage::builder()
+                .title("Content")
+                .child(&content_label)
+                .build(),
+        );
 
         let split = build_split_view(&sidebar_page, &content);
+        split.set_show_sidebar(true);
+        let window = gtk4::Window::builder().child(&split).build();
+        window.set_default_size(1_024, 768);
+        window.set_size_request(1_024, 768);
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
 
-        assert!(split.is_collapsed());
-        assert_eq!(split.sidebar_position(), gtk4::PackType::Start);
+        let content_bounds = content
+            .compute_bounds(&window)
+            .expect("content must share the window coordinate space");
         assert!(
-            !split.shows_sidebar(),
-            "a narrow (sub-breakpoint) restored window must not start with the \
-             sidebar overlaid on top of the content"
+            !split.is_collapsed(),
+            "1024 px library split entered overlay mode: window={} split={} content={content_bounds:?}",
+            window.width(),
+            split.width(),
         );
+        assert!(
+            content_bounds.x() > 100.0,
+            "the open library sidebar did not reserve a content slot: {content_bounds:?}"
+        );
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn the_sidebar_keeps_its_column_at_a_narrow_viewport() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let sidebar_page = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let content_label = gtk4::Label::new(Some("Content"));
+        let content = adw::NavigationView::new();
+        content.add(
+            &adw::NavigationPage::builder()
+                .title("Content")
+                .child(&content_label)
+                .build(),
+        );
+
+        let split = build_split_view(&sidebar_page, &content);
+        super::super::sidebar_presentation::style_overlay_split_view(&split);
+        split.set_show_sidebar(true);
+        let window = gtk4::Window::builder().child(&split).build();
+        window.set_default_size(600, 700);
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(
+            !split.is_collapsed(),
+            "a narrow viewport turned the library sidebar into an overlay: \
+             window={}",
+            window.width(),
+        );
+        let content_bounds = content
+            .compute_bounds(&window)
+            .expect("content must share the window coordinate space");
+        assert!(
+            content_bounds.x() > 100.0,
+            "the sidebar stopped reserving a content slot when narrow: \
+             {content_bounds:?}"
+        );
+        window.close();
     }
 
     #[test]

@@ -126,6 +126,9 @@ fn device_snapshot(device: AgentDeviceSyncDevice) -> DeviceSnapshot {
             bytes_done: device.bytes_done,
             bytes_total: device.bytes_total,
             bytes_per_second: device.bytes_per_second,
+            units_done: device.units_done,
+            units_total: device.units_total,
+            estimated_remaining_seconds: device.estimated_remaining_seconds,
         },
         current_track: device.current_track,
         last_synced_at: device.last_synced_at,
@@ -296,7 +299,9 @@ fn phase_name(phase: &AgentDeviceSyncPhase) -> &'static str {
         AgentDeviceSyncPhase::Removing => "removing",
         AgentDeviceSyncPhase::Transcoding => "transcoding",
         AgentDeviceSyncPhase::Copying => "copying",
+        AgentDeviceSyncPhase::WritingAnalysis => "writing_analysis",
         AgentDeviceSyncPhase::WritingPlaylists => "writing_playlists",
+        AgentDeviceSyncPhase::WritingTrackMetadata => "writing_track_metadata",
         AgentDeviceSyncPhase::Finishing => "finishing",
     }
 }
@@ -354,6 +359,9 @@ mod tests {
                     can_eject: false,
                 },
                 bytes_per_second: 12,
+                units_done: 4,
+                units_total: 12,
+                estimated_remaining_seconds: Some(16),
                 phase: AgentDeviceSyncPhase::Copying,
                 ..AgentDeviceSyncDevice::default()
             }],
@@ -375,6 +383,11 @@ mod tests {
         assert!(device.controls.can_cancel);
         assert!(!device.controls.can_eject);
         assert_eq!(device.progress.bytes_per_second, 12);
+        assert_eq!(
+            (device.progress.units_done, device.progress.units_total),
+            (4, 12)
+        );
+        assert_eq!(device.progress.estimated_remaining_seconds, Some(16));
         assert_eq!(device.last_synced_at, Some(1_721_234_890));
         assert_eq!(
             control.protocol_version(),

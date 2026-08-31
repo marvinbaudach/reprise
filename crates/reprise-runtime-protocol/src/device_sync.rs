@@ -126,6 +126,9 @@ pub struct DeviceProgress {
     pub bytes_done: u64,
     pub bytes_total: u64,
     pub bytes_per_second: u64,
+    pub units_done: u32,
+    pub units_total: u32,
+    pub estimated_remaining_seconds: Option<u64>,
 }
 
 /// The playlists target's state and `MTP-22` diff reading.

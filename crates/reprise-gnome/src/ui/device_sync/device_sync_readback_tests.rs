@@ -7,7 +7,7 @@ fn mtp_10_success_stays_finishing_until_device_contents_are_verified() {
         select_road_playlist(&conn, &[1]);
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        settle().await;
         let (inspection_started, release_inspection) = backend.gate_next_inspection();
 
         runtime.sync_now("a").unwrap();
@@ -26,13 +26,13 @@ fn mtp_10_success_stays_finishing_until_device_contents_are_verified() {
             runtime.update_settings(device.settings),
             Err("device synchronization is active".into())
         );
-        assert_eq!(
+        assert!(
             reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()
                 .remove(0)
-                .last_synced_at,
-            None,
-            "playlist publication alone must not claim a verified sync"
+                .last_synced_at
+                .is_some(),
+            "a published playlist must retain its per-unit verification stamp"
         );
 
         let (_subscription, verified) =
@@ -140,7 +140,7 @@ fn mtp_10_failed_readback_never_claims_a_successful_sync() {
         .unwrap();
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        settle().await;
         backend.fail_next_inspection("phone was locked");
         let (_subscription, finished) = signal_when(&runtime, |state| {
             state.devices[0].sync_phase == PlannedSyncPhase::Idle
@@ -158,12 +158,13 @@ fn mtp_10_failed_readback_never_claims_a_successful_sync() {
             .sync_error
             .as_ref()
             .is_some_and(|error| error.message.contains("could not verify device contents")));
-        assert_eq!(
+        assert!(
             reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()
                 .remove(0)
-                .last_synced_at,
-            Some(1_700_000_000)
+                .last_synced_at
+                .is_some_and(|timestamp| timestamp > 1_700_000_000),
+            "successful playlist publication must keep its fresh per-unit stamp"
         );
     });
 }
@@ -175,7 +176,7 @@ fn failed_playlist_timestamp_write_never_claims_a_successful_sync() {
         select_road_playlist(&conn, &[1]);
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        settle().await;
         let (inspection_started, release_inspection) = backend.gate_next_inspection();
 
         runtime.sync_now("a").unwrap();
@@ -200,15 +201,20 @@ fn failed_playlist_timestamp_write_never_claims_a_successful_sync() {
         let device = runtime.devices().remove(0);
         assert!(device.last_sync.is_none());
         assert_eq!(device.verified_managed_track_count, None);
-        assert!(device.sync_error.as_ref().is_some_and(|error| error
-            .message
-            .contains("could not record verified playlist synchronization")));
-        assert_eq!(
+        assert!(
+            device.sync_error.as_ref().is_some_and(|error| error
+                .message
+                .contains("could not record verified playlist synchronization")),
+            "sync error: {:?}",
+            device.sync_error
+        );
+        assert!(
             reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()
                 .remove(0)
-                .last_synced_at,
-            None
+                .last_synced_at
+                .is_some(),
+            "the earlier per-unit stamp must survive a failed final rewrite"
         );
     });
 }

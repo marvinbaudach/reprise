@@ -139,9 +139,11 @@ pub(in crate::ui) fn arm_cursor(widget: &impl IsA<gtk4::Widget>) {
 
 pub(in crate::ui) fn css() -> String {
     use super::tokens::{
+        ADD_ACTION_FILL_ALPHA, ADD_ACTION_FILL_HOVER_ALPHA, ADD_ACTION_FILL_PRESS_ALPHA,
         BTN_CHECKED_FILL_ALPHA, BTN_CHECKED_FILL_HOVER_ALPHA, BTN_CHECKED_FILL_PRESS_ALPHA,
         BTN_DOT_SIZE, BTN_DOT_VERTICAL_POSITION, BTN_HOVER_ALPHA, BTN_PRESS_ALPHA, BTN_PRESS_SCALE,
-        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH, TRANSITION,
+        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH,
+        PRIMARY_DISABLED_FILL_ALPHA, TRANSITION,
     };
 
     let focus_ring = format!(
@@ -221,16 +223,35 @@ pub(in crate::ui) fn css() -> String {
                        transform {TRANSITION}; }}\n\
          button.suggested-action:hover {{ \
            box-shadow: 0 0 {FOCUS_GLOW_BLUR} alpha(@accent_color, {FOCUS_GLOW_ALPHA}); }}\n\
+         /* BTN-5: a primary action that cannot be taken drops its accent \
+            surface rather than dimming it. Adwaita dims the fill instead, which \
+            leaves the near-black accent foreground sitting on a mid-dark tint \
+            of the accent — 2.5:1, and the reason the insensitive device-sync \
+            action was unreadable. The missing surface is the state signal; the \
+            label stays legible at the secondary text level. \
+            `filter: none` is load-bearing, not tidying: Adwaita dims through \
+            `filter: Opacity(var(--disabled-opacity))` on every `button:disabled`, \
+            which multiplies the finished render node and would scale this \
+            label down to 0.70 x 0.50 alpha no matter what colour is set here. \
+            Overriding the colours without dropping the filter leaves the rule \
+            half inert. */\n\
+         .{PRIMARY_CLASS}:disabled, button.suggested-action:disabled {{ \
+           filter: none; \
+           color: @reprise_secondary_fg_color; \
+           background-image: none; \
+           background-color: alpha(currentColor, {PRIMARY_DISABLED_FILL_ALPHA}); \
+           box-shadow: none; \
+           transform: none; }}\n\
          /* Source add actions are rectangular tinted controls, never pills. */\n\
          .{ADD_ACTION_CLASS} {{ \
            border-radius: 8px; \
-           background-color: alpha(@accent_bg_color, 0.16); \
+           background-color: alpha(@accent_bg_color, {ADD_ACTION_FILL_ALPHA}); \
            color: @reprise_accent_text_color; \
            transition: background-color {TRANSITION}, transform {TRANSITION}; }}\n\
          .{ADD_ACTION_CLASS}:hover {{ \
-           background-color: alpha(@accent_bg_color, 0.22); }}\n\
+           background-color: alpha(@accent_bg_color, {ADD_ACTION_FILL_HOVER_ALPHA}); }}\n\
          .{ADD_ACTION_CLASS}:active {{ \
-           background-color: alpha(@accent_bg_color, 0.28); }}\n\
+           background-color: alpha(@accent_bg_color, {ADD_ACTION_FILL_PRESS_ALPHA}); }}\n\
          /* BTN-3: tertiary tier — background hover only, no scale, because menu \
             rows sitting in a list must not jump under the cursor. */\n\
          .{TERTIARY_CLASS} {{ transition: background-color {TRANSITION}; }}\n\
@@ -274,6 +295,33 @@ pub(in crate::ui) fn reduced_motion_css() -> String {
 #[cfg(test)]
 mod tests {
     use super::super::tokens;
+
+    /// The disabled primary rule is only as good as its `filter: none`.
+    /// Adwaita dims every `button:disabled` with
+    /// `filter: Opacity(var(--disabled-opacity))`, which multiplies the finished
+    /// render node — colours set here would be scaled down afterwards and the
+    /// rule would ship half inert, looking correct in every string assertion.
+    #[test]
+    fn btn_5_the_disabled_primary_drops_the_theme_dimming_filter() {
+        let css = super::css();
+        let rule = css
+            .split("button.suggested-action:disabled")
+            .nth(1)
+            .expect("the disabled primary rule is in the stylesheet")
+            .split('}')
+            .next()
+            .expect("the rule has a body");
+
+        assert!(
+            rule.contains("filter: none"),
+            "the disabled primary rule does not neutralise Adwaita's dimming \
+             filter, so its measured colours are not what renders: {rule}"
+        );
+        assert!(
+            !rule.contains("@accent_bg_color") && !rule.contains("@accent_color"),
+            "BTN-5: a disabled primary keeps no accent surface: {rule}"
+        );
+    }
 
     #[test]
     fn btn_1_css_defines_all_four_states_for_every_tier() {

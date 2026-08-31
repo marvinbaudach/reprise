@@ -7,10 +7,10 @@
 //!
 //! ## Sidebar toggle
 //!
-//! `AdwOverlaySplitView` keeps the content mounted while its Start-positioned
-//! sidebar collapses into an overlay below 800 px. The persistent header
-//! toggle controls `show-sidebar`; responsive collapse never overwrites the
-//! user's explicit hidden preference.
+//! `AdwOverlaySplitView` keeps the content mounted and its Start-positioned
+//! sidebar pinned at every window width: no breakpoint collapses the library
+//! column into an overlay. The persistent header toggle owns `show-sidebar`,
+//! so the sidebar only ever appears or disappears because the user said so.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
@@ -169,14 +169,13 @@ pub fn build(
             move |source, _count, filter, browse| {
                 if let Some(player) = &player_for_reload {
                     player.refresh_library_availability();
-                    // PLAY-11: a Music view that just became completely
-                    // unfiltered is the one moment an exhausted, filter-born
-                    // snapshot may be given a future. Every other reload pays
-                    // only the two `Cell`/`RefCell` reads inside — the queries
-                    // sit behind the exhausted-and-filtered-origin guards, and
-                    // the guard that matters most (a filtered `play_origin`)
-                    // is cleared by the first success, so this cannot re-bind
-                    // the continuation it just installed.
+                    // PLAY-11/PLAY-15: when a Music view becomes completely
+                    // unfiltered, an exhausted filter-born snapshot gains a
+                    // future, while one with titles ahead rebinds to the full
+                    // visible view. The queries stay behind the repeat,
+                    // loaded-title and filtered-origin guards. A successful
+                    // handoff clears the filtered `play_origin`, so its own
+                    // reload cannot bind or rebind the queue again.
                     if matches!(source, ViewSource::Library)
                         && filter.trim().is_empty()
                         && browse.is_empty()
@@ -319,7 +318,7 @@ pub fn build(
     );
     super::startup_report::mark("source_views::install (podcasts / YouTube / radio)");
     if let Some(player) = &player {
-        source_views.wire_episode_played(player, &sidebar);
+        source_views.wire_episode_played(player);
         source_views.wire_episode_position(player);
     }
     // The toast layer is attached after the player-bar shell exists so
@@ -494,6 +493,7 @@ pub fn build(
         youtube_view: &youtube_view,
         radio_view: &radio_view,
         podcasts_runtime: &podcasts_runtime,
+        device_sync: &device_sync,
         content_stack: &content_stack,
         library_doctor_navigation: &library_doctor_navigation,
         doctor_chrome: &doctor_chrome,
@@ -527,7 +527,7 @@ pub fn build(
         &radio_view,
     );
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
-    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel, conn);
+    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel);
     tracing::info!("main window built");
     let startup_completion = if startup_report_armed {
         let mapped = Rc::new(Cell::new(false));

@@ -3,6 +3,7 @@
 
 mod add_dialog;
 mod add_dialog_chips;
+mod add_dialog_followers;
 mod add_dialog_input;
 mod add_dialog_results;
 mod add_dialog_rows;
@@ -33,6 +34,11 @@ mod podcasts_row_interaction;
 mod podcasts_row_state;
 mod podcasts_scroller;
 mod podcasts_selection;
+mod podcasts_sync_row;
+#[cfg(test)]
+#[path = "podcasts_sync_row_display_tests.rs"]
+mod podcasts_sync_row_display_tests;
+mod podcasts_sync_state;
 mod podcasts_title;
 mod podcasts_view;
 mod podcasts_view_data;

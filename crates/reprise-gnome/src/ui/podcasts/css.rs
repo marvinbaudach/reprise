@@ -1,13 +1,85 @@
 //! Podcasts source structural styles.
 
+use crate::ui::motion;
+
 pub(super) fn css() -> String {
-    r#"
+    format!("{HEAD}{sync}{TAIL}", sync = sync_chrome_css())
+}
+
+const HEAD: &str = r#"
 .reprise-podcasts-source { min-width: 0; }
 .reprise-podcasts-table { border-top: 1px solid alpha(currentColor, 0.10); }
 .reprise-podcast-group {
   border-radius: 12px;
   background: alpha(currentColor, 0.045);
   border: 1px solid alpha(currentColor, 0.08);
+}
+"#;
+
+/// `POD-26`'s loading chrome. It sits between two raw blocks rather than inside
+/// them because its durations are interpolated from `ui::motion`: `MOT-1` keeps
+/// timing out of the CSS itself (`scripts/check-motion-tokens.sh`).
+fn sync_chrome_css() -> String {
+    format!(
+        r#".reprise-podcast-group.reprise-podcast-group-syncing {{
+  border-color: alpha(@accent_bg_color, 0.22);
+  background-image: linear-gradient(to bottom, alpha(@accent_bg_color, 0.06), transparent);
+  transition: border-color {standard}ms ease, background-image {standard}ms ease;
+}}
+.reprise-podcast-group-syncing > title > arrow {{ opacity: 0.38; }}
+.reprise-podcast-sync-row {{ min-height: 56px; }}
+.reprise-podcast-sync-cover {{
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 8px;
+  background: alpha(currentColor, 0.08);
+}}
+.reprise-podcast-sync-cover-icon {{ opacity: 0.62; }}
+.reprise-podcast-sync-shimmer {{
+  min-width: 7px;
+  background: alpha(@accent_bg_color, 0.14);
+  animation: reprise-podcast-shimmer {shimmer}ms linear infinite;
+}}
+.reprise-podcast-sync-spin {{
+  color: @reprise_accent_text_color;
+  animation: reprise-podcast-spin {spin}ms linear infinite;
+}}
+.reprise-podcast-sync-breathe {{
+  animation: reprise-podcast-breathe {breathe}ms ease-in-out infinite;
+}}
+"#,
+        standard = motion::STANDARD_MS,
+        shimmer = motion::PODCAST_SYNC_SHIMMER_MS,
+        spin = motion::PODCAST_SYNC_SPIN_MS,
+        breathe = motion::PODCAST_SYNC_BREATHE_MS,
+    )
+}
+
+const TAIL: &str = r#".reprise-podcast-sync-dot {
+  min-width: 6px;
+  min-height: 6px;
+  margin: 5px;
+  border-radius: 999px;
+  background: alpha(currentColor, 0.24);
+}
+.reprise-podcast-sync-dot-active { background: @accent_bg_color; }
+.reprise-podcast-sync-step-done { opacity: 0.62; }
+.reprise-podcast-sync-step-active { color: @reprise_accent_text_color; }
+.reprise-podcast-sync-step-pending { opacity: 0.48; }
+.reprise-podcast-sync-step-failed { color: @error_color; }
+@keyframes reprise-podcast-shimmer {
+  from { transform: translate(-8px, 0); opacity: 0; }
+  18% { opacity: 0.7; }
+  82% { opacity: 0.7; }
+  to { transform: translate(48px, 0); opacity: 0; }
+}
+@keyframes reprise-podcast-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes reprise-podcast-breathe {
+  from { opacity: 0.42; }
+  to { opacity: 0.78; }
 }
 .reprise-podcast-group-artwork {
   min-width: 40px;
@@ -70,9 +142,7 @@ pub(super) fn css() -> String {
   padding: 10px;
   background: alpha(currentColor, 0.04);
 }
-"#
-    .to_owned()
-}
+"#;
 
 #[cfg(test)]
 mod tests {
@@ -104,5 +174,27 @@ mod tests {
             "the selected rule must come last, or a selected loaded row would not look selected"
         );
         assert!(css.contains("background: alpha(currentColor, 0.12)"));
+    }
+
+    #[test]
+    fn pod_26_loading_chrome_uses_named_accent_roles_and_the_approved_motion() {
+        let css = css();
+        assert!(css.contains(".reprise-podcast-group-syncing"));
+        assert!(css.contains("border-color: alpha(@accent_bg_color, 0.22)"));
+        assert!(
+            css.contains("linear-gradient(to bottom, alpha(@accent_bg_color, 0.06), transparent)")
+        );
+        assert!(css.contains("animation: reprise-podcast-shimmer 1900ms linear infinite"));
+        assert!(css.contains("animation: reprise-podcast-spin 900ms linear infinite"));
+        assert!(css.contains("animation: reprise-podcast-breathe 2000ms ease-in-out infinite"));
+        // Read from the token rather than pinned as a literal: this duration is
+        // the shared `STANDARD_MS`, so a retune elsewhere in the app must not
+        // surface here as a failing podcasts test.
+        assert!(css.contains(&format!(
+            "transition: border-color {}ms",
+            motion::STANDARD_MS
+        )));
+        assert!(css.contains(".reprise-podcast-group-syncing > title > arrow { opacity: 0.38; }"));
+        assert!(!css.contains("#4ddac4"));
     }
 }

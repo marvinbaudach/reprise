@@ -159,6 +159,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
             downloads: BTreeMap::new(),
             selection: BTreeMap::new(),
             channels: BTreeMap::new(),
+            syncs: BTreeMap::new(),
             artwork: Vec::new(),
         };
         let rendered = episode_row(
@@ -242,6 +243,7 @@ fn src_14_grouped_secondary_click_opens_for_one_row_or_the_three_row_selection()
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
         false,
+        &Rc::new(crate::test_db::open().unwrap()),
         Connectivity::Online,
         None,
         &selection,
@@ -286,6 +288,7 @@ fn acc_1_every_point_of_a_grouped_episode_row_reaches_the_context_menu() {
         downloads: BTreeMap::new(),
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
+        syncs: BTreeMap::new(),
         artwork: Vec::new(),
     };
     let row = episode(None);
@@ -374,6 +377,7 @@ fn collapsed_group_renders_ten_episodes_and_one_show_all_action() {
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
         false,
+        &Rc::new(crate::test_db::open().unwrap()),
         Connectivity::Online,
         None,
         &Rc::new(RefCell::new(PodcastSelection::default())),
@@ -430,6 +434,7 @@ fn src_5_one_expander_is_rendered_per_source_group() {
         &Rc::new(RefCell::new(BTreeSet::new())),
         &BTreeMap::new(),
         false,
+        &Rc::new(crate::test_db::open().unwrap()),
         Connectivity::Online,
         None,
         &Rc::new(RefCell::new(PodcastSelection::default())),
@@ -480,6 +485,7 @@ fn src_12b_grouped_selection_survives_render_rebuild_on_the_row() {
             &Rc::new(RefCell::new(BTreeSet::new())),
             &BTreeMap::new(),
             false,
+            &Rc::new(crate::test_db::open().unwrap()),
             Connectivity::Online,
             None,
             &selection,

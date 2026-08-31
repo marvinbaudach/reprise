@@ -22,12 +22,12 @@ fn two_stages_of_the_same_track_never_share_a_path() {
 fn a_temporary_name_sanitizes_the_device_and_names_this_process() {
     let path = temporary_path("Pixel/7 ../Pro", 9, "opus");
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
-    assert_eq!(path.parent(), Some(std::env::temp_dir().as_path()));
+    assert_eq!(path.parent(), Some(staging_dir().as_path()));
     assert!(!name.contains('/'), "{name} carries a path separator");
     assert!(
         name.starts_with(&format!(
-            "reprise-sync-Pixel 7 .. Pro-{}-9-",
-            std::process::id()
+            "reprise-sync-{}-Pixel 7 .. Pro-9-",
+            std::process::id(),
         )),
         "unexpected staged name {name}"
     );
@@ -50,4 +50,26 @@ fn a_write_that_cannot_land_answers_with_an_error_and_no_path() {
     // `Err` carries no path, so a caller has nothing to hand to a backend.
     let failure = stage_bytes("device-7", 42, "no-such-directory/analysis", b"encoded");
     assert!(failure.is_err(), "the write should not have succeeded");
+}
+
+#[test]
+fn storage_full_names_the_local_staging_directory_not_the_device() {
+    let directory = std::env::temp_dir().join("reprise-staging-full-test");
+    let error = stage_bytes_with(
+        &directory,
+        "device-7",
+        42,
+        "analysis",
+        b"encoded",
+        |_, _| Err(std::io::Error::from(std::io::ErrorKind::StorageFull)),
+    )
+    .unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("local staging directory"), "{message}");
+    assert!(
+        message.contains(&directory.display().to_string()),
+        "{message}"
+    );
+    assert!(!message.to_lowercase().contains("device"), "{message}");
 }

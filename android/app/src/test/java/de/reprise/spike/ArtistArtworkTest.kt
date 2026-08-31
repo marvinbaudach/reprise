@@ -186,6 +186,34 @@ class ArtistArtworkTest {
         }
     }
 
+    @Test
+    fun aPortraitWrittenAfterTheFallbackWasResolvedReplacesThatFallback() {
+        val generated = bitmap(Color.MAGENTA)
+        val portrait = bitmap(Color.BLUE)
+        var portraitAvailable = false
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            resolveArtistPortraitCached = { _, _ ->
+                if (portraitAvailable) "cached-portrait" else null
+            },
+            decode = { path -> if (path == "cached-portrait") portrait else null },
+            fallback = { _, _, _ -> generated },
+            cache = ArtworkCache(),
+            onMainThread = { work -> work() },
+        )
+
+        try {
+            assertSame(generated, resolveArtist(artwork, AndroidArtworkSize.LIST, false))
+
+            portraitAvailable = true
+            artwork.artistPortraitsChanged()
+
+            assertSame(portrait, resolveArtist(artwork, AndroidArtworkSize.LIST, false))
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
     private fun resolveArtist(
         artwork: TrackArtwork,
         size: AndroidArtworkSize,
