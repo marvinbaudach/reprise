@@ -80,12 +80,13 @@ class NowPlayingSwipeTransitionTest {
                 up()
             }
 
-            var sawExitBeforeTransport = false
+            var sawExitAfterTransport = false
             var incomingCoverWasDisplaced = false
             var incomingFogChangedWhileDisplaced = false
             var visualizerResetWhileDisplaced = false
             var incomingArrived = false
             var framesSinceTransport = 0
+            var outgoingWasDisplaced = false
             var outgoingReturnedToCentre = false
             repeat(MAX_TRANSITION_FRAMES) {
                 compose.mainClock.advanceTimeByFrame()
@@ -99,8 +100,9 @@ class NowPlayingSwipeTransitionTest {
                 val cover = frame.strongCoverRun()
                 val displaced = cover == null ||
                     kotlin.math.abs(cover.center - frame.width / 2f) > 2f
-                if (controls.nextCalls == 0 && displaced) sawExitBeforeTransport = true
+                if (controls.nextCalls > 0 && displaced) sawExitAfterTransport = true
                 if (displaced) {
+                    outgoingWasDisplaced = outgoingWasDisplaced || cover?.incoming == false
                     incomingCoverWasDisplaced = incomingCoverWasDisplaced || cover?.incoming == true
                     incomingFogChangedWhileDisplaced = incomingFogChangedWhileDisplaced ||
                         frame.blueMassOutsideCover() > baselineFogBlue + FOG_BLUE_TOLERANCE
@@ -110,6 +112,7 @@ class NowPlayingSwipeTransitionTest {
                 if (
                     controls.nextCalls > 0 &&
                     !incomingArrived &&
+                    outgoingWasDisplaced &&
                     cover?.incoming == false &&
                     kotlin.math.abs(cover.center - frame.width / 2f) <= 2f
                 ) {
@@ -127,7 +130,7 @@ class NowPlayingSwipeTransitionTest {
 
             // The fake chooses its own flip timing, so this proves the invariant regardless of
             // when that flip lands. It is a regression pin, not a reproduction of device latency.
-            assertTrue("transport advanced before the card began its exit", sawExitBeforeTransport)
+            assertTrue("the card never began its exit after transport advanced", sawExitAfterTransport)
             assertTrue("the fake incoming track never arrived", incomingArrived)
             assertFalse("the incoming cover appeared on a displaced card", incomingCoverWasDisplaced)
             assertFalse("the incoming fog appeared on a displaced card", incomingFogChangedWhileDisplaced)
@@ -141,6 +144,140 @@ class NowPlayingSwipeTransitionTest {
         } finally {
             motion.detach()
             artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun aCommittedSwipeThatNeverReceivesANewTrackReturnsToCentre() {
+        compose.mainClock.autoAdvance = false
+        val outgoing = swipeTrack(id = 830, uri = "content://tracks/outgoing")
+        val incoming = swipeTrack(id = 831, uri = "content://tracks/incoming")
+        val controls = SwipeRecordingControls()
+        val engineFactory = SwipeRecordingEngineFactory()
+        val motion = AmbientMotionController()
+        val artwork = swipeArtwork(outgoing, incoming)
+
+        try {
+            compose.setContent {
+                RepriseTheme(swipeTheme(), darkPalette = true) {
+                    CompositionLocalProvider(
+                        LocalPlaybackControls provides controls,
+                        LocalTrackArtwork provides artwork,
+                        LocalVisualSceneEngineFactory provides engineFactory,
+                        LocalAmbientMotionController provides motion,
+                    ) {
+                        NowPlayingSheet(
+                            track = outgoing,
+                            playback = swipePlayback(outgoing),
+                            close = {},
+                        )
+                    }
+                }
+            }
+            enableMotion(motion)
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeByFrame()
+
+            swipeNext()
+            compose.mainClock.advanceTimeBy(EXIT_SETTLE_MS)
+
+            val frame = captureScene()
+            val cover = frame.strongCoverRun()
+            assertEquals(1, controls.nextCalls)
+            assertTrue("the outgoing cover stayed offscreen", cover?.incoming == false)
+            assertEquals(frame.width / 2f, cover?.center ?: -1f, 2f)
+        } finally {
+            motion.detach()
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun aRapidSecondSwipeCannotReplaceTheInFlightExit() {
+        compose.mainClock.autoAdvance = false
+        val outgoing = swipeTrack(id = 830, uri = "content://tracks/outgoing")
+        val incoming = swipeTrack(id = 831, uri = "content://tracks/incoming")
+        val controls = SwipeRecordingControls()
+        val engineFactory = SwipeRecordingEngineFactory()
+        val motion = AmbientMotionController()
+        val artwork = swipeArtwork(outgoing, incoming)
+
+        try {
+            compose.setContent {
+                RepriseTheme(swipeTheme(), darkPalette = true) {
+                    CompositionLocalProvider(
+                        LocalPlaybackControls provides controls,
+                        LocalTrackArtwork provides artwork,
+                        LocalVisualSceneEngineFactory provides engineFactory,
+                        LocalAmbientMotionController provides motion,
+                    ) {
+                        NowPlayingSheet(
+                            track = outgoing,
+                            playback = swipePlayback(outgoing),
+                            close = {},
+                        )
+                    }
+                }
+            }
+            enableMotion(motion)
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeByFrame()
+
+            swipeNext()
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithTag("now-playing-gestures").performTouchInput {
+                down(Offset(width * 0.25f, height * 0.3f))
+                moveTo(Offset(width * 0.65f, height * 0.3f))
+                up()
+            }
+            compose.mainClock.advanceTimeBy(EXIT_SETTLE_MS)
+
+            assertEquals(1, controls.nextCalls)
+            assertEquals(0, controls.previousCalls)
+        } finally {
+            motion.detach()
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun leavingCompositionDuringTheExitCannotLoseTheTransportCommand() {
+        compose.mainClock.autoAdvance = false
+        val mounted = mutableStateOf(true)
+        val outgoing = swipeTrack(id = 830, uri = "content://tracks/outgoing")
+        val controls = SwipeRecordingControls()
+        val engineFactory = SwipeRecordingEngineFactory()
+        val motion = AmbientMotionController()
+
+        try {
+            compose.setContent {
+                if (mounted.value) {
+                    RepriseTheme(swipeTheme(), darkPalette = true) {
+                        CompositionLocalProvider(
+                            LocalPlaybackControls provides controls,
+                            LocalVisualSceneEngineFactory provides engineFactory,
+                            LocalAmbientMotionController provides motion,
+                        ) {
+                            NowPlayingSheet(
+                                track = outgoing,
+                                playback = swipePlayback(outgoing),
+                                close = {},
+                            )
+                        }
+                    }
+                }
+            }
+            enableMotion(motion)
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeByFrame()
+
+            swipeNext()
+            compose.runOnUiThread { mounted.value = false }
+            compose.mainClock.advanceTimeByFrame()
+
+            assertEquals(1, controls.nextCalls)
+        } finally {
+            motion.detach()
         }
     }
 
@@ -191,6 +328,25 @@ class NowPlayingSwipeTransitionTest {
     private fun captureScene(): Bitmap = compose.onNodeWithTag("now-playing-scene")
         .captureToImage()
         .asAndroidBitmap()
+
+    private fun enableMotion(motion: AmbientMotionController) {
+        compose.runOnUiThread {
+            motion.attach()
+            motion.runtimeChanged(
+                resumed = true,
+                screenInteractive = true,
+                animationsEnabled = true,
+            )
+        }
+    }
+
+    private fun swipeNext() {
+        compose.onNodeWithTag("now-playing-gestures").performTouchInput {
+            down(Offset(width * 0.75f, height * 0.3f))
+            moveTo(Offset(width * 0.35f, height * 0.3f))
+            up()
+        }
+    }
 
     private fun swipeArtwork(outgoing: LibraryTrack, incoming: LibraryTrack): TrackArtwork {
         val cache = ArtworkCache()
@@ -267,9 +423,15 @@ private data class CoverRun(val left: Int, val right: Int, val incoming: Boolean
 private class SwipeRecordingControls : PlaybackControls by DisconnectedPlaybackControls {
     var nextCalls = 0
         private set
+    var previousCalls = 0
+        private set
 
     override fun next() {
         nextCalls += 1
+    }
+
+    override fun previous() {
+        previousCalls += 1
     }
 }
 
@@ -321,6 +483,7 @@ private fun swipePlayback(track: LibraryTrack) = PlaybackUiState(
 
 private const val MAX_TRANSITION_FRAMES = 90
 private const val FAKE_FLIP_DELAY_FRAMES = 5
+private const val EXIT_SETTLE_MS = 2_000L
 private const val PLAYED_CENTRE_FRACTION = 0.34f
 private const val FOG_BLUE_TOLERANCE = 2_000L
 private const val STRONG_CHANNEL = 180

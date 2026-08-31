@@ -51,7 +51,7 @@ internal fun Modifier.nowPlayingGestures(
     animationsEnabled: Boolean,
     onHorizontalOffset: (Float) -> Unit,
     onVerticalOffset: (Float) -> Unit,
-    onSettle: (PlayGestureDecision) -> Unit,
+    onSettle: (decision: PlayGestureDecision, widthPx: Float) -> Unit,
     onDoubleTap: (leftHalf: Boolean) -> Unit,
     onTap: (Offset) -> Unit,
 ): Modifier = pointerInput(animationsEnabled) {
@@ -107,7 +107,19 @@ internal fun Modifier.nowPlayingGestures(
                 pendingTap?.cancel()
                 pendingTap = null
                 val measured = velocity.calculateVelocity()
-                onSettle(state.settle(measured.x, measured.y))
+                val decision = state.settle(measured.x, measured.y)
+                val widthPx = size.width.toFloat()
+                // A zero-width node cannot animate a card offscreen, so reject that
+                // impossible pre-layout commit instead of exposing an immediate flip.
+                val measuredDecision = if (
+                    widthPx <= 0f &&
+                    (decision == PlayGestureDecision.NEXT || decision == PlayGestureDecision.PREVIOUS)
+                ) {
+                    PlayGestureDecision.SPRING_BACK
+                } else {
+                    decision
+                }
+                onSettle(measuredDecision, widthPx)
                 lastTapTime = Long.MIN_VALUE
                 lastTapPosition = Offset.Unspecified
             } else {

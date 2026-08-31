@@ -42,7 +42,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -87,9 +86,7 @@ internal fun NowPlayingSheet(
     val horizontalOffset = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
     val gestureScope = rememberCoroutineScope()
-    var swipeWidthPx by remember { mutableFloatStateOf(0f) }
     var outgoingTrack by remember { mutableStateOf<LibraryTrack?>(null) }
-    var exitFinished by remember { mutableStateOf(false) }
     val displayedTrack = outgoingTrack ?: track
     var seekMarker by remember { mutableStateOf<String?>(null) }
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
@@ -122,14 +119,6 @@ internal fun NowPlayingSheet(
         delay(600)
         seekMarker = null
     }
-    LaunchedEffect(track.id, exitFinished, outgoingTrack?.id) {
-        val capturedTrack = outgoingTrack ?: return@LaunchedEffect
-        if (exitFinished && track.id != capturedTrack.id) {
-            horizontalOffset.snapTo(0f)
-            outgoingTrack = null
-            exitFinished = false
-        }
-    }
     PredictiveBackHandler {
         try {
             it.collect { event -> backProgress = event.progress }
@@ -143,21 +132,29 @@ internal fun NowPlayingSheet(
         modifier = Modifier
             .fillMaxSize()
             .testTag("now-playing-gestures")
-            .onSizeChanged { size -> swipeWidthPx = size.width.toFloat() }
             .nowPlayingGestures(
                 animationsEnabled = motion.sceneAnimationsEnabled,
                 onHorizontalOffset = { offset ->
-                    gestureScope.launch { horizontalOffset.snapTo(offset) }
+                    gestureScope.launch {
+                        if (outgoingTrack == null) horizontalOffset.snapTo(offset)
+                    }
                 },
                 onVerticalOffset = { offset ->
-                    gestureScope.launch { verticalOffset.snapTo(offset) }
+                    gestureScope.launch {
+                        if (outgoingTrack == null) verticalOffset.snapTo(offset)
+                    }
                 },
-                onSettle = { decision ->
+                onSettle = settle@{ decision, swipeWidthPx ->
+                    if (outgoingTrack != null) return@settle
                     val advancesTrack = decision == PlayGestureDecision.NEXT ||
                         decision == PlayGestureDecision.PREVIOUS
-                    if (advancesTrack && motion.sceneAnimationsEnabled && swipeWidthPx > 0f) {
+                    if (advancesTrack && motion.sceneAnimationsEnabled) {
                         outgoingTrack = track
-                        exitFinished = false
+                        if (decision == PlayGestureDecision.NEXT) {
+                            controls.next()
+                        } else {
+                            controls.previous()
+                        }
                         gestureScope.launch {
                             val exitOffset = if (decision == PlayGestureDecision.NEXT) {
                                 -swipeWidthPx
@@ -165,12 +162,8 @@ internal fun NowPlayingSheet(
                                 swipeWidthPx
                             }
                             horizontalOffset.animateTo(exitOffset, spring())
-                            if (decision == PlayGestureDecision.NEXT) {
-                                controls.next()
-                            } else {
-                                controls.previous()
-                            }
-                            exitFinished = true
+                            horizontalOffset.snapTo(0f)
+                            outgoingTrack = null
                             verticalOffset.animateTo(0f, spring())
                         }
                     } else {
