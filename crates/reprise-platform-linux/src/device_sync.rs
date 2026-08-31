@@ -446,6 +446,9 @@ impl DeviceStorage {
                 {
                     Ok(batch) => batch,
                     Err(error) => {
+                        // This handles remote enumerators disappearing between batches. Local
+                        // chmod fixtures cannot fail after open; coverage would require an
+                        // injectable GFileEnumerator.
                         warn_cleanup_failure(
                             &managed_root,
                             &directory,
@@ -664,7 +667,11 @@ fn warn_cleanup_failure(
     error: &gio::glib::Error,
     action: &str,
 ) {
-    tracing::warn!(path = ?root.relative_path(path), error = %error, action, "device sync: could not clean partial files");
+    let path = root.relative_path(path).map_or_else(
+        || path.uri().to_string(),
+        |path| path.to_string_lossy().into_owned(),
+    );
+    tracing::warn!(path = %path, error = %error, action, "device sync: could not clean partial files");
 }
 
 fn choose_storage_volume(volumes: &[String]) -> Option<String> {

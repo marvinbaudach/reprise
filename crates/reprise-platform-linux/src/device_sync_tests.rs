@@ -245,6 +245,7 @@ fn copy_creates_managed_directories_and_reports_progress() {
 fn managed_write_names_destination_directory_creation_failures() {
     let (temp, storage) = fixture();
     if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
         return;
     }
     let managed_root = temp.path().join("Music/Reprise");
@@ -576,6 +577,7 @@ fn cleanup_partials_silently_accepts_a_missing_managed_root() {
 fn cleanup_partials_continues_after_one_delete_fails() {
     let (temp, storage) = fixture();
     if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
         return;
     }
     let protected = temp.path().join("Music/Reprise/Protected");
@@ -600,10 +602,11 @@ fn cleanup_partials_continues_after_one_delete_fails() {
 fn cleanup_partials_continues_after_one_directory_cannot_be_enumerated() {
     let (temp, storage) = fixture();
     if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
         return;
     }
     let unreadable = temp.path().join("Music/Reprise/Unreadable");
-    let writable = temp.path().join("Music/Reprise/Writable");
+    let writable = temp.path().join("Music/Reprise/Deep/Writable");
     fs::create_dir_all(&unreadable).unwrap();
     fs::create_dir_all(&writable).unwrap();
     let writable_partial = writable.join("removed.opus.part");
@@ -615,6 +618,26 @@ fn cleanup_partials_continues_after_one_directory_cannot_be_enumerated() {
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(result.as_ref().ok(), Some(&1));
     assert!(!writable_partial.exists());
+}
+
+#[test]
+fn cleanup_partials_root_enumeration_warning_names_the_managed_root() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
+        return;
+    }
+    let managed_root = temp.path().join("Music/Reprise");
+    fs::create_dir_all(&managed_root).unwrap();
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let (result, warnings) =
+        capture_warnings(|| run(storage.cleanup_partials_in(None, "/Music/Reprise")));
+
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(result.as_ref().ok(), Some(&0));
+    assert!(warnings.contains(gio::File::for_path(&managed_root).uri().as_str()));
+    assert!(warnings.contains("action=\"enumerate directory\""));
 }
 
 #[test]
