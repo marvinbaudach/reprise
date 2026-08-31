@@ -78,7 +78,6 @@ flock -n 9 || {
 rm -f -- "$O"/s-*.mp4 "$LIST"
 
 CROP="crop=2880:1747:0:53"
-DEBADGE="split[a][b];[b]crop=180:88:600:0[p];[a][p]overlay=128:0"
 STAGE_W=1582
 PAD="pad=1920:1080:169:0:color=$FILM2_GROUND"
 # -frames:v is not belt-and-braces on top of -t: the takes are VFR (avg 23.8
@@ -162,7 +161,8 @@ bridge() { # name deskstart phonestart
   # it: the slide starts at dhalf - xf into the bridge, so with the desk run
   # ending at 30.0 the bass at 36.5 and the slide at 36.6 still meet.
   local dhalf=${SHOWREEL_BRIDGE_DESK:-6.8} phalf=1.2 xf=0.2
-  local dur=$(python3 -c "print(round($dhalf + $phalf - $xf, 3))")
+  local dur
+  dur=$(python3 -c "print(round($dhalf + $phalf - $xf, 3))")
   LIST_OFF=1
   case ${SHOWREEL_BRIDGE:-devicesync} in
     # The visualiser panel, at the right edge of the window.
