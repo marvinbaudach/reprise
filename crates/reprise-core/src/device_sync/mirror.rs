@@ -273,7 +273,7 @@ fn build_plan(
     desired_files.sort_by_key(|file| file.track.id);
     let managed_paths = managed_files
         .iter()
-        .map(|file| file.relative_path.as_str())
+        .map(|file| file.relative_path.to_lowercase())
         .collect::<HashSet<_>>();
 
     let mut plan = MirrorPlan {
@@ -427,7 +427,7 @@ fn plan_file_changes(
     inventory_by_id: &HashMap<i64, DeviceFileRecord>,
     unavailable: &HashMap<i64, UnavailableTrack>,
     managed_files_scanned: bool,
-    managed_paths: &HashSet<&str>,
+    managed_paths: &HashSet<String>,
     plan: &mut MirrorPlan,
 ) {
     let mut desired_ids = desired.keys().copied().collect::<Vec<_>>();
@@ -439,7 +439,7 @@ fn plan_file_changes(
             Some(existing)
                 if inventory_matches(existing, file)
                     && managed_files_scanned
-                    && !managed_paths.contains(existing.device_path.as_str()) =>
+                    && !managed_paths.contains(&existing.device_path.to_lowercase()) =>
             {
                 plan.copy.push(file.clone());
             }

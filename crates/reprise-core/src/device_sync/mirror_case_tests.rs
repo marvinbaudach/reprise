@@ -93,6 +93,24 @@ fn resident_non_ascii_case_spelling_is_adopted() {
 }
 
 #[test]
+fn authoritative_scan_accepts_the_resident_case_variant_of_the_inventory_path() {
+    let wanted = case_track(1, "Carnifex", "Graveside Confessions", "Track 1");
+    let inventory_path = "Carnifex/Graveside Confessions/01 Track 1.mp3";
+    let resident_path = "Carnifex/GRAVESIDE CONFESSIONS/01 Track 1.mp3";
+    let mut mirror_input = selected_input(wanted.clone());
+    mirror_input
+        .inventory
+        .push(inventory(&wanted, inventory_path, "copy-original-v1"));
+    mirror_input.managed_files.push(managed(resident_path));
+    mirror_input.managed_files_scanned = true;
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+}
+
+#[test]
 fn new_track_uses_the_majority_resident_directory_spelling() {
     let wanted = case_track(9, "Current Artist", "Current Album", "Track 9");
     let mut mirror_input = selected_input(wanted);
