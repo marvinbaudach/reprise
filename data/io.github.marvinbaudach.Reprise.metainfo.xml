@@ -102,13 +102,15 @@
   <supports>
     <control>touch</control>
   </supports>
-  <content_rating type="oars-1.1"/>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
   <branding>
     <color type="primary" scheme_preference="light">#4FDBD4</color>
     <color type="primary" scheme_preference="dark">#00706B</color>
   </branding>
   <requires>
-    <display_length compare="ge">768</display_length>
+    <display_length compare="ge">600</display_length>
   </requires>
   <recommends>
     <control>keyboard</control>
@@ -134,6 +136,87 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.111" date="2026-08-31" type="stable">
+      <description><p>Keeps the waveform on the exact frame where a seek settles.</p></description>
+    </release>
+    <release version="0.1.110" date="2026-08-31" type="stable">
+      <description><p>Lets a stopped waveform click choose where the next playback starts.</p></description>
+    </release>
+    <release version="0.1.109" date="2026-08-31" type="stable">
+      <description><p>Makes Library Doctor scans cover the whole library consistently.</p></description>
+    </release>
+    <release version="0.1.108" date="2026-08-30" type="stable">
+      <description><p>Corrects the remaining-time presentation in the player dock.</p></description>
+    </release>
+    <release version="0.1.107" date="2026-08-30" type="stable">
+      <description><p>Keeps the device synchronization runtime within its maintained module boundary.</p></description>
+    </release>
+    <release version="0.1.106" date="2026-08-30" type="stable">
+      <description><p>Names the process holding the library write slot and reports contention safely.</p></description>
+    </release>
+    <release version="0.1.105" date="2026-08-30" type="stable">
+      <description><p>Lets device synchronization continue when a selected track disappears.</p></description>
+    </release>
+    <release version="0.1.104" date="2026-08-30" type="stable">
+      <description><p>Stops an abandoned temporary file from blocking later cleanup.</p></description>
+    </release>
+    <release version="0.1.103" date="2026-08-29" type="stable">
+      <description><p>Reports synchronization progress in completed work units instead of transferred bytes.</p></description>
+    </release>
+    <release version="0.1.102" date="2026-08-29" type="stable">
+      <description><p>Explains why a device playlist is locked instead of leaving the action unexplained.</p></description>
+    </release>
+    <release version="0.1.101" date="2026-08-29" type="stable">
+      <description><p>Rechecks podcast artwork permission when a group expands.</p></description>
+    </release>
+    <release version="0.1.100" date="2026-08-29" type="stable">
+      <description><p>Shows YouTube channel size in channel search and keeps its sorting predictable.</p></description>
+    </release>
+    <release version="0.1.99" date="2026-08-29" type="stable">
+      <description><p>Starts agent-requested playback with the same library queue as direct playback.</p></description>
+    </release>
+    <release version="0.1.98" date="2026-08-29" type="stable">
+      <description><p>Limits automatic lyrics batches to tracks discovered since the previous completed pass.</p></description>
+    </release>
+    <release version="0.1.97" date="2026-08-29" type="stable">
+      <description><p>Avoids requesting artwork for podcast groups that are still collapsed.</p></description>
+    </release>
+    <release version="0.1.96" date="2026-08-29" type="stable">
+      <description><p>Hardens playback formatting and keeps toast messages on their maintained path.</p></description>
+    </release>
+    <release version="0.1.95" date="2026-08-29" type="stable">
+      <description><p>Makes the waveform available before a track has been played for the first time.</p></description>
+    </release>
+    <release version="0.1.94" date="2026-08-29" type="stable">
+      <description><p>Makes podcast loading animation use the shared motion timing.</p></description>
+    </release>
+    <release version="0.1.93" date="2026-08-29" type="stable">
+      <description><p>Simplifies podcast download actions while preserving their behavior.</p></description>
+    </release>
+    <release version="0.1.92" date="2026-08-28" type="stable">
+      <description><p>Keeps the sidebar in its column at every supported window width.</p></description>
+    </release>
+    <release version="0.1.91" date="2026-08-28" type="stable">
+      <description><p>Shows what a podcast row is loading instead of leaving an unexplained placeholder.</p></description>
+    </release>
+    <release version="0.1.90" date="2026-08-28" type="stable">
+      <description><p>Refreshes device synchronization when another process changes the library.</p></description>
+    </release>
+    <release version="0.1.89" date="2026-08-28" type="stable">
+      <description><p>Matches wide-layout sidebar tests to the window's actual geometry.</p></description>
+    </release>
+    <release version="0.1.88" date="2026-08-28" type="stable">
+      <description><p>Moves sorting into the track table customization surface.</p></description>
+    </release>
+    <release version="0.1.87" date="2026-08-28" type="stable">
+      <description><p>Lets one failed artist portrait request finish without holding the rest of the queue.</p></description>
+    </release>
+    <release version="0.1.86" date="2026-08-28" type="stable">
+      <description><p>Lets the content panels yield enough width to the track table.</p></description>
+    </release>
+    <release version="0.1.85" date="2026-08-28" type="stable">
+      <description><p>Keeps remembered device playlists connected after the device is opened again.</p></description>
+    </release>
     <release version="0.1.84" date="2026-08-27" type="stable">
       <description>
         <p>Makes the Android library tabs follow the swipe: the navigation mark and the count move with the gesture, and the tab next door is filled before it is reached, so no first swipe lands on an empty list.</p>
