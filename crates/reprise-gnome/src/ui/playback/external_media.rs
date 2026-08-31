@@ -175,14 +175,20 @@ impl PlayerController {
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
         match media {
-            media @ ExternalMedia::Podcast { episode_id, .. } => {
+            mut media @ ExternalMedia::Podcast { episode_id, .. } => {
                 let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
                     .map_err(|error| PlaybackError::Backend(error.to_string()))?;
-                self.prepare_external_playback();
+                let start_position_ms =
+                    self.prepare_external_playback(Some(QueueItem::Episode(episode_id)));
+                if let (Some(position_ms), ExternalMedia::Podcast { resume_ms, .. }) =
+                    (start_position_ms, &mut media)
+                {
+                    *resume_ms = position_ms;
+                }
                 self.begin_podcast(media, row.as_ref(), neighbours, automatic_advance, origin)
             }
             media @ ExternalMedia::Radio { station_id, .. } => {
-                self.prepare_external_playback();
+                self.prepare_external_playback(None);
                 self.begin_radio(media, station_id);
                 Ok(())
             }
@@ -196,8 +202,14 @@ impl PlayerController {
         automatic_advance: AutomaticAdvance,
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
-        let media = media_from_episode(episode);
-        self.prepare_external_playback();
+        let mut media = media_from_episode(episode);
+        let start_position_ms =
+            self.prepare_external_playback(Some(QueueItem::Episode(episode.id)));
+        if let (Some(position_ms), ExternalMedia::Podcast { resume_ms, .. }) =
+            (start_position_ms, &mut media)
+        {
+            *resume_ms = position_ms;
+        }
         self.begin_podcast(
             media,
             Some(episode),
@@ -207,7 +219,8 @@ impl PlayerController {
         )
     }
 
-    fn prepare_external_playback(&self) {
+    fn prepare_external_playback(&self, item: Option<QueueItem>) -> Option<i64> {
+        let start_position_ms = self.take_pending_start_mark(item);
         self.clear_pending_local_seek();
         self.persist_external_position();
         self.evaluate_play_tracking();
@@ -216,6 +229,7 @@ impl PlayerController {
         self.max_position_ms.set(0);
         self.player.set_next(None);
         *self.now_playing.borrow_mut() = None;
+        start_position_ms
     }
 
     pub(in crate::ui) fn play_queued_episode(self: &Rc<Self>, episode_id: i64) {
@@ -229,8 +243,9 @@ impl PlayerController {
         let episode = reprise_core::podcasts::store::episode(&self.conn, episode_id);
         match episode {
             Ok(Some(episode)) => {
+                let media = media_from_episode(&episode);
                 if let Err(error) = self.play_external_with_context_and_origin(
-                    media_from_episode(&episode),
+                    media,
                     neighbours,
                     None,
                     PodcastOrigin::ManualQueue,

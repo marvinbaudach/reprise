@@ -1,4 +1,4 @@
-//! Waveform-only start-then-seek handling for restored media.
+//! Waveform-only start-position marking for restored media.
 
 use std::rc::Rc;
 
@@ -7,7 +7,6 @@ use reprise_core::up_next::QueueItem;
 
 use super::external_media_state::ResumePolicy;
 use super::player_controller::PlayerController;
-use super::queue_transport::restored_start_change;
 
 impl PlayerController {
     pub(in crate::ui) fn seek_or_start(self: &Rc<Self>, position_ms: i64) {
@@ -25,20 +24,13 @@ impl PlayerController {
                 .get()
                 .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
             if let Some(item) = current {
-                let change = restored_start_change(self.restored_placement_intact.get());
-                self.start_current_item(item, change);
-                match item {
-                    QueueItem::Track(id)
-                        if self
-                            .current_track
-                            .get()
-                            .is_some_and(|(loaded, _)| loaded == id) =>
-                    {
-                        self.start_pending_seek(position_ms);
-                    }
-                    QueueItem::Episode(_) => self.seek(position_ms),
-                    QueueItem::Track(_) => {}
-                }
+                self.pending_start_mark.set(Some((item, position_ms)));
+                let duration_ms = self
+                    .now_playing
+                    .borrow()
+                    .as_ref()
+                    .map_or(0, |now_playing| now_playing.duration_ms);
+                self.sync_position(position_ms, duration_ms);
                 return;
             }
         }
@@ -50,6 +42,31 @@ impl PlayerController {
         let succeeded = self.seek_after_start(position_ms);
         policy.initial_seek_finished(succeeded);
         *self.pending_local_seek.borrow_mut() = (!succeeded && position_ms > 0).then_some(policy);
+    }
+
+    pub(in crate::ui) fn apply_local_start_mark(
+        &self,
+        item: QueueItem,
+        start_position_ms: Option<i64>,
+    ) {
+        let (QueueItem::Track(track_id), Some(position_ms)) = (item, start_position_ms) else {
+            return;
+        };
+        if self
+            .current_track
+            .get()
+            .is_some_and(|(loaded, _)| loaded == track_id)
+        {
+            self.start_pending_seek(position_ms);
+        }
+    }
+
+    pub(in crate::ui) fn take_pending_start_mark(&self, item: Option<QueueItem>) -> Option<i64> {
+        self.pending_start_mark
+            .take()
+            .and_then(|(marked_item, position_ms)| {
+                (Some(marked_item) == item).then_some(position_ms)
+            })
     }
 
     pub(in crate::ui) fn seek_after_start(&self, position_ms: i64) -> bool {

@@ -255,6 +255,9 @@ pub struct PlayerController {
     /// `present_track`, which is the moment any placement stops being the
     /// startup one.
     pub(in crate::ui) restored_placement_intact: Cell<bool>,
+    /// A waveform position selected before playback starts, bound to the
+    /// exact queue item that may consume it on the next start attempt.
+    pub(in crate::ui) pending_start_mark: Cell<Option<(QueueItem, i64)>>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<QueueItem>>,
     /// PLAY-14 runtime playback history and navigation one-shot flag.
@@ -460,6 +463,7 @@ impl PlayerController {
             queue: RefCell::new(Queue::new()),
             library_has_tracks: Cell::new(library_has_tracks),
             restored_placement_intact: Cell::new(false),
+            pending_start_mark: Cell::new(None),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
             history: RefCell::default(),
@@ -613,6 +617,7 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        let start_position_ms = self.take_pending_start_mark(Some(QueueItem::Track(id)));
         self.clear_pending_local_seek();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -744,6 +749,7 @@ impl PlayerController {
                         // Pre-feed the following track so the backend can hand
                         // off to it gaplessly when this one is about to finish.
                         self.feed_next();
+                        self.apply_local_start_mark(QueueItem::Track(id), start_position_ms);
                     }
                     Err(error) => {
                         tracing::error!(%error, path = %summary.path, track_id = id, "failed to start playback");

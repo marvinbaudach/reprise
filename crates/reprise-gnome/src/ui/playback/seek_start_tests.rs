@@ -76,7 +76,7 @@ fn controller(calls: Rc<PlaybackCalls>, test_root: &Path) -> Rc<PlayerController
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
+fn stopped_restored_track_marks_the_clicked_waveform_position_until_play() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let test_root = tempfile::tempdir().unwrap();
@@ -109,6 +109,11 @@ fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
 
     controller.seek_or_start(30_000);
 
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
+
     assert_eq!(
         calls.played_paths.borrow().as_slice(),
         ["/music/restored.flac"]
@@ -118,7 +123,79 @@ fn stopped_restored_track_starts_at_the_clicked_waveform_position() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn restored_episode_starts_at_the_clicked_position_not_its_saved_resume() {
+fn stopped_track_mark_applies_when_the_same_track_starts_directly() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/marked.flac', 'Marked', 'Artist', 120000, 0)",
+            [],
+        )
+        .unwrap();
+    controller.current_up_next.set(Some(QueueItem::Track(7)));
+
+    controller.seek_or_start(30_000);
+
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.play_track_id(7);
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/marked.flac"]
+    );
+    assert_eq!(calls.sought_positions.borrow().as_slice(), [30_000]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stopped_track_mark_cannot_survive_a_different_direct_start() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/marked.flac', 'Marked', 'Artist', 120000, 0);
+             INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (8, '/music/other.flac', 'Other', 'Artist', 120000, 0);",
+        )
+        .unwrap();
+    controller.current_up_next.set(Some(QueueItem::Track(7)));
+
+    controller.seek_or_start(30_000);
+
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.play_track_id(8);
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/other.flac"]
+    );
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.reset_to_stopped();
+    controller.toggle_pause();
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/other.flac", "/music/marked.flac"]
+    );
+    assert!(calls.sought_positions.borrow().is_empty());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn restored_episode_marks_the_clicked_position_until_play() {
     use reprise_core::library::session::{SessionEpisode, SessionEpisodeOrigin};
     use reprise_core::podcasts::feed::ParsedEpisode;
     use reprise_core::podcasts::store::{self, NewSubscription};
@@ -168,6 +245,11 @@ fn restored_episode_starts_at_the_clicked_position_not_its_saved_resume() {
 
     controller.seek_or_start(30_000);
 
+    assert!(calls.played_uris.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
+
     assert_eq!(
         calls.played_uris.borrow().as_slice(),
         ["https://podcast.test/episode.mp3"]
@@ -205,6 +287,10 @@ fn stopped_restored_track_retries_the_clicked_position_once_after_preroll() {
     );
 
     controller.seek_or_start(30_000);
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
     controller.apply_event(PlayerEvent::Position {
         position_ms: 0,
         duration_ms: 120_000,
@@ -269,6 +355,10 @@ fn restored_episode_retries_only_the_clicked_position_once_after_preroll() {
     })));
 
     controller.seek_or_start(30_000);
+    assert!(calls.played_uris.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
     controller.apply_event(PlayerEvent::Position {
         position_ms: 0,
         duration_ms: 3_600_000,
@@ -338,7 +428,13 @@ fn restored_youtube_episode_keeps_the_clicked_position_until_delayed_source_star
     })));
 
     controller.seek_or_start(30_000);
+    assert!(calls.played_paths.borrow().is_empty());
     assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
     let generation = controller.external.borrow().generation;
     controller
         .start_podcast_source(
@@ -357,7 +453,7 @@ fn restored_youtube_episode_keeps_the_clicked_position_until_delayed_source_star
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stopped_queued_episode_does_not_drop_the_clicked_position() {
+fn stopped_queued_episode_marks_the_clicked_position_until_play() {
     use reprise_core::podcasts::feed::ParsedEpisode;
     use reprise_core::podcasts::store::{self, NewSubscription};
     use reprise_core::podcasts::PodcastKind;
@@ -402,6 +498,11 @@ fn stopped_queued_episode_does_not_drop_the_clicked_position() {
         .set(Some(QueueItem::Episode(episode_id)));
 
     controller.seek_or_start(30_000);
+
+    assert!(calls.played_uris.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.toggle_pause();
 
     assert_eq!(
         calls.played_uris.borrow().as_slice(),
