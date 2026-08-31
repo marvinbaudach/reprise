@@ -749,16 +749,20 @@ impl AndroidPlaybackSession {
 
     /// Re-reads authored settings after an explicit UI write and applies them.
     pub fn reload_playback_settings(&self) -> Result<(), AndroidPlaybackError> {
-        let database =
-            self.inner
-                .library
-                .reader()
-                .map_err(|error| AndroidPlaybackError::Backend {
-                    detail: format!("could not reload playback settings: {error}"),
-                })?;
-        let playback_settings = crate::AndroidPlaybackSettings::load(&database);
-        let transition = reprise_core::library::settings::get_track_transition(&database);
-        let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);
+        let (playback_settings, transition, crossfade_seconds) = {
+            let database =
+                self.inner
+                    .library
+                    .reader()
+                    .map_err(|error| AndroidPlaybackError::Backend {
+                        detail: format!("could not reload playback settings: {error}"),
+                    })?;
+            (
+                crate::AndroidPlaybackSettings::load(&database),
+                reprise_core::library::settings::get_track_transition(&database),
+                reprise_core::library::settings::get_crossfade_seconds(&database),
+            )
+        };
         let backend = self.inner.backend()?;
         backend.set_equalizer(
             playback_settings.equalizer_enabled,
