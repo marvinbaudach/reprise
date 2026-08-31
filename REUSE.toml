@@ -1,0 +1,36 @@
+version = 1
+
+[[annotations]]
+path = ["**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marvin Baudach"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = [
+  "crates/reprise-core/src/playback/cava.rs",
+  "crates/reprise-core/src/playback/cava/bands.rs",
+  "crates/reprise-core/src/playback/cava/smoothing.rs",
+  "crates/reprise-core/src/playback/cava_tests.rs",
+]
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2015 Karl Stavestrand <karl@stavestrand.no>",
+  "2026 Marvin Baudach",
+]
+SPDX-License-Identifier = "MIT AND GPL-3.0-or-later"
+
+[[annotations]]
+path = "showroom/src/components/showcase/ShotTile.tsx"
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2023 Phosphor Icons",
+  "2026 Marvin Baudach",
+]
+SPDX-License-Identifier = "MIT AND GPL-3.0-or-later"
+
+[[annotations]]
+path = ["android/gradlew", "android/gradlew.bat"]
+precedence = "override"
+SPDX-FileCopyrightText = "2015 the original author or authors"
+SPDX-License-Identifier = "Apache-2.0"
