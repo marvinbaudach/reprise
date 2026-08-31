@@ -30,7 +30,6 @@ impl StartPageModel {
 
 pub(in crate::ui) struct DoctorStartPage {
     root: gtk4::Box,
-    scope: adw::ToggleGroup,
     remote: adw::SwitchRow,
     acoustid_unavailable: adw::ActionRow,
     fingerprint_available: bool,
@@ -89,37 +88,6 @@ impl DoctorStartPage {
             .build();
         intro.append(&body);
         column.append(&intro);
-
-        let scope = adw::ToggleGroup::new();
-        for (name, label) in [
-            ("library", strings::DOCTOR_SCOPE_WHOLE_LIBRARY),
-            ("view", strings::DOCTOR_SCOPE_CURRENT_VIEW),
-            ("selection", strings::DOCTOR_SCOPE_SELECTION),
-        ] {
-            scope.add(
-                adw::Toggle::builder()
-                    .name(name)
-                    .label(strings::text(label))
-                    .build(),
-            );
-        }
-        scope.set_active(0);
-        scope.set_homogeneous(true);
-        scope.set_hexpand(true);
-        // a11y-semantics: role=group name=doctor-scope state=one-selected action=arrow-keys
-        scope.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-            strings::DOCTOR_SCOPE,
-        ))]);
-
-        let scope_label = gtk4::Label::builder()
-            .label(strings::text(strings::DOCTOR_SCOPE))
-            .xalign(0.0)
-            .css_classes(["caption", "doctor-start-scope-label"])
-            .build();
-        let scope_block = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        scope_block.append(&scope_label);
-        scope_block.append(&scope);
-        column.append(&scope_block);
 
         let remote = remote_toggle::remote_suggestions_row_for(conn, parent, on_remote_changed);
         remote.set_subtitle(&strings::text(strings::LIBRARY_DOCTOR_REMOTE_DESCRIPTION));
@@ -185,7 +153,6 @@ impl DoctorStartPage {
 
         let page = Self {
             root,
-            scope,
             remote,
             acoustid_unavailable,
             fingerprint_available,
@@ -212,14 +179,6 @@ impl DoctorStartPage {
         self.revert.connect_clicked(move |_| callback());
     }
 
-    pub(in crate::ui) fn selected_scope(&self) -> u32 {
-        self.scope.active()
-    }
-
-    pub(in crate::ui) fn set_selected_scope(&self, scope: u32) {
-        self.scope.set_active(scope);
-    }
-
     pub(in crate::ui) fn remote_active(&self) -> bool {
         self.remote.is_active()
     }
@@ -232,7 +191,6 @@ impl DoctorStartPage {
     }
 
     pub(in crate::ui) fn set_running(&self, running: bool) {
-        self.scope.set_sensitive(!running);
         self.remote.set_sensitive(!running);
         self.run.set_sensitive(!running);
         self.revert.set_sensitive(!running);
@@ -299,9 +257,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn doc_8c_start_page_carries_scope_remote_run_and_the_only_revert() {
+    fn doc_8c_start_page_carries_remote_run_and_the_only_revert() {
         let source = include_str!("start_page.rs");
-        assert!(source.contains("adw::ToggleGroup::new"));
+        assert!(!source.contains(&["adw::", "ToggleGroup::new"].concat()));
         assert!(source.contains("remote_suggestions_row_for"));
         assert!(source.contains("DOCTOR_RUN_SCAN"));
         assert!(source.contains("DOCTOR_REVERT_LAST_CLEANUP"));
