@@ -9,19 +9,19 @@ marker=$(mktemp)
 trap 'rm -f "$marker"' EXIT
 
 test_suites=(
-  de.reprise.spike.scene.SceneStateTest
-  de.reprise.spike.scene.BandEnvelopeTest
-  de.reprise.spike.scene.CoreShapeTest
-  de.reprise.spike.scene.SceneColourTest
-  de.reprise.spike.CoverFogBitmapTest
-  de.reprise.spike.NowPlayingFogTest
-  de.reprise.spike.NowPlayingLegibilityTest
-  de.reprise.spike.NowPlayingBurstTest
-  de.reprise.spike.NowPlayingBurstPixelsTest
-  de.reprise.spike.SceneDriverTest
-  de.reprise.spike.ScenePowerGateTest
-  de.reprise.spike.MainActivityVisualizerTest
-  de.reprise.spike.NowPlayingSceneVerificationTest
+  io.github.marvinbaudach.reprise.scene.SceneStateTest
+  io.github.marvinbaudach.reprise.scene.BandEnvelopeTest
+  io.github.marvinbaudach.reprise.scene.CoreShapeTest
+  io.github.marvinbaudach.reprise.scene.SceneColourTest
+  io.github.marvinbaudach.reprise.CoverFogBitmapTest
+  io.github.marvinbaudach.reprise.NowPlayingFogTest
+  io.github.marvinbaudach.reprise.NowPlayingLegibilityTest
+  io.github.marvinbaudach.reprise.NowPlayingBurstTest
+  io.github.marvinbaudach.reprise.NowPlayingBurstPixelsTest
+  io.github.marvinbaudach.reprise.SceneDriverTest
+  io.github.marvinbaudach.reprise.ScenePowerGateTest
+  io.github.marvinbaudach.reprise.MainActivityVisualizerTest
+  io.github.marvinbaudach.reprise.NowPlayingSceneVerificationTest
 )
 
 # The expected totals are read off the suite list and its sources, never typed
