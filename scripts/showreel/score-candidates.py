@@ -8,12 +8,15 @@ there is none at all (match -2.000, quietest -99 dB are sentinels, not
 measurements). So score every candidate over the same 60 s stretch, and run the
 hole check where score.sh does not already fade: 3.0 s to 58.8 s.
 """
-import importlib.util, subprocess, sys
+import importlib.util
+import subprocess
+import sys
 import numpy as np
 
 spec = importlib.util.spec_from_file_location(
     'pw', '/home/marvin/Projects/reprise-showreel/scripts/showreel/pick-window.py')
-pw = importlib.util.module_from_spec(spec); spec.loader.exec_module(pw)
+pw = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pw)
 
 SR, RATE = pw.SR, pw.SR / pw.FRAME
 SECONDS = float(sys.argv[1])
@@ -25,7 +28,8 @@ def best_start(path, length):
         return 0.0
     out = subprocess.run(['python3', '/home/marvin/Projects/reprise-showreel/scripts/showreel/pick-window.py',
                           path, str(SECONDS), '100.0'], capture_output=True, text=True).stdout
-    return float([l.split()[1] for l in out.splitlines() if l.startswith('start')][0])
+    return float([line.split()[1] for line in out.splitlines()
+                  if line.startswith('start')][0])
 
 print(f"{'candidate':<32}{'start':>7}{'corr':>8}{f'hole(3-{SECONDS-1.2:.1f}s)':>15}{'head':>7}{'tail':>7}")
 for path in sys.argv[1:]:

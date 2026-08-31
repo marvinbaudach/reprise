@@ -19,7 +19,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rp import app_root, find, walk, actions, do, work_dir  # noqa: E402
+from rp import app_root, walk, actions, do, work_dir  # noqa: E402
 
 import gi  # noqa: E402
 gi.require_version('Atspi', '2.0')

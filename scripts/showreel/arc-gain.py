@@ -19,7 +19,6 @@ import importlib.util
 import pathlib
 import sys
 
-import numpy as np
 
 _pw = pathlib.Path(__file__).with_name('pick-window.py')
 _spec = importlib.util.spec_from_file_location('pick_window', _pw)
