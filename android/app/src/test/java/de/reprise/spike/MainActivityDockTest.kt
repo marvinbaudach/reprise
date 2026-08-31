@@ -109,6 +109,15 @@ class MainActivityDockTest {
     }
 
     @Test
+    fun dockPreviousUsesQueueOrder() {
+        enterDock()
+
+        compose.onNodeWithTag("dock-previous").performClick()
+
+        assertEquals(1, application.controls.queuePreviousCalls)
+    }
+
+    @Test
     fun destroyingTheDockedActivityClearsKeepScreenWithoutAnExitAction() {
         enterDock()
         val oldWindow = compose.activity.window

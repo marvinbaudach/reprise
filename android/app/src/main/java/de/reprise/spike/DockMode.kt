@@ -146,7 +146,7 @@ private fun DockTransport(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DockTransportButton("skip_previous", "Previous track", DOCK_SKIP_DP, "dock-previous") {
-            controls.previous()
+            controls.previousInQueueOrder()
         }
         DockTransportButton(
             symbol = playback.playPauseSymbol,

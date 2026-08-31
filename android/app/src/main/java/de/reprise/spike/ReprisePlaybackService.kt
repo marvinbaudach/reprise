@@ -73,7 +73,7 @@ open class ReprisePlaybackService : MediaSessionService() {
 
         override fun next() = this@ReprisePlaybackService.next()
 
-        override fun previous() = this@ReprisePlaybackService.previous()
+        override fun previousInQueueOrder() = this@ReprisePlaybackService.previousInQueueOrder()
     }
 
     override fun onCreate() {
@@ -227,6 +227,10 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     internal fun previous() {
         coreSession().previous()
+    }
+
+    internal fun previousInQueueOrder() {
+        coreSession().previousInQueueOrder()
     }
 
     internal fun seekTo(positionMs: Long) {
