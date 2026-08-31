@@ -218,7 +218,33 @@ gh api "repos/{owner}/{repo}/actions/caches" --paginate \
 gh api -X DELETE "repos/{owner}/{repo}/actions/caches/<id>"
 ```
 
-This is an operational one-off, not a file change; it belongs to no strand.
+### Measured 2026-08-31: do not prune — the premise above is wrong
+
+The store had grown to **23.54 GB across 158 entries**, but every single entry
+was **at most 5 days old**:
+
+| Age | Entries | Size |
+|---|---|---|
+| 0 d | 36 | 3.91 GB |
+| 1 d | 16 | 2.42 GB |
+| 2 d | 46 | 6.84 GB |
+| 3 d | 26 | 3.98 GB |
+| 4 d | 21 | 3.03 GB |
+| 5 d | 13 | 1.93 GB |
+
+Nothing older than 5 days exists, so the entries are **not** "never pruned" —
+GitHub's 7-day unused-entry expiry already prunes them, and the store simply sits
+at a steady state of roughly one week of CI traffic. The absence of anything near
+the 7-day mark also says size-based LRU is not currently biting: 23.54 GB is
+under whatever this repo's real cap is, which is therefore well above the 10 GB
+figure usually quoted.
+
+So a manual prune would delete only live entries that the next CI run
+re-downloads — it costs runner minutes and buys nothing. **Do not prune.**
+
+It would not help strand `b` in any case. `b`'s entry dies of the 7-day expiry,
+not of size pressure, and no amount of pruning extends that clock. Post-merge
+check 4 is what actually settles whether `b`'s win is real.
 
 ## Why PRs prove nothing here, and what to do instead
 
@@ -251,10 +277,20 @@ step.
    three dev pushes. `b` and `a2` spend from the same store; only with both
    landed can the eviction rate be judged. If it thrashes, revert the
    `rust-cache` step alone — not `a1`, not `b`.
-4. **`require-ci-results.sh` against reality.** Confirm on a real run that a
+4. **Strand `b`'s entry survives a realistic release gap.** Size is not the only
+   eviction path: GitHub drops any cache entry unused for **7 days**, and `b`'s
+   key is touched only by `release.yml` on `main`. Two back-to-back release runs
+   will always show a hit and prove nothing about the steady state. Check for a
+   hit on a release that follows the previous one by more than a week — list the
+   entry with `gh api "repos/{owner}/{repo}/actions/caches" --paginate` and
+   confirm it is still there, or read the hit/miss off the run's
+   `Restore cached Flatpak runtimes` step. A miss here means the 11 min saving
+   only ever materialises for clustered releases, which is a materially smaller
+   win than the plan claims.
+5. **`require-ci-results.sh` against reality.** Confirm on a real run that a
    `false` route still yields `skipped` for the display job, in the suite-skip
    (PR) case as well as a routed one.
-5. **The local gate is still whole.** In a clean checkout of `dev`,
+6. **The local gate is still whole.** In a clean checkout of `dev`,
    `scripts/check-merge-readiness.sh` with no env set runs all 27 gates and
    skips none.
 
