@@ -211,21 +211,10 @@ buttons end up on the wrong side.
 2. **No audio.** Every take is mute, and the cut is built so a music bed can be
    laid under it later without touching the picture. A film about a music
    player that cannot be heard is still a choice worth making deliberately.
-3. **Whether the film belongs on the showroom** — and if so, whether it
-   replaces plates or joins them. What the ground looks like today:
-   `showroom/` is React 19 + Vite, deployed by `.github/workflows/pages.yml`
-   to GitHub Pages on pushes to `main` touching `showroom/**`. The gallery is
-   eleven `.webp` plates declared in `showroom/src/data/showcase.ts`, served
-   from `showroom/public/media/showroom/` — **2.4 MB for the whole media
-   payload**, against **6.0 MB for the film alone**. There is no `<video>`
-   anywhere in the showroom today, no LFS and no asset-size gate, but
-   `showroom/tests/product-gallery.test.mjs:39` pins the plate count at
-   exactly eleven, so removing plates is a test change too. The film with its
-   push weighs **19.7 MB — eight times the entire current media payload**. If
-   it goes up at all it should go up as a click-to-play `<video
-   preload="none">` with an existing plate as its poster, *beside* the gallery,
-   and almost certainly as a smaller re-encode: nothing about this page should
-   hand a first-time visitor 19.7 MB unasked.
+3. **The showroom placement was decided on 2026-08-31.** The film joins the
+   gallery in CH.03 as a click-to-play `<video preload="none">` plate; it does
+   not replace the eleven screenshots and does not start on its own. This
+   placement and playback decision is closed. A smaller re-encode remains open.
 4. **The welcome plate's crop is reconstructed, not recorded.** The original
    hand step between `welcome-raw.png` (3456×2160) and the shipped 2400×1456
    plate was never written down; `welcome-shot.sh` now does
