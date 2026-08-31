@@ -6807,7 +6807,7 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
   asynchronous work runs through `glib::spawn_future_local`; CPU-bound work
   runs through `gio::spawn_blocking` and reports back over a channel. Source:
   gtk4-rs book, main event loop.
-- **GP-3** [planned] [gtk] — A closure that captures a widget which itself
+- **GP-3** [active] [gtk] — A closure that captures a widget which itself
   stores that closure uses `glib::clone!(#[weak] …)`, never a strong capture.
   The grep gate catches explicit `#[strong]` captures. An unannotated capture
   is implicitly strong and must be checked in review because the gate cannot
@@ -6838,18 +6838,18 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
 
 ### Distribution metadata
 
-- **GP-12** [planned] [core] — The metainfo file passes
+- **GP-12** [active] [core] — The metainfo file passes
   `appstreamcli validate --no-net --explain`.
   <!-- Keep validation offline and deterministic. Do not add --pedantic: it
        rejects the conventional uppercase final component in GNOME app IDs. -->
-- **GP-13** [planned] [core] — The desktop file passes `desktop-file-validate`.
+- **GP-13** [active] [core] — The desktop file passes `desktop-file-validate`.
 - **GP-14** [planned] [core] — The Flatpak manifest passes
   `flatpak-builder-lint manifest`.
 - **GP-15** [planned] [manual] — Static sandbox permissions stay at the
   absolute minimum. Where an XDG portal exists, the portal is used instead of
   a static permission, and every remaining static permission is justified in
   `flatpak/README.md`. Source: Flathub requirements.
-- **GP-16** [planned] [core] — App name is shorter than 15 characters and the
+- **GP-16** [active] [core] — App name is shorter than 15 characters and the
   summary is at most 35 characters, in sentence case, without a trailing
   period, and without repeating the app name. Source: Flathub quality
   guidelines.
@@ -6866,10 +6866,10 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
 These four points are, verbatim, the rejection reasons the GNOME Circle
 committee published on 2026-05-29.
 
-- **GP-19** [planned] [core] — No comments that read as instructions to a
+- **GP-19** [active] [core] — No comments that read as instructions to a
   model, no banner comment blocks drawn from repeated `=` or `-`, no emoji in
   comments.
-- **GP-20** [planned] [core] — No dead code: no unused items, and no
+- **GP-20** [active] [core] — No dead code: no unused items, and no
   `#[allow(dead_code)]` without a stated reason on the same or preceding line.
 
 ## AJ. Showroom (public site)
