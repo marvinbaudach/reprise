@@ -2,7 +2,7 @@
 slug: showreel-scripts-pass-shellcheck
 worktree: /home/marvin/Projects/reprise-showreel-scripts-pass-shellcheck
 branch: feature/showreel-scripts-pass-shellcheck
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-31
 ---
