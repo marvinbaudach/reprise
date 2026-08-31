@@ -21,10 +21,10 @@ pub(crate) struct GaveUp<E> {
 }
 
 /// Offers `write` again while the only thing in the way is another writer.
-pub(crate) fn with_busy_retries<E: std::fmt::Display>(
+pub(crate) fn with_busy_retries<E>(
     shutting_down: &AtomicBool,
     track_id: i64,
-    is_busy: fn(&E) -> bool,
+    is_busy: impl Fn(&E) -> bool,
     mut write: impl FnMut() -> Result<(), E>,
 ) -> Result<(), GaveUp<E>> {
     let mut attempt = 1;

@@ -29,6 +29,7 @@ mod online_sources;
 mod play_journal;
 mod play_recorder;
 mod play_recorder_retry;
+mod play_recorder_writer;
 pub mod playback;
 mod playback_session;
 mod playback_settings;

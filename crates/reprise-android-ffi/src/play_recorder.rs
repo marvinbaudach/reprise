@@ -76,6 +76,7 @@ use reprise_core::db::Db;
 
 use crate::play_journal::{JournalEntry, PlayJournal};
 use crate::play_recorder_retry::{with_busy_retries, GaveUp};
+use crate::play_recorder_writer::{with_shared_writer_retries, SharedWriteError};
 
 /// One counted play, timestamped where it happened rather than where it lands,
 /// so a queued write cannot back-date `last_played_at` to the drain.
@@ -233,11 +234,7 @@ fn write_queued_plays(
 }
 
 fn drain_shared_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
-    let Ok(database) = writer.lock() else {
-        tracing::warn!("Android play counts remain journaled: the shared writer was poisoned");
-        return;
-    };
-    drain_journal(&database, journal, shutting_down);
+    drain_journal(writer, journal, shutting_down);
 }
 
 fn append_or_warn(journal: &mut PlayJournal, play: RecordedPlay) -> bool {
@@ -254,9 +251,9 @@ fn append_or_warn(journal: &mut PlayJournal, play: RecordedPlay) -> bool {
     }
 }
 
-fn drain_journal(db: &Db, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
+fn drain_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
     while let Some(entry) = journal.front() {
-        if !record_play_with_retries(db, entry, shutting_down) {
+        if !record_play_with_retries(writer, entry, shutting_down) {
             return;
         }
         if let Err(error) = journal.remove_front() {
@@ -278,14 +275,19 @@ fn drain_journal(db: &Db, journal: &mut PlayJournal, shutting_down: &AtomicBool)
 /// Writes one journal entry, offering it again while the only thing in the way
 /// is another writer. A retry round that gives up leaves a warning naming the
 /// track and sequence; the caller keeps the entry durable for a later drain.
-fn record_play_with_retries(db: &Db, entry: JournalEntry, shutting_down: &AtomicBool) -> bool {
-    let written = with_busy_retries(
+fn record_play_with_retries(
+    writer: &Mutex<Db>,
+    entry: JournalEntry,
+    shutting_down: &AtomicBool,
+) -> bool {
+    let written = with_shared_writer_retries(
+        writer,
         shutting_down,
         entry.play.track_id,
         reprise_core::library::stats::is_database_busy,
-        || {
+        |database| {
             reprise_core::library::stats::record_journaled_play(
-                db,
+                database,
                 entry.sequence,
                 entry.play.track_id,
                 entry.play.at_unix,
@@ -295,13 +297,28 @@ fn record_play_with_retries(db: &Db, entry: JournalEntry, shutting_down: &Atomic
     );
     match written {
         Ok(()) => true,
-        Err(GaveUp { attempts, error }) => {
+        Err(GaveUp {
+            attempts,
+            error: SharedWriteError::Database(error),
+        }) => {
             tracing::warn!(
                 %error,
                 track_id = entry.play.track_id,
                 sequence = entry.sequence,
                 attempts,
                 "kept an Android play count in its journal after a write failure",
+            );
+            false
+        }
+        Err(GaveUp {
+            attempts,
+            error: SharedWriteError::WriterPoisoned,
+        }) => {
+            tracing::warn!(
+                track_id = entry.play.track_id,
+                sequence = entry.sequence,
+                attempts,
+                "kept an Android play count in its journal: the shared writer was poisoned",
             );
             false
         }
@@ -510,7 +527,7 @@ mod tests {
 
         let logs = CapturedLogs::default();
         logs.capture(|| {
-            super::drain_journal(&db, &mut journal, &AtomicBool::new(false));
+            super::drain_journal(&Mutex::new(db), &mut journal, &AtomicBool::new(false));
         });
 
         assert_eq!(play_count(&database_path, tracks[0]), 1);
@@ -729,7 +746,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("reprise.db");
         drop(Db::open_migrated(Some(&path)).unwrap());
-        let read_only = Db::open_ready_read_only(&path).unwrap();
+        let read_only = Mutex::new(Db::open_ready_read_only(&path).unwrap());
 
         let logs = CapturedLogs::default();
         logs.capture(|| {
