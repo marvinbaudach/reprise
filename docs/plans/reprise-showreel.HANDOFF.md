@@ -179,9 +179,9 @@ buttons end up on the wrong side.
 
 ## What is decided
 
-- **The film is a file.** It was explicitly not built into the showroom as a
-  video component. The user's intent was that it *could* later replace the
-  many screenshots there — that decision has not been taken.
+- **The film joins the showroom.** Decided 2026-08-31: it is mounted in CH.03
+  as a click-to-play `<video preload="none">` plate beside the eleven gallery
+  plates; it replaces none of them.
 - **The plates that came out of the same session are live.** The eleven
   gallery plates were reshot and shipped in #695, and the podcasts plate was
   reshot from an anonymised profile in #698 after the first one showed real
@@ -208,9 +208,9 @@ buttons end up on the wrong side.
    landed on the scrubber, so shot 6 is the same still Now Playing as shots 3
    and 5. Either re-shoot the phone take with a working swipe, or drop the
    shot — dropping it costs 2.5 s and no information.
-2. **No audio.** Every take is mute, and the cut is built so a music bed can be
-   laid under it later without touching the picture. A film about a music
-   player that cannot be heard is still a choice worth making deliberately.
+2. **The film has audio.** The shipped MP4 carries a music stream and the
+   caption cues begin with `[music begins]`. The showroom starts it muted and
+   offers a sound toggle, so the page never makes noise unbidden.
 3. **The showroom placement was decided on 2026-08-31.** The film joins the
    gallery in CH.03 as a click-to-play `<video preload="none">` plate; it does
    not replace the eleven screenshots and does not start on its own. This
