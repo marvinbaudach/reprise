@@ -49,7 +49,21 @@ pub(crate) fn migrate_v45(conn: &Connection) -> Result<(), rusqlite::Error> {
 /// Adds a distinct diagnostic event for analysis-sidecar write failures.
 pub(crate) fn migrate_v81(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 81 {
+    let supports_analysis_failed: bool = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM sqlite_master
+           WHERE type = 'table' AND name = 'sync_events'
+             AND instr(sql, 'analysis_failed') > 0
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if supports_analysis_failed {
+        if version < 81 {
+            let transaction = conn.unchecked_transaction()?;
+            transaction.pragma_update(None, "user_version", 81)?;
+            transaction.commit()?;
+        }
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
@@ -71,7 +85,7 @@ pub(crate) fn migrate_v81(conn: &Connection) -> Result<(), rusqlite::Error> {
          ALTER TABLE sync_events_v81 RENAME TO sync_events;
          CREATE INDEX idx_sync_events_run ON sync_events(run_id);",
     )?;
-    transaction.pragma_update(None, "user_version", 81)?;
+    transaction.pragma_update(None, "user_version", version.max(81))?;
     transaction.commit()
 }
 

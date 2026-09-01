@@ -113,6 +113,12 @@ Keep the rebuild transactional and idempotent as it is today.
 
 ### 3 — The migration test must be able to fail for the reason the migration exists
 
+**Resolved before this follow-up branch:** the base already contains the later
+PR #773 review fixes H2 and M2. The test constructs the genuine five-kind v45
+table directly, keeps the existing row-preservation assertion, and inserts an
+`analysis_failed` row after migration. The stale `Db::open_in_memory()` premise
+below no longer describes the repository and requires no implementation here.
+
 `crates/reprise-core/src/db_sync_log_migration_tests.rs` opens through
 `Db::open_in_memory()`, which runs the full current chain, so `sync_events`
 already carries the new CHECK before the test forces `user_version` back to 80

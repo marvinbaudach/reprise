@@ -78,6 +78,23 @@ fn migrate_v81_preserves_existing_sync_events() {
 }
 
 #[test]
+fn migrate_v81_repairs_the_old_check_at_the_current_version() {
+    let conn = Connection::open_in_memory().unwrap();
+    create_v45_sync_events(&conn);
+    conn.pragma_update(None, "user_version", 81).unwrap();
+
+    migrate_v81(&conn).unwrap();
+
+    conn.execute(
+        "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail)
+         VALUES (1, 'analysis_failed', 1667, 'Artist/Album/Track.reprise-analysis',
+                 'analysis copy failed')",
+        [],
+    )
+    .unwrap();
+}
+
+#[test]
 fn migrate_v45_declares_the_current_analysis_failure_kind() {
     let conn = Connection::open_in_memory().unwrap();
     migrate_v45(&conn).unwrap();
