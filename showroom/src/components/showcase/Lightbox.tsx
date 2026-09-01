@@ -210,7 +210,8 @@ export function Lightbox({
           <h2 id={titleId}>{capture.title}</h2>
         </div>
         <div className="lightbox__controls">
-          <span className="lightbox__counter" aria-live="polite">
+          <span className="lightbox__counter" aria-live="polite" aria-atomic="true">
+            <span className="visually-hidden">{capture.title}. </span>
             {counter}
           </span>
           <button type="button" onClick={onPrevious} aria-label="Previous screenshot">

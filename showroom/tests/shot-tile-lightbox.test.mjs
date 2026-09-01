@@ -211,6 +211,12 @@ test('the full view holds its frame until the next picture has decoded', async (
   const counterTag = source.match(/<span\b[^>]*\bclassName="lightbox__counter"[^>]*>/)?.[0];
   assert.ok(counterTag, 'the lightbox counter must remain a span');
   assert.match(counterTag, /aria-live="polite"/);
+  assert.match(counterTag, /aria-atomic="true"/);
+  const counterStart = source.indexOf(counterTag);
+  const counterRegion = source.slice(counterStart, source.indexOf('<button', counterStart));
+  assert.match(counterRegion, /className="visually-hidden"/);
+  assert.match(counterRegion, /\{capture\.title\}/);
+  assert.match(counterRegion, /\{counter\}/);
 });
 
 test('the full view carries the live plate for the capture that has one', async () => {
