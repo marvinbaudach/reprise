@@ -22,7 +22,8 @@ expect_routes() {
     local expected_android=$1
     local expected_gnome=$2
     local expected_core=$3
-    shift 3
+    local expected_display=$4
+    shift 4
     local output
     output=$("$classifier" --paths "$@")
     rg --quiet "^android=$expected_android$" <<<"$output" || \
@@ -31,31 +32,34 @@ expect_routes() {
         fail "expected gnome=$expected_gnome for $*; got: $output"
     rg --quiet "^core=$expected_core$" <<<"$output" || \
         fail "expected core=$expected_core for $*; got: $output"
+    rg --quiet "^display=$expected_display$" <<<"$output" || \
+        fail "expected display=$expected_display for $*; got: $output"
 }
 
-expect_routes true false false android/app/src/main/MainActivity.kt
-expect_routes true false false crates/reprise-android-ffi/src/lib.rs
-expect_routes false true false crates/reprise-gnome/src/main.rs
-expect_routes false true false crates/reprise-platform-linux/src/lib.rs
-expect_routes true false true crates/reprise-core/src/lib.rs
-expect_routes true true false crates/reprise-view/src/lib.rs
-expect_routes true false true Cargo.lock
-expect_routes false false true crates/reprise-runtime/src/lib.rs
-expect_routes false false false docs/agents/branching.md
-expect_routes false false false .github/workflows/ci.yml
-expect_routes false false false showroom/src/App.tsx
-expect_routes false false false quality/run-python-lint.mjs
-expect_routes false false false ruff.toml
-expect_routes false false false .yamllint.yaml
-expect_routes false false false .markdownlint-cli2.jsonc
-expect_routes true false true unexpected-product-root/new-source.rs
+expect_routes true false false false android/app/src/main/MainActivity.kt
+expect_routes true false false false crates/reprise-android-ffi/src/lib.rs
+expect_routes false true false true crates/reprise-gnome/src/main.rs
+expect_routes false true false true crates/reprise-platform-linux/src/lib.rs
+expect_routes true false true true crates/reprise-core/src/lib.rs
+expect_routes true true false true crates/reprise-view/src/lib.rs
+expect_routes true false true true Cargo.lock
+expect_routes false false true true crates/reprise-runtime/src/lib.rs
+expect_routes false false false false docs/agents/branching.md
+expect_routes false false false false .github/workflows/ci.yml
+expect_routes false false false false showroom/src/App.tsx
+expect_routes false false false false quality/run-python-lint.mjs
+expect_routes false false false false ruff.toml
+expect_routes false false false false .yamllint.yaml
+expect_routes false false false false .markdownlint-cli2.jsonc
+expect_routes true false true true unexpected-product-root/new-source.rs
 
 expect_diff_routes() {
     local expected_android=$1
     local expected_gnome=$2
     local expected_core=$3
-    local event=$4
-    local ref=$5
+    local expected_display=$4
+    local event=$5
+    local ref=$6
     local output
     output=$("$classifier" --diff "$event" "$ref" HEAD HEAD)
     rg --quiet "^android=$expected_android$" <<<"$output" || \
@@ -64,10 +68,12 @@ expect_diff_routes() {
         fail "expected gnome=$expected_gnome for $event on $ref; got: $output"
     rg --quiet "^core=$expected_core$" <<<"$output" || \
         fail "expected core=$expected_core for $event on $ref; got: $output"
+    rg --quiet "^display=$expected_display$" <<<"$output" || \
+        fail "expected display=$expected_display for $event on $ref; got: $output"
 }
 
-expect_diff_routes true true true push refs/heads/main
-expect_diff_routes true true true schedule refs/heads/main
+expect_diff_routes true true true true push refs/heads/main
+expect_diff_routes true true true true schedule refs/heads/main
 
 [[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
     contributor marvinbaudach head dev) == true ]] || \
@@ -91,25 +97,29 @@ expect_diff_routes true true true schedule refs/heads/main
     marvinbaudach marvinbaudach head dev) == false ]] || \
     fail "a main revision different from dev must run every selected suite"
 
-"$aggregator" success success false true success false skipped false skipped
-"$aggregator" success success false false skipped true success false skipped
-"$aggregator" success success false true success false skipped true success
-"$aggregator" success skipped true false skipped false skipped false skipped
-if "$aggregator" success success false true skipped false skipped false skipped 2>/dev/null; then
+"$aggregator" success success false true success false skipped false skipped false skipped
+"$aggregator" success success false false skipped true success false skipped true success
+"$aggregator" success success false true success false skipped true success true success
+"$aggregator" success success false false skipped false skipped false skipped false skipped
+"$aggregator" success skipped true false skipped false skipped false skipped false skipped
+if "$aggregator" success success false true skipped false skipped false skipped false skipped 2>/dev/null; then
     fail "a selected Android route must not accept a skipped Android suite"
 fi
-if "$aggregator" success success false false skipped maybe skipped false skipped 2>/dev/null; then
+if "$aggregator" success success false false skipped maybe skipped false skipped false skipped 2>/dev/null; then
     fail "an invalid GNOME route must fail closed"
 fi
-if "$aggregator" success failure false false skipped false skipped false skipped 2>/dev/null; then
+if "$aggregator" success success false false skipped false skipped false skipped true failure 2>/dev/null; then
+    fail "a selected display route must not accept a failed display matrix"
+fi
+if "$aggregator" success failure false false skipped false skipped false skipped false skipped 2>/dev/null; then
     fail "a failed base contract job must fail the aggregate Quality gate"
 fi
-if "$aggregator" success success true false skipped false skipped false skipped 2>/dev/null; then
+if "$aggregator" success success true false skipped false skipped false skipped false skipped 2>/dev/null; then
     fail "an owner skip must require the base contract job to be skipped"
 fi
 
 rg --multiline --quiet \
-    '^  quality:\n    name: Quality gate\n    needs: \[changes, base-contracts, android-unit-suite, gnome-suite, core-suite\]\n    if: always\(\)' \
+    '^  quality:\n    name: Quality gate\n    needs: \[changes, base-contracts, android-unit-suite, gnome-suite, core-suite, display-tests\]\n    if: always\(\)' \
     "$workflow" || fail "Quality gate must aggregate every routed job and always report"
 rg --quiet '^  base-contracts:$' "$workflow" || \
     fail "the always-on base and contract job is missing"
@@ -117,12 +127,16 @@ rg --quiet '^  gnome-suite:$' "$workflow" || \
     fail "the routed GNOME quality suite is missing"
 rg --quiet '^  core-suite:$' "$workflow" || \
     fail "the routed Core quality suite is missing"
+rg --quiet '^  display-tests:$' "$workflow" || \
+    fail "the routed display-test matrix is missing"
 rg --quiet "needs\.changes\.outputs\.android == 'true'" "$workflow" || \
     fail "the Android suite is not routed by the Android classifier output"
 rg --quiet "needs\.changes\.outputs\.gnome == 'true'" "$workflow" || \
     fail "the GNOME suite is not routed by the GNOME classifier output"
 rg --quiet "needs\.changes\.outputs\.core == 'true'" "$workflow" || \
     fail "the Core suite is not routed by the Core classifier output"
+rg --quiet "needs\.changes\.outputs\.display == 'true'" "$workflow" || \
+    fail "the display matrix is not routed by the display classifier output"
 rg --quiet "needs\.changes\.outputs\.suite_skip != 'true'" "$workflow" || \
     fail "routed jobs do not honour the authenticated suite reuse"
 rg --quiet 'ci-paths\.sh --suite-skip' "$workflow" || \
@@ -170,6 +184,17 @@ rg --multiline --quiet \
     fail "Android CI must generate UniFFI bindings before source lint"
 rg --quiet 'check-gnome-ci\.sh' "$workflow" || \
     fail "GNOME-only changes must use the targeted GNOME gate"
+if rg --quiet 'check-display-tests\.sh' "$gnome_gate"; then
+    fail "the GNOME gate must leave all display tests to the display matrix"
+fi
+rg --quiet 'Rule-owned display tests' scripts/ci-quality.sh || \
+    fail "the complete workspace gate must skip display tests owned by the matrix"
+rg --multiline --quiet \
+    'strategy:\n      fail-fast: false\n      matrix:\n        shard: \[1, 2, 3, 4\]' "$workflow" || \
+    fail "the display matrix must collect all four shard outcomes"
+rg --fixed-strings --quiet \
+    'scripts/check-display-tests.sh --shard ${{ matrix.shard }}/4' "$workflow" || \
+    fail "the display matrix must execute the selected shard"
 rg --quiet 'cargo test --locked -p reprise-view -p reprise-android-ffi' "$workflow" || \
     fail "Android CI must test its shared Rust presentation and FFI crates"
 rg --quiet '^      DISPLAY_TEST_JOBS: 4$' "$workflow" || \
