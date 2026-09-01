@@ -123,6 +123,10 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn advance_playback(self: &std::rc::Rc<Self>, reason: AdvanceReason) {
+        // A marked position belongs to the stopped play it was armed for.
+        // Advancing starts a new play even when Repeat One selects the same
+        // item, so consume the mark before that item reaches its funnel.
+        let _ = self.take_pending_start_mark(None);
         self.advance_common(reason, StartPlayback::Yes);
     }
 

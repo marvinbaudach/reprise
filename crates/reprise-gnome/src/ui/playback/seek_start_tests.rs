@@ -195,6 +195,51 @@ fn stopped_track_mark_cannot_survive_a_different_direct_start() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn repeat_one_restart_does_not_apply_a_stopped_track_mark() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/marked.flac', 'Marked', 'Artist', 120000, 0)",
+            [],
+        )
+        .unwrap();
+    controller.restore_session_queue(
+        QueueSnapshot {
+            position: Some(0),
+            ids: vec![7],
+            order: vec![0],
+            repeat: Repeat::One,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+
+    controller.seek_or_start(30_000);
+
+    assert!(calls.played_paths.borrow().is_empty());
+    assert!(calls.sought_positions.borrow().is_empty());
+
+    controller.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/marked.flac"]
+    );
+    assert!(
+        calls.sought_positions.borrow().is_empty(),
+        "a repeat-one restart must start from the beginning"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn restored_episode_marks_the_clicked_position_until_play() {
     use reprise_core::library::session::{SessionEpisode, SessionEpisodeOrigin};
     use reprise_core::podcasts::feed::ParsedEpisode;
