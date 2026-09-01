@@ -15,6 +15,10 @@ import {
 import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
 import './lightbox.css';
 
+// Ten seconds leaves a slow but healthy download ample time to preserve the
+// atomic ratio-and-bitmap swap, while still letting a wedged dialog recover.
+const IMAGE_PRELOAD_TIMEOUT_MS = 10_000;
+
 interface LightboxProps {
   readonly activeIndex: number;
   readonly captures: readonly ProductCapture[];
@@ -74,10 +78,16 @@ export function Lightbox({
     }
 
     let superseded = false;
-    const commit = () => {
+    let timedOut = false;
+    const settle = () => {
+      window.clearTimeout(timeout);
       // A later press starts its own preload and this one must not land on top
       // of it — the reader would be sent back a picture.
       if (!superseded) setShownIndex(activeIndex);
+    };
+    const commit = () => {
+      timedOut = true;
+      settle();
     };
 
     const preload = new Image();
@@ -90,14 +100,20 @@ export function Lightbox({
     // decoded is still the picture the reader asked for, and the `<img>` below
     // carries its own error handling.
     if (typeof preload.decode === 'function') {
-      preload.decode().then(commit, commit);
+      preload.decode().then(settle, settle);
     } else {
-      preload.onload = commit;
-      preload.onerror = commit;
+      preload.onload = settle;
+      preload.onerror = settle;
     }
+    const timeout = window.setTimeout(commit, IMAGE_PRELOAD_TIMEOUT_MS);
 
     return () => {
       superseded = true;
+      window.clearTimeout(timeout);
+      if (!timedOut) {
+        preload.src = '';
+        preload.srcset = '';
+      }
     };
   }, [activeIndex, shownIndex, captures]);
 
@@ -201,7 +217,10 @@ export function Lightbox({
           <h2 id={titleId}>{capture.title}</h2>
         </div>
         <div className="lightbox__controls">
-          <span className="lightbox__counter">{counter}</span>
+          <span className="lightbox__counter" aria-live="polite" aria-atomic="true">
+            <span className="visually-hidden">{capture.title}. </span>
+            {counter}
+          </span>
           <button type="button" onClick={onPrevious} aria-label="Previous screenshot">
             ←
           </button>
