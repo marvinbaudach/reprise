@@ -47,7 +47,16 @@ internal fun playbackErrorSummary(errorCodeName: String, error: Throwable): Stri
     if (summary.length <= MAX_PLAYBACK_ERROR_SUMMARY_LENGTH) {
         return summary.toString()
     }
-    return summary.substring(0, MAX_PLAYBACK_ERROR_SUMMARY_LENGTH - 1) + "…"
+    val proposedEnd = MAX_PLAYBACK_ERROR_SUMMARY_LENGTH - 1
+    val end = if (
+        Character.isHighSurrogate(summary[proposedEnd - 1]) &&
+        Character.isLowSurrogate(summary[proposedEnd])
+    ) {
+        proposedEnd - 1
+    } else {
+        proposedEnd
+    }
+    return summary.substring(0, end) + "…"
 }
 
 /** Media3 implementation of the foreign half of Core's PlaybackBackend. */

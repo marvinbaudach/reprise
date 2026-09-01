@@ -88,4 +88,17 @@ class PlaybackErrorSummaryTest {
         assertTrue(summary.startsWith("ERROR_CODE_IO_UNSPECIFIED: "))
         assertTrue(summary.endsWith("…"))
     }
+
+    @Test
+    fun truncationDoesNotSplitASupplementaryCharacter() {
+        val prefix = "ERROR_CODE_IO_UNSPECIFIED: "
+        val message = "x".repeat(1_022 - prefix.length) + "🙂" + "tail"
+
+        val summary = playbackErrorSummary(
+            "ERROR_CODE_IO_UNSPECIFIED",
+            IllegalStateException(message),
+        )
+
+        assertEquals(prefix + "x".repeat(1_022 - prefix.length) + "…", summary)
+    }
 }
