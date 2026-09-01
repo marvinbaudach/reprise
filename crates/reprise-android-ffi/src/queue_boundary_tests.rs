@@ -385,17 +385,17 @@ fn signed_window_and_current_index_follow_the_same_shuffled_order() {
             limit: 10,
         })
         .unwrap();
-    let (source_position, target_id) = future
+    let target_id = tracks[4].id;
+    let source_position = future
         .rows
         .iter()
-        .enumerate()
-        .find(|(_, row)| row.id != tracks[4].id)
-        .map(|(position, row)| (position, row.id))
+        .position(|row| row.id == target_id)
         .unwrap();
+    // Promoting the known flat-index-4 track puts it at queue index 1. This
+    // explicit divergence keeps the regression deterministic for every shuffle.
     assert!(session
-        .move_upcoming_track(u64::try_from(source_position).unwrap(), target_id, 3)
+        .play_upcoming_track_now(u64::try_from(source_position).unwrap(), target_id)
         .unwrap());
-    assert!(session.play_upcoming_track_now(3, target_id).unwrap());
 
     let snapshot = session.snapshot().unwrap();
     let window = session
@@ -410,6 +410,7 @@ fn signed_window_and_current_index_follow_the_same_shuffled_order() {
         .iter()
         .position(|track_id| Some(*track_id) == snapshot.current_track_id)
         .and_then(|position| u64::try_from(position).ok());
+    assert_eq!(current_position, Some(1));
     assert_eq!(snapshot.current_index, current_position);
 
     session.set_shuffle(false).unwrap();
