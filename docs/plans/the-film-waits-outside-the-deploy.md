@@ -2,7 +2,7 @@
 slug: the-film-waits-outside-the-deploy
 worktree: /home/marvin/Projects/reprise-the-film-waits-outside-the-deploy
 branch: feature/the-film-waits-outside-the-deploy
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-09-01
 ---
