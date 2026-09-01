@@ -145,10 +145,12 @@ on the `<video>`, beside `onPlay` / `onPause`. A JSX event prop, so the
 `useEffect` ban is untouched.
 
 Once this exists it is the single source of truth for `muted`: assigning
-`video.muted` in `toggleSound` fires `volumechange` synchronously, so that
-callback's own `setMuted(next)` becomes redundant. Dropping it is the DRY-er
-shape; keeping it is harmless. Prefer dropping it, but do not spend a round
-trip on it.
+`video.muted` in `toggleSound` queues a media element task to fire
+`volumechange`; the event is not synchronous. The callback's own
+`setMuted(next)` is still redundant because `toggleSound` reads the live DOM
+property, which updates synchronously, rather than React state. Dropping it is
+the DRY-er shape; keeping it is harmless. Prefer dropping it, but do not spend
+a round trip on it.
 
 **(b) `ShowreelFilm.tsx` — the three buttons use two icon conventions.**
 Play and Captions name the *action* the button performs; Sound names the

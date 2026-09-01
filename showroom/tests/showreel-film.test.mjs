@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 const showroomRoot = new URL('..', import.meta.url).pathname;
 const chapterThreeSource = join(showroomRoot, 'src', 'components', 'chapters', 'ChapterThree.tsx');
+// Intentionally loose: a false positive fails loudly, while a false negative would fail silently.
 const mounted = /ShowreelFilm/.test(await readFile(chapterThreeSource, 'utf8'));
 const filmDir = mounted
   ? join(showroomRoot, 'public', 'media', 'showreel')
