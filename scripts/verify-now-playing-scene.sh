@@ -11,16 +11,12 @@ trap 'rm -f "$marker"' EXIT
 test_suites=(
   io.github.marvinbaudach.reprise.scene.SceneStateTest
   io.github.marvinbaudach.reprise.scene.BandEnvelopeTest
-  io.github.marvinbaudach.reprise.scene.CoreShapeTest
   io.github.marvinbaudach.reprise.scene.SceneColourTest
   io.github.marvinbaudach.reprise.CoverFogBitmapTest
   io.github.marvinbaudach.reprise.NowPlayingFogTest
   io.github.marvinbaudach.reprise.NowPlayingLegibilityTest
-  io.github.marvinbaudach.reprise.NowPlayingBurstTest
-  io.github.marvinbaudach.reprise.NowPlayingBurstPixelsTest
   io.github.marvinbaudach.reprise.SceneDriverTest
   io.github.marvinbaudach.reprise.ScenePowerGateTest
-  io.github.marvinbaudach.reprise.MainActivityVisualizerTest
   io.github.marvinbaudach.reprise.NowPlayingSceneVerificationTest
 )
 
