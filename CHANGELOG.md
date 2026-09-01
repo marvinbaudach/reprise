@@ -4,6 +4,51 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.126] - 2026-09-02
+
+### Playback
+
+- A queued track whose file has gone missing is skipped instead of stopping the
+  queue, on every surface that plays.
+- Clicking the stopped waveform sets where the next playback starts.
+- The waveform keeps the frame it settles on after a seek, instead of briefly
+  falling back to the one before it.
+- Under Repeat One, restarting the same track begins at the beginning again
+  rather than re-applying the mark the previous pass left.
+
+### Library
+
+- The Doctor scans the whole library again, not a partial scope.
+- Moving tracks to the trash no longer holds the library's write lock while the
+  files move, so the rest of the library keeps working during a trash run.
+
+### Device sync
+
+- Sync no longer deletes a file on the phone that it is about to copy straight
+  back.
+- A track added to a sync playlist while the sync runs keeps the copy already on
+  the device.
+- Sync keeps the file name the phone already uses instead of renaming the track
+  on every run.
+- A cleanup pass that meets one unreadable file finishes its walk instead of
+  giving up on the rest.
+
+### Android
+
+- Now Playing's swipe carries the whole screen with it, and the play button and
+  the top edge answer the gesture while it happens.
+- Up Next reaches the tracks just before the current one, not only the ones
+  ahead of it.
+- A playback error names what actually failed instead of reporting a generic
+  fault.
+- The app asks before it fetches artist photos.
+- Play counts are retried when the library database is busy instead of being
+  dropped, and the library no longer blocks the first screen while it loads.
+
+### Language
+
+- Added a Spanish translation.
+
 ## [0.1.84] - 2026-08-27
 
 ### Android

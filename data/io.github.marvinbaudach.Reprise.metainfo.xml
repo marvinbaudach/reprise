@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.126" date="2026-09-02" type="stable">
+      <description>
+        <p>Keeps playback going when a queued file has gone missing, lets a click on the stopped waveform choose where the next play starts, stops device sync from deleting and renaming files it means to keep, carries the whole Now Playing screen with an Android swipe, asks before fetching artist photos, and adds a Spanish translation.</p>
+        <p xml:lang="de">Hält die Wiedergabe am Laufen, wenn eine Datei aus der Warteschlange fehlt, lässt einen Klick auf die ruhende Wellenform den nächsten Startpunkt setzen, hindert die Gerätesynchronisierung daran, Dateien zu löschen und umzubenennen, die sie behalten will, trägt beim Wischen unter Android den ganzen Wiedergabebildschirm mit, fragt vor dem Laden von Künstlerfotos und ergänzt eine spanische Übersetzung.</p>
+      </description>
+    </release>
     <release version="0.1.84" date="2026-08-27" type="stable">
       <description>
         <p>Makes the Android library tabs follow the swipe: the navigation mark and the count move with the gesture, and the tab next door is filled before it is reached, so no first swipe lands on an empty list.</p>
