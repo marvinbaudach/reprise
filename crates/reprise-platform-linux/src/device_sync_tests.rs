@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::fs;
 use std::future::Future;
+use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use reprise_core::device_sync::{DeviceStorageAccess, StorageId, SyncTarget, DEFAULT_TARGET_PATH};
 use reprise_core::library::m3u::M3uEntry;
@@ -11,6 +13,44 @@ use tempfile::TempDir;
 use super::inspection::storage_access_from_attributes;
 use super::target_browser::derive_storage_id;
 use super::*;
+
+#[derive(Clone, Default)]
+struct CapturedWarnings(Arc<Mutex<Vec<u8>>>);
+
+struct WarningWriter(Arc<Mutex<Vec<u8>>>);
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedWarnings {
+    type Writer = WarningWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        WarningWriter(Arc::clone(&self.0))
+    }
+}
+
+impl Write for WarningWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_warnings<T>(operation: impl FnOnce() -> T) -> (T, String) {
+    let output = CapturedWarnings::default();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_max_level(tracing::Level::WARN)
+        .with_writer(output.clone())
+        .finish();
+    let result = tracing::subscriber::with_default(subscriber, operation);
+    let bytes = output.0.lock().unwrap().clone();
+    (result, String::from_utf8(bytes).unwrap())
+}
 
 pub(super) fn run<T>(future: impl Future<Output = T>) -> T {
     let context = gio::glib::MainContext::new();
@@ -205,6 +245,7 @@ fn copy_creates_managed_directories_and_reports_progress() {
 fn managed_write_names_destination_directory_creation_failures() {
     let (temp, storage) = fixture();
     if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
         return;
     }
     let managed_root = temp.path().join("Music/Reprise");
@@ -234,6 +275,31 @@ fn managed_write_names_destination_directory_creation_failures() {
         .unwrap_err()
         .to_string()
         .starts_with("creating the destination directory failed: device I/O failed:"));
+}
+
+#[test]
+fn managed_write_names_target_storage_resolution_failures() {
+    let (temp, storage) = fixture();
+    let source = temp.path().join("source.flac");
+    fs::write(&source, b"audio").unwrap();
+
+    let result = run(storage.replace_managed(
+        Some(StorageId(u32::MAX)),
+        "/Music/Reprise",
+        &gio::File::for_path(source),
+        "Road/song.flac",
+        5,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::ResolveStorage,
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -522,9 +588,21 @@ fn cleanup_partials_removes_only_orphaned_part_files_under_the_managed_root() {
 }
 
 #[test]
+fn cleanup_partials_silently_accepts_a_missing_managed_root() {
+    let (_temp, storage) = fixture();
+
+    let (result, warnings) =
+        capture_warnings(|| run(storage.cleanup_partials_in(None, "/Music/Reprise")));
+
+    assert_eq!(result.unwrap(), 0);
+    assert_eq!(warnings, "");
+}
+
+#[test]
 fn cleanup_partials_continues_after_one_delete_fails() {
     let (temp, storage) = fixture();
     if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
         return;
     }
     let protected = temp.path().join("Music/Reprise/Protected");
@@ -546,19 +624,63 @@ fn cleanup_partials_continues_after_one_delete_fails() {
 }
 
 #[test]
-fn cleanup_partials_still_fails_when_a_directory_cannot_be_enumerated() {
+fn cleanup_partials_continues_after_one_directory_cannot_be_enumerated() {
     let (temp, storage) = fixture();
     if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
         return;
     }
     let unreadable = temp.path().join("Music/Reprise/Unreadable");
+    let writable = temp.path().join("Music/Reprise/Deep/Writable");
     fs::create_dir_all(&unreadable).unwrap();
+    fs::create_dir_all(&writable).unwrap();
+    let writable_partial = writable.join("removed.opus.part");
+    fs::write(&writable_partial, b"partial").unwrap();
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
 
     let result = run(storage.cleanup_partials_in(None, "/Music/Reprise"));
 
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o700)).unwrap();
-    assert!(result.is_err());
+    assert_eq!(result.as_ref().ok(), Some(&1));
+    assert!(!writable_partial.exists());
+}
+
+#[test]
+fn cleanup_partials_root_enumeration_warning_names_the_managed_root() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
+        return;
+    }
+    let managed_root = temp.path().join("Music/Reprise");
+    fs::create_dir_all(&managed_root).unwrap();
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let (result, warnings) =
+        capture_warnings(|| run(storage.cleanup_partials_in(None, "/Music/Reprise")));
+
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(result.as_ref().ok(), Some(&0));
+    assert!(warnings.contains(gio::File::for_path(&managed_root).uri().as_str()));
+    assert!(warnings.contains("action=\"enumerate directory\""));
+}
+
+#[test]
+fn cleanup_partials_still_fails_before_the_walk_when_storage_cannot_be_resolved() {
+    let (_temp, storage) = fixture();
+
+    let result = run(storage.cleanup_partials_in(Some(StorageId(u32::MAX)), "/Music/Reprise"));
+
+    assert!(matches!(result, Err(DeviceIoError::StorageNotFound)));
+}
+
+#[test]
+fn cleanup_partials_still_fails_before_the_walk_when_the_target_path_is_invalid() {
+    let (_temp, storage) = fixture();
+
+    let result = run(storage.cleanup_partials_in(None, "../outside"));
+
+    assert!(matches!(result, Err(DeviceIoError::InvalidRelativePath)));
 }
 
 #[test]

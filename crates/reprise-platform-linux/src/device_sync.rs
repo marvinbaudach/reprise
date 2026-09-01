@@ -421,7 +421,7 @@ impl DeviceStorage {
     ) -> Result<u32, DeviceIoError> {
         let storage = self.resolve_target_storage(storage_id).await?;
         let managed_root = Self::managed_child(&storage, target_path, &[])?;
-        let mut pending = VecDeque::from([managed_root]);
+        let mut pending = VecDeque::from([managed_root.clone()]);
         let mut removed = 0_u32;
         while let Some(directory) = pending.pop_front() {
             let enumerator = match directory
@@ -434,12 +434,30 @@ impl DeviceStorage {
             {
                 Ok(enumerator) => enumerator,
                 Err(error) if error.matches(gio::IOErrorEnum::NotFound) => continue,
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    warn_cleanup_failure(&managed_root, &directory, &error, "enumerate directory");
+                    continue;
+                }
             };
             loop {
-                let batch = enumerator
+                let batch = match enumerator
                     .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
-                    .await?;
+                    .await
+                {
+                    Ok(batch) => batch,
+                    Err(error) => {
+                        // This handles remote enumerators disappearing between batches. Local
+                        // chmod fixtures cannot fail after open; coverage would require an
+                        // injectable GFileEnumerator.
+                        warn_cleanup_failure(
+                            &managed_root,
+                            &directory,
+                            &error,
+                            "continue enumerating directory",
+                        );
+                        break;
+                    }
+                };
                 if batch.is_empty() {
                     break;
                 }
@@ -450,10 +468,11 @@ impl DeviceStorage {
                     } else if info.name().to_string_lossy().ends_with(PARTIAL_SUFFIX) {
                         match child.delete_future(gio::glib::Priority::DEFAULT).await {
                             Ok(()) => removed = removed.saturating_add(1),
-                            Err(error) => tracing::warn!(
-                                path = %child.uri(),
-                                error = %error,
-                                "device sync: could not delete partial file"
+                            Err(error) => warn_cleanup_failure(
+                                &managed_root,
+                                &child,
+                                &error,
+                                "delete partial file",
                             ),
                         }
                     }
@@ -640,6 +659,19 @@ impl DeviceStorage {
             .chain(relative_components.iter().cloned())
             .fold(storage.clone(), |parent, component| parent.child(component)))
     }
+}
+
+fn warn_cleanup_failure(
+    root: &gio::File,
+    path: &gio::File,
+    error: &gio::glib::Error,
+    action: &str,
+) {
+    let path = root.relative_path(path).map_or_else(
+        || path.uri().to_string(),
+        |path| path.to_string_lossy().into_owned(),
+    );
+    tracing::warn!(path = %path, error = %error, action, "device sync: could not clean partial files");
 }
 
 fn choose_storage_volume(volumes: &[String]) -> Option<String> {
