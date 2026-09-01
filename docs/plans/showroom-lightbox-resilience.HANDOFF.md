@@ -2,7 +2,7 @@
 slug: showroom-lightbox-resilience
 worktree: /home/marvin/Projects/reprise-showroom-lightbox-resilience
 branch: fix/showroom-lightbox-resilience
-phase: refactored
+phase: shipped
 created: 2026-09-01
 ---
 
