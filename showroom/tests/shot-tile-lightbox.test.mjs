@@ -195,8 +195,13 @@ test('the full view holds its frame until the next picture has decoded', async (
   );
   assert.ok(supersede, 'preload cleanup must disarm its commit and abort its image fetch');
 
-  // The press still needs an answer while the frame holds.
+  // The press still needs a visual and assistive answer while the frame holds.
   assert.match(source, /data-swapping=\{swapping \? 'true' : 'false'\}/);
+  assert.match(source, /aria-busy=\{swapping \? 'true' : undefined\}/);
+  assert.match(
+    source,
+    /<span className="lightbox__counter" aria-live="polite">\s*\{counter\}\s*<\/span>/,
+  );
 });
 
 test('the full view carries the live plate for the capture that has one', async () => {
