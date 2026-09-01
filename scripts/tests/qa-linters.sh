@@ -30,6 +30,46 @@ reject_pattern() {
   fi
 }
 
+verify_workflow_run_block_indentation() {
+  local scratch_root actual_dir expected_dir
+  scratch_root=$(mktemp -d)
+  actual_dir="$scratch_root/actual"
+  expected_dir="$scratch_root/expected"
+  mkdir "$actual_dir" "$expected_dir"
+
+  printf '%s\n' \
+    'jobs:' \
+    '  one:' \
+    '    steps:' \
+    '      - name: One extra space' \
+    '        run: |' \
+    '         echo one' \
+    '' \
+    '           if true; then' \
+    '             echo nested' \
+    '           fi' >"$scratch_root/one.yml"
+  printf '%s\n' \
+    'jobs:' \
+    '  four:' \
+    '    steps:' \
+    '      - name: Four extra spaces' \
+    '        run: |' \
+    '            echo four' \
+    '              echo indented' >"$scratch_root/four.yml"
+
+  awk -v output_dir="$actual_dir" -v workflow_name=one.yml \
+    -f scripts/lib/extract-workflow-run-blocks.awk "$scratch_root/one.yml"
+  awk -v output_dir="$actual_dir" -v workflow_name=four.yml \
+    -f scripts/lib/extract-workflow-run-blocks.awk "$scratch_root/four.yml"
+  printf '%s\n' '#!/usr/bin/env bash' 'echo one' '' '  if true; then' \
+    '    echo nested' '  fi' >"$expected_dir/one.yml.run-5.sh"
+  printf '%s\n' '#!/usr/bin/env bash' 'echo four' '  echo indented' \
+    >"$expected_dir/four.yml.run-5.sh"
+
+  diff --recursive --unified "$expected_dir" "$actual_dir"
+  rm -rf "$scratch_root"
+}
+
 require_pattern_order() {
   local before=$1
   local after=$2
@@ -45,6 +85,11 @@ require_pattern_order() {
 
 require_executable scripts/check-architecture.sh
 require_executable scripts/check-shell.sh
+[[ -f scripts/lib/extract-workflow-run-blocks.awk ]] || {
+  echo "scripts/lib/extract-workflow-run-blocks.awk must exist" >&2
+  exit 1
+}
+verify_workflow_run_block_indentation
 require_pattern "git ls-files -z '.github/workflows/\*.yml'" scripts/check-shell.sh
 require_pattern 'workflow_run_blocks' scripts/check-shell.sh
 require_executable scripts/check-frontend-thinness.sh
