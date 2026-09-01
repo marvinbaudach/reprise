@@ -75,7 +75,11 @@ internal fun rememberCoverShadowBitmap(): CoverShadowBitmap? {
     return shadow
 }
 
-internal fun DrawScope.drawCoverShadow(shadow: CoverShadowBitmap, cover: Rect) {
+internal fun DrawScope.drawCoverShadow(
+    shadow: CoverShadowBitmap,
+    cover: Rect,
+    alpha: Float = 1f,
+) {
     val padding = SHADOW_PADDING.dp.toPx()
     val textureSize = SHADOW_TEXTURE_SIZE.dp.toPx().roundToInt()
     drawImage(
@@ -85,6 +89,7 @@ internal fun DrawScope.drawCoverShadow(shadow: CoverShadowBitmap, cover: Rect) {
             (cover.top - padding).roundToInt(),
         ),
         dstSize = IntSize(textureSize, textureSize),
+        alpha = alpha,
     )
 }
 

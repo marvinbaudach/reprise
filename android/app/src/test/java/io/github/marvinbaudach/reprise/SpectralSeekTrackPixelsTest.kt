@@ -92,6 +92,20 @@ class SpectralSeekTrackPixelsTest {
         )
     }
 
+    @Test
+    fun played_fraction_has_a_bright_vertical_marker_without_analysis() {
+        showTrack(positionMs = 60_000)
+
+        val pixels = render()
+        val markerX = pixels.width / 2
+        val brightMarkerPixels = (0 until pixels.height).count { y ->
+            val pixel = pixels[markerX, y]
+            pixel.red > 0.75f && pixel.green > 0.75f && pixel.blue > 0.75f
+        }
+
+        assertTrue("the played fraction has no full-height accent marker", brightMarkerPixels >= 20)
+    }
+
     private fun showTrack(positionMs: Long = 120_000) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,

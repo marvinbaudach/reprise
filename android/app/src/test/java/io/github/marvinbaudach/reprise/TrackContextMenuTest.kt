@@ -428,7 +428,9 @@ private class RecordingContextMenuControls(
         Result.success(
             LibraryWindow(
                 total = upcoming.size.toLong(),
-                rows = upcoming.drop(window.offset.toInt()).take(window.limit.toInt()),
+                rows = upcoming
+                    .drop(window.offset.toInt().coerceAtLeast(0))
+                    .take(window.limit.toInt()),
                 hasMore = false,
             ),
         ),
