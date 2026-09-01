@@ -130,13 +130,13 @@ impl SessionState {
     }
 
     fn adopt_history_target(&mut self, target: HistoryEntry) {
+        self.reset_fault_run();
         self.history.present(target);
         self.snapshot.current_index = None;
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
         self.snapshot.state = AndroidPlaybackState::Playing;
         self.current_loaded = false;
-        self.snapshot.error = None;
         self.max_position_ms = 0;
         self.play_recorded = false;
     }
@@ -178,7 +178,7 @@ impl SessionInner {
     fn adopt_target(&self, state: &mut SessionState, target: HistoryEntry) {
         if let Some(position) = history_target_playhead(&state.queue, &target) {
             if state.queue.jump_to_order_position(position).is_some() {
-                state.adopt_current();
+                state.adopt_current_for_play_intent();
                 state.history.present(target);
                 return;
             }

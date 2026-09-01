@@ -85,7 +85,7 @@ impl AndroidPlaybackSession {
                 .is_some_and(|track_id| report.removed_ids.contains(&track_id));
             state.queue.remove_ids(&report.removed_ids);
             if removed_current && state.queue.current().is_some() {
-                state.adopt_current();
+                state.adopt_current_for_play_intent();
             }
             (
                 removed_current,

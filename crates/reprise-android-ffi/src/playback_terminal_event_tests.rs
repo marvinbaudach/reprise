@@ -175,6 +175,91 @@ fn play_5b_successful_start_resets_the_consecutive_fault_run() {
     );
 }
 
+// UX FB-6: replacing an exhausted fault run with a new queue gives that queue
+// its own bounded skip run instead of inheriting the old queue's limit.
+#[test]
+fn fb_6_a_new_queue_resets_the_prior_fault_bound() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(vec![7], vec!["content://provider/old.flac".to_owned()], 0)
+        .unwrap();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "old queue fault".to_owned(),
+        },
+    );
+
+    fixture
+        .session
+        .play_tracks(
+            vec![8, 9, 10],
+            vec![
+                "content://provider/new-first.flac".to_owned(),
+                "content://provider/new-second.flac".to_owned(),
+                "content://provider/new-third.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "new queue fault".to_owned(),
+        },
+    );
+
+    let snapshot = fixture.session.snapshot().unwrap();
+    assert_eq!(snapshot.state, AndroidPlaybackState::Playing);
+    assert_eq!(snapshot.current_index, Some(1));
+    assert_eq!(snapshot.current_track_id, Some(9));
+    assert_eq!(
+        snapshot.error.as_deref(),
+        Some("Track unavailable — skipped")
+    );
+}
+
+// UX FB-6: a new queue is a new play intent, so its optimistic Playing
+// snapshot never carries the prior queue's terminal fault notice.
+#[test]
+fn fb_6_a_new_queue_clears_the_prior_fault_notice_before_confirmation() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(vec![7], vec!["content://provider/old.flac".to_owned()], 0)
+        .unwrap();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "old queue fault".to_owned(),
+        },
+    );
+    assert_eq!(
+        fixture.session.snapshot().unwrap().error.as_deref(),
+        Some("Playback stopped — too many unplayable tracks")
+    );
+
+    fixture
+        .session
+        .play_tracks(
+            vec![8, 9],
+            vec![
+                "content://provider/new-first.flac".to_owned(),
+                "content://provider/new-second.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+
+    let snapshot = fixture.session.snapshot().unwrap();
+    assert_eq!(snapshot.state, AndroidPlaybackState::Playing);
+    assert_eq!(snapshot.current_track_id, Some(8));
+    assert_eq!(snapshot.error, None);
+}
+
 #[test]
 fn buffering_emitted_synchronously_while_starting_is_preserved() {
     let fixture = recording_session();
