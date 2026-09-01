@@ -2,7 +2,7 @@
 slug: one-missing-file-no-longer-ends-the-queue-a
 worktree: /home/marvin/Projects/reprise-one-missing-file-no-longer-ends-the-queue-a
 branch: feature/one-missing-file-no-longer-ends-the-queue-a
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
