@@ -53,7 +53,6 @@ pub fn plan_trash(db: &Db, tracks: &[(i64, PathBuf)]) -> TrashPlan {
                     path: path.clone(),
                     error: "track path changed before trash; refusing stale request".into(),
                 });
-                continue;
             }
             Err(error) => {
                 plan.failures.push(TrashFailure {
@@ -61,7 +60,6 @@ pub fn plan_trash(db: &Db, tracks: &[(i64, PathBuf)]) -> TrashPlan {
                     path: path.clone(),
                     error: format!("could not validate track path before trash: {error}"),
                 });
-                continue;
             }
         }
     }
@@ -70,6 +68,10 @@ pub fn plan_trash(db: &Db, tracks: &[(i64, PathBuf)]) -> TrashPlan {
 }
 
 /// Removes rows for files the caller actually moved to trash.
+///
+/// The caller must put only files confirmed as moved to trash in `trashed`.
+/// `failures` is preserved in order, and cleanup failures discovered here are
+/// appended after it in the returned report.
 pub fn commit_trash(
     db: &Db,
     trashed: &[(i64, PathBuf)],

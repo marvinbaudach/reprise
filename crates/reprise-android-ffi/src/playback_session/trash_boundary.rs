@@ -80,8 +80,19 @@ impl AndroidPlaybackSession {
             }
         }
 
+        // This scope must drop the writer before `persist_queue` re-acquires it.
         let report = {
-            let database = self.inner.library.writer()?;
+            let database = match self.inner.library.writer() {
+                Ok(database) => database,
+                Err(error) => {
+                    tracing::error!(
+                        %error,
+                        orphaned_tracks = ?trashed,
+                        "could not reconcile files already moved to trash"
+                    );
+                    return Err(error);
+                }
+            };
             commit_trash(&database, &trashed, failures)
         };
 

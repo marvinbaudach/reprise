@@ -34,6 +34,7 @@ enum WriterProbeFailure {
 struct WriterAvailabilityProbe {
     writer: Arc<Mutex<Db>>,
     outcomes: Arc<Mutex<Vec<Result<(), WriterProbeFailure>>>>,
+    failures: HashSet<String>,
 }
 
 impl TrashAction for WriterAvailabilityProbe {
@@ -44,6 +45,9 @@ impl TrashAction for WriterAvailabilityProbe {
             Err(TryLockError::Poisoned(_)) => Err(WriterProbeFailure::Poisoned),
         };
         self.outcomes.lock().unwrap().push(outcome);
+        if self.failures.contains(&uri) {
+            return Some("device refused deletion".to_owned());
+        }
         std::fs::remove_file(uri)
             .err()
             .map(|error| error.to_string())
@@ -132,11 +136,42 @@ fn writer_is_free_during_every_trash_callback() {
             Box::new(WriterAvailabilityProbe {
                 writer,
                 outcomes: Arc::clone(&outcomes),
+                failures: HashSet::new(),
             }),
         )
         .unwrap();
 
     assert_eq!(report.removed_ids.len(), 3);
+    assert_eq!(*outcomes.lock().unwrap(), vec![Ok(()), Ok(()), Ok(())]);
+}
+
+#[test]
+fn writer_is_free_during_successful_and_failing_trash_callbacks() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Refused", "Third"]);
+    let refused = tracks
+        .iter()
+        .find(|track| track.title == "Refused")
+        .unwrap();
+    let library = library_in(directory.path());
+    let writer = library.writer_handle();
+    let (session, _) = session_with_library(library);
+    let outcomes = Arc::new(Mutex::new(Vec::new()));
+
+    let report = session
+        .trash_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            Box::new(WriterAvailabilityProbe {
+                writer,
+                outcomes: Arc::clone(&outcomes),
+                failures: HashSet::from([refused.path.clone()]),
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(report.removed_ids.len(), 2);
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(report.failures[0].track_id, refused.id);
     assert_eq!(*outcomes.lock().unwrap(), vec![Ok(()), Ok(()), Ok(())]);
 }
 
