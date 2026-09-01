@@ -38,7 +38,8 @@ Two defects, both found on the device, both fixed and verified there.
   fails every Robolectric class with `ExceptionInInitializerError at
   NativeLibrary.java:325`, because only the script builds
   `target/release/libreprise_android_ffi.so` and exports `LD_LIBRARY_PATH`.
-- **Not committed yet.** Nothing is pushed.
+- Committed as `756fde7066` on `feature/the-swipe-animation-runs`. **Not pushed**,
+  no PR opened.
 
 ## Still open
 
