@@ -1,17 +1,22 @@
 package io.github.marvinbaudach.reprise
 
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import java.io.FileNotFoundException
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidPlayerEvent
 import uniffi.reprise_android_ffi.NoHandle
@@ -20,6 +25,38 @@ import uniffi.reprise_android_ffi.PlaybackEventBridge
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class Media3PlaybackPortTest {
+    @Test
+    fun playbackFaultEmitsItsCauseSummaryAndLogsTheThrowableOnce() {
+        val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
+        val events = mutableListOf<AndroidPlayerEvent.Error>()
+        val port = Media3PlaybackPort(fake.player) {}
+        port.setEventBridge(object : PlaybackEventBridge(NoHandle) {
+            override fun emit(generation: ULong, event: AndroidPlayerEvent) {
+                if (event is AndroidPlayerEvent.Error) events += event
+            }
+        })
+        val cause = FileNotFoundException("No such file or directory")
+        val error = PlaybackException(
+            "Source error",
+            cause,
+            PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        )
+        ShadowLog.clear()
+
+        fake.listener.onPlayerError(error)
+
+        val summary =
+            "ERROR_CODE_IO_UNSPECIFIED: Source error — " +
+                "FileNotFoundException: No such file or directory"
+        assertEquals(listOf(summary), events.map { it.message })
+        val logItems = ShadowLog.getLogsForTag("ReprisePlayback")
+        assertEquals(1, logItems.size)
+        assertEquals(Log.ERROR, logItems.single().type)
+        assertEquals(summary, logItems.single().msg)
+        assertSame(error, logItems.single().throwable)
+        port.release()
+    }
+
     @Test
     fun aMomentaryNotPlayingDoesNotStopPositionEventsForGood() {
         val fake = CallbackPlayer(

@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -22,6 +23,32 @@ import uniffi.reprise_android_ffi.PlaybackEventBridgeInterface
 import uniffi.reprise_android_ffi.projectEqualizerCurve
 
 private const val POSITION_INTERVAL_MS = 500L
+private const val MAX_PLAYBACK_ERROR_CAUSES = 3
+private const val MAX_PLAYBACK_ERROR_SUMMARY_LENGTH = 1_024
+private const val TAG = "ReprisePlayback"
+
+internal fun playbackErrorSummary(errorCodeName: String, error: Throwable): String {
+    val detail = error.message ?: errorCodeName
+    val summary = StringBuilder("$errorCodeName: $detail")
+    var cause = error.cause
+    var causeCount = 0
+    val seen = mutableListOf<Throwable>(error)
+    while (cause != null && causeCount < MAX_PLAYBACK_ERROR_CAUSES) {
+        val current = cause
+        if (seen.any { previous -> previous === current }) {
+            break
+        }
+        seen += current
+        summary.append(" — ${current.javaClass.simpleName}")
+        current.message?.let { message -> summary.append(": $message") }
+        cause = current.cause
+        causeCount += 1
+    }
+    if (summary.length <= MAX_PLAYBACK_ERROR_SUMMARY_LENGTH) {
+        return summary.toString()
+    }
+    return summary.substring(0, MAX_PLAYBACK_ERROR_SUMMARY_LENGTH - 1) + "…"
+}
 
 /** Media3 implementation of the foreign half of Core's PlaybackBackend. */
 internal class Media3PlaybackPort(
@@ -89,8 +116,9 @@ internal class Media3PlaybackPort(
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val detail = error.message ?: error.errorCodeName
-            emit(AndroidPlayerEvent.Error("${error.errorCodeName}: $detail"))
+            val summary = playbackErrorSummary(error.errorCodeName, error)
+            Log.e(TAG, summary, error)
+            emit(AndroidPlayerEvent.Error(summary))
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
