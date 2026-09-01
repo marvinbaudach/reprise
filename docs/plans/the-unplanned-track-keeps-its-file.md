@@ -2,7 +2,7 @@
 slug: the-unplanned-track-keeps-its-file
 worktree: /home/marvin/Projects/reprise-the-unplanned-track-keeps-its-file
 branch: feature/the-unplanned-track-keeps-its-file
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
