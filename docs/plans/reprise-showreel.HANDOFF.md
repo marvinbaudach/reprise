@@ -233,9 +233,11 @@ buttons end up on the wrong side.
    the master with the push-in, against 5.7 MB for the same film without it; it
    is not the web ladder. The four encodes plus posters and captions total
    15,830,922 bytes (15.83 MB), which was 84.4% of the 18,753,781-byte deploy
-   artifact before they moved out of `public/`. A visitor selects exactly one of
-   the four encodes, at most 6.2 MB, so the ladder total is a repository and
-   artifact cost rather than a visitor-bandwidth cost. There is no asset-size
-   gate in CI. Before the film returns, the size lever is a second encode at a
-   higher CRF, not dropping the motion, because the motion is what stops half
-   these shots reading as screenshots.
+   artifact before they moved out of `public/`. After the move, the deploy
+   artifact is 2,922,859 bytes and `dist/media/` contains only `showroom`. A
+   visitor selects exactly one of the four encodes, at most 6.2 MB, so the
+   ladder total is a repository and artifact cost rather than a
+   visitor-bandwidth cost. There is no asset-size gate in CI. Before the film
+   returns, the size lever is a second encode at a higher CRF, not dropping the
+   motion, because the motion is what stops half these shots reading as
+   screenshots.

@@ -98,6 +98,12 @@ status, not the build's. Put long-run logs outside `/tmp`. And in the browser,
 reading a React label synchronously right after `.click()` shows the *old* text,
 because the re-render has not happened yet; two evals, not one.
 
+**A showroom build leaves stale passthrough assets in `dist/`.** After the D1a
+mutation probe, `du -sb dist/media/showreel` still read 15,830,922 because the
+build does not empty stale files, so clear `dist` before measuring the after
+artifact. This is not a deploy risk: `dist` is untracked and Pages builds from
+a fresh checkout.
+
 ## Verifying the current state
 
 ```
