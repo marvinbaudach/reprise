@@ -123,6 +123,8 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn advance_playback(self: &std::rc::Rc<Self>, reason: AdvanceReason) {
+        // An advance starts a new play even when Repeat One selects the same item.
+        self.clear_pending_start_mark();
         self.advance_common(reason, StartPlayback::Yes);
     }
 
