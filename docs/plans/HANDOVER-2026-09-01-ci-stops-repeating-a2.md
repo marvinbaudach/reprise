@@ -171,11 +171,12 @@ for k in 1 2 3 4; do ./scripts/check-display-tests.sh --shard $k/4 --list > /tmp
 # 855 == 855, no duplicates, byte-identical union
 ```
 
-Guards — `--shard 0/4`, `5/4`, `1/0`, `abc/4` and `--bogus` must all exit **2**.
-Run them **from inside the worktree**: the script's line 3 is
-`cd "$(git rev-parse --show-toplevel)"`, so running it from elsewhere fails at
-that line under `set -e` and exits 1 before argument parsing — that looks exactly
-like a broken guard and is not.
+Guards — `--shard 0/4`, `5/4`, `1/0`, `abc/4` and `--bogus` must all exit **2**,
+from any working directory. The script used to open with
+`cd "$(git rev-parse --show-toplevel)"`, which made every run from outside the
+worktree exit 1 before argument parsing; it now derives its root from
+`${BASH_SOURCE[0]}` instead, so that trap is gone. The change was forced by CI,
+not cosmetic — see "The safe.directory gap" below.
 
 Mutation proofs (`GITHUB_ACTIONS=false .github/tests/ci-path-routing.sh`), each
 must exit 1, restore with `git checkout --` afterwards:
@@ -190,6 +191,31 @@ must exit 1, restore with `git checkout --` afterwards:
 Invariant: `git diff origin/dev...HEAD -- scripts/check-merge-readiness.sh` must
 be **empty**. The file is untouched, which is the strongest form of the 27-gate
 guarantee.
+
+## The safe.directory gap — found by dispatch run 33547425822
+
+The first dispatch run failed all four shards in `Run display-test shard`, before
+a single test ran:
+
+```
+fatal: detected dubious ownership in repository at '/__w/reprise/reprise'
+scripts/check-display-tests.sh: line 3: cd: null directory
+```
+
+`check-display-tests.sh` opened with `cd "$(git rev-parse --show-toplevel)"`.
+Inside the `archlinux:latest` container git refuses the workspace, the command
+substitution collapses to the empty string, and `cd ""` kills the script under
+`set -e`. The two sibling gates that used to be its only callers both set
+`git config --global --add safe.directory` first — `.github/scripts/check-gnome-ci.sh:8`
+and `scripts/ci-quality.sh:8` — so the script had never been reached without that
+setup. A2.2 makes the job invoke it directly, which is what exposed the gap.
+**No local check could have caught this**: the guard is container-only.
+
+Fixed by deriving the root from `${BASH_SOURCE[0]}`, exactly as
+`check-gnome-ci.sh` does. `git` appeared on that one line only, so the script now
+has no git dependency at all and needs no `safe.directory` of its own. This also
+covers the `Verify display-test shard partition` step, which calls the script
+directly too.
 
 ## Landing
 

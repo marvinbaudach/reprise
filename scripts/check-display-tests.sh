@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+
+# Resolve the repo root from this script's own location rather than from git:
+# the sharded CI job runs the script directly inside a container where git
+# refuses the workspace as dubious ownership, and the sibling gates that do call
+# git (.github/scripts/check-gnome-ci.sh, scripts/ci-quality.sh) only reach it
+# after their own safe.directory setup.
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_root"
 
 mode=all
 list_only=false
