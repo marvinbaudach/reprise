@@ -2,7 +2,7 @@
 slug: the-repo-is-ready-for-gnome
 worktree: /home/marvin/Projects/reprise-gnome-ready
 branch: feature/the-repo-is-ready-for-gnome
-phase: planned
+phase: coded
 codex_session:
 created: 2026-09-01
 ---
