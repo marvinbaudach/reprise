@@ -115,7 +115,7 @@ gate "Input parity" -- scripts/check-input-parity.sh
 gate "Frontend thinness" -- scripts/check-frontend-thinness.sh
 gate "UX traceability" -- scripts/check-ux-traceability.sh
 gate "AppStream" -- scripts/check-appstream.sh
-gate "Release metadata" -- scripts/check-release-metadata.sh
+gate "Release metadata" -- scripts/check-release-metadata.sh --gate
 gate "Flatpak manifest" -- scripts/check-flatpak-manifest.sh
 gate "GNOME idioms" -- scripts/check-gnome-idioms.sh
 gate "AI hygiene" -- scripts/check-ai-hygiene.sh
