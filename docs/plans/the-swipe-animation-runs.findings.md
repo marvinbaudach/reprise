@@ -7,6 +7,37 @@ named "hard cut or real tween?" as the one question to settle.
 It is a hard cut. The cause is a state-update race, found by instrumenting the
 settle path on the device. Two defects, both fixed here.
 
+## Where this ended up — read this before the log below
+
+Everything from "2026-09-02" onwards is a debugging log, and it reverses itself
+twice. The conclusions are:
+
+**The cover defect is a downgrade, not a cold cache.** `resolveVisual`
+(`TrackCover.kt`) falls back to a generated cover whenever the full-size read
+returns nothing or its decode fails, and delivers that over a real cover the
+seed had already put on screen. That is the "cover flashes up and is gone
+again", and the note that follows is the generated cover. Fixed on
+`fix/the-cover-does-not-fall-back`: `ArtworkCache.resolvedArtworkAcrossSizes`
+now answers "this track's real cover at any size", and the full-size read
+consults it before generating. Guarded by
+`ArtworkCompositionTest.a_failed_full_size_read_keeps_the_cover_the_prefetch_already_warmed`,
+red without the fix and green with it.
+
+**Three things here are NOT defects. Do not "fix" them:**
+
+1. The LIST/NOW_PLAYING shelf split. `seedArtwork` bridges sizes on purpose,
+   `matchesIdentity` ignores size on purpose, and `ArtworkCacheTest.kt:41-49`
+   already proves it. The original handoff blamed this; it was wrong.
+2. The prefetch constants `-3`/`5`. The window starts *after* the current track
+   (`queue_boundary.rs`), so they mean current−2…+2, exactly as documented.
+3. The two-panel window right after a commit (`withCurrentPanel`). Intended and
+   covered by `NowPlayingPanelsTest.kt:49`.
+
+**Still open:** the white line moving at the top edge after the cover lands, and
+the neighbour panel showing a cover rather than the visualiser — the latter is
+by design (`live = panel.index == currentIndex`) and would be a design change,
+not a fix.
+
 ## 0. The phone did not have the redesign on it
 
 | | value |
@@ -292,3 +323,29 @@ window only held three tracks. Do not "fix" this.
 subtree can be disposed and rebuilt. That discards both the delivered visual and
 the in-flight decode, which would produce exactly symptom 2 followed by
 symptom 1. **Not yet measured. Needs frames, not argument.**
+
+### 2026-09-02 — root cause, measured on the JVM
+
+`ArtworkCompositionTest.a_failed_full_size_read_keeps_the_cover_the_prefetch_already_warmed`
+reproduces the defect with no device attached. Warm the LIST shelf for a track,
+compose the panel at `NOW_PLAYING`, let the full-size read find nothing:
+
+- The first assertion **passes** — `seedVisual` crosses sizes and the panel shows
+  the real prefetched cover. The bridge works, as established above.
+- The second assertion **fails**:
+
+  ```
+  the full-size read must not replace it
+  expected same:<ArtworkVisual(image=…@39c7c63a, ambientColors=null)>
+  was not:<ArtworkVisual(image=…@5f76764e, ambientColors=AmbientArtworkColors(…))>
+  ```
+
+The delivered visual carries `ambientColors`, which only the NOW_PLAYING path
+computes — it is a freshly *generated* cover. `resolveVisual` (`TrackCover.kt:180`)
+falls back to `generatedVisual(request, resolved = true)` whenever
+`resolve(trackUri, size)` yields nothing **or its decode returns null**, and
+`loadVisual` then delivers that downgrade over a real cover already on screen.
+
+That is the whole of the user's "the cover flashes up and is gone again", and
+the note that follows is that generated cover — not a cold cache, and not the
+size-shelf split the handoff blamed.
