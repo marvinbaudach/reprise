@@ -39,7 +39,7 @@ class NowPlayingCueTest {
 
     @Test
     fun top_edge_preindicator_references_the_commit_threshold_symbol() {
-        val source = File("src/main/java/de/reprise/spike/TopEdgeAccentLine.kt").readText()
+        val source = File("src/main/java/io/github/marvinbaudach/reprise/TopEdgeAccentLine.kt").readText()
 
         assertTrue("preindicator must read the commit symbol", TRACK_COMMIT_DISTANCE_FRACTION_SYMBOL in source)
         assertFalse("preindicator must not copy the threshold literal", "0.22" in source)

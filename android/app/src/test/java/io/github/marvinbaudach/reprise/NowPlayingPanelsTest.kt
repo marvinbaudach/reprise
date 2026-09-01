@@ -142,7 +142,7 @@ class NowPlayingPanelsTest {
 
     @Test
     fun every_per_frame_panel_canvas_captures_the_scene_revision() {
-        val source = File("src/main/java/de/reprise/spike/NowPlayingScene.kt").readText()
+        val source = File("src/main/java/io/github/marvinbaudach/reprise/NowPlayingScene.kt").readText()
         val observation = "observeSceneFrame(drawRevision)"
 
         assertEquals(3, source.split(observation).size - 1)
