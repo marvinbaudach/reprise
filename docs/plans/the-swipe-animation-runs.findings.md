@@ -258,3 +258,37 @@ LIST shelf cold for the incoming track?**
   thrashes, but evicting a NOW_PLAYING entry only costs a re-decode, because the
   cross-size `TrackArtworkKey` match still finds the LIST entry ahead of any
   generated key. A performance defect, not the note.
+
+### 2026-09-02 — four distinct symptoms, reported live from the device
+
+The user watched the fixed build by hand and reported more than the handoff had:
+
+1. The neighbour panel shows the generated fallback cover instead of the real one.
+2. **The real next cover flashes up and then disappears again.** This is the
+   most informative of the four: a cold cache cannot flash a real cover, so the
+   artwork *is* loaded at that moment and something discards it afterwards. It
+   moves the suspicion off the prefetch and onto the delivery path.
+3. A white line at the top edge keeps moving after the cover has already landed.
+4. With the visualiser on, the neighbour panel shows a cover rather than the
+   visualiser. This one is by design, not a defect: `NowPlayingScene.kt:344`
+   passes `live = panel.index == currentIndex`, so the scene engine runs only in
+   the current panel. It still contradicts what the user expects to see.
+
+### A structural claim that turned out to be wrong
+
+An earlier pass here read `withCurrentPanel` (`NowPlayingGestures.kt:46-62`)
+dropping the forward panel and keeping `firstIndex`/`lastIndex` unchanged as a
+defect. It is not: `NowPlayingPanelsTest.kt:49`
+(`a_known_index_change_replaces_the_centre_without_discarding_its_neighbour`)
+covers exactly this, and the forward panel genuinely cannot exist yet — the old
+window only held three tracks. Do not "fix" this.
+
+### The mechanism still to be measured
+
+`rememberTrackArtworkVisual` (`TrackCover.kt:275-290`) holds its visual in
+`remember(request, artwork)` and starts the load in a `DisposableEffect` whose
+`onDispose` calls `gate.invalidate(admitted)`. When the panel window churns —
+`withCurrentPanel` first, the async `loadUpcomingTracks` reload second — a panel
+subtree can be disposed and rebuilt. That discards both the delivered visual and
+the in-flight decode, which would produce exactly symptom 2 followed by
+symptom 1. **Not yet measured. Needs frames, not argument.**
