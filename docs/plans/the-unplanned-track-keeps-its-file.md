@@ -2,7 +2,7 @@
 slug: the-unplanned-track-keeps-its-file
 worktree: /home/marvin/Projects/reprise-the-unplanned-track-keeps-its-file
 branch: feature/the-unplanned-track-keeps-its-file
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
@@ -130,6 +130,15 @@ After the migration call, insert a row with `kind = 'analysis_failed'` and
 assert it succeeds. Keep the existing row-preservation assertion.
 
 ### 4 — Pin the run outcome
+
+**Rejected by implementation evidence on this follow-up branch:** the focused
+runtime test records `RunOutcome::Failed`, not `Completed`.
+`device_sync_effects.rs` forwards `Event::AnalysisWritten(Err)` and
+`machine.rs` assigns that error to `terminal_error`. The statement below that
+`AnalysisFailed` cannot reach the terminal error considers only the run-log
+counter and misses the independent state-machine path. Pinning `Completed`
+would therefore be a behavior fix beyond this assertion-only task, and the
+prohibited `machine.rs` is one of the relevant seams.
 
 `crates/reprise-gnome/src/ui/device_sync/device_sync_analysis_metadata_tests.rs`,
 `failed_analysis_copy_records_track_path_and_error` drives a real sidecar

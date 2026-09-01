@@ -529,6 +529,9 @@ fn plan_orphan_removals(
         .map(|path| path.to_lowercase())
         .collect::<HashSet<_>>();
     for file in managed_files {
+        // A folded match may retain a genuine case-variant duplicate, but an
+        // MTP phantom delete can abort every later sync. Prefer leaked space
+        // over risking that destructive failure.
         if !seen_physical.insert(file.relative_path.as_str())
             || known_paths.contains(&file.relative_path)
             || known_folded_paths.contains(&file.relative_path.to_lowercase())

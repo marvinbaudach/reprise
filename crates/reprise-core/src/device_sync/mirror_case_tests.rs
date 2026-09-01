@@ -298,7 +298,7 @@ fn ambiguous_directory_keeps_a_track_at_its_distinct_inventory_path() {
 }
 
 #[test]
-fn unavailable_track_keeps_its_minority_inventory_spelling() {
+fn unavailable_track_is_retained_at_its_minority_inventory_spelling() {
     let source = SelectionSource::Playlist(10);
     let mut entries = vec![unavailable(9)];
     entries.extend((1..=4).map(unavailable));
