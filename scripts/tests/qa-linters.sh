@@ -143,6 +143,12 @@ require_pattern 'display_test_passed' scripts/check-display-tests.sh
 require_pattern 'passed_lines=\$\(grep -Ec' scripts/check-display-tests.sh
 require_pattern 'DISPLAY_TEST_JOBS' scripts/check-display-tests.sh
 require_pattern 'wait -n' scripts/check-display-tests.sh
+require_pattern '\-\-list\) list_only=true' scripts/check-display-tests.sh
+require_pattern '\-\-shard\) shard_spec=' scripts/check-display-tests.sh
+require_pattern 'sort$' scripts/check-display-tests.sh
+require_pattern 'index % shard_count == shard_index - 1' scripts/check-display-tests.sh
+require_pattern_order 'if \[\[ \$mode == rule-named \]\]' 'index % shard_count == shard_index - 1' scripts/check-display-tests.sh
+require_pattern_order 'index % shard_count == shard_index - 1' 'No ignored display tests were discovered' scripts/check-display-tests.sh
 require_pattern 'results_dir' scripts/check-display-tests.sh
 require_pattern 'XDG_RUNTIME_DIR' scripts/check-display-tests.sh
 require_pattern 'XDG_CONFIG_HOME' scripts/check-display-tests.sh

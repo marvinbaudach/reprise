@@ -3,21 +3,52 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 mode=all
-case "${1:-}" in
-  "") ;;
-  --rule-named) mode=rule-named ;;
-  # --css runs only ignored CSS-provider parsing guards. Keep this targeted:
-  # it is a focused developer mode, never the standing merge gate.
-  --css) mode=css ;;
-  *)
-    echo "Usage: $0 [--rule-named | --css]" >&2
-    exit 2
-    ;;
-esac
+list_only=false
+shard_spec=
+
+usage() {
+  echo "Usage: $0 [--rule-named | --css] [--shard K/N] [--list]" >&2
+  exit 2
+}
+
+while (( $# > 0 )); do
+  case $1 in
+    --rule-named)
+      [[ $mode == all ]] || usage
+      mode=rule-named
+      shift
+      ;;
+    # --css runs only ignored CSS-provider parsing guards. Keep this targeted:
+    # it is a focused developer mode, never the standing merge gate.
+    --css)
+      [[ $mode == all ]] || usage
+      mode=css
+      shift
+      ;;
+    --shard) shard_spec=${2:-}
+      [[ -n $shard_spec ]] || usage
+      shift 2
+      ;;
+    --list) list_only=true
+      shift
+      ;;
+    *) usage ;;
+  esac
+done
+
+shard_index=
+shard_count=
+if [[ -n $shard_spec ]]; then
+  [[ $shard_spec =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] || usage
+  shard_index=${BASH_REMATCH[1]}
+  shard_count=${BASH_REMATCH[2]}
+  (( shard_index <= shard_count )) || usage
+fi
 
 mapfile -t tests < <(
   cargo test -p reprise-gnome -- --ignored --list \
-    | sed -n 's/: test$//p'
+    | sed -n 's/: test$//p' \
+    | sort
 )
 
 # `--ignored` is how a display test announces that it needs an X server, but it
@@ -94,9 +125,24 @@ if [[ $mode == rule-named ]]; then
   tests=("${rule_tests[@]}")
 fi
 
+if [[ -n $shard_spec ]]; then
+  shard_tests=()
+  for index in "${!tests[@]}"; do
+    if (( index % shard_count == shard_index - 1 )); then
+      shard_tests+=("${tests[$index]}")
+    fi
+  done
+  tests=("${shard_tests[@]}")
+fi
+
 if [[ ${#tests[@]} -eq 0 ]]; then
   echo "No ignored display tests were discovered" >&2
   exit 1
+fi
+
+if [[ $list_only == true ]]; then
+  printf '%s\n' "${tests[@]}"
+  exit 0
 fi
 
 jobs=${DISPLAY_TEST_JOBS:-1}
