@@ -24,11 +24,11 @@ while read -r id st; do
 done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned|replaced)' "$doc" \
   | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(active|planned|replaced)/\1 \2/')
 
-# --- Read the document: ID -> level (core|gtk|e2e|web|manual) ---
+# --- Read the document: ID -> level (core|gtk|e2e|web|android|manual) ---
 declare -A level_of
 while read -r id lvl; do
   level_of[$id]=$lvl
-done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned)\] \[(core|gtk|e2e|web|manual)\]' "$doc" \
+done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(active|planned)\] \[(core|gtk|e2e|web|android|manual)\]' "$doc" \
   | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(active|planned)\] \[([a-z0-9]+)\]/\1 \3/')
 
 # Derive the section prefixes from the document itself, so a new rulebook
@@ -37,11 +37,13 @@ prefixes=$(printf '%s\n' "${!status_of[@]}" | sed -E 's/-.*$//' \
   | sort -u | tr '[:upper:]' '[:lower:]' | paste -sd'|')
 [[ -n $prefixes ]] || { echo "check-ux-traceability: no rules found in $doc" >&2; exit 1; }
 
-# --- Collect test references (snake from Rust, kebab from cua-e2e) ---
+# --- Collect test references (snake from Rust/Kotlin, kebab from cua-e2e) ---
 # A fn only counts when a #[test] attribute sits within the 5 lines above
 # it, so plain helper fns cannot green the gate.
 snake_refs=$(grep -rhA5 --include='*.rs' '#\[test\]' crates 2>/dev/null \
   | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_" | sed -E 's/^fn //; s/_$//' | sort -u || true)
+android_refs=$(grep -rhA5 --include='*.kt' '@Test' android/app/src/test 2>/dev/null \
+  | grep -oE "fun (${prefixes})_[0-9]+[a-z]?_" | sed -E 's/^fun //; s/_$//' | sort -u || true)
 # Comment lines never count as coverage.
 kebab_refs=$(grep -rhE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" scripts/cua-e2e 2>/dev/null \
   | grep -vE '^[[:space:]]*#' \
@@ -74,7 +76,7 @@ to_id() { # play_1a or play-1a -> PLAY-1a
 }
 
 declare -A tested
-for ref in $snake_refs $kebab_refs $web_refs; do
+for ref in $snake_refs $android_refs $kebab_refs $web_refs; do
   id=$(to_id "$ref")
   tested[$id]=1
   case "${status_of[$id]:-missing}" in
