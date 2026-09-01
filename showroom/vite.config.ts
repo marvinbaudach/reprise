@@ -109,7 +109,6 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
       'Rust documentation',
       'Workspace tests',
       'Linux platform tests',
-      'Runtime service bus tests',
     ],
   },
   {
