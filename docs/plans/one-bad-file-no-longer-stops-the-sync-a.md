@@ -2,7 +2,7 @@
 slug: one-bad-file-no-longer-stops-the-sync-a
 worktree: /home/marvin/Projects/reprise-one-bad-file-no-longer-stops-the-sync-a
 branch: feature/one-bad-file-no-longer-stops-the-sync-a
-phase: shipped
+phase: refactored
 codex_session:
 created: 2026-08-30
 ---
