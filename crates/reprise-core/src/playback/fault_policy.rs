@@ -43,3 +43,25 @@ pub fn playback_fault_policy(file_exists: bool) -> PlaybackFaultPolicy {
         }
     }
 }
+
+/// Whether a consecutive playback-fault run has exhausted its fixed queue
+/// bound. An empty bound always stops; otherwise faults may advance only
+/// while their count remains below the bound.
+pub fn should_stop_skipping(consecutive_skips: usize, queue_len: usize) -> bool {
+    queue_len == 0 || consecutive_skips >= queue_len
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_stop_skipping;
+
+    #[test]
+    fn fb_6_skip_guard_stops_only_at_the_latched_queue_bound() {
+        // UX FB-6: a fault skips while another bounded candidate remains,
+        // then stops instead of spinning through an exhausted queue.
+        assert!(should_stop_skipping(0, 0));
+        assert!(!should_stop_skipping(2, 3));
+        assert!(should_stop_skipping(3, 3));
+        assert!(should_stop_skipping(4, 3));
+    }
+}

@@ -159,7 +159,7 @@ impl AndroidPlaybackSession {
             {
                 return Ok(false);
             }
-            state.adopt_current();
+            state.adopt_current_for_play_intent();
             state.queue.clone()
         };
         self.inner.persist_queue(&queue_to_save)?;

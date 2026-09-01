@@ -70,6 +70,8 @@ struct SessionState {
     snapshot: AndroidPlaybackSnapshot,
     stream: StreamGeneration,
     current_loaded: bool,
+    consecutive_faults: usize,
+    fault_skip_limit: Option<usize>,
     max_position_ms: i64,
     play_recorded: bool,
 }
@@ -97,6 +99,8 @@ impl SessionState {
             },
             stream: StreamGeneration::INITIAL,
             current_loaded: false,
+            consecutive_faults: 0,
+            fault_skip_limit: None,
             max_position_ms: 0,
             play_recorded: false,
         }
@@ -139,6 +143,8 @@ impl SessionState {
             uris: restored.uris,
             stream: StreamGeneration::INITIAL,
             current_loaded: false,
+            consecutive_faults: 0,
+            fault_skip_limit: None,
             max_position_ms: 0,
             play_recorded: false,
         }
@@ -173,7 +179,7 @@ impl SessionState {
         self.track_ids = track_ids.clone();
         self.uris = uris;
         self.queue.set_tracks(track_ids, start_index);
-        self.adopt_current();
+        self.adopt_current_for_play_intent();
     }
 
     fn adopt_current(&mut self) {
@@ -185,10 +191,20 @@ impl SessionState {
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
         self.current_loaded = false;
-        self.snapshot.error = None;
         self.snapshot.state = AndroidPlaybackState::Playing;
         self.max_position_ms = 0;
         self.play_recorded = false;
+    }
+
+    fn adopt_current_for_play_intent(&mut self) {
+        self.reset_fault_run();
+        self.adopt_current();
+    }
+
+    fn reset_fault_run(&mut self) {
+        self.consecutive_faults = 0;
+        self.fault_skip_limit = None;
+        self.snapshot.error = None;
     }
 
     fn stop(&mut self) {
@@ -548,7 +564,7 @@ impl AndroidPlaybackSession {
             if state.queue.jump_to_order_position(previous).is_none() {
                 return Ok(());
             }
-            state.adopt_current();
+            state.adopt_current_for_play_intent();
             state.queue.clone()
         };
         self.inner.persist_queue(&queue_to_save)?;
@@ -654,7 +670,7 @@ impl AndroidPlaybackSession {
             let mut state = self.inner.lock()?;
             let has_current = move_queue(&mut state.queue).is_some();
             if has_current {
-                state.adopt_current();
+                state.adopt_current_for_play_intent();
             }
             (has_current, state.queue.clone())
         };
