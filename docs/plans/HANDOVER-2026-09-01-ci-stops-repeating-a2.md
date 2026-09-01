@@ -16,28 +16,46 @@ any action of that session. Read the plan from the worktree, not from `main`.
 
 ## State right now
 
+Rebased onto `origin/dev` at `047c8d74cf`, pushed, and dispatch-proved. Commits
+on top of `origin/dev`, newest first:
+
 ```
-219e25efe2 docs: strand a2 phase refactored (third pass)
-07cce203cf fix(ci): derive workflow block indentation        <- S3
-269c80d89b test(ci): pin display matrix to shard axis        <- S1
-73a104f204 docs: strand a2 phase reviewed (third pass)
-42c01fa1ea docs: strand a2 phase refactored (second pass)
-b65f4b3d3b fix(ci): close display shard review gaps          ← R1,R3,R4,R5,R6,R7
-af31189287 docs: strand a2 phase reviewed (second pass)
-9b30ee2d41 docs: strand a2 phase refactored
-04993baf6d test(ci): verify display shard partition          ← m4
-f7c91ad4f4 test(ci): bind display ownership contracts        ← M1+m1, M2
-0deae345e5 docs: strand a2 phase reviewed
-9d3f162396 docs: strand a2 phase coded
-4843b23181 ci: cache core builds and Android dependencies    ← A2.4, revertible alone
-e79e8b2991 ci: route display tests to sharded jobs           ← A2.2 + A2.3, one commit
-90ff42b78c feat(ci): shard display test execution            ← A2.1
-1d1aaa2a81 docs: correct expected display-test count
-7722b0364e docs: plan strand a2
+a134088b7e test: assert has_tooltip alongside the recorded lazy-tooltip text
+f1292d8be8 docs: record why the three display tests were red
+6b1ce6a4b0 fix: satisfy clippy's needless_pass_by_value in LazyTooltip::set_text
+068a3d4f92 fix: give the activation-id fixture a deterministic sort order
+a140e6b317 fix: read the deferred tooltip text two display tests still assert
+c30e1da9af ci: verify the shard partition before running it
+2b99814a7f docs: record strand a2 dispatch results
+1f81292a9d fix(ci): resolve display-test root without git
+abe1e1cb5a docs: handover note for strand a2
+bb2565aa31 docs: strand a2 phase refactored (third pass)
+70e20aa331 fix(ci): derive workflow block indentation
+d39926e892 test(ci): pin display matrix to shard axis
+4f85fcd839 docs: strand a2 phase reviewed (third pass)
+8e5445d23f docs: strand a2 phase refactored (second pass)
+d9695890c2 fix(ci): close display shard review gaps
+f6c9ca7218 docs: strand a2 phase reviewed (second pass)
+a44a9be2ba docs: strand a2 phase refactored
+4864be16dc test(ci): verify display shard partition
+8e7f2f3e61 test(ci): bind display ownership contracts
+a1bd111f86 docs: strand a2 phase reviewed
+94f91db357 docs: strand a2 phase coded
+76cda02357 ci: cache core builds and Android dependencies
+78917dd50d ci: route display tests to sharded jobs
+7518afe750 feat(ci): shard display test execution
+c1ff114c98 docs: correct strand a2 expected display-test count to the discovered set
+c91e4273c0 docs: plan strand a2 — the display tests get their own sharded job
 ```
 
-Tree clean. Nothing pushed. **The branch is 14 commits behind `origin/dev`** and
-needs a rebase before anything else.
+The commits below `c30e1da9af` are the original three review rounds, unchanged by
+the rebase apart from one conflict in `.github/scripts/check-gnome-ci.sh`: a2
+removed the display-test block there, `dev` (#783) removed the runtime
+service-bus block, and the resolution keeps neither. Everything above it was
+added after the rebase, in response to what the dispatch runs found.
+
+Tree clean, branch pushed. Landing is blocked only on
+`feature/dev-gates-go-green` — see "Landing".
 
 ## The last run finished
 
@@ -301,32 +319,71 @@ strand. Fixing one column would also be arbitrary when eleven share the flaw.
 `quality` fails as a consequence of these; `require-ci-results.sh` reports them
 correctly, which is itself evidence the 11-argument signature works.
 
-### A gap in a2 itself, not yet closed
+### The partition check now runs — and runs first
 
-`Verify display-test shard partition` is `if: matrix.shard == 1` and sits *after*
-the shard's test step. One failing test in shard 1 leaves it `skipped`, so **the
-partition check has never executed in CI** — not in run 1, not in run 2. It is
-proved locally only (856 tests, 4 x 214, union byte-identical to the unsharded
-list, no duplicates). Moving it ahead of the test step, or onto its own job,
-would make it independent of whether the tests pass. Deliberately not changed
-here: it touches reviewed code and is the user's call.
+`Verify display-test shard partition` was `if: matrix.shard == 1` and sat *after*
+the shard's test step, so one failing display test left it `skipped`. It is this
+strand's own proof that the four shards partition the suite, and across runs 1
+and 2 it never once executed. It now sits **ahead** of the test step, where it
+depends only on the listing.
+
+Run 3, `33554394762`, is the first run in which it executed:
+`Verify display-test shard partition: success`, with all four shards green.
 
 ## Landing
 
-1. **Rebase** onto `origin/dev` — 12 commits behind at the time of writing.
-2. **`gh workflow run ci.yml --ref feature/the-ci-stops-repeating-itself-a2`.**
-   This needs a push and is the real pre-landing proof. `workflow_dispatch` sets
-   `suite_skip=false` and `emit_routes` with no arguments gives
-   `android=true, gnome=false, core=true` → `display=true`, so it exercises
-   `base-contracts`, `core-suite` and all four shards. `gnome-suite` is **not**
-   exercised by dispatch; it is first proved by the dev run after landing.
-   Confirm the shard counts sum to the unsharded count and that `core-suite` has
-   lost its display phase.
+**a2's own work is finished and proved.** What is left is not a2's.
+
+Proved on the rebased branch:
+
+- Run 3 `33554394762` — all four display shards green, and
+  `Verify display-test shard partition` green for the first time.
+- Partition locally: 856 tests, 4 x 214, union byte-identical to the unsharded
+  listing, no duplicates. The five argument guards exit 2 from any directory.
+- All six mutation proofs exit 1, re-run after each change to `ci.yml`.
+- `check-shell.sh` (137 files, 55 workflow run blocks), the routing contract
+  suite and `qa-linters.sh` all exit 0.
+- `git diff origin/dev...HEAD -- scripts/check-merge-readiness.sh` is 0 bytes.
+
+Still red, on defects a2 does not own and was scoped out of:
+
+- `core-suite` — NET-4b.
+- `android-unit-suite` — the `ArtistPhotoProgressBarTest.kt:420` lint error.
+- `quality` — a consequence of those two.
+
+Both are fixed on **`feature/dev-gates-go-green`** (worktree
+`/home/marvin/Projects/reprise-dev-gates-go-green`, phase `refactored`, pushed).
+It was already finished when a2's dispatch runs exposed the same defects;
+duplicating it inside a2 would have conflicted in `check-ux-traceability.sh` and
+`lint-baseline.xml`, so a2 took only the three display tests that nobody owned.
+
+### Order
+
+1. **Land `dev-gates-go-green` first.** Until it does, no branch that routes
+   `core=true` can produce a green run, a2 included.
+2. **Rebase a2** onto the resulting `dev` and dispatch once more. The
+   expectation at that point is a fully green run: nothing else is outstanding.
 3. **`land.sh`** — a2 is last in the mother plan's `merge_order` (`b, a1, a2`);
    `b` (#777) and `a1` (#774) already landed. `land.sh` finds the plan by
    `^branch: <BR>$`, which only `-a2.md` carries, so no `--plan` is needed.
-4. **Post-merge cross-checks** from the mother plan — those are the comparisons
-   no strand could make alone, and a2 landing is what makes them due.
+4. **Post-merge cross-checks** from the mother plan — the comparisons no strand
+   could make alone, which a2 landing is what makes due.
+
+### Review
+
+The commits added after the third refactor pass — the `safe.directory` fix, the
+step reorder and the four Rust test commits — were reviewed separately. One
+finding was raised and applied: `text_of` reads only the recorded string, not
+`widget.set_has_tooltip(...)`, so both contract tests now assert `has_tooltip()`
+beside the text. Proved load-bearing by forcing `set_has_tooltip(false)` in
+`lazy_tooltip.rs` and watching both tests fail at exactly the new assertions.
+
+Accepted as-is: the `#[cfg(test)]` registry in `lazy_tooltip.rs` keys on
+`widget.as_ptr()`, so a freed widget's address could in principle be reused. Not
+reachable from these two tests — both hold their widget for the whole test and
+rebind before every read — and the alternatives are worse: `gtk4::Tooltip` has no
+public constructor, so the `query-tooltip` signal cannot be read back, and glib's
+`set_data`/`data` are `unsafe fn`. Worth revisiting if a third caller appears.
 
 ## Traps that cost time in this session
 
