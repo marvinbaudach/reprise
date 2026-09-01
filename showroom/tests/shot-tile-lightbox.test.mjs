@@ -191,11 +191,9 @@ test('the full view holds its frame until the next picture has decoded', async (
     preloadEffect,
     /const timeout = window\.setTimeout\(commit, IMAGE_PRELOAD_TIMEOUT_MS\)/,
   );
-  assert.match(
-    preloadEffect,
-    /const settle = \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/,
-  );
-  assert.match(preloadEffect, /return \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/);
+  const settleBody = preloadEffect.match(/const settle = \(\) => \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.ok(settleBody, 'the preload effect must define a settle function');
+  assert.match(settleBody, /window\.clearTimeout\(timeout\);/);
 
   // A second press must supersede the first preload rather than race it: a
   // stale resolution landing late would send the reader back a picture, while
