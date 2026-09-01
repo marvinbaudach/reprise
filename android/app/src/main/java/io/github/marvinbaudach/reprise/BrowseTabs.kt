@@ -1,0 +1,564 @@
+package io.github.marvinbaudach.reprise
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import uniffi.reprise_android_ffi.AndroidArtworkSize
+import uniffi.reprise_android_ffi.AndroidPlaybackState
+
+internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText.isNotBlank()) {
+    "No matching ${label.lowercase()}."
+} else {
+    when (this) {
+        BrowseTab.TITLES -> "No tracks found in this folder."
+        BrowseTab.ARTISTS -> "No artists found in this folder."
+        // Unreachable in practice — the queue page speaks for itself.
+        BrowseTab.QUEUE -> "The queue is exhausted."
+    }
+}
+
+@Composable
+internal fun TitlesTab(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    tracks: LibraryWindow<LibraryTrack>,
+    searchText: String,
+    playback: LibraryPlayback,
+    lastRequestedOffset: Long?,
+    play: (Int) -> Unit,
+    loadMore: (LibraryWindowRange) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (tracks.rows.isEmpty()) {
+            Text(
+                text = BrowseTab.TITLES.emptyMessage(searchText),
+                modifier = Modifier.padding(16.dp),
+            )
+        } else {
+            TrackRows(
+                surfaceLayout = surfaceLayout,
+                surfaceState = surfaceState,
+                listKey = LibraryListKey.TITLES,
+                tracks = tracks,
+                playback = playback,
+                lastRequestedOffset = lastRequestedOffset,
+                play = play,
+                loadMore = loadMore,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun LibrarySearchField(
+    tab: BrowseTab,
+    searchText: String,
+    search: (String) -> Unit,
+    close: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+    BackHandler(onBack = close)
+    OutlinedTextField(
+        value = searchText,
+        onValueChange = search,
+        label = {
+            Text(
+                "Search ${tab.label.lowercase()}",
+            )
+        },
+        leadingIcon = { MaterialSymbol("search", "") },
+        trailingIcon = {
+            IconButton(onClick = { if (searchText.isEmpty()) close() else search("") }) {
+                MaterialSymbol(
+                    name = if (searchText.isEmpty()) "close" else "clear",
+                    contentDescription = if (searchText.isEmpty()) {
+                        "Close search"
+                    } else {
+                        "Clear search"
+                    },
+                )
+            }
+        },
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+internal fun AlbumDetailPage(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    selectedAlbum: AlbumTrackList,
+    playback: LibraryPlayback,
+    closeAlbum: () -> Unit,
+    play: (Int) -> Unit,
+    albumRequestedOffset: Long?,
+    loadMoreAlbumTracks: (LibraryWindowRange) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = closeAlbum)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MaterialSymbol("arrow_back", "Back")
+            Text(selectedAlbum.album.title, style = MaterialTheme.typography.titleLarge)
+        }
+        Text(
+            selectedAlbum.album.artist,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        if (selectedAlbum.tracks.rows.isEmpty()) {
+            Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
+        } else {
+            ListPlayButton(
+                description = "Play ${selectedAlbum.album.title}",
+                onClick = { play(0) },
+            )
+            TrackRows(
+                surfaceLayout = surfaceLayout,
+                surfaceState = surfaceState,
+                listKey = LibraryListKey.ALBUM_TRACKS,
+                tracks = selectedAlbum.tracks,
+                playback = playback,
+                lastRequestedOffset = albumRequestedOffset,
+                play = play,
+                loadMore = loadMoreAlbumTracks,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ArtistsTab(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    artists: LibraryWindow<LibraryArtist>,
+    searchText: String,
+    selectedArtist: ArtistTrackList?,
+    selectedAlbum: AlbumTrackList? = null,
+    playback: LibraryPlayback,
+    openArtist: (LibraryArtist) -> Unit,
+    openAlbum: (LibraryAlbum) -> Unit = {},
+    closeArtist: () -> Unit,
+    closeAlbum: () -> Unit = {},
+    play: (Int) -> Unit,
+    playAlbum: (Int) -> Unit = {},
+    lastRequestedOffset: Long?,
+    artistRequestedOffset: Long?,
+    artistAlbumsRequestedOffset: Long? = null,
+    albumRequestedOffset: Long? = null,
+    loadMoreArtists: (LibraryWindowRange) -> Unit,
+    loadMoreArtistTracks: (LibraryWindowRange) -> Unit,
+    loadMoreArtistAlbums: (LibraryWindowRange) -> Unit = {},
+    loadMoreAlbumTracks: (LibraryWindowRange) -> Unit = {},
+) {
+    if (selectedAlbum != null) {
+        AlbumDetailPage(
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
+            selectedAlbum = selectedAlbum,
+            playback = playback,
+            closeAlbum = closeAlbum,
+            play = playAlbum,
+            albumRequestedOffset = albumRequestedOffset,
+            loadMoreAlbumTracks = loadMoreAlbumTracks,
+        )
+        return
+    }
+    if (selectedArtist != null) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = closeArtist)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MaterialSymbol("arrow_back", "Back to artists")
+                Text(selectedArtist.artist.name, style = MaterialTheme.typography.titleLarge)
+            }
+            val hasAlbums = selectedArtist.albums.rows.isNotEmpty()
+            val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
+            if (!hasAlbums && !hasOtherTitles) {
+                Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
+            } else {
+                val albumTrackIds = LocalAlbumTrackIds.current
+                val controls = LocalPlaybackControls.current
+                ListPlayButton(
+                    description = "Play ${selectedArtist.artist.name}",
+                    onClick = {
+                        val trackIds = buildList {
+                            selectedArtist.albums.rows.forEach { album ->
+                                addAll(albumTrackIds(album))
+                            }
+                            addAll(selectedArtist.untaggedTracks.rows.map(LibraryTrack::id))
+                        }
+                        controls.playTrackIds(trackIds, 0)
+                    },
+                )
+            }
+            if (hasAlbums) {
+                ArtistDetailSections(
+                    surfaceLayout = surfaceLayout,
+                    surfaceState = surfaceState,
+                    artist = selectedArtist.artist,
+                    albums = selectedArtist.albums,
+                    untaggedTracks = selectedArtist.untaggedTracks,
+                    playback = playback,
+                    albumsRequestedOffset = artistAlbumsRequestedOffset,
+                    tracksRequestedOffset = artistRequestedOffset,
+                    openAlbum = openAlbum,
+                    play = play,
+                    loadMoreAlbums = loadMoreArtistAlbums,
+                    loadMoreTracks = loadMoreArtistTracks,
+                )
+            } else if (hasOtherTitles) {
+                ArtistDetailSections(
+                    surfaceLayout = surfaceLayout,
+                    surfaceState = surfaceState,
+                    artist = selectedArtist.artist,
+                    albums = LibraryWindow.empty(),
+                    untaggedTracks = selectedArtist.untaggedTracks,
+                    playback = playback,
+                    albumsRequestedOffset = artistAlbumsRequestedOffset,
+                    tracksRequestedOffset = artistRequestedOffset,
+                    openAlbum = openAlbum,
+                    play = play,
+                    loadMoreAlbums = loadMoreArtistAlbums,
+                    loadMoreTracks = loadMoreArtistTracks,
+                )
+            }
+        }
+        return
+    }
+
+    if (artists.rows.isEmpty()) {
+        Text(BrowseTab.ARTISTS.emptyMessage(searchText), modifier = Modifier.padding(16.dp))
+        return
+    }
+    Column(modifier = Modifier.fillMaxSize()) {
+        ArtistRows(
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
+            artists = artists,
+            requestedOffset = lastRequestedOffset,
+            openArtist = openArtist,
+            loadMore = loadMoreArtists,
+        )
+    }
+}
+
+@Composable
+private fun ArtistDetailSections(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    artist: LibraryArtist,
+    albums: LibraryWindow<LibraryAlbum>,
+    untaggedTracks: LibraryWindow<LibraryTrack>,
+    playback: LibraryPlayback,
+    albumsRequestedOffset: Long?,
+    tracksRequestedOffset: Long?,
+    openAlbum: (LibraryAlbum) -> Unit,
+    play: (Int) -> Unit,
+    loadMoreAlbums: (LibraryWindowRange) -> Unit,
+    loadMoreTracks: (LibraryWindowRange) -> Unit,
+) {
+    val key = LibraryListKey.ARTIST_ALBUMS
+    val head = rememberArtistArtworkVisual(
+        name = artist.name,
+        representativeUri = artist.representativeUri,
+        artworkSize = AndroidArtworkSize.ARTIST_DETAIL,
+        allowFetch = true,
+    )
+    val trackContent = trackListContent(untaggedTracks, tracksRequestedOffset)
+    val albumContinuation = albums.nextRequest(albumsRequestedOffset)
+    val albumItemCount = albums.rows.size + if (albums.rows.isEmpty()) 0 else 1
+    val itemCount = albumItemCount + trackContent.size +
+        (if (albumContinuation == null) 0 else 1) +
+        (if (untaggedTracks.rows.isEmpty()) 0 else 1) + 1
+    val anchor = surfaceState.scrollPosition(key).within(itemCount)
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(key, listState, surfaceState)
+    val metrics = libraryFrameMetrics(surfaceLayout)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val portraitCenterFraction = if (maxHeight.value > 0f) {
+            (ARTIST_PORTRAIT_DIAMETER_DP.toFloat() / 2f / maxHeight.value).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        ArtistPortraitShimmer(
+            visual = head,
+            playing = playback.state == AndroidPlaybackState.PLAYING,
+            coverDiameterDp = ARTIST_PORTRAIT_DIAMETER_DP.toFloat(),
+            centerFraction = portraitCenterFraction,
+            modifier = Modifier.fillMaxSize(),
+        )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().testTag(key.testTag()),
+        ) {
+            item(key = "artist-portrait-head") { ArtistPortraitHeader(head, artist) }
+            if (albums.rows.isNotEmpty()) {
+                item(key = "artist-albums-heading") { SectionHeading("Albums") }
+                items(
+                    albums.rows,
+                    key = { album -> "artist-album-${album.artist}\u0000${album.title}" },
+                ) { album -> AlbumRow(album, openAlbum) }
+                albumContinuation?.let { request ->
+                    item(key = "artist-albums-load-${request.offset}") {
+                        LaunchedEffect(request.offset) { loadMoreAlbums(request) }
+                        LoadingWindowRow()
+                    }
+                }
+            }
+            if (untaggedTracks.rows.isNotEmpty()) {
+                item(key = "artist-tracks-heading") { SectionHeading("Other titles") }
+                items(
+                    trackContent,
+                    key = { content ->
+                        when (content) {
+                            is TrackListContent.Row -> "artist-track-${content.track.uri}"
+                            is TrackListContent.Continuation ->
+                                "artist-tracks-load-${content.request.offset}"
+                        }
+                    },
+                ) { content ->
+                    TrackListItem(
+                        content = content,
+                        surfaceState = surfaceState,
+                        metrics = metrics,
+                        playback = playback,
+                        play = play,
+                        loadMore = loadMoreTracks,
+                        subtitle = TrackRowSubtitle.ALBUM_ONLY,
+                        onFavouriteChanged = { _, _ -> },
+                        queueActions = null,
+                        rowCount = untaggedTracks.rows.size,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun ListPlayButton(description: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        MaterialSymbol("play_arrow", description)
+        Text("Play")
+    }
+}
+
+@Composable
+private fun AlbumRows(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    albums: LibraryWindow<LibraryAlbum>,
+    requestedOffset: Long?,
+    openAlbum: (LibraryAlbum) -> Unit,
+    loadMore: (LibraryWindowRange) -> Unit,
+    key: LibraryListKey,
+) {
+    val anchor = surfaceState.scrollPosition(key).within(albums.itemCount(requestedOffset))
+    if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+        val metrics = libraryFrameMetrics(surfaceLayout)
+        val gridState = rememberLibraryGridState(anchor)
+        ObserveLibraryGridAnchor(key, gridState, surfaceState)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            state = gridState,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                metrics.listColumnGapDp.dp,
+            ),
+            modifier = Modifier.fillMaxSize().testTag(key.testTag()),
+        ) {
+            gridItems(
+                items = albums.rows,
+                key = { album -> "${album.artist}\u0000${album.title}" },
+            ) { album -> AlbumRow(album, openAlbum) }
+            albums.nextRequest(requestedOffset)?.let { request ->
+                item(key = "load-window-${request.offset}", span = { GridItemSpan(maxLineSpan) }) {
+                    LaunchedEffect(request.offset) { loadMore(request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+        return
+    }
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(key, listState, surfaceState)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().testTag(key.testTag()),
+    ) {
+        items(albums.rows, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
+            AlbumRow(album, openAlbum)
+        }
+        windowContinuation(albums, requestedOffset, loadMore)
+    }
+}
+
+@Composable
+private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
+    val contextMenu = rememberTrackContextMenuAnchorState()
+    val albumTrackIds = LocalAlbumTrackIds.current
+    val controls = LocalPlaybackControls.current
+    // The acknowledgement sits below the row, not inside the Box it would
+    // otherwise cover — see TrackContextMenuMessage.
+    Column {
+        Box {
+            ListItem(
+                headlineContent = { Text(album.title) },
+                supportingContent = { Text(album.details()) },
+                trailingContent = { Text(formatDuration(album.totalDurationMs)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .trackContextMenuAnchor(contextMenu) { openAlbum(album) },
+            )
+            TrackContextMenu(
+                anchor = contextMenu,
+                target = LibraryTrackMenuTarget(
+                    label = album.title,
+                    trackCount = album.trackCount,
+                    resolveTrackIds = { albumTrackIds(album) },
+                    play = { ids -> controls.playTrackIds(ids, 0) },
+                ),
+            )
+        }
+        TrackContextMenuMessage(contextMenu)
+    }
+    HorizontalDivider()
+}
+
+@Composable
+private fun ArtistRows(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    artists: LibraryWindow<LibraryArtist>,
+    requestedOffset: Long?,
+    openArtist: (LibraryArtist) -> Unit,
+    loadMore: (LibraryWindowRange) -> Unit,
+) {
+    val key = LibraryListKey.ARTISTS
+    val anchor = surfaceState.scrollPosition(key).within(artists.itemCount(requestedOffset))
+    if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+        val metrics = libraryFrameMetrics(surfaceLayout)
+        val gridState = rememberLibraryGridState(anchor)
+        ObserveLibraryGridAnchor(key, gridState, surfaceState)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            state = gridState,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                metrics.listColumnGapDp.dp,
+            ),
+            modifier = Modifier.fillMaxSize().testTag("library-artists-list"),
+        ) {
+            gridItems(artists.rows, key = LibraryArtist::name) { artist ->
+                ArtistRow(artist, openArtist)
+            }
+            artists.nextRequest(requestedOffset)?.let { request ->
+                item(key = "load-window-${request.offset}", span = { GridItemSpan(maxLineSpan) }) {
+                    LaunchedEffect(request.offset) { loadMore(request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+        return
+    }
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(key, listState, surfaceState)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().testTag("library-artists-list"),
+    ) {
+        items(artists.rows, key = LibraryArtist::name) { artist ->
+            ArtistRow(artist, openArtist)
+        }
+        windowContinuation(artists, requestedOffset, loadMore)
+    }
+}
+
+@Composable
+private fun ArtistRow(artist: LibraryArtist, openArtist: (LibraryArtist) -> Unit) {
+    val visual = rememberArtistArtworkVisual(
+        name = artist.name,
+        representativeUri = artist.representativeUri,
+        artworkSize = AndroidArtworkSize.LIST,
+        allowFetch = false,
+    )
+    ListItem(
+        headlineContent = { Text(artist.name) },
+        supportingContent = { Text(artist.details()) },
+        leadingContent = { ArtistAvatar(visual, sizeDp = 40) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { openArtist(artist) },
+    )
+    HorizontalDivider()
+}
+
+private fun <T> LazyListScope.windowContinuation(
+    window: LibraryWindow<T>,
+    lastRequestedOffset: Long?,
+    loadMore: (LibraryWindowRange) -> Unit,
+) {
+    val request = window.nextRequest(lastRequestedOffset) ?: return
+    item(key = "load-window-${request.offset}") {
+        LaunchedEffect(request.offset) { loadMore(request) }
+        LoadingWindowRow()
+    }
+}

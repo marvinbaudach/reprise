@@ -50,13 +50,7 @@ impl AndroidPlaybackSession {
         action: Box<dyn TrashAction>,
     ) -> Result<AndroidTrashReport, LibraryError> {
         let (report, already_gone) = {
-            let database = self
-                .inner
-                .database
-                .lock()
-                .map_err(|_| LibraryError::Database {
-                    detail: "playback queue database was poisoned".to_owned(),
-                })?;
+            let database = self.inner.library.writer()?;
             let mut tracks = Vec::with_capacity(track_ids.len());
             let mut already_gone = Vec::new();
             for track_id in track_ids {

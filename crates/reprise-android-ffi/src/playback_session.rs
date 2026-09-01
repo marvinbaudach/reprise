@@ -1,14 +1,13 @@
 //! Android's Core-owned playback queue and transport surface.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use reprise_core::playback::{PlaybackBackend, PlayerEvent, StreamEvent, StreamGeneration};
+use reprise_core::playback::{PlaybackBackend, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
-use crate::listen_export_recorder::{ListenExportRecorder, RecordedListen};
-use crate::play_recorder::{PlayRecorder, RecordedPlay};
+use crate::listen_export_recorder::ListenExportRecorder;
+use crate::play_recorder::PlayRecorder;
 use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
@@ -16,6 +15,7 @@ use crate::playback::{
 mod history;
 mod queue_boundary;
 mod queue_persistence;
+mod stream_events;
 mod trash_boundary;
 
 pub use trash_boundary::{AndroidTrashFailure, AndroidTrashReport, TrashAction};
@@ -286,12 +286,11 @@ fn index_tracks(track_ids: &[i64]) -> HashMap<i64, usize> {
 /// out of the state it also updates.
 struct SessionInner {
     state: Mutex<SessionState>,
-    database: Mutex<reprise_core::db::Db>,
+    library: Arc<crate::MusicLibrary>,
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Arc<dyn AndroidPlaybackListener>,
     plays: PlayRecorder,
     listen_exports: ListenExportRecorder,
-    database_path: PathBuf,
 }
 
 impl SessionInner {
@@ -311,10 +310,10 @@ impl SessionInner {
 
     fn persist_queue(&self, queue: &Queue) -> Result<(), AndroidPlaybackError> {
         let database = self
-            .database
-            .lock()
-            .map_err(|_| AndroidPlaybackError::Backend {
-                detail: "playback queue database was poisoned".to_owned(),
+            .library
+            .writer()
+            .map_err(|error| AndroidPlaybackError::Backend {
+                detail: error.to_string(),
             })?;
         queue_persistence::save(&database, queue).map_err(|error| AndroidPlaybackError::Backend {
             detail: format!("could not save the playback queue: {error}"),
@@ -379,135 +378,6 @@ impl SessionInner {
         self.notify();
         Ok(())
     }
-
-    fn handle_event(&self, event: StreamEvent) {
-        enum FollowUp {
-            None,
-            Start,
-            Feed(Option<String>),
-            Stop,
-        }
-
-        let (follow_up, play_to_record, queue_to_save) = {
-            let Ok(mut state) = self.state.lock() else {
-                return;
-            };
-            if !state.accepts(event.generation) {
-                return;
-            }
-            match event.event {
-                PlayerEvent::StateChanged(playback) => {
-                    state.snapshot.state = playback.into();
-                    (FollowUp::None, None, None)
-                }
-                PlayerEvent::Position {
-                    position_ms,
-                    duration_ms,
-                } => {
-                    state.snapshot.position_ms = position_ms.max(0);
-                    if duration_ms > 0 {
-                        state.snapshot.duration_ms = duration_ms;
-                    }
-                    state.max_position_ms = state.max_position_ms.max(position_ms.max(0));
-                    let play = state.play_to_record(false);
-                    (FollowUp::None, play, None)
-                }
-                PlayerEvent::TrackFinished => {
-                    let play = state.play_to_record(true);
-                    state.snapshot.automatic_advance_count =
-                        state.snapshot.automatic_advance_count.saturating_add(1);
-                    if state.queue.advance_auto().is_some() {
-                        state.adopt_current();
-                        (FollowUp::Start, play, Some(state.queue.clone()))
-                    } else {
-                        state.stop();
-                        (FollowUp::Stop, play, Some(state.queue.clone()))
-                    }
-                }
-                PlayerEvent::AdvancedToNext => {
-                    let play = state.play_to_record(true);
-                    state.snapshot.automatic_advance_count =
-                        state.snapshot.automatic_advance_count.saturating_add(1);
-                    if state.queue.advance_auto().is_some() {
-                        state.adopt_current();
-                        state.current_loaded = true;
-                        let history_entry = state
-                            .current_track_id()
-                            .zip(state.current_uri())
-                            .map(|(track_id, uri)| state.history_entry_for_started(track_id, uri));
-                        if let Some(history_entry) = history_entry {
-                            state.note_playback_started(history_entry);
-                        }
-                        (
-                            FollowUp::Feed(state.next_uri()),
-                            play,
-                            Some(state.queue.clone()),
-                        )
-                    } else {
-                        state.stop();
-                        (FollowUp::Stop, play, Some(state.queue.clone()))
-                    }
-                }
-                PlayerEvent::Error(message) => {
-                    state.snapshot.state = AndroidPlaybackState::Stopped;
-                    state.snapshot.error = Some(message.into_message());
-                    state.current_loaded = false;
-                    (FollowUp::Stop, None, None)
-                }
-                PlayerEvent::Buffering { .. } => {
-                    // Buffering describes only a stream that is still loaded.
-                    // Queue exhaustion and errors both clear `current_loaded`,
-                    // so a callback already in flight cannot revive their
-                    // terminal Stopped snapshot.
-                    if state.current_loaded {
-                        state.snapshot.state = AndroidPlaybackState::Buffering;
-                    }
-                    (FollowUp::None, None, None)
-                }
-                PlayerEvent::StreamTags { .. } | PlayerEvent::Spectrum(_) => {
-                    (FollowUp::None, None, None)
-                }
-            }
-        };
-
-        if let Some(queue) = queue_to_save {
-            if let Err(error) = self.persist_queue(&queue) {
-                tracing::warn!(%error, "could not persist automatic Android queue advance");
-            }
-        }
-
-        // Queued, not written: this runs on Media3's application thread, and
-        // `FollowUp::Start` below is the gapless transition into the next
-        // track. See `play_recorder`.
-        if let Some((track_id, ms_played)) = play_to_record {
-            let play = RecordedPlay::now(track_id);
-            self.plays.record(play);
-            self.listen_exports.record(RecordedListen {
-                track_id,
-                at_unix: play.at_unix,
-                ms_played,
-            });
-        }
-
-        match follow_up {
-            FollowUp::None => self.notify(),
-            FollowUp::Start => {
-                let _ = self.start_current();
-            }
-            FollowUp::Feed(next_uri) => {
-                if let Ok(backend) = self.backend() {
-                    backend.set_next(next_uri.as_deref());
-                }
-                self.notify();
-            }
-            FollowUp::Stop => {
-                if let Ok(backend) = self.backend() {
-                    let _ = backend.stop();
-                }
-                self.notify();
-            }
-        }
-    }
 }
 
 /// The Android service's one owner of Core queue state and playback commands.
@@ -519,17 +389,16 @@ pub struct AndroidPlaybackSession {
 #[uniffi::export]
 impl AndroidPlaybackSession {
     #[uniffi::constructor]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(
-        app_private_directory: &str,
+        library: Arc<crate::MusicLibrary>,
         port: Box<dyn AndroidPlaybackPort>,
         listener: Box<dyn AndroidPlaybackListener>,
     ) -> Result<Self, AndroidPlaybackError> {
-        let database_path = Path::new(&app_private_directory).join(crate::DATABASE_FILE_NAME);
-        let database =
-            reprise_core::db::Db::open_migrated(Some(&database_path)).map_err(|error| {
-                AndroidPlaybackError::Backend {
-                    detail: format!("could not open playback statistics database: {error}"),
-                }
+        let database = library
+            .reader()
+            .map_err(|error| AndroidPlaybackError::Backend {
+                detail: format!("could not read the playback database: {error}"),
             })?;
         let restored = queue_persistence::restore(&database).map_err(|error| {
             AndroidPlaybackError::Backend {
@@ -545,19 +414,24 @@ impl AndroidPlaybackSession {
                     detail: format!("could not read playback statistics journal state: {error}"),
                 }
             })?;
+        drop(database);
         let listener: Arc<dyn AndroidPlaybackListener> = Arc::from(listener);
         let report_listener = Arc::clone(&listener);
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::from_restored(restored)),
-            database: Mutex::new(database),
+            library: Arc::clone(&library),
             backend: OnceLock::new(),
             listener,
-            plays: PlayRecorder::spawn(database_path.clone(), applied_play_sequence),
+            plays: PlayRecorder::spawn(
+                library.database_path.clone(),
+                library.writer_handle(),
+                applied_play_sequence,
+            ),
             listen_exports: ListenExportRecorder::spawn(
-                database_path.clone(),
+                library.database_path.clone(),
+                library.reader_handle(),
                 Arc::new(move || report_listener.on_listen_report_changed()),
             ),
-            database_path,
         });
         let weak = Arc::downgrade(&inner);
         let backend = AndroidPlaybackBackend::new(
@@ -697,7 +571,7 @@ impl AndroidPlaybackSession {
         acknowledgement: Option<Vec<u8>>,
     ) -> Result<Vec<u8>, AndroidPlaybackError> {
         crate::listen_export_journal::prepare_report(
-            &self.inner.database_path,
+            &self.inner.library.database_path,
             acknowledgement.as_deref(),
         )
         .map_err(|error| AndroidPlaybackError::Backend {
@@ -747,15 +621,20 @@ impl AndroidPlaybackSession {
 
     /// Re-reads authored settings after an explicit UI write and applies them.
     pub fn reload_playback_settings(&self) -> Result<(), AndroidPlaybackError> {
-        let database =
-            reprise_core::db::Db::open_ready(&self.inner.database_path).map_err(|error| {
-                AndroidPlaybackError::Backend {
-                    detail: format!("could not reload playback settings: {error}"),
-                }
-            })?;
-        let playback_settings = crate::AndroidPlaybackSettings::load(&database);
-        let transition = reprise_core::library::settings::get_track_transition(&database);
-        let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);
+        let (playback_settings, transition, crossfade_seconds) = {
+            let database =
+                self.inner
+                    .library
+                    .reader()
+                    .map_err(|error| AndroidPlaybackError::Backend {
+                        detail: format!("could not reload playback settings: {error}"),
+                    })?;
+            (
+                crate::AndroidPlaybackSettings::load(&database),
+                reprise_core::library::settings::get_track_transition(&database),
+                reprise_core::library::settings::get_crossfade_seconds(&database),
+            )
+        };
         let backend = self.inner.backend()?;
         backend.set_equalizer(
             playback_settings.equalizer_enabled,

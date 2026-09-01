@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use reprise_core::db::Db;
@@ -20,11 +20,17 @@ pub(crate) struct ListenExportRecorder {
 }
 
 impl ListenExportRecorder {
-    pub(crate) fn spawn(database_path: PathBuf, on_change: Arc<dyn Fn() + Send + Sync>) -> Self {
+    pub(crate) fn spawn(
+        database_path: PathBuf,
+        reader: Arc<Mutex<Db>>,
+        on_change: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
         let (listens, queued) = mpsc::channel();
         let worker = std::thread::Builder::new()
             .name("reprise-android-listen-export".to_owned())
-            .spawn(move || write_queued_listens(&database_path, queued, on_change.as_ref()));
+            .spawn(move || {
+                write_queued_listens(&database_path, &reader, queued, on_change.as_ref());
+            });
         match worker {
             Ok(worker) => Self {
                 listens: Some(listens),
@@ -67,19 +73,20 @@ impl Drop for ListenExportRecorder {
 
 fn write_queued_listens(
     database_path: &Path,
+    reader: &Mutex<Db>,
     queued: Receiver<RecordedListen>,
     on_change: &(dyn Fn() + Send + Sync),
 ) {
-    let db = match Db::open_ready(database_path) {
-        Ok(db) => db,
-        Err(error) => {
-            tracing::warn!(%error, "no Android listen export: could not open the library");
-            return;
-        }
-    };
     for listen in queued {
+        let database = match reader.lock() {
+            Ok(database) => database,
+            Err(_) => {
+                tracing::warn!("no Android listen export: the shared reader was poisoned");
+                return;
+            }
+        };
         let device_path = match reprise_core::device_sync::mobile_import::device_path_for_track(
-            &db,
+            &database,
             listen.track_id,
         ) {
             Ok(Some(path)) => path,
@@ -95,6 +102,7 @@ fn write_queued_listens(
                 continue;
             }
         };
+        drop(database);
         match crate::listen_export_journal::record_listen(
             database_path,
             &device_path,

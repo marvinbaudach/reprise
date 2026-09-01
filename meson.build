@@ -1,7 +1,7 @@
 project(
   'reprise',
   'rust',
-  version: '0.1.113',
+  version: '0.1.114',
   license: 'GPL-3.0-or-later',
   meson_version: '>= 1.3.0',
 )
@@ -25,22 +25,6 @@ custom_target(
     get_option('stem_backend').to_string(),
     prefix,
     worker_path,
-  ],
-  env: {'MESON_BUILD_PROFILE': get_option('profile')},
-  build_by_default: true,
-  install: true,
-  install_dir: get_option('bindir'),
-)
-
-cargo_runtime_build = find_program('build-aux/meson-cargo-runtime-build.sh')
-custom_target(
-  'reprise-runtime',
-  output: 'reprise-runtime',
-  command: [
-    cargo_runtime_build,
-    meson.project_source_root(),
-    meson.project_build_root(),
-    '@OUTPUT@',
   ],
   env: {'MESON_BUILD_PROFILE': get_option('profile')},
   build_by_default: true,

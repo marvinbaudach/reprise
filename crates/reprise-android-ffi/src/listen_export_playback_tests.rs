@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use reprise_core::device_sync::listen_report::{ListenReport, ListenReportAcknowledgement};
 
-use super::test_support::{RecordingListener, RecordingPort};
+use super::test_support::{library_in, RecordingListener, RecordingPort};
 use crate::playback::AndroidPlayerEvent;
 use crate::{AndroidPlaybackSession, MusicLibrary};
 
@@ -62,7 +62,7 @@ fn half_play_after_reinstall_keeps_its_device_path_in_the_export_journal() {
 
     let bridge = Arc::new(Mutex::new(None));
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls: Arc::new(Mutex::new(Vec::new())),
             bridge: Arc::clone(&bridge),

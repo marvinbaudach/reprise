@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use reprise_core::queries;
 
-use super::test_support::{PortCall, RecordingListener, RecordingPort};
+use super::test_support::{library_in, PortCall, RecordingListener, RecordingPort};
 use crate::playback::{AndroidPlaybackState, PlaybackEventBridge};
 use crate::{AndroidPlaybackSession, TrashAction, WindowRange};
 
@@ -65,7 +65,7 @@ fn session_with_calls(directory: &Path) -> (AndroidPlaybackSession, Arc<Mutex<Ve
     let calls = Arc::new(Mutex::new(Vec::new()));
     let bridge = Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>));
     let session = AndroidPlaybackSession::new(
-        directory.to_str().unwrap(),
+        library_in(directory),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge,

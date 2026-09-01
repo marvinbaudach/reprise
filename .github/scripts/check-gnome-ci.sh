@@ -14,7 +14,6 @@ fi
 echo "== GNOME contracts =="
 scripts/check-accessibility-semantics.sh
 scripts/check-input-parity.sh
-scripts/check-runtime-service-install.sh
 scripts/check-frontend-thinness.sh
 scripts/check-ux-traceability.sh
 scripts/check-appstream.sh
@@ -47,9 +46,5 @@ env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
 
 echo "== GNOME display tests =="
 scripts/check-display-tests.sh
-
-echo "== Runtime service bus tests =="
-dbus-run-session -- cargo test --locked -p reprise-platform-linux \
-    --test runtime_service -- --ignored --test-threads=1
 
 echo "GNOME quality checks passed"

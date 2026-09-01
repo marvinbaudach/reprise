@@ -17,8 +17,8 @@
 
 .hero-seek__mark {
   display: block;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   opacity: 0.9;
 }

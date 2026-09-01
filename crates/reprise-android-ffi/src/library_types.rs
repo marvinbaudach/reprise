@@ -23,8 +23,8 @@ pub(crate) struct ConfiguredTree {
 // The reader is never held together with either of them.
 #[derive(uniffi::Object)]
 pub struct MusicLibrary {
-    pub(crate) writer: Mutex<Db>,
-    pub(crate) reader: Mutex<Db>,
+    pub(crate) writer: Arc<Mutex<Db>>,
+    pub(crate) reader: Arc<Mutex<Db>>,
     pub(crate) tree: Mutex<Option<ConfiguredTree>>,
     pub(crate) cache_root: PathBuf,
     pub(crate) database_path: PathBuf,
@@ -46,6 +46,14 @@ impl MusicLibrary {
         self.reader.lock().map_err(|_| LibraryError::Database {
             detail: "library handle poisoned by an earlier panic".to_owned(),
         })
+    }
+
+    pub(crate) fn writer_handle(&self) -> Arc<Mutex<Db>> {
+        Arc::clone(&self.writer)
+    }
+
+    pub(crate) fn reader_handle(&self) -> Arc<Mutex<Db>> {
+        Arc::clone(&self.reader)
     }
 
     pub(crate) fn configured_tree(&self) -> Result<(PathBuf, Arc<BridgedSource>), LibraryError> {

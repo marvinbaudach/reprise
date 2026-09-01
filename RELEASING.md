@@ -26,6 +26,31 @@ published and marked latest:
 - `Reprise-Android-<android-version>.apk`
 - `Reprise-Android-<android-version>.apk.sha256`
 
+The automated CI and GitHub release jobs build
+`io.github.marvinbaudach.Reprise.yml` from the checked-out tree. That root
+manifest deliberately uses `type: dir` and `path: .`, so it remains buildable
+before the release tag exists. The separate
+`flatpak/io.github.marvinbaudach.Reprise.yml` is the Flathub submission
+manifest and pins its source to the release tag archive.
+
+After the automated release has pushed the tag, download GitHub's immutable
+tag archive and print its hash:
+
+```sh
+release_version=$(scripts/bump-version.sh current)
+curl --fail --location \
+  --output "reprise-${release_version}.tar.gz" \
+  "https://github.com/marvinbaudach/reprise/archive/refs/tags/v${release_version}.tar.gz"
+sha256sum "reprise-${release_version}.tar.gz"
+```
+
+Replace the Flathub manifest URL's version and
+`REPLACE_WITH_TAG_ARCHIVE_SHA256` with those exact tag and hash values before
+submission. Do not put the archive source or hash into the root manifest. A
+placeholder is intentional in the Flathub manifest until the corresponding
+release tag exists; never calculate the hash from a branch archive or a
+locally generated tarball.
+
 The full English release body comes from the matching dated section in
 `CHANGELOG.md`. Software centres use the matching bilingual `<release>` entry
 in `data/io.github.marvinbaudach.Reprise.metainfo.xml`. Both curated entries
@@ -471,6 +496,6 @@ populated test library; do not fabricate them from headless output.
 
 The GitHub release is not a Flathub, AUR, COPR, Play Store, or F-Droid
 publication. Those channels keep their own review and maintainer handoffs. The
-Flatpak manifest continues to use the repository checkout as its CI source; a
-future distribution manifest must use the immutable published source archive
-and its verified checksum instead.
+Flatpak manifest uses the immutable tagged source archive and verified checksum
+prepared by the release procedure above; submitting it to a distribution
+channel remains a separate maintainer action.

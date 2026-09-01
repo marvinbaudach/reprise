@@ -32,6 +32,7 @@ modules:
         CARGO_NET_OFFLINE: 'true'
     config-opts:
       - -Dprofile=release
+      - -Dstem_backend=false
     sources:
       - type: dir
         path: .

@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -7,8 +8,18 @@ use crate::playback::{
 };
 use crate::{
     AndroidEqualizerPoint, AndroidEqualizerSnapshot, AndroidPlaybackListener,
-    AndroidPlaybackSession, AndroidPlaybackSnapshot,
+    AndroidPlaybackSession, AndroidPlaybackSnapshot, MusicLibrary,
 };
+
+pub(super) fn library_in(directory: &Path) -> Arc<MusicLibrary> {
+    Arc::new(
+        MusicLibrary::open(
+            directory.to_str().unwrap(),
+            directory.join("cache").to_str().unwrap(),
+        )
+        .unwrap(),
+    )
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum PortCall {
@@ -173,7 +184,7 @@ pub(super) fn recording_session() -> SessionFixture {
     let report_changes = Arc::new(AtomicUsize::new(0));
     let directory = tempfile::tempdir().unwrap();
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::clone(&bridge),

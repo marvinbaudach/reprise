@@ -7,11 +7,17 @@ use std::thread;
 use std::time::Duration;
 
 use super::{
-    AndroidArtworkSize, AndroidStoredTheme, AndroidThemeChoice, LibraryError, MusicLibrary,
-    ScanProgressListener, ScanProgressUpdate, TrackWindow,
+    AndroidArtworkSize, AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot,
+    AndroidStoredTheme, AndroidThemeChoice, LibraryError, MusicLibrary, ScanProgressListener,
+    ScanProgressUpdate, TrackWindow,
+};
+use crate::playback::{
+    AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState, AndroidTransitionMode,
+    PlaybackEventBridge,
 };
 use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 use crate::WindowRange;
+use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot};
 
 const TREE_URI: &str = "content://reprise.test/tree/music";
 const FIRST_TRACK_URI: &str = "content://reprise.test/tree/music/first.flac";
@@ -48,6 +54,7 @@ struct ScanRendezvous {
 enum ReaderAnswer {
     Browse(Result<TrackWindow, LibraryError>),
     Artwork(Result<Option<String>, LibraryError>),
+    Playback(Result<AndroidPlaybackSession, AndroidPlaybackError>),
 }
 
 enum ReaderRendezvousOutcome {
@@ -235,6 +242,7 @@ fn read_while_scanning() -> (Option<Result<TrackWindow, LibraryError>>, TrackWin
     let during_scan = match observed_answer.lock().unwrap().take() {
         Some(ReaderAnswer::Browse(answer)) => Some(answer),
         Some(ReaderAnswer::Artwork(_)) => panic!("browse rendezvous received artwork"),
+        Some(ReaderAnswer::Playback(_)) => panic!("browse rendezvous received playback"),
         None => None,
     };
     let after_scan = library.list_tracks(full_window()).unwrap();
@@ -290,9 +298,152 @@ fn artwork_while_scanning() -> Option<Result<Option<String>, LibraryError>> {
     let answer = match observed_answer.lock().unwrap().take() {
         Some(ReaderAnswer::Artwork(answer)) => Some(answer),
         Some(ReaderAnswer::Browse(_)) => panic!("artwork rendezvous received browse answer"),
+        Some(ReaderAnswer::Playback(_)) => panic!("artwork rendezvous received playback"),
         None => None,
     };
     answer
+}
+
+struct QuietPlaybackPort;
+
+impl AndroidPlaybackPort for QuietPlaybackPort {
+    fn set_event_bridge(
+        &self,
+        _bridge: Arc<PlaybackEventBridge>,
+    ) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn play_path(&self, _path: String) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn play_uri(&self, _uri: String) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn toggle_pause(&self) -> Result<AndroidPlaybackState, AndroidPlaybackError> {
+        Ok(AndroidPlaybackState::Paused)
+    }
+
+    fn seek_to(&self, _position_ms: i64) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn set_volume(&self, _volume: f64) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn set_equalizer(
+        &self,
+        _enabled: bool,
+        _curve: Vec<AndroidEqualizerPoint>,
+    ) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn equalizer_snapshot(&self) -> Result<Option<AndroidEqualizerSnapshot>, AndroidPlaybackError> {
+        Ok(None)
+    }
+
+    fn set_audio_effects(&self) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn set_spectrum_enabled(&self, _enabled: bool) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn stop(&self) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn set_next(&self, _uri: Option<String>) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn set_transition(&self, _mode: AndroidTransitionMode) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn current_generation(&self) -> Result<u64, AndroidPlaybackError> {
+        Ok(0)
+    }
+}
+
+struct QuietPlaybackListener;
+
+impl AndroidPlaybackListener for QuietPlaybackListener {
+    fn on_playback_changed(&self, _snapshot: AndroidPlaybackSnapshot) {}
+
+    fn on_listen_report_changed(&self) {}
+}
+
+fn playback_session_while_scanning() -> Option<Result<(), AndroidPlaybackError>> {
+    let directory = tempfile::tempdir().unwrap();
+    let library = Arc::new(
+        MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap(),
+    );
+    library
+        .set_tree_uri(TREE_URI.to_owned(), Box::new(FixtureSource::plain(1)))
+        .unwrap();
+    library.scan(Box::new(QuietProgress)).unwrap();
+
+    let (inside_tx, inside_rx) = mpsc::sync_channel(1);
+    let (answer_tx, answer_rx) = mpsc::sync_channel(1);
+    let observed_answer = Arc::new(Mutex::new(None));
+    library
+        .set_tree_uri(
+            TREE_URI.to_owned(),
+            Box::new(FixtureSource::blocking(
+                2,
+                inside_tx,
+                answer_rx,
+                Arc::clone(&observed_answer),
+            )),
+        )
+        .unwrap();
+
+    let reader_library = Arc::clone(&library);
+    let reader = thread::spawn(move || {
+        if inside_rx.recv_timeout(SCAN_RENDEZVOUS_DEADLINE).is_err() {
+            return ReaderRendezvousOutcome::ScanNeverReachedRendezvous;
+        }
+        let opened = AndroidPlaybackSession::new(
+            reader_library,
+            Box::new(QuietPlaybackPort),
+            Box::new(QuietPlaybackListener),
+        );
+        let _ = answer_tx.send(ReaderAnswer::Playback(opened));
+        ReaderRendezvousOutcome::ReadAttempted
+    });
+    library.scan(Box::new(QuietProgress)).unwrap();
+    assert!(matches!(
+        reader.join().unwrap(),
+        ReaderRendezvousOutcome::ReadAttempted
+    ));
+
+    let answer = match observed_answer.lock().unwrap().take() {
+        Some(ReaderAnswer::Playback(answer)) => Some(answer.map(drop)),
+        Some(ReaderAnswer::Browse(_)) => panic!("playback rendezvous received browse answer"),
+        Some(ReaderAnswer::Artwork(_)) => panic!("playback rendezvous received artwork"),
+        None => None,
+    };
+    answer
+}
+
+#[test]
+fn playback_session_reads_complete_while_a_scan_holds_the_writer() {
+    let during_scan = playback_session_while_scanning();
+
+    assert!(
+        matches!(during_scan, Some(Ok(()))),
+        "opening playback did not complete while a scan held the writer"
+    );
 }
 
 #[test]

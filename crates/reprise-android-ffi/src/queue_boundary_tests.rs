@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
-use super::test_support::{PortCall, RecordingListener, RecordingPort};
+use super::test_support::{library_in, PortCall, RecordingListener, RecordingPort};
 use crate::playback::{AndroidPlaybackState, AndroidPlayerEvent, PlaybackEventBridge};
 use crate::{AndroidPlaybackSession, AndroidRepeatMode, WindowRange};
 
@@ -62,7 +62,7 @@ fn session_with_controls(directory: &Path) -> TestSessionControls {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let bridge = Arc::new(Mutex::new(None));
     AndroidPlaybackSession::new(
-        directory.to_str().unwrap(),
+        library_in(directory),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::clone(&bridge),

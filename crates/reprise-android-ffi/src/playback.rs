@@ -13,6 +13,9 @@ use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot};
 mod test_support;
 
 #[cfg(test)]
+#[path = "playback_reader_lock_tests.rs"]
+mod reader_lock_tests;
+#[cfg(test)]
 #[path = "playback_tests.rs"]
 mod tests;
 
