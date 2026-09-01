@@ -10,6 +10,20 @@ fn index_exists(conn: &Connection, name: &str) -> bool {
         > 0
 }
 
+fn user_version(conn: &Connection) -> i64 {
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap()
+}
+
+fn table_rootpage(conn: &Connection, name: &str) -> i64 {
+    conn.query_row(
+        "SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [name],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
 fn create_v45_sync_events(conn: &Connection) {
     conn.execute_batch(
         "CREATE TABLE sync_events (
@@ -42,6 +56,7 @@ fn migrate_v81_preserves_existing_sync_events() {
 
     migrate_v81(&conn).unwrap();
 
+    assert_eq!(user_version(&conn), 81);
     let event: (i64, String, Option<i64>, String, String) = conn
         .query_row(
             "SELECT run_id, kind, track_id, device_path, detail FROM sync_events",
@@ -75,6 +90,37 @@ fn migrate_v81_preserves_existing_sync_events() {
         [],
     )
     .unwrap();
+}
+
+#[test]
+fn migrate_v81_repairs_the_old_check_at_the_current_version() {
+    let conn = Connection::open_in_memory().unwrap();
+    create_v45_sync_events(&conn);
+    conn.pragma_update(None, "user_version", 81).unwrap();
+
+    migrate_v81(&conn).unwrap();
+
+    assert_eq!(user_version(&conn), 81);
+    conn.execute(
+        "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail)
+         VALUES (1, 'analysis_failed', 1667, 'Artist/Album/Track.reprise-analysis',
+                 'analysis copy failed')",
+        [],
+    )
+    .unwrap();
+}
+
+#[test]
+fn migrate_v81_advances_a_stale_version_without_rebuilding_the_current_schema() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate_v45(&conn).unwrap();
+    conn.pragma_update(None, "user_version", 80).unwrap();
+    let rootpage = table_rootpage(&conn, "sync_events");
+
+    migrate_v81(&conn).unwrap();
+
+    assert_eq!(user_version(&conn), 81);
+    assert_eq!(table_rootpage(&conn, "sync_events"), rootpage);
 }
 
 #[test]
