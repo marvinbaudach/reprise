@@ -4,6 +4,7 @@
   <name>Reprise</name>
   <summary>Play and organize your music</summary>
   <summary xml:lang="de">Musik abspielen und verwalten</summary>
+  <summary xml:lang="es">Reproduce y organiza tu música</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <developer id="io.github.marvinbaudach">
@@ -29,6 +30,14 @@
       ListenBrainz- und Last.fm-Scrobbling kann nach ausdrücklicher Kontoeinrichtung
       abgeschlossene Wiedergaben melden.
     </p>
+    <p xml:lang="es">
+      Reprise es un reproductor de música nativo para GNOME con una biblioteca
+      rápida basada en columnas, listas de reproducción, cola de reproducción,
+      carátulas, letras sincronizadas para la pista en curso, edición de etiquetas
+      e integración con MPRIS para las teclas multimedia y la pantalla de bloqueo.
+      El scrobbling opcional de ListenBrainz y Last.fm puede informar de las
+      reproducciones completadas después de configurar una cuenta expresamente.
+    </p>
     <p>
       Your library stays local. Reprise changes music files only after an
       explicit tag-edit or move-to-trash confirmation. Missing covers are retrieved
@@ -47,6 +56,17 @@
       Last.fm sind standardmäßig aus. Zugangsdaten bleiben im System-Schlüsselbund;
       beide Dienste haben getrennte Offline-Warteschlangen. Last.fm erfordert eigene
       API-Zugangsdaten.
+    </p>
+    <p xml:lang="es">
+      Tu biblioteca permanece local. Reprise solo modifica archivos de música
+      después de confirmar expresamente la edición de etiquetas o el traslado a
+      la papelera. Las carátulas que faltan se obtienen automáticamente. Para las
+      pistas que reproduces se envían a LRCLIB el título, el artista, el álbum y
+      la duración para buscar letras; no se envían las rutas de archivo ni el
+      resto de la biblioteca. ListenBrainz y Last.fm están desactivados de forma
+      predeterminada; las credenciales permanecen en el depósito de claves del sistema y
+      cada servicio tiene su propia cola local sin conexión. Last.fm requiere las
+      credenciales de API del usuario.
     </p>
   </description>
   <launchable type="desktop-id">io.github.marvinbaudach.Reprise.desktop</launchable>
@@ -75,17 +95,22 @@
     <keyword xml:lang="de">Musik</keyword>
     <keyword xml:lang="de">Sammlung</keyword>
     <keyword xml:lang="de">Wiedergabeliste</keyword>
+    <keyword xml:lang="es">música</keyword>
+    <keyword xml:lang="es">biblioteca</keyword>
+    <keyword xml:lang="es">lista de reproducción</keyword>
   </keywords>
   <supports>
     <control>touch</control>
   </supports>
-  <content_rating type="oars-1.1"/>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
   <branding>
     <color type="primary" scheme_preference="light">#4FDBD4</color>
     <color type="primary" scheme_preference="dark">#00706B</color>
   </branding>
   <requires>
-    <display_length compare="ge">768</display_length>
+    <display_length compare="ge">600</display_length>
   </requires>
   <recommends>
     <control>keyboard</control>
@@ -111,6 +136,15 @@
     </screenshot>
   </screenshots>
   <releases>
+    <!-- One entry per promoted release, not per merge into dev. Every merge
+         raises the workspace version; only a promotion to main ships one.
+         See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.126" date="2026-09-02" type="stable">
+      <description>
+        <p>Keeps playback going when a queued file has gone missing, lets a click on the stopped waveform choose where the next play starts, stops device sync from deleting and renaming files it means to keep, carries the whole Now Playing screen with an Android swipe, asks before fetching artist photos, and adds a Spanish translation.</p>
+        <p xml:lang="de">Hält die Wiedergabe am Laufen, wenn eine Datei aus der Warteschlange fehlt, lässt einen Klick auf die ruhende Wellenform den nächsten Startpunkt setzen, hindert die Gerätesynchronisierung daran, Dateien zu löschen und umzubenennen, die sie behalten will, trägt beim Wischen unter Android den ganzen Wiedergabebildschirm mit, fragt vor dem Laden von Künstlerfotos und ergänzt eine spanische Übersetzung.</p>
+      </description>
+    </release>
     <release version="0.1.84" date="2026-08-27" type="stable">
       <description>
         <p>Makes the Android library tabs follow the swipe: the navigation mark and the count move with the gesture, and the tab next door is filled before it is reached, so no first swipe lands on an empty list.</p>

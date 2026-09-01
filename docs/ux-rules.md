@@ -2979,6 +2979,15 @@ property is set and yet nothing happens.
   shut and writes no module; clearing every source behind an open gate closes
   it and writes those three modules off. An existing library never sees the
   wizard and keeps the banner.
+- **NET-4b** [active] [android] — On Android the artist-photo question is asked
+  by exactly one dismissible banner in the Library, shown whenever the global
+  gate is off, the question has not been settled, and the library holds at
+  least one artist. It carries "Download artist photos" and "Not now"; either
+  one settles the question for good, and the permanent path stays Settings →
+  Online sources. It is never a modal or a toast, and never appears while the
+  gate is already on. Unlike the `NET-4` banner it enables directly instead of
+  pointing at the settings page, because Android has a single online switch
+  and the banner already names what is sent.
 - **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
   gate is open and the device is online immediately starts exactly one fresh
   cover pass through the same Preferences transition used by Plugins and the
@@ -4503,6 +4512,20 @@ means deterministic and high-confidence, never „without review".
   only after full completion. Cheap staleness checking flags changed
   rows on reopening, exact revalidation follows before writing. Newly
   added tracks are not retroactively taken into the snapshot.
+  *Amended 2026-08-30: the start page can no longer produce an invalid
+  invocation context, because every scan it starts is Whole Library. A
+  Selection scan from "Unify spellings" can still lose its tracks between the
+  click and the freeze; that run ends and visibly says the tracks are gone
+  instead of falling back to a whole-library scan nobody asked for.
+  `ScopeFallbackRequired` remains a Core outcome reported to its caller, and
+  the agent surface still turns every non-`Completed` outcome into an error.
+  The clause "An invalid or emptied invocation context visibly falls back to
+  Whole Library" is void; every caller now treats `ScopeFallbackRequired` as a
+  terminal, user-visible outcome.* *Tests:*
+  `doc_2a_scope_freezes_present_track_ids`,
+  `doc_2a_last_complete_scan_survives_restart`,
+  `doc_2a_a_stored_selection_scan_still_names_its_scope`,
+  `doc_2a_a_scope_fallback_ends_the_job_without_retrying`.
 
 - **DOC-2b** [active] [gtk] — **The result page is a summary of three
   meanings, never a write surface.** After a scan the Doctor shows at most
@@ -4739,7 +4762,10 @@ means deterministic and high-confidence, never „without review".
   repeated Doctor entry during a running job navigates to that job
   instead of starting a second one. Scope, remote toggle, and scan
   action are locked during the job and explain the running job; Cancel
-  lives exclusively on its progress surface.
+  lives exclusively on its progress surface. *Amended 2026-08-31: the start
+  page no longer has a scope control. The locking clause now reads: remote
+  toggle and scan action are locked during the job and explain the running
+  job.*
 
 - **DOC-7a** [replaced by DOC-7c] [gtk] — **Local checks are an available tool;
   network stays opt-in.** Library Doctor has no main switch and its
@@ -4798,13 +4824,21 @@ means deterministic and high-confidence, never „without review".
   `doc_7c_the_review_page_is_pushed_inside_the_doctors_own_navigation_view`,
   `doc_7c_the_doctor_uses_the_shared_window_chrome`,
   `doc_7c_the_review_page_carries_no_provider_toggle`,
-  `doc_7c_a_second_review_session_replaces_the_first`.
+  `doc_7c_a_second_review_session_replaces_the_first`,
+  `doc_7c_the_start_page_offers_no_scope_choice`,
+  `doc_7c_unify_spellings_scans_its_group_without_the_start_page`.
   *Amended 2026-08-15: the search action is the single exception to both
   sentences above. It stays hidden on Start and Result and is revealed on
   Review, which is searchable per DOC-12a, so the clause "Review places only
   its 'All' and 'None' actions there" reads "only its selection actions and
   its search action". The Library-only source title and the scan action stay
   hidden on every Doctor page.*
+  *Amended 2026-08-30: the start page owns no scope choice. It owns the remote
+  switch, "Run Scan Now" and the only "Revert Last Cleanup", and every scan it
+  starts covers the whole library; the clause "Scope is not persistent" is
+  void. Selection survives without a selector: "Unify spellings" in My Stats
+  scans exactly that group's tracks and goes straight to the running screen,
+  never through Start. `music_scan_tags` keeps all three scopes per DOC-2a.*
 
 - **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
   the noun.** The global ⋮ menu is the only way to start a scan. While a
@@ -4873,7 +4907,10 @@ means deterministic and high-confidence, never „without review".
   sheet. "Run Scan Now" is the single primary action, with a track count and
   rough duration beside it. Below a separator, and only while a revertible
   cleanup exists, are the last-scan line and the only "Revert Last Cleanup"
-  action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
+  action. *Amended 2026-08-31: the segmented-control sentence is void. The
+  start page is composed of the remote toggle, "Run Scan Now", and the
+  conditional "Revert Last Cleanup" line.* *Tests:*
+  `doc_8c_start_page_carries_remote_run_and_the_only_revert`,
   `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`,
   `doc_8c_every_count_on_the_start_page_inflects`.
 
@@ -6649,7 +6686,13 @@ same state. This section governs exclusively what a user sees of
 this; ownership, lease, and error categories are in the architecture
 plan.
 
-- **RUN-1** [active] [core] — A single owner: playback, queue, jobs,
+ADR 003 shelved the headless runtime, and the rule-named tests for RUN-1 and
+RUN-4 disappeared with the implementation they tested. Both returned to
+[planned]; the whole section is [planned] again, as it began. The ADR's
+resumption trigger — a second frontend, or agent control with no window — is
+what makes them enforceable again.
+
+- **RUN-1** [planned] [core] — A single owner: playback, queue, jobs,
   and device runs belong to exactly one runtime at any point in time.
   A second surface never starts a competing runtime; it connects or
   fails, named. Two simultaneously visible, diverging playback states
@@ -6665,7 +6708,7 @@ plan.
   once, in place. After reconnecting, a complete snapshot replaces the
   runtime-bound state without sacrificing selection and scroll
   position (like EXT-2).
-- **RUN-4** [active] [core] — Idle shutdown never interrupts work:
+- **RUN-4** [planned] [core] — Idle shutdown never interrupts work:
   the runtime only terminates when no client is connected, nothing is
   playing or loaded paused, no device run and no job is active. A
   service that aborts running work for the sake of resources is a
@@ -6770,7 +6813,7 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
   asynchronous work runs through `glib::spawn_future_local`; CPU-bound work
   runs through `gio::spawn_blocking` and reports back over a channel. Source:
   gtk4-rs book, main event loop.
-- **GP-3** [planned] [gtk] — A closure that captures a widget which itself
+- **GP-3** [active] [gtk] — A closure that captures a widget which itself
   stores that closure uses `glib::clone!(#[weak] …)`, never a strong capture.
   The grep gate catches explicit `#[strong]` captures. An unannotated capture
   is implicitly strong and must be checked in review because the gate cannot
@@ -6801,18 +6844,18 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
 
 ### Distribution metadata
 
-- **GP-12** [planned] [core] — The metainfo file passes
+- **GP-12** [active] [core] — The metainfo file passes
   `appstreamcli validate --no-net --explain`.
   <!-- Keep validation offline and deterministic. Do not add --pedantic: it
        rejects the conventional uppercase final component in GNOME app IDs. -->
-- **GP-13** [planned] [core] — The desktop file passes `desktop-file-validate`.
+- **GP-13** [active] [core] — The desktop file passes `desktop-file-validate`.
 - **GP-14** [planned] [core] — The Flatpak manifest passes
   `flatpak-builder-lint manifest`.
 - **GP-15** [planned] [manual] — Static sandbox permissions stay at the
   absolute minimum. Where an XDG portal exists, the portal is used instead of
   a static permission, and every remaining static permission is justified in
   `flatpak/README.md`. Source: Flathub requirements.
-- **GP-16** [planned] [core] — App name is shorter than 15 characters and the
+- **GP-16** [active] [core] — App name is shorter than 15 characters and the
   summary is at most 35 characters, in sentence case, without a trailing
   period, and without repeating the app name. Source: Flathub quality
   guidelines.
@@ -6829,10 +6872,10 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
 These four points are, verbatim, the rejection reasons the GNOME Circle
 committee published on 2026-05-29.
 
-- **GP-19** [planned] [core] — No comments that read as instructions to a
+- **GP-19** [active] [core] — No comments that read as instructions to a
   model, no banner comment blocks drawn from repeated `=` or `-`, no emoji in
   comments.
-- **GP-20** [planned] [core] — No dead code: no unused items, and no
+- **GP-20** [active] [core] — No dead code: no unused items, and no
   `#[allow(dead_code)]` without a stated reason on the same or preceding line.
 
 ## AJ. Showroom (public site)

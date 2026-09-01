@@ -50,11 +50,27 @@ fi
 # of guessing which lines are checks. The preparation steps above stay outside
 # it deliberately: they are preconditions, not checks, and counting them would
 # inflate the number the page shows.
+skipped_here=()
+
+is_skipped() {
+  local name=$1 entry
+  [[ -n ${MERGE_READINESS_SKIP_GATES:-} ]] || return 1
+  while IFS= read -r entry; do
+    [[ $entry == "$name" ]] && return 0
+  done <<<"${MERGE_READINESS_SKIP_GATES}"
+  return 1
+}
+
 gate() {
   local name=$1
   shift
   if [[ ${1:-} == -- ]]; then
     shift
+  fi
+  if is_skipped "$name"; then
+    echo "== $name (skipped here; runs in another CI job) =="
+    skipped_here+=("$name")
+    return 0
   fi
   echo "== $name =="
   "$@"
@@ -96,10 +112,10 @@ gate "Architecture" -- scripts/check-architecture.sh
 gate "Device-sync GStreamer" -- scripts/check-device-sync-gstreamer.sh
 gate "Accessibility semantics" -- scripts/check-accessibility-semantics.sh
 gate "Input parity" -- scripts/check-input-parity.sh
-gate "Runtime service install" -- scripts/check-runtime-service-install.sh
 gate "Frontend thinness" -- scripts/check-frontend-thinness.sh
 gate "UX traceability" -- scripts/check-ux-traceability.sh
 gate "AppStream" -- scripts/check-appstream.sh
+gate "Release metadata" -- scripts/check-release-metadata.sh --gate
 gate "Flatpak manifest" -- scripts/check-flatpak-manifest.sh
 gate "GNOME idioms" -- scripts/check-gnome-idioms.sh
 gate "AI hygiene" -- scripts/check-ai-hygiene.sh
@@ -126,11 +142,14 @@ gate "Linux platform tests" -- env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME
 
 gate "Rule-owned display tests" -- scripts/check-display-tests.sh --rule-named
 
-# The runtime service's own tests need a session bus. A private one, so they
-# never touch the developer's running Reprise.
-gate "Runtime service bus tests" -- dbus-run-session -- cargo test --locked -p reprise-platform-linux \
-  --test runtime_service -- --ignored --test-threads=1
-
 gate "Dependency audit" -- run_audit
 
 echo "Merge-readiness checks passed against $base_ref"
+
+if (( ${#skipped_here[@]} > 0 )); then
+  skipped_summary=${skipped_here[0]}
+  for name in "${skipped_here[@]:1}"; do
+    skipped_summary+=", $name"
+  done
+  echo "Skipped here, covered by another CI job: $skipped_summary"
+fi

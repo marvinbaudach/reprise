@@ -6,7 +6,9 @@ use reprise_core::playback::{
     AudioEffects, PlaybackBackend, PlaybackState, PlayerEvent, StreamEvent, StreamGeneration,
 };
 
-use super::test_support::{recording_session, PortCall, RecordingListener, RecordingPort};
+use super::test_support::{
+    library_in, recording_session, PortCall, RecordingListener, RecordingPort,
+};
 use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackState, AndroidPlayerEvent, AndroidTransitionMode,
     PlaybackEventBridge,
@@ -472,7 +474,7 @@ fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
     let bridge = Arc::new(Mutex::new(None));
     let report_changes = Arc::new(AtomicUsize::new(0));
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls,
             bridge: Arc::clone(&bridge),
@@ -578,7 +580,7 @@ fn viewing_and_applying_playback_settings_preserves_the_authored_curve_byte_for_
     assert_eq!(viewed.equalizer_curve[0].frequency_hz, 80.0);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::new(Mutex::new(None)),
@@ -675,7 +677,7 @@ fn saved_track_transition_drives_android_at_startup_and_after_reload() {
     drop(database);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
+        library_in(directory.path()),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::new(Mutex::new(None)),

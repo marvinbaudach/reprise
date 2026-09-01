@@ -58,6 +58,14 @@
   font-family: "Martian Mono", ui-monospace, monospace;
   font-size: 0.68rem;
   color: oklch(68% 0.011 269);
+  transition: opacity 160ms ease-out;
+}
+
+/* The frame holds the picture it has until the next one has decoded, so a press
+   on a cold connection would otherwise look ignored. The counter is the element
+   that names which picture this is — so it is the one that says "not yet". */
+.lightbox[data-swapping="true"] .lightbox__counter {
+  opacity: 0.4;
 }
 
 .lightbox__controls button {
@@ -191,7 +199,8 @@
   .lightbox__header,
   .lightbox__description,
   .lightbox__zoom,
-  .lightbox__frame {
+  .lightbox__frame,
+  .lightbox__counter {
     animation: none;
     transition: none;
   }

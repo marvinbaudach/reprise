@@ -33,9 +33,6 @@ fn is_reprise_event(metadata: &Metadata<'_>) -> bool {
         "reprise",
         "reprise_core",
         "reprise_platform_linux",
-        "reprise_runtime",
-        "reprise_runtime_client",
-        "reprise_runtime_protocol",
         "reprise_view",
     ];
     let root = metadata.target().split("::").next().unwrap_or_default();

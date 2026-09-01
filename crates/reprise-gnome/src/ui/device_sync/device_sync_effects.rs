@@ -243,7 +243,17 @@ pub(super) async fn perform(
         }
         Effect::WriteAnalysis { index } => {
             let planned = work.machine.borrow().plan().analysis_writes[index].clone();
-            Event::AnalysisWritten(copy_analysis_sidecar(runtime, work, &planned).await)
+            let result = copy_analysis_sidecar(runtime, work, &planned).await;
+            if let Err(error) = &result {
+                work.log.note(
+                    runtime,
+                    DeviationKind::AnalysisFailed,
+                    Some(planned.track_id),
+                    &planned.device_path,
+                    error.clone(),
+                );
+            }
+            Event::AnalysisWritten(result)
         }
         Effect::WritePlaylist {
             index,
@@ -507,12 +517,18 @@ pub(super) async fn write_track_metadata_list(
     work: &PlannedWork,
 ) -> Result<(), String> {
     let desired_files = work.machine.borrow().plan().desired_files.clone();
+    let track_ids = desired_files
+        .iter()
+        .map(|desired| desired.track.id)
+        .collect::<Vec<_>>();
+    let tracks = reprise_core::queries::query_present_tracks_by_ids(&runtime.conn, &track_ids)
+        .map_err(|error| format!("could not read track metadata: {error}"))?
+        .into_iter()
+        .map(|track| (track.id, track))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut entries = Vec::with_capacity(desired_files.len());
     for desired in desired_files {
-        let Some(track) =
-            reprise_core::queries::query_present_track_by_id(&runtime.conn, desired.track.id)
-                .map_err(|error| format!("could not read track metadata: {error}"))?
-        else {
+        let Some(track) = tracks.get(&desired.track.id) else {
             continue;
         };
         entries.push(

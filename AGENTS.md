@@ -34,25 +34,15 @@ successor. **Nine-crate** Cargo workspace:
 
 `scripts/check-architecture.sh` enforces the dependency direction between all nine.
 
-## Where we are RIGHT NOW — read these two, in order
+## Where we are RIGHT NOW
 
-1. **`.superpowers/sdd/progress.md`** — the authoritative ledger. Append-only history of
-   every task: which are complete (with commit hashes), what was fixed, deferred minors,
-   and incidents. **Tasks marked `complete` are DONE — do not redo them.** The last lines
-   tell you which stage/task is in flight.
-2. **`git log --oneline -20`** — cross-check the ledger against reality. Commits are the
-   ground truth; only committed work exists. Active work lives on a dedicated branch and is
-   published through the GitHub flow below.
+Read **`git log --oneline -20`** before starting. Commits are the authoritative record of
+what is done; only committed work exists. Cross-check the current branch and any maintained
+plan named by those commits before deciding which task is genuinely unfinished. Active work
+lives on a dedicated branch and is published through the GitHub flow below.
 
-Throwaway per-stage implementation plans are not kept in the repo — the
-`.superpowers/sdd/progress.md` ledger plus `git log` are the authoritative record of what is
-done and in flight. Work new features via the brainstorm → spec → plan → TDD method below,
-holding any working spec/plan in the session rather than committing it.
-
-The exception is a plan that outlives its own execution because later work has to follow it:
-those live in `docs/plans/` and are maintained, not archived (`docs/plans/android-sync.md`,
-`docs/plans/ux-rules-acceptance-tests.md`). Binding contracts (`docs/ux-rules.md`) are never
-plans — they live at `docs/` top level and outrank the code.
+The retention policy for plans lives in `docs/plans/README.md`. Read it before adding or
+removing anything under that directory.
 
 ## Shared workflow skills (read these)
 
@@ -66,95 +56,41 @@ plans — they live at `docs/` top level and outrank the code.
 
 ## UX rules are binding
 
-`docs/ux-rules.md` is the single UX source of truth. Before touching
-any user-facing behavior, read the sections you work in. The contract:
-
-- `[active]` rules are enforceable: deviation is a bug; every `[active]` rule
-  has a rule-named test (`fn play_1a_…` / cua-e2e `play-1a-…`) that gates
-  merges via `scripts/check-ux-traceability.sh`.
-- A rule flips `[planned]` → `[active]` in the same commit that implements
-  the behavior and adds its test — never retroactively.
-- Rule IDs are append-only; replaced rules stay as `[replaced durch <ID>]`
-  and their tests are re-pointed in the same commit.
-- If you hit a case no rule covers: do NOT decide locally. Add a
-  `[planned]` draft with the next free ID in the affected section, marked
-  `<!-- REVIEW: rule proposal -->`, and surface it for human review.
+`docs/ux-rules.md` is the single source for the UX contract, including rule
+status, traceability, replacement, and proposal requirements. Read its
+introduction and the sections you work in before changing user-facing behavior.
 
 ## How to resume (the method — no special tooling required)
 
 The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 
-1. Read the ledger + `git log` to find where work left off. For new work, brainstorm and
-   plan the task before writing code (superpowers process skills).
+1. Read `git log` and any maintained plan it names to find where work left off. For new
+   work, brainstorm and plan the task before writing code (superpowers process skills).
 2. Work each task test-first: **write the failing test → run it, see it fail → implement the
    minimal code → run tests, see them pass → run the full gate battery → commit.**
-3. One commit per task (fixes get their own follow-up commits). **No attribution footer. Do
-   not push unless explicitly requested, except for the verified pre-distribution
-   `dev`-to-`main` promotion authorized below.** Branch from `dev`, open squashed pull
-   requests to `dev`, and follow the promotion authority below; emergency `hotfix/*`
-   branches also start from `dev` and pass the same full gate. See
-   `docs/agents/branching.md`.
-4. Append one line to `.superpowers/sdd/progress.md`:
-   `Task N: complete (commit <hash>, base <hash>, <one-line note>)`.
-5. Recommended: after each task, do (or dispatch) an adversarial review of the diff before
+3. Keep commits focused and follow `docs/agents/branching.md` for every branch, pull
+   request, merge, push, promotion, and cleanup action.
+4. Recommended: after each task, do (or dispatch) an adversarial review of the diff before
    moving on — this pipeline has caught several real bugs that way.
-6. After a pull request is squash-merged into `dev`, close its local worktree with
-   `scripts/close-worktree.sh --repo /home/marvin/Projects/reprise --worktree <path> --pr <number>`.
-   The command verifies the merged PR and exact head before removing anything. If the current
-   session or another process still owns the directory, it records a pending cleanup for the
-   weekly collector.
 
 ## GitHub contribution flow — mandatory for every agent
 
-- Never commit or push directly to `dev` or `main`, except for the fast-forward promotion
-  described below. Create a dedicated branch for every change and open a pull request whose
-  base branch is `dev`.
-- Agents may prepare, update, verify, and merge pull requests into `dev` after the gate is
-  green. Until Reprise is publicly distributed, agents may also promote a verified `dev`
-  snapshot to `main` without separate owner approval. Public distribution means availability
-  through AUR, Flathub/GNOME Software, or another public app channel. This standing
-  permission is not approval to publish a release. Once public distribution begins, agents
-  must not initiate a promotion and may perform one only after explicit owner authorization
-  for that exact promotion. Which gate applies depends on the repository's plan — see
-  `docs/agents/branching.md`.
-- Pull requests report a deliberately lightweight `Quality gate`; they do not run the
-  expensive product suites. The squash commit on `dev` is the authoritative CI revision:
-  its path-selected suites may never be skipped. An exact owner-pushed fast-forward of that
-  same `dev` SHA to `main` reuses the green `Quality gate` and `From dev` evidence instead of
-  compiling it again. Any other `main` push is ineligible for reuse.
-- **Every pull request is squashed**, and every pull request targets `dev`. The repository
-  allows no other merge method, so this is not a choice to make on the merge button. One
-  commit per pull request, titled as a conventional commit. A squashed branch is never
-  reported as merged by `git branch -d`, so delete it with `-D`, and never stack a topic
-  branch on another topic branch. See `docs/agents/branching.md`, "Merge method".
-- A merged topic is not fully closed until its local worktree was removed or an exact,
-  PR-verified pending cleanup was recorded. Dirty, locked, active, or unmerged worktrees are
-  never cleanup candidates.
-- The promotion is a fast-forward push (`git push origin origin/dev:main`), not a pull
-  request — a squashed promotion would make the two branches diverge permanently. Until
-  Reprise is publicly distributed, agents may perform this promotion autonomously. Public
-  distribution means availability through AUR, Flathub/GNOME Software, or another public app
-  channel. That permission expires immediately when public distribution begins; from then
-  on, only the repository owner decides when promotion happens, though an agent may execute
-  the exact promotion the owner explicitly authorizes. Immediately before pushing in either
-  case, the agent must live-read both remote refs, require `main` to be an ancestor of `dev`,
-  and verify that the exact current `dev` SHA has successful `Quality gate` and `From dev`
-  checks. After pushing, it must read back both remote refs and require exact equality.
+`docs/agents/branching.md` is the single source for branch creation, pull
+requests, squash merging, version routing, worktree cleanup, emergency fixes,
+and `dev`-to-`main` promotion. Follow it literally; do not restate or infer a
+different flow here.
+
+Three rules from that document are repeated here, because they decide whether an
+agent may act alone and an agent that never opens the guide must still meet them:
+
+- The `dev`-to-`main` promotion is a fast-forward push, never a pull request; a squashed
+  promotion would make the two branches diverge permanently.
+- Until Reprise is publicly distributed, agents may perform this promotion autonomously.
+  Public distribution means AUR, Flathub/GNOME Software, or another public app channel;
+  that permission expires the moment it begins.
 - Emergency production fixes start on a `hotfix/*` branch **from `dev`** and reach `main`
   through the same promotion. A `hotfix/*` merged straight into `main` breaks the
-  fast-forward property irrecoverably; `docs/agents/branching.md` explains why.
-- **Only affected apps raise their version on a merge into `dev`.** Desktop and Android
-  have independent patch versions. A desktop-only change raises only the workspace version
-  in `Cargo.toml`/`Cargo.lock`; an Android-only change raises only Android's literal
-  `versionName` and monotonic `versionCode`; a shared `reprise-core` or `reprise-view`
-  change raises both. Documentation, CI, README and Showroom/Pages changes raise neither.
-  Run `./scripts/bump-version.sh --base origin/dev` in the feature branch immediately before
-  merging and commit any result, so the selected version changes ride along in the pull
-  request rather than landing as a separate commit on `dev`. The pipeline skill's `land.sh`
-  does this automatically. Each number is computed from `origin/dev` plus one, never from
-  the branch, so a branch cut days ago cannot reuse an intervening merge's app version. The
-  `<release>` entries in `data/io.github.marvinbaudach.Reprise.metainfo.xml` stay reserved
-  for real releases and are not touched per merge.
+  fast-forward property irrecoverably.
 
 ## Gates — ALL must pass before every commit
 
@@ -167,10 +103,8 @@ cargo test --workspace                                  # NOTE: bare `cargo test
 cargo audit                                             # ONLY accepted advisory: RUSTSEC-2024-0436 (`paste`, via lofty). A NEW advisory = STOP.
 ```
 
-Baseline test count: take it from the **latest entry in
-`.superpowers/sdd/progress.md`**, not from this file — a number hardcoded here goes stale
-within days and a stale baseline is worse than none. Each task states its expected new total
-relative to the run it starts from.
+Do not copy a historical test count into this file. Use the result from the exact gate run
+being reviewed, or measure the current suite when a task needs a baseline.
 
 **Core purity proof** (run after any `reprise-core` change):
 ```bash
@@ -456,7 +390,7 @@ finished in every case. The fields were stale, not the work.
 | --- | --- | --- | --- |
 | `docs/plans/motion-player.md` | planned | **shipped** | MOT-5 `[active]`; `waveform_seek.rs` carries `crossfade_progress`/`desaturation_progress`, `player_bar.rs` carries `animate_play_pulse()` |
 | `docs/plans/ux-rules-motion.md` | reviewed | **shipped** | both phases merged; `ui/motion.rs` exists with the planned tokens; `check-motion-tokens.sh` has an empty phase-two allowlist |
-| `docs/plans/list-views-fixes.md` | refactored | **shipped** | every measure verified in code (cover centring, duration format, episode window of 10, title tail dedup, `image_url` migration) |
+| List-view fixes | refactored | **shipped** | every measure verified in code (cover centring, duration format, episode window of 10, title tail dedup, `image_url` migration) |
 | `docs/plans/audio-character-mcp.md` | ready-for-review | **reverted** | shipped 2026-07-19/20, then removed wholesale by `eda0edaebb`; migration v27 drops its tables. No production code remains |
 
 `reverted` is a new value in the pipeline's status vocabulary. It was

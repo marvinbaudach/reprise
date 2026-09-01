@@ -1,0 +1,44 @@
+name: Bug report
+description: Report behavior that is broken or unexpected
+title: ""
+labels:
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report a Reprise problem.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe what you observed and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest reliable sequence you know.
+      placeholder: |
+        1. Open …
+        2. Choose …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Reprise version or commit
+      description: Include whether this is the GNOME or Android app.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include your OS, desktop, installation method, and relevant hardware.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Remove private file paths, credentials, and personal library data first.

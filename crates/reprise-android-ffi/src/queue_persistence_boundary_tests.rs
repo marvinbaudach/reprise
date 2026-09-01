@@ -153,6 +153,46 @@ fn automatic_advance_is_saved_for_the_next_process() {
     );
 }
 
+// UX FB-6: a fault-driven skip persists the same queue cursor that the next
+// process would observe after an ordinary automatic advance.
+#[test]
+fn fb_6_fault_advance_is_saved_for_the_next_process() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [track("First"), track("Second"), track("Third")];
+    let (session, _, bridge) = session_with_controls(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    bridge.lock().unwrap().clone().unwrap().emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "decoder failed".to_owned(),
+        },
+    );
+    assert_eq!(
+        session.snapshot().unwrap().current_track_id,
+        Some(track("Second").id),
+    );
+    drop(session);
+
+    let restored = session_in(directory.path());
+    assert_eq!(
+        restored.snapshot().unwrap().state,
+        AndroidPlaybackState::Paused
+    );
+    assert_eq!(
+        restored.snapshot().unwrap().current_track_id,
+        Some(track("Second").id),
+    );
+}
+
 #[test]
 fn queue_saves_leave_unrelated_desktop_session_fields_untouched() {
     let directory = tempfile::tempdir().unwrap();

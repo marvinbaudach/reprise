@@ -16,6 +16,7 @@ pub mod analysis_sidecar;
 pub mod auto_start;
 pub mod browser;
 pub mod delta;
+mod device_case;
 pub mod device_presence;
 pub mod device_view;
 pub mod ledger;

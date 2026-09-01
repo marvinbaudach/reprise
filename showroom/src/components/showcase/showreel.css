@@ -1,0 +1,99 @@
+.film-frame {
+  margin-top: clamp(3.5rem, 2.5rem + 3vw, 6rem);
+}
+
+.film-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-line);
+  margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.5rem);
+}
+
+.film-heading h3 {
+  max-width: 30ch;
+  color: var(--text-strong);
+  font-size: clamp(1.4rem, 1.15rem + 1.2vw, 2.2rem);
+  font-variation-settings:
+    "wdth" 104,
+    "wght" 560;
+  letter-spacing: -0.02em;
+}
+
+.film-heading p {
+  max-width: 42ch;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.film {
+  overflow: hidden;
+  border: 1px solid var(--surface-line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95);
+}
+
+.film__video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-base);
+  object-fit: cover;
+}
+
+.film__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-tight);
+  padding: var(--gap-line) var(--gap-block) 0;
+}
+
+.film__control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-tight);
+  min-height: 38px;
+  padding: var(--gap-tight) var(--gap-line);
+  border: 1px solid var(--surface-line);
+  border-radius: 999px;
+  background: var(--surface-stage);
+  color: var(--text-strong);
+  font: inherit;
+  cursor: pointer;
+}
+
+/*
+ * The global :focus-visible (global.css) also sets --radius-sharp, at the same
+ * specificity as .film__control's own 999px — so at equal weight the emitted
+ * order would decide whether the pill squares off on focus. Restating the
+ * radius here wins on specificity instead, whatever order the bundler picks.
+ * outline and outline-offset come from the global rule unchanged.
+ */
+.film__control:focus-visible {
+  border-radius: 999px;
+}
+
+.film__caption {
+  max-width: var(--measure);
+  padding: var(--gap-line) var(--gap-block) var(--gap-block);
+  color: var(--text-body);
+}
+
+/* Must match SMALL_VIEWPORT in ShowreelFilm.tsx for the source ladder. */
+@media (max-width: 900px) {
+  .film-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .film__controls,
+  .film__caption {
+    padding-inline: var(--gap-line);
+  }
+}

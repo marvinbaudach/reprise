@@ -48,6 +48,19 @@ to it. See "Merge method".
    non-fast-forward push by default, so a `main` that has drifted away from `dev` announces
    itself here instead of being papered over.
 
+Only affected applications raise their version on a merge into `dev`. Desktop
+and Android have independent patch versions: desktop-only changes raise the
+workspace version in `Cargo.toml` and `Cargo.lock`; Android-only changes raise
+Android's literal `versionName` and monotonic `versionCode`; shared
+`reprise-core` or `reprise-view` changes raise both. Documentation, CI, README,
+Showroom, Pages, and tooling-only changes raise neither.
+
+Run `./scripts/bump-version.sh --base origin/dev` in the topic branch
+immediately before merging and commit any result. Each number is computed from
+`origin/dev` plus one, so an older topic branch cannot reuse an intervening
+merge's version. AppStream `<release>` entries remain reserved for actual
+releases and are not changed for each merge.
+
 Direct pushes to `main` other than the promotion above, every direct push to
 `dev`, all force pushes, and deleting either branch are forbidden. Read that
 as a rule this project holds itself to, not as one the platform stops you from
@@ -133,11 +146,11 @@ One thing the model gives up, recorded so nobody rediscovers it as a surprise:
 `dev` snapshot. The emergency path above says what to do instead, and why
 attempting the isolated repair anyway is unrecoverable.
 
-The squash commit message is the pull request title in the project's
-conventional-commit form (`fix(sync): name the running step`); GitHub appends
-the `(#N)` reference. Trim the auto-collected list of branch commits out of the
-body and leave the explanation instead. No attribution footer, as everywhere
-else in this repository.
+The squash commit message takes the pull request's short narrative title;
+GitHub appends the `(#N)` reference. A title says what changed in the product
+or project, for example `The queue keeps its place after filtering`. Trim the
+auto-collected list of branch commits out of the body and leave the reason,
+verification, and limitations instead. Do not add attribution footers.
 
 Two consequences of squashing, both of which bite silently:
 
@@ -157,7 +170,7 @@ project's review checklist, which does not belong in the permanent history.
 
 ## What actually enforces this
 
-Three repository rulesets are active, verified live on 2026-08-17:
+Three repository rulesets enforce the branch boundary:
 
 - `dev-pr-boundary` (`20937610`) requires a pull request, squash merging, an
   up-to-date `Quality gate`, and rejects deletion and non-fast-forward updates.

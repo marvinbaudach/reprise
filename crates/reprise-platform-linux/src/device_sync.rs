@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::fmt;
-use std::path::{Component, Path};
+use std::path::Path;
 use std::rc::Rc;
 
 use gio::prelude::*;
@@ -11,12 +10,17 @@ use reprise_core::library::m3u::{parse_m3u, M3uEntry};
 
 pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapshot};
 
+#[path = "device_sync_errors.rs"]
+mod errors;
 #[path = "device_sync_identity.rs"]
 mod identity;
+#[path = "device_sync_paths.rs"]
+mod paths;
 #[path = "device_sync_projection.rs"]
 mod projection;
 #[path = "device_sync_read.rs"]
 mod read;
+pub use errors::{CopyOutcome, DeviceIoError, WriteStep};
 pub use identity::{
     descriptor_from_mount, is_placeholder_name, project_descriptor, usb_facts_for_address,
     usb_serial_from_sysfs, DeviceDescriptor, UsbFacts,
@@ -228,99 +232,7 @@ mod inspection;
 #[path = "device_sync_browser.rs"]
 mod target_browser;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CopyOutcome {
-    Copied,
-}
-
-/// Which step of a managed write produced the failure underneath.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WriteStep {
-    ResolveStorage,
-    CreateDirectories,
-    CopyPartial,
-    VerifyPartial,
-    Publish,
-}
-
-impl fmt::Display for WriteStep {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::ResolveStorage => "resolving the target storage",
-            Self::CreateDirectories => "creating the destination directory",
-            Self::CopyPartial => "copying the partial file",
-            Self::VerifyPartial => "verifying the partial file",
-            Self::Publish => "publishing the destination file",
-        })
-    }
-}
-
-#[derive(Debug)]
-pub enum DeviceIoError {
-    InvalidRelativePath,
-    SizeMismatch {
-        expected: u64,
-        actual: u64,
-    },
-    PublishNotApplied {
-        name: String,
-    },
-    DuringWrite {
-        step: WriteStep,
-        source: Box<DeviceIoError>,
-    },
-    Io(gio::glib::Error),
-    /// Design 7d: the chosen `StorageId` no longer matches any storage volume at the device root —
-    /// e.g. an SD card was removed since the browser last listed storages.
-    StorageNotFound,
-    /// Design 7d's "New folder": a folder with that name already exists at the chosen location.
-    FolderAlreadyExists,
-    /// Design 7d's root-creation error path: the device refused to create a folder directly at a
-    /// storage volume's own top level.
-    CannotCreateAtStorageRoot(gio::glib::Error),
-}
-
-impl fmt::Display for DeviceIoError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidRelativePath => formatter.write_str("invalid managed device path"),
-            Self::SizeMismatch { expected, actual } => formatter.write_fmt(format_args!(
-                "partial device file has {actual} bytes, expected {expected}"
-            )),
-            Self::PublishNotApplied { name } => formatter.write_fmt(format_args!(
-                "the device acknowledged publishing {name} but the file never appeared"
-            )),
-            Self::DuringWrite { step, source } => write!(formatter, "{step} failed: {source}"),
-            Self::Io(error) => write!(formatter, "device I/O failed: {error}"),
-            Self::StorageNotFound => {
-                formatter.write_str("the selected storage is no longer available on this device")
-            }
-            Self::FolderAlreadyExists => {
-                formatter.write_str("a folder with that name already exists here")
-            }
-            Self::CannotCreateAtStorageRoot(error) => formatter.write_fmt(format_args!(
-                "this device does not allow creating folders directly in the storage root: {error}"
-            )),
-        }
-    }
-}
-
-impl std::error::Error for DeviceIoError {}
-
-impl DeviceIoError {
-    fn during(self, step: WriteStep) -> Self {
-        Self::DuringWrite {
-            step,
-            source: self.into(),
-        }
-    }
-}
-
-impl From<gio::glib::Error> for DeviceIoError {
-    fn from(error: gio::glib::Error) -> Self {
-        Self::Io(error)
-    }
-}
+use paths::{is_audio_file, join_relative, safe_relative_components, safe_target_components};
 
 #[derive(Clone)]
 pub struct DeviceStorage {
@@ -421,7 +333,7 @@ impl DeviceStorage {
     ) -> Result<u32, DeviceIoError> {
         let storage = self.resolve_target_storage(storage_id).await?;
         let managed_root = Self::managed_child(&storage, target_path, &[])?;
-        let mut pending = VecDeque::from([managed_root]);
+        let mut pending = VecDeque::from([managed_root.clone()]);
         let mut removed = 0_u32;
         while let Some(directory) = pending.pop_front() {
             let enumerator = match directory
@@ -434,12 +346,30 @@ impl DeviceStorage {
             {
                 Ok(enumerator) => enumerator,
                 Err(error) if error.matches(gio::IOErrorEnum::NotFound) => continue,
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    warn_cleanup_failure(&managed_root, &directory, &error, "enumerate directory");
+                    continue;
+                }
             };
             loop {
-                let batch = enumerator
+                let batch = match enumerator
                     .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
-                    .await?;
+                    .await
+                {
+                    Ok(batch) => batch,
+                    Err(error) => {
+                        // This handles remote enumerators disappearing between batches. Local
+                        // chmod fixtures cannot fail after open; coverage would require an
+                        // injectable GFileEnumerator.
+                        warn_cleanup_failure(
+                            &managed_root,
+                            &directory,
+                            &error,
+                            "continue enumerating directory",
+                        );
+                        break;
+                    }
+                };
                 if batch.is_empty() {
                     break;
                 }
@@ -450,10 +380,11 @@ impl DeviceStorage {
                     } else if info.name().to_string_lossy().ends_with(PARTIAL_SUFFIX) {
                         match child.delete_future(gio::glib::Priority::DEFAULT).await {
                             Ok(()) => removed = removed.saturating_add(1),
-                            Err(error) => tracing::warn!(
-                                path = %child.uri(),
-                                error = %error,
-                                "device sync: could not delete partial file"
+                            Err(error) => warn_cleanup_failure(
+                                &managed_root,
+                                &child,
+                                &error,
+                                "delete partial file",
                             ),
                         }
                     }
@@ -642,6 +573,19 @@ impl DeviceStorage {
     }
 }
 
+fn warn_cleanup_failure(
+    root: &gio::File,
+    path: &gio::File,
+    error: &gio::glib::Error,
+    action: &str,
+) {
+    let path = root.relative_path(path).map_or_else(
+        || path.uri().to_string(),
+        |path| path.to_string_lossy().into_owned(),
+    );
+    tracing::warn!(path = %path, error = %error, action, "device sync: could not clean partial files");
+}
+
 fn choose_storage_volume(volumes: &[String]) -> Option<String> {
     volumes
         .iter()
@@ -654,40 +598,6 @@ fn choose_storage_volume(volumes: &[String]) -> Option<String> {
         })
         .or_else(|| volumes.first())
         .cloned()
-}
-
-/// Splits a [`reprise_core::device_sync::SyncTarget`] path (e.g. `/Music/Selected`, `MTP-23`) into path components for building a `gio::File`
-/// under the resolved storage volume. Unlike [`safe_relative_components`], a single leading `Component::RootDir` is accepted and dropped —
-/// sync target paths are written as absolute-looking device paths, but every one of them is still resolved relative to the storage volume
-/// returned by [`DeviceStorage::storage_root`].
-fn safe_target_components(path: &str) -> Result<Vec<String>, DeviceIoError> {
-    safe_components(path, true)
-}
-
-fn safe_relative_components(path: &str) -> Result<Vec<String>, DeviceIoError> {
-    safe_components(path, false)
-}
-
-fn safe_components(path: &str, allow_root: bool) -> Result<Vec<String>, DeviceIoError> {
-    if path.is_empty() || path.chars().any(char::is_control) {
-        return Err(DeviceIoError::InvalidRelativePath);
-    }
-    let components = Path::new(path)
-        .components()
-        .filter_map(|component| match component {
-            Component::RootDir if allow_root => None,
-            Component::Normal(value) => Some(
-                value
-                    .to_str()
-                    .map(str::to_string)
-                    .ok_or(DeviceIoError::InvalidRelativePath),
-            ),
-            _ => Some(Err(DeviceIoError::InvalidRelativePath)),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    (!components.is_empty())
-        .then_some(components)
-        .ok_or(DeviceIoError::InvalidRelativePath)
 }
 
 async fn target_size(file: &gio::File) -> Result<Option<u64>, DeviceIoError> {
@@ -763,26 +673,6 @@ async fn delete_if_present(file: &gio::File) {
             tracing::warn!(%error, "failed to remove partial device sync file");
         }
     }
-}
-
-fn join_relative(prefix: &str, name: &str) -> String {
-    if prefix.is_empty() {
-        name.to_string()
-    } else {
-        format!("{prefix}/{name}")
-    }
-}
-
-fn is_audio_file(name: &str) -> bool {
-    Path::new(name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wav" | "audio"
-            )
-        })
 }
 
 #[cfg(test)]

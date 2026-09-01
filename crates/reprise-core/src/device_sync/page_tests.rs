@@ -38,6 +38,7 @@ fn page_projection_deduplicates_selected_tracks_but_keeps_playlist_repeats() {
                     MirrorTrack::Available(track(2)),
                     MirrorTrack::Available(track(1)),
                 ],
+                stability_margin_track_ids: Vec::new(),
             },
             MirrorPlaylistSnapshot {
                 source: mix,
@@ -46,6 +47,7 @@ fn page_projection_deduplicates_selected_tracks_but_keeps_playlist_repeats() {
                     MirrorTrack::Available(track(2)),
                     MirrorTrack::Available(track(3)),
                 ],
+                stability_margin_track_ids: Vec::new(),
             },
         ],
         profile: TransferProfile::Mp3(Mp3Quality::Kbps256),
@@ -108,11 +110,13 @@ fn mtp_12_page_projects_the_verified_sync_time_for_each_playlist() {
                 source: road.clone(),
                 name: "Road".into(),
                 entries: Vec::new(),
+                stability_margin_track_ids: Vec::new(),
             },
             MirrorPlaylistSnapshot {
                 source: mix,
                 name: "Mix".into(),
                 entries: Vec::new(),
+                stability_margin_track_ids: Vec::new(),
             },
         ],
         playlist_inventory: vec![DevicePlaylistRecord {
@@ -150,6 +154,7 @@ fn controls_do_not_offer_a_start_when_transfers_exceed_current_free_space() {
             source,
             name: "Road".into(),
             entries: vec![MirrorTrack::Available(track(1))],
+            stability_margin_track_ids: Vec::new(),
         }],
         inventory: vec![DeviceFileRecord {
             device_serial: "phone".into(),
@@ -189,6 +194,7 @@ fn controls_do_not_offer_a_start_for_a_known_read_only_target() {
             source,
             name: "Road".into(),
             entries: vec![MirrorTrack::Available(track(1))],
+            stability_margin_track_ids: Vec::new(),
         }],
         storage: DeviceStorageSnapshot {
             access: DeviceStorageAccess::ReadOnly,

@@ -198,11 +198,12 @@ impl StatsSongsCard {
                 } else {
                     revealer.set_reveal_child(false);
                 }
-                button.set_label(if reveal {
-                    "Hide more top tracks"
+                let label = if reveal {
+                    crate::i18n::gettext("Hide more top tracks")
                 } else {
-                    "Show more top tracks"
-                });
+                    crate::i18n::gettext("Show more top tracks")
+                };
+                button.set_label(&label);
             }
         ));
 
@@ -257,7 +258,8 @@ impl StatsSongsCard {
         if !has_more {
             self.revealer.set_reveal_child(false);
             self.summary.actions.play_context.expanded.set(false);
-            self.reveal_button.set_label("Show more top tracks");
+            self.reveal_button
+                .set_label(&crate::i18n::gettext("Show more top tracks"));
         }
         *self.snapshot.borrow_mut() = Some(snapshot.clone());
         self.summary.render(snapshot, self.sort_by.get());

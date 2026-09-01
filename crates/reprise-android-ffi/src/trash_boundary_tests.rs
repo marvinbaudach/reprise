@@ -1,13 +1,14 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 
+use reprise_core::db::Db;
 use reprise_core::queries;
 
-use super::test_support::{PortCall, RecordingListener, RecordingPort};
+use super::test_support::{library_in, PortCall, RecordingListener, RecordingPort};
 use crate::playback::{AndroidPlaybackState, PlaybackEventBridge};
-use crate::{AndroidPlaybackSession, TrashAction, WindowRange};
+use crate::{AndroidPlaybackSession, MusicLibrary, TrashAction, WindowRange};
 
 struct SelectiveTrash {
     failures: HashSet<String>,
@@ -15,6 +16,35 @@ struct SelectiveTrash {
 
 impl TrashAction for SelectiveTrash {
     fn trash(&self, uri: String) -> Option<String> {
+        if self.failures.contains(&uri) {
+            return Some("device refused deletion".to_owned());
+        }
+        std::fs::remove_file(uri)
+            .err()
+            .map(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum WriterProbeFailure {
+    WouldBlock,
+    Poisoned,
+}
+
+struct WriterAvailabilityProbe {
+    writer: Arc<Mutex<Db>>,
+    outcomes: Arc<Mutex<Vec<Result<(), WriterProbeFailure>>>>,
+    failures: HashSet<String>,
+}
+
+impl TrashAction for WriterAvailabilityProbe {
+    fn trash(&self, uri: String) -> Option<String> {
+        let outcome = match self.writer.try_lock() {
+            Ok(_writer) => Ok(()),
+            Err(TryLockError::WouldBlock) => Err(WriterProbeFailure::WouldBlock),
+            Err(TryLockError::Poisoned(_)) => Err(WriterProbeFailure::Poisoned),
+        };
+        self.outcomes.lock().unwrap().push(outcome);
         if self.failures.contains(&uri) {
             return Some("device refused deletion".to_owned());
         }
@@ -61,11 +91,13 @@ fn seed_tracks(directory: &Path, titles: &[&str]) -> Vec<reprise_core::models::T
     .rows
 }
 
-fn session_with_calls(directory: &Path) -> (AndroidPlaybackSession, Arc<Mutex<Vec<PortCall>>>) {
+fn session_with_library(
+    library: Arc<MusicLibrary>,
+) -> (AndroidPlaybackSession, Arc<Mutex<Vec<PortCall>>>) {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let bridge = Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>));
     let session = AndroidPlaybackSession::new(
-        directory.to_str().unwrap(),
+        library,
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge,
@@ -79,10 +111,68 @@ fn session_with_calls(directory: &Path) -> (AndroidPlaybackSession, Arc<Mutex<Ve
     (session, calls)
 }
 
+fn session_with_calls(directory: &Path) -> (AndroidPlaybackSession, Arc<Mutex<Vec<PortCall>>>) {
+    session_with_library(library_in(directory))
+}
+
 fn successful_trash() -> Box<dyn TrashAction> {
     Box::new(SelectiveTrash {
         failures: HashSet::new(),
     })
+}
+
+#[test]
+fn writer_is_free_during_every_trash_callback() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
+    let library = library_in(directory.path());
+    let writer = library.writer_handle();
+    let (session, _) = session_with_library(library);
+    let outcomes = Arc::new(Mutex::new(Vec::new()));
+
+    let report = session
+        .trash_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            Box::new(WriterAvailabilityProbe {
+                writer,
+                outcomes: Arc::clone(&outcomes),
+                failures: HashSet::new(),
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(report.removed_ids.len(), 3);
+    assert_eq!(*outcomes.lock().unwrap(), vec![Ok(()), Ok(()), Ok(())]);
+}
+
+#[test]
+fn writer_is_free_during_successful_and_failing_trash_callbacks() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Refused", "Third"]);
+    let refused = tracks
+        .iter()
+        .find(|track| track.title == "Refused")
+        .unwrap();
+    let library = library_in(directory.path());
+    let writer = library.writer_handle();
+    let (session, _) = session_with_library(library);
+    let outcomes = Arc::new(Mutex::new(Vec::new()));
+
+    let report = session
+        .trash_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            Box::new(WriterAvailabilityProbe {
+                writer,
+                outcomes: Arc::clone(&outcomes),
+                failures: HashSet::from([refused.path.clone()]),
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(report.removed_ids.len(), 2);
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(report.failures[0].track_id, refused.id);
+    assert_eq!(*outcomes.lock().unwrap(), vec![Ok(()), Ok(()), Ok(())]);
 }
 
 #[test]

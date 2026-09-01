@@ -38,6 +38,7 @@ fn playlist(
         source,
         name: name.into(),
         entries,
+        stability_margin_track_ids: Vec::new(),
     }
 }
 
@@ -762,3 +763,8 @@ fn inventory_and_directory_enumeration_order_do_not_change_the_plan() {
 
     assert_eq!(plan_mirror(forward), plan_mirror(reversed));
 }
+
+#[path = "mirror_case_tests.rs"]
+mod case_tests;
+#[path = "mirror_stability_tests.rs"]
+mod stability_tests;

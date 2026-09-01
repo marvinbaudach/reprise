@@ -100,9 +100,7 @@ struct ParsedImport {
     playlists: Option<Result<Vec<RhythmboxPlaylist>, String>>,
 }
 
-// ---------------------------------------------------------------------------
 // Three-state import dialog
-// ---------------------------------------------------------------------------
 
 struct ImportDialogWidgets {
     dialog: adw::Dialog,
@@ -363,9 +361,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
     }
 }
 
-// ---------------------------------------------------------------------------
 // PreferencesContext integration
-// ---------------------------------------------------------------------------
 
 impl PreferencesContext {
     pub(in crate::ui) fn present_rhythmbox_import_dialog(self: &Rc<Self>) {

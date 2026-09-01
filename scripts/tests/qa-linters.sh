@@ -30,6 +30,46 @@ reject_pattern() {
   fi
 }
 
+verify_workflow_run_block_indentation() {
+  local scratch_root actual_dir expected_dir
+  scratch_root=$(mktemp -d)
+  actual_dir="$scratch_root/actual"
+  expected_dir="$scratch_root/expected"
+  mkdir "$actual_dir" "$expected_dir"
+
+  printf '%s\n' \
+    'jobs:' \
+    '  one:' \
+    '    steps:' \
+    '      - name: One extra space' \
+    '        run: |' \
+    '         echo one' \
+    '' \
+    '           if true; then' \
+    '             echo nested' \
+    '           fi' >"$scratch_root/one.yml"
+  printf '%s\n' \
+    'jobs:' \
+    '  four:' \
+    '    steps:' \
+    '      - name: Four extra spaces' \
+    '        run: |' \
+    '            echo four' \
+    '              echo indented' >"$scratch_root/four.yml"
+
+  awk -v output_dir="$actual_dir" -v workflow_name=one.yml \
+    -f scripts/lib/extract-workflow-run-blocks.awk "$scratch_root/one.yml"
+  awk -v output_dir="$actual_dir" -v workflow_name=four.yml \
+    -f scripts/lib/extract-workflow-run-blocks.awk "$scratch_root/four.yml"
+  printf '%s\n' '#!/usr/bin/env bash' 'echo one' '' '  if true; then' \
+    '    echo nested' '  fi' >"$expected_dir/one.yml.run-5.sh"
+  printf '%s\n' '#!/usr/bin/env bash' 'echo four' '  echo indented' \
+    >"$expected_dir/four.yml.run-5.sh"
+
+  diff --recursive --unified "$expected_dir" "$actual_dir"
+  rm -rf "$scratch_root"
+}
+
 require_pattern_order() {
   local before=$1
   local after=$2
@@ -45,6 +85,13 @@ require_pattern_order() {
 
 require_executable scripts/check-architecture.sh
 require_executable scripts/check-shell.sh
+[[ -f scripts/lib/extract-workflow-run-blocks.awk ]] || {
+  echo "scripts/lib/extract-workflow-run-blocks.awk must exist" >&2
+  exit 1
+}
+verify_workflow_run_block_indentation
+require_pattern "git ls-files -z '.github/workflows/\*.yml'" scripts/check-shell.sh
+require_pattern 'workflow_run_blocks' scripts/check-shell.sh
 require_executable scripts/check-frontend-thinness.sh
 require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh
@@ -97,6 +144,12 @@ require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings'
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
 require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
+require_pattern '^skipped_here=\(\)$' scripts/check-merge-readiness.sh
+require_pattern '^is_skipped\(\) \{$' scripts/check-merge-readiness.sh
+require_pattern 'MERGE_READINESS_SKIP_GATES' scripts/check-merge-readiness.sh
+require_pattern 'skipped_summary\+=", \$name"' scripts/check-merge-readiness.sh
+require_pattern 'echo "Skipped here, covered by another CI job: \$skipped_summary"' scripts/check-merge-readiness.sh
+require_pattern 'MERGE_READINESS_SKIP_GATES' scripts/ci-quality.sh
 # Both calls moved into the `gate "<name>" -- <command>` form, so neither path
 # starts its own line any more. The assertion follows the call rather than the
 # layout: the gate must still name the project-quality wrapper, and it must
@@ -117,6 +170,17 @@ require_pattern '^scripts/check-flatpak-cargo-sources\.sh$' scripts/check-releas
 require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
 require_pattern 'scripts/check-release-metadata\.sh --gate' .github/workflows/ci.yml
 require_pattern 'scripts/check-flatpak-cargo-sources\.sh' .github/workflows/ci.yml
+require_pattern 'Verify worktree hygiene' .github/workflows/ci.yml
+require_pattern 'scripts/tests/worktree-gc\.sh' .github/workflows/ci.yml
+require_pattern 'scripts/tests/worktree-gc-schedule\.sh' .github/workflows/ci.yml
+require_pattern 'Run the script self-tests' .github/workflows/ci.yml
+require_pattern 'scripts/tests/qa-linters\.sh' .github/workflows/ci.yml
+require_pattern '^          scripts/check-shell\.sh$' .github/workflows/ci.yml
+require_pattern '^        run: scripts/check-project-quality\.sh --project --showroom$' .github/workflows/ci.yml
+require_pattern '^          scripts/check-architecture\.sh$' .github/workflows/ci.yml
+require_pattern_order 'Verify worktree hygiene' 'Verify project source quality' .github/workflows/ci.yml
+require_pattern_order 'Run the script self-tests' 'Verify project source quality' .github/workflows/ci.yml
+require_pattern_order 'Verify repository and workflow contracts' 'Verify project source quality' .github/workflows/ci.yml
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
 reject_pattern 'scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
@@ -126,6 +190,12 @@ require_pattern 'display_test_passed' scripts/check-display-tests.sh
 require_pattern 'passed_lines=\$\(grep -Ec' scripts/check-display-tests.sh
 require_pattern 'DISPLAY_TEST_JOBS' scripts/check-display-tests.sh
 require_pattern 'wait -n' scripts/check-display-tests.sh
+require_pattern '\-\-list\) list_only=true' scripts/check-display-tests.sh
+require_pattern '\-\-shard\) shard_spec=' scripts/check-display-tests.sh
+require_pattern 'sort$' scripts/check-display-tests.sh
+require_pattern 'index % shard_count == shard_index - 1' scripts/check-display-tests.sh
+require_pattern_order 'if \[\[ \$mode == rule-named \]\]' 'index % shard_count == shard_index - 1' scripts/check-display-tests.sh
+require_pattern_order 'index % shard_count == shard_index - 1' 'No ignored display tests were discovered' scripts/check-display-tests.sh
 require_pattern 'results_dir' scripts/check-display-tests.sh
 require_pattern 'XDG_RUNTIME_DIR' scripts/check-display-tests.sh
 require_pattern 'XDG_CONFIG_HOME' scripts/check-display-tests.sh

@@ -127,39 +127,3 @@ fn nav_10b_a_user_scroll_during_the_glide_wins() {
     assert_eq!(adjustment.value(), user_value);
     window.close();
 }
-
-#[test]
-fn visible_position_finds_the_current_track_in_view_order() {
-    assert_eq!(
-        visible_position_for_track_in_source(&[41, 42, 43], 42, None, false),
-        Some(1)
-    );
-}
-
-#[test]
-fn visible_position_uses_queue_occurrence_then_falls_back_to_first_match() {
-    assert_eq!(
-        visible_position_for_track_in_source(&[7, 8, 7], 7, Some(2), false),
-        Some(2)
-    );
-    assert_eq!(
-        visible_position_for_track_in_source(&[7, 8, 7], 7, Some(1), false),
-        Some(0)
-    );
-    assert_eq!(
-        visible_position_for_track_in_source(&[7, 8, 7], 9, None, false),
-        None
-    );
-}
-
-#[test]
-fn queue_does_not_highlight_a_pending_duplicate_of_the_current_track() {
-    assert_eq!(
-        visible_position_for_track_in_source(&[7, 8, 7], 7, None, true),
-        None
-    );
-    assert_eq!(
-        visible_position_for_track_in_source(&[7, 8, 7], 7, None, false),
-        Some(0)
-    );
-}

@@ -13,7 +13,9 @@ use std::borrow::Cow;
 
 pub use bass_pressure::{BassPressure, BassPressureDetector, STEADY_GLOW};
 pub use cava::{CavaBarProcessor, CavaConfig, CavaError};
-pub use fault_policy::{playback_fault_policy, PlaybackFaultNotice, PlaybackFaultPolicy};
+pub use fault_policy::{
+    playback_fault_policy, should_stop_skipping, PlaybackFaultNotice, PlaybackFaultPolicy,
+};
 
 /// Coarse playback state, mirrored from the underlying GStreamer pipeline state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

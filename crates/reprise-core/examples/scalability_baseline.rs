@@ -119,6 +119,8 @@ struct BaselineReport {
     middle_window: TimingSummary,
     final_window: TimingSummary,
     title_window_query_plan: QueryPlanSummary,
+    artist_final_window: TimingSummary,
+    artist_window_query_plan: QueryPlanSummary,
     album_final_window: TimingSummary,
     album_window_query_plan: QueryPlanSummary,
     filtered_count: TimingSummary,
@@ -367,6 +369,8 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         i64::try_from(config.track_count.saturating_sub(WINDOW_ROWS as usize)).unwrap_or(i64::MAX);
     let final_window = measure_window(&db, config.iterations, "title", final_offset)?;
     let title_window_query_plan = explain_window(&config.db_path, "title")?;
+    let artist_final_window = measure_window(&db, config.iterations, "artist", final_offset)?;
+    let artist_window_query_plan = explain_window(&config.db_path, "artist")?;
     let album_final_window = measure_window(&db, config.iterations, "album", final_offset)?;
     let album_window_query_plan = explain_window(&config.db_path, "album")?;
 
@@ -438,7 +442,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
     )?;
 
     Ok(BaselineReport {
-        schema_version: 4,
+        schema_version: 5,
         generated_tracks: config.track_count,
         database_bytes: std::fs::metadata(&config.db_path)?.len(),
         iterations: config.iterations,
@@ -448,6 +452,8 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         middle_window,
         final_window,
         title_window_query_plan,
+        artist_final_window,
+        artist_window_query_plan,
         album_final_window,
         album_window_query_plan,
         filtered_count,
@@ -571,7 +577,7 @@ mod tests {
     #[test]
     fn report_serializes_the_stable_json_contract() {
         let report = BaselineReport {
-            schema_version: 4,
+            schema_version: 5,
             generated_tracks: 10_000,
             database_bytes: 42,
             iterations: 3,
@@ -587,6 +593,12 @@ mod tests {
                 ],
                 uses_temp_sort: true,
                 index_name: None,
+            },
+            artist_final_window: TimingSummary::from_samples(vec![42, 40, 41], 200),
+            artist_window_query_plan: QueryPlanSummary {
+                details: vec!["SCAN tracks USING INDEX idx_tracks_present_artist_order".to_string()],
+                uses_temp_sort: false,
+                index_name: Some("idx_tracks_present_artist_order".to_string()),
             },
             album_final_window: TimingSummary::from_samples(vec![27, 25, 26], 200),
             album_window_query_plan: QueryPlanSummary {
@@ -610,7 +622,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(report).unwrap(),
             serde_json::json!({
-                "schema_version": 4,
+                "schema_version": 5,
                 "generated_tracks": 10000,
                 "database_bytes": 42,
                 "iterations": 3,
@@ -623,6 +635,12 @@ mod tests {
                     "details": ["SCAN tracks", "USE TEMP B-TREE FOR ORDER BY"],
                     "uses_temp_sort": true,
                     "index_name": null
+                },
+                "artist_final_window": {"min_us": 40, "median_us": 41, "max_us": 42, "result_rows": 200},
+                "artist_window_query_plan": {
+                    "details": ["SCAN tracks USING INDEX idx_tracks_present_artist_order"],
+                    "uses_temp_sort": false,
+                    "index_name": "idx_tracks_present_artist_order"
                 },
                 "album_final_window": {"min_us": 25, "median_us": 26, "max_us": 27, "result_rows": 200},
                 "album_window_query_plan": {

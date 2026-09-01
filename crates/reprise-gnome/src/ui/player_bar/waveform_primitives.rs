@@ -41,7 +41,10 @@ impl RedrawSnapshot {
     }
 }
 
-pub(super) fn should_redraw(
+/// Private on purpose: the tick must go through `should_redraw_on_tick`, which
+/// also covers the frame it stops on. This decides on visible *movement* alone,
+/// which is exactly what the settling frame has none of.
+fn should_redraw(
     last_drawn: Option<RedrawSnapshot>,
     current: RedrawSnapshot,
     animation_running: bool,
@@ -56,6 +59,26 @@ pub(super) fn should_redraw(
         || (current.colour.2 - last.colour.2).abs() >= REDRAW_COLOUR_THRESHOLD
         || current.hover_fraction != last.hover_fraction
         || current.drag_fraction != last.drag_fraction
+}
+
+/// Whether the tick that is about to *stop* still owes the widget a paint.
+///
+/// `should_redraw` only compares what the playhead looks like, so it cannot see
+/// the bars: on the frame a build-up or crossfade reaches its end, the playhead
+/// has not moved and `animation_running` has already flipped to `false`, so the
+/// finished bars would never be painted. Normally the frame before it is close
+/// enough to be indistinguishable — but when frames are dropped (a busy main
+/// loop at startup) the last painted frame can be an early, half-built one, and
+/// a track parked at 0:00 produces no position ticks to invalidate it again.
+/// So the settling frame always repaints. It happens once per tick lifetime,
+/// because the tick breaks on it.
+pub(super) fn should_redraw_on_tick(
+    last_drawn: Option<RedrawSnapshot>,
+    current: RedrawSnapshot,
+    animation_running: bool,
+    settled: bool,
+) -> bool {
+    settled || should_redraw(last_drawn, current, animation_running)
 }
 
 /// Advances the smooth-fill interpolation by one frame: `fraction` moves by
@@ -239,6 +262,44 @@ mod tests {
             RedrawSnapshot::new(20.0, (0.2 + 1.1 / 512.0, 0.4, 0.6)),
             false,
         ));
+    }
+
+    #[test]
+    fn a_settling_tick_never_skips_its_paint() {
+        // The regression this guards: a build-up that finishes while the
+        // playhead is parked (paused at 0:00) used to leave the widget showing
+        // whichever half-built frame was painted last, with nothing left to
+        // invalidate it — no position ticks come in while paused, so it stayed
+        // a row of stubs until the pointer happened to cross the bar.
+        //
+        // Whatever the snapshot says, a tick that is about to break must paint.
+        // Asserted over every shape the last-drawn state can take, because the
+        // settling frame is precisely the one where none of them differ.
+        let parked = RedrawSnapshot::new(1.5, (0.2, 0.4, 0.6));
+        let moved = RedrawSnapshot::new(40.0, (0.9, 0.1, 0.1));
+        for last_drawn in [None, Some(parked), Some(moved)] {
+            for animation_running in [false, true] {
+                assert!(
+                    should_redraw_on_tick(last_drawn, parked, animation_running, true),
+                    "settled tick skipped its paint: last={last_drawn:?} \
+                     animation_running={animation_running}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_frame_a_tick_settles_on_always_repaints() {
+        // The build-up finishing changes every bar but moves nothing in the
+        // snapshot, and `animation_running` is already false by the time the
+        // decision is made — the state the tick settles into must still be
+        // painted, or a dropped frame leaves a half-built waveform on screen
+        // with nothing left to invalidate it.
+        let parked = RedrawSnapshot::new(1.5, (0.2, 0.4, 0.6));
+        assert!(!should_redraw(Some(parked), parked, false));
+        assert!(should_redraw_on_tick(Some(parked), parked, false, true));
+        // A tick that keeps running still decides on movement alone.
+        assert!(!should_redraw_on_tick(Some(parked), parked, false, false));
     }
 
     #[test]

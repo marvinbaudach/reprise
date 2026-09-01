@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use reprise_core::library::trash_tracks::trash_tracks_with;
+use reprise_core::library::trash_tracks::{commit_trash, plan_trash, TrashFailure};
 use reprise_core::playback::PlaybackBackend;
 use reprise_core::queries;
 
@@ -49,14 +49,8 @@ impl AndroidPlaybackSession {
         track_ids: Vec<i64>,
         action: Box<dyn TrashAction>,
     ) -> Result<AndroidTrashReport, LibraryError> {
-        let (report, already_gone) = {
-            let database = self
-                .inner
-                .database
-                .lock()
-                .map_err(|_| LibraryError::Database {
-                    detail: "playback queue database was poisoned".to_owned(),
-                })?;
+        let (plan, already_gone) = {
+            let database = self.inner.library.writer()?;
             let mut tracks = Vec::with_capacity(track_ids.len());
             let mut already_gone = Vec::new();
             for track_id in track_ids {
@@ -74,10 +68,32 @@ impl AndroidPlaybackSession {
                     }),
                 }
             }
-            (
-                trash_tracks_with(&database, &tracks, |path| trash_path(action.as_ref(), path)),
-                already_gone,
-            )
+            (plan_trash(&database, &tracks), already_gone)
+        };
+
+        let mut trashed = Vec::with_capacity(plan.validated.len());
+        let mut failures = plan.failures;
+        for (id, path) in plan.validated {
+            match trash_path(action.as_ref(), &path) {
+                Ok(()) => trashed.push((id, path)),
+                Err(error) => failures.push(TrashFailure { id, path, error }),
+            }
+        }
+
+        // This scope must drop the writer before `persist_queue` re-acquires it.
+        let report = {
+            let database = match self.inner.library.writer() {
+                Ok(database) => database,
+                Err(error) => {
+                    tracing::error!(
+                        %error,
+                        orphaned_tracks = ?trashed,
+                        "could not reconcile files already moved to trash"
+                    );
+                    return Err(error);
+                }
+            };
+            commit_trash(&database, &trashed, failures)
         };
 
         let (removed_current, has_current, next_uri, queue_to_save) = {
@@ -91,7 +107,7 @@ impl AndroidPlaybackSession {
                 .is_some_and(|track_id| report.removed_ids.contains(&track_id));
             state.queue.remove_ids(&report.removed_ids);
             if removed_current && state.queue.current().is_some() {
-                state.adopt_current();
+                state.adopt_current_for_play_intent();
             }
             (
                 removed_current,

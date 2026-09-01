@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
-use super::test_support::{PortCall, RecordingListener, RecordingPort};
+use super::test_support::{library_in, PortCall, RecordingListener, RecordingPort};
 use crate::playback::{AndroidPlaybackState, AndroidPlayerEvent, PlaybackEventBridge};
 use crate::{AndroidPlaybackSession, AndroidRepeatMode, WindowRange};
 
@@ -62,7 +62,7 @@ fn session_with_controls(directory: &Path) -> TestSessionControls {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let bridge = Arc::new(Mutex::new(None));
     AndroidPlaybackSession::new(
-        directory.to_str().unwrap(),
+        library_in(directory),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::clone(&bridge),
@@ -266,17 +266,64 @@ fn upcoming_window_excludes_the_current_track_and_counts_beyond_the_page() {
 }
 
 #[test]
-fn negative_upcoming_offset_is_the_first_page_not_an_empty_contradiction() {
+fn forward_window_total_is_independent_of_non_negative_offset() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            tracks.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    for offset in [0, 1, 2, 3, 20] {
+        let window = session
+            .upcoming_tracks(WindowRange { offset, limit: 1 })
+            .unwrap();
+        assert_eq!(
+            window.total, 3,
+            "forward total must remain the complete future at offset {offset}",
+        );
+    }
+}
+
+#[test]
+fn signed_window_reaches_both_sides_and_clamps_without_shifting_at_the_ends() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Zero", "One", "Two", "Three", "Four"]);
     let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
     let ordered = [
-        track("Current"),
-        track("First"),
-        track("Second"),
-        track("Third"),
+        track("Zero"),
+        track("One"),
+        track("Two"),
+        track("Three"),
+        track("Four"),
     ];
     let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            2,
+        )
+        .unwrap();
+
+    let middle = session
+        .upcoming_tracks(WindowRange {
+            // Offsets stay relative to the upcoming boundary. The current
+            // row is -1, so -3 begins two positions before the cursor.
+            offset: -3,
+            limit: 5,
+        })
+        .unwrap();
+    assert_eq!(
+        middle.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        ordered.iter().map(|track| track.id).collect::<Vec<_>>(),
+    );
+    assert_eq!(session.snapshot().unwrap().current_index, Some(2));
+
     session
         .play_tracks(
             ordered.iter().map(|track| track.id).collect(),
@@ -284,20 +331,124 @@ fn negative_upcoming_offset_is_the_first_page_not_an_empty_contradiction() {
             0,
         )
         .unwrap();
-
-    let window = session
+    let first = session
         .upcoming_tracks(WindowRange {
-            offset: -1,
-            limit: 2,
+            offset: -3,
+            limit: 5,
         })
         .unwrap();
-
-    assert_eq!(window.total, 3);
     assert_eq!(
-        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
-        vec![track("First").id, track("Second").id],
+        first.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Zero").id, track("One").id, track("Two").id],
+        "clamping the left edge must not pull extra rows in from the right",
     );
-    assert!(window.has_more);
+
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            4,
+        )
+        .unwrap();
+    let last = session
+        .upcoming_tracks(WindowRange {
+            offset: -3,
+            limit: 5,
+        })
+        .unwrap();
+    assert_eq!(
+        last.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Two").id, track("Three").id, track("Four").id],
+    );
+    assert!(
+        last.rows.len() <= usize::try_from(last.total).unwrap(),
+        "a signed window must never return more rows than its advertised total",
+    );
+}
+
+#[test]
+fn signed_window_and_current_index_follow_the_same_shuffled_order() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Zero", "One", "Two", "Three", "Four"]);
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            tracks.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+    session.set_shuffle(true).unwrap();
+    let future = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    let target_id = tracks[4].id;
+    let source_position = future
+        .rows
+        .iter()
+        .position(|row| row.id == target_id)
+        .unwrap();
+    // Promoting the known flat-index-4 track puts it at queue index 1. This
+    // explicit divergence keeps the regression deterministic for every shuffle.
+    assert!(session
+        .play_upcoming_track_now(u64::try_from(source_position).unwrap(), target_id)
+        .unwrap());
+
+    let snapshot = session.snapshot().unwrap();
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: -5,
+            limit: 5,
+        })
+        .unwrap();
+    let ids = window.rows.iter().map(|row| row.id).collect::<Vec<_>>();
+
+    let current_position = ids
+        .iter()
+        .position(|track_id| Some(*track_id) == snapshot.current_track_id)
+        .and_then(|position| u64::try_from(position).ok());
+    assert_eq!(current_position, Some(1));
+    assert_eq!(snapshot.current_index, current_position);
+
+    session.set_shuffle(false).unwrap();
+    let linear_position = tracks
+        .iter()
+        .position(|track| track.id == target_id)
+        .and_then(|position| u64::try_from(position).ok());
+    assert_eq!(session.snapshot().unwrap().current_index, linear_position);
+}
+
+#[test]
+fn queue_order_previous_then_next_round_trips_with_and_without_shuffle() {
+    for shuffled in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let tracks = seed_tracks(directory.path(), &["Zero", "One", "Two", "Three", "Four"]);
+        let session = session_in(directory.path());
+        session
+            .play_tracks(
+                tracks.iter().map(|track| track.id).collect(),
+                tracks.iter().map(|track| track.path.clone()).collect(),
+                2,
+            )
+            .unwrap();
+        if shuffled {
+            session.set_shuffle(true).unwrap();
+        }
+        let before = session.snapshot().unwrap();
+
+        session.previous_in_queue_order().unwrap();
+        session.next().unwrap();
+
+        let after = session.snapshot().unwrap();
+        assert_eq!(
+            after.current_track_id, before.current_track_id,
+            "queue-order navigation must round-trip when shuffled={shuffled}",
+        );
+        assert_eq!(after.current_index, before.current_index);
+    }
 }
 
 #[test]

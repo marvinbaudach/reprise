@@ -164,9 +164,7 @@ impl LbStatsClient {
     }
 }
 
-// ---------------------------------------------------------------------------
 // JSON parsing helpers
-// ---------------------------------------------------------------------------
 
 fn parse_top_artists(body: &str) -> Result<Vec<TopArtist>, RemoteStatsError> {
     let root: Value =

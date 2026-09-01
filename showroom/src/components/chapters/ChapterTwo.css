@@ -313,6 +313,7 @@
 
 .gate-cluster__marks {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
 }
 
@@ -452,16 +453,34 @@
 }
 
 @media (hover: none), (max-width: 46rem) {
-  .gate-strip__tick {
-    min-width: 44px;
-  }
-
   .gate-groups {
     grid-template-columns: 1fr;
   }
 }
 
+/*
+ * The 44px floor is unconditional on touch. When a cluster cannot hold all of
+ * its marks on one line, the marks wrap inside that cluster instead of
+ * overlapping the next one or being clipped at the viewport edge.
+ */
+@media (hover: none) {
+  .gate-strip__tick {
+    min-width: 44px;
+  }
+}
+
+/*
+ * Narrow, the clusters go two to a row and their ticks divide the half they
+ * get. Four across only worked while a tick could be 3px wide; at 44px it needs
+ * half the figure. Two across is the widest packing that still fits, and it
+ * keeps the marks reading as a group instead of scattering them over a whole
+ * row each.
+ */
 @media (max-width: 46rem) {
+  .gate-cluster {
+    flex-basis: calc(50% - var(--gap-tight));
+  }
+
   .pipeline {
     flex-direction: column;
     align-items: stretch;

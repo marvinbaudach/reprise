@@ -25,7 +25,6 @@ pub const LIBRARY_DOCTOR_REMOTE_BODY: &str = N_!(
     "Reprise sends only existing title, artist, album, album artist, MusicBrainz IDs, and duration to MusicBrainz. AcoustID receives only a fingerprint and duration. File paths, filenames, library roots, ratings, listening history, playlists, and device data are never sent."
 );
 pub const LIBRARY_DOCTOR_REMOTE_ENABLE: &str = N_!("Enable Suggestions");
-pub const DOCTOR_SCOPE: &str = N_!("Scope");
 pub const DOCTOR_SCOPE_WHOLE_LIBRARY: &str = N_!("Whole Library");
 pub const DOCTOR_SCOPE_CURRENT_VIEW: &str = N_!("Current View");
 pub const DOCTOR_SCOPE_SELECTION: &str = N_!("Selection");
@@ -47,8 +46,7 @@ pub const DOCTOR_MISSING_ALBUM_ARTIST: &str = N_!("Missing Album Artist");
 pub const DOCTOR_GENRE_VARIANTS: &str = N_!("Genre Variants");
 pub const DOCTOR_MISSING_WRONG_YEAR: &str = N_!("Missing / Incorrect Year");
 pub const DOCTOR_MISSING_RECORDING_MBID: &str = N_!("Missing Recording MBID");
-pub const DOCTOR_SCOPE_FALLBACK: &str =
-    N_!("That scope is no longer available. Scanning the whole library instead.");
+pub const DOCTOR_SCOPE_FALLBACK: &str = N_!("Those tracks are no longer in the library.");
 pub const DOCTOR_ACOUSTID_UNAVAILABLE: &str = N_!("AcoustID Unavailable");
 pub const DOCTOR_ACOUSTID_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Local checks and MusicBrainz suggestions remain available.");

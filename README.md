@@ -1,12 +1,13 @@
 # Reprise
 
-Reprise is a music player for people who still keep their own music files —
-and for developers who want to see native desktop UX, a portable core, and
-measurable systems work come together in one Rust codebase. A GTK4/libadwaita
-GNOME app sits on top of a GUI-free core, with everything Linux-specific kept
-behind explicit contracts.
+Reprise is a native GNOME music player for people who keep their own music
+files. It brings a fast sortable library, playlists, queue management, lyrics,
+artwork, listening history, podcasts, radio, and device synchronization into a
+GTK4/libadwaita app while keeping the library local.
 
 > **Status:** active alpha. Reprise is not a public release yet.
+
+![Reprise Now Playing view with album art, playback controls, queue, and a live audio visualizer.](data/screenshots/now-playing.png)
 
 ## Downloads
 
@@ -45,9 +46,12 @@ release page.
 | `reprise-core` | Library, SQLite queries, queue semantics, scanning, playlists, settings, and platform contracts | GTK, libadwaita, GStreamer, zbus, or GLib dependencies |
 | `reprise-platform-linux` | GStreamer playback and analysis, MPRIS/D-Bus, MTP, Trash, and other Linux adapters | Product UI or duplicated domain rules |
 | `reprise-gnome` | GTK4/libadwaita presentation, interaction state, accessibility, and desktop composition | Productive SQL, blocking HTTP, or direct GStreamer orchestration |
+| `reprise-runtime-protocol` | Versioned command and snapshot data shared by direct-path D-Bus and MCP surfaces | Runtime ownership or toolkit code |
 | `reprise-cli` | Headless CLI over core facades: playlists, search, library summary, scan, and instrumental jobs | Any workspace crate beyond reprise-core (bar the feature-gated mpris/worker exceptions) or productive SQL |
 | `reprise-mcp` | Local stdio MCP server exposing read-only library resources and capability-gated create tools to agents | Any workspace crate beyond reprise-core, productive SQL, or playback/queue/tag/delete tools |
 | `reprise-stems` | Portable stem-separation backend (ML inference) for the experimental instrumental jobs | Any workspace crate beyond reprise-core, or GUI/engine coupling |
+| `reprise-view` | Toolkit-neutral presentation state shared by native frontends | GTK, Compose, platform services, or productive SQL |
+| `reprise-android-ffi` | The narrow UniFFI boundary used by the Android frontend | Android UI or duplicated domain rules |
 
 All application logic and data live in the shared engine; the platform crates
 only implement the narrow contracts the core defines, and each frontend stays
@@ -84,9 +88,9 @@ this README deliberately avoids numbers that would go stale.
 `reprise-core`; native interaction and accessibility in `reprise-gnome`; or
 audio, desktop, and device adapters in `reprise-platform-linux`.
 
-Start with [AGENTS.md](AGENTS.md) and the [UX rulebook](docs/ux-rules.md).
-Contributor setup and pull-request details are in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Start with the [contributor guide](CONTRIBUTING.md). Coding agents pick up from
+the [AGENTS.md](AGENTS.md) runbook for the automation and safety boundaries. The
+[UX rulebook](docs/ux-rules.md) is the interaction contract.
 Every change starts with a failing test, respects the core boundary, and lands
 through a squashed pull request into `dev`, from where `main` is
 fast-forwarded. The goal is not more code —
@@ -166,6 +170,7 @@ missing — they never fall back to the live desktop or your user profile.
 
 | Document | Purpose |
 |---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Human onboarding, build setup, and pull-request entry point |
 | [AGENTS.md](AGENTS.md) | Repository workflow, safety boundaries, and required gates |
 | [TESTING.md](TESTING.md) | Test layers, benchmark method, and evidence limits |
 | [docs/ux-rules.md](docs/ux-rules.md) | Binding interaction and accessibility contracts |
@@ -181,29 +186,17 @@ native GTK4 frontend. See [LICENSE](LICENSE) for the full text and
 
 ## How this project is built
 
-Reprise is written with AI assistance. I am saying so here rather than leaving
-it to be discovered, because the commit history says so plainly: many commits
-carry a `Co-Authored-By` trailer, and `docs/plans/` contains the working plans
-the implementation followed.
+Reprise is built with AI assistance under a human-owned architecture and review
+process. Models work from grilled plans; the maintainer decides the product,
+reviews the changes, and remains responsible for explaining and maintaining
+the result. The commit history preserves named co-authorship where applicable.
 
-What that means in practice, and what it does not mean:
-
-I design the architecture, decide what gets built, and review every change.
-Models draft implementations against plans I write and grill first. I can
-explain any part of this codebase, and I answer questions about it directly —
-if a maintainer asks why something works the way it does, they get an answer
-from me, not a summary of a summary.
-
-The project's defence against the failure mode people rightly worry about —
-plausible code nobody understands — is that nothing merges on a claim. Every
-change passes a chain of gates before it can land, including formatting,
-clippy as `-D warnings`, the full test suite, a dependency audit, an
-architecture lint capping file size, a frontend thinness budget, accessibility
-semantics, input parity, and a traceability gate that refuses any enforceable
-UX rule without a test named after it. There are 5,596 test functions across
-897 files.
-`docs/ux-rules.md` holds 571 numbered rules; a rule only becomes enforceable in
-the same commit that proves it with a test.
+The engineering discipline is machine-checked. Formatting, Clippy with
+warnings denied, the workspace tests, dependency auditing, architecture and
+frontend boundaries, accessibility, input parity, and UX-rule traceability all
+gate changes. The [UX rulebook](docs/ux-rules.md) only marks a rule active when
+a rule-named test enforces it, and [TESTING.md](TESTING.md) records what the
+automated evidence does and does not prove.
 
 If you find something in here that does not hold up, open an issue. That is
 worth more to me than the benefit of the doubt.

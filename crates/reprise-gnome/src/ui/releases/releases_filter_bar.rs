@@ -329,7 +329,9 @@ impl ReleasesFilterBar {
             ReleaseWindow::All,
         ];
         for value in values {
-            list.append(&chooser_row(&strings::text(window_label(value))));
+            list.append(&filter_bar_layout::chooser_row(&strings::text(
+                window_label(value),
+            )));
         }
         let popover = gtk4::Popover::new();
         popover.set_child(Some(&padded(&list)));
@@ -445,18 +447,6 @@ fn window_label(window: ReleaseWindow) -> &'static str {
         ReleaseWindow::TenYears => strings::RELEASES_WINDOW_TEN_YEARS,
         ReleaseWindow::All => strings::RELEASES_WINDOW_ALL,
     }
-}
-
-fn chooser_row(label: &str) -> gtk4::ListBoxRow {
-    let label = gtk4::Label::builder()
-        .label(label)
-        .xalign(0.0)
-        .margin_top(7)
-        .margin_bottom(7)
-        .margin_start(10)
-        .margin_end(10)
-        .build();
-    gtk4::ListBoxRow::builder().child(&label).build()
 }
 
 fn padded(child: &impl IsA<gtk4::Widget>) -> gtk4::Box {

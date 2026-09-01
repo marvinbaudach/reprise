@@ -188,7 +188,7 @@ pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
 // Kept — strings.rs is append-only — rather than deleted.
 #[allow(dead_code)]
 pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
-#[allow(dead_code)]
+#[allow(dead_code)] // Append-only gettext key superseded by the TAG-5 summary.
 pub const TAG_PENDING_CHANGES_PLURAL: &str = N_!("{count} changes pending");
 pub const TAG_REVERT: &str = N_!("Revert");
 // Superseded by TAG-8's two-answer discard prompt (`tag_discard_prompt_title`
@@ -198,7 +198,7 @@ pub const TAG_REVERT: &str = N_!("Revert");
 // append-only — rather than deleted.
 #[allow(dead_code)]
 pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
-#[allow(dead_code)]
+#[allow(dead_code)] // Append-only gettext key superseded by the TAG-8 prompt.
 pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
 pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
 

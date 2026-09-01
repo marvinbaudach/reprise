@@ -142,8 +142,10 @@ fn status_column(view: &gtk4::ColumnView, on_wire_cell: &OnWireCell) {
 
 fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &OnWireCell) {
     let factory = gtk4::SignalListItemFactory::new();
+    let tooltips = crate::ui::lazy_tooltip::ListItemTooltips::default();
     let on_open = on_open.clone();
     let on_wire_cell = on_wire_cell.clone();
+    let tooltips_for_setup = tooltips.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -166,8 +168,10 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &O
             }
         });
         cell.append(&button);
+        tooltips_for_setup.install(item, &cell);
         cell_surface::set_child(item, &cell, on_wire_cell.as_ref());
     });
+    let tooltips_for_bind = tooltips.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -186,15 +190,16 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &O
             let label = link.label();
             button.set_label(&label);
             button.set_visible(true);
-            cell.set_tooltip_text(Some(link.target()));
+            tooltips_for_bind.set_text(item, &cell, Some(link.target().to_owned()));
             button.update_property(&[gtk4::accessible::Property::Label(&label)]);
         } else {
             button.set_label("");
             button.set_visible(false);
-            cell.set_tooltip_text(None);
+            tooltips_for_bind.set_text(item, &cell, None);
             button.reset_property(gtk4::AccessibleProperty::Label);
         }
     });
+    let tooltips_for_unbind = tooltips;
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -206,7 +211,7 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &O
             return;
         };
         button.set_label("");
-        cell.set_tooltip_text(None);
+        tooltips_for_unbind.set_text(item, &cell, None);
         button.set_visible(false);
         button.reset_property(gtk4::AccessibleProperty::Label);
     });
@@ -553,9 +558,10 @@ mod tests {
         let cell = button.parent().and_downcast::<gtk4::Box>().unwrap();
         assert!(button.has_css_class("flat") && button.has_css_class("link"));
         assert_eq!(
-            cell.tooltip_text().as_deref(),
+            crate::ui::lazy_tooltip::text_of(&cell).as_deref(),
             Some("https://musicbrainz.org/release-group/mbid")
         );
+        assert!(cell.has_tooltip());
         assert!(gtk4::test_accessible_has_property(
             &button,
             gtk4::AccessibleProperty::Label
@@ -570,7 +576,8 @@ mod tests {
         crate::ui::source_context_surface::settle_layout();
         assert!(!button.is_visible());
         assert_eq!(button.label().as_deref(), Some(""));
-        assert_eq!(cell.tooltip_text(), None);
+        assert_eq!(crate::ui::lazy_tooltip::text_of(&cell), None);
+        assert!(!cell.has_tooltip());
         assert!(!gtk4::test_accessible_has_property(
             &button,
             gtk4::AccessibleProperty::Label

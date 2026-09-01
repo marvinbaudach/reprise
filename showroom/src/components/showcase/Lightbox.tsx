@@ -15,6 +15,10 @@ import {
 import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
 import './lightbox.css';
 
+// Ten seconds leaves a slow but healthy download ample time to preserve the
+// atomic ratio-and-bitmap swap, while still letting a wedged dialog recover.
+const IMAGE_PRELOAD_TIMEOUT_MS = 10_000;
+
 interface LightboxProps {
   readonly activeIndex: number;
   readonly captures: readonly ProductCapture[];
@@ -41,14 +45,77 @@ export function Lightbox({
   onNext,
   onPrevious,
 }: LightboxProps) {
-  const capture = captures[activeIndex];
+  /*
+   * The picture the frame is currently built around, which lags the requested
+   * index until the next file has decoded.
+   *
+   * The frame carries the capture's aspect ratio and the image inside it is
+   * `object-fit: contain`, so advancing the ratio the moment the index changes
+   * re-letterboxes the picture that is still on screen: the outgoing shot
+   * visibly rescales — a desktop capture at 1.6 into a phone's 0.46 — and only
+   * then does the new one arrive. Warm, the two happen in the same frame and
+   * nobody sees it; cold, on a phone, that is the reported flash. Holding the
+   * ratio and the source together removes it: nothing moves until the picture
+   * that belongs to the new ratio is ready to be painted.
+   */
+  const [shownIndex, setShownIndex] = useState(activeIndex);
+  const capture = captures[shownIndex];
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  // Tied to the picture it was measured on, so the next arrow key cannot flash
-  // the following screenshot at 2.1x around the previous one's origin.
+  // Display follows the requested index, so an arrow press settles the outgoing
+  // picture before the decoded incoming picture replaces it at 1x.
   const [zoom, setZoom] = useState<ZoomState | null>(null);
   const frameZoom = zoom && zoom.index === activeIndex ? zoom : null;
   const activeZoom = frameZoom?.zoomed ? frameZoom : null;
+  const swapping = activeIndex !== shownIndex;
+
+  useEffect(() => {
+    if (activeIndex === shownIndex) return undefined;
+    const incoming = captures[activeIndex];
+    if (!incoming) {
+      setShownIndex(activeIndex);
+      return undefined;
+    }
+
+    let superseded = false;
+    let timedOut = false;
+    const settle = () => {
+      window.clearTimeout(timeout);
+      // A later press starts its own preload and this one must not land on top
+      // of it — the reader would be sent back a picture.
+      if (!superseded) setShownIndex(activeIndex);
+    };
+    const commit = () => {
+      timedOut = true;
+      settle();
+    };
+
+    const preload = new Image();
+    preload.sizes = LIGHTBOX_SIZES;
+    preload.srcset = captureSrcSet(incoming);
+    preload.src = captureUrl(incoming);
+    // `decode()` waits for the pixels, not just the bytes, which is the whole
+    // point here — but it rejects on an aborted or broken file, and it is not
+    // everywhere. Either way the swap has to happen: a picture that cannot be
+    // decoded is still the picture the reader asked for, and the `<img>` below
+    // carries its own error handling.
+    if (typeof preload.decode === 'function') {
+      preload.decode().then(settle, settle);
+    } else {
+      preload.onload = settle;
+      preload.onerror = settle;
+    }
+    const timeout = window.setTimeout(commit, IMAGE_PRELOAD_TIMEOUT_MS);
+
+    return () => {
+      superseded = true;
+      window.clearTimeout(timeout);
+      if (!timedOut) {
+        preload.src = '';
+        preload.srcset = '';
+      }
+    };
+  }, [activeIndex, shownIndex, captures]);
 
   useEffect(() => {
     // The dialog lives in a portal on <body>, so the page behind it can be made
@@ -121,13 +188,13 @@ export function Lightbox({
     const x = ((event.clientX - bounds.left) / bounds.width) * 100;
     const y = ((event.clientY - bounds.top) / bounds.height) * 100;
     setZoom({
-      index: activeIndex,
+      index: shownIndex,
       origin: `${x.toFixed(1)}% ${y.toFixed(1)}%`,
       zoomed: true,
     });
   };
 
-  const counter = `${String(activeIndex + 1).padStart(2, '0')} / ${String(captures.length).padStart(2, '0')}`;
+  const counter = `${String(shownIndex + 1).padStart(2, '0')} / ${String(captures.length).padStart(2, '0')}`;
   const titleId = `lightbox-title-${capture.id}`;
   const descriptionId = `lightbox-description-${capture.id}`;
 
@@ -139,8 +206,10 @@ export function Lightbox({
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
+      aria-busy={swapping ? 'true' : undefined}
       tabIndex={-1}
       data-lb=""
+      data-swapping={swapping ? 'true' : 'false'}
     >
       <header className="lightbox__header">
         <div className="lightbox__heading">
@@ -148,7 +217,10 @@ export function Lightbox({
           <h2 id={titleId}>{capture.title}</h2>
         </div>
         <div className="lightbox__controls">
-          <span className="lightbox__counter">{counter}</span>
+          <span className="lightbox__counter" aria-live="polite" aria-atomic="true">
+            <span className="visually-hidden">{capture.title}. </span>
+            {counter}
+          </span>
           <button type="button" onClick={onPrevious} aria-label="Previous screenshot">
             ←
           </button>

@@ -205,7 +205,7 @@ echo "== Dead-code allowlist =="
 # misses the wide one is worse than no gate: it reads as coverage.
 allowlist=$(cat <<'ALLOWLIST'
 crates/reprise-cli/tests/common/mod.rs:1
-crates/reprise-core/src/library/playlists.rs:6
+crates/reprise-core/src/library/playlists.rs:5
 crates/reprise-gnome/examples/row_loss_dump_repro.rs:2
 crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_columns.rs:1
@@ -214,27 +214,21 @@ crates/reprise-gnome/src/ui/concerts/concerts_model.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_presentation.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_view.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_worker.rs:1
-crates/reprise-gnome/src/ui/concerts/mod.rs:1
-crates/reprise-gnome/src/ui/issues/mod.rs:1
-crates/reprise-gnome/src/ui/lyrics/lyrics_view.rs:4
 crates/reprise-gnome/src/ui/motion.rs:4
 crates/reprise-gnome/src/ui/playback/external_media.rs:1
 crates/reprise-gnome/src/ui/playback/external_media_state.rs:1
 crates/reprise-gnome/src/ui/playback/preview.rs:1
-crates/reprise-gnome/src/ui/playback/session_player.rs:3
+crates/reprise-gnome/src/ui/playback/session_player.rs:2
 crates/reprise-gnome/src/ui/player_bar/player_bar_layout.rs:2
 crates/reprise-gnome/src/ui/player_bar/waveform_seek.rs:2
 crates/reprise-gnome/src/ui/player_bar/waveform_seek_state.rs:1
 crates/reprise-gnome/src/ui/playing_links.rs:1
 crates/reprise-gnome/src/ui/podcasts/mod.rs:1
 crates/reprise-gnome/src/ui/radio/mod.rs:1
-crates/reprise-gnome/src/ui/releases/mod.rs:1
 crates/reprise-gnome/src/ui/releases/releases_empty_state.rs:1
 crates/reprise-gnome/src/ui/releases/releases_model.rs:1
 crates/reprise-gnome/src/ui/releases/releases_presentation.rs:1
 crates/reprise-gnome/src/ui/releases/releases_view.rs:1
-crates/reprise-gnome/src/ui/runtime/commands.rs:1
-crates/reprise-gnome/src/ui/runtime/session.rs:2
 crates/reprise-gnome/src/ui/strings.rs:4
 crates/reprise-gnome/src/ui/strings_concerts.rs:1
 crates/reprise-gnome/src/ui/strings_news.rs:1

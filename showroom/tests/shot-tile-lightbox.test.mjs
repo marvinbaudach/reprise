@@ -12,6 +12,16 @@ async function builtCss() {
   return readFile(join(assets, stylesheet), 'utf8');
 }
 
+function assertShownCaptureDrivesRatio(source) {
+  assert.match(source, /const capture = captures\[shownIndex\];/);
+  assert.match(source, /'--lb-ratio': capture\.width \/ capture\.height/);
+  assert.equal(
+    (source.match(/\bconst capture\s*=/g) ?? []).length,
+    1,
+    'the frame ratio and bitmap must share the sole capture binding',
+  );
+}
+
 test('ShotTile owns the still frame the loading sweep and the zoom cue', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
@@ -123,8 +133,11 @@ test('the Lightbox inerts the page behind it and forgets its zoom with the pictu
   const cleanup = source.match(/removeAttribute\('aria-hidden'\)[\s\S]*?returnFocus\.focus\(\)/);
   assert.ok(cleanup, 'returnFocus must be restored after the inert attributes are dropped');
 
-  // The zoom belongs to one picture, not to a bare boolean.
+  // The zoom belongs to one picture, not to a bare boolean. Its display follows
+  // the requested index so the outgoing shot settles before the incoming one
+  // replaces it.
   assert.match(source, /zoom\.index === activeIndex/);
+  assert.match(source, /setZoom\(\{\s*index: shownIndex/);
   // ...and the origin outlives the zoom itself: dropping the state outright
   // would snap the origin back to the centre while the picture is still
   // travelling, swinging it across the viewport instead of letting it settle.
@@ -134,6 +147,83 @@ test('the Lightbox inerts the page behind it and forgets its zoom with the pictu
   // Neither the closing backdrop nor any other tabindex="-1" node is a tab stop.
   assert.match(source, /className="lightbox__backdrop"[\s\S]*?tabIndex=\{-1\}/);
   assert.match(source, /button:not\(\[disabled\]\):not\(\[tabindex="-1"\]\)/);
+});
+
+test('the full view holds its frame until the next picture has decoded', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'Lightbox.tsx'),
+    'utf8',
+  );
+
+  // The frame's ratio comes from the capture it draws, and the image inside it
+  // is `object-fit: contain`. Advancing the ratio on the press re-letterboxes
+  // the picture that is still on screen — the outgoing shot visibly rescales
+  // for as long as the next file takes to arrive, which on a cold phone is
+  // seconds. So the frame draws a picture that lags the request.
+  assert.match(source, /const \[shownIndex, setShownIndex\] = useState\(activeIndex\)/);
+  assertShownCaptureDrivesRatio(source);
+
+  const preloadEffect = source.match(
+    /useEffect\(\(\) => \{\s*if \(activeIndex === shownIndex\)[\s\S]*?\}, \[activeIndex, shownIndex, captures\]\);/,
+  )?.[0];
+  assert.ok(
+    preloadEffect,
+    'the preload effect must stay scoped to the requested and shown captures',
+  );
+
+  // The gate waits for pixels, not bytes, and survives a file it cannot decode.
+  assert.match(preloadEffect, /new Image\(\)/);
+  assert.match(preloadEffect, /preload\.decode\(\)\.then\(settle, settle\)/);
+  assert.match(preloadEffect, /preload\.onerror = settle/);
+
+  // A transfer that never settles must eventually release the held frame, and
+  // both a normal settlement and effect cleanup must disarm that recovery.
+  assert.match(source, /const IMAGE_PRELOAD_TIMEOUT_MS = 10_000/);
+  assert.match(preloadEffect, /let timedOut = false/);
+  const timeoutCommit = preloadEffect.match(/const commit = \(\) => \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.ok(
+    timeoutCommit,
+    'the preload timeout must identify its forced commit before releasing the frame',
+  );
+  assert.match(timeoutCommit, /timedOut = true;/);
+  assert.match(timeoutCommit, /settle\(\);/);
+  assert.match(
+    preloadEffect,
+    /const timeout = window\.setTimeout\(commit, IMAGE_PRELOAD_TIMEOUT_MS\)/,
+  );
+  const settleBody = preloadEffect.match(/const settle = \(\) => \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.ok(settleBody, 'the preload effect must define a settle function');
+  assert.match(settleBody, /window\.clearTimeout\(timeout\);/);
+
+  // A second press must supersede the first preload rather than race it: a
+  // stale resolution landing late would send the reader back a picture, while
+  // leaving its fetch alive would compete with the picture now being requested.
+  assert.match(preloadEffect, /let superseded = false/);
+  assert.match(preloadEffect, /if \(!superseded\) setShownIndex\(activeIndex\)/);
+  const preloadCleanup = preloadEffect.match(/return \(\) => \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.ok(preloadCleanup, 'the preload effect must return a cleanup function');
+  for (const statement of [
+    /superseded = true;/,
+    /window\.clearTimeout\(timeout\);/,
+    /preload\.src = '';/,
+    /preload\.srcset = '';/,
+  ]) {
+    assert.match(preloadCleanup, statement);
+  }
+  assert.match(preloadCleanup, /if \(!timedOut\) \{/);
+
+  // The press still needs a visual and assistive answer while the frame holds.
+  assert.match(source, /data-swapping=\{swapping \? 'true' : 'false'\}/);
+  assert.match(source, /aria-busy=\{swapping \? 'true' : undefined\}/);
+  const counterTag = source.match(/<span\b[^>]*\bclassName="lightbox__counter"[^>]*>/)?.[0];
+  assert.ok(counterTag, 'the lightbox counter must remain a span');
+  assert.match(counterTag, /aria-live="polite"/);
+  assert.match(counterTag, /aria-atomic="true"/);
+  const counterStart = source.indexOf(counterTag);
+  const counterRegion = source.slice(counterStart, source.indexOf('<button', counterStart));
+  assert.match(counterRegion, /className="visually-hidden"/);
+  assert.match(counterRegion, /\{capture\.title\}/);
+  assert.match(counterRegion, /\{counter\}/);
 });
 
 test('the full view carries the live plate for the capture that has one', async () => {
@@ -151,7 +241,7 @@ test('the full view carries the live plate for the capture that has one', async 
     source,
     /className="lightbox__frame"[\s\S]*?transform: activeZoom \? 'scale\(2\.1\)'/,
   );
-  assert.match(source, /'--lb-ratio': capture\.width \/ capture\.height/);
+  assertShownCaptureDrivesRatio(source);
   // Exactly one capture claims the plate today: the Android Now Playing scene.
   assert.equal((data.match(/visualizer: true/g) ?? []).length, 1);
   assert.match(data, /id: 'android-visualizer'[\s\S]{0,420}?visualizer: true/);

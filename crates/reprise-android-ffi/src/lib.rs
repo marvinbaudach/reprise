@@ -28,6 +28,8 @@ mod mobile_sync;
 mod online_sources;
 mod play_journal;
 mod play_recorder;
+mod play_recorder_retry;
+mod play_recorder_writer;
 pub mod playback;
 mod playback_session;
 mod playback_settings;
@@ -96,8 +98,8 @@ impl MusicLibrary {
             detail: error.to_string(),
         })?;
         Ok(Self {
-            writer: Mutex::new(writer),
-            reader: Mutex::new(reader),
+            writer: Arc::new(Mutex::new(writer)),
+            reader: Arc::new(Mutex::new(reader)),
             tree: Mutex::new(None),
             cache_root: PathBuf::from(app_cache_directory),
             database_path: db_path,

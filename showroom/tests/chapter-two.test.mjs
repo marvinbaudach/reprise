@@ -266,11 +266,18 @@ test('show-9 reduced motion leaves the figure and the strip without travel', asy
   assert.ok(guarded, 'a reduced-motion query must govern the gate strip');
   assert.match(guarded[0], /transition:none/);
 
-  const touch = sourceCss.match(
-    /@media \(hover: none\), \(max-width: 46rem\) \{[\s\S]*?\.gate-strip__tick \{[\s\S]*?\n {2}\}\n/,
-  )?.[0];
-  assert.ok(touch, 'a touch-width media query must widen the gate buttons');
+  const touch = sourceCss.match(/@media \(hover: none\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(touch, 'an unconditional touch media query must widen the gate buttons');
   assert.match(touch, /\.gate-strip__tick \{\s*min-width: 44px;/);
+  assert.doesNotMatch(sourceCss, /@media \(hover: none\) and \(min-width:/);
+
+  const marks = cssRule(sourceCss, '.gate-cluster__marks');
+  assert.match(marks, /\bflex-wrap:\s*wrap\s*;/);
+  assert.equal(
+    sourceCss.match(/@media \(max-width: 46rem\) \{/g)?.length,
+    1,
+    'the narrow cluster and pipeline rules belong to one media block',
+  );
 });
 
 test('show-10 the gate count is nowhere a literal, not even in the meta description', async () => {

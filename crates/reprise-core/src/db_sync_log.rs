@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC, i
 CREATE TABLE IF NOT EXISTS sync_events (
   run_id       INTEGER NOT NULL,
   kind         TEXT NOT NULL
-    CHECK (kind IN ('skipped','failed','deleted','conversion_fallback','playlist_write_failed')),
+    CHECK (kind IN ('skipped','failed','analysis_failed','deleted','conversion_fallback','playlist_write_failed')),
   track_id     INTEGER,
   device_path  TEXT NOT NULL,
   detail       TEXT NOT NULL
@@ -45,3 +45,50 @@ pub(crate) fn migrate_v45(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.pragma_update(None, "user_version", 45)?;
     transaction.commit()
 }
+
+/// Adds a distinct diagnostic event for analysis-sidecar write failures.
+pub(crate) fn migrate_v81(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let supports_analysis_failed: bool = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM sqlite_master
+           WHERE type = 'table' AND name = 'sync_events'
+             AND instr(sql, 'analysis_failed') > 0
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if supports_analysis_failed {
+        if version < 81 {
+            let transaction = conn.unchecked_transaction()?;
+            transaction.pragma_update(None, "user_version", 81)?;
+            transaction.commit()?;
+        }
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch(
+        "CREATE TABLE sync_events_v81 (
+           run_id       INTEGER NOT NULL,
+           kind         TEXT NOT NULL
+             CHECK (kind IN (
+               'skipped','failed','analysis_failed','deleted',
+               'conversion_fallback','playlist_write_failed'
+             )),
+           track_id     INTEGER,
+           device_path  TEXT NOT NULL,
+           detail       TEXT NOT NULL
+         );
+         INSERT INTO sync_events_v81 (run_id, kind, track_id, device_path, detail)
+         SELECT run_id, kind, track_id, device_path, detail FROM sync_events;
+         DROP TABLE sync_events;
+         ALTER TABLE sync_events_v81 RENAME TO sync_events;
+         CREATE INDEX idx_sync_events_run ON sync_events(run_id);",
+    )?;
+    transaction.pragma_update(None, "user_version", version.max(81))?;
+    transaction.commit()
+}
+
+#[cfg(test)]
+#[path = "db_sync_log_migration_tests.rs"]
+mod tests;

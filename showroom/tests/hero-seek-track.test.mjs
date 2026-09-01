@@ -17,7 +17,7 @@ test('the Hero seek strip presents the measured duration', async () => {
 
   assert.ok(hero);
   assert.match(hero, /data-showcase="hero-seek-track"/);
-  assert.match(hero, /src="\/reprise\/brand\/reprise-mark\.svg"[^>]+width="26" height="26"/);
+  assert.match(hero, /src="\/reprise\/brand\/reprise-mark\.svg"[^>]+width="24" height="24"/);
   assert.match(hero, />0:00</);
   assert.match(hero, /data-seek-canvas=""/);
   // The strip is a control, but only once the measured track has arrived: the

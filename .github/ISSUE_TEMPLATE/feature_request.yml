@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a focused improvement to Reprise
+title: ""
+labels:
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: Describe the music-listening problem before proposing an interface.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Explain who encounters it and in what situation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe what should become possible, without requiring one implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Note any current workflow or smaller change that might address the problem.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - GNOME desktop app
+        - Android app
+        - Core, CLI, or MCP
+        - Packaging or documentation
+        - Multiple surfaces
+    validations:
+      required: true

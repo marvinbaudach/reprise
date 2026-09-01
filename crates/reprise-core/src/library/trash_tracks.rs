@@ -21,13 +21,17 @@ pub struct TrashReport {
     pub failures: Vec<TrashFailure>,
 }
 
-pub fn trash_tracks_with<F>(db: &Db, tracks: &[(i64, PathBuf)], trash_action: F) -> TrashReport
-where
-    F: Fn(&Path) -> Result<(), String>,
-{
+/// Requests that still match a library row, and the ones that already do not.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct TrashPlan {
+    pub validated: Vec<(i64, PathBuf)>,
+    pub failures: Vec<TrashFailure>,
+}
+
+/// De-duplicates ids and refuses paths that no longer match the library row.
+pub fn plan_trash(db: &Db, tracks: &[(i64, PathBuf)]) -> TrashPlan {
     let conn = db.conn();
-    let mut report = TrashReport::default();
-    let mut trashed = Vec::new();
+    let mut plan = TrashPlan::default();
     let mut seen = HashSet::new();
 
     for (id, path) in tracks {
@@ -40,45 +44,53 @@ where
             })
             .optional();
         match registered {
-            Ok(Some(registered)) if registered == path.to_string_lossy() => {}
+            Ok(Some(registered)) if registered == path.to_string_lossy() => {
+                plan.validated.push((*id, path.clone()));
+            }
             Ok(_) => {
-                report.failures.push(TrashFailure {
+                plan.failures.push(TrashFailure {
                     id: *id,
                     path: path.clone(),
                     error: "track path changed before trash; refusing stale request".into(),
                 });
-                continue;
             }
             Err(error) => {
-                report.failures.push(TrashFailure {
+                plan.failures.push(TrashFailure {
                     id: *id,
                     path: path.clone(),
                     error: format!("could not validate track path before trash: {error}"),
                 });
-                continue;
             }
-        }
-
-        match trash_action(path) {
-            Ok(()) => trashed.push((*id, path.clone())),
-            Err(error) => report.failures.push(TrashFailure {
-                id: *id,
-                path: path.clone(),
-                error,
-            }),
         }
     }
 
+    plan
+}
+
+/// Removes rows for files the caller actually moved to trash.
+///
+/// The caller must put only files confirmed as moved to trash in `trashed`.
+/// `failures` is preserved in order, and cleanup failures discovered here are
+/// appended after it in the returned report.
+pub fn commit_trash(
+    db: &Db,
+    trashed: &[(i64, PathBuf)],
+    failures: Vec<TrashFailure>,
+) -> TrashReport {
+    let mut report = TrashReport {
+        removed_ids: Vec::new(),
+        failures,
+    };
     if trashed.is_empty() {
         return report;
     }
-    match crate::queries::remove_tracks_matching_paths_remembering_releases(db, &trashed) {
+    match crate::queries::remove_tracks_matching_paths_remembering_releases(db, trashed) {
         Ok(removed) => {
             for (id, path) in trashed {
-                if !removed.contains(&id) {
+                if !removed.contains(id) {
                     report.failures.push(TrashFailure {
-                        id,
-                        path,
+                        id: *id,
+                        path: path.clone(),
                         error: "file was trashed but its database row was not removed".into(),
                     });
                 }
@@ -88,14 +100,32 @@ where
         Err(error) => {
             for (id, path) in trashed {
                 report.failures.push(TrashFailure {
-                    id,
-                    path,
+                    id: *id,
+                    path: path.clone(),
                     error: format!("file was trashed but database cleanup failed: {error}"),
                 });
             }
         }
     }
     report
+}
+
+pub fn trash_tracks_with<F>(db: &Db, tracks: &[(i64, PathBuf)], trash_action: F) -> TrashReport
+where
+    F: Fn(&Path) -> Result<(), String>,
+{
+    let plan = plan_trash(db, tracks);
+    let mut trashed = Vec::new();
+    let mut failures = plan.failures;
+
+    for (id, path) in plan.validated {
+        match trash_action(&path) {
+            Ok(()) => trashed.push((id, path)),
+            Err(error) => failures.push(TrashFailure { id, path, error }),
+        }
+    }
+
+    commit_trash(db, &trashed, failures)
 }
 
 #[cfg(test)]

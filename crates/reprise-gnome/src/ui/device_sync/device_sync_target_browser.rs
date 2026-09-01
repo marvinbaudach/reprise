@@ -330,7 +330,7 @@ pub(in crate::ui) fn present(
             updating.set(true);
             storage_dropdown.set_selected(gtk4::INVALID_LIST_POSITION);
             updating.set(false);
-            breadcrumb.set_label("Pick a storage to browse");
+            breadcrumb.set_label(&crate::i18n::gettext("Pick a storage to browse"));
             up_button.set_sensitive(false);
             new_folder_entry.set_sensitive(false);
             new_folder_button.set_sensitive(false);
@@ -418,13 +418,13 @@ pub(in crate::ui) fn present(
                             navigate_fn(starting_path);
                         }
                     } else {
-                        breadcrumb.set_label("Pick a storage to browse");
+                        breadcrumb.set_label(&crate::i18n::gettext("Pick a storage to browse"));
                     }
                 }
                 Err(error) => {
                     error_label.set_label(&error);
                     error_box.set_visible(true);
-                    breadcrumb.set_label("Storage list unavailable");
+                    breadcrumb.set_label(&crate::i18n::gettext("Storage list unavailable"));
                 }
             }
         }

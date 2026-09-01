@@ -87,6 +87,7 @@ pub(super) struct FakeState {
     transcode_probe_error: RefCell<Option<String>>,
     cleanup_error: RefCell<Option<String>>,
     sidecar_replace_error: RefCell<Option<String>>,
+    analysis_sidecar_replace_error: RefCell<Option<String>>,
     track_metadata_replace_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
@@ -151,6 +152,13 @@ impl FakeBackend {
 
     pub(super) fn with_sidecar_replace_error(self, error: &str) -> Self {
         self.state.sidecar_replace_error.replace(Some(error.into()));
+        self
+    }
+
+    pub(super) fn with_analysis_sidecar_replace_error(self, error: &str) -> Self {
+        self.state
+            .analysis_sidecar_replace_error
+            .replace(Some(error.into()));
         self
     }
 
@@ -374,6 +382,13 @@ impl DeviceBackend for FakeBackend {
                 &relative_target,
             )) {
                 if let Some(error) = state.sidecar_replace_error.borrow().clone() {
+                    return Err(error);
+                }
+            }
+            if reprise_core::device_sync::analysis_sidecar::is_sidecar_path(std::path::Path::new(
+                &relative_target,
+            )) {
+                if let Some(error) = state.analysis_sidecar_replace_error.borrow().clone() {
                     return Err(error);
                 }
             }

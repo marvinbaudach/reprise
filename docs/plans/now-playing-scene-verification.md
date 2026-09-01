@@ -25,7 +25,17 @@ run rather than quietly lowering the bar.
 The list originally named nine suites and expected 29 tests, which silently left
 out three of the four scene-mathematics suites — the envelope coefficients, the
 per-track core shape and the colour rule all went unchecked while the script
-still printed that verification had passed. All four are in the list now.
+still printed that verification had passed. All four were in the list from
+then on.
+
+Four of the named suites have since been deleted, and the list no longer
+names them: the play-view rework in `android-play-view-gestures.md` removed
+`NowPlayingBurstTest`, `NowPlayingBurstPixelsTest` and
+`MainActivityVisualizerTest` with `NowPlayingBurst.kt`, and `scene/CoreShape.kt`
+took `scene.CoreShapeTest` with it once no caller remained. The harness reads
+a missing source as a failure, so it had been refusing to run at all until
+the four entries were dropped. Three of the four scene-mathematics suites
+remain; the per-track core shape is no longer a thing to check.
 
 ## The emulator run of 2026-08-09, 20:20-21:00
 

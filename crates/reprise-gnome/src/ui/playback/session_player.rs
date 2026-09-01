@@ -32,11 +32,6 @@ fn validated_up_next(
     (up_next, current)
 }
 
-#[allow(dead_code)] // Called through the Task 5 session orchestration.
-pub(in crate::ui) fn restore_should_start_playback() -> bool {
-    false
-}
-
 impl PlayerController {
     #[allow(dead_code)] // Wired into the close handler in Task 5.
     pub(in crate::ui) fn session_queue_snapshot(&self) -> QueueSnapshot {
@@ -55,7 +50,6 @@ impl PlayerController {
         current_up_next: Option<QueueItem>,
         play_origin: Option<super::play_origin::PlayOrigin>,
     ) {
-        debug_assert!(!restore_should_start_playback());
         let retained = {
             let conn = &self.conn;
             match reprise_core::queries::query_queue_retained_track_ids(conn) {
@@ -179,11 +173,6 @@ impl PlayerController {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn session_restore_never_starts_playback() {
-        assert!(!restore_should_start_playback());
-    }
 
     #[test]
     fn restored_pending_and_current_ids_are_validated_together() {

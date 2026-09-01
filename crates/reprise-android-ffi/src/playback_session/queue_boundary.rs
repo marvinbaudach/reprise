@@ -57,40 +57,43 @@ impl AndroidPlaybackSession {
         &self,
         window: WindowRange,
     ) -> Result<TrackWindow, AndroidPlaybackError> {
-        let offset = usize::try_from(window.offset.max(0)).unwrap_or(usize::MAX);
         let limit = usize::try_from(window.limit.max(0)).unwrap_or(0);
         loop {
-            let (ids, total) = {
+            let (ids, total, has_more) = {
                 let state = self.inner.lock()?;
-                let Some(start) = queue_window_start(&state) else {
+                let Some(upcoming_start) = queue_window_start(&state) else {
                     return Ok(TrackWindow {
                         total: 0,
                         rows: Vec::new(),
                         has_more: false,
                     });
                 };
-                let ids = (start.saturating_add(offset)..state.queue.len())
-                    .take(limit)
+                let range =
+                    signed_queue_window(upcoming_start, state.queue.len(), window.offset, limit);
+                let has_more = range.end < state.queue.len();
+                let total = state
+                    .queue
+                    .len()
+                    .saturating_sub(upcoming_start)
+                    .max(range.len()) as i64;
+                let ids = range
                     .filter_map(|position| state.queue.id_at_order_position(position))
                     .map(QueueItem::Track)
                     .collect::<Vec<_>>();
-                let total = state.queue.len().saturating_sub(start) as i64;
-                (ids, total)
+                (ids, total, has_more)
             };
-            let metadata = {
-                let database =
-                    self.inner
-                        .database
-                        .lock()
-                        .map_err(|_| AndroidPlaybackError::Backend {
-                            detail: "playback queue database was poisoned".to_owned(),
-                        })?;
-                queries::query_queue_item_window(&database, &ids, 0, window.limit.max(0)).map_err(
-                    |error| AndroidPlaybackError::Backend {
-                        detail: format!("could not load the playback queue: {error}"),
-                    },
-                )?
-            };
+            let metadata =
+                {
+                    let database = self.inner.library.reader().map_err(|error| {
+                        AndroidPlaybackError::Backend {
+                            detail: error.to_string(),
+                        }
+                    })?;
+                    queries::query_queue_item_window(&database, &ids, 0, window.limit.max(0))
+                        .map_err(|error| AndroidPlaybackError::Backend {
+                            detail: format!("could not load the playback queue: {error}"),
+                        })?
+                };
             let resolved = metadata
                 .iter()
                 .map(QueueItemMetadata::item)
@@ -110,8 +113,6 @@ impl AndroidPlaybackSession {
                         QueueItemMetadata::Episode(_) => None,
                     })
                     .collect::<Vec<_>>();
-                let returned = i64::try_from(rows.len()).unwrap_or(i64::MAX);
-                let has_more = window.offset.max(0).saturating_add(returned) < total;
                 return Ok(TrackWindow {
                     total,
                     rows,
@@ -158,7 +159,7 @@ impl AndroidPlaybackSession {
             {
                 return Ok(false);
             }
-            state.adopt_current();
+            state.adopt_current_for_play_intent();
             state.queue.clone()
         };
         self.inner.persist_queue(&queue_to_save)?;
@@ -256,13 +257,13 @@ impl AndroidPlaybackSession {
         requested_ids: Vec<i64>,
         error_context: &str,
     ) -> Result<Vec<(usize, i64, String)>, AndroidPlaybackError> {
-        let database = self
-            .inner
-            .database
-            .lock()
-            .map_err(|_| AndroidPlaybackError::Backend {
-                detail: "playback queue database was poisoned".to_owned(),
-            })?;
+        let database =
+            self.inner
+                .library
+                .reader()
+                .map_err(|error| AndroidPlaybackError::Backend {
+                    detail: error.to_string(),
+                })?;
         requested_ids
             .into_iter()
             .enumerate()
@@ -285,6 +286,26 @@ fn queue_window_start(state: &super::SessionState) -> Option<usize> {
         .queue
         .current_order_position()
         .map(|position| position.saturating_add(usize::from(state.current_loaded)))
+}
+
+/// Resolves a signed offset from the upcoming boundary without shifting the
+/// requested span when either queue end clips it. Relative to that boundary,
+/// a loaded current row is offset `-1` and its previous row is `-2`. Before
+/// the current row is loaded, it is itself the boundary at offset `0`.
+fn signed_queue_window(
+    upcoming_start: usize,
+    queue_len: usize,
+    offset: i64,
+    limit: usize,
+) -> std::ops::Range<usize> {
+    let upcoming_start = i64::try_from(upcoming_start).unwrap_or(i64::MAX);
+    let queue_len_i64 = i64::try_from(queue_len).unwrap_or(i64::MAX);
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    let requested_start = upcoming_start.saturating_add(offset);
+    let requested_end = requested_start.saturating_add(limit);
+    let start = requested_start.clamp(0, queue_len_i64) as usize;
+    let end = requested_end.clamp(0, queue_len_i64) as usize;
+    start.min(end)..end
 }
 
 fn upcoming_order_position(state: &super::SessionState, position: u64) -> Option<usize> {

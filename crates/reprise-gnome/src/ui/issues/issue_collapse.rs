@@ -29,26 +29,15 @@ struct Shared {
 }
 
 /// A list that materializes two rows initially and at most fifty per click.
-pub(in crate::ui) struct CollapsedList {
-    listbox: gtk4::ListBox,
-    shared: Rc<Shared>,
-}
+pub(in crate::ui) struct CollapsedList;
 
 impl CollapsedList {
-    pub(in crate::ui) fn new(total: u32, build_row: Rc<dyn Fn(u32) -> gtk4::Widget>) -> Self {
-        let listbox = gtk4::ListBox::new();
-        listbox.set_selection_mode(gtk4::SelectionMode::Multiple);
-        listbox.set_activate_on_single_click(false);
-        listbox.add_css_class("issue-card-list");
-        Self::attach_to(&listbox, total, build_row)
-    }
-
     /// Populates an existing card body while retaining the same lazy paging.
     pub(in crate::ui) fn attach_to(
         listbox: &gtk4::ListBox,
         total: u32,
         build_row: Rc<dyn Fn(u32) -> gtk4::Widget>,
-    ) -> Self {
+    ) {
         listbox.set_selection_mode(gtk4::SelectionMode::Multiple);
         listbox.set_activate_on_single_click(false);
 
@@ -87,19 +76,6 @@ impl CollapsedList {
             append_through(shared, next);
             update_footer(shared);
         });
-
-        Self {
-            listbox: listbox.clone(),
-            shared,
-        }
-    }
-
-    pub(in crate::ui) fn widget(&self) -> &gtk4::ListBox {
-        &self.listbox
-    }
-
-    pub(in crate::ui) fn visible_count(&self) -> u32 {
-        self.shared.visible.get()
     }
 }
 

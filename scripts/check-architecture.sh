@@ -118,23 +118,6 @@ for surface in reprise-cli reprise-mcp; do
   fi
 done
 
-# The runtime is the toolkit-neutral owner of playback, queue, device runs and
-# jobs (plan §9.1). Its whole reason to exist is that a second frontend — or no
-# frontend at all — can drive the application, so a GTK/GLib/GStreamer/zbus edge
-# here would silently re-couple it to the GNOME process. It may depend on the
-# engine and the protocol contract, and on nothing else in the workspace.
-runtime_tree=$(run_dependency_probe "reprise-runtime all features" \
-  -p reprise-runtime --all-features -e normal --prefix none --target all) || exit 1
-stray_runtime_edge=$(printf '%s\n' "$runtime_tree" \
-  | rg '^reprise-[a-z-]+ ' \
-  | rg -v '^(reprise-core|reprise-runtime|reprise-runtime-protocol) ' \
-  | sort -u || true)
-if [[ -n "$stray_runtime_edge" ]]; then
-  echo "reprise-runtime may depend on reprise-core and reprise-runtime-protocol only; found:" >&2
-  echo "$stray_runtime_edge" >&2
-  exit 1
-fi
-
 # The shared presentation layer is consumed by GTK, by a Compose app on
 # Android and by a Tauri app on the desktop (multi-surface spec §1). A
 # toolkit or bus edge here would silently re-couple every surface to the
@@ -185,30 +168,7 @@ if [[ -n "$stray_android_ffi_edge" ]]; then
   exit 1
 fi
 
-# The runtime client is what every surface — GTK, MCP, a future frontend —
-# uses to reach the runtime. It must therefore stay cheap to depend on: the
-# contract, zbus, and nothing else. It deliberately does NOT live in
-# reprise-platform-linux, because taking the runtime's address from the crate
-# that also hosts the GStreamer backend would drag GStreamer into the MCP
-# server, which only ever wanted to send a command. zbus is expected here and
-# so is checked separately from the other families.
-client_tree=$(run_dependency_probe "reprise-runtime-client" \
-  -p reprise-runtime-client -e normal --prefix none --target all) || exit 1
-stray_client_edge=$(printf '%s\n' "$client_tree" \
-  | rg '^reprise-[a-z-]+ ' \
-  | rg -v '^(reprise-runtime-client|reprise-runtime-protocol) ' \
-  | sort -u || true)
-if [[ -n "$stray_client_edge" ]]; then
-  echo "reprise-runtime-client may depend on reprise-runtime-protocol only; found:" >&2
-  echo "$stray_client_edge" >&2
-  exit 1
-fi
-if printf '%s\n' "$client_tree" | rg --quiet '(^| )(gtk4|libadwaita|glib|gstreamer)( |$| v)'; then
-  echo "reprise-runtime-client must not depend on GTK, libadwaita, GLib or GStreamer" >&2
-  exit 1
-fi
-
-for surface in reprise-cli reprise-mcp reprise-stems reprise-runtime; do
+for surface in reprise-cli reprise-mcp reprise-stems; do
   surface_tree=$(run_dependency_probe "$surface default build" \
     -p "$surface" -e normal --target all) || exit 1
   if printf '%s\n' "$surface_tree" | rg --quiet "$banned_dependency_families"; then
@@ -311,9 +271,9 @@ fi
 
 echo "== Documentation references from code =="
 
-# Source and scripts cite design documents by path — reprise-runtime/src/lib.rs
-# points at multi-frontend-core.md, reprise-stems at the stem-separation
-# report, queries/maintenance.rs at ADR 002. A doc deletion that leaves those
+# Source and scripts cite design documents by path — reprise-stems points at
+# the stem-separation report and queries/maintenance.rs at ADR 002. A doc
+# deletion that leaves those
 # pointing at nothing is silent rot: nothing compiles differently, and the next
 # reader follows a path that is not there.
 #

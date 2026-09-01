@@ -121,6 +121,43 @@ fn synced_audio_without_sidecars_plans_one_analysis_copy_per_track() {
 }
 
 #[test]
+fn failed_analysis_copy_records_track_path_and_error() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_render_data(&conn, 1, 7, 3);
+        select_road_playlist(&conn, &[1]);
+        let synced_audio = register_synced_track(&conn, &temp, 1);
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 1)
+                .with_analysis_sidecar_replace_error("simulated analysis refusal"),
+        );
+        backend.state.managed_files.replace(vec![synced_audio]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let run = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
+            .unwrap()
+            .remove(0);
+        let deviations = reprise_core::device_sync::sync_log::deviations(&conn, run.id).unwrap();
+        let failure = deviations
+            .iter()
+            .find(|deviation| {
+                deviation.kind == reprise_core::device_sync::sync_log::DeviationKind::AnalysisFailed
+            })
+            .expect("the analysis failure must be recorded");
+        assert_eq!(failure.track_id, Some(1));
+        assert_eq!(
+            failure.device_path,
+            "Artist/Unknown Album/00 Track 1.reprise-analysis"
+        );
+        assert!(failure.detail.contains("simulated analysis refusal"));
+    });
+}
+
+#[test]
 fn an_analysis_write_cycle_reinspects_to_a_plan_without_a_second_write() {
     run(async {
         let (temp, conn) = fixture();

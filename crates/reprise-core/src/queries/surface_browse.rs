@@ -224,6 +224,31 @@ pub fn query_present_track_by_id(db: &Db, track_id: i64) -> Result<Option<Track>
         .optional()
 }
 
+/// Returns the present library tracks among `track_ids` with one statement.
+///
+/// The generated SQL contains placeholders only; every id remains a bound
+/// value. Result order is unspecified because callers key the rows by stable
+/// track id before restoring their own order.
+pub fn query_present_tracks_by_ids(
+    db: &Db,
+    track_ids: &[i64],
+) -> Result<Vec<Track>, rusqlite::Error> {
+    if track_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let projection = track_projection("", false);
+    let placeholders = (1..=track_ids.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!("SELECT {projection} FROM tracks WHERE id IN ({placeholders}) AND {PRESENT}");
+    let mut statement = db.conn().prepare(&sql)?;
+    let tracks = statement
+        .query_map(rusqlite::params_from_iter(track_ids), row_to_track)?
+        .collect();
+    tracks
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,6 +385,50 @@ mod tests {
         assert_eq!(playing.play_count, 9);
         assert_eq!(query_present_track_by_id(&db, 42).unwrap(), None);
         assert_eq!(query_present_track_by_id(&db, 999).unwrap(), None);
+    }
+
+    #[test]
+    fn present_tracks_by_ids_match_per_id_results_and_run_one_statement() {
+        use rusqlite::trace::{TraceEvent, TraceEventCodes};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static BATCH_STATEMENTS: AtomicUsize = AtomicUsize::new(0);
+
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks
+                   (id,path,title,artist,album,duration_ms,rating,play_count,added_at) VALUES
+                 (41,'/music/one.flac','One','Artist','Album',123000,4,9,0),
+                 (42,'/music/missing.flac','Missing','Artist','Album',456000,2,3,0),
+                 (43,'/music/three.flac','Three','Artist','Album',789000,5,7,0);
+                 UPDATE tracks SET missing_since = 10 WHERE id = 42;",
+            )
+            .unwrap();
+        let ids = [41, 42, 43, 999];
+        let mut expected = ids
+            .iter()
+            .filter_map(|id| query_present_track_by_id(&db, *id).unwrap())
+            .collect::<Vec<_>>();
+        expected.sort_by_key(|track| track.id);
+
+        BATCH_STATEMENTS.store(0, Ordering::SeqCst);
+        db.conn().trace_v2(
+            TraceEventCodes::SQLITE_TRACE_STMT,
+            Some(|event| {
+                if let TraceEvent::Stmt(statement, _expanded) = event {
+                    let sql = statement.sql();
+                    if sql.contains("FROM tracks WHERE id IN") {
+                        BATCH_STATEMENTS.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }),
+        );
+        let mut actual = query_present_tracks_by_ids(&db, &ids).unwrap();
+        actual.sort_by_key(|track| track.id);
+
+        assert_eq!(actual, expected);
+        assert_eq!(BATCH_STATEMENTS.load(Ordering::SeqCst), 1);
     }
 
     /// The single-row lookup and a window read the same track the same way.

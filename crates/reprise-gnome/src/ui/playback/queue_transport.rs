@@ -286,11 +286,13 @@ impl PlayerController {
             }
         };
         match playable {
-            Ok(true) => self.present_queue_item(
-                item,
-                crate::ui::player_controller::StartPlayback::Yes,
-                change,
-            ),
+            Ok(true) => {
+                self.present_queue_item(
+                    item,
+                    crate::ui::player_controller::StartPlayback::Yes,
+                    change,
+                );
+            }
             Ok(false) => self.advance_playback(AdvanceReason::Manual),
             Err(error) => {
                 tracing::error!(%error, id, "could not validate restored current track; trying it directly");

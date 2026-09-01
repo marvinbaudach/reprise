@@ -1,50 +1,61 @@
 # Contributing
 
-Thanks for looking. Reprise is a GTK4 music player for GNOME, written in Rust.
+Thanks for helping make Reprise a better native music player for GNOME. The
+project welcomes focused bug fixes, tests, documentation, accessibility work,
+and discussed features.
 
-## Before you start
+## Choose an entry point
 
-Open an issue describing what you want to change. For anything beyond a small
-fix, agreeing on the approach first saves both of us work.
-Repository workflow and safety boundaries are documented in
-[AGENTS.md](AGENTS.md).
+- `reprise-core` owns portable library, queue, scanner, playlist, and settings
+  behavior.
+- `reprise-gnome` owns GTK4/libadwaita presentation and interaction.
+- `reprise-platform-linux` owns GStreamer, MPRIS, MTP, Trash, and other Linux
+  adapters.
+- `reprise-view` owns presentation-neutral state shared by native frontends.
 
-## Building
+Open an issue before starting anything beyond a small fix so the intended
+behavior and module boundary are clear. The [agent runbook](AGENTS.md) records
+the repository's automation and safety constraints for contributors using
+coding agents.
+
+## Build the desktop app
+
+Install the dependencies listed in [README.md](README.md), then build with
+Cargo or Meson:
 
 ```sh
-meson setup build
-meson compile -C build
+cargo build --locked --workspace
+meson setup _build
+meson compile -C _build
 ```
 
-Running from a Flatpak sandbox is described in `flatpak/README.md`.
+Flatpak development is described in [flatpak/README.md](flatpak/README.md).
 
-## What has to pass
+## Make a change
 
-Run this before opening a pull request:
+Start a focused branch from `dev`, add a failing test for the behavior, make
+the smallest change that passes it, and keep unrelated edits out of the diff.
+The [UX rulebook](docs/ux-rules.md) is the source of truth for interaction and
+accessibility behavior; its introduction explains how active and proposed
+rules are changed.
+
+Before opening a pull request, run the complete local gate:
 
 ```sh
-scripts/check-merge-readiness.sh
+MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh
 ```
 
-It runs the project's chain of gates, including `cargo fmt --check`, clippy with
-`-D warnings`, the workspace test suite, a dependency audit, an architecture
-lint, a frontend thinness budget, accessibility semantics, input parity, and
-UX rule traceability.
+The script owns the current gate list, so this document does not duplicate a
+count that will drift. Pull requests target `dev` and are squash-merged; the
+complete workflow is documented in
+[docs/agents/branching.md](docs/agents/branching.md).
 
-## UX rules
+## Commit and pull-request titles
 
-`docs/ux-rules.md` is binding. For `[active]` rules, deviating from a rule is a
-bug. If you hit a case no rule covers, add a rule rather than deciding locally:
-append a `[planned]` draft with the next free ID in the affected section and
-mark it `<!-- REVIEW: rule proposal -->`.
-
-Every `[active]` rule needs a test carrying its ID in the name, for example
-`fn play_1a_resumes_after_seek()`. The traceability gate enforces this.
-
-## Commit messages
-
-`<type>: <description>`, where type is one of feat, fix, refactor, docs, test,
-chore, perf, ci.
+Use a short narrative title that says what changed in the product or project,
+for example `The queue keeps its place after filtering` or
+`The Flatpak stops shipping the worker`. Keep the body for the reason,
+verification, and relevant limitations. Do not add tool-attribution footers.
 
 ## Code of Conduct
 

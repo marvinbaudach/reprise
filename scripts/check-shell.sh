@@ -7,13 +7,28 @@ source scripts/lib/rulebook.sh
 skip_gate_if_tool_missing shellcheck
 
 mapfile -d '' files < <(git ls-files -z '*.sh' '.githooks/*')
-shellcheck_version=$(shellcheck --version | awk '$1 == "version:" { print $2; exit }')
-printf 'ShellCheck %s: checking %d tracked shell files\n' \
-  "$shellcheck_version" "${#files[@]}"
+mapfile -d '' workflow_files < <(git ls-files -z '.github/workflows/*.yml')
 
-shellcheck -x -P SCRIPTDIR -S warning -f gcc -- "${files[@]}"
+workflow_run_blocks=$(mktemp -d)
+trap 'rm -rf "$workflow_run_blocks"' EXIT
+
+extract_workflow_run_blocks() {
+  local workflow
+  for workflow in "${workflow_files[@]}"; do
+    awk -v output_dir="$workflow_run_blocks" -v workflow_name="${workflow##*/}" \
+      -f scripts/lib/extract-workflow-run-blocks.awk "$workflow"
+  done
+}
+
+extract_workflow_run_blocks
+mapfile -d '' workflow_scripts < <(find "$workflow_run_blocks" -type f -print0 | sort -z)
+shellcheck_version=$(shellcheck --version | awk '$1 == "version:" { print $2; exit }')
+printf 'ShellCheck %s: checking %d tracked shell files and %d workflow run blocks\n' \
+  "$shellcheck_version" "${#files[@]}" "${#workflow_scripts[@]}"
+
+shellcheck -x -P SCRIPTDIR -S warning -f gcc -- "${files[@]}" "${workflow_scripts[@]}"
 shellcheck -x -P SCRIPTDIR -S style -i SC2251,SC2004,SC2181 \
-  -f gcc -- "${files[@]}"
+  -f gcc -- "${files[@]}" "${workflow_scripts[@]}"
 
 disable_marker='shellcheck '"disable="
 unexplained=0

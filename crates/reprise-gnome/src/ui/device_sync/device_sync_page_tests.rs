@@ -12,6 +12,11 @@ use reprise_core::device_sync::{
 use super::*;
 use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 
+#[test]
+fn connected_status_label_is_looked_up_through_gettext() {
+    assert!(include_str!("device_sync_page.rs").contains("crate::i18n::gettext(\"MTP connected\")"));
+}
+
 fn no_op_content_actions() -> OnDeviceActions {
     OnDeviceActions {
         set_remove_deleted: Rc::new(|_| {}),

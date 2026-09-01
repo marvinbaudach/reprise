@@ -5,6 +5,24 @@ use reprise_core::library::stats_snapshot;
 use super::*;
 
 #[test]
+fn updated_reveal_labels_are_looked_up_through_gettext() {
+    let source = include_str!("stats_songs_card.rs");
+
+    assert_eq!(
+        source
+            .matches("crate::i18n::gettext(\"Show more top tracks\")")
+            .count(),
+        2,
+    );
+    assert_eq!(
+        source
+            .matches("crate::i18n::gettext(\"Hide more top tracks\")")
+            .count(),
+        1,
+    );
+}
+
+#[test]
 fn stats_19_the_card_shows_a_full_top_ten_over_two_columns() {
     assert_eq!(SONG_ROW_LIMIT, 10);
     assert_eq!(SUMMARY_COLUMN_ROWS, 5);

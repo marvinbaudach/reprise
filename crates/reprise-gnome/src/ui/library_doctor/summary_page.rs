@@ -284,14 +284,6 @@ impl LibraryDoctorPage {
         self.last_scan.borrow().clone()
     }
 
-    pub(in crate::ui) fn selected_scope(&self) -> u32 {
-        self.start.selected_scope()
-    }
-
-    pub(in crate::ui) fn set_selected_scope(&self, scope: u32) {
-        self.start.set_selected_scope(scope);
-    }
-
     pub(in crate::ui) fn remote_active(&self) -> bool {
         self.start.remote_active()
     }

@@ -15,7 +15,7 @@
 //! - `skip_after_failure`: the one shared skip-loop guard — advances pending
 //!   Up Next and the playback context, or gives up at their fixed combined
 //!   bound.
-//! - `should_stop_skipping`: the pure decision the guard consults.
+//! - the fixed-bound skip loop, consulting Core's `should_stop_skipping` rule.
 //!
 //! ## Seam: `pub(in crate::ui)`
 //!
@@ -38,7 +38,7 @@
 use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
 use crate::ui::up_next_transport::AdvanceReason;
-use reprise_core::playback::{playback_fault_policy, PlaybackFaultNotice};
+use reprise_core::playback::{playback_fault_policy, should_stop_skipping, PlaybackFaultNotice};
 use reprise_core::queries;
 
 pub(super) fn note_episode_skip(run: &std::cell::Cell<usize>) {
@@ -182,16 +182,6 @@ impl PlayerController {
     }
 }
 
-/// The skip-loop guard's pure decision (Stage 2 Task 5 — see this module's
-/// doc comment): whether `skip_after_failure` should give up rather than
-/// skip to yet another track. `true` once `consecutive_skips` has reached
-/// `queue_len`, which is the fixed context plus manual candidate count
-/// captured at the first failure, or when there was nothing to skip to. Pure
-/// (no Queue/GTK/DB access) so it is unit-testable directly.
-fn should_stop_skipping(consecutive_skips: usize, queue_len: usize) -> bool {
-    queue_len == 0 || consecutive_skips >= queue_len
-}
-
 fn failure_limit(
     existing: usize,
     context_len: usize,
@@ -226,28 +216,6 @@ mod tests {
             notice_text(PlaybackFaultNotice::TrackUnavailableSkipped, "Ignored"),
             "Track unavailable — skipped"
         );
-    }
-
-    #[test]
-    fn should_stop_skipping_table() {
-        // (consecutive_skips, queue_len, expected)
-        let cases = [
-            (0, 0, true),  // empty queue: nothing to skip to, stop immediately
-            (1, 0, true),  // empty queue always stops, regardless of skips
-            (0, 3, false), // no skips yet: keep going
-            (1, 3, false), // fewer skips than the queue is long: keep going
-            (2, 3, false), // still fewer than queue_len: keep going
-            (3, 3, true),  // skips == queue_len: bounded, stop
-            (4, 3, true),  // skips > queue_len: definitely stop
-            (1, 1, true),  // single-track queue: one skip already exhausts it
-        ];
-        for (skips, queue_len, expected) in cases {
-            assert_eq!(
-                should_stop_skipping(skips, queue_len),
-                expected,
-                "should_stop_skipping({skips}, {queue_len}) should be {expected}"
-            );
-        }
     }
 
     #[test]

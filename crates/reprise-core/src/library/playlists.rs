@@ -6,7 +6,7 @@
 //! across all operations (create, add, remove, move).
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[path = "playlists_api.rs"]
 mod api;
@@ -56,8 +56,7 @@ pub enum SmartRulesError {
 }
 
 /// Single rule in the smart playlist rules array: { field, op, value? }.
-#[derive(Debug, Serialize, Deserialize)]
-#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
 struct Rule {
     field: String,
     op: String,

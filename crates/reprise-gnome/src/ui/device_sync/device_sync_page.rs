@@ -201,7 +201,9 @@ impl DeviceSyncPage {
                     self.dashboard.connection.set_label(status);
                     self.dashboard.connection.add_css_class("warning");
                 } else {
-                    self.dashboard.connection.set_label("MTP connected");
+                    self.dashboard
+                        .connection
+                        .set_label(&crate::i18n::gettext("MTP connected"));
                     self.dashboard.connection.add_css_class("success");
                 }
             }
