@@ -266,6 +266,30 @@ fn upcoming_window_excludes_the_current_track_and_counts_beyond_the_page() {
 }
 
 #[test]
+fn forward_window_total_is_independent_of_non_negative_offset() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            tracks.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    for offset in [0, 1, 2, 3, 20] {
+        let window = session
+            .upcoming_tracks(WindowRange { offset, limit: 1 })
+            .unwrap();
+        assert_eq!(
+            window.total, 3,
+            "forward total must remain the complete future at offset {offset}",
+        );
+    }
+}
+
+#[test]
 fn signed_window_reaches_both_sides_and_clamps_without_shifting_at_the_ends() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["Zero", "One", "Two", "Three", "Four"]);
@@ -336,6 +360,10 @@ fn signed_window_reaches_both_sides_and_clamps_without_shifting_at_the_ends() {
         last.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
         vec![track("Two").id, track("Three").id, track("Four").id],
     );
+    assert!(
+        last.rows.len() <= usize::try_from(last.total).unwrap(),
+        "a signed window must never return more rows than its advertised total",
+    );
 }
 
 #[test]
@@ -351,19 +379,75 @@ fn signed_window_and_current_index_follow_the_same_shuffled_order() {
         )
         .unwrap();
     session.set_shuffle(true).unwrap();
-    session.next().unwrap();
-    session.next().unwrap();
+    let future = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    let (source_position, target_id) = future
+        .rows
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.id != tracks[4].id)
+        .map(|(position, row)| (position, row.id))
+        .unwrap();
+    assert!(session
+        .move_upcoming_track(u64::try_from(source_position).unwrap(), target_id, 3)
+        .unwrap());
+    assert!(session.play_upcoming_track_now(3, target_id).unwrap());
 
     let snapshot = session.snapshot().unwrap();
     let window = session
         .upcoming_tracks(WindowRange {
-            offset: -3,
+            offset: -5,
             limit: 5,
         })
         .unwrap();
     let ids = window.rows.iter().map(|row| row.id).collect::<Vec<_>>();
 
-    assert_eq!(ids.get(2).copied(), snapshot.current_track_id);
+    let current_position = ids
+        .iter()
+        .position(|track_id| Some(*track_id) == snapshot.current_track_id)
+        .and_then(|position| u64::try_from(position).ok());
+    assert_eq!(snapshot.current_index, current_position);
+
+    session.set_shuffle(false).unwrap();
+    let linear_position = tracks
+        .iter()
+        .position(|track| track.id == target_id)
+        .and_then(|position| u64::try_from(position).ok());
+    assert_eq!(session.snapshot().unwrap().current_index, linear_position);
+}
+
+#[test]
+fn queue_order_previous_then_next_round_trips_with_and_without_shuffle() {
+    for shuffled in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let tracks = seed_tracks(directory.path(), &["Zero", "One", "Two", "Three", "Four"]);
+        let session = session_in(directory.path());
+        session
+            .play_tracks(
+                tracks.iter().map(|track| track.id).collect(),
+                tracks.iter().map(|track| track.path.clone()).collect(),
+                2,
+            )
+            .unwrap();
+        if shuffled {
+            session.set_shuffle(true).unwrap();
+        }
+        let before = session.snapshot().unwrap();
+
+        session.previous_in_queue_order().unwrap();
+        session.next().unwrap();
+
+        let after = session.snapshot().unwrap();
+        assert_eq!(
+            after.current_track_id, before.current_track_id,
+            "queue-order navigation must round-trip when shuffled={shuffled}",
+        );
+        assert_eq!(after.current_index, before.current_index);
+    }
 }
 
 #[test]

@@ -180,8 +180,7 @@ impl SessionState {
         self.history.clear_presented();
         self.snapshot.current_index = self
             .queue
-            .current()
-            .and_then(|track_id| self.track_index(track_id))
+            .current_order_position()
             .and_then(|index| u64::try_from(index).ok());
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
@@ -711,6 +710,10 @@ impl AndroidPlaybackSession {
             let mut state = self.inner.lock()?;
             state.queue.set_shuffle(enabled);
             state.snapshot.shuffled = state.queue.is_shuffled();
+            state.snapshot.current_index = state
+                .queue
+                .current_order_position()
+                .and_then(|index| u64::try_from(index).ok());
             (state.next_uri(), state.queue.clone())
         };
         self.inner.persist_queue(&queue_to_save)?;

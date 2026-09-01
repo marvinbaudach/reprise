@@ -71,11 +71,15 @@ impl AndroidPlaybackSession {
                 let range =
                     signed_queue_window(upcoming_start, state.queue.len(), window.offset, limit);
                 let has_more = range.end < state.queue.len();
+                let total = state
+                    .queue
+                    .len()
+                    .saturating_sub(upcoming_start)
+                    .max(range.len()) as i64;
                 let ids = range
                     .filter_map(|position| state.queue.id_at_order_position(position))
                     .map(QueueItem::Track)
                     .collect::<Vec<_>>();
-                let total = state.queue.len().saturating_sub(upcoming_start) as i64;
                 (ids, total, has_more)
             };
             let metadata = {
@@ -287,8 +291,9 @@ fn queue_window_start(state: &super::SessionState) -> Option<usize> {
 }
 
 /// Resolves a signed offset from the upcoming boundary without shifting the
-/// requested span when either queue end clips it. The current row is offset
-/// `-1`, the previous row `-2`, and so on.
+/// requested span when either queue end clips it. Relative to that boundary,
+/// a loaded current row is offset `-1` and its previous row is `-2`. Before
+/// the current row is loaded, it is itself the boundary at offset `0`.
 fn signed_queue_window(
     upcoming_start: usize,
     queue_len: usize,
