@@ -307,12 +307,6 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-
 
-      - name: Run display-test shard
-        env:
-          DISPLAY_SHARD: ${{ matrix.shard }}
-          DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}
-        run: scripts/check-display-tests.sh --shard "$DISPLAY_SHARD/$DISPLAY_SHARD_COUNT"
-
       - name: Verify display-test shard partition
         if: matrix.shard == 1
         env:
@@ -344,6 +338,12 @@ jobs:
             echo "Sorted display-shard union differs from the unsharded listing" >&2
             exit 1
           }
+
+      - name: Run display-test shard
+        env:
+          DISPLAY_SHARD: ${{ matrix.shard }}
+          DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}
+        run: scripts/check-display-tests.sh --shard "$DISPLAY_SHARD/$DISPLAY_SHARD_COUNT"
 
   quality:
     name: Quality gate
