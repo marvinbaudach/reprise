@@ -80,7 +80,7 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
     line: 'It installs as a desktop app, not as a demo.',
     checks: [
       'Gettext catalogues',
-      'Runtime service install',
+      'Release metadata',
       'AppStream',
       'Flatpak manifest',
       'Dependency audit',
