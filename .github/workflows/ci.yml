@@ -140,6 +140,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          cache: gradle
 
       - name: Cache Cargo downloads
         uses: actions/cache@v6
@@ -255,15 +256,8 @@ jobs:
         with:
           version: "0.12.3"
 
-      - name: Cache Cargo downloads
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: Run the complete workspace gate
         run: scripts/ci-quality.sh

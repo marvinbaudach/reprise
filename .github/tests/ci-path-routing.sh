@@ -167,7 +167,11 @@ rg --quiet 'uses: astral-sh/setup-uv@v10\.0\.1' "$workflow" || \
     fail "the base source-quality job must install uv through the pinned action"
 rg --quiet 'version: "0\.12\.3"' "$workflow" || \
     fail "the base source-quality job must use the verified uv pin"
-core_workflow=$(sed -n '/^  core-suite:/,/^  quality:/p' "$workflow")
+android_workflow=$(sed -n '/^  android-unit-suite:/,/^  gnome-suite:/p' "$workflow")
+rg --multiline --quiet \
+    'uses: actions/setup-java@v5\n        with:\n          distribution: temurin\n          java-version: "21"\n          cache: gradle' \
+    <<<"$android_workflow" || fail "the Android JVM suite must use setup-java's Gradle cache"
+core_workflow=$(sed -n '/^  core-suite:/,/^  display-tests:/p' "$workflow")
 rg --quiet 'uses: actions/setup-node@v7' <<<"$core_workflow" || \
     fail "the Core suite must install the pinned Node generation before the complete gate"
 rg --quiet 'node-version: "26\.7\.0"' <<<"$core_workflow" || \
@@ -176,6 +180,11 @@ rg --quiet 'uses: astral-sh/setup-uv@v10\.0\.1' <<<"$core_workflow" || \
     fail "the Core suite must install uv through the pinned action"
 rg --quiet 'version: "0\.12\.3"' <<<"$core_workflow" || \
     fail "the Core suite must use the verified uv pin"
+rg --quiet 'uses: Swatinem/rust-cache@v2' <<<"$core_workflow" || \
+    fail "the Core suite must cache its Rust dependency build graph"
+if [[ $(rg -c 'uses: Swatinem/rust-cache@v2' "$workflow") -ne 1 ]]; then
+    fail "rust-cache must appear in core-suite only"
+fi
 rg --quiet 'check-project-quality\.sh --android' "$workflow" || \
     fail "the Android job must run Android source quality"
 rg --multiline --quiet \
