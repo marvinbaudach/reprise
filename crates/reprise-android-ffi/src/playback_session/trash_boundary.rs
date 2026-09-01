@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use reprise_core::library::trash_tracks::trash_tracks_with;
+use reprise_core::library::trash_tracks::{commit_trash, plan_trash, TrashFailure};
 use reprise_core::playback::PlaybackBackend;
 use reprise_core::queries;
 
@@ -49,7 +49,7 @@ impl AndroidPlaybackSession {
         track_ids: Vec<i64>,
         action: Box<dyn TrashAction>,
     ) -> Result<AndroidTrashReport, LibraryError> {
-        let (report, already_gone) = {
+        let (plan, already_gone) = {
             let database = self.inner.library.writer()?;
             let mut tracks = Vec::with_capacity(track_ids.len());
             let mut already_gone = Vec::new();
@@ -68,10 +68,21 @@ impl AndroidPlaybackSession {
                     }),
                 }
             }
-            (
-                trash_tracks_with(&database, &tracks, |path| trash_path(action.as_ref(), path)),
-                already_gone,
-            )
+            (plan_trash(&database, &tracks), already_gone)
+        };
+
+        let mut trashed = Vec::with_capacity(plan.validated.len());
+        let mut failures = plan.failures;
+        for (id, path) in plan.validated {
+            match trash_path(action.as_ref(), &path) {
+                Ok(()) => trashed.push((id, path)),
+                Err(error) => failures.push(TrashFailure { id, path, error }),
+            }
+        }
+
+        let report = {
+            let database = self.inner.library.writer()?;
+            commit_trash(&database, &trashed, failures)
         };
 
         let (removed_current, has_current, next_uri, queue_to_save) = {
