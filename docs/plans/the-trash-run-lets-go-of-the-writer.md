@@ -2,7 +2,7 @@
 slug: the-trash-run-lets-go-of-the-writer
 worktree: /home/marvin/Projects/reprise-the-trash-run-lets-go-of-the-writer
 branch: feature/the-trash-run-lets-go-of-the-writer
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
