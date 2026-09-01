@@ -341,11 +341,10 @@ not run 3, or the Actions UI will make the claim look unsupported.
 
 Proved on the rebased branch:
 
-- Run 4 `33555440025`, at the branch tip `a134088b7e` — all four display
-  shards green, and `Verify display-test shard partition` green. Run 3
-  `33554394762` showed the same on `f1292d8be8`, but its final state reads
-  `cancelled` (superseded by run 4 after the display jobs finished), so cite
-  run 4.
+- **Run 6 `33561062481` is fully green** — every job: routing,
+  `base-contracts`, all four display shards, `Verify display-test shard
+  partition`, `core-suite`, `android-unit-suite` and `quality`. `gnome-suite`
+  is correctly skipped by routing. This is the run to cite.
 - Partition locally: 856 tests, 4 x 214, union byte-identical to the unsharded
   listing, no duplicates. The five argument guards exit 2 from any directory.
 - All six mutation proofs exit 1, re-run after each change to `ci.yml`.
@@ -353,52 +352,51 @@ Proved on the rebased branch:
   suite and `qa-linters.sh` all exit 0.
 - `git diff origin/dev...HEAD -- scripts/check-merge-readiness.sh` is 0 bytes.
 
-Still red, on defects a2 does not own and was scoped out of:
+### Four foreign defects had to clear first
 
-- `core-suite` — NET-4b.
-- `android-unit-suite` — the `ArtistPhotoProgressBarTest.kt:420` lint error.
-- `quality` — a consequence of those two.
+Sharding the display tests is what made them visible: they had not run in a
+`dev` CI run for several pushes, and `core-suite` aborted before its later gates.
 
-Both are fixed on **`feature/dev-gates-go-green`** (worktree
-`/home/marvin/Projects/reprise-dev-gates-go-green`, phase `refactored`, pushed).
-It was already finished when a2's dispatch runs exposed the same defects;
-duplicating it inside a2 would have conflicted in `check-ux-traceability.sh` and
-`lint-baseline.xml`, so a2 took only the three display tests that nobody owned.
+- **NET-4b** and the **Android lint** were already fixed on
+  `feature/dev-gates-go-green`; that branch landed first, as **#788**
+  (`1b68764703`), and `dev` went green with it.
+- **Three display tests** from #784 (`2772c33b7d`) belonged to nobody. a2 took
+  them — see above.
+- **A clippy toolchain drift**, found by run 5: `chunks_exact_to_as_chunks` on
+  `crates/reprise-core/src/device_sync/snapshot.rs:275`, a file byte-identical
+  with `dev`. The CI container's `archlinux:latest` carries clippy 1.98, which
+  has the lint; the local toolchain is 0.1.97, which does not, so it cannot be
+  reproduced or verified locally. It blocked the "Rust lint" gate and therefore
+  every run that routes `core`. Rewritten as `.into_iter().step_by(2)` — the
+  same elements, no new API, no MSRV question — and proved element-identical
+  against the old expression before committing.
 
-### One path is still unexercised — `--shard`'s sibling, `--rule-named`
+### `--rule-named` is not unexercised — it is deliberately retired
 
-`scripts/check-display-tests.sh --rule-named` is what the "Rule-owned display
-tests" gate inside `check-merge-readiness.sh:143` runs. **It has not executed in
-any of the four dispatch runs**, because `core-suite` aborts at NET-4b long
-before reaching that gate.
-
-That matters here specifically. The mode selects tests whose names carry a rule
-prefix from `docs/ux-rules.md` — and two of the three tests this branch changed,
-`doc_9b_…` and `nr_33_…`, are exactly that shape. So the one gate that targets
-the changed code is the one gate no run has reached.
-
-It is *not* known to be broken: nothing in this branch touches the `rule-named`
-branch of the script, and both tests pass under the shard path. But it is
-unproven on this branch. A local run was started and had not finished when this
-note was written — the machine was carrying eight parallel sessions and the load
-governor was handing out zero of two slots. **Re-run it before landing**, from
-inside the worktree, and read the exit status directly:
+Worth writing down, because it looks like a coverage hole and is not.
+`scripts/check-display-tests.sh --rule-named` backs the "Rule-owned display
+tests" gate in `check-merge-readiness.sh:143`, and it no longer runs in CI at
+all. Run 6's `core-suite` log says so plainly:
 
 ```
-cd <worktree>
-./scripts/check-display-tests.sh --rule-named ; echo "EXIT=$?"
+== Rule-owned display tests (skipped here; runs in another CI job) ==
 ```
 
-Expect 0. If `dev-gates-go-green` lands first, the post-rebase dispatch run
-exercises it for free inside `core-suite`, which is the cheaper proof — one more
-reason to take the branches in that order.
+That is A2.2 working as designed: the entry sits in
+`MERGE_READINESS_SKIP_GATES` in `scripts/ci-quality.sh`, and the tests it would
+select are a strict subset of the 856 the sharded job now runs in full. Nothing
+is lost by skipping it, and the M2 mutation proof keeps the skip-list entry
+honest — it must byte-match a real `gate "<name>"` line, in both directions
+(R1 closed the delete-and-still-pass hole).
+
+So there is nothing to re-run before landing. Two of the three tests this branch
+changed (`doc_9b_…`, `nr_33_…`) are rule-named, and they were exercised by
+shards 2 and 3 in run 6.
 
 ### Order
 
-1. **Land `dev-gates-go-green` first.** Until it does, no branch that routes
-   `core=true` can produce a green run, a2 included.
-2. **Rebase a2** onto the resulting `dev` and dispatch once more. The
-   expectation at that point is a fully green run: nothing else is outstanding.
+1. ~~Land `dev-gates-go-green` first.~~ Done — #788, `1b68764703`.
+2. ~~Rebase a2 and dispatch.~~ Done — run 6 `33561062481`, fully green.
 3. **`land.sh`** — a2 is last in the mother plan's `merge_order` (`b, a1, a2`);
    `b` (#777) and `a1` (#774) already landed. `land.sh` finds the plan by
    `^branch: <BR>$`, which only `-a2.md` carries, so no `--plan` is needed.
