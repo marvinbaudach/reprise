@@ -139,6 +139,7 @@ pub struct MirrorPlan {
     pub analysis_writes: Vec<AnalysisSidecarWrite>,
     pub remove: Vec<ManagedRemoval>,
     pub retained_unavailable: Vec<DeviceFileRecord>,
+    pub retained_stable: Vec<DeviceFileRecord>,
     pub playlist_writes: Vec<PlaylistWrite>,
     pub playlist_removals: Vec<DevicePlaylistRecord>,
     pub transfer_bytes: u64,
@@ -378,6 +379,12 @@ fn owned_analysis_sidecar_paths(
         .filter(|path| resident.contains(path) || arriving.contains(path))
         .chain(
             plan.retained_unavailable
+                .iter()
+                .map(|file| file.device_path.as_str())
+                .filter(|path| resident.contains(path)),
+        )
+        .chain(
+            plan.retained_stable
                 .iter()
                 .map(|file| file.device_path.as_str())
                 .filter(|path| resident.contains(path)),

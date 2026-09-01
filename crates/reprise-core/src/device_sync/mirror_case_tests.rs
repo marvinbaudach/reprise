@@ -321,7 +321,6 @@ fn ambiguous_uninventoried_apostrophe_variant_keeps_its_resident_file() {
         ManagedRemoval::Orphan(file) => file.relative_path == wanted_resident,
     }));
 }
-}
 
 #[test]
 fn ambiguous_directory_keeps_a_track_at_its_distinct_inventory_path() {

@@ -85,6 +85,7 @@ pub(super) fn plan_file_changes(input: FileChangeInput<'_>, plan: &mut MirrorPla
         }
         if stability_margin_ids.contains(&existing.track_id) {
             plan.target_bytes = plan.target_bytes.saturating_add(existing.device_size);
+            plan.retained_stable.push(existing.clone());
             continue;
         }
         if safe_managed_path(&existing.device_path) {

@@ -100,6 +100,7 @@ fn empty_plan() -> MirrorPlan {
         analysis_writes: Vec::new(),
         remove: Vec::new(),
         retained_unavailable: Vec::new(),
+        retained_stable: Vec::new(),
         playlist_writes: Vec::new(),
         playlist_removals: Vec::new(),
         transfer_bytes: 0,
