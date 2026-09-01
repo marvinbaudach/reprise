@@ -235,6 +235,46 @@ fn equal_directory_counts_plan_neither_arrival_analysis_nor_removal() {
 }
 
 #[test]
+fn ambiguous_uninventoried_track_protects_resident_audio_and_analysis() {
+    let wanted = case_track(9, "Tie Artist", "Tie Album", "Track 9");
+    let audio_path = "Tie Artist/Tie Album/09 Track 9.mp3";
+    let sidecar_path = "Tie Artist/Tie Album/09 Track 9.reprise-analysis";
+    let source = SelectionSource::Playlist(10);
+    let mut mirror_input = input(
+        vec![source.clone()],
+        vec![playlist(
+            source,
+            "Tie",
+            vec![
+                MirrorTrack::Available(wanted),
+                unavailable(1),
+                unavailable(2),
+            ],
+        )],
+    );
+    mirror_input.managed_files = vec![managed(audio_path), managed(sidecar_path)];
+    for id in 1..=2 {
+        let path = format!("TIE ARTIST/Tie Album/{id:02} Resident.mp3");
+        let resident = case_track(id, "TIE ARTIST", "Tie Album", "Resident");
+        mirror_input
+            .inventory
+            .push(inventory(&resident, &path, "copy-original-v1"));
+        mirror_input.managed_files.push(managed(&path));
+    }
+    mirror_input.desktop_analyses.push(DesktopAnalysis {
+        track_id: 9,
+        size_bytes: 123,
+    });
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.remove.is_empty());
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert!(plan.analysis_writes.is_empty());
+}
+
+#[test]
 fn ambiguous_directory_keeps_a_track_at_its_distinct_inventory_path() {
     let wanted = case_track(9, "Tie Artist", "Tie Album", "Track 9");
     let inventory_path = "Former Artist/Former Album/09 Track 9.mp3";

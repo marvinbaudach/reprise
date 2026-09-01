@@ -51,8 +51,9 @@ pub(super) fn rewrite_desired_paths(
     inventory: &[DeviceFileRecord],
     inventory_by_id: &HashMap<i64, DeviceFileRecord>,
     managed_files: &[ManagedDeviceFile],
-) {
+) -> Vec<String> {
     let spellings = build_directory_spellings(inventory, managed_files);
+    let mut unplanned_resident_paths = Vec::new();
     let mut track_ids = desired.keys().copied().collect::<Vec<_>>();
     track_ids.sort_unstable();
     for track_id in track_ids {
@@ -82,11 +83,13 @@ pub(super) fn rewrite_desired_paths(
                         second_spelling,
                         "ambiguous case-only device directory; leaving track unplanned"
                     );
+                    unplanned_resident_paths.push(desired_path);
                     desired.remove(&track_id);
                 }
             }
         }
     }
+    unplanned_resident_paths
 }
 
 fn build_directory_spellings(

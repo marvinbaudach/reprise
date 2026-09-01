@@ -263,7 +263,7 @@ fn build_plan(
         .drain(..)
         .map(|file| (file.track.id, file))
         .collect::<HashMap<_, _>>();
-    super::device_case::rewrite_desired_paths(
+    let unplanned_resident_paths = super::device_case::rewrite_desired_paths(
         &mut desired_by_id,
         &inventory,
         &inventory_by_id,
@@ -318,6 +318,12 @@ fn build_plan(
             plan.playlist_writes
                 .iter()
                 .map(|playlist| playlist.device_path.clone()),
+        )
+        .chain(unplanned_resident_paths.iter().cloned())
+        .chain(
+            unplanned_resident_paths
+                .iter()
+                .filter_map(|path| super::analysis_sidecar::device_path_for_track(path)),
         )
         .chain(owned_analysis_sidecars)
         .collect::<HashSet<_>>();
