@@ -247,8 +247,8 @@ export function HeroSeekTrack({ reducedMotion }: { readonly reducedMotion: boole
           className="hero-seek__mark"
           src={`${import.meta.env.BASE_URL}brand/reprise-mark.svg`}
           alt=""
-          width="26"
-          height="26"
+          width="24"
+          height="24"
         />
         <span ref={elapsedRef} className="seek-track__time">
           0:00
