@@ -235,16 +235,56 @@ green**. Shards 1–3 each fail on exactly one test:
 | 2 | `ui::library_doctor::review_row::contract_tests::doc_9b_a_stale_row_names_its_reason_where_the_click_happens` | `review_row_contract_tests.rs:312` — `None` vs `Some("This file changed after the scan …")` |
 | 3 | `ui::releases::releases_columns::tests::nr_33_release_link_cell_binds_and_clears_the_visible_affordance` | `releases_columns.rs:560` — `None` vs `Some("https://musicbrainz.org/release-group/mbid")` |
 
-**All three belong to `dev`, not to a2.** Two independent arguments, both checked:
-`git diff --name-only origin/dev...HEAD` contains no `crates/` path and no `.rs`
-file at all, so the Rust code here is byte-identical with `origin/dev`; and each
-test was re-run locally three times with the shard script's own invocation form
-(`dbus-run-session` plus `xvfb-run --server-num`, `--ignored --exact`), failing
-deterministically with the same `left`/`right` every time. No shared root cause,
-no Xvfb or font symptom, no shard or ordering dependency — three unrelated
-content regressions. They went unnoticed because the display tests have not
-actually executed in a `dev` CI run for several pushes: `gnome-suite` aborted at
-NET-4b before reaching them, and on `1f8eacadc8` it was skipped by routing.
+**All three belonged to `dev`, not to a2.** Two independent arguments, both
+checked at the time. First: at the commits the two runs tested (`abe1e1cb5a` and
+`1f81292a9d`), `git diff --name-only origin/dev...HEAD` contained no `crates/`
+path and no `.rs` file at all, so the Rust code under test was byte-identical
+with `origin/dev`. *That check no longer holds at the branch tip* — the fixes
+below add Rust test changes on purpose; re-run it against those two commits, not
+against `HEAD`. Second: each test was re-run locally three times with the shard
+script's own invocation form (`dbus-run-session` plus `xvfb-run --server-num`,
+`--ignored --exact`), failing deterministically with the same `left`/`right`
+every time. No shared root cause in the environment, no Xvfb or font symptom, no
+shard or ordering dependency.
+
+They went unnoticed because the display tests had not actually executed in a
+`dev` CI run for several pushes: `gnome-suite` aborted at NET-4b before reaching
+them, and on `1f8eacadc8` it was skipped by routing. Sharding them into their own
+job is what made them visible again.
+
+### All three trace to one commit — `2772c33b7d` (#784)
+
+- **Shards 2 and 3 are test debt.** #784 replaced eager
+  `widget.set_tooltip_text(...)` with `ui/lazy_tooltip.rs`, which sets only
+  `has-tooltip` and answers `query-tooltip` on demand — X11 makes the eager
+  property a synchronous display round trip, too costly inside a virtualised
+  `ListItem` bind path. The GTK `tooltip-text` property is therefore `None` by
+  design, as `lazy_tooltip.rs`'s own test asserts. Two test files were not
+  migrated with it. They now read the text through a `#[cfg(test)]` getter on
+  `LazyTooltip`, so they still assert the *text* — DOC-9b says a refused row
+  *names its reason*, and `has_tooltip()` alone would weaken that to "some
+  tooltip exists".
+- **Shard 1 was an accidental dependency on tie order.** #784 added
+  `migrate_v82` in `db_sort_indexes.rs`, a partial index on
+  `tracks(artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no)`. The
+  three fixture tracks carried no artist at all, so every sort column tied and
+  the row order fell out of whichever plan SQLite picked: a temp b-tree over the
+  title index before v82 (`[1, 3, 2]`), the new index's rowid order after
+  (`[1, 2, 3]`). The test's subject is caching — "activation ids are reused until
+  the generation changes" — and the id arrays were only a by-product. The fixture
+  now gives the three tracks distinct artists, so the order is determined.
+
+### Finding for a separate strand — sort ties are not determined
+
+`SORT_WHITELIST` in `crates/reprise-core/src/queries/clauses.rs` gives only
+`album_canonical` a final `, id`. The other eleven entries — `title`, `artist`,
+`album`, `track_no`, `genre`, `year`, `duration_ms`, `rating`, `play_count`,
+`added_at` — have no tiebreaker, so equal keys order by whatever plan the query
+planner picks, and adding an index can silently reorder rows the user sees. That
+is what #784 did here. **Not fixed in a2, deliberately:** the parallel
+`sort_key_columns()` in the same file drives tag-editing decisions and would have
+to change in lockstep, which is a product change with no place in a CI-sharding
+strand. Fixing one column would also be arbitrary when eleven share the flaw.
 
 ### Blocked on defects a2 does not own
 
