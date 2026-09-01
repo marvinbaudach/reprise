@@ -110,7 +110,17 @@ class NowPlayingPanelsTest {
 
     @Test
     fun title_runs_at_its_wider_ratio_while_progress_only_fades_and_compresses() {
-        assertEquals(-569.2f, nowPlayingTitleTranslation(positionPx = 400f, widthPx = 400f), 0.001f)
+        assertEquals(-512.8f, nowPlayingTitleTranslation(positionPx = 400f), 0.001f)
+        // The resting panel carries no offset at all: any constant here shifts
+        // every title off the screen centre for as long as nothing is dragged.
+        assertEquals(0f, nowPlayingTitleTranslation(positionPx = 0f), 0f)
+        // ...and the two neighbours have to sit the same distance out on either
+        // side, or a swipe left and a swipe right do not mirror each other.
+        assertEquals(
+            -nowPlayingTitleTranslation(positionPx = -400f),
+            nowPlayingTitleTranslation(positionPx = 400f),
+            0.001f,
+        )
 
         val progress = nowPlayingProgressTransform(currentIndex = 1, positionPx = 600f, widthPx = 400f)
         assertEquals(-35f, progress.translationY, 0f)
