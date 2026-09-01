@@ -234,9 +234,7 @@ fn check_api_error(body: &str, username: &str) -> Result<(), RemoteStatsError> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
 // JSON parsing helpers
-// ---------------------------------------------------------------------------
 
 fn parse_top_artists(body: &str) -> Result<Vec<TopArtist>, RemoteStatsError> {
     let root: Value =

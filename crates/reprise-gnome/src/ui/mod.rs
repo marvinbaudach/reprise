@@ -91,7 +91,6 @@ pub mod primary_menu;
 pub(in crate::ui) mod progress_subscribers;
 pub(crate) mod radio;
 mod releases;
-pub(crate) mod runtime;
 mod runtime_performance;
 mod scan;
 mod scrobbling;

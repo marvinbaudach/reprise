@@ -25,6 +25,12 @@ struct RowWidgets {
     source: gtk4::Label,
     warning: gtk4::Image,
     edit: gtk4::Button,
+    root_tooltip: crate::ui::lazy_tooltip::LazyTooltip,
+    track_tooltip: crate::ui::lazy_tooltip::LazyTooltip,
+    field_tooltip: crate::ui::lazy_tooltip::LazyTooltip,
+    current_tooltip: crate::ui::lazy_tooltip::LazyTooltip,
+    proposed_tooltip: crate::ui::lazy_tooltip::LazyTooltip,
+    source_tooltip: crate::ui::lazy_tooltip::LazyTooltip,
     model: RefCell<Option<ReviewRowModel>>,
     binding: Cell<bool>,
 }
@@ -188,6 +194,12 @@ fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
     root.append(&edit);
     root.set_accessible_role(gtk4::AccessibleRole::ListItem);
     root.add_css_class("doctor-review-row");
+    let root_tooltip = crate::ui::lazy_tooltip::LazyTooltip::install(&root);
+    let track_tooltip = crate::ui::lazy_tooltip::LazyTooltip::install(&track);
+    let field_tooltip = crate::ui::lazy_tooltip::LazyTooltip::install(&field);
+    let current_tooltip = crate::ui::lazy_tooltip::LazyTooltip::install(&current);
+    let proposed_tooltip = crate::ui::lazy_tooltip::LazyTooltip::install(&proposed);
+    let source_tooltip = crate::ui::lazy_tooltip::LazyTooltip::install(&source);
     RowWidgets {
         root,
         selected,
@@ -199,6 +211,12 @@ fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
         source,
         warning,
         edit,
+        root_tooltip,
+        track_tooltip,
+        field_tooltip,
+        current_tooltip,
+        proposed_tooltip,
+        source_tooltip,
         model: RefCell::new(None),
         binding: Cell::new(false),
     }
@@ -243,14 +261,14 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
         ReviewLayout::Wide => gtk4::Orientation::Horizontal,
         ReviewLayout::Narrow => gtk4::Orientation::Vertical,
     });
-    set_full_text(&widgets.track, &model.track);
+    set_full_text(&widgets.track, &widgets.track_tooltip, &model.track);
     apply_album_wide_style(&widgets.track, model.is_album_wide);
-    set_full_text(&widgets.field, &model.field);
+    set_full_text(&widgets.field, &widgets.field_tooltip, &model.field);
     let rendered_current = visible_edge_spaces(&model.current);
     let current = narrow_prefixed(layout, ValueKind::Current, &rendered_current);
     let proposed = narrow_prefixed(layout, ValueKind::Proposed, &model.proposed);
-    set_full_text(&widgets.current, &current);
-    set_full_text(&widgets.proposed, &proposed);
+    set_full_text(&widgets.current, &widgets.current_tooltip, &current);
+    set_full_text(&widgets.proposed, &widgets.proposed_tooltip, &proposed);
     let source = if let Some(outcome) = model.outcome.as_ref() {
         let status = format!(
             "{} · {}",
@@ -268,6 +286,7 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     };
     set_full_text(
         &widgets.source,
+        &widgets.source_tooltip,
         &narrow_prefixed(layout, ValueKind::Source, &source),
     );
     widgets.current.remove_css_class("doctor-current-empty");
@@ -304,7 +323,7 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
         widgets.root.add_css_class("doctor-review-row-deselected");
     }
     let reason = row_state_reason(model.row.state).map(strings::text);
-    widgets.root.set_tooltip_text(reason.as_deref());
+    widgets.root_tooltip.set_text(&widgets.root, reason);
     let description = model.accessible_description();
     widgets.root.update_property(&[
         gtk4::accessible::Property::Label(&format!("{} · {}", model.track, model.field)),
@@ -381,9 +400,9 @@ pub(super) fn strike_range(rendered: &str, value: &str) -> (u32, u32) {
     )
 }
 
-fn set_full_text(label: &gtk4::Label, value: &str) {
+fn set_full_text(label: &gtk4::Label, tooltip: &crate::ui::lazy_tooltip::LazyTooltip, value: &str) {
     label.set_label(value);
-    label.set_tooltip_text(Some(value));
+    tooltip.set_text(label, Some(value.to_owned()));
     label.update_property(&[gtk4::accessible::Property::Description(value)]);
 }
 

@@ -163,11 +163,11 @@ pub const COMPACT_MODE_SUGGESTION: &str = N_!("This window may be easier to use 
 pub const USE_COMPACT_MODE: &str = N_!("Use Compact Mode");
 // Compact Mode opens through the menu action; the Library header has no duplicate control.
 pub const RESTORE_FULL_WINDOW: &str = N_!("Restore Full Window");
-#[allow(dead_code)]
+#[allow(dead_code)] // Append-only gettext key retained for repeat-state copy.
 pub const REPEAT_OFF: &str = N_!("Repeat Off");
-#[allow(dead_code)]
+#[allow(dead_code)] // Append-only gettext key retained for repeat-state copy.
 pub const REPEAT_ALL: &str = N_!("Repeat All");
-#[allow(dead_code)]
+#[allow(dead_code)] // Append-only gettext key retained for repeat-state copy.
 pub const REPEAT_ONE: &str = N_!("Repeat One");
 pub const VIEW_MODE_SAVE_FAILED: &str = N_!("Could not save the window view");
 pub const COMPACT_PLAYER_UNAVAILABLE: &str = N_!("Compact player is unavailable");

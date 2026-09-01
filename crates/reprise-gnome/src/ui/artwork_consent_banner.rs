@@ -93,15 +93,13 @@ pub(in crate::ui) fn build(
     root.append(&dismiss);
 
     let completed = Rc::new(Cell::new(false));
+    let review_db = db.clone();
+    let review_completed = completed.clone();
     banner.connect_button_clicked(glib::clone!(
-        #[strong]
-        db,
-        #[strong]
-        completed,
         #[weak]
         root,
         move |banner| {
-            if !persist_completed(&db, &completed) {
+            if !persist_completed(&review_db, &review_completed) {
                 return;
             }
             banner.set_revealed(false);
@@ -109,17 +107,15 @@ pub(in crate::ui) fn build(
             on_review();
         }
     ));
+    let dismiss_db = db.clone();
+    let dismiss_completed = completed;
     dismiss.connect_clicked(glib::clone!(
-        #[strong]
-        db,
-        #[strong]
-        completed,
         #[weak]
         banner,
         #[weak]
         root,
         move |_| {
-            if !persist_completed(&db, &completed) {
+            if !persist_completed(&dismiss_db, &dismiss_completed) {
                 return;
             }
             banner.set_revealed(false);

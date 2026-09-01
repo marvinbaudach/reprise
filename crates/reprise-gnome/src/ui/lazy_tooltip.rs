@@ -6,6 +6,7 @@
 //! is actually about to show one.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -13,6 +14,37 @@ use gtk4::prelude::*;
 #[derive(Clone)]
 pub(crate) struct LazyTooltip {
     text: Rc<RefCell<Option<String>>>,
+}
+
+/// Tooltip state paired with recycled `GtkListItem` cells.
+///
+/// Factories receive separate setup and bind callbacks, so the state created
+/// while constructing a cell has to be retained until that cell is rebound.
+#[derive(Clone, Default)]
+pub(crate) struct ListItemTooltips {
+    states: Rc<RefCell<HashMap<usize, LazyTooltip>>>,
+}
+
+impl ListItemTooltips {
+    pub(crate) fn install(&self, item: &gtk4::ListItem, widget: &impl IsA<gtk4::Widget>) {
+        self.states
+            .borrow_mut()
+            .insert(item.as_ptr() as usize, LazyTooltip::install(widget));
+    }
+
+    pub(crate) fn set_text(
+        &self,
+        item: &gtk4::ListItem,
+        widget: &impl IsA<gtk4::Widget>,
+        text: Option<String>,
+    ) {
+        let tooltip = self.states.borrow().get(&(item.as_ptr() as usize)).cloned();
+        if let Some(tooltip) = tooltip {
+            tooltip.set_text(widget, text);
+        } else {
+            tracing::warn!("list item has no lazy tooltip state");
+        }
+    }
 }
 
 impl LazyTooltip {

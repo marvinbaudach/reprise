@@ -42,7 +42,6 @@ pub(super) fn test_entry(mbid: &str) -> reprise_core::artist_news_history::Histo
     }
 }
 
-#[allow(dead_code)]
 pub(in crate::ui) fn install(conn: Rc<Db>, database_path: PathBuf) -> ReleasesView {
     ReleasesView::new(conn, database_path)
 }

@@ -517,12 +517,18 @@ pub(super) async fn write_track_metadata_list(
     work: &PlannedWork,
 ) -> Result<(), String> {
     let desired_files = work.machine.borrow().plan().desired_files.clone();
+    let track_ids = desired_files
+        .iter()
+        .map(|desired| desired.track.id)
+        .collect::<Vec<_>>();
+    let tracks = reprise_core::queries::query_present_tracks_by_ids(&runtime.conn, &track_ids)
+        .map_err(|error| format!("could not read track metadata: {error}"))?
+        .into_iter()
+        .map(|track| (track.id, track))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut entries = Vec::with_capacity(desired_files.len());
     for desired in desired_files {
-        let Some(track) =
-            reprise_core::queries::query_present_track_by_id(&runtime.conn, desired.track.id)
-                .map_err(|error| format!("could not read track metadata: {error}"))?
-        else {
+        let Some(track) = tracks.get(&desired.track.id) else {
             continue;
         };
         entries.push(

@@ -1,7 +1,6 @@
 //! Shared card, row, and lazy-collapse building blocks for issue views.
 
 mod issue_card;
-#[allow(dead_code)] // The standalone constructor is consumed by Task 3.3.
 mod issue_collapse;
 mod issue_row;
 mod missing_dialogs;

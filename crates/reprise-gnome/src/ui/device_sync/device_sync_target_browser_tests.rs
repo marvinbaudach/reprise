@@ -11,6 +11,24 @@ use crate::ui::device_sync::device_sync_runtime::{BackendFuture, DeviceBackend};
 use super::*;
 
 #[test]
+fn browser_status_labels_are_looked_up_through_gettext() {
+    let source = include_str!("device_sync_target_browser.rs");
+
+    assert_eq!(
+        source
+            .matches("crate::i18n::gettext(\"Pick a storage to browse\")")
+            .count(),
+        2,
+    );
+    assert_eq!(
+        source
+            .matches("crate::i18n::gettext(\"Storage list unavailable\")")
+            .count(),
+        1,
+    );
+}
+
+#[test]
 fn mtp_31_path_navigation_pushes_and_pops_components() {
     assert_eq!(push_path("/", "Music"), "/Music");
     assert_eq!(push_path("/Music", "Reprise"), "/Music/Reprise");

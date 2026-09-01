@@ -19,9 +19,10 @@ readonly RENDERED_TOP_ARTIST_RANKS=20
 readonly PORTRAIT_REPAINT_MARGIN_SECONDS=2
 # The fingerprint exists for the silhouette that hides behind an ordinary,
 # artist-specific image identifier: the baseline's fixed list cannot reach those.
-# Four artists in this library carry one (measured 2026-08-14, see the table in
-# docs/plans/portrait-placeholder-fingerprint.md). Only a rendered rank fetches a
-# portrait at all, and those four sit at ranks 40, 122, 131 and — with zero plays
+# Four artists in this library carry one (measured 2026-08-14; the acceptance
+# notes emitted near the end of this runner preserve their names and ranks).
+# Only a rendered rank fetches a portrait at all, and those four sit at ranks 40,
+# 122, 131 and — with zero plays
 # — in no ranking whatsoever. Rendering that far would need a product switch the
 # baseline arm cannot carry (its tree comes from `git archive origin/dev`, no
 # patches) plus scrolling this harness does not do. The run copy therefore

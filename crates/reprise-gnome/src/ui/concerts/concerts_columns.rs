@@ -83,14 +83,18 @@ pub(super) fn build_artist_cell() -> ArtistCell {
 
 fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::QuerySource) {
     let factory = gtk4::SignalListItemFactory::new();
+    let tooltips = crate::ui::lazy_tooltip::ListItemTooltips::default();
+    let tooltips_for_setup = tooltips.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
         let cell = build_artist_cell();
+        tooltips_for_setup.install(item, &cell.root);
         item.set_child(Some(&cell.root));
     });
     let query = query.clone();
+    let tooltips_for_bind = tooltips.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -112,8 +116,11 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         let text = similar_caption(&row);
         caption.set_text(text.as_deref().unwrap_or_default());
         caption.set_visible(text.is_some());
-        concerts_status_cells::apply_row_link_presentation(&cell, &row);
+        let presentation = concerts_status_cells::row_link_presentation(&row);
+        tooltips_for_bind.set_text(item, &cell, Some(presentation.tooltip.clone()));
+        concerts_status_cells::apply_row_link_accessibility(&cell, &presentation);
     });
+    let tooltips_for_unbind = tooltips;
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -130,6 +137,7 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         artist.set_text("");
         caption.set_text("");
         caption.set_visible(false);
+        tooltips_for_unbind.set_text(item, &cell, None);
     });
     let column = gtk4::ColumnViewColumn::builder()
         .id(ConcertColumn::Artist.as_str())
@@ -155,6 +163,13 @@ struct TextColumnSpec<'a> {
     css_class: Option<&'static str>,
 }
 
+fn text_column_tooltip(
+    column_tooltip: Option<String>,
+    row_link: &concerts_status_cells::RowLinkPresentation,
+) -> Option<String> {
+    column_tooltip.or_else(|| Some(row_link.tooltip.clone()))
+}
+
 fn text_column(
     view: &gtk4::ColumnView,
     spec: TextColumnSpec<'_>,
@@ -170,6 +185,8 @@ fn text_column(
         css_class,
     } = spec;
     let factory = gtk4::SignalListItemFactory::new();
+    let tooltips = crate::ui::lazy_tooltip::ListItemTooltips::default();
+    let tooltips_for_setup = tooltips.clone();
     factory.connect_setup(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -184,9 +201,11 @@ fn text_column(
         if let Some(css_class) = css_class {
             label.add_css_class(css_class);
         }
+        tooltips_for_setup.install(item, &label);
         item.set_child(Some(&label));
     });
     let query = query.cloned();
+    let tooltips_for_bind = tooltips.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -204,9 +223,11 @@ fn text_column(
         } else {
             label.set_text(&text);
         }
-        label.set_tooltip_text(tooltip(&row).as_deref());
-        concerts_status_cells::apply_row_link_presentation(&label, &row);
+        let row_link = concerts_status_cells::row_link_presentation(&row);
+        tooltips_for_bind.set_text(item, &label, text_column_tooltip(tooltip(&row), &row_link));
+        concerts_status_cells::apply_row_link_accessibility(&label, &row_link);
     });
+    let tooltips_for_unbind = tooltips;
     factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -215,7 +236,7 @@ fn text_column(
             return;
         };
         label.set_text("");
-        label.set_tooltip_text(None);
+        tooltips_for_unbind.set_text(item, &label, None);
     });
 
     let column = gtk4::ColumnViewColumn::builder()
@@ -409,6 +430,21 @@ mod tests {
     #[test]
     fn city_tooltip_joins_only_available_location_context() {
         assert_eq!(city_tooltip(&row(None, None)).as_deref(), Some("BY · DE"));
+    }
+
+    #[test]
+    fn city_context_takes_precedence_over_the_row_link_tooltip() {
+        let event = row(Some("https://tickets.example/offer"), None);
+        let row_link = concerts_status_cells::row_link_presentation(&event);
+
+        assert_eq!(
+            text_column_tooltip(city_tooltip(&event), &row_link).as_deref(),
+            Some("BY · DE")
+        );
+        assert_eq!(
+            text_column_tooltip(None, &row_link).as_deref(),
+            Some("Opens Ticketmaster")
+        );
     }
 
     #[test]
