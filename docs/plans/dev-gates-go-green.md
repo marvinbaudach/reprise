@@ -2,7 +2,7 @@
 slug: dev-gates-go-green
 worktree: /home/marvin/Projects/reprise-dev-gates-go-green
 branch: feature/dev-gates-go-green
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
