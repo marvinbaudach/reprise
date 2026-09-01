@@ -227,7 +227,8 @@ display_workflow=$(awk '
     in_display_job { print }
 ' "$workflow")
 rg --multiline --quiet \
-    'strategy:\n      fail-fast: false\n      matrix:\n        shard: \[1, 2, 3, 4\]' "$workflow" || \
+    'strategy:\n      fail-fast: false\n      matrix:\n        shard: \[1, 2, 3, 4\]\n    runs-on:' \
+    <<<"$display_workflow" || \
     fail "the display matrix must collect all four shard outcomes"
 rg --fixed-strings --quiet \
     'name: Display tests ${{ matrix.shard }}/${{ strategy.job-total }}' \
