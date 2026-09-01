@@ -114,7 +114,7 @@ impl SessionInner {
                         state.snapshot.error = Some(TOO_MANY_UNPLAYABLE_TRACKS.to_owned());
                         state.stop();
                         (FollowUp::Stop, None, None)
-                    } else if policy.skip && state.queue.advance_auto().is_some() {
+                    } else if policy.skip && state.queue.next_manual().is_some() {
                         state.adopt_current();
                         (FollowUp::Start, None, Some(state.queue.clone()))
                     } else {

@@ -50,6 +50,48 @@ fn fb_6_fault_on_a_multi_track_queue_advances_and_keeps_playing() {
     );
 }
 
+// UX FB-6: repeat-one repeats a track after a successful finish, but a fault
+// skips that broken item and starts the next queue candidate.
+#[test]
+fn fb_6_repeat_one_does_not_retry_the_faulted_track() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(
+            vec![7, 8, 9],
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+                "content://provider/third.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+    fixture.session.set_repeat(AndroidRepeatMode::One).unwrap();
+    fixture.calls.lock().unwrap().clear();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "decoder failed".to_owned(),
+        },
+    );
+
+    let snapshot = fixture.session.snapshot().unwrap();
+    assert_eq!(snapshot.state, AndroidPlaybackState::Playing);
+    assert_eq!(snapshot.current_index, Some(1));
+    assert_eq!(snapshot.current_track_id, Some(8));
+    assert_eq!(
+        fixture.calls.lock().unwrap().as_slice(),
+        &[
+            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::CurrentGeneration,
+            PortCall::SetNext(Some("content://provider/second.flac".to_owned())),
+        ]
+    );
+}
+
 // UX FB-6: a wholly unplayable repeating queue stops after one bounded pass
 // instead of cycling forever.
 #[test]
