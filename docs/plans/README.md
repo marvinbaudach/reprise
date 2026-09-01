@@ -12,6 +12,11 @@ work; the retention rules below govern what remains here.
   resolve, so these are load-bearing and are deleted only together with the citation.
 - Maintained implementation records that later work still follows:
   `android-sync.md` and `ux-rules-acceptance-tests.md`.
+- `phase: superseded` plans whose *measurement* outlives their code, kept
+  together with their run log. `the-throw-and-the-plate-land-together.md` and
+  its `.device-arms.md` are the case: the branch is parked, but the device
+  harness and the open defect in that log are what the succeeding plan is
+  measured against.
 - Contracts that were never plans — `docs/ux-rules.md` and the ADRs — which live
   outside this directory and outrank the code.
 
