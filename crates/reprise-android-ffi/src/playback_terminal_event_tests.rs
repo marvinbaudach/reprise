@@ -301,7 +301,7 @@ fn fb_6_a_new_queue_clears_the_prior_fault_notice_before_confirmation() {
     );
     assert_eq!(
         fixture.session.snapshot().unwrap().error.as_deref(),
-        Some("Playback stopped — too many unplayable tracks")
+        Some("Track unavailable — skipped")
     );
 
     fixture
@@ -408,6 +408,6 @@ fn buffering_from_the_failed_stream_cannot_revive_a_stopped_snapshot() {
     assert_eq!(snapshot.state, AndroidPlaybackState::Stopped);
     assert_eq!(
         snapshot.error.as_deref(),
-        Some("Playback stopped — too many unplayable tracks")
+        Some("Track unavailable — skipped")
     );
 }

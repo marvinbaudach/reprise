@@ -110,13 +110,25 @@ impl SessionInner {
                     let queue_len = state.queue.len();
                     let skip_limit = *state.fault_skip_limit.get_or_insert(queue_len);
                     state.consecutive_faults = state.consecutive_faults.saturating_add(1);
-                    if should_stop_skipping(state.consecutive_faults, skip_limit) {
+                    let repeated_fault_bound_reached = state.consecutive_faults > 1
+                        && should_stop_skipping(state.consecutive_faults, skip_limit);
+                    if repeated_fault_bound_reached {
                         state.snapshot.error = Some(TOO_MANY_UNPLAYABLE_TRACKS.to_owned());
                         state.stop();
                         (FollowUp::Stop, None, None)
-                    } else if policy.skip && state.queue.next_manual().is_some() {
-                        state.adopt_current();
-                        (FollowUp::Start, None, Some(state.queue.clone()))
+                    } else if policy.skip {
+                        let faulted_track_id = state.queue.current();
+                        let next_track = state
+                            .queue
+                            .next_manual()
+                            .filter(|track_id| Some(*track_id) != faulted_track_id);
+                        if next_track.is_some() {
+                            state.adopt_current();
+                            (FollowUp::Start, None, Some(state.queue.clone()))
+                        } else {
+                            state.stop();
+                            (FollowUp::Stop, None, Some(state.queue.clone()))
+                        }
                     } else {
                         state.stop();
                         (FollowUp::Stop, None, Some(state.queue.clone()))
