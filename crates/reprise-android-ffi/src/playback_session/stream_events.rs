@@ -6,13 +6,27 @@
 //! keeping the play-recording and queue-persistence side effects outside the
 //! state lock they read out of.
 
-use reprise_core::playback::{PlaybackBackend, PlayerEvent, StreamEvent};
+use reprise_core::playback::{
+    playback_fault_policy, should_stop_skipping, PlaybackBackend, PlaybackFaultNotice,
+    PlaybackState, PlayerEvent, StreamEvent,
+};
 
 use crate::listen_export_recorder::RecordedListen;
 use crate::play_recorder::RecordedPlay;
 use crate::playback::AndroidPlaybackState;
 
 use super::SessionInner;
+
+const TRACK_UNAVAILABLE_SKIPPED: &str = "Track unavailable — skipped";
+const TOO_MANY_UNPLAYABLE_TRACKS: &str = "Playback stopped — too many unplayable tracks";
+
+fn fault_notice_text(notice: PlaybackFaultNotice) -> &'static str {
+    match notice {
+        PlaybackFaultNotice::TrackUnavailableSkipped | PlaybackFaultNotice::CouldNotPlaySkipped => {
+            TRACK_UNAVAILABLE_SKIPPED
+        }
+    }
+}
 
 impl SessionInner {
     pub(super) fn handle_event(&self, event: StreamEvent) {
@@ -32,6 +46,11 @@ impl SessionInner {
             }
             match event.event {
                 PlayerEvent::StateChanged(playback) => {
+                    if playback == PlaybackState::Playing {
+                        state.consecutive_faults = 0;
+                        state.fault_skip_limit = None;
+                        state.snapshot.error = None;
+                    }
                     state.snapshot.state = playback.into();
                     (FollowUp::None, None, None)
                 }
@@ -84,10 +103,24 @@ impl SessionInner {
                     }
                 }
                 PlayerEvent::Error(message) => {
-                    state.snapshot.state = AndroidPlaybackState::Stopped;
-                    state.snapshot.error = Some(message.into_message());
+                    tracing::warn!(%message, "Android playback backend reported an error");
+                    let policy = playback_fault_policy(true);
+                    state.snapshot.error = Some(fault_notice_text(policy.notices[0]).to_owned());
                     state.current_loaded = false;
-                    (FollowUp::Stop, None, None)
+                    let queue_len = state.queue.len();
+                    let skip_limit = *state.fault_skip_limit.get_or_insert(queue_len);
+                    state.consecutive_faults = state.consecutive_faults.saturating_add(1);
+                    if should_stop_skipping(state.consecutive_faults, skip_limit) {
+                        state.snapshot.error = Some(TOO_MANY_UNPLAYABLE_TRACKS.to_owned());
+                        state.stop();
+                        (FollowUp::Stop, None, None)
+                    } else if policy.skip && state.queue.advance_auto().is_some() {
+                        state.adopt_current();
+                        (FollowUp::Start, None, Some(state.queue.clone()))
+                    } else {
+                        state.stop();
+                        (FollowUp::Stop, None, Some(state.queue.clone()))
+                    }
                 }
                 PlayerEvent::Buffering { .. } => {
                     // Buffering describes only a stream that is still loaded.

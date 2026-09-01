@@ -70,6 +70,8 @@ struct SessionState {
     snapshot: AndroidPlaybackSnapshot,
     stream: StreamGeneration,
     current_loaded: bool,
+    consecutive_faults: usize,
+    fault_skip_limit: Option<usize>,
     max_position_ms: i64,
     play_recorded: bool,
 }
@@ -97,6 +99,8 @@ impl SessionState {
             },
             stream: StreamGeneration::INITIAL,
             current_loaded: false,
+            consecutive_faults: 0,
+            fault_skip_limit: None,
             max_position_ms: 0,
             play_recorded: false,
         }
@@ -139,6 +143,8 @@ impl SessionState {
             uris: restored.uris,
             stream: StreamGeneration::INITIAL,
             current_loaded: false,
+            consecutive_faults: 0,
+            fault_skip_limit: None,
             max_position_ms: 0,
             play_recorded: false,
         }
@@ -185,7 +191,6 @@ impl SessionState {
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
         self.current_loaded = false;
-        self.snapshot.error = None;
         self.snapshot.state = AndroidPlaybackState::Playing;
         self.max_position_ms = 0;
         self.play_recorded = false;
