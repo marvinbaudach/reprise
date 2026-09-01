@@ -272,8 +272,8 @@ mod tests {
         let literals = whitelist.split('"').skip(1).step_by(2).collect::<Vec<_>>();
         assert_eq!(literals.len() % 2, 0, "sort whitelist tuples changed shape");
         literals
-            .chunks_exact(2)
-            .map(|pair| pair[0])
+            .into_iter()
+            .step_by(2)
             .filter(|field| *field != "playlist_order")
             .map(str::to_owned)
             .collect()

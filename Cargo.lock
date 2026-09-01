@@ -2809,7 +2809,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reprise-android-ffi"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "reprise-core",
  "reprise-view",
@@ -2823,7 +2823,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-cli"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "chrono",
  "clap",
@@ -2838,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-core"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2867,7 +2867,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-gnome"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2893,7 +2893,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-mcp"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "chrono",
  "reprise-core",
@@ -2912,7 +2912,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-platform-linux"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "async-channel",
  "gio",
@@ -2930,7 +2930,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-runtime-protocol"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "serde",
  "serde_json",
@@ -2939,7 +2939,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-stems"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "dirs",
  "flacenc",
@@ -2955,7 +2955,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-view"
-version = "0.1.123"
+version = "0.1.124"
 dependencies = [
  "reprise-core",
 ]

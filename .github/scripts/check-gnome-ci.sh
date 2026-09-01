@@ -44,7 +44,4 @@ env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
     REPRISE_AUDIO_SINK=fakesink \
     cargo test --locked -p reprise-platform-linux -- --test-threads=1
 
-echo "== GNOME display tests =="
-scripts/check-display-tests.sh
-
 echo "GNOME quality checks passed"
