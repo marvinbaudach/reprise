@@ -4,7 +4,20 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 const showroomRoot = new URL('..', import.meta.url).pathname;
-const filmDir = join(showroomRoot, 'public', 'media', 'showreel');
+const chapterThreeSource = join(showroomRoot, 'src', 'components', 'chapters', 'ChapterThree.tsx');
+const mounted = /ShowreelFilm/.test(await readFile(chapterThreeSource, 'utf8'));
+const filmDir = mounted
+  ? join(showroomRoot, 'public', 'media', 'showreel')
+  : join(showroomRoot, 'media', 'showreel');
+const filmFiles = [
+  'showreel-1080.mp4',
+  'showreel-1080.webm',
+  'showreel-720.mp4',
+  'showreel-720.webm',
+  'showreel-poster.jpg',
+  'showreel-poster.webp',
+  'showreel.vtt',
+];
 
 /** The cut, to the frame. Every caption cue has to land inside it. */
 const FILM_SECONDS = 60.0;
@@ -33,7 +46,20 @@ test('the film never starts itself', async () => {
   assert.doesNotMatch(source, /useEffect/);
 });
 
-test('every file the film section names is actually shipped', async () => {
+test('the encodes are served exactly when the film is on the page', async () => {
+  const publicFilmDir = join(showroomRoot, 'public', 'media', 'showreel');
+
+  if (mounted) {
+    for (const name of filmFiles) await stat(join(publicFilmDir, name));
+    return;
+  }
+
+  await assert.rejects(stat(publicFilmDir), { code: 'ENOENT' });
+  const repositoryFilmDir = join(showroomRoot, 'media', 'showreel');
+  for (const name of filmFiles) await stat(join(repositoryFilmDir, name));
+});
+
+test('every file the film section names is present in the repository', async () => {
   for (const name of [
     'showreel-720.webm',
     'showreel-1080.webm',

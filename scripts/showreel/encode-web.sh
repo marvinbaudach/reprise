@@ -11,7 +11,7 @@
 set -euo pipefail
 
 SRC=${1:-$HOME/Videos/reprise-showreel/reprise-showreel-32s-c.mp4}
-OUT=${2:-$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/showroom/public/media/showreel}
+OUT=${2:-$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/showroom/media/showreel}
 # Shot 02, where the whole window is lit and the callout is legible. The hook
 # frame looked stronger in the cut and worse as a still: its scrim dims the UI.
 POSTER_AT=${POSTER_AT:-4.60}
