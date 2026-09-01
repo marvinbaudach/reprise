@@ -2,7 +2,7 @@
 slug: device-sync-fits-the-file-budget
 worktree: /home/marvin/Projects/reprise-device-sync-fits-the-file-budget
 branch: feature/device-sync-fits-the-file-budget
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
