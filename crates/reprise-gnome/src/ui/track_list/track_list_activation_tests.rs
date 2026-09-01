@@ -9,11 +9,16 @@ fn activation_ids_are_reused_until_the_track_model_generation_changes() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
+    // Distinct artists give the default artist-ascending sort a unique order
+    // to settle on. Tied artists have no tiebreaker in `SORT_WHITELIST`
+    // (`queries::clauses`), so their relative order falls out of whichever
+    // plan the query planner happens to pick — not what this test means to
+    // exercise, which is activation-id caching across model generations.
     crate::test_db::connection(&conn)
         .execute_batch(
-            "INSERT INTO tracks (path, title, added_at) VALUES
-             ('/music/one.flac', 'One', 0),
-             ('/music/two.flac', 'Two', 0);",
+            "INSERT INTO tracks (path, title, artist, added_at) VALUES
+             ('/music/one.flac', 'One', 'Charlie', 0),
+             ('/music/two.flac', 'Two', 'Alice', 0);",
         )
         .unwrap();
     let track_list = TrackList::new(
@@ -26,12 +31,12 @@ fn activation_ids_are_reused_until_the_track_model_generation_changes() {
     let generation = track_list.shared.model.generation();
 
     let first = queue_ids_for_activation(&track_list.shared, 0, 1).0;
-    assert_eq!(first, vec![1, 2]);
+    assert_eq!(first, vec![2, 1]);
 
     crate::test_db::connection(&conn)
         .execute(
-            "INSERT INTO tracks (path, title, added_at)
-             VALUES ('/music/three.flac', 'Three', 0)",
+            "INSERT INTO tracks (path, title, artist, added_at)
+             VALUES ('/music/three.flac', 'Three', 'Bob', 0)",
             [],
         )
         .unwrap();
@@ -45,5 +50,5 @@ fn activation_ids_are_reused_until_the_track_model_generation_changes() {
     track_list.reload();
     assert_ne!(track_list.shared.model.generation(), generation);
     let after_reload = queue_ids_for_activation(&track_list.shared, 0, 1).0;
-    assert_eq!(after_reload, vec![1, 3, 2]);
+    assert_eq!(after_reload, vec![2, 3, 1]);
 }
