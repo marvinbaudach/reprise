@@ -207,3 +207,54 @@ Three traps that cost time here:
   frame rate. Do not poll the UI while measuring motion.
 - The screen sleeping mid-capture looks exactly like a black animation.
   `adb shell svc power stayon usb` first.
+
+## 2026-09-02 — the cover hypothesis in the handoff is refuted
+
+The handoff proposed that the prefetch warms `AndroidArtworkSize.LIST` while the
+panels request `NOW_PLAYING`, and that those separate shelves make the prefetch
+unable to warm what the panels read. **That is wrong**, on four pieces of
+primary evidence:
+
+- `ArtworkCache.kt:105-120` — `seedArtwork` explicitly bridges sizes. After the
+  exact-size lookup misses it scans *every* shelf for a `TrackArtworkKey` whose
+  identity matches the request, and returns that visual.
+- `ArtworkCache.kt:208-209` — `matchesIdentity` compares `trackUri` and `kind`
+  only. Size is deliberately not part of it, so a LIST entry answers a
+  NOW_PLAYING seed.
+- `ArtworkCacheTest.kt:41-49` — an existing, green test already asserts exactly
+  that: `putArtwork(request("direct", LIST))` then `seedArtwork(request("direct"))`
+  at NOW_PLAYING returns the same visual.
+- `MobileSurfaceViewModel.kt:288-290` — the prefetch's own comment documents the
+  LIST shelf plus cross-size seed as the intended design, not an oversight.
+
+### What the symptom actually is
+
+The note is **not** `CoverPlaceholder` (`LibraryFrame.kt:358`). `seedVisual`
+(`TrackCover.kt:283`) can never return null — it falls back to
+`generatedVisual(request, resolved = false)`, and `fallbackCoverBitmap`
+(`FallbackCover.kt:35`) draws a gradient with `drawRestrainedNote` on it. So the
+panel is showing the *generated* cover, which is what a cold seed is supposed to
+produce.
+
+Both symptoms the handoff lists — the neighbour during the drag and the ≥1.5 s
+on the new current panel — are the same single mechanism: a cold seed followed
+by the async `loadVisual`. They are not two defects.
+
+The open question is therefore narrower than the handoff states: **why is the
+LIST shelf cold for the incoming track?**
+
+### Two findings that are real but are NOT this bug
+
+- The prefetch window is **not** off by one, though it reads that way. A first
+  pass here recorded `ANALYSIS_PREFETCH_OFFSET = -3` / `LIMIT = 5` as −3…+1
+  against a doc comment promising −2…+2. That was a misreading:
+  `queue_boundary.rs:56-75` starts the window at `queue_window_start`, the track
+  *after* the current one, so `(-3, 5)` is current−2…+2 exactly as documented,
+  and the panels' own `(-2, 3)` (`NowPlayingGestures.kt:94`) is current−1…+1,
+  fully inside it. Do not "fix" these constants.
+- `NOW_PLAYING_ARTWORK_CAPACITY = 3` (`ArtworkCache.kt:12`) while `putGenerated`
+  (`ArtworkCache.kt:182`) writes into the same shelf as resolved covers. Three
+  panels can insert up to six entries per track change into three slots. That
+  thrashes, but evicting a NOW_PLAYING entry only costs a re-decode, because the
+  cross-size `TrackArtworkKey` match still finds the LIST entry ahead of any
+  generated key. A performance defect, not the note.
