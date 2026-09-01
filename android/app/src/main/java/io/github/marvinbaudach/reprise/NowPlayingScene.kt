@@ -127,9 +127,16 @@ internal fun nowPlayingPanelTransform(
     )
 }
 
-internal fun nowPlayingTitleTranslation(positionPx: Float, widthPx: Float): Float =
-    -positionPx * TITLE_PANEL_WIDTH_RATIO -
-        (TITLE_PANEL_WIDTH_RATIO - 1f) * widthPx / 2f
+// The title rides its own panel offset at the wider ratio and nothing else.
+// A half-panel-width term used to be subtracted here to re-centre a container
+// that is laid out `TITLE_PANEL_WIDTH_RATIO` wide, but that container already
+// centres its text on the screen, so the term only shifted every title
+// 0.141 * width to the left -- 152 px on a 1080 px screen, enough to clip the
+// first glyphs of a long title off the display. It also broke the symmetry the
+// panels need: the neighbour on the left has to sit as far out as the one on
+// the right, which only holds when this is odd in `positionPx`.
+internal fun nowPlayingTitleTranslation(positionPx: Float): Float =
+    -positionPx * TITLE_PANEL_WIDTH_RATIO
 
 internal data class NowPlayingGlowTransform(
     val translationX: Float,
@@ -254,7 +261,6 @@ internal fun NowPlayingScene(
                             .graphicsLayer {
                                 translationX = nowPlayingTitleTranslation(
                                     positionPx = positionPx - panel.index * widthPx,
-                                    widthPx = widthPx,
                                 )
                                 alpha = max(
                                     0f,
