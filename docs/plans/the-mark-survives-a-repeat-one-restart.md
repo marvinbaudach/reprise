@@ -2,7 +2,7 @@
 slug: the-mark-survives-a-repeat-one-restart
 worktree: /home/marvin/Projects/reprise-the-mark-survives-a-repeat-one-restart
 branch: feature/the-mark-survives-a-repeat-one-restart
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
