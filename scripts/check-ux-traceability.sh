@@ -7,7 +7,7 @@
 #   2. No test references an ID that is missing from the document or
 #      marked [replaced ...].
 #   3. The display-runner marker is allowed on every rule status. Every other
-#      #[ignore] is limited to [planned] rules and must spell out
+#      #[ignore]/@Ignore is limited to [planned] rules and must spell out
 #      "UX <ID> [planned] — ...".
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -115,6 +115,19 @@ while read -r fn_name; do
   fi
 done < <(grep -rA3 --include='*.rs' '#\[ignore' crates 2>/dev/null \
   | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_[a-z0-9_]+" | sed -E 's/^fn //' | sort -u || true)
+
+while read -r fn_name; do
+  ref=$(printf '%s' "$fn_name" | grep -oE "^(${prefixes})_[0-9]+[a-z]?")
+  id=$(to_id "$ref")
+  ignore_lines=$(grep -rhB3 --include='*.kt' "fun ${fn_name}(" android/app/src/test 2>/dev/null \
+    | grep -E '^[[:space:]]*@Ignore' || true)
+  if [[ ${status_of[$id]:-} == active ]]; then
+    echo "ERROR: test $ref is ignored but rule $id is [active]" >&2; fail=1
+  elif ! printf '%s\n' "$ignore_lines" | grep -qF "UX $id [planned]"; then
+    echo "ERROR: @Ignore on $ref must read \"UX $id [planned] — ...\"" >&2; fail=1
+  fi
+done < <(grep -rA3 --include='*.kt' '@Ignore' android/app/src/test 2>/dev/null \
+  | grep -oE "fun (${prefixes})_[0-9]+[a-z]?_[A-Za-z0-9_]+" | sed -E 's/^fun //' | sort -u || true)
 
 if (( fail )); then exit 1; fi
 active_count=$(grep -cE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[active\]' "$doc" || true)
