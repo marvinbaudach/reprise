@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 
 internal const val PREFERENCES_NAME = "reprise_android"
 internal const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
@@ -37,7 +38,9 @@ internal class ArtistPhotoOfferState(
     }
 
     private fun settle() {
-        preferences.edit().putBoolean(ARTIST_PHOTO_OFFER_SETTLED, true).apply()
+        preferences.edit {
+            putBoolean(ARTIST_PHOTO_OFFER_SETTLED, true)
+        }
         settled = true
     }
 }
