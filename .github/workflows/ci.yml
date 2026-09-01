@@ -127,7 +127,7 @@ jobs:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: always
       # Android runs no GTK display tests; keep the project-wide fallback
-      # explicit while the two display-running jobs override it below.
+      # explicit while the display-tests matrix job overrides it below.
       DISPLAY_TEST_JOBS: 1
     steps:
       - name: Check out the tested revision
@@ -181,7 +181,6 @@ jobs:
       GDK_BACKEND: x11
       WAYLAND_DISPLAY: ""
       REPRISE_AUDIO_SINK: fakesink
-      DISPLAY_TEST_JOBS: 4
     steps:
       - name: Install system dependencies
         run: >-
@@ -227,7 +226,6 @@ jobs:
       GDK_BACKEND: x11
       WAYLAND_DISPLAY: ""
       REPRISE_AUDIO_SINK: fakesink
-      DISPLAY_TEST_JOBS: 4
     steps:
       - name: Install system dependencies
         run: >-

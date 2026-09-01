@@ -5,6 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 classifier="$repo_root/.github/scripts/ci-paths.sh"
 aggregator="$repo_root/.github/scripts/require-ci-results.sh"
 gnome_gate="$repo_root/.github/scripts/check-gnome-ci.sh"
+merge_readiness="$repo_root/scripts/check-merge-readiness.sh"
+ci_quality="$repo_root/scripts/ci-quality.sh"
 workflow="$repo_root/.github/workflows/ci.yml"
 cross_target="$repo_root/.github/workflows/cross-target.yml"
 showroom="$repo_root/.github/workflows/pages.yml"
@@ -196,8 +198,22 @@ rg --quiet 'check-gnome-ci\.sh' "$workflow" || \
 if rg --quiet 'check-display-tests\.sh' "$gnome_gate"; then
     fail "the GNOME gate must leave all display tests to the display matrix"
 fi
-rg --quiet 'Rule-owned display tests' scripts/ci-quality.sh || \
-    fail "the complete workspace gate must skip display tests owned by the matrix"
+skip_gates_literal=$(sed -n "s/^MERGE_READINESS_SKIP_GATES=\\\$'\\(.*\\)' \\\\$/\\1/p" "$ci_quality")
+[[ -n $skip_gates_literal ]] || fail "the complete workspace skip list is missing"
+mapfile -t skip_gates < <(printf '%b\n' "$skip_gates_literal")
+mapfile -t readiness_gates < <(sed -n 's/^gate "\([^"]*\)" -- .*/\1/p' "$merge_readiness")
+for skip_gate in "${skip_gates[@]}"; do
+    matched=false
+    for readiness_gate in "${readiness_gates[@]}"; do
+        if [[ $skip_gate == "$readiness_gate" ]]; then
+            matched=true
+            break
+        fi
+    done
+    [[ $matched == true ]] || \
+        fail "skip-list entry does not match a merge-readiness gate: $skip_gate"
+done
+display_workflow=$(sed -n '/^  display-tests:/,/^  quality:/p' "$workflow")
 rg --multiline --quiet \
     'strategy:\n      fail-fast: false\n      matrix:\n        shard: \[1, 2, 3, 4\]' "$workflow" || \
     fail "the display matrix must collect all four shard outcomes"
@@ -206,7 +222,7 @@ rg --fixed-strings --quiet \
     fail "the display matrix must execute the selected shard"
 rg --quiet 'cargo test --locked -p reprise-view -p reprise-android-ffi' "$workflow" || \
     fail "Android CI must test its shared Rust presentation and FFI crates"
-rg --quiet '^      DISPLAY_TEST_JOBS: 4$' "$workflow" || \
+rg --quiet '^      DISPLAY_TEST_JOBS: 4$' <<<"$display_workflow" || \
     fail "display tests must use four isolated workers"
 if [[ $(rg -c 'uses: actions/checkout@v7' "$workflow") -lt 6 ]]; then
     fail "every script-running job, including Quality gate, must check out the revision"
