@@ -2,7 +2,7 @@
 slug: showreel-film-leaves-the-page
 worktree: /home/marvin/Projects/reprise-showreel-film-leaves-the-page
 branch: feature/showreel-film-leaves-the-page
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
