@@ -228,3 +228,18 @@ B is source-contract verified only. No real screen reader was driven. Ancestor
 `aria-busy` suppression of a descendant live region is correct per ARIA but has
 uneven AT support — a manual NVDA/VoiceOver pass is the honest next step before
 claiming the announcement lands.
+
+## Base and naming, checked at hand-off
+
+`origin/dev` re-fetched at hand-off time and still sits at `496a9a5c36` — the
+same commit this branch was cut from, and nothing touching `showroom/` landed in
+the interim. `git merge-tree` against `origin/dev` reports a clean merge. No
+rebase is pending as of this note; re-check before landing, since several other
+pipelines were mid-land in neighbouring worktrees.
+
+One naming trap for the next reader of the preload effect: the E commit
+**inverted the two names**. `commit` is now the *timeout* trigger (it sets
+`timedOut` and delegates), and `settle` is the normal settle path that clears the
+timer and advances `shownIndex`. So `setTimeout(commit, …)` still reads
+correctly, but `commit` no longer means "commit the swap". Rename if you touch
+this effect for another reason; not worth a commit on its own.
