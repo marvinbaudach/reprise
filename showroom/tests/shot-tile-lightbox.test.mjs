@@ -151,13 +151,39 @@ test('the full view holds its frame until the next picture has decoded', async (
   // for as long as the next file takes to arrive, which on a cold phone is
   // seconds. So the frame draws a picture that lags the request.
   assert.match(source, /const \[shownIndex, setShownIndex\] = useState\(activeIndex\)/);
-  assert.match(source, /const capture = captures\[shownIndex\]/);
-  assert.match(source, /'--lb-ratio': capture\.width \/ capture\.height/);
+  const shownCaptureDrivesRatio = source.match(
+    /const capture = captures\[shownIndex\];[\s\S]{0,7000}?'--lb-ratio': capture\.width \/ capture\.height/,
+  );
+  assert.ok(
+    shownCaptureDrivesRatio,
+    'the lagging capture must drive the frame ratio as well as the bitmap',
+  );
+
+  const preloadEffect = source.match(
+    /useEffect\(\(\) => \{\s*if \(activeIndex === shownIndex\)[\s\S]*?\}, \[activeIndex, shownIndex, captures\]\);/,
+  )?.[0];
+  assert.ok(
+    preloadEffect,
+    'the preload effect must stay scoped to the requested and shown captures',
+  );
 
   // The gate waits for pixels, not bytes, and survives a file it cannot decode.
-  assert.match(source, /new Image\(\)/);
-  assert.match(source, /preload\.decode\(\)\.then\(commit, commit\)/);
-  assert.match(source, /preload\.onerror = commit/);
+  assert.match(preloadEffect, /new Image\(\)/);
+  assert.match(preloadEffect, /preload\.decode\(\)\.then\(commit, commit\)/);
+  assert.match(preloadEffect, /preload\.onerror = commit/);
+
+  // A transfer that never settles must eventually release the held frame, and
+  // both a normal settlement and effect cleanup must disarm that recovery.
+  assert.match(source, /const IMAGE_PRELOAD_TIMEOUT_MS = 10_000/);
+  assert.match(
+    preloadEffect,
+    /const timeout = window\.setTimeout\(commit, IMAGE_PRELOAD_TIMEOUT_MS\)/,
+  );
+  assert.match(
+    preloadEffect,
+    /const commit = \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/,
+  );
+  assert.match(preloadEffect, /return \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/);
 
   // A second press must supersede the first preload rather than race it: a
   // stale resolution landing late would send the reader back a picture.
@@ -186,7 +212,10 @@ test('the full view carries the live plate for the capture that has one', async 
     source,
     /className="lightbox__frame"[\s\S]*?transform: activeZoom \? 'scale\(2\.1\)'/,
   );
-  assert.match(source, /'--lb-ratio': capture\.width \/ capture\.height/);
+  assert.match(
+    source,
+    /const capture = captures\[shownIndex\];[\s\S]{0,7000}?'--lb-ratio': capture\.width \/ capture\.height/,
+  );
   // Exactly one capture claims the plate today: the Android Now Playing scene.
   assert.equal((data.match(/visualizer: true/g) ?? []).length, 1);
   assert.match(data, /id: 'android-visualizer'[\s\S]{0,420}?visualizer: true/);

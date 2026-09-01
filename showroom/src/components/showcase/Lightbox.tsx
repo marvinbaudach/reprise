@@ -15,6 +15,10 @@ import {
 import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
 import './lightbox.css';
 
+// Ten seconds leaves a slow but healthy download ample time to preserve the
+// atomic ratio-and-bitmap swap, while still letting a wedged dialog recover.
+const IMAGE_PRELOAD_TIMEOUT_MS = 10_000;
+
 interface LightboxProps {
   readonly activeIndex: number;
   readonly captures: readonly ProductCapture[];
@@ -75,6 +79,7 @@ export function Lightbox({
 
     let superseded = false;
     const commit = () => {
+      window.clearTimeout(timeout);
       // A later press starts its own preload and this one must not land on top
       // of it — the reader would be sent back a picture.
       if (!superseded) setShownIndex(activeIndex);
@@ -95,9 +100,11 @@ export function Lightbox({
       preload.onload = commit;
       preload.onerror = commit;
     }
+    const timeout = window.setTimeout(commit, IMAGE_PRELOAD_TIMEOUT_MS);
 
     return () => {
       superseded = true;
+      window.clearTimeout(timeout);
     };
   }, [activeIndex, shownIndex, captures]);
 
