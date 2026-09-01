@@ -173,19 +173,27 @@ test('the full view holds its frame until the next picture has decoded', async (
 
   // The gate waits for pixels, not bytes, and survives a file it cannot decode.
   assert.match(preloadEffect, /new Image\(\)/);
-  assert.match(preloadEffect, /preload\.decode\(\)\.then\(commit, commit\)/);
-  assert.match(preloadEffect, /preload\.onerror = commit/);
+  assert.match(preloadEffect, /preload\.decode\(\)\.then\(settle, settle\)/);
+  assert.match(preloadEffect, /preload\.onerror = settle/);
 
   // A transfer that never settles must eventually release the held frame, and
   // both a normal settlement and effect cleanup must disarm that recovery.
   assert.match(source, /const IMAGE_PRELOAD_TIMEOUT_MS = 10_000/);
+  assert.match(preloadEffect, /let timedOut = false/);
+  const timeoutCommit = preloadEffect.match(/const commit = \(\) => \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.ok(
+    timeoutCommit,
+    'the preload timeout must identify its forced commit before releasing the frame',
+  );
+  assert.match(timeoutCommit, /timedOut = true;/);
+  assert.match(timeoutCommit, /settle\(\);/);
   assert.match(
     preloadEffect,
     /const timeout = window\.setTimeout\(commit, IMAGE_PRELOAD_TIMEOUT_MS\)/,
   );
   assert.match(
     preloadEffect,
-    /const commit = \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/,
+    /const settle = \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/,
   );
   assert.match(preloadEffect, /return \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/);
 
@@ -204,6 +212,7 @@ test('the full view holds its frame until the next picture has decoded', async (
   ]) {
     assert.match(preloadCleanup, statement);
   }
+  assert.match(preloadCleanup, /if \(!timedOut\) \{/);
 
   // The press still needs a visual and assistive answer while the frame holds.
   assert.match(source, /data-swapping=\{swapping \? 'true' : 'false'\}/);
