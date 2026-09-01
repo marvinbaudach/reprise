@@ -105,6 +105,8 @@ export function Lightbox({
     return () => {
       superseded = true;
       window.clearTimeout(timeout);
+      preload.src = '';
+      preload.srcset = '';
     };
   }, [activeIndex, shownIndex, captures]);
 

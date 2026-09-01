@@ -186,12 +186,14 @@ test('the full view holds its frame until the next picture has decoded', async (
   assert.match(preloadEffect, /return \(\) => \{[\s\S]{0,120}?window\.clearTimeout\(timeout\)/);
 
   // A second press must supersede the first preload rather than race it: a
-  // stale resolution landing late would send the reader back a picture.
-  assert.match(source, /let superseded = false/);
-  const supersede = source.match(
-    /if \(!superseded\) setShownIndex\(activeIndex\)[\s\S]*?return \(\) => \{\s*superseded = true;/,
+  // stale resolution landing late would send the reader back a picture, while
+  // leaving its fetch alive would compete with the picture now being requested.
+  assert.match(preloadEffect, /let superseded = false/);
+  assert.match(preloadEffect, /if \(!superseded\) setShownIndex\(activeIndex\)/);
+  const supersede = preloadEffect.match(
+    /return \(\) => \{\s*superseded = true;\s*window\.clearTimeout\(timeout\);\s*preload\.src = '';\s*preload\.srcset = '';\s*\};/,
   );
-  assert.ok(supersede, 'the preload effect must mark itself superseded on cleanup');
+  assert.ok(supersede, 'preload cleanup must disarm its commit and abort its image fetch');
 
   // The press still needs an answer while the frame holds.
   assert.match(source, /data-swapping=\{swapping \? 'true' : 'false'\}/);
