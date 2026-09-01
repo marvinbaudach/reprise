@@ -37,7 +37,8 @@ module and cost alike, so round-robin balances better than contiguous chunks.
 
 Compose with the existing modes rather than replacing them: `--shard` applies
 **after** the measurement-tool drop and after `--rule-named` / `--css` filtering,
-so `--shard` alone shards the full 852.
+so `--shard` alone shards the full discovered set (852 at baseline `0c962a02`,
+855 today — see "A note on the expected count" below).
 
 Guard the argument: `K` and `N` positive integers, `1 <= K <= N`, exit 2
 otherwise. An out-of-range shard that silently runs zero tests is exactly the
@@ -77,7 +78,7 @@ that away.
 Then remove `scripts/check-display-tests.sh` from
 `.github/scripts/check-gnome-ci.sh`, and add `Rule-owned display tests` to the
 skip list in `scripts/ci-quality.sh` — the new job becomes the single owner of
-all 852.
+all of them.
 
 **Expected: −708 s from `core-suite`, −846 s from `gnome-suite`; the display
 suite itself lands at ~9 min (5.5 min cold build + 3.5 min tests per shard).**
@@ -138,12 +139,33 @@ restore is worse than none.
 is poor or the store evicts working entries, revert this task alone — A1, A2.1-3
 and strand `b` all stand without it.
 
+## A note on the expected count: 852 became 855
+
+The `852` throughout the mother plan is a measurement taken at baseline
+`0c962a02`. Three further display tests landed after it — `DOC-7c` from
+"The Doctor always scans the whole library" (#757) and two seek-start
+regressions from "The waveform click sets the start point" (#759) — so this
+branch discovers **855**. Coverage grew; nothing was lost.
+
+`852` is not encoded anywhere in the product: it appears in no script, no
+workflow and no rules document, only in these plan files. So nothing in the
+implementation depends on it, and the verification below is written
+relationally so it cannot rot again the next time a display test lands.
+
+The `-708 s` / `-846 s` savings above come from the same pre-A1 baseline and are
+projections, not gates. There is no post-A1 baseline to compare against: A1's
+own landing run (`33444057593`) skipped `core-suite` entirely.
+
 ## Verification
 
 Locally:
 
 1. `scripts/check-display-tests.sh --shard 1/4` (and 2,3,4) — the four
-   `failed: N of M` lines must sum to exactly **852** with no test in two shards.
+   shard counts must sum to exactly the unsharded count, with no test in two
+   shards. Assert this **relationally**, never against a hardcoded literal:
+   `sum(--shard K/4 counts) == count(unsharded)`. Add a floor — the unsharded
+   count must be **>= 852** — so a collapsed discovery cannot pass a purely
+   relational check. Record the observed absolute number; do not assert it.
    Diff the union of `== display test:` names against an unsharded `--list`.
 2. `scripts/check-display-tests.sh --shard 0/4`, `--shard 5/4`, `--shard 1/0` →
    exit 2, no tests run.
@@ -162,7 +184,7 @@ Before landing:
    `suite_skip=false` and `emit_routes` with no arguments yields
    `android=true, gnome=false, core=true`, so `display=true` — the dispatch run
    exercises `base-contracts`, `core-suite` and all four shards. Confirm the
-   shard test counts sum to 852, `Quality gate` passes, and `core-suite` has
+   shard test counts sum to the unsharded count, `Quality gate` passes, and `core-suite` has
    lost its display phase. `gnome-suite` is **not** exercised by dispatch; it is
    first proved by the dev run after landing.
 
