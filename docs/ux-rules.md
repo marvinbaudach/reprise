@@ -6686,7 +6686,13 @@ same state. This section governs exclusively what a user sees of
 this; ownership, lease, and error categories are in the architecture
 plan.
 
-- **RUN-1** [active] [core] — A single owner: playback, queue, jobs,
+ADR 003 shelved the headless runtime, and the rule-named tests for RUN-1 and
+RUN-4 disappeared with the implementation they tested. Both returned to
+[planned]; the whole section is [planned] again, as it began. The ADR's
+resumption trigger — a second frontend, or agent control with no window — is
+what makes them enforceable again.
+
+- **RUN-1** [planned] [core] — A single owner: playback, queue, jobs,
   and device runs belong to exactly one runtime at any point in time.
   A second surface never starts a competing runtime; it connects or
   fails, named. Two simultaneously visible, diverging playback states
@@ -6702,7 +6708,7 @@ plan.
   once, in place. After reconnecting, a complete snapshot replaces the
   runtime-bound state without sacrificing selection and scroll
   position (like EXT-2).
-- **RUN-4** [active] [core] — Idle shutdown never interrupts work:
+- **RUN-4** [planned] [core] — Idle shutdown never interrupts work:
   the runtime only terminates when no client is connected, nothing is
   playing or loaded paused, no device run and no job is active. A
   service that aborts running work for the sake of resources is a
