@@ -45,6 +45,8 @@ require_pattern_order() {
 
 require_executable scripts/check-architecture.sh
 require_executable scripts/check-shell.sh
+require_pattern "git ls-files -z '.github/workflows/\*.yml'" scripts/check-shell.sh
+require_pattern 'workflow_run_blocks' scripts/check-shell.sh
 require_executable scripts/check-frontend-thinness.sh
 require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh

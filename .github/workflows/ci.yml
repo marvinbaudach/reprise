@@ -261,7 +261,7 @@ jobs:
         run: scripts/ci-quality.sh
 
   display-tests:
-    name: Display tests ${{ matrix.shard }}/4
+    name: Display tests ${{ matrix.shard }}/${{ strategy.job-total }}
     needs: changes
     if: >-
       needs.changes.outputs.suite_skip != 'true' &&
@@ -308,18 +308,23 @@ jobs:
             cargo-${{ runner.os }}-
 
       - name: Run display-test shard
-        run: scripts/check-display-tests.sh --shard ${{ matrix.shard }}/4
+        env:
+          DISPLAY_SHARD: ${{ matrix.shard }}
+          DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}
+        run: scripts/check-display-tests.sh --shard "$DISPLAY_SHARD/$DISPLAY_SHARD_COUNT"
 
       - name: Verify display-test shard partition
         if: matrix.shard == 1
+        env:
+          DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}
         run: |
           listing_root=$(mktemp -d)
           trap 'rm -rf "$listing_root"' EXIT
           scripts/check-display-tests.sh --list > "$listing_root/unsharded"
           shard_total=0
           : > "$listing_root/union"
-          for shard in 1 2 3 4; do
-            scripts/check-display-tests.sh --shard "$shard/4" --list > "$listing_root/shard-$shard"
+          for ((shard = 1; shard <= DISPLAY_SHARD_COUNT; shard++)); do
+            scripts/check-display-tests.sh --shard "$shard/$DISPLAY_SHARD_COUNT" --list > "$listing_root/shard-$shard"
             shard_count=$(wc -l < "$listing_root/shard-$shard")
             shard_total=$((shard_total + shard_count))
             cat "$listing_root/shard-$shard" >> "$listing_root/union"

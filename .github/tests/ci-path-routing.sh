@@ -199,10 +199,16 @@ if rg --quiet 'check-display-tests\.sh' "$gnome_gate"; then
     fail "the GNOME gate must leave all display tests to the display matrix"
 fi
 skip_gates_literal=$(sed -n "s/^MERGE_READINESS_SKIP_GATES=\\\$'\\(.*\\)' \\\\$/\\1/p" "$ci_quality")
-[[ -n $skip_gates_literal ]] || fail "the complete workspace skip list is missing"
-mapfile -t skip_gates < <(printf '%b\n' "$skip_gates_literal")
+[[ -n $skip_gates_literal ]] || \
+    fail "the complete workspace skip list could not be parsed; expected one MERGE_READINESS_SKIP_GATES=\$'...\\n...' \\ assignment line"
+mapfile -t skip_gates < <(sed 's/\\n/\n/g' <<<"$skip_gates_literal")
 mapfile -t readiness_gates < <(sed -n 's/^gate "\([^"]*\)" -- .*/\1/p' "$merge_readiness")
+required_display_skip='Rule-owned display tests'
+display_skip_found=false
 for skip_gate in "${skip_gates[@]}"; do
+    if [[ $skip_gate == "$required_display_skip" ]]; then
+        display_skip_found=true
+    fi
     matched=false
     for readiness_gate in "${readiness_gates[@]}"; do
         if [[ $skip_gate == "$readiness_gate" ]]; then
@@ -213,22 +219,38 @@ for skip_gate in "${skip_gates[@]}"; do
     [[ $matched == true ]] || \
         fail "skip-list entry does not match a merge-readiness gate: $skip_gate"
 done
-display_workflow=$(sed -n '/^  display-tests:/,/^  quality:/p' "$workflow")
+[[ $display_skip_found == true ]] || \
+    fail "the complete workspace gate must skip display tests owned by the matrix"
+display_workflow=$(awk '
+    /^  display-tests:$/ { in_display_job = 1 }
+    in_display_job && /^  [a-z][a-z0-9-]*:$/ && $0 != "  display-tests:" { exit }
+    in_display_job { print }
+' "$workflow")
 rg --multiline --quiet \
     'strategy:\n      fail-fast: false\n      matrix:\n        shard: \[1, 2, 3, 4\]' "$workflow" || \
     fail "the display matrix must collect all four shard outcomes"
 rg --fixed-strings --quiet \
-    'scripts/check-display-tests.sh --shard ${{ matrix.shard }}/4' "$workflow" || \
-    fail "the display matrix must execute the selected shard"
+    'name: Display tests ${{ matrix.shard }}/${{ strategy.job-total }}' \
+    <<<"$display_workflow" || fail "the display matrix title must derive its shard total"
+rg --fixed-strings --quiet 'DISPLAY_SHARD: ${{ matrix.shard }}' \
+    <<<"$display_workflow" || fail "the display matrix must expose the selected shard"
+rg --fixed-strings --quiet 'DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}' \
+    <<<"$display_workflow" || fail "the display matrix must derive its shard total"
+rg --fixed-strings --quiet \
+    'scripts/check-display-tests.sh --shard "$DISPLAY_SHARD/$DISPLAY_SHARD_COUNT"' \
+    <<<"$display_workflow" || fail "the display matrix must execute the selected shard"
 rg --multiline --quiet \
-    'name: Verify display-test shard partition\n        if: matrix\.shard == 1\n        run: \|' \
+    'name: Verify display-test shard partition\n        if: matrix\.shard == 1\n        env:\n          DISPLAY_SHARD_COUNT: \$\{\{ strategy\.job-total \}\}\n        run: \|' \
     <<<"$display_workflow" || \
     fail "one display shard must verify that the matrix partitions the full suite"
 rg --fixed-strings --quiet \
     'scripts/check-display-tests.sh --list > "$listing_root/unsharded"' \
     <<<"$display_workflow" || fail "the partition check must list the unsharded suite"
 rg --fixed-strings --quiet \
-    'scripts/check-display-tests.sh --shard "$shard/4" --list > "$listing_root/shard-$shard"' \
+    'for ((shard = 1; shard <= DISPLAY_SHARD_COUNT; shard++)); do' \
+    <<<"$display_workflow" || fail "the partition check must iterate over the live matrix size"
+rg --fixed-strings --quiet \
+    'scripts/check-display-tests.sh --shard "$shard/$DISPLAY_SHARD_COUNT" --list > "$listing_root/shard-$shard"' \
     <<<"$display_workflow" || fail "the partition check must list every shard"
 rg --fixed-strings --quiet '(( shard_total == unsharded_count ))' \
     <<<"$display_workflow" || fail "the partition check must compare relational counts"
