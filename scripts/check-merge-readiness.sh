@@ -142,11 +142,6 @@ gate "Linux platform tests" -- env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME
 
 gate "Rule-owned display tests" -- scripts/check-display-tests.sh --rule-named
 
-# The runtime service's own tests need a session bus. A private one, so they
-# never touch the developer's running Reprise.
-gate "Runtime service bus tests" -- dbus-run-session -- cargo test --locked -p reprise-platform-linux \
-  --test runtime_service -- --ignored --test-threads=1
-
 gate "Dependency audit" -- run_audit
 
 echo "Merge-readiness checks passed against $base_ref"

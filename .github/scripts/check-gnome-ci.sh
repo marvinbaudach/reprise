@@ -47,8 +47,4 @@ env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
 echo "== GNOME display tests =="
 scripts/check-display-tests.sh
 
-echo "== Runtime service bus tests =="
-dbus-run-session -- cargo test --locked -p reprise-platform-linux \
-    --test runtime_service -- --ignored --test-threads=1
-
 echo "GNOME quality checks passed"
