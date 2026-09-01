@@ -179,9 +179,9 @@ buttons end up on the wrong side.
 
 ## What is decided
 
-- **The film joins the showroom.** Decided 2026-08-31: it is mounted in CH.03
-  as a click-to-play `<video preload="none">` plate beside the eleven gallery
-  plates; it replaces none of them.
+- **The film exists and is ready as a file; its showroom placement is open
+  again.** The finished encodes remain in the repository, but the film is not
+  currently mounted on the page.
 - **The plates that came out of the same session are live.** The eleven
   gallery plates were reshot and shipped in #695, and the podcasts plate was
   reshot from an anonymised profile in #698 after the first one showed real
@@ -211,10 +211,12 @@ buttons end up on the wrong side.
 2. **The film has audio.** The shipped MP4 carries a music stream and the
    caption cues begin with `[music begins]`. The showroom starts it muted and
    offers a sound toggle, so the page never makes noise unbidden.
-3. **The showroom placement was decided on 2026-08-31.** The film joins the
-   gallery in CH.03 as a click-to-play `<video preload="none">` plate; it does
-   not replace the eleven screenshots and does not start on its own. This
-   placement and playback decision is closed. A smaller re-encode remains open.
+3. **The showroom placement was decided, then reopened.** On 2026-08-31 the
+   film was mounted in CH.03 as a click-to-play `<video preload="none">` plate.
+   On 2026-09-01 it was taken off the page again because the film is not yet in
+   a state to be shown. `ShowreelFilm.tsx`, `showreel.css` and all encodes were
+   kept, so bringing it back later means re-adding one element rather than
+   rebuilding anything.
 4. **The welcome plate's crop is reconstructed, not recorded.** The original
    hand step between `welcome-raw.png` (3456×2160) and the shipped 2400×1456
    plate was never written down; `welcome-shot.sh` now does

@@ -9,42 +9,16 @@ const filmDir = join(showroomRoot, 'public', 'media', 'showreel');
 /** The cut, to the frame. Every caption cue has to land inside it. */
 const FILM_SECONDS = 60.0;
 
-test('CH.03 carries the film beside the screenshot mosaic', async () => {
+test('CH.03 does not carry the film yet', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const chapter = html.match(/<section id="ch-03"[\s\S]+?<section id="ch-04"/)?.[0];
   assert.ok(chapter);
 
-  assert.match(chapter, /data-showcase="showreel-film"/);
+  // The film is finished code but not finished work. Keep it off the public
+  // page until someone decides it is ready, without treating it as abandoned.
+  assert.doesNotMatch(chapter, /data-showcase="showreel-film"/);
+  assert.doesNotMatch(chapter, /<video/);
   assert.match(chapter, /data-layout="design-mosaic"/);
-  assert.match(chapter, /<video[^>]*\bpreload="none"/);
-
-  // Both codecs, both ladder steps, and the small step offered first so the
-  // element picks it before it ever considers the 1080 file.
-  for (const source of [
-    'showreel-720.webm',
-    'showreel-1080.webm',
-    'showreel-720.mp4',
-    'showreel-1080.mp4',
-  ]) {
-    assert.match(chapter, new RegExp(source.replace('.', '\\.')));
-  }
-  assert.ok(
-    chapter.indexOf('showreel-720.webm') < chapter.indexOf('showreel-1080.webm'),
-    'the smaller step has to be offered before the larger one',
-  );
-
-  // Muted, and with a control that can undo that. A landing page does not get
-  // to make noise at a reader who has not asked for it.
-  assert.match(chapter, /<video[^>]*\bmuted\b/);
-  assert.match(chapter, /Sound on/);
-  assert.match(chapter, /Play the film|>Play</);
-  assert.match(chapter, /Captions on/);
-
-  // Nothing here may be eager: the page-wide count of two belongs to the hero.
-  assert.doesNotMatch(chapter, /loading="eager"/);
-
-  assert.match(chapter, /poster="[^"]*showreel-poster\.webp"/);
-  assert.match(chapter, /kind="captions"/);
 });
 
 test('the film never starts itself', async () => {
