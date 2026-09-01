@@ -302,7 +302,7 @@ pub(in crate::ui) fn style_clear_all(button: &impl IsA<gtk4::Widget>) {
     button.add_css_class(CLEAR_ALL_CSS_CLASS);
 }
 
-pub(crate) fn chooser_row(label: &str) -> gtk4::ListBoxRow {
+pub(in crate::ui) fn chooser_row(label: &str) -> gtk4::ListBoxRow {
     let label = gtk4::Label::builder()
         .label(label)
         .xalign(0.0)
