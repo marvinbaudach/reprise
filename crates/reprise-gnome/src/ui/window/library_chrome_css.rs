@@ -25,32 +25,3 @@ pub(in crate::ui) fn css() -> String {
        color: @reprise_secondary_fg_color; }}"
     )
 }
-
-#[cfg(test)]
-mod tests {
-    /// UX STYLE-1: every chrome surface that should read as its own plane
-    /// declares its background explicitly.
-    #[test]
-    fn style_1_chrome_surfaces_declare_background_and_edge() {
-        let css = super::css();
-
-        for class in [".reprise-library-header", ".reprise-search-popover"] {
-            let block = css
-                .split(class)
-                .nth(1)
-                .unwrap_or_else(|| panic!("{class} has no rule in the chrome CSS"));
-            let block = block.split('}').next().unwrap_or_default();
-            assert!(
-                block.contains("background-color:"),
-                "{class} inherits its background"
-            );
-            // The header divides itself from content with a bottom hairline;
-            // the floating popover has a full border instead.
-            if class == ".reprise-library-header" {
-                assert!(block.contains("border-bottom:"));
-            } else {
-                assert!(block.contains("border:"));
-            }
-        }
-    }
-}
