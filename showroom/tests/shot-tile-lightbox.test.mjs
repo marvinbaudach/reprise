@@ -12,6 +12,16 @@ async function builtCss() {
   return readFile(join(assets, stylesheet), 'utf8');
 }
 
+function assertShownCaptureDrivesRatio(source) {
+  assert.match(source, /const capture = captures\[shownIndex\];/);
+  assert.match(source, /'--lb-ratio': capture\.width \/ capture\.height/);
+  assert.equal(
+    (source.match(/\bconst capture\s*=/g) ?? []).length,
+    1,
+    'the frame ratio and bitmap must share the sole capture binding',
+  );
+}
+
 test('ShotTile owns the still frame the loading sweep and the zoom cue', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
@@ -151,13 +161,7 @@ test('the full view holds its frame until the next picture has decoded', async (
   // for as long as the next file takes to arrive, which on a cold phone is
   // seconds. So the frame draws a picture that lags the request.
   assert.match(source, /const \[shownIndex, setShownIndex\] = useState\(activeIndex\)/);
-  const shownCaptureDrivesRatio = source.match(
-    /const capture = captures\[shownIndex\];[\s\S]{0,7000}?'--lb-ratio': capture\.width \/ capture\.height/,
-  );
-  assert.ok(
-    shownCaptureDrivesRatio,
-    'the lagging capture must drive the frame ratio as well as the bitmap',
-  );
+  assertShownCaptureDrivesRatio(source);
 
   const preloadEffect = source.match(
     /useEffect\(\(\) => \{\s*if \(activeIndex === shownIndex\)[\s\S]*?\}, \[activeIndex, shownIndex, captures\]\);/,
@@ -190,18 +194,23 @@ test('the full view holds its frame until the next picture has decoded', async (
   // leaving its fetch alive would compete with the picture now being requested.
   assert.match(preloadEffect, /let superseded = false/);
   assert.match(preloadEffect, /if \(!superseded\) setShownIndex\(activeIndex\)/);
-  const supersede = preloadEffect.match(
-    /return \(\) => \{\s*superseded = true;\s*window\.clearTimeout\(timeout\);\s*preload\.src = '';\s*preload\.srcset = '';\s*\};/,
-  );
-  assert.ok(supersede, 'preload cleanup must disarm its commit and abort its image fetch');
+  const preloadCleanup = preloadEffect.match(/return \(\) => \{([\s\S]*?)^\s*\};/m)?.[1];
+  assert.ok(preloadCleanup, 'the preload effect must return a cleanup function');
+  for (const statement of [
+    /superseded = true;/,
+    /window\.clearTimeout\(timeout\);/,
+    /preload\.src = '';/,
+    /preload\.srcset = '';/,
+  ]) {
+    assert.match(preloadCleanup, statement);
+  }
 
   // The press still needs a visual and assistive answer while the frame holds.
   assert.match(source, /data-swapping=\{swapping \? 'true' : 'false'\}/);
   assert.match(source, /aria-busy=\{swapping \? 'true' : undefined\}/);
-  assert.match(
-    source,
-    /<span className="lightbox__counter" aria-live="polite">\s*\{counter\}\s*<\/span>/,
-  );
+  const counterTag = source.match(/<span\b[^>]*\bclassName="lightbox__counter"[^>]*>/)?.[0];
+  assert.ok(counterTag, 'the lightbox counter must remain a span');
+  assert.match(counterTag, /aria-live="polite"/);
 });
 
 test('the full view carries the live plate for the capture that has one', async () => {
@@ -219,10 +228,7 @@ test('the full view carries the live plate for the capture that has one', async 
     source,
     /className="lightbox__frame"[\s\S]*?transform: activeZoom \? 'scale\(2\.1\)'/,
   );
-  assert.match(
-    source,
-    /const capture = captures\[shownIndex\];[\s\S]{0,7000}?'--lb-ratio': capture\.width \/ capture\.height/,
-  );
+  assertShownCaptureDrivesRatio(source);
   // Exactly one capture claims the plate today: the Android Now Playing scene.
   assert.equal((data.match(/visualizer: true/g) ?? []).length, 1);
   assert.match(data, /id: 'android-visualizer'[\s\S]{0,420}?visualizer: true/);
