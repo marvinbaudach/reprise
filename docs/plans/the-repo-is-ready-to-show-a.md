@@ -2,7 +2,7 @@
 slug: the-repo-is-ready-to-show-a
 worktree: /home/marvin/Projects/reprise-the-repo-is-ready-to-show-a
 branch: feature/the-repo-is-ready-to-show-a
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-31
 ---
