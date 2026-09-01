@@ -226,7 +226,7 @@ fn repeat_one_restart_does_not_apply_a_stopped_track_mark() {
     assert!(calls.played_paths.borrow().is_empty());
     assert!(calls.sought_positions.borrow().is_empty());
 
-    controller.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+    controller.apply_event(PlayerEvent::TrackFinished);
 
     assert_eq!(
         calls.played_paths.borrow().as_slice(),

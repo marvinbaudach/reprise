@@ -69,6 +69,12 @@ impl PlayerController {
             })
     }
 
+    /// Drops the mark before a new play, including a same-item Repeat One
+    /// restart; this clear must not be filtered by item identity.
+    pub(in crate::ui) fn clear_pending_start_mark(&self) {
+        self.pending_start_mark.take();
+    }
+
     pub(in crate::ui) fn seek_after_start(&self, position_ms: i64) -> bool {
         self.try_seek_with_feedback(position_ms)
     }

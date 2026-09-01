@@ -2,7 +2,7 @@
 slug: the-mark-survives-a-repeat-one-restart
 worktree: /home/marvin/Projects/reprise-the-mark-survives-a-repeat-one-restart
 branch: feature/the-mark-survives-a-repeat-one-restart
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-09-01
 ---
@@ -80,7 +80,8 @@ test failed and was then narrowed. Worth widening that wording in future plans.
 The literal probe was added as
 `repeat_one_restart_does_not_apply_a_stopped_track_mark`. It restores one
 stopped track under `Repeat::One`, arms a mark through `seek_or_start`, and
-calls `advance_playback(Automatic)` directly. No production code had been
+feeds `PlayerEvent::TrackFinished` through `apply_event`, the production entry
+point that calls `advance_playback(Automatic)`. No production code had been
 changed when the probe was first run. The result was red:
 
 ```text
@@ -105,11 +106,23 @@ error: test failed, to rerun pass `-p reprise-gnome --bin reprise`
 
 The restart reaches `present_track`. That funnel consumes the mark by item
 identity, so Repeat One's legitimate return to the same track incorrectly
-matches it. The fix consumes and drops a pending mark at the beginning of
-`advance_playback`: an advance starts a new play even when it selects the same
-item. Direct starts and the external-media funnel retain their reviewed
-identity-matching behavior. The literal probe was not changed after the red
-run.
+matches it. The fix explicitly clears a pending mark at the beginning of
+`advance_playback`, without an item-identity filter: an advance starts a new play
+even when it selects the same item. Direct starts and the external-media funnel
+retain their reviewed identity-matching behavior.
+
+The review follow-up changed the test only after that original red run, replacing
+the direct `advance_playback(Automatic)` call with the real
+`PlayerEvent::TrackFinished` entry point. Its setup and both assertions were not
+changed. With the production clear temporarily removed, the rewritten probe was
+also red with the same assertion failure:
+
+```text
+thread 'ui::playback::seek_start_tests::repeat_one_restart_does_not_apply_a_stopped_track_mark' (587) panicked at crates/reprise-gnome/src/ui/playback/seek_start_tests.rs:235:5:
+a repeat-one restart must start from the beginning
+```
+
+Restoring the explicit, unfiltered clear made the rewritten probe green again.
 
 The sibling branch's
 `stopped_track_mark_cannot_return_on_advance_to_the_marked_track` covers a
