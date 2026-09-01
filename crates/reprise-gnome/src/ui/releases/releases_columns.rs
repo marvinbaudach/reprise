@@ -561,6 +561,7 @@ mod tests {
             crate::ui::lazy_tooltip::text_of(&cell).as_deref(),
             Some("https://musicbrainz.org/release-group/mbid")
         );
+        assert!(cell.has_tooltip());
         assert!(gtk4::test_accessible_has_property(
             &button,
             gtk4::AccessibleProperty::Label
@@ -576,6 +577,7 @@ mod tests {
         assert!(!button.is_visible());
         assert_eq!(button.label().as_deref(), Some(""));
         assert_eq!(crate::ui::lazy_tooltip::text_of(&cell), None);
+        assert!(!cell.has_tooltip());
         assert!(!gtk4::test_accessible_has_property(
             &button,
             gtk4::AccessibleProperty::Label
