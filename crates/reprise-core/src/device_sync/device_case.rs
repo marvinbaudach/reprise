@@ -1,11 +1,11 @@
-//! Resolves case-only path differences without renaming anything over MTP.
+//! Resolves fold-equivalent path spellings without renaming anything over MTP.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::mirror::{DesiredManagedFile, ManagedDeviceFile};
 use super::settings::DeviceFileRecord;
 
-/// The spelling the device already uses for a path, when it differs only in case.
+/// The spelling the device already uses for a fold-equivalent path.
 pub(super) enum ResidentSpelling {
     /// Use this path instead of the desired one.
     Adopt(String),
@@ -33,7 +33,7 @@ pub(super) fn adopt_resident_spelling(
     let Some((desired_directory, file_name)) = desired_path.rsplit_once('/') else {
         return ResidentSpelling::Keep;
     };
-    let Some(spelling) = directory_spellings.get(&desired_directory.to_lowercase()) else {
+    let Some(spelling) = directory_spellings.get(&fold_path(desired_directory)) else {
         return ResidentSpelling::Keep;
     };
     match spelling {
@@ -70,7 +70,7 @@ pub(super) fn rewrite_desired_paths(
                         track_id,
                         desired_path,
                         resident_path,
-                        "ambiguous case-only device directory; keeping the track's inventory path"
+                        "ambiguous device directory spelling; keeping the track's inventory path"
                     );
                     desired.get_mut(&track_id).unwrap().device_path = resident_path.to_owned();
                 } else {
@@ -81,7 +81,7 @@ pub(super) fn rewrite_desired_paths(
                         track_id,
                         first_spelling,
                         second_spelling,
-                        "ambiguous case-only device directory; leaving track unplanned"
+                        "ambiguous device directory spelling; leaving track unplanned"
                     );
                     unplanned_resident_paths.push(desired_path);
                     desired.remove(&track_id);
@@ -107,7 +107,7 @@ fn build_directory_spellings(
             continue;
         };
         *counts
-            .entry(directory.to_lowercase())
+            .entry(fold_path(directory))
             .or_default()
             .entry(directory.to_owned())
             .or_default() += 1;
@@ -138,12 +138,25 @@ fn ambiguous_spellings<'a>(
     spellings: &'a HashMap<String, DirectorySpelling>,
 ) -> Option<(&'a str, &'a str)> {
     let (directory, _) = desired_path.rsplit_once('/')?;
-    match spellings.get(&directory.to_lowercase())? {
+    match spellings.get(&fold_path(directory))? {
         DirectorySpelling::Ambiguous { first, second } => Some((first, second)),
         DirectorySpelling::Resident(_) => None,
     }
 }
 
 fn folds_equal(left: &str, right: &str) -> bool {
-    left.to_lowercase() == right.to_lowercase()
+    fold_path(left) == fold_path(right)
+}
+
+/// Folds the path differences a case-insensitive phone treats as spelling
+/// variants. Curly quotation marks are normalized here beside case so every
+/// resident-path comparison shares one definition.
+pub(super) fn fold_path(path: &str) -> String {
+    path.chars()
+        .flat_map(char::to_lowercase)
+        .map(|character| match character {
+            '\u{2018}' | '\u{2019}' => '\'',
+            other => other,
+        })
+        .collect()
 }

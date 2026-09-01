@@ -33,6 +33,7 @@ fn inventoried_input(managed_files_scanned: bool) -> MirrorInput {
             source: SelectionSource::Playlist(10),
             name: "Road".into(),
             entries: vec![MirrorTrack::Available(track.clone())],
+            stability_margin_track_ids: Vec::new(),
         }],
         profile: TransferProfile::Mp3(Mp3Quality::Kbps256),
         inventory: vec![DeviceFileRecord {

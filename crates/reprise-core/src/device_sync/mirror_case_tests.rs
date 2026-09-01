@@ -151,6 +151,24 @@ fn resident_non_ascii_case_spelling_is_adopted() {
 }
 
 #[test]
+fn resident_typographic_apostrophe_spelling_is_adopted() {
+    let wanted = case_track(1, "Artist", "Album", "It's Not Just a Party");
+    let resident = "Artist/Album/01 It’s Not Just a Party.mp3";
+    let mut mirror_input = selected_input(wanted.clone());
+    mirror_input
+        .inventory
+        .push(inventory(&wanted, resident, "copy-original-v1"));
+    mirror_input.managed_files.push(managed(resident));
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert_eq!(plan.desired_files[0].device_path, resident);
+    assert!(plan.remove.is_empty());
+}
+
+#[test]
 fn authoritative_scan_accepts_the_resident_case_variant_of_the_inventory_path() {
     let wanted = case_track(1, "Carnifex", "Graveside Confessions", "Track 1");
     let inventory_path = "Carnifex/Graveside Confessions/01 Track 1.mp3";
@@ -272,6 +290,37 @@ fn ambiguous_uninventoried_track_protects_resident_audio_and_analysis() {
     assert!(plan.copy.is_empty());
     assert!(plan.replace.is_empty());
     assert!(plan.analysis_writes.is_empty());
+}
+
+#[test]
+fn ambiguous_uninventoried_apostrophe_variant_keeps_its_resident_file() {
+    let wanted = case_track(9, "Tie Artist", "Tie Album", "It's Resident");
+    let other = case_track(1, "TIE ARTIST", "Tie Album", "Other");
+    let wanted_resident = "Tie Artist/Tie Album/09 It’s Resident.mp3";
+    let other_resident = "TIE ARTIST/Tie Album/01 Other.mp3";
+    let source = SelectionSource::Playlist(10);
+    let mut mirror_input = input(
+        vec![source.clone()],
+        vec![playlist(
+            source,
+            "Tie",
+            vec![MirrorTrack::Available(wanted), unavailable(other.id)],
+        )],
+    );
+    mirror_input
+        .inventory
+        .push(inventory(&other, other_resident, "copy-original-v1"));
+    mirror_input.managed_files = vec![managed(wanted_resident), managed(other_resident)];
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert!(!plan.remove.iter().any(|removal| match removal {
+        ManagedRemoval::Inventory(_) => false,
+        ManagedRemoval::Orphan(file) => file.relative_path == wanted_resident,
+    }));
+}
 }
 
 #[test]

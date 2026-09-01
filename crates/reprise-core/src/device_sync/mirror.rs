@@ -9,6 +9,9 @@ use super::settings::{DeviceFileRecord, DevicePlaylistRecord, SelectionSource};
 use super::transfer::build_transfer_plan_with_inventory;
 use super::{SyncTrack, TransferAction, TransferProfile};
 
+#[path = "mirror_file_changes.rs"]
+mod file_changes;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnavailableTrack {
     pub track_id: i64,
@@ -37,6 +40,8 @@ pub struct MirrorPlaylistSnapshot {
     pub source: SelectionSource,
     pub name: String,
     pub entries: Vec<MirrorTrack>,
+    /// Ranked smart-playlist members just below its addition cap.
+    pub stability_margin_track_ids: Vec<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -224,6 +229,10 @@ fn build_plan(
 
     let mut available = HashMap::<i64, SyncTrack>::new();
     let mut unavailable = HashMap::<i64, UnavailableTrack>::new();
+    let stability_margin_ids = playlists
+        .iter()
+        .flat_map(|playlist| playlist.stability_margin_track_ids.iter().copied())
+        .collect::<HashSet<_>>();
     for entry in playlists.iter().flat_map(|playlist| &playlist.entries) {
         match entry {
             MirrorTrack::Available(track) => {
@@ -283,13 +292,16 @@ fn build_plan(
         desired_files,
         ..MirrorPlan::default()
     };
-    plan_file_changes(
-        &desired_by_id,
-        &inventory,
-        &inventory_by_id,
-        &unavailable,
-        managed_files_scanned,
-        &managed_paths,
+    file_changes::plan_file_changes(
+        file_changes::FileChangeInput {
+            desired: &desired_by_id,
+            inventory: &inventory,
+            inventory_by_id: &inventory_by_id,
+            unavailable: &unavailable,
+            stability_margin_ids: &stability_margin_ids,
+            managed_files_scanned,
+            managed_paths: &managed_paths,
+        },
         &mut plan,
     );
     plan_analysis_sidecars(desktop_analyses, &managed_files, &mut plan);
@@ -427,97 +439,6 @@ fn plan_analysis_sidecars(
     plan.target_bytes = plan.target_bytes.saturating_add(analysis_target_bytes);
 }
 
-fn plan_file_changes(
-    desired: &HashMap<i64, DesiredManagedFile>,
-    inventory: &[DeviceFileRecord],
-    inventory_by_id: &HashMap<i64, DeviceFileRecord>,
-    unavailable: &HashMap<i64, UnavailableTrack>,
-    managed_files_scanned: bool,
-    managed_paths: &HashSet<String>,
-    plan: &mut MirrorPlan,
-) {
-    let mut desired_ids = desired.keys().copied().collect::<Vec<_>>();
-    desired_ids.sort_unstable();
-    for track_id in desired_ids {
-        let file = &desired[&track_id];
-        match inventory_by_id.get(&track_id) {
-            None => plan.copy.push(file.clone()),
-            Some(existing)
-                if inventory_matches(existing, file)
-                    && managed_files_scanned
-                    && !managed_paths.contains(&existing.device_path.to_lowercase()) =>
-            {
-                plan.copy.push(file.clone());
-            }
-            Some(existing) if inventory_matches(existing, file) => {}
-            Some(existing) if safe_managed_path(&existing.device_path) => {
-                plan.replace.push(MirrorReplacement {
-                    existing: existing.clone(),
-                    desired: file.clone(),
-                });
-            }
-            Some(existing) => {
-                push_warning(
-                    &mut plan.warnings,
-                    MirrorWarning::UnsafeManagedPath {
-                        path: existing.device_path.clone(),
-                    },
-                );
-                plan.copy.push(file.clone());
-            }
-        }
-    }
-
-    let mut unavailable_ids = unavailable
-        .keys()
-        .copied()
-        .filter(|track_id| !desired.contains_key(track_id))
-        .collect::<Vec<_>>();
-    unavailable_ids.sort_unstable();
-    let mut retained_ids = HashSet::new();
-    for track_id in unavailable_ids {
-        if let Some(existing) = inventory_by_id.get(&track_id) {
-            retained_ids.insert(track_id);
-            plan.target_bytes = plan.target_bytes.saturating_add(existing.device_size);
-            plan.retained_unavailable.push(existing.clone());
-        } else {
-            push_warning(
-                &mut plan.warnings,
-                MirrorWarning::UnavailableNotOnDevice { track_id },
-            );
-        }
-    }
-
-    for existing in inventory {
-        if desired.contains_key(&existing.track_id) || retained_ids.contains(&existing.track_id) {
-            continue;
-        }
-        if safe_managed_path(&existing.device_path) {
-            plan.bytes_freed = plan.bytes_freed.saturating_add(existing.device_size);
-            plan.remove
-                .push(ManagedRemoval::Inventory(existing.clone()));
-        } else {
-            push_warning(
-                &mut plan.warnings,
-                MirrorWarning::UnsafeManagedPath {
-                    path: existing.device_path.clone(),
-                },
-            );
-        }
-    }
-
-    plan.transfer_bytes = plan
-        .copy
-        .iter()
-        .map(|file| file.target_bytes)
-        .chain(
-            plan.replace
-                .iter()
-                .map(|replacement| replacement.desired.target_bytes),
-        )
-        .fold(0_u64, u64::saturating_add);
-}
-
 fn plan_orphan_removals(
     known_paths: &HashSet<String>,
     managed_files: &[ManagedDeviceFile],
@@ -526,7 +447,7 @@ fn plan_orphan_removals(
     let mut seen_physical = HashSet::new();
     let known_folded_paths = known_paths
         .iter()
-        .map(|path| path.to_lowercase())
+        .map(|path| super::device_case::fold_path(path))
         .collect::<HashSet<_>>();
     for file in managed_files {
         // A folded match may retain a genuine case-variant duplicate, but an
@@ -534,7 +455,7 @@ fn plan_orphan_removals(
         // over risking that destructive failure.
         if !seen_physical.insert(file.relative_path.as_str())
             || known_paths.contains(&file.relative_path)
-            || known_folded_paths.contains(&file.relative_path.to_lowercase())
+            || known_folded_paths.contains(&super::device_case::fold_path(&file.relative_path))
         {
             continue;
         }

@@ -16,6 +16,7 @@ pub fn everything_playlist_snapshot(tracks: Vec<SyncTrack>) -> MirrorPlaylistSna
         source: EVERYTHING_SOURCE,
         name: "Everything".to_string(),
         entries: tracks.into_iter().map(MirrorTrack::Available).collect(),
+        stability_margin_track_ids: Vec::new(),
     }
 }
 
