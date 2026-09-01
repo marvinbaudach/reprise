@@ -97,3 +97,70 @@ TODO's own framing.
   been read.
 - The `showroom-refactor` wake lock was already held for exactly this run and is
   being reused — release it when Codex is done. No second lock was taken.
+
+---
+
+# Check phase — 2026-09-01, phase: reviewed
+
+Gates measured directly (exit codes captured per command, not through a pipe):
+`npm run lint` 0, `npm run typecheck` 0, `npm test` 0 (96/96).
+
+Mutation arms, one at a time against a green control, worktree restored between
+each: `captures[shownIndex]` -> `captures[activeIndex]`; delete the `setTimeout`
+line; drop `aria-live="polite"`; drop the `src`/`srcset` clearing. **All four
+turn the suite red.** The assertions bite. (A first attempt was invalid — `cp -i`
+silently blocked the restores, so arms ran cumulatively; re-run with
+`git checkout` as the restore.)
+
+Reviewers: `typescript-reviewer` and `react-reviewer`, both Sonnet/high.
+
+## Findings, awaiting the user's selection
+
+**A — `{0,7000}` span has 348 characters of headroom (test, latent break).**
+`shot-tile-lightbox.test.mjs:155` and `:224`. Measured independently: the gap
+between `const capture = captures[shownIndex];` and
+`'--lb-ratio': capture.width / capture.height` is 6652 chars against a 7000 cap.
+Six to nine more lines anywhere in the component body between those anchors and
+both assertions fail — with the message "the lagging capture must drive the
+frame ratio", pointing at a regression that does not exist. Note the direction:
+the span was suspected of being too loose; it is too tight.
+
+**B — the swap announces only "03 / 12" (accessibility, scope question).**
+`Lightbox.tsx:213-215`. The dialog's `aria-labelledby` (h2 title) and
+`aria-describedby` both change on a swap but are not live regions, so a screen
+reader hears the position and not the picture's identity. Codex did exactly what
+the accepted finding asked ("give the counter `aria-live="polite"`"); this says
+the accepted finding was itself too narrow. A decision, not a defect.
+
+**C — cleanup regex forbids an interstitial comment (test, brittle).**
+`shot-tile-lightbox.test.mjs:193-196`. The four cleanup statements must be
+adjacent with only `\s*` between them, so documenting *why* `src` is cleared
+before `srcset` would turn the suite red with no behaviour change.
+
+**D — counter regex forbids a sibling ARIA attribute (test, brittle).**
+`shot-tile-lightbox.test.mjs:203`. `aria-live="polite"` must immediately follow
+`className`. Adding `aria-atomic="true"` — the normal pairing, and what finding
+B would want — is rejected outright.
+
+**E — timeout force-commit shares its cleanup with genuine supersession
+(speculative, likely a non-issue).** `Lightbox.tsx:103-110`. When the 10s
+timeout force-commits, `shownIndex` changes, the effect cleans up, and the
+in-flight preload is aborted just as the visible `<img>` requests the same URL.
+Reported as a risk the reviewer could not verify statically. Argument against:
+React runs passive-effect cleanup *after* DOM mutation, so the `<img>` has
+already attached to the request before the preload consumer is cancelled, and
+browsers coalesce concurrent requests for the same URL. Recorded for
+completeness; do not act on it without a measurement.
+
+C and D are in real tension with the mutation arms: the tight regexes are
+exactly why the arms go red. Loosening them trades bite for durability — that
+trade is the user's call, not the agent's.
+
+## Not done, deliberately
+
+No fixes applied. That is `/refactor`, and it runs only once the user has picked
+which findings are valid — the selection is the input to that phase.
+
+The `showroom-refactor` wake lock is still held. Codex reported releasing it;
+that report was wrong (`wake-lock status` still lists it active). Release it when
+this work ends.
