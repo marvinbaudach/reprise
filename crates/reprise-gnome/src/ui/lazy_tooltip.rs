@@ -66,10 +66,10 @@ impl LazyTooltip {
 
     pub(crate) fn set_text(&self, widget: &impl IsA<gtk4::Widget>, text: Option<String>) {
         let enabled = text.is_some();
-        self.text.replace(text.clone());
+        self.text.replace(text);
         widget.set_has_tooltip(enabled);
         #[cfg(test)]
-        record_text(widget, text);
+        record_text(widget, self.text.borrow().clone());
     }
 }
 
