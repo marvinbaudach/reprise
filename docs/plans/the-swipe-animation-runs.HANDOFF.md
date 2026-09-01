@@ -38,20 +38,28 @@ Two defects, both found on the device, both fixed and verified there.
   fails every Robolectric class with `ExceptionInInitializerError at
   NativeLibrary.java:325`, because only the script builds
   `target/release/libreprise_android_ffi.so` and exports `LD_LIBRARY_PATH`.
-- Committed as `756fde7066` on `feature/the-swipe-animation-runs`. **Not pushed**,
-  no PR opened.
+- Committed as `756fde7066` on `feature/the-swipe-animation-runs`, pushed, and
+  open as **#799** against `dev`.
 
 ## Still open
 
-- **The incoming track shows a placeholder note instead of its cover**, on the
-  neighbour panel during the drag and on the new current panel for at least
-  1.5 s after the commit. The design has the neighbour carrying its own artwork.
-  Mapped but not verified: the prefetch warms `AndroidArtworkSize.LIST`
-  (`MobileSurfaceViewModel.kt:277-296`) while the panels request
-  `NOW_PLAYING` (`NowPlayingScene.kt:333-338`), and those are separate LRU
-  shelves keyed `(trackUri, size)` (`ArtworkCache.kt:13-20`). If that holds, the
-  prefetch cannot warm the shelf the panels read from, and `seedVisual` draws
-  the fallback until the async load returns. **Measure before believing it.**
+- ~~The incoming track shows a placeholder note instead of its cover.~~
+  **Cause found, fixed in #801** on `fix/the-cover-does-not-fall-back`. The
+  hypothesis this handoff originally recorded — separate LRU shelves for `LIST`
+  and `NOW_PLAYING` — is **wrong**, and the summary at the top of
+  `the-swipe-animation-runs.findings.md` lists the four pieces of evidence that
+  refute it. The real cause is a downgrade: `resolveVisual` (`TrackCover.kt`)
+  falls back to a *generated* cover whenever the full-size read comes back empty
+  or its decode returns null, and delivers it over the real cover the seed had
+  already put on screen. What looks like a placeholder note is that generated
+  cover (`FallbackCover.kt`, a gradient with `drawRestrainedNote`), not
+  `CoverPlaceholder`. Still unverified on a device.
+- **Two smaller defects reported from the device, not yet worked on:** a white
+  line at the top edge keeps moving after the cover has landed; and the
+  neighbour panel shows a cover rather than the visualiser. The second is
+  current behaviour by construction (`NowPlayingScene.kt`, `live = panel.index
+  == currentIndex`), so changing it is a design decision and **needs the user's
+  call**, not a fix.
 - The user's own 0.1.74 is **not** back on the phone; the fixed release APK
   built here is, with a library it rescanned itself. Their own app data (play
   counts, favourites, listening journal) is **not** in that install — a release
@@ -61,8 +69,8 @@ Two defects, both found on the device, both fixed and verified there.
   `appdata.tar`, taken 21:32, play counts and favourites included). The SAF grant dies with
   every uninstall but can be re-granted entirely over adb — tap "Choose folder
   again", "Use this folder", "Allow"; no need to hand the phone over.
-- The phone's rotation is locked to portrait and `svc power stayon usb` is set.
-  Both were set for measuring and should be undone.
+- `svc power stayon usb` is still set and should be undone. The rotation lock is
+  already gone (`accelerometer_rotation=1` as of 2026-09-02).
 
 ## Traps that cost time here
 
