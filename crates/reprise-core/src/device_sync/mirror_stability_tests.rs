@@ -101,26 +101,35 @@ fn stability_margin_retains_the_resident_analysis_sidecar() {
 }
 
 #[test]
-fn resident_track_outside_the_smart_stability_margin_is_still_removed() {
+fn active_stability_margin_retains_only_its_resident_track() {
     let source = SelectionSource::Smart(20);
     let wanted = track(1, "/music/one.mp3", Some(192), 10_000, 240_000);
-    let stale = track(2, "/music/two.mp3", Some(192), 10_000, 240_000);
-    let mut mirror_input = input(
-        vec![source.clone()],
-        vec![playlist(
-            source,
-            "Capped smart playlist",
-            vec![MirrorTrack::Available(wanted)],
-        )],
+    let stable = track(2, "/music/two.mp3", Some(192), 10_000, 240_000);
+    let stale = track(3, "/music/three.mp3", Some(192), 10_000, 240_000);
+    let mut snapshot = playlist(
+        source.clone(),
+        "Capped smart playlist",
+        vec![MirrorTrack::Available(wanted)],
     );
+    snapshot.stability_margin_track_ids = vec![stable.id];
+    let mut mirror_input = input(vec![source], vec![snapshot]);
+    mirror_input.inventory.push(inventory(
+        &stable,
+        "Album Artist/Album/02 Track 2.mp3",
+        "copy-original-v1",
+    ));
     mirror_input.inventory.push(inventory(
         &stale,
-        "Album Artist/Album/02 Track 2.mp3",
+        "Album Artist/Album/03 Track 3.mp3",
         "copy-original-v1",
     ));
 
     let plan = plan_mirror(mirror_input);
 
+    assert!(!plan.remove.iter().any(|removal| matches!(
+        removal,
+        ManagedRemoval::Inventory(file) if file.track_id == stable.id
+    )));
     assert!(plan.remove.iter().any(|removal| matches!(
         removal,
         ManagedRemoval::Inventory(file) if file.track_id == stale.id
