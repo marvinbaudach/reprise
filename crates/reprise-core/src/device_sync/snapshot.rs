@@ -258,6 +258,38 @@ mod tests {
 
     struct PresentSource;
 
+    fn smart_sort_fields_from_query_whitelist() -> Vec<String> {
+        let whitelist = include_str!("../queries/clauses.rs")
+            .split_once("const SORT_WHITELIST")
+            .unwrap()
+            .1
+            .split_once("= [")
+            .unwrap()
+            .1
+            .split_once("];")
+            .unwrap()
+            .0;
+        let literals = whitelist.split('"').skip(1).step_by(2).collect::<Vec<_>>();
+        assert_eq!(literals.len() % 2, 0, "sort whitelist tuples changed shape");
+        literals
+            .chunks_exact(2)
+            .map(|pair| pair[0])
+            .filter(|field| *field != "playlist_order")
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn query_member_order(sort_field: &str, sort_dir: &str) -> String {
+        crate::queries::build_track_ids_query(sort_field, sort_dir, false)
+            .split_once(" ORDER BY ")
+            .unwrap()
+            .1
+            .rsplit_once(" LIMIT ")
+            .unwrap()
+            .0
+            .to_owned()
+    }
+
     impl LibrarySource for PresentSource {
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             None
@@ -318,6 +350,22 @@ mod tests {
                 .all(|snapshot| snapshot.source != super::super::selection::EVERYTHING_SOURCE),
             "the ordinary playlist projection must not gain the picker's synthetic Everything row"
         );
+    }
+
+    #[test]
+    fn smart_stability_order_matches_every_smart_query_sort() {
+        let mut sort_fields = smart_sort_fields_from_query_whitelist();
+        sort_fields.push("unknown-field".to_owned());
+
+        for sort_field in sort_fields {
+            for sort_dir in ["asc", "desc"] {
+                assert_eq!(
+                    smart_member_order(&sort_field, sort_dir),
+                    query_member_order(&sort_field, sort_dir),
+                    "smart stability ordering drifted for {sort_field} {sort_dir}"
+                );
+            }
+        }
     }
 
     #[test]
