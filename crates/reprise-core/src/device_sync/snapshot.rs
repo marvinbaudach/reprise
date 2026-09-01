@@ -12,6 +12,15 @@ use crate::library::source::{
     LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
 
+/// A capped smart source may retain this many already-resident tracks below
+/// its addition cap. Ten is a fixed, inspectable bound that covers the six-file
+/// flap measured in the triggering runs without turning the cap into an open-
+/// ended grace period. The device can therefore grow by at most ten resident
+/// files per capped source; only the cap itself still authorises additions.
+/// Candidates come from the same rule predicate, so a track that stops
+/// matching the rules is removed immediately rather than protected here.
+const SMART_CAP_STABILITY_MARGIN: i64 = 10;
+
 pub fn load_mirror_playlist_snapshots(
     db: &crate::db::Db,
 ) -> Result<Vec<MirrorPlaylistSnapshot>, rusqlite::Error> {
@@ -29,19 +38,91 @@ pub fn load_mirror_playlist_snapshots_with_source(
             source: SelectionSource::Playlist(playlist.id),
             name: playlist.name,
             entries: load_manual_entries(source, conn, playlist.id)?,
+            stability_margin_track_ids: Vec::new(),
         });
     }
     for playlist in crate::library::playlists::list_smart(db)? {
         let view_source = crate::view_source::ViewSource::Smart(playlist.id);
         let ids = crate::queries::query_track_ids(db, &view_source, "title", "asc", "", &[])?;
+        let stability_margin_track_ids = load_smart_stability_margin(conn, &playlist, ids.len())?;
         let tracks = crate::queries::query_sync_tracks_with_source(source, db, &ids)?;
         snapshots.push(MirrorPlaylistSnapshot {
             source: SelectionSource::Smart(playlist.id),
             name: playlist.name,
             entries: tracks.into_iter().map(MirrorTrack::Available).collect(),
+            stability_margin_track_ids,
         });
     }
     Ok(snapshots)
+}
+
+fn load_smart_stability_margin(
+    conn: &Connection,
+    playlist: &crate::library::playlists::SmartPlaylist,
+    desired_count: usize,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    if playlist.limit_count.is_none() {
+        return Ok(Vec::new());
+    }
+    let (rules, mut params) =
+        match crate::library::playlists::smart_rules_to_sql(&playlist.rules_json) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    smart_id = playlist.id,
+                    "invalid smart playlist rules; returning empty stability margin"
+                );
+                return Ok(Vec::new());
+            }
+        };
+    let order = smart_member_order(&playlist.sort_field, &playlist.sort_dir);
+    let sql = format!(
+        "SELECT id FROM tracks \
+         WHERE {} AND ({rules}) \
+         ORDER BY {order} LIMIT ? OFFSET ?",
+        crate::queries::PRESENT
+    );
+    params.push(rusqlite::types::Value::Integer(SMART_CAP_STABILITY_MARGIN));
+    params.push(rusqlite::types::Value::Integer(
+        i64::try_from(desired_count).unwrap_or(i64::MAX),
+    ));
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(rusqlite::params_from_iter(params), |row| row.get(0))?;
+    rows.collect()
+}
+
+/// Mirrors the smart query's validated member ordering without changing that
+/// general-purpose query merely to ask for the retention-only rows after its
+/// cap. Unknown fields retain the query's title fallback.
+fn smart_member_order(sort_field: &str, sort_dir: &str) -> String {
+    let expression = match sort_field {
+        "title" => "title COLLATE NOCASE",
+        "artist" => "artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no",
+        "album" => "album COLLATE NOCASE, track_no",
+        "track_no" => "track_no",
+        "genre" => "genre COLLATE NOCASE, artist COLLATE NOCASE",
+        "year" => "year",
+        "duration_ms" => "duration_ms",
+        "rating" => "rating",
+        "play_count" => "play_count",
+        "added_at" => "added_at",
+        "album_canonical" => {
+            "CASE WHEN disc_no IS NULL THEN 1 ELSE disc_no END, \
+             CASE WHEN track_no IS NULL THEN 1 ELSE 0 END, track_no, path COLLATE NOCASE, id"
+        }
+        _ => "title COLLATE NOCASE",
+    };
+    let direction = if sort_dir.eq_ignore_ascii_case("desc") {
+        "DESC"
+    } else {
+        "ASC"
+    };
+    expression
+        .split(',')
+        .map(|term| format!("{} {direction}", term.trim()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn load_everything_playlist_snapshot(
@@ -167,6 +248,95 @@ impl SnapshotTrack {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+    use std::path::Path;
+
+    use crate::library::source::{
+        LibraryDirectoryEntry, LibraryPathMetadata, LibraryReadHandle, LibraryWalkOrder,
+        LibraryWalkVisitor,
+    };
+
+    struct PresentSource;
+
+    fn smart_sort_fields_from_query_whitelist() -> Vec<String> {
+        let whitelist = include_str!("../queries/clauses.rs")
+            .split_once("const SORT_WHITELIST")
+            .unwrap()
+            .1
+            .split_once("= [")
+            .unwrap()
+            .1
+            .split_once("];")
+            .unwrap()
+            .0;
+        let literals = whitelist.split('"').skip(1).step_by(2).collect::<Vec<_>>();
+        assert_eq!(literals.len() % 2, 0, "sort whitelist tuples changed shape");
+        literals
+            .chunks_exact(2)
+            .map(|pair| pair[0])
+            .filter(|field| *field != "playlist_order")
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn query_member_order(sort_field: &str, sort_dir: &str) -> String {
+        crate::queries::build_track_ids_query(sort_field, sort_dir, false)
+            .split_once(" ORDER BY ")
+            .unwrap()
+            .1
+            .rsplit_once(" LIMIT ")
+            .unwrap()
+            .0
+            .to_owned()
+    }
+
+    impl LibrarySource for PresentSource {
+        fn residence_token(&self, _at: &Path) -> Option<i64> {
+            None
+        }
+
+        fn mount_point(&self, _at: &Path) -> Option<PathBuf> {
+            None
+        }
+
+        fn display_name(&self, at: &Path) -> Option<String> {
+            at.file_name()?.to_str().map(str::to_owned)
+        }
+
+        fn container_name(&self, _at: &Path) -> Option<String> {
+            None
+        }
+
+        fn relative_path(&self, root: &Path, at: &Path) -> Option<PathBuf> {
+            at.strip_prefix(root).ok().map(Path::to_path_buf)
+        }
+
+        fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
+            Ok(LibraryReadHandle::new(Cursor::new(Vec::new())))
+        }
+
+        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
+            LibraryPathPresence::Present(LibraryPathMetadata {
+                is_file: true,
+                is_directory: false,
+                size: Some(100),
+                modified: None,
+                identity: None,
+            })
+        }
+
+        fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+            None
+        }
+
+        fn walk(
+            &self,
+            _root: &Path,
+            _order: LibraryWalkOrder,
+            _visitor: &mut dyn LibraryWalkVisitor,
+        ) {
+        }
+    }
 
     #[test]
     fn mtp_51_everything_is_exposed_only_by_the_picker_not_as_a_playlist() {
@@ -180,5 +350,75 @@ mod tests {
                 .all(|snapshot| snapshot.source != super::super::selection::EVERYTHING_SOURCE),
             "the ordinary playlist projection must not gain the picker's synthetic Everything row"
         );
+    }
+
+    #[test]
+    fn smart_stability_order_matches_every_smart_query_sort() {
+        let mut sort_fields = smart_sort_fields_from_query_whitelist();
+        sort_fields.push("unknown-field".to_owned());
+
+        for sort_field in sort_fields {
+            for sort_dir in ["asc", "desc"] {
+                assert_eq!(
+                    smart_member_order(&sort_field, sort_dir),
+                    query_member_order(&sort_field, sort_dir),
+                    "smart stability ordering drifted for {sort_field} {sort_dir}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn capped_smart_snapshot_keeps_ten_ranked_members_only_for_resident_stability() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        for id in 1..=13_i64 {
+            db.conn()
+                .execute(
+                    "INSERT INTO tracks \
+                     (id, path, title, artist, album, album_artist, duration_ms, rating, play_count, added_at) \
+                     VALUES (?1, ?2, ?3, 'Artist', 'Album', 'Artist', 1000, 5, ?1, 1)",
+                    rusqlite::params![id, format!("/music/{id}.mp3"), format!("Track {id}")],
+                )
+                .unwrap();
+        }
+        db.conn()
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, album_artist, duration_ms, rating, play_count, added_at) \
+                 VALUES (99, '/music/99.mp3', 'Rule failure', 'Artist', 'Album', 'Artist', \
+                         1000, 0, 99, 1)",
+                [],
+            )
+            .unwrap();
+        let smart_id = crate::library::playlists::create_smart(
+            &db,
+            "Capped",
+            r#"[{"field":"rating","op":">=","value":1}]"#,
+            "play_count",
+            "desc",
+            Some(2),
+        )
+        .unwrap();
+
+        let snapshots = load_mirror_playlist_snapshots_with_source(&PresentSource, &db).unwrap();
+        let snapshot = snapshots
+            .iter()
+            .find(|snapshot| snapshot.source == SelectionSource::Smart(smart_id))
+            .unwrap();
+        let desired_ids = snapshot
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                MirrorTrack::Available(track) => track.id,
+                MirrorTrack::Unavailable(track) => track.track_id,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(desired_ids, vec![12, 13], "the addition cap stays at two");
+        assert_eq!(snapshot.stability_margin_track_ids.len(), 10);
+        assert!(snapshot.stability_margin_track_ids.contains(&2));
+        assert!(snapshot.stability_margin_track_ids.contains(&11));
+        assert!(!snapshot.stability_margin_track_ids.contains(&1));
+        assert!(!snapshot.stability_margin_track_ids.contains(&99));
     }
 }
