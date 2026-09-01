@@ -35,7 +35,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,9 +57,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.ui.theme.AmbientTrueBlack
 import de.reprise.spike.ui.theme.NowPlayingOnBackdrop
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.AndroidStoredVisualizer
@@ -86,8 +93,9 @@ internal fun NowPlayingSheet(
     val horizontalOffset = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
     val gestureScope = rememberCoroutineScope()
-    var outgoingTrack by remember { mutableStateOf<LibraryTrack?>(null) }
-    val displayedTrack = outgoingTrack ?: track
+    val liveTrack = rememberUpdatedState(track)
+    var swipeExit by remember { mutableStateOf<NowPlayingSwipeExit?>(null) }
+    val displayedTrack = swipeExit?.outgoingTrack ?: track
     var seekMarker by remember { mutableStateOf<String?>(null) }
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -136,35 +144,59 @@ internal fun NowPlayingSheet(
                 animationsEnabled = motion.sceneAnimationsEnabled,
                 onHorizontalOffset = { offset ->
                     gestureScope.launch {
-                        if (outgoingTrack == null) horizontalOffset.snapTo(offset)
+                        if (swipeExit == null) horizontalOffset.snapTo(offset)
                     }
                 },
                 onVerticalOffset = { offset ->
                     gestureScope.launch {
-                        if (outgoingTrack == null) verticalOffset.snapTo(offset)
+                        if (swipeExit == null) verticalOffset.snapTo(offset)
                     }
                 },
                 onSettle = settle@{ decision, swipeWidthPx ->
-                    if (outgoingTrack != null) return@settle
+                    if (swipeExit != null) return@settle
                     val advancesTrack = decision == PlayGestureDecision.NEXT ||
                         decision == PlayGestureDecision.PREVIOUS
                     if (advancesTrack && motion.sceneAnimationsEnabled) {
-                        outgoingTrack = track
-                        if (decision == PlayGestureDecision.NEXT) {
-                            controls.next()
-                        } else {
-                            controls.previous()
-                        }
+                        val exit = NowPlayingSwipeExit(track, decision)
+                        swipeExit = exit
                         gestureScope.launch {
+                            var transportResolved = false
+                            fun dispatchUnlessPlaybackAdvanced() {
+                                if (transportResolved) return
+                                transportResolved = true
+                                if (liveTrack.value.id == exit.outgoingTrack.id) {
+                                    exit.dispatch(controls)
+                                }
+                            }
+
                             val exitOffset = if (decision == PlayGestureDecision.NEXT) {
                                 -swipeWidthPx
                             } else {
                                 swipeWidthPx
                             }
-                            horizontalOffset.animateTo(exitOffset, spring())
-                            horizontalOffset.snapTo(0f)
-                            outgoingTrack = null
-                            verticalOffset.animateTo(0f, spring())
+                            try {
+                                withTimeout(NOW_PLAYING_SWIPE_EXIT_TIMEOUT_MS) {
+                                    horizontalOffset.animateTo(exitOffset, spring())
+                                }
+                                dispatchUnlessPlaybackAdvanced()
+                                withTimeoutOrNull(NOW_PLAYING_TRACK_SETTLE_TIMEOUT_MS) {
+                                    snapshotFlow { liveTrack.value.id }
+                                        .first { it != exit.outgoingTrack.id }
+                                }
+                            } finally {
+                                withContext(NonCancellable) {
+                                    try {
+                                        dispatchUnlessPlaybackAdvanced()
+                                    } finally {
+                                        try {
+                                            horizontalOffset.snapTo(0f)
+                                            verticalOffset.snapTo(0f)
+                                        } finally {
+                                            if (swipeExit === exit) swipeExit = null
+                                        }
+                                    }
+                                }
+                            }
                         }
                     } else {
                         when (decision) {
@@ -266,6 +298,22 @@ internal fun NowPlayingSheet(
         }
     }
 }
+
+private class NowPlayingSwipeExit(
+    val outgoingTrack: LibraryTrack,
+    private val decision: PlayGestureDecision,
+) {
+    fun dispatch(controls: PlaybackControls) {
+        when (decision) {
+            PlayGestureDecision.NEXT -> controls.next()
+            PlayGestureDecision.PREVIOUS -> controls.previous()
+            else -> error("A Now Playing swipe exit must advance playback")
+        }
+    }
+}
+
+private const val NOW_PLAYING_SWIPE_EXIT_TIMEOUT_MS = 1_500L
+private const val NOW_PLAYING_TRACK_SETTLE_TIMEOUT_MS = 500L
 
 internal const val VISUALIZER_CROSSFADE_MS = 220
 private const val NOW_PLAYING_VISUALIZER_TAG = "RepriseVisualizer"
