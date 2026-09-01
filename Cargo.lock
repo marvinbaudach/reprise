@@ -2923,6 +2923,7 @@ dependencies = [
  "reprise-runtime-protocol",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
  "trash",
  "zbus",
 ]

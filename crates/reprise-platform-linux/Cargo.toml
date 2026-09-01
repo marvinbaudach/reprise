@@ -29,6 +29,11 @@ gio = { version = "0.22", features = ["v2_74"] }
 trash = "5"
 [dev-dependencies]
 tempfile = "3"
+# The device-sync tests capture the warnings the sync path emits, so they
+# install their own subscriber. Shelving the runtime took this out of the
+# normal dependencies with the binary that used to log through it; the tests
+# are the only user left, so it belongs here now.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [lints]
 workspace = true
