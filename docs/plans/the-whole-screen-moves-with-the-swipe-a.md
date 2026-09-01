@@ -2,7 +2,7 @@
 slug: the-whole-screen-moves-with-the-swipe-a
 worktree: /home/marvin/Projects/reprise-the-whole-screen-moves-with-the-swipe-a
 branch: feature/the-whole-screen-moves-with-the-swipe-a
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-08-31
 ---
