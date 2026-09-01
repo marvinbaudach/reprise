@@ -164,3 +164,67 @@ which findings are valid — the selection is the input to that phase.
 The `showroom-refactor` wake lock is still held. Codex reported releasing it;
 that report was wrong (`wake-lock status` still lists it active). Release it when
 this work ends.
+
+---
+
+# Refactor phase — 2026-09-01, phase: refactored
+
+All five findings applied. Commits on top of the check phase:
+
+- `9122d306a5` resilient source assertions (A, C, D)
+- `118c410f98` live region announces capture identity, atomically (B)
+- `60e652fcb3` timeout commit no longer aborts its own preload (E)
+- plus a follow-up dropping the last distance-bounded spans (see below)
+
+## The refactor's own miss, and how it was caught
+
+Codex reported A/C/D done. A and D were. **C was half-done**: the assertion the
+finding named was fixed, but two sibling `{0,120}` spans in the same block
+survived, at the time lines 196 and 198. The cleanup one had 32 characters
+against a 120 cap — 88 characters of headroom, so a single comment line broke
+it. Line 198 was also redundant: the `preloadCleanup` loop three lines below
+already asserts `window.clearTimeout(timeout);`. It was deleted; the `settle`
+one was replaced with the same block-extraction the cleanup uses.
+
+**This was only visible because the arms were run in both directions.** Bite
+arms alone would have stayed green on a half-fixed C — they only prove an
+assertion still fails on a reverted fix, never that the brittleness it was
+loosened for is actually gone. Any future pass that loosens an assertion here
+needs a tolerance arm, not just a mutation arm.
+
+One earlier tolerance measurement was itself invalid: a 900-character single-line
+comment tripped Biome, and the suite has a lint contract, so the red came from
+formatting rather than from the assertion under test. Re-run with a lint-clean
+multi-line comment, it passed. Keep filler lint-clean.
+
+## Final verification, measured directly
+
+Gates from `showroom/`, exit codes captured per command: `npm run lint` 0,
+`npm run typecheck` 0, `npm test` 0.
+
+Bite arms, each alone against a green control, `git checkout` restore verified
+between each — all exit 1:
+delete the `setTimeout` line; delete `window.clearTimeout(timeout);` inside
+`settle`; delete the `preload.src`/`srcset` clearing; `captures[shownIndex]` ->
+`captures[activeIndex]`; drop `aria-live="polite"`.
+
+Tolerance arms — all exit 0: a comment inside the effect cleanup; a comment
+inside `settle`; the counter's attributes reordered with an extra attribute
+added. Also verified separately that padding the component body to 7774
+characters between the capture binding and the ratio (past the old 7000 cap)
+keeps the suite green — finding A's distance dependency is genuinely gone.
+
+The only distance-bounded span left in the file is `{0,420}` on line 247, in an
+unrelated test about the visualizer plate. Pre-existing, out of scope, untouched.
+
+## Left open
+
+E is implemented as asked but remains unverified behaviour: the argument that it
+was a non-issue (React runs passive cleanup after DOM mutation, browsers coalesce
+same-URL requests) was never measured either way. It is defensive and costs a
+flag; if it ever needs justifying, that is the measurement to run.
+
+B is source-contract verified only. No real screen reader was driven. Ancestor
+`aria-busy` suppression of a descendant live region is correct per ARIA but has
+uneven AT support — a manual NVDA/VoiceOver pass is the honest next step before
+claiming the announcement lands.
