@@ -124,6 +124,9 @@ internal class TrackAnalysisLoader(
             }
         }
         if (cached.first) {
+            // Cache hits deliver on the caller's thread. The only background caller is
+            // prefetch(), which supplies an empty callback. Accepted misses hop below;
+            // shutdown rejection completes inline with null.
             deliver(cached.second)
             if (cached.third) warmRetainedBars(count)
             return
@@ -155,6 +158,9 @@ internal class TrackAnalysisLoader(
             }
         }
         if (cached.first) {
+            // Cache hits deliver on the caller's thread. The only background caller is
+            // prefetch(), which supplies an empty callback. Accepted misses hop below;
+            // shutdown rejection completes inline with null.
             deliver(cached.second)
             return
         }
@@ -188,11 +194,13 @@ internal class TrackAnalysisLoader(
     }
 
     override fun warmth(trackId: Long) = synchronized(cacheLock) {
+        // There is one bar-count consumer today, so warmth follows its latest requested count.
+        // A second count-owning consumer needs a count-aware warmth contract instead.
         TrackAnalysisWarmth(
             bars = preferredBarCount?.let { count ->
-                barCache.containsKey(BarCacheKey(trackId, count))
+                barCache[BarCacheKey(trackId, count)] != null
             } == true,
-            spectrogram = spectrogramCache.containsKey(trackId),
+            spectrogram = spectrogramCache[trackId] != null,
         )
     }
 
@@ -226,8 +234,8 @@ internal class TrackAnalysisLoader(
 
     private fun invalidate(trackId: Long) {
         synchronized(cacheLock) {
-            barCache.keys.removeAll { key -> key.trackId == trackId }
-            spectrogramCache.remove(trackId)
+            barCache.entries.removeAll { (key, bars) -> key.trackId == trackId && bars == null }
+            if (spectrogramCache[trackId] == null) spectrogramCache.remove(trackId)
         }
     }
 

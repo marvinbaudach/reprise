@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
 class TrackAnalysisLoaderTest {
     @Test
@@ -45,13 +46,14 @@ class TrackAnalysisLoaderTest {
         val mainHops = ArrayDeque<() -> Unit>()
         val readStarted = CountDownLatch(1)
         var reads = 0
+        val expected = AndroidTrackSpectrogram(2u, 10u, byteArrayOf(1, 2))
         val loader = TrackAnalysisLoader(
             importAnalysis = {},
             readBars = { _, _ -> null },
             readSpectrogram = {
                 reads += 1
                 readStarted.countDown()
-                null
+                expected
             },
             onMainThread = mainHops::add,
         )
@@ -67,6 +69,74 @@ class TrackAnalysisLoaderTest {
         assertTrue(delivered)
         assertTrue(loader.warmth(41).spectrogram)
         assertEquals(1, reads)
+    }
+
+    @Test
+    fun preparingAPrefetchedTrackKeepsItsPositiveCacheHitSynchronous() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val answersQueued = CountDownLatch(2)
+        var reads = 0
+        val expected = AndroidTrackSpectrogram(2u, 10u, byteArrayOf(1, 2))
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {},
+            readBars = { _, _ -> null },
+            readSpectrogram = {
+                reads += 1
+                expected
+            },
+            onMainThread = { work ->
+                mainHops.add(work)
+                answersQueued.countDown()
+            },
+        )
+
+        try {
+            loader.retain(setOf(41))
+            loader.prefetch(listOf(41))
+            loader.prepare(41)
+            assertTrue(
+                "the prefetch and import answers never queued",
+                answersQueued.await(2, TimeUnit.SECONDS),
+            )
+            while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+            var deliveredSynchronously = false
+            loader.loadSpectrogram(41) { deliveredSynchronously = it != null }
+
+            assertTrue(deliveredSynchronously)
+            assertEquals(1, reads)
+        } finally {
+            loader.shutdownForTest()
+            while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+        }
+    }
+
+    @Test
+    fun nullAnalysisEntriesAreNotReportedAsWarm() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val readsFinished = CountDownLatch(2)
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {},
+            readBars = { _, _ ->
+                readsFinished.countDown()
+                null
+            },
+            readSpectrogram = {
+                readsFinished.countDown()
+                null
+            },
+            onMainThread = mainHops::add,
+        )
+
+        loader.retain(setOf(41))
+        loader.loadBars(41, 64) {}
+        loader.loadSpectrogram(41) {}
+        assertTrue("the null reads never finished", readsFinished.await(2, TimeUnit.SECONDS))
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        assertFalse(loader.warmth(41).bars)
+        assertFalse(loader.warmth(41).spectrogram)
     }
 
     @Test

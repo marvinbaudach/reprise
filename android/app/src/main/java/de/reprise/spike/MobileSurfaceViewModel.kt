@@ -272,6 +272,9 @@ internal class MobileSurfaceViewModel : ViewModel() {
             prefetchedForTrackId = null
             return
         }
+        // This guard records the whole current-track tenure, not which ports were present.
+        // Analysis is therefore expected on the first call; it is not a LaunchedEffect key,
+        // so analysis becoming non-null later does not prefetch again for the same track.
         if (prefetchedForTrackId == currentTrackId) return
         prefetchedForTrackId = currentTrackId
         controls.loadUpcomingTracks(
