@@ -180,8 +180,7 @@ impl SessionState {
         self.history.clear_presented();
         self.snapshot.current_index = self
             .queue
-            .current()
-            .and_then(|track_id| self.track_index(track_id))
+            .current_order_position()
             .and_then(|index| u64::try_from(index).ok());
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
@@ -657,6 +656,31 @@ impl AndroidPlaybackSession {
         self.inner.previous_from_history()
     }
 
+    /// Moves one position backward in the queue's current play order.
+    ///
+    /// Android's spatial player uses this separately named route so its left
+    /// and right neighbours remain reversible. The history-based `previous`
+    /// entry point stays intact for callers that present playback history.
+    pub fn previous_in_queue_order(&self) -> Result<(), AndroidPlaybackError> {
+        let queue_to_save = {
+            let mut state = self.inner.lock()?;
+            let Some(previous) = state
+                .queue
+                .current_order_position()
+                .and_then(|position| position.checked_sub(1))
+            else {
+                return Ok(());
+            };
+            if state.queue.jump_to_order_position(previous).is_none() {
+                return Ok(());
+            }
+            state.adopt_current();
+            state.queue.clone()
+        };
+        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.start_current()
+    }
+
     pub fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError> {
         self.inner
             .backend()?
@@ -686,6 +710,10 @@ impl AndroidPlaybackSession {
             let mut state = self.inner.lock()?;
             state.queue.set_shuffle(enabled);
             state.snapshot.shuffled = state.queue.is_shuffled();
+            state.snapshot.current_index = state
+                .queue
+                .current_order_position()
+                .and_then(|index| u64::try_from(index).ok());
             (state.next_uri(), state.queue.clone())
         };
         self.inner.persist_queue(&queue_to_save)?;

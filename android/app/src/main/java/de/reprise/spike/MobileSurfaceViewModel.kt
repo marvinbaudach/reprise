@@ -10,6 +10,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import uniffi.reprise_android_ffi.MusicLibrary
 
+private const val ANALYSIS_PREFETCH_OFFSET = -3L
+private const val ANALYSIS_PREFETCH_LIMIT = 5L
+
 /** The two surface arrangements M9a supports; neither is an orientation. */
 internal enum class SurfaceLayout {
     STACKED,
@@ -253,25 +256,43 @@ internal class MobileSurfaceViewModel : ViewModel() {
         nowPlayingExpanded = show
     }
 
-    /** Requests exactly the next two queue covers once for each current track. */
+    /** Warms the current track and its two queue neighbours on either side once. */
     fun prefetchUpcomingArtwork(
         currentTrackId: Long?,
         controls: PlaybackControls,
         artwork: TrackArtwork?,
+        analysis: TrackAnalysisPort? = TrackAnalysisLoader.activePort(),
     ) {
-        if (currentTrackId == null || artwork == null) {
+        if (currentTrackId == null) {
+            prefetchedForTrackId = null
+            analysis?.retain(emptySet())
+            return
+        }
+        if (artwork == null && analysis == null) {
             prefetchedForTrackId = null
             return
         }
+        // This guard records the whole current-track tenure, not which ports were present.
+        // Analysis is therefore expected on the first call; it is not a LaunchedEffect key,
+        // so analysis becoming non-null later does not prefetch again for the same track.
         if (prefetchedForTrackId == currentTrackId) return
         prefetchedForTrackId = currentTrackId
-        controls.loadUpcomingTracks(LibraryWindowRange(0, 2)) { outcome ->
+        controls.loadUpcomingTracks(
+            LibraryWindowRange(ANALYSIS_PREFETCH_OFFSET, ANALYSIS_PREFETCH_LIMIT),
+        ) { outcome ->
             if (prefetchedForTrackId != currentTrackId) return@loadUpcomingTracks
-            outcome.getOrNull()?.rows?.take(2)?.forEach { track ->
-                artwork.prefetch(
+            val tracks = outcome.getOrNull()?.rows.orEmpty()
+            val trackIds = tracks.map { track -> track.id }
+            analysis?.retain(trackIds.toSet())
+            analysis?.prefetch(trackIds)
+            tracks.filterNot { track -> track.id == currentTrackId }.forEach { track ->
+                artwork?.prefetch(
                     ArtworkRequest(
                         trackUri = track.uri,
-                        size = uniffi.reprise_android_ffi.AndroidArtworkSize.NOW_PLAYING,
+                        // The full-size shelf holds the three rendered panels. Keep the
+                        // wider prefetch window in the list shelf; seedVisual reads it
+                        // synchronously across sizes while the panel resolves full size.
+                        size = uniffi.reprise_android_ffi.AndroidArtworkSize.LIST,
                         title = track.title,
                         artist = track.artist,
                     ),

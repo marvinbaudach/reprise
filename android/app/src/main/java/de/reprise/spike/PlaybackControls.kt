@@ -23,6 +23,9 @@ internal interface PlaybackControls {
 
     fun previous()
 
+    /** Moves to the preceding item in queue order, independent of history. */
+    fun previousInQueueOrder() = previous()
+
     fun seekTo(positionMs: Long)
 
     fun setShuffle(enabled: Boolean)
@@ -98,6 +101,8 @@ internal object DisconnectedPlaybackControls : PlaybackControls {
     override fun next() = Unit
 
     override fun previous() = Unit
+
+    override fun previousInQueueOrder() = Unit
 
     override fun seekTo(positionMs: Long) = Unit
 

@@ -49,6 +49,10 @@ internal class ActivityPlaybackControls(
 
     override fun previous() = command("return to the previous track") { previous() }
 
+    override fun previousInQueueOrder() = command("return to the previous queue track") {
+        previousInQueueOrder()
+    }
+
     override fun seekTo(positionMs: Long) = command("seek") { seekTo(positionMs) }
 
     override fun setShuffle(enabled: Boolean) = command("change shuffle") {

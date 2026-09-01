@@ -38,8 +38,8 @@ fun mediaSessionTransportReturnsToCore() {
             calls += "next"
         }
 
-        override fun previous() {
-            calls += "previous"
+        override fun previousInQueueOrder() {
+            calls += "queue-previous"
         }
     })
 
@@ -47,9 +47,10 @@ fun mediaSessionTransportReturnsToCore() {
     playWhenReady = true
     controlled.pause()
     controlled.seekToNext()
+    controlled.seekToPrevious()
     controlled.seekToPreviousMediaItem()
 
-    assertEquals(listOf("toggle", "toggle", "next", "previous"), calls)
+    assertEquals(listOf("toggle", "toggle", "next", "queue-previous", "queue-previous"), calls)
 }
 
 private fun primitiveDefault(type: Class<*>): Any? = when (type) {
@@ -77,6 +78,7 @@ fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     ).toUiState()
 
     assertEquals(2, state.currentIndex)
+    assertEquals(2, state.libraryPlayback().currentIndex)
     assertEquals(41L, state.currentTrackId)
     assertEquals("content://provider/playing.flac", state.currentTrackUri)
     assertEquals(1_250L, state.positionMs)

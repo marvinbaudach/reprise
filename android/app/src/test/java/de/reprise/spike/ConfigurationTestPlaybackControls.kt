@@ -21,6 +21,7 @@ internal class ConfigurationTestPlaybackControls(
     val moveUpcomingRequests = mutableListOf<Triple<Int, Long, Int>>()
     val removeUpcomingRequests = mutableListOf<Pair<Int, Long>>()
     val loadUpcomingRequests = mutableListOf<LibraryWindowRange>()
+    var queuePreviousCalls = 0
 
     /** What the write answers with; null is the database agreeing. */
     var ratingFailure: String? = null
@@ -37,6 +38,9 @@ internal class ConfigurationTestPlaybackControls(
     override fun togglePause() = Unit
     override fun next() = Unit
     override fun previous() = Unit
+    override fun previousInQueueOrder() {
+        queuePreviousCalls += 1
+    }
     override fun seekTo(positionMs: Long) {
         seekPositions += positionMs
     }

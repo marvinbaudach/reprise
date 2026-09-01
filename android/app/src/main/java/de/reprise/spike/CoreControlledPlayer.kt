@@ -13,7 +13,7 @@ internal class CoreControlledPlayer(
 
         fun next()
 
-        fun previous()
+        fun previousInQueueOrder()
     }
 
     override fun play() {
@@ -43,10 +43,10 @@ internal class CoreControlledPlayer(
     }
 
     override fun seekToPrevious() {
-        commands.previous()
+        commands.previousInQueueOrder()
     }
 
     override fun seekToPreviousMediaItem() {
-        commands.previous()
+        commands.previousInQueueOrder()
     }
 }
