@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.Interaction
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -29,6 +31,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.runBlocking
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidStoredVisualizer
@@ -120,18 +123,90 @@ class NowPlayingGesturesTest {
     }
 
     @Test
+    fun a_track_change_keeps_the_populated_panel_window_until_its_reload_answers() {
+        val controls = DelayedPanelWindowControls()
+        val track = mutableStateOf(gestureTrack())
+        val currentIndex = mutableIntStateOf(1)
+        compose.setContent {
+            val window = rememberPlayPanelWindow(track.value, currentIndex.intValue, controls)
+            Text(window.panels.joinToString(",") { panel -> panel.track.id.toString() })
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("829,830,831").assertIsDisplayed()
+
+        compose.runOnUiThread {
+            track.value = gestureTrack(id = 831, title = "Next song")
+            currentIndex.intValue = 2
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("830,831").assertIsDisplayed()
+    }
+
+    @Test
+    fun externalAdvanceMidDragReanchorsBeforeTheFingerCommitsForward() {
+        val controls = GestureRecordingControls(
+            upcomingRows = (828L..833L).map { id -> gestureTrack(id, "Song $id") },
+        )
+        val track = mutableStateOf(gestureTrack())
+        val playback = mutableStateOf(gesturePlayback().copy(currentIndex = 4))
+        compose.setContent {
+            testNowPlayingSheet(
+                controls = controls,
+                track = track.value,
+                playback = playback.value,
+            )
+        }
+        val gestures = compose.onNodeWithTag("now-playing-gestures")
+        gestures.performTouchInput {
+            down(Offset(width * 0.5f, height * 0.3f))
+            moveTo(Offset(width * 0.9f, height * 0.3f))
+        }
+
+        compose.runOnUiThread {
+            track.value = gestureTrack(831, "Next song")
+            playback.value = playback.value.copy(currentIndex = 5, currentTrackId = 831)
+        }
+        compose.waitForIdle()
+        gestures.performTouchInput {
+            moveTo(Offset(width * 0.6f, height * 0.3f))
+            up()
+        }
+
+        assertEquals(1, controls.nextCalls)
+        assertEquals(0, controls.previousCalls)
+    }
+
+    @Test
     fun coverDragBelowThresholdSpringsBackWithoutChangingTrack() {
         val controls = GestureRecordingControls()
         compose.setContent { testNowPlayingSheet(controls = controls) }
 
         compose.onNodeWithTag("now-playing-gestures").performTouchInput {
             down(Offset(width * 0.65f, height * 0.3f))
-            moveTo(Offset(width * 0.55f, height * 0.3f))
+            moveTo(Offset(width * 0.60f, height * 0.3f))
+            advanceEventTime(250)
             up()
         }
 
         assertEquals(0, controls.nextCalls)
         assertEquals(0, controls.previousCalls)
+    }
+
+    @Test
+    fun reducedMotionCommitSnapsToItsTargetWithoutAnimationOrConfirmationCue() = runBlocking {
+        val motionPasses = mutableListOf<String>()
+        settleNowPlayingPosition(
+            target = 500f,
+            animationsEnabled = false,
+            animate = { motionPasses += "animate" },
+            snap = { target -> motionPasses += "snap:$target" },
+        )
+        val cueGate = TrackChangeCueGate()
+        cueGate.observe(trackId = 830, animationsEnabled = false)
+
+        assertEquals(listOf("snap:500.0"), motionPasses)
+        assertFalse(cueGate.observe(trackId = 831, animationsEnabled = false))
     }
 
     @Test
@@ -296,6 +371,9 @@ class NowPlayingGesturesTest {
         controls: PlaybackControls = DisconnectedPlaybackControls,
         preference: VisualizerPreference = DisconnectedVisualizerPreference,
         engines: VisualSceneEngineFactory = RecordingVisualEngineFactory(),
+        controller: AmbientMotionController = AmbientMotionController(),
+        track: LibraryTrack = gestureTrack(),
+        playback: PlaybackUiState = gesturePlayback(),
         close: () -> Unit = {},
     ) {
         val theme = MobileThemeSelection(
@@ -308,10 +386,11 @@ class NowPlayingGesturesTest {
                 LocalPlaybackControls provides controls,
                 LocalVisualizerPreference provides preference,
                 LocalVisualSceneEngineFactory provides engines,
+                LocalAmbientMotionController provides controller,
             ) {
                 NowPlayingSheet(
-                    track = gestureTrack(),
-                    playback = gesturePlayback(),
+                    track = track,
+                    playback = playback,
                     close = close,
                 )
             }
@@ -441,7 +520,31 @@ private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
     }
 }
 
-private class GestureRecordingControls : PlaybackControls by DisconnectedPlaybackControls {
+private class DelayedPanelWindowControls : PlaybackControls by DisconnectedPlaybackControls {
+    private var requests = 0
+
+    override fun loadUpcomingTracks(
+        window: LibraryWindowRange,
+        report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
+    ) {
+        requests += 1
+        if (requests != 1) return
+        report(
+            Result.success(
+                LibraryWindow(
+                    rows = (829L..833L).map { id -> gestureTrack(id, "Song $id") },
+                    total = 5,
+                    hasMore = false,
+                ),
+            ),
+        )
+    }
+}
+
+private class GestureRecordingControls(
+    private val upcomingRows: List<LibraryTrack> =
+        listOf(gestureTrack(), gestureTrack(831, "Next song")),
+) : PlaybackControls by DisconnectedPlaybackControls {
     val seekPositions = mutableListOf<Long>()
     var nextCalls = 0
         private set
@@ -459,6 +562,21 @@ private class GestureRecordingControls : PlaybackControls by DisconnectedPlaybac
     override fun seekTo(positionMs: Long) {
         seekPositions += positionMs
     }
+
+    override fun loadUpcomingTracks(
+        window: LibraryWindowRange,
+        report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
+    ) {
+        report(
+            Result.success(
+                LibraryWindow(
+                    rows = upcomingRows,
+                    total = upcomingRows.size.toLong(),
+                    hasMore = false,
+                ),
+            ),
+        )
+    }
 }
 
 private fun gesturePlayback() = PlaybackUiState(
@@ -471,10 +589,10 @@ private fun gesturePlayback() = PlaybackUiState(
     durationMs = 100_000,
 )
 
-private fun gestureTrack() = LibraryTrack(
-    id = 830,
-    uri = "content://provider/document/song.flac",
-    title = "Song",
+private fun gestureTrack(id: Long = 830, title: String = "Song") = LibraryTrack(
+    id = id,
+    uri = "content://provider/document/$id.flac",
+    title = title,
     artist = "Artist",
     album = "Album",
     durationMs = 100_000,

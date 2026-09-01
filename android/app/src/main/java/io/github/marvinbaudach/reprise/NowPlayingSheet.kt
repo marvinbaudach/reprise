@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -82,10 +85,19 @@ internal fun NowPlayingSheet(
     val controls = LocalPlaybackControls.current
     val motion = LocalAmbientMotionController.current
     val visualizerPreference = LocalVisualizerPreference.current
-    val neighbours = rememberPlayGestureNeighbours(track, controls)
-    val horizontalOffset = remember { Animatable(0f) }
+    val currentIndex = playback.currentIndex ?: 0
+    val panelWindow = rememberPlayPanelWindow(track, currentIndex, controls)
+    val positionPx = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
     val gestureScope = rememberCoroutineScope()
+    var screenWidthPx by remember { mutableFloatStateOf(0f) }
+    var draggingTrack by remember { mutableStateOf(false) }
+    var settlingTargetIndex by remember { mutableStateOf<Int?>(null) }
+    val positionReconciler = remember { NowPlayingPositionReconciler() }
+    val cueGate = remember { TrackChangeCueGate() }
+    var cueRevision by remember { mutableIntStateOf(0) }
+    val haptics = rememberQueueHaptics()
+    val latestCurrentIndex by rememberUpdatedState(currentIndex)
     var seekMarker by remember { mutableStateOf<String?>(null) }
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -125,28 +137,113 @@ internal fun NowPlayingSheet(
             backProgress = 0f
         }
     }
+    LaunchedEffect(track.id, currentIndex, screenWidthPx, motion.sceneAnimationsEnabled) {
+        if (screenWidthPx <= 0f) return@LaunchedEffect
+        val target = currentIndex * screenWidthPx
+        when (
+            positionReconciler.update(
+                trackId = track.id,
+                index = currentIndex,
+                dragging = draggingTrack,
+                animationsEnabled = motion.sceneAnimationsEnabled,
+                settlingTargetIndex = settlingTargetIndex,
+            )
+        ) {
+            NowPlayingPositionAction.ANIMATE -> positionPx.animateTo(
+                target,
+                tween(NOW_PLAYING_SETTLE_MS, easing = NOW_PLAYING_SETTLE_EASING),
+            )
+            NowPlayingPositionAction.SNAP,
+            NowPlayingPositionAction.REANCHOR,
+            -> positionPx.snapTo(target)
+            NowPlayingPositionAction.CONTINUE_SETTLE -> Unit
+        }
+    }
+    LaunchedEffect(track.id, motion.sceneAnimationsEnabled) {
+        if (cueGate.observe(track.id, motion.sceneAnimationsEnabled)) {
+            cueRevision += 1
+            haptics.commit()
+        }
+    }
+    val settleTrack: (PlayGestureDecision) -> Unit = { decision ->
+        val requestedIndex = when (decision) {
+            PlayGestureDecision.NEXT -> currentIndex + 1
+            PlayGestureDecision.PREVIOUS -> currentIndex - 1
+            else -> currentIndex
+        }
+        val targetIndex = requestedIndex.coerceIn(panelWindow.firstIndex, panelWindow.lastIndex)
+        val changesTrack = targetIndex != currentIndex
+        gestureScope.launch {
+            val target = targetIndex * screenWidthPx
+            if (changesTrack && motion.sceneAnimationsEnabled) {
+                settlingTargetIndex = targetIndex
+            }
+            try {
+                when (decision) {
+                    PlayGestureDecision.NEXT -> if (changesTrack) controls.next()
+                    PlayGestureDecision.PREVIOUS -> if (changesTrack) {
+                        controls.previousInQueueOrder()
+                    }
+                    else -> Unit
+                }
+                settleNowPlayingPosition(
+                    target = target,
+                    animationsEnabled = motion.sceneAnimationsEnabled,
+                    animate = { targetValue ->
+                        positionPx.animateTo(
+                            targetValue = targetValue,
+                            animationSpec = tween(
+                                NOW_PLAYING_SETTLE_MS,
+                                easing = NOW_PLAYING_SETTLE_EASING,
+                            ),
+                        )
+                    },
+                    snap = positionPx::snapTo,
+                )
+                if (
+                    changesTrack &&
+                    latestCurrentIndex == currentIndex
+                ) {
+                    positionPx.snapTo(currentIndex * screenWidthPx)
+                }
+            } finally {
+                if (settlingTargetIndex == targetIndex) settlingTargetIndex = null
+            }
+        }
+    }
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
+            .onSizeChanged { size ->
+                val width = size.width.toFloat()
+                if (screenWidthPx == width) return@onSizeChanged
+                screenWidthPx = width
+                gestureScope.launch { positionPx.snapTo(currentIndex * width) }
+            }
             .testTag("now-playing-gestures")
             .nowPlayingGestures(
                 animationsEnabled = motion.sceneAnimationsEnabled,
-                onHorizontalOffset = { offset ->
-                    gestureScope.launch { horizontalOffset.snapTo(offset) }
+                currentIndex = currentIndex,
+                firstIndex = panelWindow.firstIndex,
+                lastIndex = panelWindow.lastIndex,
+                positionPx = positionPx.value,
+                onHorizontalPosition = { position ->
+                    gestureScope.launch { positionPx.snapTo(position) }
                 },
                 onVerticalOffset = { offset ->
                     gestureScope.launch { verticalOffset.snapTo(offset) }
                 },
+                onDragStateChanged = { draggingTrack = it },
                 onSettle = { decision ->
                     when (decision) {
-                        PlayGestureDecision.NEXT -> controls.next()
-                        PlayGestureDecision.PREVIOUS -> controls.previous()
+                        PlayGestureDecision.NEXT,
+                        PlayGestureDecision.PREVIOUS,
+                        PlayGestureDecision.SPRING_BACK,
+                        -> settleTrack(decision)
                         PlayGestureDecision.DISMISS -> close()
-                        PlayGestureDecision.SPRING_BACK -> Unit
                     }
                     gestureScope.launch {
-                        horizontalOffset.animateTo(0f, spring())
                         verticalOffset.animateTo(0f, spring())
                     }
                 },
@@ -205,6 +302,8 @@ internal fun NowPlayingSheet(
                 playback = playback,
                 surfaceState = surfaceState,
                 metrics = metrics,
+                onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
+                onNext = { settleTrack(PlayGestureDecision.NEXT) },
             )
         } else {
             Box(Modifier.fillMaxSize().testTag("now-playing-content")) {
@@ -212,12 +311,22 @@ internal fun NowPlayingSheet(
                     track = track,
                     playback = playback,
                     surfaceState = surfaceState,
-                    horizontalOffsetPx = horizontalOffset.value,
-                    previousTrack = neighbours.previous,
-                    nextTrack = neighbours.next,
+                    positionPx = positionPx.value,
+                    currentIndex = currentIndex,
+                    panels = panelWindow.panels,
                     visualizerOpacity = visualizerOpacity.value,
+                    cueRevision = cueRevision,
                     onCoverBounds = { coverBounds.value = it },
+                    onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
+                    onNext = { settleTrack(PlayGestureDecision.NEXT) },
                 )
+                TopEdgeAccentLine(
+                    deviationPx = positionPx.value - currentIndex * screenWidthPx,
+                    widthPx = screenWidthPx,
+                    fingerDown = draggingTrack,
+                    animationsEnabled = motion.sceneAnimationsEnabled,
+                )
+                TopEdgeSweep(cueRevision, motion.sceneAnimationsEnabled)
                 seekMarker?.let { marker ->
                     Text(
                         text = marker,
@@ -238,7 +347,18 @@ internal fun NowPlayingSheet(
     }
 }
 
+internal suspend fun settleNowPlayingPosition(
+    target: Float,
+    animationsEnabled: Boolean,
+    animate: suspend (Float) -> Unit,
+    snap: suspend (Float) -> Unit,
+) {
+    if (animationsEnabled) animate(target) else snap(target)
+}
+
 internal const val VISUALIZER_CROSSFADE_MS = 220
+internal const val NOW_PLAYING_SETTLE_MS = 480
+internal val NOW_PLAYING_SETTLE_EASING = CubicBezierEasing(0.22f, 1.06f, 0.32f, 1f)
 private const val NOW_PLAYING_VISUALIZER_TAG = "RepriseVisualizer"
 
 @Composable
@@ -247,6 +367,8 @@ private fun WideShortNowPlayingContent(
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
     metrics: NowPlayingMetrics,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -328,7 +450,13 @@ private fun WideShortNowPlayingContent(
                 )
             }
             Spacer(Modifier.weight(1f))
-            PlaybackActions(playback = playback, metrics = metrics, wideShort = true)
+            PlaybackActions(
+                playback = playback,
+                metrics = metrics,
+                wideShort = true,
+                onPrevious = onPrevious,
+                onNext = onNext,
+            )
         }
     }
 }
@@ -340,6 +468,8 @@ internal fun SpectralSeekSlider(
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
     interactionSource: MutableInteractionSource? = null,
+    cueRevision: Int = 0,
+    animationsEnabled: Boolean = true,
 ) {
     val seekTo = LocalPlaybackControls.current::seekTo
     val sliderInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
@@ -372,7 +502,16 @@ internal fun SpectralSeekSlider(
             interactionSource = sliderInteractionSource,
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
-            track = { SpectralSeekTrack(trackId, displayed, durationMs) },
+            thumb = {},
+            track = {
+                SpectralSeekTrack(
+                    trackId,
+                    displayed,
+                    durationMs,
+                    cueRevision,
+                    animationsEnabled,
+                )
+            },
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -398,6 +537,8 @@ private fun PlaybackActions(
     playback: PlaybackUiState,
     metrics: NowPlayingMetrics,
     wideShort: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
 ) {
     val controls = LocalPlaybackControls.current
     Row(
@@ -413,11 +554,11 @@ private fun PlaybackActions(
                 onClick = { controls.setShuffle(!playback.shuffled) },
             )
         }
-        IconButton(onClick = controls::previous, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = onPrevious, modifier = Modifier.size(48.dp)) {
             MaterialSymbol("skip_previous", "Previous track", sizeSp = 30)
         }
         if (wideShort) {
-            IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
                 MaterialSymbol("skip_next", "Next track", sizeSp = 30)
             }
         }
@@ -439,7 +580,7 @@ private fun PlaybackActions(
             )
         }
         if (!wideShort) {
-            IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
                 MaterialSymbol("skip_next", "Next track", sizeSp = 30)
             }
         } else {

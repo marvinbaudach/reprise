@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
@@ -22,12 +23,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -35,10 +38,13 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.preferredFrameRate
@@ -60,11 +66,112 @@ import io.github.marvinbaudach.reprise.ui.theme.toComposeColor
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
 
 private const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
 private const val PLAYED_CENTRE_FRACTION = 0.34f
 private const val TITLE_TO_ARTIST_GAP_DP = 6
+private const val TITLE_PANEL_WIDTH_RATIO = 1.282f
+private const val GLOW_TRANSLATION_FACTOR = 0.23f
+private const val MAXIMUM_COLOR_CHANNEL = 255
+
+private val SATURATION_FILTERS by lazy {
+    Array(MAXIMUM_COLOR_CHANNEL + 1) { channel ->
+        val saturation = channel.toFloat() / MAXIMUM_COLOR_CHANNEL
+        ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(saturation) })
+    }
+}
+
+private fun cachedSaturationFilter(saturation: Float): ColorFilter? {
+    if (saturation.toRawBits() == 1f.toRawBits()) return null
+    val channel = (saturation.coerceIn(0f, 1f) * MAXIMUM_COLOR_CHANNEL).roundToInt()
+    return SATURATION_FILTERS[channel]
+}
+
+internal data class NowPlayingPanelTransform(
+    val translationX: Float,
+    val scale: Float,
+    val rotationDegrees: Float,
+    val opacity: Float,
+    val blurPx: Float,
+    val saturation: Float,
+) {
+    val rotationForLayer: Float?
+        get() = rotationDegrees.takeUnless { it.toRawBits() == 0f.toRawBits() }
+}
+
+internal fun nowPlayingPanelTransform(
+    panelIndex: Int,
+    positionPx: Float,
+    widthPx: Float,
+): NowPlayingPanelTransform {
+    if (widthPx <= 0f) return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
+    if (positionPx == panelIndex * widthPx) {
+        return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
+    }
+    val fractionalIndex = positionPx / widthPx
+    val delta = panelIndex - fractionalIndex
+    val distance = min(1.6f, abs(delta))
+    val near = max(0f, 1f - min(1f, abs(delta)))
+    return NowPlayingPanelTransform(
+        translationX = panelIndex * widthPx - positionPx,
+        scale = 1f - distance * 0.13f,
+        rotationDegrees = delta.coerceIn(-1f, 1f) * -3.5f,
+        opacity = max(0f, 1f - distance * 0.75f),
+        blurPx = (1f - near) * 5f,
+        saturation = 0.4f + near * 0.6f,
+    )
+}
+
+internal fun nowPlayingTitleTranslation(positionPx: Float, widthPx: Float): Float =
+    -positionPx * TITLE_PANEL_WIDTH_RATIO -
+        (TITLE_PANEL_WIDTH_RATIO - 1f) * widthPx / 2f
+
+internal data class NowPlayingGlowTransform(
+    val translationX: Float,
+    val opacity: Float,
+)
+
+internal fun nowPlayingGlowTransform(
+    panelIndex: Int,
+    positionPx: Float,
+    widthPx: Float,
+): NowPlayingGlowTransform {
+    if (widthPx <= 0f) return NowPlayingGlowTransform(0f, 1f)
+    if (positionPx == panelIndex * widthPx) return NowPlayingGlowTransform(0f, 1f)
+    val delta = panelIndex - positionPx / widthPx
+    return NowPlayingGlowTransform(
+        translationX = delta * widthPx * GLOW_TRANSLATION_FACTOR,
+        opacity = max(0f, 1f - abs(delta) * 1.1f),
+    )
+}
+
+internal data class NowPlayingProgressTransform(
+    val translationY: Float,
+    val opacity: Float,
+    val scaleX: Float,
+)
+
+internal fun nowPlayingProgressTransform(
+    currentIndex: Int,
+    positionPx: Float,
+    widthPx: Float,
+): NowPlayingProgressTransform {
+    val offset = if (widthPx > 0f) {
+        min(1f, abs(positionPx / widthPx - currentIndex))
+    } else {
+        0f
+    }
+    return NowPlayingProgressTransform(
+        translationY = -offset * 70f,
+        opacity = 1f - offset * 0.9f,
+        scaleX = 1f - offset * 0.06f,
+    )
+}
 
 internal fun shouldRequestHighVisualizerFrameRate(
     visualizerOpacity: Float,
@@ -85,54 +192,16 @@ internal fun NowPlayingScene(
     track: LibraryTrack,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
-    horizontalOffsetPx: Float = 0f,
-    previousTrack: LibraryTrack? = null,
-    nextTrack: LibraryTrack? = null,
+    positionPx: Float = 0f,
+    currentIndex: Int = 0,
+    panels: List<PlayPanel> = listOf(PlayPanel(currentIndex, track)),
     visualizerOpacity: Float = 0f,
+    cueRevision: Int = 0,
     onCoverBounds: (Rect) -> Unit = {},
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
 ) {
-    val frames = rememberSpectrogram(track.id)
-    val state = remember(frames) { SceneState(frames) }
-    val artwork = rememberTrackArtworkVisual(
-        track.uri,
-        AndroidArtworkSize.NOW_PLAYING,
-        track.title,
-        track.artist,
-    )
-    val previousArtwork = previousTrack?.let { neighbour ->
-        rememberTrackArtworkVisual(
-            neighbour.uri,
-            AndroidArtworkSize.NOW_PLAYING,
-            neighbour.title,
-            neighbour.artist,
-        )
-    }
-    val nextArtwork = nextTrack?.let { neighbour ->
-        rememberTrackArtworkVisual(
-            neighbour.uri,
-            AndroidArtworkSize.NOW_PLAYING,
-            neighbour.title,
-            neighbour.artist,
-        )
-    }
-    val fog = rememberCoverFogTransition(artwork?.image, AmbientTrueBlack)
-    val coverShadow = rememberCoverShadowBitmap()
     val motion = LocalAmbientMotionController.current
-    val fallbackAccent = MaterialTheme.colorScheme.primary
-    val visualEngine = rememberVisualSceneEngine(
-        trackId = track.id,
-        playback = playback,
-        accent = artwork?.ambientColors?.first?.toComposeColor() ?: fallbackAccent,
-    )
-    val visualFrameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
-    val drawRevision = DriveScene(
-        frames = frames,
-        state = state,
-        playback = playback,
-        controller = motion,
-        frameSink = visualFrameSink,
-    )
-    val power = motion.sceneRenderPower()
 
     BoxWithConstraints(
         modifier = Modifier
@@ -147,104 +216,53 @@ internal fun NowPlayingScene(
             ),
     ) {
         val density = LocalDensity.current
+        val widthPx = with(density) { maxWidth.toPx() }
+        val currentTransform = nowPlayingPanelTransform(currentIndex, positionPx, widthPx)
+        val progressTransform = nowPlayingProgressTransform(currentIndex, positionPx, widthPx)
         val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
+        val titleTop = maxHeight * PLAYED_CENTRE_FRACTION + 156.dp
+        val titleWidth = maxWidth * TITLE_PANEL_WIDTH_RATIO
         val reportedCoverBounds = with(density) {
             playedCoverRect(
                 center = Offset(
-                    maxWidth.toPx() / 2f + horizontalOffsetPx,
+                    maxWidth.toPx() / 2f + currentTransform.translationX,
                     maxHeight.toPx() * PLAYED_CENTRE_FRACTION,
                 ),
                 side = COVER_SIZE_DP.dp.toPx(),
             )
         }
         SideEffect { onCoverBounds(reportedCoverBounds) }
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("now-playing-scene"),
-        ) {
-            // Capturing the frame counter is what makes Compose re-run this lambda once
-            // per scene frame; the value itself has nothing to contribute to the drawing.
-            observeSceneFrame(drawRevision)
-            drawRect(AmbientTrueBlack)
-            val playedCenter = Offset(
-                size.width / 2f + horizontalOffsetPx,
-                size.height * PLAYED_CENTRE_FRACTION,
-            )
-            val fogCenter = playedCenter.copy(
-                x = size.width / 2f + horizontalOffsetPx * FOG_SWIPE_DISTANCE_FACTOR,
-            )
-            // The film is drawn first and lit from whichever picture the cover
-            // slot is currently showing — the artwork's own quadrants, or the
-            // visualizer's ramp once the spectrum has crossed over it.
-            drawPlayedNowPlayingFog(
-                fog = fog.previous,
-                center = fogCenter,
-                state = state,
-                visualizerOpacity = visualizerOpacity,
-                opacity = 1f - fog.fraction,
-                rotationsEnabled = power.fogRotates,
-            )
-            drawPlayedNowPlayingFog(
-                fog = fog.current,
-                center = fogCenter,
-                state = state,
-                visualizerOpacity = visualizerOpacity,
-                opacity = fog.fraction,
-                rotationsEnabled = power.fogRotates,
-            )
-            drawPlayedNowPlayingShimmer(
-                fog = fog.previous,
-                center = fogCenter,
-                state = state,
-                opacity = 1f - fog.fraction,
-                rotationsEnabled = power.fogRotates,
-            )
-            drawPlayedNowPlayingShimmer(
-                fog = fog.current,
-                center = fogCenter,
-                state = state,
-                opacity = fog.fraction,
-                rotationsEnabled = power.fogRotates,
-            )
-            if (horizontalOffsetPx > 0f) {
-                previousArtwork?.image?.let { neighbour ->
-                    drawPlayedCover(
-                        artwork = neighbour,
-                        center = playedCenter.copy(x = playedCenter.x - size.width),
-                        fallback = AmbientTrueBlack,
-                        shadow = coverShadow,
+        Box(Modifier.fillMaxSize().testTag("now-playing-scene")) {
+            panels.forEach { panel ->
+                key(panel.track.id, panel.index) {
+                    NowPlayingPanelLayer(
+                        panel = panel,
+                        currentIndex = currentIndex,
+                        positionPx = positionPx,
+                        widthPx = widthPx,
+                        playback = playback,
+                        motion = motion,
+                        visualizerOpacity = visualizerOpacity,
+                        coverTop = coverTop,
+                    )
+                    SceneTitle(
+                        track = panel.track,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .offset(y = titleTop)
+                            .requiredWidth(titleWidth)
+                            .graphicsLayer {
+                                translationX = nowPlayingTitleTranslation(
+                                    positionPx = positionPx - panel.index * widthPx,
+                                    widthPx = widthPx,
+                                )
+                                alpha = max(
+                                    0f,
+                                    1f - abs(panel.index - positionPx / widthPx) * 1.35f,
+                                )
+                            },
                     )
                 }
-            } else if (horizontalOffsetPx < 0f) {
-                nextArtwork?.image?.let { neighbour ->
-                    drawPlayedCover(
-                        artwork = neighbour,
-                        center = playedCenter.copy(x = playedCenter.x + size.width),
-                        fallback = AmbientTrueBlack,
-                        shadow = coverShadow,
-                    )
-                }
-            }
-            drawPlayedCover(
-                artwork = artwork?.image,
-                center = playedCenter,
-                fallback = AmbientTrueBlack,
-                shadow = coverShadow,
-                opacity = 1f - visualizerOpacity,
-            )
-            if (visualEngine != null && visualizerOpacity > 0f) {
-                drawPlayedVisualizer(
-                    buffer = visualEngine.sceneBytes(
-                        width = COVER_SIZE_DP.dp.toPx(),
-                        height = COVER_SIZE_DP.dp.toPx(),
-                    ),
-                    center = playedCenter,
-                    side = COVER_SIZE_DP.dp.toPx(),
-                    radius = COVER_RADIUS_DP.dp.toPx(),
-                    shadow = null,
-                    opacity = visualizerOpacity,
-                )
             }
         }
 
@@ -253,6 +271,7 @@ internal fun NowPlayingScene(
                 .align(Alignment.TopCenter)
                 .offset(y = coverTop - ((nowPlayingMetrics.coverSizeDp - COVER_SIZE_DP) / 2).dp)
                 .size(nowPlayingMetrics.coverSizeDp.dp)
+                .graphicsLayer { translationX = currentTransform.translationX }
                 .testTag("now-playing-cover"),
             contentAlignment = Alignment.Center,
         ) {
@@ -265,24 +284,28 @@ internal fun NowPlayingScene(
 
         PlayedHeader(track = track, playback = playback, surfaceState = surfaceState)
 
-        SceneTitle(
-            track = track,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .offset(y = maxHeight * PLAYED_CENTRE_FRACTION + 156.dp),
-        )
-
         SceneProgress(
             track = track,
             playback = playback,
             surfaceState = surfaceState,
+            cueRevision = cueRevision,
+            animationsEnabled = motion.sceneAnimationsEnabled,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .offset(y = maxHeight * 0.69f),
+                .offset(y = maxHeight * 0.69f)
+                .graphicsLayer {
+                    translationY = progressTransform.translationY
+                    alpha = progressTransform.opacity
+                    scaleX = progressTransform.scaleX
+                },
         )
 
         SceneTransport(
             playback = playback,
+            cueRevision = cueRevision,
+            animationsEnabled = motion.sceneAnimationsEnabled,
+            onPrevious = onPrevious,
+            onNext = onNext,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 18.dp, vertical = 18.dp),
@@ -291,12 +314,133 @@ internal fun NowPlayingScene(
 }
 
 @Composable
+private fun NowPlayingPanelLayer(
+    panel: PlayPanel,
+    currentIndex: Int,
+    positionPx: Float,
+    widthPx: Float,
+    playback: PlaybackUiState,
+    motion: AmbientMotionController,
+    visualizerOpacity: Float,
+    coverTop: androidx.compose.ui.unit.Dp,
+) {
+    val artwork = rememberTrackArtworkVisual(
+        panel.track.uri,
+        AndroidArtworkSize.NOW_PLAYING,
+        panel.track.title,
+        panel.track.artist,
+    )
+    val fog = rememberCoverFogBitmap(artwork?.image, AmbientTrueBlack)
+    val frames = rememberSpectrogram(panel.track.id)
+    val state = remember(frames) { SceneState(frames) }
+    val accent = artwork?.ambientColors?.first?.toComposeColor()
+        ?: MaterialTheme.colorScheme.primary
+    val visualEngine = rememberVisualSceneEngine(
+        panel.track.id,
+        playback,
+        accent,
+        live = panel.index == currentIndex,
+    )
+    val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
+    val drawRevision = DriveScene(frames, state, playback, motion, frameSink)
+    val power = motion.sceneRenderPower()
+    val transform = nowPlayingPanelTransform(panel.index, positionPx, widthPx)
+    val glow = nowPlayingGlowTransform(panel.index, positionPx, widthPx)
+    val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
+    val near = max(0f, 1f - min(1f, distance))
+    val coverOpacity = 1f - visualizerOpacity * near.pow(1.6f)
+    val barsOpacity = visualizerOpacity * near.pow(1.4f)
+    val barHeight = 0.3f + near * 0.7f
+    val coverShadow = rememberCoverShadowBitmap()
+    val density = LocalDensity.current
+    val saturationFilter = cachedSaturationFilter(transform.saturation)
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { translationX = glow.translationX },
+    ) {
+        observeSceneFrame(drawRevision)
+        val center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION)
+        drawPlayedNowPlayingFog(
+            fog = fog,
+            center = center,
+            state = state,
+            visualizerOpacity = barsOpacity,
+            opacity = glow.opacity,
+            rotationsEnabled = power.fogRotates,
+        )
+        drawPlayedNowPlayingShimmer(
+            fog = fog,
+            center = center,
+            state = state,
+            opacity = glow.opacity,
+            rotationsEnabled = power.fogRotates,
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .offset(y = coverTop)
+            .fillMaxWidth()
+            .height(COVER_SIZE_DP.dp)
+            .graphicsLayer {
+                translationX = transform.translationX
+                scaleX = transform.scale
+                scaleY = transform.scale
+                transform.rotationForLayer?.let { rotationZ = it }
+                alpha = transform.opacity
+                colorFilter = saturationFilter
+            }
+            .then(
+                if (transform.blurPx.toRawBits() == 0f.toRawBits()) {
+                    Modifier
+                } else {
+                    Modifier.blur(with(density) { transform.blurPx.toDp() })
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(COVER_SIZE_DP.dp)) {
+            observeSceneFrame(drawRevision)
+            val center = Offset(size.width / 2f, size.height / 2f)
+            drawPlayedCover(
+                artwork = artwork?.image,
+                center = center,
+                fallback = AmbientTrueBlack,
+                shadow = coverShadow,
+                opacity = coverOpacity,
+            )
+        }
+        if (visualEngine != null && barsOpacity > 0f) {
+            Canvas(
+                Modifier
+                    .size(COVER_SIZE_DP.dp)
+                    .graphicsLayer { scaleY = barHeight },
+            ) {
+                observeSceneFrame(drawRevision)
+                val center = Offset(size.width / 2f, size.height / 2f)
+                drawPlayedVisualizer(
+                    buffer = visualEngine.sceneBytes(size.width, size.height),
+                    center = center,
+                    side = size.width,
+                    radius = COVER_RADIUS_DP.dp.toPx(),
+                    shadow = null,
+                    opacity = barsOpacity,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun rememberVisualSceneEngine(
     trackId: Long,
     playback: PlaybackUiState,
     accent: Color,
+    live: Boolean,
 ): VisualSceneEngine? {
-    val factory = LocalVisualSceneEngineFactory.current
+    val factory = visualSceneFactoryForPanel(live, LocalVisualSceneEngineFactory.current)
     val engine: VisualSceneEngine? = remember(factory) { factory.create() }
     DisposableEffect(engine) {
         onDispose { engine?.close() }
@@ -310,6 +454,11 @@ private fun rememberVisualSceneEngine(
     }
     return engine
 }
+
+internal fun visualSceneFactoryForPanel(
+    live: Boolean,
+    liveFactory: VisualSceneEngineFactory,
+): VisualSceneEngineFactory = if (live) liveFactory else NativeVisualSceneEngineFactory
 
 internal fun updateVisualSceneEngine(
     engine: VisualSceneEngine,
@@ -461,16 +610,28 @@ private fun SceneProgress(
     track: LibraryTrack,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
+    cueRevision: Int,
+    animationsEnabled: Boolean,
     modifier: Modifier,
 ) {
     Box(modifier.padding(horizontal = 24.dp)) {
-        SpectralSeekSlider(track.id, playback, surfaceState)
+        SpectralSeekSlider(
+            track.id,
+            playback,
+            surfaceState,
+            cueRevision = cueRevision,
+            animationsEnabled = animationsEnabled,
+        )
     }
 }
 
 @Composable
 private fun SceneTransport(
     playback: PlaybackUiState,
+    cueRevision: Int,
+    animationsEnabled: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     modifier: Modifier,
 ) {
     val controls = LocalPlaybackControls.current
@@ -488,9 +649,9 @@ private fun SceneTransport(
             tag = "now-playing-shuffle",
             onClick = { controls.setShuffle(!playback.shuffled) },
         )
-        FlatSceneButton("skip_previous", "Previous track", onClick = controls::previous)
-        ScenePauseButton(playback, controls::togglePause)
-        FlatSceneButton("skip_next", "Next track", onClick = controls::next)
+        FlatSceneButton("skip_previous", "Previous track", onClick = onPrevious)
+        ScenePauseButton(playback, cueRevision, animationsEnabled, controls::togglePause)
+        FlatSceneButton("skip_next", "Next track", onClick = onNext)
         FlatSceneButton(
             symbol = if (playback.repeat == AndroidRepeatMode.ONE) "repeat_one" else "repeat",
             description = "Repeat ${playback.repeat.name.lowercase()}",
@@ -540,23 +701,28 @@ private fun FlatSceneButton(
 @Composable
 private fun ScenePauseButton(
     playback: PlaybackUiState,
+    cueRevision: Int,
+    animationsEnabled: Boolean,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(28.dp)
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier
-            .size(80.dp)
-            .testTag("now-playing-play")
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.primary),
-    ) {
-        MaterialSymbol(
-            name = playback.playPauseSymbol,
-            contentDescription = playback.playPauseLabel,
-            tint = NowPlayingOnBackdrop,
-            sizeSp = 40,
-        )
+    Box(Modifier.size(80.dp), contentAlignment = Alignment.Center) {
+        PlayButtonPulse(cueRevision, animationsEnabled)
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier
+                .size(80.dp)
+                .testTag("now-playing-play")
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.primary),
+        ) {
+            MaterialSymbol(
+                name = playback.playPauseSymbol,
+                contentDescription = playback.playPauseLabel,
+                tint = NowPlayingOnBackdrop,
+                sizeSp = 40,
+            )
+        }
     }
 }
 
@@ -570,9 +736,11 @@ internal fun DrawScope.drawPlayedCover(
     val side = COVER_SIZE_DP.dp.toPx()
     val rect = playedCoverRect(center, side)
     val radius = COVER_RADIUS_DP.dp.toPx()
-    shadow?.let { drawCoverShadow(it, rect) }
     if (opacity <= 0f) return
     val safeOpacity = opacity.coerceIn(0f, 1f)
+    shadow?.let {
+        drawCoverShadow(it, rect, alpha = safeOpacity)
+    }
     val path = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }
     clipPath(path) {
         if (artwork == null) {
@@ -601,5 +769,3 @@ internal fun playedCoverRect(center: Offset, side: Float): Rect = Rect(
 
 /** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
 private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit
-
-private const val FOG_SWIPE_DISTANCE_FACTOR = 0.35f

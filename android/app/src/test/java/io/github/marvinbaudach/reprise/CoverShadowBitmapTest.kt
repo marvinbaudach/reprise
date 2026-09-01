@@ -22,6 +22,30 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class CoverShadowBitmapTest {
     @Test
+    fun an_invisible_panel_leaves_no_cover_shadow() {
+        val rendered = Bitmap.createBitmap(CANVAS_SIZE, CANVAS_SIZE, Bitmap.Config.ARGB_8888)
+        CanvasDrawScope().draw(
+            density = Density(1f),
+            layoutDirection = LayoutDirection.Ltr,
+            canvas = Canvas(rendered.asImageBitmap()),
+            size = Size(CANVAS_SIZE.toFloat(), CANVAS_SIZE.toFloat()),
+        ) {
+            drawPlayedCover(
+                artwork = null,
+                center = Offset(COVER_CENTRE, COVER_CENTRE),
+                fallback = androidx.compose.ui.graphics.Color.White,
+                shadow = prepareCoverShadowBitmap(),
+                opacity = 0f,
+            )
+        }
+
+        val nonTransparent = IntArray(CANVAS_SIZE * CANVAS_SIZE).also { pixels ->
+            rendered.getPixels(pixels, 0, CANVAS_SIZE, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
+        }.count { pixel -> Color.alpha(pixel) > 0 }
+        assertEquals(0, nonTransparent)
+    }
+
+    @Test
     fun shadow_below_cover_falls_monotonically_without_stair_steps() {
         val rendered = Bitmap.createBitmap(CANVAS_SIZE, CANVAS_SIZE, Bitmap.Config.ARGB_8888)
         val artwork = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply {

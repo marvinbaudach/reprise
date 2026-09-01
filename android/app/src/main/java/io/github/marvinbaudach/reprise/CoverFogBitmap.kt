@@ -1,14 +1,10 @@
 package io.github.marvinbaudach.reprise
 
 import android.graphics.Bitmap
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -25,7 +21,6 @@ private const val BOX_BLUR_PASSES = 2
 private const val RADIAL_FADE_START = 0.62f
 private const val SHIMMER_MASK_SOLID = 0.12f
 private const val SHIMMER_MASK_CLEAR = 0.68f
-private const val FOG_CROSSFADE_MS = 180
 
 /**
  * What one artwork contributes to the scene, prepared once away from the frame.
@@ -35,46 +30,14 @@ private const val FOG_CROSSFADE_MS = 180
  * clouds now and reads [palette] instead, so what is left is the disc the
  * shimmer turns over the cover — and the palette, which is not a texture at all
  * but belongs to the same question: what does this cover look like from far
- * enough away. Both are cached and cross-faded together, so a track change
- * moves the film's colour and the disc in step.
+ * enough away. Both are cached together; the per-panel scene owns their spatial
+ * transition, so this value never carries a second cross-fade of its own.
  */
 internal data class CoverFogBitmap(
     val disc: Bitmap,
     val palette: OilFilmPalette,
 ) {
     val discImage: ImageBitmap = disc.asImageBitmap()
-}
-
-internal data class CoverFogTransition(
-    val previous: CoverFogBitmap?,
-    val current: CoverFogBitmap?,
-    val fraction: Float,
-)
-
-/** Keeps the currently drawn fog while its replacement is being prepared. */
-internal class CoverFogTransitionState {
-    private var previous: CoverFogBitmap? = null
-    private var current: CoverFogBitmap? = null
-
-    fun beginReplacement() = Unit
-
-    fun adopt(next: CoverFogBitmap) {
-        if (current === next) return
-        previous = current
-        current = next
-    }
-
-    fun pending() = CoverFogTransition(previous = null, current = current, fraction = 1f)
-
-    fun transition(fraction: Float) = CoverFogTransition(
-        previous = previous,
-        current = current,
-        fraction = fraction.coerceIn(0f, 1f),
-    )
-
-    fun finish() {
-        previous = null
-    }
 }
 
 /**
@@ -105,41 +68,20 @@ internal fun prepareFogTexture(source: Bitmap?, fallbackArgb: Int): Bitmap =
 internal fun rememberCoverFogBitmap(
     artwork: ImageBitmap?,
     fallback: Color,
-): CoverFogBitmap? = rememberCoverFogTransition(artwork, fallback).current
-
-@Composable
-internal fun rememberCoverFogTransition(
-    artwork: ImageBitmap?,
-    fallback: Color,
     cache: ArtworkCache = SharedArtworkCache,
-): CoverFogTransition {
+): CoverFogBitmap? {
     val fallbackArgb = fallback.toArgb()
-    val state = remember { CoverFogTransitionState() }
-    val fade = remember { Animatable(1f) }
-    var revision by remember { mutableIntStateOf(0) }
+    val prepared = remember(artwork, fallbackArgb, cache) {
+        mutableStateOf(artwork?.let(cache::fog))
+    }
     LaunchedEffect(artwork, fallbackArgb) {
-        state.beginReplacement()
-        revision += 1
-        val prepared = artwork?.let(cache::fog) ?: withContext(Dispatchers.Default) {
+        prepared.value = artwork?.let(cache::fog) ?: withContext(Dispatchers.Default) {
             prepareCoverFogBitmap(artwork?.asAndroidBitmap(), fallbackArgb).also { fog ->
                 if (artwork != null) cache.putFog(artwork, fog)
             }
         }
-        val hadCurrent = state.pending().current != null
-        state.adopt(prepared)
-        revision += 1
-        if (hadCurrent) {
-            fade.snapTo(0f)
-            fade.animateTo(1f, tween(FOG_CROSSFADE_MS))
-            state.finish()
-            revision += 1
-        } else {
-            fade.snapTo(1f)
-        }
     }
-    @Suppress("UNUSED_VARIABLE")
-    val observedRevision = revision
-    return state.transition(fade.value)
+    return prepared.value
 }
 
 private fun cropSquare(source: Bitmap?, fallbackArgb: Int): Bitmap {

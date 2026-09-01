@@ -34,12 +34,16 @@ internal interface QueueHaptics {
     /** The row has been let go where it started, or the gesture was taken away. */
     fun cancelled()
 
+    /** A Now Playing track change has committed. */
+    fun commit()
+
     /** What a preview, a test, or a device without a vibrator uses. */
     object None : QueueHaptics {
         override fun lift() = Unit
         override fun crossedBoundary() = Unit
         override fun dropped() = Unit
         override fun cancelled() = Unit
+        override fun commit() = Unit
     }
 }
 
@@ -63,6 +67,8 @@ private class DeviceQueueHaptics(
     override fun dropped() = pulse(longArrayOf(0, 14, 40, 10), HapticFeedbackType.LongPress)
 
     override fun cancelled() = pulse(longArrayOf(0, 25), HapticFeedbackType.TextHandleMove)
+
+    override fun commit() = pulse(longArrayOf(0, 12), HapticFeedbackType.TextHandleMove)
 
     private fun pulse(pattern: LongArray, fallback: HapticFeedbackType) {
         // The platform route consults this setting on its own; the vibrator
