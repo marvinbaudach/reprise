@@ -68,9 +68,15 @@
   cursor: pointer;
 }
 
+/*
+ * The global :focus-visible (global.css) also sets --radius-sharp, at the same
+ * specificity as .film__control's own 999px — so at equal weight the emitted
+ * order would decide whether the pill squares off on focus. Restating the
+ * radius here wins on specificity instead, whatever order the bundler picks.
+ * outline and outline-offset come from the global rule unchanged.
+ */
 .film__control:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  border-radius: 999px;
 }
 
 .film__caption {
@@ -79,6 +85,7 @@
   color: var(--text-body);
 }
 
+/* Must match SMALL_VIEWPORT in ShowreelFilm.tsx for the source ladder. */
 @media (max-width: 900px) {
   .film-heading {
     align-items: flex-start;
