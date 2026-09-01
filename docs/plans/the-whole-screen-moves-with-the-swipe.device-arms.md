@@ -1,5 +1,22 @@
 # Device arms — the whole screen moves with the swipe
 
+> **Corrected 2026-09-01, same day. Do not read the verdict below as "the
+> implementation is good."** The user looked at the running app and reported
+> the animation as still completely broken. This document's checks were too
+> narrow to see that: they test where layers are and whether a cover appears,
+> at sampled instants, and never test motion over time. A correct ratio on the
+> four frames that exist says nothing about the frames that are missing.
+>
+> What survives: the retirement of the old brightness gate, the harness
+> geometry, and the observation that the previous-direction regression does not
+> reproduce *in the sense measured*. What does not survive: any implication
+> that the animation runs correctly.
+>
+> `the-swipe-animation-is-still-broken.HANDOVER.md` carries the evidence
+> already in these captures that points the other way — a cover that switches
+> in a single frame with no tween, gesture frame gaps of up to 87 ms, and a
+> screen that did not settle — and says what to measure next.
+
 First device measurement of `feature/the-whole-screen-moves-with-the-swipe-b`
 (f402c2756e). The question asked was the user's: does the implementation
 animate the way this plan says it does?
