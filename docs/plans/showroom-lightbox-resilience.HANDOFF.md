@@ -1,3 +1,11 @@
+---
+slug: showroom-lightbox-resilience
+worktree: /home/marvin/Projects/reprise-showroom-lightbox-resilience
+branch: fix/showroom-lightbox-resilience
+phase: refactored
+created: 2026-09-01
+---
+
 # Handoff — showroom lightbox resilience (2026-09-01, 03:55)
 
 Supersedes `/home/marvin/Projects/reprise-showroom-bugs/HANDOFF.md`, which is
