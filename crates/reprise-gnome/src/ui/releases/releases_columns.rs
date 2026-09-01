@@ -558,7 +558,7 @@ mod tests {
         let cell = button.parent().and_downcast::<gtk4::Box>().unwrap();
         assert!(button.has_css_class("flat") && button.has_css_class("link"));
         assert_eq!(
-            cell.tooltip_text().as_deref(),
+            crate::ui::lazy_tooltip::text_of(&cell).as_deref(),
             Some("https://musicbrainz.org/release-group/mbid")
         );
         assert!(gtk4::test_accessible_has_property(
@@ -575,7 +575,7 @@ mod tests {
         crate::ui::source_context_surface::settle_layout();
         assert!(!button.is_visible());
         assert_eq!(button.label().as_deref(), Some(""));
-        assert_eq!(cell.tooltip_text(), None);
+        assert_eq!(crate::ui::lazy_tooltip::text_of(&cell), None);
         assert!(!gtk4::test_accessible_has_property(
             &button,
             gtk4::AccessibleProperty::Label

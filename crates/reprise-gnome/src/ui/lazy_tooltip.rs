@@ -66,14 +66,44 @@ impl LazyTooltip {
 
     pub(crate) fn set_text(&self, widget: &impl IsA<gtk4::Widget>, text: Option<String>) {
         let enabled = text.is_some();
-        self.text.replace(text);
+        self.text.replace(text.clone());
         widget.set_has_tooltip(enabled);
+        #[cfg(test)]
+        record_text(widget, text);
     }
 }
 
 pub(crate) fn install(widget: &impl IsA<gtk4::Widget>, text: String) {
     let tooltip = LazyTooltip::install(widget);
     tooltip.set_text(widget, Some(text));
+}
+
+// Tests cannot read GTK's `tooltip-text` property back (it is deliberately
+// never set — see the module doc comment), so `set_text` mirrors what each
+// widget's `query-tooltip` handler would answer into this widget-keyed
+// registry. `text_of` is the read side, used by contract tests that only
+// have the bound widget, not the `LazyTooltip` that installed it.
+#[cfg(test)]
+thread_local! {
+    static TEXT_BY_WIDGET: RefCell<HashMap<usize, Option<String>>> = RefCell::new(HashMap::new());
+}
+
+#[cfg(test)]
+fn record_text(widget: &impl IsA<gtk4::Widget>, text: Option<String>) {
+    TEXT_BY_WIDGET.with(|registry| {
+        registry.borrow_mut().insert(widget.as_ptr() as usize, text);
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn text_of(widget: &impl IsA<gtk4::Widget>) -> Option<String> {
+    TEXT_BY_WIDGET.with(|registry| {
+        registry
+            .borrow()
+            .get(&(widget.as_ptr() as usize))
+            .cloned()
+            .flatten()
+    })
 }
 
 #[cfg(test)]
