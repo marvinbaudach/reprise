@@ -327,8 +327,13 @@ strand's own proof that the four shards partition the suite, and across runs 1
 and 2 it never once executed. It now sits **ahead** of the test step, where it
 depends only on the listing.
 
-Run 3, `33554394762`, is the first run in which it executed:
-`Verify display-test shard partition: success`, with all four shards green.
+It first executed in run 3, `33554394762`, and again in run 4,
+`33555440025`, which is the one to cite: run 4 tests the branch tip
+`a134088b7e`, the commit that actually lands. Both show
+`Verify display-test shard partition: success` with all four display shards
+green. Run 3's own final state reads `cancelled` — run 4's concurrency group
+superseded it *after* every display job had already completed — so quote run 4,
+not run 3, or the Actions UI will make the claim look unsupported.
 
 ## Landing
 
@@ -336,8 +341,11 @@ Run 3, `33554394762`, is the first run in which it executed:
 
 Proved on the rebased branch:
 
-- Run 3 `33554394762` — all four display shards green, and
-  `Verify display-test shard partition` green for the first time.
+- Run 4 `33555440025`, at the branch tip `a134088b7e` — all four display
+  shards green, and `Verify display-test shard partition` green. Run 3
+  `33554394762` showed the same on `f1292d8be8`, but its final state reads
+  `cancelled` (superseded by run 4 after the display jobs finished), so cite
+  run 4.
 - Partition locally: 856 tests, 4 x 214, union byte-identical to the unsharded
   listing, no duplicates. The five argument guards exit 2 from any directory.
 - All six mutation proofs exit 1, re-run after each change to `ci.yml`.
@@ -356,6 +364,34 @@ Both are fixed on **`feature/dev-gates-go-green`** (worktree
 It was already finished when a2's dispatch runs exposed the same defects;
 duplicating it inside a2 would have conflicted in `check-ux-traceability.sh` and
 `lint-baseline.xml`, so a2 took only the three display tests that nobody owned.
+
+### One path is still unexercised — `--shard`'s sibling, `--rule-named`
+
+`scripts/check-display-tests.sh --rule-named` is what the "Rule-owned display
+tests" gate inside `check-merge-readiness.sh:143` runs. **It has not executed in
+any of the four dispatch runs**, because `core-suite` aborts at NET-4b long
+before reaching that gate.
+
+That matters here specifically. The mode selects tests whose names carry a rule
+prefix from `docs/ux-rules.md` — and two of the three tests this branch changed,
+`doc_9b_…` and `nr_33_…`, are exactly that shape. So the one gate that targets
+the changed code is the one gate no run has reached.
+
+It is *not* known to be broken: nothing in this branch touches the `rule-named`
+branch of the script, and both tests pass under the shard path. But it is
+unproven on this branch. A local run was started and had not finished when this
+note was written — the machine was carrying eight parallel sessions and the load
+governor was handing out zero of two slots. **Re-run it before landing**, from
+inside the worktree, and read the exit status directly:
+
+```
+cd <worktree>
+./scripts/check-display-tests.sh --rule-named ; echo "EXIT=$?"
+```
+
+Expect 0. If `dev-gates-go-green` lands first, the post-rebase dispatch run
+exercises it for free inside `core-suite`, which is the cheaper proof — one more
+reason to take the branches in that order.
 
 ### Order
 
@@ -377,6 +413,13 @@ finding was raised and applied: `text_of` reads only the recorded string, not
 `widget.set_has_tooltip(...)`, so both contract tests now assert `has_tooltip()`
 beside the text. Proved load-bearing by forcing `set_has_tooltip(false)` in
 `lazy_tooltip.rs` and watching both tests fail at exactly the new assertions.
+
+This fourth round left **no `phase:` marker commit**, unlike the first three.
+That is deliberate, not an oversight: `land.sh` never reads `phase:` as a
+precondition — it only *writes* `phase: shipped` before the merge
+(`skills/pipeline/scripts/land.sh:115-117`) — and it finds the plan by
+`^branch: <BR>$`. The plan file's frontmatter therefore still reads
+`phase: refactored` from the third pass.
 
 Accepted as-is: the `#[cfg(test)]` registry in `lazy_tooltip.rs` keys on
 `widget.as_ptr()`, so a freed widget's address could in principle be reused. Not
