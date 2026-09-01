@@ -127,7 +127,7 @@ had exposed: most of this footage does not move. Four things were added, and
 
 The push costs size: **19.7 MB against 5.7 MB** for the same film without it.
 Every frame is a fresh resample of a screen full of text, which is the worst
-case an encoder can be handed. That number decides open point 3 more than any
+case an encoder can be handed. That number decides open point 5 more than any
 taste question does.
 
 ## How it was shot
@@ -215,8 +215,13 @@ buttons end up on the wrong side.
    film was mounted in CH.03 as a click-to-play `<video preload="none">` plate.
    On 2026-09-01 it was taken off the page again because the film is not yet in
    a state to be shown. `ShowreelFilm.tsx`, `showreel.css` and all encodes were
-   kept, so bringing it back later means re-adding one element rather than
-   rebuilding anything.
+   kept, but the encodes moved to `showroom/media/showreel/` so they stay out of
+   the deploy. Bringing it back later means `git mv`-ing that directory to
+   `showroom/public/media/showreel/` and then re-adding `<ShowreelFilm />` after
+   `<ProductGallery />`; `the encodes are served exactly when the film is on the
+   page` catches either half of that return being missed. The control focus-radius
+   cascade is a site-wide mechanism, so the film's focused pill wins by selector
+   specificity instead of depending on stylesheet bundle order.
 4. **The welcome plate's crop is reconstructed, not recorded.** The original
    hand step between `welcome-raw.png` (3456×2160) and the shipped 2400×1456
    plate was never written down; `welcome-shot.sh` now does
@@ -224,8 +229,15 @@ buttons end up on the wrong side.
    is why its header bar is sliced. Compare against `welcome-plate.png` after a
    re-shoot before trusting it.
 
-5. **The film weighs 19.7 MB.** That is the push-in, not the footage: the same
-   cut without motion is 5.7 MB. If the size ever matters — and on the showroom
-   it does — the lever is a second encode at a higher CRF, not dropping the
+5. **A return to the showroom has a size precondition.** The 19.7 MB figure is
+   the master with the push-in, against 5.7 MB for the same film without it; it
+   is not the web ladder. The four encodes plus posters and captions total
+   15,830,922 bytes (15.83 MB), which was 84.4% of the 18,753,781-byte deploy
+   artifact before they moved out of `public/`. After the move, the deploy
+   artifact is 2,922,859 bytes and `dist/media/` contains only `showroom`. A
+   visitor selects exactly one of the four encodes, at most 6.2 MB, so the
+   ladder total is a repository and artifact cost rather than a
+   visitor-bandwidth cost. There is no asset-size gate in CI. Before the film
+   returns, the size lever is a second encode at a higher CRF, not dropping the
    motion, because the motion is what stops half these shots reading as
    screenshots.

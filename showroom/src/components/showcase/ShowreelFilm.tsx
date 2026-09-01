@@ -2,12 +2,14 @@ import { useCallback, useRef, useState } from 'react';
 import './showreel.css';
 
 const BASE_URL = import.meta.env?.BASE_URL ?? '/reprise/';
+// This is the runtime URL where the encodes must be served when the film is mounted.
 const FILM_BASE = `${BASE_URL}media/showreel/`;
 
 /**
  * Below this width the 1080 ladder is wasted on the layout, so the smaller
  * step is offered first. `media` is read once when the element picks a source,
  * which is why the breakpoint matches the layout's own and not a device class.
+ * The 900px value must stay equal to showreel.css's responsive breakpoint.
  */
 const SMALL_VIEWPORT = '(max-width: 900px)';
 
@@ -38,7 +40,6 @@ export function ShowreelFilm() {
     if (!video) return;
     const next = !video.muted;
     video.muted = next;
-    setMuted(next);
     // Turning the sound on is the clearest statement of intent there is, so it
     // also starts the film if it happens to be sitting still.
     if (!next && video.paused) void video.play().catch(() => undefined);
@@ -76,6 +77,7 @@ export function ShowreelFilm() {
           height={1080}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
+          onVolumeChange={(event) => setMuted(event.currentTarget.muted)}
         >
           <source src={`${FILM_BASE}showreel-720.webm`} type="video/webm" media={SMALL_VIEWPORT} />
           <source src={`${FILM_BASE}showreel-1080.webm`} type="video/webm" />
@@ -90,7 +92,7 @@ export function ShowreelFilm() {
             {playing ? 'Pause' : 'Play'}
           </button>
           <button type="button" className="film__control" onClick={toggleSound}>
-            <span aria-hidden="true">{muted ? '🔇' : '🔊'}</span>
+            <span aria-hidden="true">{muted ? '🔊' : '🔇'}</span>
             {muted ? 'Sound on' : 'Sound off'}
           </button>
           <button type="button" className="film__control" onClick={toggleCaptions}>
