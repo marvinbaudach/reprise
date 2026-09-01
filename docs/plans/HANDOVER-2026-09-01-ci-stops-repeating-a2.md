@@ -4,8 +4,9 @@ Written 2026-09-01. Strand `a2` of `docs/plans/the-ci-stops-repeating-itself.md`
 
 **Worktree** `/home/marvin/Projects/reprise-the-ci-stops-repeating-itself-a2`
 **Branch** `feature/the-ci-stops-repeating-itself-a2`
-**Phase** `refactored` — all three review rounds are applied and re-verified.
-Ready for rebase, dispatch run and landing.
+**Phase** `refactored`, rebased onto `origin/dev` and dispatch-proved.
+The branch is pushed. Landing is blocked only by defects a2 does not own — see
+"Dispatch runs" below.
 
 The plan files for this whole task are **not in the main checkout**. All four
 (`the-ci-stops-repeating-itself{,-a1,-b}.md`) live on `origin/dev`; `-a2.md` is
@@ -216,6 +217,59 @@ Fixed by deriving the root from `${BASH_SOURCE[0]}`, exactly as
 has no git dependency at all and needs no `safe.directory` of its own. This also
 covers the `Verify display-test shard partition` step, which calls the script
 directly too.
+
+## Dispatch runs — what they proved and what still blocks
+
+Two dispatch runs on the rebased branch.
+
+**Run 1, `33547425822`** — all four shards died in `Run display-test shard`
+before a test ran. Cause and fix in the section above.
+
+**Run 2, `33549387663`** (after the fix) — the script starts everywhere.
+`base-contracts` green, `gnome-suite` correctly skipped, **shard 4/4 fully
+green**. Shards 1–3 each fail on exactly one test:
+
+| shard | test | assertion |
+|---|---|---|
+| 1 | `ui::track_list::track_list_activation::tests::activation_ids_are_reused_until_the_track_model_generation_changes` | `track_list_activation_tests.rs:48` — `[1, 2, 3]` vs `[1, 3, 2]` |
+| 2 | `ui::library_doctor::review_row::contract_tests::doc_9b_a_stale_row_names_its_reason_where_the_click_happens` | `review_row_contract_tests.rs:312` — `None` vs `Some("This file changed after the scan …")` |
+| 3 | `ui::releases::releases_columns::tests::nr_33_release_link_cell_binds_and_clears_the_visible_affordance` | `releases_columns.rs:560` — `None` vs `Some("https://musicbrainz.org/release-group/mbid")` |
+
+**All three belong to `dev`, not to a2.** Two independent arguments, both checked:
+`git diff --name-only origin/dev...HEAD` contains no `crates/` path and no `.rs`
+file at all, so the Rust code here is byte-identical with `origin/dev`; and each
+test was re-run locally three times with the shard script's own invocation form
+(`dbus-run-session` plus `xvfb-run --server-num`, `--ignored --exact`), failing
+deterministically with the same `left`/`right` every time. No shared root cause,
+no Xvfb or font symptom, no shard or ordering dependency — three unrelated
+content regressions. They went unnoticed because the display tests have not
+actually executed in a `dev` CI run for several pushes: `gnome-suite` aborted at
+NET-4b before reaching them, and on `1f8eacadc8` it was skipped by routing.
+
+### Blocked on defects a2 does not own
+
+- **NET-4b** — `docs/ux-rules.md:2982` carries `- **NET-4b** [active] [android]`,
+  but the UX traceability gate matches only `(core|gtk|e2e|web|manual)` on its
+  line 31, so the rule never enters the level map and is reported as untested.
+  `core-suite` aborts there. Still unfixed on `origin/dev` at `1f8eacadc8`.
+  Another session holds the `fix-dev-gates` wake lock; local notes live in
+  `docs/plans/dev-gates-go-green.md`.
+- **Android lint** — `ArtistPhotoProgressBarTest.kt:420`,
+  `ViewModelConstructorInComposable`. Fails on `dev` itself at `1f8eacadc8`.
+- **The three display tests above.**
+
+`quality` fails as a consequence of these; `require-ci-results.sh` reports them
+correctly, which is itself evidence the 11-argument signature works.
+
+### A gap in a2 itself, not yet closed
+
+`Verify display-test shard partition` is `if: matrix.shard == 1` and sits *after*
+the shard's test step. One failing test in shard 1 leaves it `skipped`, so **the
+partition check has never executed in CI** — not in run 1, not in run 2. It is
+proved locally only (856 tests, 4 x 214, union byte-identical to the unsharded
+list, no duplicates). Moving it ahead of the test step, or onto its own job,
+would make it independent of whether the tests pass. Deliberately not changed
+here: it touches reviewed code and is the user's call.
 
 ## Landing
 
