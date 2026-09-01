@@ -220,6 +220,23 @@ rg --multiline --quiet \
 rg --fixed-strings --quiet \
     'scripts/check-display-tests.sh --shard ${{ matrix.shard }}/4' "$workflow" || \
     fail "the display matrix must execute the selected shard"
+rg --multiline --quiet \
+    'name: Verify display-test shard partition\n        if: matrix\.shard == 1\n        run: \|' \
+    <<<"$display_workflow" || \
+    fail "one display shard must verify that the matrix partitions the full suite"
+rg --fixed-strings --quiet \
+    'scripts/check-display-tests.sh --list > "$listing_root/unsharded"' \
+    <<<"$display_workflow" || fail "the partition check must list the unsharded suite"
+rg --fixed-strings --quiet \
+    'scripts/check-display-tests.sh --shard "$shard/4" --list > "$listing_root/shard-$shard"' \
+    <<<"$display_workflow" || fail "the partition check must list every shard"
+rg --fixed-strings --quiet '(( shard_total == unsharded_count ))' \
+    <<<"$display_workflow" || fail "the partition check must compare relational counts"
+rg --fixed-strings --quiet 'uniq -d "$listing_root/sorted-union"' \
+    <<<"$display_workflow" || fail "the partition check must reject duplicate tests"
+rg --fixed-strings --quiet \
+    'cmp --silent "$listing_root/unsharded" "$listing_root/sorted-union"' \
+    <<<"$display_workflow" || fail "the partition check must compare the sorted union byte-for-byte"
 rg --quiet 'cargo test --locked -p reprise-view -p reprise-android-ffi' "$workflow" || \
     fail "Android CI must test its shared Rust presentation and FFI crates"
 rg --quiet '^      DISPLAY_TEST_JOBS: 4$' <<<"$display_workflow" || \

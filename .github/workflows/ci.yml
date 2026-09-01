@@ -310,6 +310,36 @@ jobs:
       - name: Run display-test shard
         run: scripts/check-display-tests.sh --shard ${{ matrix.shard }}/4
 
+      - name: Verify display-test shard partition
+        if: matrix.shard == 1
+        run: |
+          listing_root=$(mktemp -d)
+          trap 'rm -rf "$listing_root"' EXIT
+          scripts/check-display-tests.sh --list > "$listing_root/unsharded"
+          shard_total=0
+          : > "$listing_root/union"
+          for shard in 1 2 3 4; do
+            scripts/check-display-tests.sh --shard "$shard/4" --list > "$listing_root/shard-$shard"
+            shard_count=$(wc -l < "$listing_root/shard-$shard")
+            shard_total=$((shard_total + shard_count))
+            cat "$listing_root/shard-$shard" >> "$listing_root/union"
+          done
+          unsharded_count=$(wc -l < "$listing_root/unsharded")
+          (( shard_total == unsharded_count )) || {
+            echo "Display shard counts sum to $shard_total; expected $unsharded_count" >&2
+            exit 1
+          }
+          sort "$listing_root/union" > "$listing_root/sorted-union"
+          duplicate_tests=$(uniq -d "$listing_root/sorted-union")
+          [[ -z $duplicate_tests ]] || {
+            printf 'Display shards contain duplicate tests:\n%s\n' "$duplicate_tests" >&2
+            exit 1
+          }
+          cmp --silent "$listing_root/unsharded" "$listing_root/sorted-union" || {
+            echo "Sorted display-shard union differs from the unsharded listing" >&2
+            exit 1
+          }
+
   quality:
     name: Quality gate
     needs: [changes, base-contracts, android-unit-suite, gnome-suite, core-suite, display-tests]
