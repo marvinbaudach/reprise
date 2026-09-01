@@ -6686,7 +6686,13 @@ same state. This section governs exclusively what a user sees of
 this; ownership, lease, and error categories are in the architecture
 plan.
 
-- **RUN-1** [active] [core] — A single owner: playback, queue, jobs,
+ADR 003 shelved the headless runtime, and the rule-named tests for RUN-1 and
+RUN-4 disappeared with the implementation they tested. Both returned to
+[planned]; the whole section is [planned] again, as it began. The ADR's
+resumption trigger — a second frontend, or agent control with no window — is
+what makes them enforceable again.
+
+- **RUN-1** [planned] [core] — A single owner: playback, queue, jobs,
   and device runs belong to exactly one runtime at any point in time.
   A second surface never starts a competing runtime; it connects or
   fails, named. Two simultaneously visible, diverging playback states
@@ -6702,7 +6708,7 @@ plan.
   once, in place. After reconnecting, a complete snapshot replaces the
   runtime-bound state without sacrificing selection and scroll
   position (like EXT-2).
-- **RUN-4** [active] [core] — Idle shutdown never interrupts work:
+- **RUN-4** [planned] [core] — Idle shutdown never interrupts work:
   the runtime only terminates when no client is connected, nothing is
   playing or loaded paused, no device run and no job is active. A
   service that aborts running work for the sake of resources is a
@@ -6807,7 +6813,7 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
   asynchronous work runs through `glib::spawn_future_local`; CPU-bound work
   runs through `gio::spawn_blocking` and reports back over a channel. Source:
   gtk4-rs book, main event loop.
-- **GP-3** [planned] [gtk] — A closure that captures a widget which itself
+- **GP-3** [active] [gtk] — A closure that captures a widget which itself
   stores that closure uses `glib::clone!(#[weak] …)`, never a strong capture.
   The grep gate catches explicit `#[strong]` captures. An unannotated capture
   is implicitly strong and must be checked in review because the gate cannot
@@ -6838,18 +6844,18 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
 
 ### Distribution metadata
 
-- **GP-12** [planned] [core] — The metainfo file passes
+- **GP-12** [active] [core] — The metainfo file passes
   `appstreamcli validate --no-net --explain`.
   <!-- Keep validation offline and deterministic. Do not add --pedantic: it
        rejects the conventional uppercase final component in GNOME app IDs. -->
-- **GP-13** [planned] [core] — The desktop file passes `desktop-file-validate`.
+- **GP-13** [active] [core] — The desktop file passes `desktop-file-validate`.
 - **GP-14** [planned] [core] — The Flatpak manifest passes
   `flatpak-builder-lint manifest`.
 - **GP-15** [planned] [manual] — Static sandbox permissions stay at the
   absolute minimum. Where an XDG portal exists, the portal is used instead of
   a static permission, and every remaining static permission is justified in
   `flatpak/README.md`. Source: Flathub requirements.
-- **GP-16** [planned] [core] — App name is shorter than 15 characters and the
+- **GP-16** [active] [core] — App name is shorter than 15 characters and the
   summary is at most 35 characters, in sentence case, without a trailing
   period, and without repeating the app name. Source: Flathub quality
   guidelines.
@@ -6866,10 +6872,10 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
 These four points are, verbatim, the rejection reasons the GNOME Circle
 committee published on 2026-05-29.
 
-- **GP-19** [planned] [core] — No comments that read as instructions to a
+- **GP-19** [active] [core] — No comments that read as instructions to a
   model, no banner comment blocks drawn from repeated `=` or `-`, no emoji in
   comments.
-- **GP-20** [planned] [core] — No dead code: no unused items, and no
+- **GP-20** [active] [core] — No dead code: no unused items, and no
   `#[allow(dead_code)]` without a stated reason on the same or preceding line.
 
 ## AJ. Showroom (public site)

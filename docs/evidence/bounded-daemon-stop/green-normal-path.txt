@@ -1,5 +1,0 @@
-# normal path — daemon that does honour SIGTERM, fix arm
-child_pid=3499543
-returned_after=0s
-child_still_alive=no
-exit=0  (no 2 s penalty on the common path)

@@ -4,6 +4,7 @@
   <name>Reprise</name>
   <summary>Play and organize your music</summary>
   <summary xml:lang="de">Musik abspielen und verwalten</summary>
+  <summary xml:lang="es">Reproduce y organiza tu música</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <developer id="io.github.marvinbaudach">
@@ -29,6 +30,14 @@
       ListenBrainz- und Last.fm-Scrobbling kann nach ausdrücklicher Kontoeinrichtung
       abgeschlossene Wiedergaben melden.
     </p>
+    <p xml:lang="es">
+      Reprise es un reproductor de música nativo para GNOME con una biblioteca
+      rápida basada en columnas, listas de reproducción, cola de reproducción,
+      carátulas, letras sincronizadas para la pista en curso, edición de etiquetas
+      e integración con MPRIS para las teclas multimedia y la pantalla de bloqueo.
+      El scrobbling opcional de ListenBrainz y Last.fm puede informar de las
+      reproducciones completadas después de configurar una cuenta expresamente.
+    </p>
     <p>
       Your library stays local. Reprise changes music files only after an
       explicit tag-edit or move-to-trash confirmation. Missing covers are retrieved
@@ -47,6 +56,17 @@
       Last.fm sind standardmäßig aus. Zugangsdaten bleiben im System-Schlüsselbund;
       beide Dienste haben getrennte Offline-Warteschlangen. Last.fm erfordert eigene
       API-Zugangsdaten.
+    </p>
+    <p xml:lang="es">
+      Tu biblioteca permanece local. Reprise solo modifica archivos de música
+      después de confirmar expresamente la edición de etiquetas o el traslado a
+      la papelera. Las carátulas que faltan se obtienen automáticamente. Para las
+      pistas que reproduces se envían a LRCLIB el título, el artista, el álbum y
+      la duración para buscar letras; no se envían las rutas de archivo ni el
+      resto de la biblioteca. ListenBrainz y Last.fm están desactivados de forma
+      predeterminada; las credenciales permanecen en el depósito de claves del sistema y
+      cada servicio tiene su propia cola local sin conexión. Last.fm requiere las
+      credenciales de API del usuario.
     </p>
   </description>
   <launchable type="desktop-id">io.github.marvinbaudach.Reprise.desktop</launchable>
@@ -75,17 +95,22 @@
     <keyword xml:lang="de">Musik</keyword>
     <keyword xml:lang="de">Sammlung</keyword>
     <keyword xml:lang="de">Wiedergabeliste</keyword>
+    <keyword xml:lang="es">música</keyword>
+    <keyword xml:lang="es">biblioteca</keyword>
+    <keyword xml:lang="es">lista de reproducción</keyword>
   </keywords>
   <supports>
     <control>touch</control>
   </supports>
-  <content_rating type="oars-1.1"/>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
   <branding>
     <color type="primary" scheme_preference="light">#4FDBD4</color>
     <color type="primary" scheme_preference="dark">#00706B</color>
   </branding>
   <requires>
-    <display_length compare="ge">768</display_length>
+    <display_length compare="ge">600</display_length>
   </requires>
   <recommends>
     <control>keyboard</control>
@@ -111,6 +136,168 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.111" date="2026-08-31" type="stable">
+      <description>
+        <p>Keeps the waveform on the exact frame where a seek settles.</p>
+        <p xml:lang="de">Hält die Wellenform exakt auf dem Bild, auf dem die Suche endet.</p>
+      </description>
+    </release>
+    <release version="0.1.110" date="2026-08-31" type="stable">
+      <description>
+        <p>Lets a stopped waveform click choose where the next playback starts.</p>
+        <p xml:lang="de">Lässt einen Klick auf die angehaltene Wellenform bestimmen, wo die nächste Wiedergabe beginnt.</p>
+      </description>
+    </release>
+    <release version="0.1.109" date="2026-08-31" type="stable">
+      <description>
+        <p>Makes Library Doctor scans cover the whole library consistently.</p>
+        <p xml:lang="de">Lässt die Bibliotheksdiagnose stets die gesamte Bibliothek prüfen.</p>
+      </description>
+    </release>
+    <release version="0.1.108" date="2026-08-30" type="stable">
+      <description>
+        <p>Corrects the remaining-time presentation in the player dock.</p>
+        <p xml:lang="de">Korrigiert die Anzeige der verbleibenden Zeit in der Wiedergabeleiste.</p>
+      </description>
+    </release>
+    <release version="0.1.107" date="2026-08-30" type="stable">
+      <description>
+        <p>Keeps the device synchronization runtime within its maintained module boundary.</p>
+        <p xml:lang="de">Hält die Laufzeit der Gerätesynchronisierung innerhalb ihrer gepflegten Modulgrenze.</p>
+      </description>
+    </release>
+    <release version="0.1.106" date="2026-08-30" type="stable">
+      <description>
+        <p>Names the process holding the library write slot and reports contention safely.</p>
+        <p xml:lang="de">Nennt den Prozess, der den Schreibplatz der Bibliothek belegt, und meldet Konflikte sicher.</p>
+      </description>
+    </release>
+    <release version="0.1.105" date="2026-08-30" type="stable">
+      <description>
+        <p>Lets device synchronization continue when a selected track disappears.</p>
+        <p xml:lang="de">Lässt die Gerätesynchronisierung fortfahren, wenn ein ausgewählter Titel verschwindet.</p>
+      </description>
+    </release>
+    <release version="0.1.104" date="2026-08-30" type="stable">
+      <description>
+        <p>Stops an abandoned temporary file from blocking later cleanup.</p>
+        <p xml:lang="de">Verhindert, dass eine verwaiste temporäre Datei eine spätere Bereinigung blockiert.</p>
+      </description>
+    </release>
+    <release version="0.1.103" date="2026-08-29" type="stable">
+      <description>
+        <p>Reports synchronization progress in completed work units instead of transferred bytes.</p>
+        <p xml:lang="de">Zeigt den Synchronisierungsfortschritt in abgeschlossenen Arbeitsschritten statt in übertragenen Bytes an.</p>
+      </description>
+    </release>
+    <release version="0.1.102" date="2026-08-29" type="stable">
+      <description>
+        <p>Explains why a device playlist is locked instead of leaving the action unexplained.</p>
+        <p xml:lang="de">Erklärt, warum eine Gerätewiedergabeliste gesperrt ist, statt die Aktion unbegründet zu lassen.</p>
+      </description>
+    </release>
+    <release version="0.1.101" date="2026-08-29" type="stable">
+      <description>
+        <p>Rechecks podcast artwork permission when a group expands.</p>
+        <p xml:lang="de">Prüft beim Aufklappen einer Gruppe die Berechtigung für Podcast-Bilder erneut.</p>
+      </description>
+    </release>
+    <release version="0.1.100" date="2026-08-29" type="stable">
+      <description>
+        <p>Shows YouTube channel size in channel search and keeps its sorting predictable.</p>
+        <p xml:lang="de">Zeigt die Größe von YouTube-Kanälen in der Kanalsuche an und hält ihre Sortierung vorhersehbar.</p>
+      </description>
+    </release>
+    <release version="0.1.99" date="2026-08-29" type="stable">
+      <description>
+        <p>Starts agent-requested playback with the same library queue as direct playback.</p>
+        <p xml:lang="de">Startet eine von einem Agenten angeforderte Wiedergabe mit derselben Bibliothekswarteschlange wie die direkte Wiedergabe.</p>
+      </description>
+    </release>
+    <release version="0.1.98" date="2026-08-29" type="stable">
+      <description>
+        <p>Limits automatic lyrics batches to tracks discovered since the previous completed pass.</p>
+        <p xml:lang="de">Beschränkt automatische Liedtextläufe auf Titel, die seit dem letzten abgeschlossenen Lauf gefunden wurden.</p>
+      </description>
+    </release>
+    <release version="0.1.97" date="2026-08-29" type="stable">
+      <description>
+        <p>Avoids requesting artwork for podcast groups that are still collapsed.</p>
+        <p xml:lang="de">Vermeidet Bildanfragen für Podcast-Gruppen, die noch eingeklappt sind.</p>
+      </description>
+    </release>
+    <release version="0.1.96" date="2026-08-29" type="stable">
+      <description>
+        <p>Hardens playback formatting and keeps toast messages on their maintained path.</p>
+        <p xml:lang="de">Härtet die Wiedergabeformatierung und hält Einblendungen auf ihrem gepflegten Pfad.</p>
+      </description>
+    </release>
+    <release version="0.1.95" date="2026-08-29" type="stable">
+      <description>
+        <p>Makes the waveform available before a track has been played for the first time.</p>
+        <p xml:lang="de">Stellt die Wellenform bereit, bevor ein Titel zum ersten Mal abgespielt wurde.</p>
+      </description>
+    </release>
+    <release version="0.1.94" date="2026-08-29" type="stable">
+      <description>
+        <p>Makes podcast loading animation use the shared motion timing.</p>
+        <p xml:lang="de">Lässt die Ladeanimation für Podcasts die gemeinsame Bewegungsdauer verwenden.</p>
+      </description>
+    </release>
+    <release version="0.1.93" date="2026-08-29" type="stable">
+      <description>
+        <p>Simplifies podcast download actions while preserving their behavior.</p>
+        <p xml:lang="de">Vereinfacht die Download-Aktionen für Podcasts, ohne ihr Verhalten zu verändern.</p>
+      </description>
+    </release>
+    <release version="0.1.92" date="2026-08-28" type="stable">
+      <description>
+        <p>Keeps the sidebar in its column at every supported window width.</p>
+        <p xml:lang="de">Hält die Seitenleiste bei jeder unterstützten Fensterbreite in ihrer Spalte.</p>
+      </description>
+    </release>
+    <release version="0.1.91" date="2026-08-28" type="stable">
+      <description>
+        <p>Shows what a podcast row is loading instead of leaving an unexplained placeholder.</p>
+        <p xml:lang="de">Zeigt, was eine Podcast-Zeile lädt, statt einen unerklärten Platzhalter stehen zu lassen.</p>
+      </description>
+    </release>
+    <release version="0.1.90" date="2026-08-28" type="stable">
+      <description>
+        <p>Refreshes device synchronization when another process changes the library.</p>
+        <p xml:lang="de">Aktualisiert die Gerätesynchronisierung, wenn ein anderer Prozess die Bibliothek ändert.</p>
+      </description>
+    </release>
+    <release version="0.1.89" date="2026-08-28" type="stable">
+      <description>
+        <p>Matches wide-layout sidebar tests to the window's actual geometry.</p>
+        <p xml:lang="de">Gleicht die Seitenleistentests für breite Layouts an die tatsächliche Fenstergeometrie an.</p>
+      </description>
+    </release>
+    <release version="0.1.88" date="2026-08-28" type="stable">
+      <description>
+        <p>Moves sorting into the track table customization surface.</p>
+        <p xml:lang="de">Verschiebt die Sortierung in die Anpassungsoberfläche der Titeltabelle.</p>
+      </description>
+    </release>
+    <release version="0.1.87" date="2026-08-28" type="stable">
+      <description>
+        <p>Lets one failed artist portrait request finish without holding the rest of the queue.</p>
+        <p xml:lang="de">Lässt eine fehlgeschlagene Anfrage für ein Künstlerporträt enden, ohne den Rest der Warteschlange aufzuhalten.</p>
+      </description>
+    </release>
+    <release version="0.1.86" date="2026-08-28" type="stable">
+      <description>
+        <p>Lets the content panels yield enough width to the track table.</p>
+        <p xml:lang="de">Lässt die Inhaltsbereiche der Titeltabelle genügend Breite überlassen.</p>
+      </description>
+    </release>
+    <release version="0.1.85" date="2026-08-28" type="stable">
+      <description>
+        <p>Keeps remembered device playlists connected after the device is opened again.</p>
+        <p xml:lang="de">Hält gespeicherte Gerätewiedergabelisten verbunden, nachdem das Gerät erneut geöffnet wurde.</p>
+      </description>
+    </release>
     <release version="0.1.84" date="2026-08-27" type="stable">
       <description>
         <p>Makes the Android library tabs follow the swipe: the navigation mark and the count move with the gesture, and the tab next door is filled before it is reached, so no first swipe lands on an empty list.</p>

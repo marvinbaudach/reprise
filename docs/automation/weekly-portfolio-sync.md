@@ -11,7 +11,7 @@ committed Reprise evidence. Work autonomously in the two isolated worktrees belo
 - Reprise: `{{REPRISE_WORKTREE}}`
 - Bewerbung: `{{BEWERBUNG_WORKTREE}}`
 
-Read Reprise's `AGENTS.md`, `.superpowers/sdd/progress.md`, relevant plans and recent Git
+Read Reprise's `AGENTS.md`, `docs/measurements/`, relevant plans and recent Git
 history completely before editing. Read Bewerbung's `CLAUDE.md` completely before editing.
 Treat each repository's committed `main` snapshot as ground truth; never use remembered figures
 or changes from another working tree.
@@ -19,10 +19,10 @@ or changes from another working tree.
 ## Reprise showroom and developer README
 
 Review `docs/showcase.md` and the SVGs under `docs/assets/` as the portfolio evidence source.
-Update them only where the committed code, accepted benchmark evidence, or completed ledger
-entries have materially changed. Keep the presentation concise, precise, visually consistent,
+Update them only where the committed code, accepted benchmark evidence, or completed plan
+records have materially changed. Keep the presentation concise, precise, visually consistent,
 and suitable for a senior engineering portfolio. Every claim must map to code, a test, an
-accepted benchmark report, or the progress ledger.
+accepted benchmark report under `docs/measurements/`, or Git history.
 
 Refresh the screenshots as part of every run, not only the prose. Compare every screenshot under
 `docs/images/` and every screenshot embedded in the showroom against the current build, retake the

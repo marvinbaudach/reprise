@@ -1,6 +1,0 @@
-# fix arm — same probe, bounded terminate
-$ timeout 10 bash probe-stop-daemon.sh scripts/cua-common/session.sh
-child_pid=3498428
-returned_after=3s
-child_still_alive=no
-exit=0

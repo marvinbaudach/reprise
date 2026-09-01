@@ -38,6 +38,12 @@ require_tool npm
 
 if (( project != 0 )); then
   require_tool uvx
+  if command -v reuse >/dev/null 2>&1; then
+    echo "== REUSE licensing compliance =="
+    reuse lint
+  else
+    echo "reuse is not installed; skipping REUSE licensing compliance" >&2
+  fi
   echo "== Python, YAML and Markdown source quality =="
   npm --prefix quality ci
   npm --prefix quality run lint

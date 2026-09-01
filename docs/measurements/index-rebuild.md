@@ -43,11 +43,11 @@ the shipped Cairo bloom, the tag reads as two launches compared back to back so
 the machine load is the same for both.
 
 **One caveat, stated rather than smoothed over.** The raw output of the July
-benchmark pair was never committed — the figures survive in the stage review in
-`.superpowers/sdd/progress.md` and in the SVG derived from it, not in an
-archived result file. The method is reproducible from the two commits; the run
-artefact is not. That is the weakest provenance on this page and it is named
-here rather than in nobody's notes.
+benchmark pair was never committed as an archived result file — the only
+surviving trace is `docs/assets/reprise-performance.svg`, derived from it. The
+method is reproducible from the two commits; the run artefact is not. That is
+the weakest provenance on this page and it is named here rather than in
+nobody's notes.
 
 **And one figure in the price is not a measurement at all.** "Eight cached SQL
 windows and 1'600 retained rows" are budgets a test asserts —
