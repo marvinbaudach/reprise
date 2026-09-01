@@ -98,15 +98,26 @@ jobs:
           restore-keys: |
             cross-cargo-
 
+      - name: Cache cargo-xwin
+        id: cargo_xwin_cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cargo-xwin
+          key: cargo-xwin-${{ runner.os }}-0.23.0
+
       # reprise-core links rusqlite with the `bundled` feature, so even
       # `cargo check` runs libsqlite3-sys's build script and compiles SQLite C
       # for the target. `rustup target add` alone is therefore not enough: the
       # MSVC target needs an MSVC-compatible C compiler, which cargo-xwin
       # provides (it fetches the CRT/SDK on demand); clang + lld back it.
-      - name: Install the Windows cross C toolchain (cargo-xwin)
+      - name: Install the Windows cross C toolchain dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang llvm lld
+
+      - name: Install cargo-xwin
+        if: steps.cargo_xwin_cache.outputs.cache-hit != 'true'
+        run: |
           cargo install --locked --version 0.23.0 cargo-xwin
 
       - name: cargo check reprise-core for x86_64-pc-windows-msvc

@@ -459,7 +459,7 @@ impl ConcertsFilterBar {
             facets.push(FilterFacet::Source);
         }
         for facet in &facets {
-            let row = chooser_row(&facet_label(*facet));
+            let row = filter_bar_layout::chooser_row(&facet_label(*facet));
             if *facet == FilterFacet::Radius && !self.has_location.get() {
                 row.set_sensitive(false);
                 row.set_tooltip_text(Some(&strings::text(strings::CONCERTS_SET_LOCATION_TOOLTIP)));
@@ -474,7 +474,8 @@ impl ConcertsFilterBar {
         self.value_list.remove_all();
         let values = self.values(facet);
         for value in &values {
-            self.value_list.append(&chooser_row(&value.label));
+            self.value_list
+                .append(&filter_bar_layout::chooser_row(&value.label));
         }
         self.chooser_values.replace(values);
         self.chooser_stack.set_visible_child_name(VALUE_PAGE);
@@ -552,18 +553,6 @@ fn page_box() -> gtk4::Box {
     page.set_margin_start(8);
     page.set_margin_end(8);
     page
-}
-
-fn chooser_row(label: &str) -> gtk4::ListBoxRow {
-    let label = gtk4::Label::builder()
-        .label(label)
-        .xalign(0.0)
-        .margin_top(7)
-        .margin_bottom(7)
-        .margin_start(10)
-        .margin_end(10)
-        .build();
-    gtk4::ListBoxRow::builder().child(&label).build()
 }
 
 fn countries(db: &Db) -> Vec<String> {

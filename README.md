@@ -88,8 +88,8 @@ this README deliberately avoids numbers that would go stale.
 `reprise-core`; native interaction and accessibility in `reprise-gnome`; or
 audio, desktop, and device adapters in `reprise-platform-linux`.
 
-Start with the [contributor guide](CONTRIBUTING.md). If you use a coding agent,
-read [AGENTS.md](AGENTS.md) next for the automation and safety boundaries. The
+Start with the [contributor guide](CONTRIBUTING.md). Coding agents pick up from
+the [AGENTS.md](AGENTS.md) runbook for the automation and safety boundaries. The
 [UX rulebook](docs/ux-rules.md) is the interaction contract.
 Every change starts with a failing test, respects the core boundary, and lands
 through a squashed pull request into `dev`, from where `main` is
