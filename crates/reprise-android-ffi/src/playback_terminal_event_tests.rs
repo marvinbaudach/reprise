@@ -58,11 +58,12 @@ fn fb_6_every_faulting_track_stops_at_the_latched_bound() {
     fixture
         .session
         .play_tracks(
-            vec![7, 8, 9],
+            vec![7, 8, 9, 10],
             vec![
                 "content://provider/first.flac".to_owned(),
                 "content://provider/second.flac".to_owned(),
                 "content://provider/third.flac".to_owned(),
+                "content://provider/fourth.flac".to_owned(),
             ],
             0,
         )
@@ -70,7 +71,15 @@ fn fb_6_every_faulting_track_stops_at_the_latched_bound() {
     fixture.session.set_repeat(AndroidRepeatMode::All).unwrap();
     let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
 
-    for _ in 0..3 {
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "decoder failed".to_owned(),
+        },
+    );
+    assert!(fixture.session.remove_upcoming_track(0, 9).unwrap());
+
+    for _ in 0..2 {
         bridge.emit(
             23,
             AndroidPlayerEvent::Error {
@@ -78,6 +87,17 @@ fn fb_6_every_faulting_track_stops_at_the_latched_bound() {
             },
         );
     }
+
+    let snapshot = fixture.session.snapshot().unwrap();
+    assert_eq!(snapshot.state, AndroidPlaybackState::Playing);
+    assert_eq!(snapshot.current_track_id, Some(7));
+
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "decoder failed".to_owned(),
+        },
+    );
 
     let snapshot = fixture.session.snapshot().unwrap();
     assert_eq!(snapshot.state, AndroidPlaybackState::Stopped);
