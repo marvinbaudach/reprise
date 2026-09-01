@@ -80,6 +80,18 @@ requests, squash merging, version routing, worktree cleanup, emergency fixes,
 and `dev`-to-`main` promotion. Follow it literally; do not restate or infer a
 different flow here.
 
+Three rules from that document are repeated here, because they decide whether an
+agent may act alone and an agent that never opens the guide must still meet them:
+
+- The `dev`-to-`main` promotion is a fast-forward push, never a pull request; a squashed
+  promotion would make the two branches diverge permanently.
+- Until Reprise is publicly distributed, agents may perform this promotion autonomously.
+  Public distribution means AUR, Flathub/GNOME Software, or another public app channel;
+  that permission expires the moment it begins.
+- Emergency production fixes start on a `hotfix/*` branch **from `dev`** and reach `main`
+  through the same promotion. A `hotfix/*` merged straight into `main` breaks the
+  fast-forward property irrecoverably.
+
 ## Gates — ALL must pass before every commit
 
 Run from the repo root:
