@@ -493,6 +493,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        playbackState.value = playbackState.value.copy(faultNotice = null)
         playbackBindWatchdog?.cancel()
         playbackBindWatchdog = null
         boundService.value = null

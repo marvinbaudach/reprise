@@ -6,6 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -506,6 +507,9 @@ internal fun BrowseScreen(
     val lastAnsweredTrack = answeredTrack
     val shownTrack = if (playingTrackId == null) null else lastAnsweredTrack?.track
     val shownTrackIsStale = lastAnsweredTrack != null && lastAnsweredTrack.id != playingTrackId
+    val nowPlayingSheetState = remember { MutableTransitionState(false) }
+    nowPlayingSheetState.targetState =
+        nowPlayingExpanded && playingTrackId != null && shownTrack != null
     val summary: () -> String = remember(
         shownTab,
         loadedTabs,
@@ -594,7 +598,11 @@ internal fun BrowseScreen(
                     // Re-readable state, not timed acknowledgements; see TransientMessage.
                     browseError?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
-                    if (!(nowPlayingExpanded && playingTrackId != null && shownTrack != null)) {
+                    if (
+                        !surfaceState.dockMode &&
+                        !nowPlayingSheetState.currentState &&
+                        !nowPlayingSheetState.targetState
+                    ) {
                         playback.faultNotice?.let { BrowseErrorLine(it.text) }
                     }
                     ArtistPhotoLibraryStatus(
@@ -720,7 +728,7 @@ internal fun BrowseScreen(
                 // followed straight away by a new track used to do, the answer
                 // for the new row still being read — pops its content in
                 // afterwards, with no animation of its own.
-                visible = nowPlayingExpanded && playingTrackId != null && shownTrack != null,
+                visibleState = nowPlayingSheetState,
                 modifier = nowPlayingFrameModifier.testTag("now-playing-frame"),
                 enter = slideInVertically(initialOffsetY = { height -> height }) + expandVertically(
                     expandFrom = Alignment.Bottom,

@@ -64,18 +64,12 @@ internal fun isMissingFilePlaybackError(error: PlaybackException): Boolean {
     if (error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND) {
         return true
     }
-    val seen = mutableListOf<Throwable>(error)
     var cause = error.cause
     while (cause != null) {
-        val current = cause
-        if (seen.any { previous -> previous === current }) {
-            return false
-        }
-        if (current is FileNotFoundException) {
+        if (cause is FileNotFoundException) {
             return true
         }
-        seen += current
-        cause = current.cause
+        cause = cause.cause
     }
     return false
 }
