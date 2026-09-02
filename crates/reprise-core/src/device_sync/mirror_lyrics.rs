@@ -11,7 +11,12 @@ pub(super) fn plan_lyrics_sidecars(
         .collect::<HashSet<_>>();
     let resident_lyrics = lyrics_files
         .iter()
-        .map(|file| (file.relative_path.as_str(), file.size_bytes))
+        .map(|file| {
+            (
+                crate::device_sync::device_case::fold_path(&file.relative_path),
+                file.size_bytes,
+            )
+        })
         .collect::<HashMap<_, _>>();
     let arriving_audio = arriving_audio_paths(&plan.copy, &plan.replace);
     for desired in &plan.desired_files {
@@ -31,7 +36,11 @@ pub(super) fn plan_lyrics_sidecars(
         else {
             continue;
         };
-        let existing_size_bytes = resident_lyrics.get(sidecar.device_path.as_str()).copied();
+        let existing_size_bytes = resident_lyrics
+            .get(&crate::device_sync::device_case::fold_path(
+                &sidecar.device_path,
+            ))
+            .copied();
         if existing_size_bytes == Some(size_bytes) {
             continue;
         }

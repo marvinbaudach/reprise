@@ -30,6 +30,17 @@ fn a_resident_lyrics_sidecar_of_the_expected_size_plans_no_write() {
 }
 
 #[test]
+fn a_fold_equivalent_resident_lyrics_sidecar_plans_no_write() {
+    let (_temp, mut input) = synced_audio_with_lyrics(Some(b"lyrics"));
+    input.lyrics_files.push(ManagedDeviceFile {
+        relative_path: "album artist/album/01 track 1.LRC".into(),
+        size_bytes: 6,
+    });
+
+    assert!(plan_mirror(input).lyrics_writes.is_empty());
+}
+
+#[test]
 fn a_resident_lyrics_sidecar_of_a_different_size_plans_only_its_rewrite() {
     let (_temp, mut input) = synced_audio_with_lyrics(Some(b"lyrics"));
     input.lyrics_files.push(ManagedDeviceFile {

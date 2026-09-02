@@ -36,6 +36,7 @@ pub enum SyncStep {
     Transcoding,
     Copying,
     WritingAnalysis,
+    WritingLyrics,
     WritingPlaylists,
     WritingTrackMetadata,
 }

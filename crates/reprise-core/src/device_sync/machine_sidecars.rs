@@ -25,7 +25,7 @@ impl DeviceSyncMachine {
                 opening.begin_unit(write.size_bytes);
                 return phase_transitions::syncing(
                     &opening,
-                    SyncStep::WritingAnalysis,
+                    SyncStep::WritingLyrics,
                     write.device_path.clone(),
                 );
             }
@@ -65,7 +65,7 @@ impl DeviceSyncMachine {
         self.ledger.begin_unit(write.size_bytes);
         self.phase = phase_transitions::syncing(
             &self.ledger,
-            SyncStep::WritingAnalysis,
+            SyncStep::WritingLyrics,
             write.device_path.clone(),
         );
         self.awaiting = Awaiting::WriteLyrics(from);

@@ -165,6 +165,7 @@ pub(in crate::ui) fn step_glyph(step: &SyncStep) -> &'static str {
         SyncStep::Transcoding => "⟳ transcoding ·",
         SyncStep::Copying => "↑",
         SyncStep::WritingAnalysis => "↑ analysis ·",
+        SyncStep::WritingLyrics => "↑ lyrics ·",
         SyncStep::Removing => "− removing ·",
         SyncStep::WritingPlaylists => "≡",
         SyncStep::WritingTrackMetadata => "≡ metadata ·",

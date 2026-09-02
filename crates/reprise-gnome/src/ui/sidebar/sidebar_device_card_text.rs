@@ -196,8 +196,10 @@ pub(super) fn card_subtitle(device: &DeviceView, now: DateTime<Utc>) -> String {
                 device_sync_strings::step_glyph(step),
                 current_track,
             );
-            if matches!(step, SyncStep::Copying | SyncStep::WritingAnalysis)
-                && device.bytes_per_second > 0
+            if matches!(
+                step,
+                SyncStep::Copying | SyncStep::WritingAnalysis | SyncStep::WritingLyrics
+            ) && device.bytes_per_second > 0
             {
                 activity.push_str(&format!(
                     " · {}/s",
