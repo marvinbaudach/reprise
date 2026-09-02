@@ -313,16 +313,18 @@ fn candidates_use_recent_plays_and_oldest_attempt_first() {
 #[test]
 fn refresh_policy_has_exact_boundaries_and_stable_jitter() {
     let now = 1_000_000;
+    let hourly_ttl = 60 * 60;
+    let jitter_max = 10 * 60;
     assert!(artist_due(None, now, false));
-    assert!(!artist_due(Some(now - 86_399), now, false));
-    assert!(artist_due(Some(now - 86_400), now, false));
+    assert!(!artist_due(Some(now - hourly_ttl + 1), now, false));
+    assert!(artist_due(Some(now - hourly_ttl), now, false));
     assert!(artist_due(Some(now - 1), now, true));
     assert!(!artist_due(Some(now + 1), now, false));
     assert!(refresh_due(None, now, 7));
-    assert!(!refresh_due(Some(now - 86_400), now, 7));
-    assert!(refresh_due(Some(now - 86_407), now, 7));
+    assert!(!refresh_due(Some(now - hourly_ttl), now, 7));
+    assert!(refresh_due(Some(now - hourly_ttl - 7), now, 7));
     assert_eq!(jitter_seconds("db"), jitter_seconds("db"));
-    assert!((0..=7_200).contains(&jitter_seconds("db")));
+    assert!((0..=jitter_max).contains(&jitter_seconds("db")));
 }
 
 #[test]
