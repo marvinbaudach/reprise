@@ -119,13 +119,28 @@ The arithmetic checks out from the other side — 58.2 s at the format's 20 Hz i
 0–236, mean 138, and the per-second means track the music, including the drop to
 31 in the final second where the theme fades.
 
-**What is left of it, and why it has not happened:** push the file to
-`/sdcard/Music/Reprise/Reprise/Reprise/Reprise Theme.reprise-analysis`,
-re-index the phone's library so the scanner registers the pairing, then play the
-track and confirm the spectrum. All three need the phone, and the phone was held
-by another session (`device-lock … HELD by swipe-cover`) which was itself in the
-middle of a device-sync measurement. Nothing was pushed and nothing was read
-from the device.
+**Confirmed on the phone at 20:41.** The sidecar was pushed beside the track,
+the library rescanned from the Library-actions menu (774 titles), and the theme
+played: the square shows the spectrum swinging, and the seek bar carries a real
+waveform instead of the flat line. Shot 13 has its subject.
+
+That the bars move is not on its own proof that they are *this* track's bars —
+the import is lazy and the square was already animating on arrival. The seek
+bar is what settles it. Its envelope is loud through the middle and tapers at
+both ends, which is the shape of the per-second means measured off the file
+before it ever reached the phone (118 at the start, 160 in the middle, 31 in
+the closing second as the theme fades). Data from another track would not draw
+that curve.
+
+**But it will not survive the next sync, and that is not a small footnote.**
+Between 20:02 and 20:28 another session ran a device sync, and it emptied
+`/sdcard/Music/Reprise/Reprise/Reprise/` — the hand-pushed theme song from
+earlier today was gone, and the sidecar count fell from 708 to 638. Both files
+were pushed again afterwards. So: the theme song and its sidecar are unmanaged
+files that a sync prunes. **Shoot shot 13 without a sync in between, and check
+both files are still there immediately before the take** — one `adb shell test
+-f` each. If a sync has eaten them, push both again and rescan; nothing else is
+needed, the sidecar is already made.
 
 The old sync route — copy into `library_root`, rescan, playlist, sync, delete
 the hand-pushed copy — is recorded here only as the fallback if the pairing
@@ -248,6 +263,15 @@ and not the mini player's bare `Play`.
    spectrum. Blocked only on the device lock.
 2. `probe gesture`, then `take gesture` — shot 12.
 3. `probe nowplaying`, then `take nowplaying` — shot 13, with the theme playing.
+   One thing to settle first: the step list assumes the square starts on the
+   cover and the tap swaps in the spectrum. On the phone as it stands the
+   spectrum is already showing when playback begins, so that tap would swap the
+   wrong way. Find the visualiser choice (`AndroidVisualizerChoice.COVER` in
+   `NowPlayingSheet.kt`) and set it to the cover before the take, or drop the
+   step. A tap at `540,925` was followed by the sheet closing — but the track
+   also ended in the same second, so that is not a measurement of what the tap
+   does. Settle it with one tap in the middle of a long song; it costs seconds
+   and no take.
 4. Measure both phone in-points on the finished cut by the two-band method in
    `showreel-56s.HANDOFF.md`. The on-screen clock is not good enough: it once
    put the visualiser 0.6 s ahead of the music and gave no hint of it.
