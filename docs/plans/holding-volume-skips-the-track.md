@@ -2,11 +2,31 @@
 slug: holding-volume-skips-the-track
 worktree: /home/marvin/Projects/reprise-holding-volume-skips-the-track
 branch: feature/holding-volume-skips-the-track
-phase: shipped
+phase: superseded
 codex_session:
 created: 2026-09-02
 ---
 # Holding a volume key skips the track
+
+> **Superseded on 2026-09-02 — the in-app scope was the wrong half.**
+>
+> This plan shipped as #806 and was reverted again the same day (see the revert
+> PR). On the device the owner asked for the opposite gating: the gesture should
+> work **with the screen off or while another app is in front**, and stay out of
+> the way while a Reprise activity is on screen — because there you can simply
+> tap "next".
+>
+> That inverts the cost. The foreground case implemented here is the only one
+> Android gives an app for free; the case actually wanted needs one of the two
+> routes this plan's design rejected. The chosen successor is **Media3 remote
+> volume**, whose known price is that `VolumeProvider` delivers a bare direction
+> delta with no key-up, so long press must be synthesised, and the system panel
+> shows a remote slider while active.
+>
+> What survives and is worth reusing: the decision table, `VolumeKeyTrackSwitch`
+> as a pure decision object, and the finding that the two "consume without side
+> effect" branches need explicit tests — a mutation showed the suite stayed green
+> without them.
 
 Design: `docs/superpowers/specs/2026-09-01-android-volume-keys-track-switch-design.md`
 
