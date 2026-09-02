@@ -2,7 +2,7 @@
 slug: the-sync-says-what-it-is-deleting
 worktree: /home/marvin/Projects/reprise-the-sync-says-what-it-is-deleting
 branch: feature/the-sync-says-what-it-is-deleting
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-01
 ---
