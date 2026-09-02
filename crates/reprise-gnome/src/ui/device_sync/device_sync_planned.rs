@@ -241,7 +241,7 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
                 // final byte count is discarded and the displayed rate freezes.
                 if matches!(
                     phase,
-                    PlannedSyncPhase::Syncing { step, .. } if step_uses_mtp_rate(step)
+                    PlannedSyncPhase::Syncing { step, .. } if step.reports_transfer_rate()
                 ) {
                     device.mtp_rate.begin_copy(Instant::now());
                 } else {
@@ -254,17 +254,10 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
     runtime.notify();
 }
 
-fn step_uses_mtp_rate(step: SyncStep) -> bool {
-    matches!(
-        step,
-        SyncStep::Copying | SyncStep::WritingAnalysis | SyncStep::WritingLyrics
-    )
-}
-
 #[cfg(test)]
 #[test]
 fn lyrics_writes_keep_the_mtp_rate_baseline_active() {
-    assert!(step_uses_mtp_rate(SyncStep::WritingLyrics));
+    assert!(SyncStep::WritingLyrics.reports_transfer_rate());
 }
 
 fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: SyncOutcome) {

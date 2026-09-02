@@ -428,7 +428,7 @@ fn mtp_64_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     surface.update(&device);
     assert_eq!(
         surface.dashboard.dock.detail.label(),
-        "Immortal — Lorna Shore"
+        "↑ Immortal — Lorna Shore"
     );
     assert_eq!(
         surface.dashboard.dock.metrics.label(),

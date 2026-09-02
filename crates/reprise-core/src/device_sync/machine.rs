@@ -41,6 +41,15 @@ pub enum SyncStep {
     WritingTrackMetadata,
 }
 
+impl SyncStep {
+    pub fn reports_transfer_rate(self) -> bool {
+        matches!(
+            self,
+            Self::Copying | Self::WritingAnalysis | Self::WritingLyrics
+        )
+    }
+}
+
 /// The externally visible progress of a run.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum PlannedSyncPhase {

@@ -377,11 +377,7 @@ pub fn transfer_progress_copy(
             } else {
                 0.0
             };
-            let speed = if matches!(
-                step,
-                SyncStep::Copying | SyncStep::WritingAnalysis | SyncStep::WritingLyrics
-            ) && bytes_per_second > 0
-            {
+            let speed = if step.reports_transfer_rate() && bytes_per_second > 0 {
                 ProgressSpeed::BytesPerSecond(bytes_per_second)
             } else {
                 ProgressSpeed::Unavailable
