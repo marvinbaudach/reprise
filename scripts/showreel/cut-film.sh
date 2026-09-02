@@ -30,14 +30,26 @@ cd "$(git rev-parse --show-toplevel)"
 source scripts/showreel/common.sh
 source scripts/showreel/film2.sh
 
-IN1="$SHOWREEL_DIR/roh-gnome-tour.mp4"
-IN2="$SHOWREEL_DIR/roh-gnome-pickup.mp4"
-# The bed take, not take 2: this is the only phone take shot while the handset
-# played the film's own music, which is what lets the bars be claimed to move
-# in time with it. Takes 1 and 2 were shot against whatever was in the library
-# and are kept only as fallbacks — take 1 also predates the visualiser fix
-# (#701, 2026-08-26 00:01, that take was recorded 25.08 22:05).
-INA="${SHOWREEL_ANDROID_TAKE:-$SHOWREEL_DIR/roh-android-bed.mp4}"
+# The 2026-09-02 re-record, and it is five desk takes where it used to be two.
+# The tour take lost two of its stations: the app was already on Music when it
+# started, so clicking Music turned no page and the shot had a hand with no
+# consequence; and Concerts was shot at the old 500 km radius, which puts four
+# concerts on screen under "509 concerts hidden". Both were shot again on their
+# own. The sync shot is a third take because the transfer needs to be running
+# before the camera arrives, and that is minutes, not seconds.
+IN1="${SHOWREEL_TOUR_TAKE:-$SHOWREEL_DIR/roh-gnome-tour-2026-09-02-panelopen.mp4}"
+IN2="${SHOWREEL_PICKUP_TAKE:-$SHOWREEL_DIR/roh-gnome-pickup-music-2026-09-02.mp4}"
+INC="${SHOWREEL_CONCERTS_TAKE:-$SHOWREEL_DIR/roh-gnome-concerts-2026-09-02.mp4}"
+INB="${SHOWREEL_SYNC_TAKE:-$SHOWREEL_DIR/roh-gnome-handover-sync-2026-09-02.mp4}"
+# The phone is two takes now, not one bed take, because the app draws the cover
+# and the spectrum into the same square and swaps them on a tap: one take
+# cannot both navigate to a track and hold a cover that becomes a visualiser.
+# So the navigation is one continuous gesture in its own take, and the sheet
+# opening on the cover and turning into the spectrum is another. Both were shot
+# while the handset played this film's own bed — that, and nothing else, is
+# what lets the bars be claimed to move in time with the music.
+INA="${SHOWREEL_ANDROID_TAKE:-$SHOWREEL_DIR/roh-android-gesture.mp4}"
+INV="${SHOWREEL_ANDROID_VIS_TAKE:-$SHOWREEL_DIR/roh-android-nowplaying.mp4}"
 # The MCP take, shot by take-mcp.sh. Optional on purpose: the rest of the film
 # has to stay renderable when that take is missing or has to be reshot.
 INM="${SHOWREEL_MCP_TAKE:-$SHOWREEL_DIR/roh-gnome-mcp.mp4}"
@@ -47,7 +59,7 @@ INM="${SHOWREEL_MCP_TAKE:-$SHOWREEL_DIR/roh-gnome-mcp.mp4}"
 # disk and the shot lines below stay in the history, so putting either flow
 # back is a matter of restoring two lines, not shooting again.
 OUT="${1:-$SHOWREEL_DIR/reprise-showreel-cut.mp4}"
-showreel_require "$IN1" "$INA"
+showreel_require "$IN1" "$IN2" "$INC" "$INB" "$INA" "$INV"
 
 SHELL="$SHOWREEL_WORK/phone-shell.png"
 # 830 px of screen plus bezel and the room the shadow needs comes to exactly
@@ -110,6 +122,8 @@ desk() { # take name start dur dir zoom fx fy over [dip] [ease] [speed]
   # on the take this one replaces. Patching it now would copy a strip of pixels
   # over an image that has nothing wrong with it, so T2 is passed through.
   [[ $take == T2 ]] && input="$IN2"
+  [[ $take == TC ]] && input="$INC"
+  [[ $take == TB ]] && input="$INB"
   [[ $take == TM ]] && input="$INM"
   if [[ $speed != 1 ]]; then
     decode=$(python3 -c "print(round($dur * $speed, 3))")
@@ -124,9 +138,11 @@ desk() { # take name start dur dir zoom fx fy over [dip] [ease] [speed]
 
 # A phone shot: the portrait frame centred on its own blurred enlargement, so
 # the sides are not dead black.
-phone() { # name start dur dir zoom over [dip] [ease] [fx] [fy]
-  local name=$1 start=$2 dur=$3 dir=$4 zoom=$5 over=$6 dip=${7:-} ease=${8:-lin} fx=${9:-0.5} fy=${10:-0.5}
-  ffmpeg -v error -ss "$start" -t "$dur" -i "$INA" -loop 1 -framerate 30 -i "$SHELL" \
+phone() { # take name start dur dir zoom over [dip] [ease] [fx] [fy]
+  local take=$1 name=$2 start=$3 dur=$4 dir=$5 zoom=$6 over=$7 dip=${8:-} ease=${9:-lin} fx=${10:-0.5} fy=${11:-0.5}
+  local input="$INA"
+  [[ $take == PV ]] && input="$INV"
+  ffmpeg -v error -ss "$start" -t "$dur" -i "$input" -loop 1 -framerate 30 -i "$SHELL" \
     -filter_complex "[0:v]fps=30,split[b][f];\
 [b]scale=1920:-2,boxblur=64:3,crop=1920:${FILM2_STAGE_H},eq=brightness=-0.16:saturation=0.7[bg];\
 [f]scale=${SHELL_SCREEN_W}:${SHELL_SCREEN_H},\
@@ -183,11 +199,15 @@ bridge() { # name deskstart phonestart
   # only — the phone half and the slide are unaffected, and dhalf, and
   # therefore the slide's own offset at dhalf - xf, do not move: the shot still
   # lands at 6.8 s of output, it just carries dhalf * speed seconds of source.
-  local speed=${SHOWREEL_BRIDGE_SPEED:-1}
+  # 8x by decision, not by default-to-nothing: at normal speed the shot sits on
+  # "Syncing · 0 of 74 files, 0%" for its whole 6.8 s and the one thing it is
+  # there to show — time passing on a real transfer — does not happen. At 8x the
+  # same 6.8 s of output carries 54.4 s of the take and the counter walks.
+  local speed=${SHOWREEL_BRIDGE_SPEED:-8}
   LIST_OFF=1
   case ${SHOWREEL_BRIDGE:-devicesync} in
     # The visualiser panel, at the right edge of the window.
-    visualizer) desk T1 "$name-a" "$dstart" "$dhalf" in 2.2 1.00 0.574 null "" accel "$speed" ;;
+    visualizer) desk TB "$name-a" "$dstart" "$dhalf" in 2.2 1.00 0.574 null "" accel "$speed" ;;
     # No push at all. The device page carries the claim in its own furniture —
     # MTP connected, the playlists, and at the bottom the transfer actually
     # running — and a push to 1.4 towards the top takes the transfer out of the
@@ -202,11 +222,11 @@ bridge() { # name deskstart phonestart
     # under it already says the mechanical half — MTP connected, the playlists,
     # the transfer counting up — so the words are spent on the claim the picture
     # cannot make on its own: it is not a companion app, it is the same core.
-    *)          desk T1 "$name-a" "$dstart" "$dhalf" hold 0.00 0.50 0.50 \
+    *)          desk TB "$name-a" "$dstart" "$dhalf" hold 0.00 0.50 0.50 \
                      "$(film2_callout 'A second frontend' 'the same core, now on Android' "$dhalf")" \
                      "" lin "$speed" ;;
   esac
-  phone "$name-b" "$pstart" "$phalf" hold 0.00 null ""
+  phone PA "$name-b" "$pstart" "$phalf" hold 0.00 null ""
   LIST_OFF=
   ffmpeg -v error -i "$O/s-$name-a.mp4" -i "$O/s-$name-b.mp4" \
     -filter_complex "[0:v][1:v]xfade=transition=slideleft:duration=$xf:offset=$(python3 -c "print(round($dhalf - $xf, 3))"),format=yuv420p[v]" \
@@ -293,11 +313,16 @@ card introcard 00-intro
 # in-points of the 2026-08-29 11:11 take all sit at (median 1.90, spread 1.55
 # to 1.98). Do not carry the old `+0.3` over: it was the mark plus a constant
 # from a take script that wrote its mark at a different moment.
-desk T1 01-hook   "${SHOWREEL_IN_HOOK:-7.2}"      5.4 hold 0.00 0.50 0.50 "$(film2_statement 'One player. Everything you listen to.' 0.4 5.4)"
-desk T1 02-podcasts "${SHOWREEL_IN_PODCASTS:-19.2}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 5.4)"
-desk T1 03-releases "${SHOWREEL_IN_RELEASES:-71.5}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'New releases' 'from the artists you keep' 5.4)"
-desk T1 04-concerts "${SHOWREEL_IN_CONCERTS:-84.8}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Concerts nearby' 'for the same artists' 5.4)"
-desk T1 05-stats    "${SHOWREEL_IN_STATS:-97.1}"    5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Your listening, counted' '' 5.4)"
+# Measured on the 2026-09-02 takes with find-page-turns.py, in-point = turn
+# minus 1.9. Every turn's peak-to-background ratio is 185 or better against a
+# threshold of 4 — the one that was not, a 0.39 peak that turned out to be the
+# sidebar row's own highlight and no page turn at all, is why the Music station
+# has a pickup take (T2) of its own.
+desk T2 01-hook   "${SHOWREEL_IN_HOOK:-16.64}"      5.4 hold 0.00 0.50 0.50 "$(film2_statement 'One player. Everything you listen to.' 0.4 5.4)"
+desk T1 02-podcasts "${SHOWREEL_IN_PODCASTS:-34.60}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 5.4)"
+desk T1 03-releases "${SHOWREEL_IN_RELEASES:-95.25}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'New releases' 'from the artists you keep' 5.4)"
+desk TC 04-concerts "${SHOWREEL_IN_CONCERTS:-41.33}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Concerts nearby' 'for the same artists' 5.4)"
+desk T1 05-stats    "${SHOWREEL_IN_STATS:-138.06}"    5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Your listening, counted' '' 5.4)"
 # The agent shot is out. It asked the viewer to read a prompt, a page and a
 # highlighted fourteen-pixel row inside four and a half seconds, and what it
 # actually delivered was two screens of text going past. What MCP does is worth
@@ -307,7 +332,14 @@ desk T1 05-stats    "${SHOWREEL_IN_STATS:-97.1}"    5.4 hold 0.00 0.50 0.50 "$(f
 # clicked at 123.3 and the page is up from about 124.5, with a sync already
 # running on it — the phone auto-syncs when it is plugged in, so the tour
 # arrived to find the transfer under way rather than starting one.
-bridge 09-handover "${SHOWREEL_BRIDGE_IN:-125.0}" "${SHOWREEL_PHONE_IN:-45.2}"
+# The sync take is its own recording: Sync now is clicked at 10.63 and the
+# transfer then runs for 78 s. The desk half starts after the click, so what is
+# on screen is a transfer already under way rather than a button being pressed —
+# and at 8x it carries 54.4 s of that transfer, which ends at 66.4, well inside
+# the take. The phone half is the navigation take 1.2 s before shot 12's own
+# in-point, so the slide hands over to a picture that then simply continues.
+bridge 09-handover "${SHOWREEL_BRIDGE_IN:-12.0}" \
+       "${SHOWREEL_PHONE_IN:-$(python3 -c "print(round(${SHOWREEL_PHONE_NAV_IN:-5.0} - 1.2, 3))")}"
 
 # -------------------------------------------------------------------- the phone
 # The phone shots hold at nothing at all, and that is not laziness.
@@ -375,9 +407,18 @@ bridge 09-handover "${SHOWREEL_BRIDGE_IN:-125.0}" "${SHOWREEL_PHONE_IN:-45.2}"
 # two bands — cyan third against 40-160 Hz, magenta third against 1-3.5 kHz. A
 # later in-point makes a leading picture lead more, so take the slope over two
 # renders rather than reasoning about the direction.
-phone 12-android-nav "${SHOWREEL_PHONE_NAV_IN:-46.4}" 9.6 hold 0.00 \
+# Shot 12 runs from just before the take's first mark: begin 4.01, Artists 5.52,
+# search 6.98, typing 8.06, keyboard away 9.60, the artist 10.60, the album
+# 12.48, play 14.26. An in-point of 5.0 puts the reach for the Artists tab at
+# the top of the shot and the tap that starts the music at 9.3 s in, with the
+# track list still on screen when the shot ends.
+#
+# Shot 13's take opens the sheet at 14.02 and taps the square over to the
+# spectrum at 17.65. The in-point has to leave the cover on screen long enough
+# to be read before that tap, which is what puts it around 15.
+phone PA 12-android-nav "${SHOWREEL_PHONE_NAV_IN:-5.0}" 9.6 hold 0.00 \
   "$(film2_callout 'Reprise on Android' 'the same library, in your hand' 9.6)"
-phone 13-android-vis "${SHOWREEL_PHONE_VIS_IN:-56.0}" 7.2 hold 0.00 \
+phone PV 13-android-vis "${SHOWREEL_PHONE_VIS_IN:-15.0}" 7.2 hold 0.00 \
   "$(film2_callout 'The same visuals' 'in time with the music' 7.2)" out
 
 card endcard 14-end

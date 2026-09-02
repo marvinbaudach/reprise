@@ -1,8 +1,8 @@
 # Handover — the 58.2 s showreel, sessions of 2026-09-02
 
-**Every shot but one is in the can. The one that is missing is the Concerts
-station, and it is missing because a take needs a human click that never
-landed on the right window.** Read `showreel-58s.HANDOFF.md` for the film's
+**The film is cut, scored and exactly 58.200 s. One claim in it is false:
+the phone's visualiser is not in time with the music, and the take cannot be
+made to be — it needs re-shooting with the handset connected.** Read `showreel-58s.HANDOFF.md` for the film's
 shape, the music and the cut arithmetic — none of that changed. This file is
 what the two sessions of 2026-09-02 established, decided and broke.
 
@@ -11,19 +11,16 @@ what the two sessions of 2026-09-02 established, decided and broke.
 | shot | state |
 |---|---|
 | 01 Music, 02 Podcasts, 03 Releases, 05 My Stats | shot, `VERDICT PASS` |
-| 04 Concerts | **needs re-shooting** at the new radius, see below |
-| 09 handover / sync | shot, 78 s of live transfer |
+| 04 Concerts | **shot at 1000 km**, `roh-gnome-concerts-2026-09-02.mp4` |
+| 09 handover / sync | shot, 78 s of live transfer, cut at 8x |
 | 12 phone navigation | shot, `roh-android-gesture.mp4` |
-| 13 phone visualiser | shot, `roh-android-nowplaying.mp4` |
-| the cut | not started; `cut-film.sh` still names files that do not exist |
+| 13 phone visualiser | shot, but **out of sync with the bed by 43.4 s** |
+| the cut | `~/Videos/reprise-showreel/reprise-showreel-58s-scored.mp4`, 58.200 s |
 
-Nothing is running and nothing is held: the `showreel-await` unit was stopped,
-the device lock is free, the wake locks this work took are released. Reprise
-itself is still running on the desktop (pid outside any unit) with the info
-panel open, which is the state a take wants.
-
-**The one uncommitted change** is `scripts/showreel/await-take-gnome4.sh` —
-committed with this handover; see the Concerts section for what it fixes.
+Nothing is running and nothing is held: the `showreel-await` unit is stopped,
+the device lock is free. Reprise is running under the `reprise-showreel` unit
+with the info panel open, which is the state a take wants. The phone is **not
+attached** — `adb devices` is empty — which is why the one open item is open.
 
 Everything below was measured on this machine today, against the `origin/dev`
 nightly `8a5c36227c` on the desktop and the release APK built from the same
@@ -58,7 +55,7 @@ right-hand info panel **open**, player dressed and paused.
 | 01 Music | pickup take | 18.54 | **16.64** |
 | 02 Podcasts | tour take | 36.50 | 34.60 |
 | 03 Releases | tour take | 97.15 | 95.25 |
-| 04 Concerts | tour take | 118.34 | 116.44 |
+| 04 Concerts | concerts take | 43.23 | **41.33** |
 | 05 My Stats | tour take | 139.96 | 138.06 |
 
 Every turn's peak-to-background ratio is 185–3552 against a threshold of 4. The
@@ -328,28 +325,31 @@ and not the mini player's bare `Play`.
    The sheet opens on the Reprise cover and the tap at 17.65 brings the spectrum
    in, swinging to the theme. That was settled, not assumed — see the traps
    below.
-4. **Rewire `cut-film.sh` to the takes that exist.** It still names
-   `roh-gnome-tour.mp4`, `roh-gnome-pickup.mp4` and one single
-   `roh-android-bed.mp4` for both phone shots. On disk there are now five files
-   and the phone half is two separate takes:
+4. ~~Rewire `cut-film.sh` to the takes that exist.~~ **Done.** It cuts six
+   sources now, and two of them are new take ids rather than new filenames —
+   rewiring only the `IN*` assignments would have kept cutting Concerts out of
+   the old 500 km tour take and both phone shots out of one file:
 
-       IN1  roh-gnome-tour-2026-09-02-panelopen.mp4
-       IN2  roh-gnome-pickup-music-2026-09-02.mp4
-       bridge roh-gnome-handover-sync-2026-09-02.mp4
-       12   roh-android-gesture.mp4       (marks in timeline-android-gesture.tsv)
-       13   roh-android-nowplaying.mp4    (open 14.02, spectrum 17.65)
+       IN1  T1  roh-gnome-tour-2026-09-02-panelopen.mp4     02, 03, 05
+       IN2  T2  roh-gnome-pickup-music-2026-09-02.mp4       01
+       INC  TC  roh-gnome-concerts-2026-09-02.mp4           04
+       INB  TB  roh-gnome-handover-sync-2026-09-02.mp4      the bridge's desk half
+       INA  PA  roh-android-gesture.mp4                     12, and the bridge's phone half
+       INV  PV  roh-android-nowplaying.mp4                  13
 
-   Shot 12 wants an in-point a little before its first mark; shot 13 wants the
-   cover on screen before the tap at 17.65, so its in-point is around 15.
-
-5. Measure both phone in-points on the finished cut by the two-band method in
-   `showreel-56s.HANDOFF.md`. The on-screen clock is not good enough: it once
-   put the visualiser 0.6 s ahead of the music and gave no hint of it.
-6. Cut with `SHOWREEL_BRIDGE_SPEED` set, score, and check the duration is
-   58.200.
-7. ~~Decide the Concerts shot.~~ **Decided: 1000 km.** The setting is written;
-   what is left is one take. **This is the only filming still open** — see the
-   section below for the command and the trap that cost the first attempt.
+   `phone()` grew a take id the way `desk()` already had one. The bridge's phone
+   half is the navigation take 1.2 s before shot 12's own in-point, so the slide
+   hands over to a picture that then simply continues — that relationship is now
+   written down in the call rather than in two numbers that happened to agree.
+5. ~~Cut with `SHOWREEL_BRIDGE_SPEED` set, score, check 58.200.~~ **Done.**
+   `SHOWREEL_BRIDGE_SPEED` now defaults to `8` rather than to no time-lapse at
+   all: at normal speed the shot sits on "Syncing · 0 of 74 files, 0%" for its
+   whole 6.8 s and the one thing it is there to show does not happen. The cut is
+   `reprise-showreel-58s.mp4` and the scored film
+   `reprise-showreel-58s-scored.mp4`, both **58.200000 s**, −16.1 LUFS.
+6. **The phone's visualiser is not in time with the music.** This is the one
+   thing left and it needs the handset — see the section below.
+7. ~~Decide the Concerts shot.~~ **Decided at 1000 km and shot** — see below.
 
 ## One process failure, recorded because it could have cost a take
 
@@ -364,7 +364,7 @@ re-acquire it before every stretch, and check `device-lock status` rather than
 assuming the lease from an hour ago is still yours.
 
 
-## The Concerts shot: decided, set, and not yet in the can
+## The Concerts shot: decided, set, and now in the can
 
 The shot used to show three rows under `Zurich · 500 km` with "509 concerts
 hidden" under them, which reads sparse. The choice was put as 2000 km against
@@ -415,3 +415,88 @@ playing a video; only the take's own focus guard called it (`VERDICT FAIL`,
 settle and keeps waiting instead of shooting when Reprise is no longer in front.
 Whatever was in front at the click is not necessarily in front six seconds
 later.
+
+
+## The Concerts shot, as it was actually taken (third session, 22:18–22:36)
+
+It took three runs and the first two are the lesson.
+
+**Run one aborted before a frame.** `SHOWREEL_STATIONS=concerts` alone still
+appends the device handover, because `resolve()` adds it whenever no `--limit`
+is given — and with no phone attached `Open Pixel 10 Pro XL` is not in the
+sidebar, so the pre-flight refused the take. Correct behaviour, and cheap: it
+costs a minute, not a take. `--limit 1` is what shoots one station and no
+handover.
+
+**Run two shot 21 s of nothing happening.** The app was left on Concerts by the
+previous session, so clicking Concerts turned no page: the frames at 7.7 s and
+13.0 s are the same screen, `find-page-turns.py` reported a turn at 9.59 with a
+peak of **0.99** — between the 0.39 of the Music false positive and the 1.2–7.7
+of the genuine ones — and the ratio of 624 said nothing, because a sidebar row
+lighting up is a real difference in a small region. **The ratio does not
+separate a page turn from a row highlight; the peak does, and neither settles
+it as well as two frames side by side.** Look at the frames.
+
+**Run three drove Releases first, then Concerts.** `SHOWREEL_STATIONS` filters
+`STATIONS` in place, so the order is the sidebar's, not the string's: `stats`
+sorts after `concerts` and would have been shot second. `releases,concerts`
+gives a real page to leave. The take retried Concerts once (marks at 29.02 and
+40.23) — the first click landed while a playlist page was up — and it is the
+**second** turn, at 43.23, that is the shot. In-point 41.33, peak 2.88, ratio
+310.
+
+What the shot now holds: `Zurich · 1000 km`, **45 of 524 concerts**, the list
+full to the bottom of the window, and a status line reading "Up to date —
+checked 22:20". The 500 km take it replaces had three rows, "509 concerts
+hidden by the 500 km radius around Zurich", and a status line reading "Updating
+concerts …". Run two, taken 20 minutes earlier, read "Update failed — showing
+saved concerts from 22:20" — the same page, the same radius, a different
+sentence. **A status line is part of the shot**; check it before keeping a take.
+
+One continuity break, knowingly kept: shot 04 comes from its own take, so the
+player bar under it carries a different track (*Perish feat. Christian Roche*,
+playing) than the four shots around it (*Welcome to the Family*, paused), and
+the info panel a different cover. Shot 01 already had this — it is the pickup
+take — and at 5.4 s a shot nobody has told to look at the player bar.
+
+## The phone's visualiser is 43.4 s out of step with the bed
+
+Shot 13 says "The same visuals · in time with the music". **It is not**, and
+this is the one open item.
+
+The bed is the theme song and the theme song is the bed: `spliced-58s.wav` is
+58.200000 s, `score.sh` lays it down from 0 with `SHOWREEL_ALIGN=0
+SHOWREEL_WINDOW=0`, so film time *t* is track position *t*. Shot 13 sits at
+47.4–54.6 of the film, so the handset must be at 47.4–54.6 of the same track
+for its bars to be drawing what the viewer hears.
+
+It is at 0:04, 0:08 and 0:11. Read straight off the finished frames at film
+47.6, 51.0 and 54.4 — the now-playing readout, cropped and enlarged. **The
+offset is 43.4 s.** The take was recorded from near the start of the track;
+its whole 30.7 s only ever covers positions −10.6 to 20.1, so no in-point in it
+can reach 47.4. This is not a lag to be trimmed away, it is the wrong seven
+seconds of the song.
+
+The correlation says the same thing more quietly. `measure-vis-sync.py` (new,
+this session) correlates the square's lit-pixel count against the bed's own
+band power — the low third against 40–160 Hz, the high third against 1–3.5 kHz
+— and over ±2 s it finds *r* = 0.29 at +1.27 s in the low band and *r* = 0.42 at
++0.50 s in the high one. Two bands that disagree by three quarters of a second
+at correlations that weak are two bands finding the 120 BPM grid, not each
+other. **Where the readout and the correlator disagree, the readout is not the
+weaker witness — it is the direct one.** The 2026-08-29 note that the clock "is
+not good enough" was about a 0.6 s error; it does not license ignoring a 43 s
+one.
+
+**The fix needs the handset, and nothing else.** Re-shoot `nowplaying` with the
+theme started and left to run: open the sheet and tap the square over to the
+spectrum before position 45, then hold past 56. The shot wants the picture from
+47.4 onward, so a take that reaches 0:56 has the whole of it with room at both
+ends. Then `SHOWREEL_PHONE_VIS_IN` is the take time at which the readout shows
+0:47, and `measure-vis-sync.py` on the finished cut is the proof — it should
+come back inside ±0.1 s in **both** bands, agreeing with each other, not one
+band at a time.
+
+Until then the honest options are: re-shoot (best), or change the caption so
+the film does not claim a sync it does not have. Shipping it as it stands
+claims something a viewer with the track in their ear can catch.
