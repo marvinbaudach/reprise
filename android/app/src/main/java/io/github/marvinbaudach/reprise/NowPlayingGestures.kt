@@ -62,16 +62,22 @@ internal fun PlayPanelWindow.withCurrentPanel(
 }
 
 private fun PlayPanelWindow.withCurrentPlaceholder(currentIndex: Int): PlayPanelWindow {
-    val indexIsKnown = currentIndex in firstIndex..lastIndex
     val reachable = panels.filter { panel -> abs(panel.index - currentIndex) <= 1 }
+    val currentIsKnown = reachable.any { panel -> panel.index == currentIndex }
+    val nextPanels = if (currentIsKnown) {
+        reachable.filter { panel -> panel.track != null || panel.index == currentIndex }
+    } else {
+        val populated = reachable.filter { panel -> panel.track != null }.ifEmpty {
+            panels.filter { panel ->
+                panel.track != null && abs(panel.index - currentIndex) <= 2
+            }.minByOrNull { panel -> abs(panel.index - currentIndex) }?.let(::listOf).orEmpty()
+        }
+        (populated + PlayPanel(currentIndex, null)).sortedBy(PlayPanel::index)
+    }
     return PlayPanelWindow(
-        panels = if (reachable.any { panel -> panel.index == currentIndex }) {
-            reachable
-        } else {
-            (reachable + PlayPanel(currentIndex, null)).sortedBy(PlayPanel::index)
-        },
-        firstIndex = if (indexIsKnown) firstIndex else currentIndex,
-        lastIndex = if (indexIsKnown) lastIndex else currentIndex,
+        panels = nextPanels,
+        firstIndex = nextPanels.minOf(PlayPanel::index),
+        lastIndex = nextPanels.maxOf(PlayPanel::index),
     )
 }
 

@@ -204,9 +204,10 @@ class NowPlayingGesturesTest {
                 trackIsStale.value,
             )
             Text(
-                window.panels.joinToString(",") { panel ->
-                    "${panel.index}:${panel.track?.id ?: "pending"}"
-                },
+                "${window.firstIndex}..${window.lastIndex}|" +
+                    window.panels.joinToString(",") { panel ->
+                        "${panel.index}:${panel.track?.id ?: "pending"}"
+                    },
             )
         }
         compose.waitForIdle()
@@ -216,12 +217,38 @@ class NowPlayingGesturesTest {
             trackIsStale.value = true
         }
         compose.waitForIdle()
-        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
+        compose.onNodeWithText("1..2|1:830,2:831").assertIsDisplayed()
 
         compose.runOnUiThread { currentIndex.intValue = 3 }
         compose.waitForIdle()
-        compose.onNodeWithText("2:831,3:pending").assertIsDisplayed()
+        compose.onNodeWithText("2..3|2:831,3:pending").assertIsDisplayed()
         assertEquals(1, controls.requestCount)
+    }
+
+    @Test
+    fun a_drag_can_settle_to_the_retained_neighbour_after_two_stale_advances() {
+        val window = windowAfterStaleAdvances(2, 3)
+        val gesture = PlayGestureState(
+            width = 400f,
+            height = 800f,
+            animationsEnabled = true,
+            currentIndex = 3,
+            firstIndex = window.firstIndex,
+            lastIndex = window.lastIndex,
+        ).apply {
+            begin(horizontalAllowed = true, verticalAllowed = true)
+            dragBy(deltaX = 89f, deltaY = 0f)
+        }
+
+        assertEquals(PlayGestureDecision.PREVIOUS, gesture.settle(0f, 0f))
+    }
+
+    @Test
+    fun three_stale_advances_never_leave_two_content_free_panels() {
+        val window = windowAfterStaleAdvances(2, 3, 4)
+
+        assertEquals(1, window.panels.count { panel -> panel.track == null })
+        assertTrue(window.panels.any { panel -> panel.track?.id == 831L })
     }
 
     @Test
@@ -620,6 +647,17 @@ private class RecordingVisualizerPreference(
         }
     }
 }
+
+private fun windowAfterStaleAdvances(vararg indices: Int): PlayPanelWindow =
+    indices.fold(
+        playPanelWindow(
+            currentIndex = 1,
+            currentTrackId = 830,
+            rows = (829L..831L).map { id -> gestureTrack(id, "Song $id") },
+        ),
+    ) { window, index ->
+        window.advancedTo(gestureTrack(), index, trackIsStale = true)
+    }
 
 private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
     var created = 0
