@@ -2,7 +2,7 @@
 slug: holding-volume-skips-the-track
 worktree: /home/marvin/Projects/reprise-holding-volume-skips-the-track
 branch: feature/holding-volume-skips-the-track
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-02
 ---
