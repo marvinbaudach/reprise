@@ -250,14 +250,14 @@ fn card_activity_distinguishes_transcoding_and_copying_with_artist() {
 
     assert_eq!(
         device_sync_strings::sync_activity(
-            sidebar_device_card_text::step_glyph(&SyncStep::Transcoding),
+            device_sync_strings::step_glyph(&SyncStep::Transcoding),
             track,
         ),
         "⟳ transcoding · Immortal — Lorna Shore"
     );
     assert_eq!(
         device_sync_strings::sync_activity(
-            sidebar_device_card_text::step_glyph(&SyncStep::Copying),
+            device_sync_strings::step_glyph(&SyncStep::Copying),
             track,
         ),
         "↑ Immortal — Lorna Shore"

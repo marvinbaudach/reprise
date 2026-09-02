@@ -1,5 +1,16 @@
 use super::*;
 use chrono::TimeZone;
+use reprise_core::device_sync::SyncStep;
+
+#[test]
+fn step_glyph_uses_one_sync_vocabulary() {
+    assert_eq!(step_glyph(&SyncStep::Transcoding), "⟳ transcoding ·");
+    assert_eq!(step_glyph(&SyncStep::Copying), "↑");
+    assert_eq!(step_glyph(&SyncStep::WritingAnalysis), "↑ analysis ·");
+    assert_eq!(step_glyph(&SyncStep::Removing), "− removing ·");
+    assert_eq!(step_glyph(&SyncStep::WritingPlaylists), "≡");
+    assert_eq!(step_glyph(&SyncStep::WritingTrackMetadata), "≡ metadata ·");
+}
 
 #[test]
 fn byte_formatting_uses_compact_binary_units() {

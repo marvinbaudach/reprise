@@ -50,22 +50,35 @@ class MobileHeaderRowTest {
     }
 
     @Test
-    fun everyDestinationKeepsBothActionsWithFortyEightDpTouchTargets() {
+    fun everyDestinationKeepsTheOverflowActionAndOnlyQueueDropsTheSearchAction() {
         BrowseTab.entries.forEach { destination ->
             compose.onNodeWithTag("library-destination-${destination.name}").performClick()
             compose.onNodeWithTag("library-page-${destination.name}").assertIsDisplayed()
 
-            compose.onNodeWithTag("library-summary-search")
-                .assertIsDisplayed()
-                .assertHasClickAction()
-                .assertWidthIsAtLeast(48.dp)
-                .assertHeightIsAtLeast(48.dp)
+            if (destination == BrowseTab.QUEUE) {
+                compose.onNodeWithTag("library-summary-search").assertDoesNotExist()
+            } else {
+                compose.onNodeWithTag("library-summary-search")
+                    .assertIsDisplayed()
+                    .assertHasClickAction()
+                    .assertWidthIsAtLeast(48.dp)
+                    .assertHeightIsAtLeast(48.dp)
+            }
             compose.onNodeWithTag("library-summary-overflow")
                 .assertIsDisplayed()
                 .assertHasClickAction()
                 .assertWidthIsAtLeast(48.dp)
                 .assertHeightIsAtLeast(48.dp)
         }
+    }
+
+    @Test
+    fun queueOffersNoSearchActionSoNoFieldCanEverOpenThere() {
+        compose.onNodeWithTag("library-destination-QUEUE").performClick()
+        compose.onNodeWithTag("library-page-QUEUE").assertIsDisplayed()
+
+        compose.onNodeWithTag("library-summary-search").assertDoesNotExist()
+        compose.onNodeWithText("Search queue").assertDoesNotExist()
     }
 
     @Test

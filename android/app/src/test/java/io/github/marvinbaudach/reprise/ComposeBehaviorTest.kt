@@ -818,6 +818,92 @@ class ComposeBehaviorTest {
         compose.onNodeWithText("Loud Song Two").assertDoesNotExist()
     }
 
+    /**
+     * Opening an artist replaces the list with that artist's own page, and its
+     * first section is their albums. The search field stays reachable from
+     * there, and what it takes is a question about the *list* — which artists
+     * match. Until the page went away with the query, the Artists tab answered
+     * a search with the open artist's albums: the one kind of row a search for
+     * artists must never return.
+     */
+    @Test
+    fun searchingTheArtistsTabLeavesNoAlbumPageAnsweringForIt() {
+        val slowArtist = LibraryArtist("Slow Artist", 1, 1, "content://slow")
+        val loudArtist = LibraryArtist("Loud Artist", 1, 0, "content://loud")
+        val slowAlbum = LibraryAlbum(
+            title = "Hey What",
+            artist = slowArtist.name,
+            representativeUri = "content://slow",
+            trackCount = 1,
+            year = 2021,
+            totalDurationMs = 1_000,
+        )
+
+        fun matchingArtists(text: String) = listOf(slowArtist, loudArtist)
+            .filter { text.isBlank() || it.name.contains(text, ignoreCase = true) }
+            .let { LibraryWindow(total = it.size.toLong(), rows = it, hasMore = false) }
+
+        val browse = LibraryScreenState.Browse(
+            titles = LibraryWindow.empty(),
+            artists = matchingArtists(""),
+        )
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                BrowseScreen(
+                    state = browse,
+                    playback = testPlayback(positionMs = 0).copy(
+                        currentIndex = null,
+                        currentTrackId = null,
+                        currentTrackUri = null,
+                    ).libraryPlayback(),
+                    playbackSettingsRevision = 0,
+                    chooseFolder = {},
+                    rescan = {},
+                    themeSelection = nocturneForTests,
+                    selectTheme = {},
+                    searchTitles = { _, _ -> LibraryWindow.empty() },
+                    listArtists = { matchingArtists("") },
+                    searchArtists = { text, _ -> matchingArtists(text) },
+                    openArtist = { artist ->
+                        ArtistTrackList(
+                            artist = artist,
+                            albums = LibraryWindow(
+                                total = 1,
+                                rows = listOf(slowAlbum),
+                                hasMore = false,
+                            ),
+                        )
+                    },
+                    openAlbum = { error("Album navigation is outside this test") },
+                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrack = { _, deliver -> deliver(null) },
+                    playTracks = { _, _ -> },
+                    loadPlaybackSettings = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setEqualizerEnabled = { PlaybackSettingsUiState(false, true, emptyList()) },
+                    replaceEqualizerCurve = { PlaybackSettingsUiState(false, true, emptyList()) },
+                    setGaplessEnabled = { PlaybackSettingsUiState(false, true, emptyList()) },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Artists").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText(slowArtist.name).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText(slowAlbum.title).assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Search library").performClick()
+        compose.onNodeWithText("Search artists").performTextInput("artist")
+        compose.waitForIdle()
+
+        compose.onNodeWithText(slowAlbum.title).assertDoesNotExist()
+        compose.onNodeWithText("Albums").assertDoesNotExist()
+        compose.onNodeWithText(loudArtist.name).assertIsDisplayed()
+        compose.onNodeWithText(slowArtist.name).assertIsDisplayed()
+    }
+
     private fun SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current
 

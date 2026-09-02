@@ -7,7 +7,7 @@ use std::time::Duration;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::device_sync::{
-    aggregate_balance, DeviceSessionState, DeviceStorageAccess, PlannedSyncPhase,
+    aggregate_balance, DeviceSessionState, DeviceStorageAccess, PlannedSyncPhase, SyncStep,
 };
 
 use super::device_sync_page_copy::{
@@ -38,6 +38,7 @@ pub(super) enum DockReading {
         can_start: bool,
     },
     Running {
+        step: SyncStep,
         copied: usize,
         total: usize,
         current_track: Option<String>,
@@ -74,6 +75,7 @@ impl DockReading {
         }
         match &device.sync_phase {
             PlannedSyncPhase::Syncing {
+                step,
                 done,
                 total,
                 current_track,
@@ -81,6 +83,7 @@ impl DockReading {
                 unit_bytes_total,
                 ..
             } => Self::Running {
+                step: *step,
                 copied: *done as usize,
                 total: *total as usize,
                 current_track: (!current_track.is_empty()).then(|| current_track.clone()),
@@ -196,6 +199,7 @@ impl DeviceSyncDock {
                 self.set_sync_action(can_start);
             }
             DockReading::Running {
+                step,
                 copied,
                 total,
                 current_track,
@@ -205,8 +209,10 @@ impl DeviceSyncDock {
             } => {
                 self.title
                     .set_label(&device_sync_strings::syncing_files(copied, total));
-                self.detail
-                    .set_label(current_track.as_deref().unwrap_or(""));
+                self.detail.set_label(&device_sync_strings::sync_activity(
+                    device_sync_strings::step_glyph(&step),
+                    current_track.as_deref().unwrap_or(""),
+                ));
                 self.metrics
                     .set_label(&device_sync_strings::rate_and_remaining(
                         bytes_per_second,
