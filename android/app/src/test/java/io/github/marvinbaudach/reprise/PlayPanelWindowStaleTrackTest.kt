@@ -28,11 +28,7 @@ class PlayPanelWindowStaleTrackTest {
 
     private fun window(vararg panels: Pair<Int, Long>): PlayPanelWindow {
         val entries = panels.map { (index, id) -> PlayPanel(index, track(id)) }
-        return PlayPanelWindow(
-            panels = entries,
-            firstIndex = entries.minOf(PlayPanel::index),
-            lastIndex = entries.maxOf(PlayPanel::index),
-        )
+        return PlayPanelWindow.from(entries)
     }
 
     @Test
@@ -79,6 +75,37 @@ class PlayPanelWindowStaleTrackTest {
     }
 
     @Test
+    fun `every advance sequence keeps the panel window contiguous`() {
+        assertContiguous(
+            playPanelWindow(currentIndex = 5, currentTrackId = -1L, rows = listOf(track(50L))),
+            "prefetch response without the current track",
+        )
+
+        var handoff = window(4 to 40L, 5 to 50L, 6 to 60L)
+        for (index in 6..8) {
+            handoff = handoff.advancedTo(track(60L), index, trackIsStale = true)
+        }
+        handoff = handoff.advancedTo(track(80L), currentIndex = 8, trackIsStale = false)
+        assertContiguous(handoff, "three stale advances followed by their metadata answer")
+
+        for (stepCount in 1..4) {
+            for (staleMask in 0 until (1 shl stepCount)) {
+                var advanced = window(4 to 40L, 5 to 50L, 6 to 60L)
+                for (step in 1..stepCount) {
+                    val index = 6 + step
+                    val trackIsStale = staleMask and (1 shl (step - 1)) != 0
+                    advanced = advanced.advancedTo(
+                        track = track(index * 10L),
+                        currentIndex = index,
+                        trackIsStale = trackIsStale,
+                    )
+                }
+                assertContiguous(advanced, "steps=$stepCount staleMask=$staleMask")
+            }
+        }
+    }
+
+    @Test
     fun `waiting keeps every retained track at its original index`() {
         val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
         val before = settled.panels.map { it.index to it.track?.id }
@@ -117,5 +144,13 @@ class PlayPanelWindowStaleTrackTest {
 
         assertEquals(listOf(4, 5), advanced.panels.map(PlayPanel::index))
         assertEquals(40L, advanced.panels.single { it.index == 4 }.track?.id)
+    }
+
+    private fun assertContiguous(window: PlayPanelWindow, scenario: String) {
+        assertEquals(
+            scenario,
+            (window.firstIndex..window.lastIndex).toList(),
+            window.panels.map(PlayPanel::index),
+        )
     }
 }

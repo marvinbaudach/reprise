@@ -28,36 +28,45 @@ internal data class PlayPanel(
     val track: LibraryTrack?,
 )
 
-internal data class PlayPanelWindow(
+internal class PlayPanelWindow private constructor(
     val panels: List<PlayPanel>,
     val firstIndex: Int,
     val lastIndex: Int,
-)
+) {
+    companion object {
+        fun from(panels: List<PlayPanel>): PlayPanelWindow {
+            if (panels.isEmpty()) {
+                return PlayPanelWindow(emptyList(), IntRange.EMPTY.first, IntRange.EMPTY.last)
+            }
+            val panelsByIndex = panels.associateBy(PlayPanel::index)
+            val firstIndex = panelsByIndex.keys.min()
+            val lastIndex = panelsByIndex.keys.max()
+            val contiguousPanels = (firstIndex..lastIndex).map { index ->
+                panelsByIndex[index] ?: PlayPanel(index, null)
+            }
+            return PlayPanelWindow(contiguousPanels, firstIndex, lastIndex)
+        }
+    }
+}
 
 internal fun placeholderPlayPanelWindow(
     track: LibraryTrack,
     currentIndex: Int,
-): PlayPanelWindow = PlayPanelWindow(
-    panels = listOf(PlayPanel(currentIndex, track)),
-    firstIndex = currentIndex,
-    lastIndex = currentIndex,
-)
+): PlayPanelWindow = PlayPanelWindow.from(listOf(PlayPanel(currentIndex, track)))
 
 internal fun PlayPanelWindow.withCurrentPanel(
     track: LibraryTrack,
     currentIndex: Int,
 ): PlayPanelWindow {
     val indexIsKnown = currentIndex in firstIndex..lastIndex
-    return PlayPanelWindow(
-        panels = if (indexIsKnown) {
+    return PlayPanelWindow.from(
+        if (indexIsKnown) {
             (panels.filter { panel ->
                 panel.index != currentIndex && abs(panel.index - currentIndex) <= 1
             } + PlayPanel(currentIndex, track)).sortedBy(PlayPanel::index)
         } else {
             listOf(PlayPanel(currentIndex, track))
         },
-        firstIndex = if (indexIsKnown) firstIndex else currentIndex,
-        lastIndex = if (indexIsKnown) lastIndex else currentIndex,
     )
 }
 
@@ -74,11 +83,7 @@ private fun PlayPanelWindow.withCurrentPlaceholder(currentIndex: Int): PlayPanel
         }
         (populated + PlayPanel(currentIndex, null)).sortedBy(PlayPanel::index)
     }
-    return PlayPanelWindow(
-        panels = nextPanels,
-        firstIndex = nextPanels.minOf(PlayPanel::index),
-        lastIndex = nextPanels.maxOf(PlayPanel::index),
-    )
+    return PlayPanelWindow.from(nextPanels)
 }
 
 /**
@@ -90,8 +95,9 @@ private fun PlayPanelWindow.withCurrentPlaceholder(currentIndex: Int): PlayPanel
  * says so. Writing a populated panel from a disagreeing pair stamps the
  * outgoing track onto the incoming card, and the settle animation then carries
  * the old cover into the centre. A stale pair therefore advances only the
- * geometry, adding a content-free centre panel when the fetched window does not
- * already know that index.
+ * geometry. It retains the nearest populated panel that can still be reached,
+ * adds a content-free centre panel when needed, and represents any intervening
+ * index with another content-free panel.
  */
 internal fun PlayPanelWindow.advancedTo(
     track: LibraryTrack,
@@ -109,14 +115,12 @@ internal fun playPanelWindow(
     rows: List<LibraryTrack>,
 ): PlayPanelWindow {
     val currentRow = rows.indexOfFirst { row -> row.id == currentTrackId }
-    if (currentRow < 0) return PlayPanelWindow(emptyList(), currentIndex, currentIndex)
+    if (currentRow < 0) return PlayPanelWindow.from(emptyList())
     val indexedRows = rows.mapIndexed { rowIndex, row ->
         PlayPanel(index = currentIndex + rowIndex - currentRow, track = row)
     }
-    return PlayPanelWindow(
-        panels = indexedRows.filter { panel -> abs(panel.index - currentIndex) <= 1 },
-        firstIndex = indexedRows.first().index,
-        lastIndex = indexedRows.last().index,
+    return PlayPanelWindow.from(
+        indexedRows.filter { panel -> abs(panel.index - currentIndex) <= 1 },
     )
 }
 
@@ -144,7 +148,7 @@ internal fun rememberPlayPanelWindow(
     var window by remember {
         mutableStateOf(
             if (trackIsStale) {
-                PlayPanelWindow(listOf(PlayPanel(currentIndex, null)), currentIndex, currentIndex)
+                PlayPanelWindow.from(listOf(PlayPanel(currentIndex, null)))
             } else {
                 placeholderPlayPanelWindow(track, currentIndex)
             },

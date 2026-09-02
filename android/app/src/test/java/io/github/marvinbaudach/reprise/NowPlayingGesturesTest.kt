@@ -244,11 +244,11 @@ class NowPlayingGesturesTest {
     }
 
     @Test
-    fun three_stale_advances_never_leave_two_content_free_panels() {
+    fun three_stale_advances_fill_the_gap_with_a_content_free_panel() {
         val window = windowAfterStaleAdvances(2, 3, 4)
 
-        assertEquals(1, window.panels.count { panel -> panel.track == null })
-        assertTrue(window.panels.any { panel -> panel.track?.id == 831L })
+        assertEquals(listOf(2, 3, 4), window.panels.map(PlayPanel::index))
+        assertEquals(listOf(831L, null, null), window.panels.map { panel -> panel.track?.id })
     }
 
     @Test

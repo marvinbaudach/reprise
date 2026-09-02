@@ -56,19 +56,19 @@ class NowPlayingPanelsTest {
 
         assertEquals(listOf(21L, 22L), advanced.panels.map { panel -> panel.track?.id })
         assertEquals("Answered track", advanced.panels.last().track?.title)
-        assertEquals(3, advanced.firstIndex)
+        assertEquals(4, advanced.firstIndex)
         assertEquals(5, advanced.lastIndex)
     }
 
     @Test
-    fun the_prefetch_window_keeps_two_warm_but_only_renders_one_neighbour_per_side() {
+    fun the_prefetch_response_exposes_only_the_reachable_neighbour_on_each_side() {
         val rows = (30L..34L).map(::panelTrack)
 
         val window = playPanelWindow(currentIndex = 8, currentTrackId = 32, rows = rows)
 
         assertEquals(listOf(7, 8, 9), window.panels.map { it.index })
-        assertEquals(6, window.firstIndex)
-        assertEquals(10, window.lastIndex)
+        assertEquals(7, window.firstIndex)
+        assertEquals(9, window.lastIndex)
     }
 
     @Test
