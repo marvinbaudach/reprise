@@ -271,6 +271,17 @@ internal fun BrowseScreen(
     }
 
     fun search(text: String) {
+        // A refinement is a question about a list, so it has to be answered on
+        // the list. An open artist page — or the album page nested inside it —
+        // would otherwise stay up and answer with that artist's *albums* where
+        // the listener asked for artists. The field is shared across the tabs,
+        // so this holds wherever the text was typed: the swipe back to Artists
+        // lands on whatever is still open there. An empty query is exempt; that
+        // is the field being closed again, not a question being asked.
+        if (text.isNotBlank()) {
+            selectedAlbum = null
+            selectedArtist = null
+        }
         // Only the tab this fills can be said to hold the refinement afterwards,
         // so the whole set goes first and exactly one comes back. Asking whether
         // the *text* changed would not be enough: a rescan re-enters here with
