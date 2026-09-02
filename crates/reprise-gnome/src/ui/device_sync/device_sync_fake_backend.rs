@@ -441,11 +441,13 @@ impl DeviceBackend for FakeBackend {
                 if let Some(contents) = source_contents {
                     state.managed_copy_contents.borrow_mut().push((
                         target_path,
-                        relative_target,
+                        relative_target.clone(),
                         contents,
                     ));
                 }
-                return Ok(CopyOutcome::Copied);
+                return Ok(CopyOutcome::Copied {
+                    relative_path: relative_target,
+                });
             }
             state
                 .planned_operations
@@ -523,11 +525,13 @@ impl DeviceBackend for FakeBackend {
             if let Some(contents) = source_contents {
                 state.managed_copy_contents.borrow_mut().push((
                     target_path,
-                    relative_target,
+                    relative_target.clone(),
                     contents,
                 ));
             }
-            Ok(CopyOutcome::Copied)
+            Ok(CopyOutcome::Copied {
+                relative_path: relative_target,
+            })
         })
     }
 

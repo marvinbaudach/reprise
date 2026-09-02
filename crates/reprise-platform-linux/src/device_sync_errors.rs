@@ -1,8 +1,8 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CopyOutcome {
-    Copied,
+    Copied { relative_path: String },
 }
 
 /// Which step of a managed write produced the failure underneath.

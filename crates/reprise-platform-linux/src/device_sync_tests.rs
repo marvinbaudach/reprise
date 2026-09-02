@@ -245,7 +245,12 @@ fn copy_creates_managed_directories_and_reports_progress() {
     ))
     .unwrap();
 
-    assert_eq!(outcome, CopyOutcome::Copied);
+    assert_eq!(
+        outcome,
+        CopyOutcome::Copied {
+            relative_path: "Road/7-source.flac".into()
+        }
+    );
     assert_eq!(
         fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
         vec![7_u8; 32 * 1024]
@@ -324,7 +329,12 @@ fn managed_write_adopts_a_resident_directory_that_only_differs_in_case() {
     ));
 
     fs::set_permissions(&artist, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(outcome.unwrap(), CopyOutcome::Copied);
+    assert_eq!(
+        outcome.unwrap(),
+        CopyOutcome::Copied {
+            relative_path: "Emmure/Speaker Of The Dead/13 song.flac".into()
+        }
+    );
     assert_eq!(fs::read(resident.join("13 song.flac")).unwrap(), b"audio");
     assert!(!artist.join("Speaker of the Dead").exists());
 }
@@ -443,7 +453,12 @@ fn mtp_17_same_size_untracked_destination_is_overwritten() {
         |_copied, _total| {},
     ))
     .unwrap();
-    assert_eq!(outcome, CopyOutcome::Copied);
+    assert_eq!(
+        outcome,
+        CopyOutcome::Copied {
+            relative_path: "Road/7-source.flac".into()
+        }
+    );
     assert_eq!(
         fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
         b"new!"
@@ -472,7 +487,12 @@ fn replace_track_overwrites_a_changed_file_even_when_its_size_is_unchanged() {
     ))
     .unwrap();
 
-    assert_eq!(outcome, CopyOutcome::Copied);
+    assert_eq!(
+        outcome,
+        CopyOutcome::Copied {
+            relative_path: "Road/7-source.flac".into()
+        }
+    );
     assert_eq!(
         fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
         b"new!"
