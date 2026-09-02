@@ -627,7 +627,7 @@ impl DeviceSyncMachine {
             self.phase = phase_transitions::syncing(
                 &self.ledger,
                 SyncStep::Removing,
-                self.plan.playlist_removals[index].device_path.clone(),
+                phase_transitions::playlist_removal_activity(&self.plan.playlist_removals[index]),
             );
             self.awaiting = Awaiting::RemovePlaylist(index);
             return vec![Effect::RemovePlaylist { index }];
@@ -672,7 +672,7 @@ impl DeviceSyncMachine {
         self.phase = phase_transitions::syncing(
             &self.ledger,
             SyncStep::Removing,
-            phase_transitions::removal_path(removal),
+            phase_transitions::removal_activity(removal),
         );
         self.awaiting = Awaiting::RemoveTrack(from);
         vec![Effect::RemoveTrack { index: from }]

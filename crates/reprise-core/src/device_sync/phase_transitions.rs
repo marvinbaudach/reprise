@@ -2,7 +2,7 @@
 
 use super::ledger::WorkLedger;
 use super::machine::{PlannedSyncPhase, SyncStep, TransferOperation};
-use super::{ManagedRemoval, TransferAction};
+use super::{DevicePlaylistRecord, ManagedRemoval, TransferAction};
 
 pub(super) fn syncing(
     ledger: &WorkLedger,
@@ -56,10 +56,14 @@ pub(super) fn opening(
         );
     }
     if let Some(removal) = plan.playlist_removals.first() {
-        return syncing(ledger, SyncStep::Removing, removal.device_path.clone());
+        return syncing(
+            ledger,
+            SyncStep::Removing,
+            playlist_removal_activity(removal),
+        );
     }
     if let Some(removal) = plan.remove.first() {
-        return syncing(ledger, SyncStep::Removing, removal_path(removal));
+        return syncing(ledger, SyncStep::Removing, removal_activity(removal));
     }
     if writes_track_metadata_list {
         return syncing(
@@ -81,10 +85,65 @@ pub(super) fn transfer_activity(operation: &TransferOperation) -> String {
     }
 }
 
-pub(super) fn removal_path(removal: &ManagedRemoval) -> String {
-    match removal {
-        ManagedRemoval::Inventory(file) => file.device_path.clone(),
-        ManagedRemoval::Orphan(file) => file.relative_path.clone(),
+/// The reverse of `sanitize::device_track_path` — good enough to name a file
+/// this crate itself wrote, and honest about the paths it did not.
+pub(super) fn removal_activity(removal: &ManagedRemoval) -> String {
+    let path = match removal {
+        ManagedRemoval::Inventory(file) => &file.device_path,
+        ManagedRemoval::Orphan(file) => &file.relative_path,
+    };
+    let components = path.split('/').collect::<Vec<_>>();
+    if components.len() < 2 {
+        return path.clone();
+    }
+    let Some(file_name) = components.last() else {
+        return path.clone();
+    };
+    let Some((stem, _)) = file_name.rsplit_once('.') else {
+        return path.clone();
+    };
+    let without_collision = strip_collision_suffix(stem);
+    let title = strip_track_number(without_collision);
+    if title.is_empty() || title == without_collision {
+        return path.clone();
+    }
+    match components.first().filter(|_| components.len() >= 3) {
+        Some(artist) if !artist.is_empty() => format!("{title} — {artist}"),
+        _ => title.to_owned(),
+    }
+}
+
+fn strip_track_number(value: &str) -> &str {
+    let Some((number, title)) = value.split_once(' ') else {
+        return value;
+    };
+    if matches!(number.len(), 2 | 3) && number.bytes().all(|byte| byte.is_ascii_digit()) {
+        title
+    } else {
+        value
+    }
+}
+
+fn strip_collision_suffix(value: &str) -> &str {
+    let Some((title, suffix)) = value.rsplit_once(" (") else {
+        return value;
+    };
+    let Some(index) = suffix.strip_suffix(')') else {
+        return value;
+    };
+    if !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit()) {
+        title
+    } else {
+        value
+    }
+}
+
+/// A playlist is named by the source the user picked, never by its file.
+pub(super) fn playlist_removal_activity(record: &DevicePlaylistRecord) -> String {
+    if record.source_name.is_empty() {
+        record.device_path.clone()
+    } else {
+        record.source_name.clone()
     }
 }
 
