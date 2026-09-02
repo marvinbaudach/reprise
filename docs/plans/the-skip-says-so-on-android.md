@@ -2,7 +2,7 @@
 slug: the-skip-says-so-on-android
 worktree: /home/marvin/Projects/reprise-the-skip-says-so-on-android
 branch: feature/the-skip-says-so-on-android
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-02
 ---
