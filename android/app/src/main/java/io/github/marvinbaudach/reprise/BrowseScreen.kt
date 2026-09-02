@@ -746,6 +746,7 @@ internal fun BrowseScreen(
                             playback = nowPlayingPlayback(),
                             surfaceLayout = surfaceLayout,
                             surfaceState = surfaceState,
+                            trackIsStale = shownTrackIsStale,
                             close = { surfaceState.showNowPlaying(false) },
                         )
                     }

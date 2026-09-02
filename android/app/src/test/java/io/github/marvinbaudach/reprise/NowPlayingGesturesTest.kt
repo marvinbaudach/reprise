@@ -144,6 +144,46 @@ class NowPlayingGesturesTest {
     }
 
     @Test
+    fun an_index_that_moves_before_its_track_answers_does_not_restamp_the_window() {
+        val controls = DelayedPanelWindowControls()
+        val track = mutableStateOf(gestureTrack())
+        val currentIndex = mutableIntStateOf(1)
+        val trackIsStale = mutableStateOf(false)
+        compose.setContent {
+            val window = rememberPlayPanelWindow(
+                track.value,
+                currentIndex.intValue,
+                controls,
+                trackIsStale.value,
+            )
+            Text(window.panels.joinToString(",") { panel -> panel.track.id.toString() })
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("829,830,831").assertIsDisplayed()
+
+        // The player has moved on; the metadata query has not answered yet, so
+        // the track still describes the song the swipe is leaving behind.
+        compose.runOnUiThread {
+            currentIndex.intValue = 2
+            trackIsStale.value = true
+        }
+        compose.waitForIdle()
+
+        // 830 is the outgoing track. Stamping it at index 2 is what used to
+        // carry the old cover into the centre, so the window must not move.
+        compose.onNodeWithText("829,830,831").assertIsDisplayed()
+
+        // The answer lands: the pair agrees again and the window catches up.
+        compose.runOnUiThread {
+            track.value = gestureTrack(id = 831, title = "Next song")
+            trackIsStale.value = false
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("830,831").assertIsDisplayed()
+    }
+
+    @Test
     fun externalAdvanceMidDragReanchorsBeforeTheFingerCommitsForward() {
         val controls = GestureRecordingControls(
             upcomingRows = (828L..833L).map { id -> gestureTrack(id, "Song $id") },

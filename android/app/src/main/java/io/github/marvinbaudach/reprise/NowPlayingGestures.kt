@@ -61,6 +61,23 @@ internal fun PlayPanelWindow.withCurrentPanel(
     )
 }
 
+/**
+ * The window this pair should produce, or `null` while the pair disagrees.
+ *
+ * `track` and `currentIndex` arrive from two sources — the index follows the
+ * player, the track follows the metadata query answering for it — so between a
+ * track change and its answer they describe different songs. [trackIsStale]
+ * says so. Writing a window from a disagreeing pair stamps the outgoing track
+ * onto the incoming card, and the settle animation then carries the old cover
+ * into the centre. Returning `null` keeps the last agreeing window on screen
+ * until the pair catches up.
+ */
+internal fun PlayPanelWindow.advancedTo(
+    track: LibraryTrack,
+    currentIndex: Int,
+    trackIsStale: Boolean,
+): PlayPanelWindow? = if (trackIsStale) null else withCurrentPanel(track, currentIndex)
+
 internal fun playPanelWindow(
     currentIndex: Int,
     currentTrackId: Long,
@@ -78,19 +95,41 @@ internal fun playPanelWindow(
     )
 }
 
+/**
+ * The window of cards the swipe can reach.
+ *
+ * [track] and [currentIndex] come from two sources that do not land in the same
+ * frame: the index follows the player, the track follows the metadata query
+ * answering for it. [trackIsStale] says the pair does not agree yet. Writing the
+ * window from a disagreeing pair puts the outgoing track on the incoming card —
+ * the settle animation then carries the old cover into the centre, which is the
+ * flash a swipe to the next song used to show. So the window waits: the effect
+ * keys on `track.id`, and staleness clears exactly when that id catches up, so
+ * the skipped work runs on the very next pass with a pair that agrees.
+ */
 @Composable
 internal fun rememberPlayPanelWindow(
     track: LibraryTrack,
     currentIndex: Int,
     controls: PlaybackControls,
+    trackIsStale: Boolean = false,
 ): PlayPanelWindow {
     var generation by remember { mutableStateOf(0L) }
     var window by remember {
         mutableStateOf(placeholderPlayPanelWindow(track, currentIndex))
     }
-    LaunchedEffect(track.id, currentIndex, controls) {
+    LaunchedEffect(track.id, currentIndex, controls, trackIsStale) {
+        // The generation moves on every pass, waiting ones included: a load
+        // still in flight answers for the pair that asked for it, and that pair
+        // is gone. Bumping before the wait drops it, so it cannot land a window
+        // built around an index the player has already left.
         val requestGeneration = ++generation
-        window = window.withCurrentPanel(track, currentIndex)
+        // Both writes below read the pair, so the wait covers both: the stamp
+        // that would put the outgoing track on the incoming card, and the
+        // reload underneath it, which locates the window by the same track id.
+        val advanced = window.advancedTo(track, currentIndex, trackIsStale)
+            ?: return@LaunchedEffect
+        window = advanced
         controls.loadUpcomingTracks(LibraryWindowRange(-2, 3)) { outcome ->
             if (generation != requestGeneration) return@loadUpcomingTracks
             outcome.getOrNull()?.rows?.let { rows ->

@@ -69,7 +69,6 @@ import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 
 private const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
@@ -348,9 +347,18 @@ private fun NowPlayingPanelLayer(
     val glow = nowPlayingGlowTransform(panel.index, positionPx, widthPx)
     val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
     val near = max(0f, 1f - min(1f, distance))
-    val coverOpacity = 1f - visualizerOpacity * near.pow(1.6f)
-    val barsOpacity = visualizerOpacity * near.pow(1.4f)
+    val layers = nowPlayingPanelOpacity(
+        visualizerOpacity = visualizerOpacity,
+        near = near,
+        hasVisualizer = visualEngine != null,
+    )
+    val coverOpacity = layers.cover
+    val barsOpacity = layers.bars
+    val plateOpacity = layers.plate
     val barHeight = 0.3f + near * 0.7f
+    // The same surface the sheet already uses for a card that carries no
+    // artwork, so the plate does not invent a second placeholder tone.
+    val plateColor = MaterialTheme.colorScheme.surfaceContainer
     val coverShadow = rememberCoverShadowBitmap()
     val density = LocalDensity.current
     val saturationFilter = cachedSaturationFilter(transform.saturation)
@@ -410,6 +418,15 @@ private fun NowPlayingPanelLayer(
                 fallback = AmbientTrueBlack,
                 shadow = coverShadow,
                 opacity = coverOpacity,
+            )
+            // What the spectrum cannot cover, the plate does: a panel with no
+            // PCM of its own reads as a waiting card rather than a hole.
+            drawPlayedCover(
+                artwork = null,
+                center = center,
+                fallback = plateColor,
+                shadow = null,
+                opacity = plateOpacity,
             )
         }
         if (visualEngine != null && barsOpacity > 0f) {
