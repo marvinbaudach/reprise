@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.DocumentsContract
 import android.util.Log
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -93,11 +94,9 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val artwork by artworkDelegate
-
     private val libraryWrites = LibraryWrites(
         onMainThread = { work -> runOnUiThread { work() } },
     )
-
     /**
      * Heart taps use the shared write lane and answer back on the main thread.
      * The lambda defers touching [session] until a rating is actually made, so
@@ -108,7 +107,6 @@ class MainActivity : ComponentActivity() {
         write = { trackId, favourite -> session.setFavourite(trackId, favourite) },
         libraryWrites = libraryWrites,
     )
-
     /**
      * The playing track's row, read off the main thread and answered back on
      * it. The database read stays off the main thread even though `track_by_id`
@@ -174,6 +172,7 @@ class MainActivity : ComponentActivity() {
     private val playbackState = mutableStateOf(PlaybackUiState())
     internal val currentPlaybackState: PlaybackUiState
         get() = playbackState.value
+    private val volumeKeys = VolumeKeyActivityHandler(this) { currentPlaybackState.isPlaying }
     private val playbackSettingsRevision = mutableStateOf(0L)
     private val visualSceneEngineFactory = mutableStateOf<VisualSceneEngineFactory>(
         NativeVisualSceneEngineFactory,
@@ -208,6 +207,7 @@ class MainActivity : ComponentActivity() {
             surfaceState.connectArtistPhotoBackfill(library) { work -> runOnUiThread(work) }
             productionSurface().also { surfaceState.startArtistPhotoBackfill() }
         }
+        volumeKeys.useSurfaceControls(surface.playbackControls)
         collectPlaybackServiceState()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
@@ -488,11 +488,16 @@ class MainActivity : ComponentActivity() {
                 .onFailure { error -> Log.w(TAG, "Silent library scan failed", error) }
         }.start()
     }
-
+    override fun onKeyDown(keyCode: Int, event: KeyEvent) =
+        volumeKeys.onDown(keyCode, event) ?: super.onKeyDown(keyCode, event)
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent) =
+        volumeKeys.onLongPress(keyCode) ?: super.onKeyLongPress(keyCode, event)
+    override fun onKeyUp(keyCode: Int, event: KeyEvent) =
+        volumeKeys.onUp(keyCode, event) ?: super.onKeyUp(keyCode, event)
     override fun onPause() {
+        volumeKeys.forget()
         super.onPause()
     }
-
     override fun onStop() {
         playbackBindWatchdog?.cancel()
         playbackBindWatchdog = null
@@ -504,7 +509,6 @@ class MainActivity : ComponentActivity() {
         }
         super.onStop()
     }
-
     override fun onDestroy() {
         setDockWindowMode(false)
         // Stop accepting boundary calls while letting the single ordered lane
@@ -536,7 +540,6 @@ class MainActivity : ComponentActivity() {
         }
         super.onDestroy()
     }
-
     private fun chooseTree(treeUri: Uri, report: (LibraryScreenState) -> Unit) {
         runLibraryAction(report) { progress ->
             session.chooseTree(treeUri.toString(), progress)
