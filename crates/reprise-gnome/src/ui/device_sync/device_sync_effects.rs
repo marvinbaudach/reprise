@@ -151,9 +151,12 @@ pub(super) async fn perform(
                 reprise_core::device_sync::staging::discard(&path);
             }
             match result {
-                Ok(_) => {
+                Ok(CopyOutcome::Copied { relative_path }) => {
                     work.log.copied(bytes);
-                    Event::TrackCopied(Ok(bytes))
+                    Event::TrackCopied(Ok(CopiedTrack {
+                        device_size: bytes,
+                        device_path: relative_path,
+                    }))
                 }
                 Err(error) => {
                     tracing::warn!(track_id = entry.track.id, %error, "device transfer failed");
@@ -168,7 +171,11 @@ pub(super) async fn perform(
                 }
             }
         }
-        Effect::RecordFile { index, device_size } => {
+        Effect::RecordFile {
+            index,
+            device_size,
+            device_path,
+        } => {
             if !work.persist_device_state {
                 return Event::FileRecorded(Ok(()));
             }
@@ -179,7 +186,7 @@ pub(super) async fn perform(
                 source_path: entry.track.source_path.to_string_lossy().into_owned(),
                 source_size: entry.track.size_bytes,
                 source_mtime: entry.track.source_mtime,
-                device_path: entry.device_path.clone(),
+                device_path,
                 device_size,
                 profile_fingerprint: entry.profile_fingerprint.clone(),
                 pinned: false,

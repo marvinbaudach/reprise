@@ -58,8 +58,8 @@ pub use device_view::{
     DeviceContentsState,
 };
 pub use machine::{
-    DeviceSyncMachine, Effect, Event, PlannedSyncPhase, SyncOutcome, SyncStep, TransferOperation,
-    TransferSource,
+    CopiedTrack, DeviceSyncMachine, Effect, Event, PlannedSyncPhase, SyncOutcome, SyncStep,
+    TransferOperation, TransferSource,
 };
 pub use mirror::{
     plan_mirror, AnalysisSidecarWrite, DesiredManagedFile, DesktopAnalysis, ManagedDeviceFile,

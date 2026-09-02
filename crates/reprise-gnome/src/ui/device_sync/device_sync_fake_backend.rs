@@ -81,6 +81,9 @@ pub(super) struct FakeState {
     pub(super) managed_root_enumerations: Cell<u32>,
     pub(super) last_inspected_target: RefCell<Option<SyncTarget>>,
     pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
+    /// Test-only platform outcomes for requested paths whose directory spelling
+    /// is adopted by the device backend.
+    copy_path_overrides: RefCell<HashMap<String, String>>,
     pub(super) partial_paths: RefCell<Vec<String>>,
     pub(super) lyrics_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) cleaned_partials: RefCell<Vec<String>>,
@@ -151,6 +154,13 @@ impl FakeBackend {
     pub(super) fn with_transcode_delay(self, delay_ms: u64) -> Self {
         self.state.transcode_delay_ms.set(delay_ms);
         self
+    }
+
+    pub(super) fn return_copy_at(&self, requested: &str, actual: &str) {
+        self.state
+            .copy_path_overrides
+            .borrow_mut()
+            .insert(requested.into(), actual.into());
     }
 
     pub(super) fn fail_transcode_for(&self, source: PathBuf, error: &str) {
@@ -449,6 +459,12 @@ impl DeviceBackend for FakeBackend {
                     relative_path: relative_target,
                 });
             }
+            let actual_relative_target = state
+                .copy_path_overrides
+                .borrow()
+                .get(&relative_target)
+                .cloned()
+                .unwrap_or_else(|| relative_target.clone());
             state
                 .planned_operations
                 .borrow_mut()
@@ -504,12 +520,12 @@ impl DeviceBackend for FakeBackend {
                 let mut files = files.borrow_mut();
                 if let Some(file) = files
                     .iter_mut()
-                    .find(|file| file.relative_path == relative_target)
+                    .find(|file| file.relative_path == actual_relative_target)
                 {
                     file.size_bytes = expected_size;
                 } else {
                     files.push(ManagedDeviceFile {
-                        relative_path: relative_target.clone(),
+                        relative_path: actual_relative_target.clone(),
                         size_bytes: expected_size,
                     });
                 }
@@ -530,7 +546,7 @@ impl DeviceBackend for FakeBackend {
                 ));
             }
             Ok(CopyOutcome::Copied {
-                relative_path: relative_target,
+                relative_path: actual_relative_target,
             })
         })
     }

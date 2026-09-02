@@ -1,7 +1,7 @@
 use super::tests::view;
 use super::*;
 use reprise_core::device_sync::{
-    AnalysisSidecarWrite, DesiredManagedFile, DeviceFileRecord, DevicePlaylistRecord,
+    AnalysisSidecarWrite, CopiedTrack, DesiredManagedFile, DeviceFileRecord, DevicePlaylistRecord,
     DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan, PlaylistWrite, SelectionSource,
     SyncTrack, TransferAction,
 };
@@ -466,10 +466,13 @@ fn successful_event(
 ) -> Option<Event> {
     Some(match effect {
         Effect::CleanPartials(_) => Event::PartialsCleaned(Ok(())),
-        Effect::CopyTrack { bytes, .. } => {
+        Effect::CopyTrack { index, bytes, .. } => {
             machine.dispatch(Event::CopyProgress { copied: bytes / 2 });
             phases.push(machine.phase().clone());
-            Event::TrackCopied(Ok(bytes))
+            Event::TrackCopied(Ok(CopiedTrack {
+                device_size: bytes,
+                device_path: machine.transfers()[index].desired.device_path.clone(),
+            }))
         }
         Effect::RecordFile { .. } => Event::FileRecorded(Ok(())),
         Effect::WriteAnalysis { index } => {

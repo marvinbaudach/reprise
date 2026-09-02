@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use super::machine::{DeviceSyncMachine, Effect, Event, SyncOutcome, TransferSource};
+use super::machine::{CopiedTrack, DeviceSyncMachine, Effect, Event, SyncOutcome, TransferSource};
 use super::{
     DesiredManagedFile, DeviceFileRecord, DevicePlaylistRecord, ManagedDeviceFile, ManagedRemoval,
     MirrorPlan, MirrorReplacement, PlaylistWrite, SelectionSource, SyncTrack, TransferAction,
@@ -120,6 +120,13 @@ fn write_playlist(index: usize, omitted: &[&str]) -> Effect {
     }
 }
 
+fn copied(device_size: u64, device_path: &str) -> Event {
+    Event::TrackCopied(Ok(CopiedTrack {
+        device_size,
+        device_path: device_path.into(),
+    }))
+}
+
 fn failed(failed_tracks: &[i64], verified_sources: &[SelectionSource]) -> Effect {
     Effect::Finished(SyncOutcome::Failed {
         terminal_error: None,
@@ -214,10 +221,11 @@ fn a_clean_run_copies_then_writes_playlists_then_removes_then_verifies() {
         }]
     );
     assert_eq!(
-        machine.dispatch(Event::TrackCopied(Ok(100))),
+        machine.dispatch(copied(100, "Reprise/1.opus")),
         vec![Effect::RecordFile {
             index: 0,
-            device_size: 100
+            device_size: 100,
+            device_path: "Reprise/1.opus".into(),
         }]
     );
     assert_eq!(
@@ -425,46 +433,6 @@ fn a_failed_transcode_fails_its_track_without_attempting_the_copy() {
 }
 
 #[test]
-fn a_replaced_path_is_deleted_after_the_planned_removals_not_with_its_copy() {
-    let mut plan = replacement_plan();
-    plan.remove
-        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
-
-    let (mut machine, _) = start(plan);
-    machine.dispatch(Event::PartialsCleaned(Ok(())));
-    machine.dispatch(Event::TrackCopied(Ok(100)));
-
-    assert_eq!(
-        machine.dispatch(Event::FileRecorded(Ok(()))),
-        vec![Effect::RemoveTrack { index: 0 }],
-        "the planned removals come first"
-    );
-    machine.dispatch(Event::TrackRemoved(Ok(())));
-    assert_eq!(
-        machine.dispatch(Event::FileForgotten(Ok(()))),
-        vec![Effect::RemoveReplacedFile {
-            device_path: "Album Artist/Album/03 Title.mp3".into(),
-        }],
-        "only then is the superseded path deleted"
-    );
-}
-
-#[test]
-fn a_failed_inventory_row_fails_the_track_and_keeps_the_old_file() {
-    let plan = replacement_plan();
-
-    let (mut machine, _) = start(plan);
-    machine.dispatch(Event::PartialsCleaned(Ok(())));
-    machine.dispatch(Event::TrackCopied(Ok(100)));
-
-    assert_eq!(
-        machine.dispatch(Event::FileRecorded(Err("database is locked".into()))),
-        vec![failed(&[1], &[])],
-        "the replaced file stays until its inventory row exists"
-    );
-}
-
-#[test]
 fn copy_progress_advances_the_byte_counter_without_emitting_an_effect() {
     let mut plan = empty_plan();
     plan.copy
@@ -489,7 +457,7 @@ fn copy_progress_advances_the_byte_counter_without_emitting_an_effect() {
     assert_eq!(*unit_bytes_done, 40);
     assert_eq!(machine.bytes_done(), 40);
 
-    machine.dispatch(Event::TrackCopied(Ok(100)));
+    machine.dispatch(copied(100, "Reprise/1.opus"));
     machine.dispatch(Event::FileRecorded(Ok(())));
     assert_eq!(
         machine.bytes_done(),
@@ -529,10 +497,10 @@ fn a_late_duplicate_answer_cannot_advance_the_run_twice() {
 
     let (mut machine, _) = start(plan);
     machine.dispatch(Event::PartialsCleaned(Ok(())));
-    machine.dispatch(Event::TrackCopied(Ok(100)));
+    machine.dispatch(copied(100, "Reprise/1.opus"));
 
     assert_eq!(
-        machine.dispatch(Event::TrackCopied(Ok(100))),
+        machine.dispatch(copied(100, "Reprise/1.opus")),
         Vec::new(),
         "the machine is waiting for the inventory row, not for another copy"
     );
@@ -580,10 +548,11 @@ fn two_devices_run_independently() {
         "one device's failure does not touch the other"
     );
     assert_eq!(
-        second.dispatch(Event::TrackCopied(Ok(50))),
+        second.dispatch(copied(50, "Reprise/2.opus")),
         vec![Effect::RecordFile {
             index: 0,
             device_size: 50,
+            device_path: "Reprise/2.opus".into(),
         }]
     );
 }
@@ -701,48 +670,6 @@ fn a_failed_removal_does_not_stop_the_removals_after_it() {
 }
 
 #[test]
-fn a_failed_removal_still_lets_a_superseded_path_be_cleaned_up() {
-    let mut plan = replacement_plan();
-    plan.remove
-        .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
-
-    let (mut machine, _) = start(plan);
-    machine.dispatch(Event::PartialsCleaned(Ok(())));
-    machine.dispatch(Event::TrackCopied(Ok(100)));
-    machine.dispatch(Event::FileRecorded(Ok(())));
-
-    assert_eq!(
-        machine.dispatch(Event::TrackRemoved(Err("device is busy".into()))),
-        vec![Effect::RemoveReplacedFile {
-            device_path: "Album Artist/Album/03 Title.mp3".into(),
-        }],
-        "the superseded copy is still deleted after a failed removal"
-    );
-}
-
-#[test]
-fn a_deferred_replacement_removal_names_its_own_removing_phase() {
-    let plan = replacement_plan();
-    let (mut machine, _) = start(plan);
-    machine.dispatch(Event::PartialsCleaned(Ok(())));
-    machine.dispatch(Event::TrackCopied(Ok(100)));
-    assert_eq!(
-        machine.dispatch(Event::FileRecorded(Ok(()))),
-        vec![Effect::RemoveReplacedFile {
-            device_path: "Album Artist/Album/03 Title.mp3".into(),
-        }]
-    );
-    assert!(matches!(
-        machine.phase(),
-        PlannedSyncPhase::Syncing {
-            step: SyncStep::Removing,
-            current_track,
-            ..
-        } if current_track == "Title — Album Artist"
-    ));
-}
-
-#[test]
 fn mtp_19_a_playlist_that_could_not_be_rewritten_holds_every_removal_back() {
     let mut plan = empty_plan();
     plan.playlist_writes.push(playlist_write(7));
@@ -780,6 +707,9 @@ fn mtp_19_a_failed_transfer_that_holds_back_no_playlist_leaves_the_removals_alon
         "every playlist was republished, so nothing stale can reference the file"
     );
 }
+
+#[path = "machine_replacement_tests.rs"]
+mod replacement_tests;
 
 #[test]
 fn mtp_19_a_playlist_that_could_not_be_deleted_holds_every_removal_back() {

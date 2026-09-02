@@ -139,6 +139,35 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
     });
 }
 
+#[test]
+fn adopted_copy_path_is_recorded_and_the_second_run_plans_nothing() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let requested = "Artist/Unknown Album/00 Track 1.opus";
+        let adopted = "ARTIST/Unknown Album/00 Track 1.opus";
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.return_copy_at(requested, adopted);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let files = reprise_core::device_sync::settings::load_device_files(&conn, "a").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].device_path, adopted);
+        assert_eq!(
+            backend.state.managed_files.borrow()[0].relative_path,
+            adopted
+        );
+        runtime.recompute_delta("a").unwrap();
+        let device = runtime.devices().remove(0);
+        assert_eq!(device.page.changes.additions, 0);
+        assert_eq!(device.page.changes.replacements, 0);
+    });
+}
+
 /// `MTP-23`: once the folder browser (`MTP-31`) has persisted a
 /// storage for the Playlists target, `sync_now`'s actual transfer must
 /// carry that `storage_id` through to the backend — not silently

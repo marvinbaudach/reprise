@@ -25,168 +25,12 @@ use super::{
 
 #[path = "machine_sidecars.rs"]
 mod sidecars;
-
-/// The step a run is currently working on.
-///
-/// The variants are ordered as the user meets them in the interface, not as
-/// the run executes them — see [`SyncStep::Removing`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SyncStep {
-    Removing,
-    Transcoding,
-    Copying,
-    WritingAnalysis,
-    WritingLyrics,
-    WritingPlaylists,
-    WritingTrackMetadata,
-}
-
-impl SyncStep {
-    pub fn reports_transfer_rate(self) -> bool {
-        matches!(
-            self,
-            Self::Copying | Self::WritingAnalysis | Self::WritingLyrics
-        )
-    }
-}
-
-/// The externally visible progress of a run.
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub enum PlannedSyncPhase {
-    #[default]
-    Idle,
-    ComputingDelta,
-    Syncing {
-        step: SyncStep,
-        done: u32,
-        total: u32,
-        current_track: String,
-        unit_bytes_done: u64,
-        unit_bytes_total: u64,
-    },
-    Finishing,
-}
-
-/// Where the bytes of a copy come from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TransferSource {
-    /// The track's own file, copied unchanged.
-    Original,
-    /// The temporary file produced by the preceding [`Effect::Transcode`].
-    Transcoded,
-}
-
-/// Work the owner must perform on the machine's behalf.
-///
-/// Every variant that names an `index` indexes the collection its step walks:
-/// [`DeviceSyncMachine::transfers`] for transfers, `plan.playlist_writes`,
-/// `plan.playlist_removals` and `plan.remove` for the rest.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Effect {
-    /// Delete leftover partial files under the device root.
-    CleanPartials(Vec<String>),
-    Transcode {
-        index: usize,
-        action: TransferAction,
-    },
-    CopyTrack {
-        index: usize,
-        source: TransferSource,
-        bytes: u64,
-    },
-    /// Write the inventory row for a copied track.
-    RecordFile {
-        index: usize,
-        device_size: u64,
-    },
-    WriteAnalysis {
-        index: usize,
-    },
-    WriteLyrics {
-        index: usize,
-    },
-    WritePlaylist {
-        index: usize,
-        omit_relative_paths: Vec<String>,
-    },
-    /// Write the inventory row for a written playlist.
-    RecordPlaylist {
-        index: usize,
-    },
-    RemoveTrack {
-        index: usize,
-    },
-    /// Drop the inventory row of a removed track.
-    ForgetFile {
-        index: usize,
-    },
-    /// Delete a path that a replacement superseded.
-    RemoveReplacedFile {
-        device_path: String,
-    },
-    RemovePlaylist {
-        index: usize,
-    },
-    /// Drop the inventory row of a playlist that is no longer mirrored.
-    ForgetPlaylist {
-        index: usize,
-    },
-    WriteTrackMetadataList,
-    Finished(SyncOutcome),
-}
-
-/// How a run ended.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SyncOutcome {
-    Completed {
-        /// The playlist sources whose contents the owner should verify.
-        verified_sources: Vec<SelectionSource>,
-    },
-    Cancelled,
-    Failed {
-        /// Set when a whole stage failed rather than individual tracks. The
-        /// frontend composes the message it shows; wording is not the core's
-        /// business, so a run that merely lost tracks reports only their ids.
-        terminal_error: Option<String>,
-        failed_tracks: Vec<i64>,
-        /// Playlist sources that were still safely published during the run.
-        verified_sources: Vec<SelectionSource>,
-    },
-}
-
-/// The outcome of the effect the machine is waiting for.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Event {
-    Start,
-    PartialsCleaned(Result<(), String>),
-    /// Carries the size of the produced temporary file.
-    Transcoded(Result<u64, String>),
-    /// Carries the number of bytes actually written to the device.
-    TrackCopied(Result<u64, String>),
-    FileRecorded(Result<(), String>),
-    /// Bytes written so far for the copy in flight.
-    CopyProgress {
-        copied: u64,
-    },
-    AnalysisWritten(Result<u64, String>),
-    LyricsWritten(Result<u64, String>),
-    PlaylistWritten(Result<(), String>),
-    PlaylistRecorded(Result<(), String>),
-    TrackRemoved(Result<(), String>),
-    FileForgotten(Result<(), String>),
-    ReplacedFileRemoved(Result<(), String>),
-    PlaylistRemoved(Result<(), String>),
-    PlaylistForgotten(Result<(), String>),
-    TrackMetadataListWritten(Result<(), String>),
-    Cancel,
-}
-
-/// One planned transfer together with the inventory row it supersedes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TransferOperation {
-    pub desired: DesiredManagedFile,
-    pub previous: Option<DeviceFileRecord>,
-}
+#[path = "machine_types.rs"]
+mod types;
+pub use types::{
+    CopiedTrack, Effect, Event, PlannedSyncPhase, SyncOutcome, SyncStep, TransferOperation,
+    TransferSource,
+};
 
 /// The effect the machine is currently waiting to hear back about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -224,6 +68,7 @@ pub struct DeviceSyncMachine {
     ledger: WorkLedger,
     writes_track_metadata_list: bool,
     copied_bytes: Option<u64>,
+    copied_device_path: Option<String>,
     transcoded_bytes: Option<u64>,
     deferred_replacements: Vec<(String, i64)>,
     planned_playlist_sources: HashSet<SelectionSource>,
@@ -255,6 +100,7 @@ impl DeviceSyncMachine {
             ledger,
             writes_track_metadata_list: false,
             copied_bytes: None,
+            copied_device_path: None,
             transcoded_bytes: None,
             deferred_replacements: Vec::new(),
             planned_playlist_sources,
@@ -358,10 +204,15 @@ impl DeviceSyncMachine {
                 }
             },
             (Awaiting::Copy(index), Event::TrackCopied(result)) => match result {
-                Ok(device_size) => {
-                    self.copied_bytes = Some(device_size);
+                Ok(copied) => {
+                    self.copied_bytes = Some(copied.device_size);
+                    self.copied_device_path = Some(copied.device_path.clone());
                     self.awaiting = Awaiting::RecordFile(index);
-                    vec![Effect::RecordFile { index, device_size }]
+                    vec![Effect::RecordFile {
+                        index,
+                        device_size: copied.device_size,
+                        device_path: copied.device_path,
+                    }]
                 }
                 Err(_) => {
                     // A copy that fails because the run was cancelled is not a
@@ -377,8 +228,12 @@ impl DeviceSyncMachine {
                 match result {
                     Ok(()) => {
                         let operation = &self.transfers[index];
+                        let recorded_path = self
+                            .copied_device_path
+                            .take()
+                            .expect("recording follows a successful copy");
                         if let Some(previous) = &operation.previous {
-                            if previous.device_path != operation.desired.device_path {
+                            if previous.device_path != recorded_path {
                                 self.deferred_replacements.push((
                                     previous.device_path.clone(),
                                     operation.desired.track.id,
@@ -386,7 +241,10 @@ impl DeviceSyncMachine {
                             }
                         }
                     }
-                    Err(_) => self.fail_transfer(index),
+                    Err(_) => {
+                        self.copied_device_path = None;
+                        self.fail_transfer(index);
+                    }
                 }
                 self.ledger
                     .complete_unit(self.copied_bytes.take().unwrap_or_default());
