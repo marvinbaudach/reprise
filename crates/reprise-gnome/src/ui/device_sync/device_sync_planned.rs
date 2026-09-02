@@ -620,3 +620,20 @@ mod run_log;
 mod transcode_effect;
 #[path = "device_sync_transcode_prefetch.rs"]
 mod transcode_prefetch;
+
+#[cfg(test)]
+pub(crate) async fn cancel_prefetch_for_test(staged_path: PathBuf) -> bool {
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let handle = gtk4::glib::MainContext::ref_thread_default()
+        .spawn_local(async { std::future::pending::<Result<TranscodedFile, String>>().await });
+    let mut pending = HashMap::from([(
+        0,
+        transcode_prefetch::PendingTranscode {
+            handle,
+            cancellation: cancellation.clone(),
+            staged_path,
+        },
+    )]);
+    transcode_prefetch::cancel_all(&mut pending);
+    cancellation.load(std::sync::atomic::Ordering::SeqCst) && pending.is_empty()
+}

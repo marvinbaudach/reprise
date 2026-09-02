@@ -66,33 +66,17 @@ fn transcode_ahead_starts_the_next_encode_before_the_current_copy_and_keeps_path
 #[test]
 fn cancelling_with_prefetches_outstanding_discards_every_staged_output() {
     run(async {
-        let (_temp, conn) = fixture();
-        select_road_playlist(&conn, &[1, 2, 3, 4]);
-        let backend =
-            Rc::new(FakeBackend::new(vec![descriptor("a", true)], 0).with_transcode_delay(200));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        settle().await;
+        let temp = tempfile::tempdir().unwrap();
+        let staged_path = temp.path().join("prefetched.opus");
+        write_fake_output(&staged_path).unwrap();
 
-        runtime.sync_now("a").unwrap();
-        for _ in 0..100 {
-            if backend.state.transcode_starts.borrow().len() >= 3 {
-                break;
-            }
-            gtk4::glib::timeout_future(Duration::from_millis(1)).await;
-        }
-        let staged = backend
-            .state
-            .transcode_starts
-            .borrow()
-            .iter()
-            .map(|(_, path)| path.clone())
-            .collect::<Vec<_>>();
-        assert_eq!(staged.len(), 3, "exactly three encodes must be in flight");
+        let cancelled = cancel_prefetch_for_test(staged_path.clone()).await;
 
-        runtime.cancel_current("a");
-        settle().await;
-
-        assert!(staged.iter().all(|path| !path.exists()));
+        assert!(cancelled);
+        assert!(
+            !staged_path.exists(),
+            "cancel_all itself must discard the staged output"
+        );
     });
 }
 

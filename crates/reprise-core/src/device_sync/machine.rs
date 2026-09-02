@@ -393,7 +393,13 @@ impl DeviceSyncMachine {
                 self.enter_analysis_writes(index + 1)
             }
             (Awaiting::WriteLyrics(index), Event::LyricsWritten(result)) => {
-                self.ledger.complete_unit(result.unwrap_or_default());
+                match result {
+                    Ok(bytes) => self.ledger.complete_unit(bytes),
+                    Err(error) => {
+                        self.terminal_error = Some(error);
+                        self.ledger.complete_unit(0);
+                    }
+                }
                 self.enter_lyrics_writes(index + 1)
             }
             (Awaiting::WritePlaylist(index), Event::PlaylistWritten(result)) => match result {

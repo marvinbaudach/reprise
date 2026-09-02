@@ -573,7 +573,6 @@ impl DeviceBackend for FakeBackend {
             transcode_prefetch_tests::write_fake_output(&request.output)?;
             for _ in 0..state.transcode_delay_ms.get() {
                 if cancelled.load(Ordering::SeqCst) {
-                    reprise_core::device_sync::staging::discard(&request.output);
                     return Err("cancelled".into());
                 }
                 gtk4::glib::timeout_future(Duration::from_millis(1)).await;

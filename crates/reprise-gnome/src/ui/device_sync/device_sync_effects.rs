@@ -209,7 +209,17 @@ pub(super) async fn perform(
         }
         Effect::WriteLyrics { index } => {
             let planned = work.machine.borrow().plan().lyrics_writes[index].clone();
-            Event::LyricsWritten(copy_lyrics_sidecar(runtime, work, &planned).await)
+            let result = copy_lyrics_sidecar(runtime, work, &planned).await;
+            if let Err(error) = &result {
+                work.log.note(
+                    runtime,
+                    DeviationKind::Failed,
+                    Some(planned.track_id),
+                    &planned.device_path,
+                    error.clone(),
+                );
+            }
+            Event::LyricsWritten(result)
         }
         Effect::WritePlaylist {
             index,
