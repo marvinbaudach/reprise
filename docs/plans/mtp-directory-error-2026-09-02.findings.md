@@ -327,3 +327,29 @@ this rescue is for.
 
 The retry-after-backoff path never fired in these runs; it stays in for cause 2,
 which the earlier `Publish`/`CopyPartial` failures document.
+## Follow-up implemented (2026-09-02)
+
+The copy result now carries the relative path that the platform actually
+wrote. That path travels through the sync machine into `device_files`, and the
+replacement cleanup compares the previous ledger path with the recorded path
+rather than with the plan. An adopted spelling therefore cannot make a run
+delete the file it just wrote.
+
+The ancestor concern needs no additional planning state. A regression with one
+ledger row and one device-scan entry carrying the same adopted spelling proves
+that their two votes resolve to `DirectorySpelling::Resident`; the resulting
+delta has no copy or removal. The earlier ambiguity came from the ledger voting
+for the planned spelling while the scan voted for the adopted one. Recording
+the write outcome removes that disagreement, while the runtime directory walk
+continues to handle a missing album below a drifted artist directory.
+
+The agent command bridge now logs successful Start and Cancel commands with the
+resolved device id. Future sync runs initiated through the MCP surface can
+therefore be distinguished from page starts in the journal.
+
+Analysis and lyrics sidecars and the track metadata list do not own separate
+`device_files` rows. Their copy outcomes remain intentionally unrecorded; the
+audio file's ledger row is the single inventory record for the track.
+
+The on-device arm remains unverified because no phone was attached for this
+follow-up.
