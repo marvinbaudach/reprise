@@ -49,6 +49,8 @@ struct DeviceState {
     cancellable: Option<gio::Cancellable>,
     storage: DeviceStorageSnapshot,
     managed_files: Vec<ManagedDeviceFile>,
+    partial_paths: Vec<String>,
+    lyrics_files: Vec<ManagedDeviceFile>,
     managed_track_count: usize,
     scanning: bool,
     scan_generation: u64,
@@ -96,6 +98,8 @@ impl DeviceState {
             cancellable: None,
             storage: DeviceStorageSnapshot::default(),
             managed_files: Vec::new(),
+            partial_paths: Vec::new(),
+            lyrics_files: Vec::new(),
             managed_track_count: 0,
             scanning: false,
             scan_generation: 0,
@@ -558,4 +562,7 @@ mod target_actions;
 
 pub(super) use picker::*;
 #[cfg(test)]
-pub(super) use planned::{record_rejected_start, RunLog, SyncInitiator, SyncStartError};
+pub(super) use planned::{
+    cancel_prefetch_for_test, record_rejected_start, transcode_without_prefetch_for_test, RunLog,
+    SyncInitiator, SyncStartError,
+};

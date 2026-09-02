@@ -50,6 +50,8 @@ fn input(selected: Vec<SelectionSource>, playlists: Vec<MirrorPlaylistSnapshot>)
         inventory: Vec::new(),
         playlist_inventory: Vec::new(),
         managed_files: Vec::new(),
+        partial_paths: Vec::new(),
+        lyrics_files: Vec::new(),
         managed_files_scanned: false,
         desktop_analyses: Vec::new(),
     }
@@ -90,6 +92,9 @@ fn synced_audio_input() -> MirrorInput {
     });
     mirror_input
 }
+
+#[path = "mirror_lyrics_tests.rs"]
+mod lyrics_tests;
 
 #[test]
 fn a_resident_analysis_of_the_expected_size_plans_no_write() {

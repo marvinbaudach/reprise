@@ -11,6 +11,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use gtk4::gio;
@@ -28,6 +29,7 @@ use crate::ui::device_sync::device_sync_runtime::*;
 pub(super) type TestFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 type DeviceSubscriber = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
 type DeleteObserver = Rc<dyn Fn(&str)>;
+type TranscodeObserver = Rc<dyn Fn(&std::path::Path)>;
 
 #[derive(Clone)]
 struct CopyGate {
@@ -64,9 +66,8 @@ pub(super) struct FakeState {
     /// the selected target was used, without touching a real or simulated
     /// filesystem.
     pub(super) managed_copies: RefCell<Vec<(String, String)>>,
-    /// Bytes handed to the backend for generated attachments. Audio produced
-    /// by the fake transcoder has no real temporary file, so absent sources
-    /// are simply not recorded here.
+    /// Bytes handed to the backend for generated attachments and fake
+    /// transcoded audio.
     pub(super) managed_copy_contents: RefCell<Vec<(String, String, Vec<u8>)>>,
     pub(super) managed_reads: RefCell<Vec<(String, String)>>,
     pub(super) managed_deleted: RefCell<Vec<(String, String)>>,
@@ -77,14 +78,24 @@ pub(super) struct FakeState {
     /// layer uses, not just what `device.targets` records in memory.
     pub(super) transfer_storage_ids: RefCell<Vec<(String, Option<StorageId>)>>,
     pub(super) inspection_roots: RefCell<Vec<String>>,
+    pub(super) managed_root_enumerations: Cell<u32>,
     pub(super) last_inspected_target: RefCell<Option<SyncTarget>>,
     pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
+    pub(super) partial_paths: RefCell<Vec<String>>,
+    pub(super) lyrics_files: RefCell<Vec<ManagedDeviceFile>>,
+    pub(super) cleaned_partials: RefCell<Vec<String>>,
     pub(super) ejected: RefCell<Vec<String>>,
     pub(super) planned_operations: RefCell<Vec<(String, &'static str)>>,
+    pub(super) transcode_starts: RefCell<Vec<(PathBuf, PathBuf)>>,
+    pub(super) copy_sources: RefCell<Vec<(PathBuf, String)>>,
     available_bytes: Cell<Option<u64>>,
     total_bytes: Cell<Option<u64>>,
     storage_access: Cell<DeviceStorageAccess>,
     transcode_probe_error: RefCell<Option<String>>,
+    transcode_delay_ms: Cell<u64>,
+    transcode_failures: RefCell<HashMap<PathBuf, String>>,
+    transcode_observer: RefCell<Option<TranscodeObserver>>,
+    transcode_output_override: RefCell<Option<PathBuf>>,
     cleanup_error: RefCell<Option<String>>,
     sidecar_replace_error: RefCell<Option<String>>,
     analysis_sidecar_replace_error: RefCell<Option<String>>,
@@ -135,6 +146,26 @@ impl FakeBackend {
     pub(super) fn with_transcode_probe_error(self, error: &str) -> Self {
         self.state.transcode_probe_error.replace(Some(error.into()));
         self
+    }
+
+    pub(super) fn with_transcode_delay(self, delay_ms: u64) -> Self {
+        self.state.transcode_delay_ms.set(delay_ms);
+        self
+    }
+
+    pub(super) fn fail_transcode_for(&self, source: PathBuf, error: &str) {
+        self.state
+            .transcode_failures
+            .borrow_mut()
+            .insert(source, error.into());
+    }
+
+    pub(super) fn observe_transcode_completion(&self, observer: TranscodeObserver) {
+        self.state.transcode_observer.replace(Some(observer));
+    }
+
+    pub(super) fn return_transcode_from(&self, path: PathBuf) {
+        self.state.transcode_output_override.replace(Some(path));
     }
 
     /// Came in with the dev merge: `MTP-21`'s proven-transfer work publishes
@@ -290,6 +321,11 @@ impl DeviceBackend for FakeBackend {
         let gate = self.state.inspection_gate.borrow_mut().take();
         let inspection_error = self.state.inspection_error.borrow_mut().take();
         let managed_files = self.state.managed_files.borrow().clone();
+        let partial_paths = self.state.partial_paths.borrow().clone();
+        let lyrics_files = self.state.lyrics_files.borrow().clone();
+        self.state
+            .managed_root_enumerations
+            .set(self.state.managed_root_enumerations.get().saturating_add(1));
         self.state.inspection_roots.borrow_mut().push(root_uri);
         self.state.last_inspected_target.replace(Some(target));
         Box::pin(async move {
@@ -315,6 +351,8 @@ impl DeviceBackend for FakeBackend {
                     ..DeviceStorageSnapshot::default()
                 },
                 managed_files,
+                partial_paths,
+                lyrics_files,
             })
         })
     }
@@ -355,11 +393,18 @@ impl DeviceBackend for FakeBackend {
     ) -> TestFuture<CopyOutcome> {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
+        state
+            .copy_sources
+            .borrow_mut()
+            .push((source_path.clone(), relative_target.clone()));
         let source_contents = std::fs::read(source_path).ok();
         let is_generated_metadata = matches!(
             relative_target.as_str(),
             reprise_core::device_sync::track_metadata_list::FILE_NAME
                 | reprise_core::device_sync::listen_report::ACKNOWLEDGEMENT_FILE_NAME
+        );
+        let is_lyrics = reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(
+            std::path::Path::new(&relative_target),
         );
         let is_playlists_target = state
             .last_inspected_target
@@ -449,14 +494,19 @@ impl DeviceBackend for FakeBackend {
                 return Err("cancelled".into());
             }
             if is_playlists_target {
-                let mut managed_files = state.managed_files.borrow_mut();
-                if let Some(file) = managed_files
+                let files = if is_lyrics {
+                    &state.lyrics_files
+                } else {
+                    &state.managed_files
+                };
+                let mut files = files.borrow_mut();
+                if let Some(file) = files
                     .iter_mut()
                     .find(|file| file.relative_path == relative_target)
                 {
                     file.size_bytes = expected_size;
                 } else {
-                    managed_files.push(ManagedDeviceFile {
+                    files.push(ManagedDeviceFile {
                         relative_path: relative_target.clone(),
                         size_bytes: expected_size,
                     });
@@ -486,9 +536,26 @@ impl DeviceBackend for FakeBackend {
         _root_uri: String,
         _target_path: String,
         _storage_id: Option<StorageId>,
+        partial_paths: Vec<String>,
     ) -> BackendFuture<u32> {
         let error = self.state.cleanup_error.borrow().clone();
-        Box::pin(async move { error.map_or(Ok(0), Err) })
+        let state = self.state.clone();
+        Box::pin(async move {
+            if let Some(error) = error {
+                return Err(error);
+            }
+            let partial_paths = partial_paths
+                .into_iter()
+                .filter(|path| path.ends_with(".part"))
+                .collect::<Vec<_>>();
+            let removed = u32::try_from(partial_paths.len()).unwrap_or(u32::MAX);
+            state
+                .partial_paths
+                .borrow_mut()
+                .retain(|candidate| !partial_paths.iter().any(|removed| removed == candidate));
+            state.cleaned_partials.borrow_mut().extend(partial_paths);
+            Ok(removed)
+        })
     }
 
     fn probe_transcode(&self, _profile: TranscodeProfile) -> Result<(), String> {
@@ -502,7 +569,7 @@ impl DeviceBackend for FakeBackend {
     fn transcode_track(
         &self,
         request: TranscodeRequest,
-        _cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> TestFuture<TranscodedFile> {
         let state = self.state.clone();
         Box::pin(async move {
@@ -510,8 +577,38 @@ impl DeviceBackend for FakeBackend {
                 .planned_operations
                 .borrow_mut()
                 .push(("fake".into(), "transcode"));
+            state
+                .transcode_starts
+                .borrow_mut()
+                .push((request.source.clone(), request.output.clone()));
+            transcode_prefetch_tests::write_fake_output(&request.output)?;
+            for _ in 0..state.transcode_delay_ms.get() {
+                if cancelled.load(Ordering::SeqCst) {
+                    return Err("cancelled".into());
+                }
+                gtk4::glib::timeout_future(Duration::from_millis(1)).await;
+            }
+            if let Some(error) = state
+                .transcode_failures
+                .borrow()
+                .get(&request.source)
+                .cloned()
+            {
+                return Err(error);
+            }
+            let output = state
+                .transcode_output_override
+                .borrow()
+                .clone()
+                .unwrap_or_else(|| request.output.clone());
+            if output != request.output {
+                transcode_prefetch_tests::write_fake_output(&output)?;
+            }
+            if let Some(observer) = state.transcode_observer.borrow().clone() {
+                observer(&output);
+            }
             Ok(TranscodedFile {
-                path: request.output,
+                path: output,
                 size_bytes: 100,
             })
         })
@@ -652,6 +749,11 @@ impl DeviceBackend for FakeBackend {
         })
     }
 }
+
+#[path = "device_sync_lyrics_gate_tests.rs"]
+mod lyrics_gate_tests;
+#[path = "device_sync_transcode_prefetch_tests.rs"]
+mod transcode_prefetch_tests;
 
 pub(super) fn descriptor(id: &str, reconnectable: bool) -> DeviceDescriptor {
     DeviceDescriptor {

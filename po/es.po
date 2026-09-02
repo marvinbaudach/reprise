@@ -6566,6 +6566,11 @@ msgstr "Escribiendo análisis · {done} de {total}"
 
 #: crates/reprise-view/src/device_sync.rs:78
 #, rust-format
+msgid "Writing lyrics · {done} of {total}"
+msgstr "Escribiendo letras · {done} de {total}"
+
+#: crates/reprise-view/src/device_sync.rs:78
+#, rust-format
 msgid "Writing playlists · {done} of {total}"
 msgstr "Escribiendo listas · {done} de {total}"
 

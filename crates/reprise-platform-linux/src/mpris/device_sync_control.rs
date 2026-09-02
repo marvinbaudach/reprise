@@ -300,6 +300,7 @@ fn phase_name(phase: &AgentDeviceSyncPhase) -> &'static str {
         AgentDeviceSyncPhase::Transcoding => "transcoding",
         AgentDeviceSyncPhase::Copying => "copying",
         AgentDeviceSyncPhase::WritingAnalysis => "writing_analysis",
+        AgentDeviceSyncPhase::WritingLyrics => "writing_lyrics",
         AgentDeviceSyncPhase::WritingPlaylists => "writing_playlists",
         AgentDeviceSyncPhase::WritingTrackMetadata => "writing_track_metadata",
         AgentDeviceSyncPhase::Finishing => "finishing",

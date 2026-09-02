@@ -6,7 +6,7 @@
 //! run, performs the I/O and database writes the machine asks for, and feeds
 //! the outcome back.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Instant;
 
@@ -82,14 +82,22 @@ struct PlannedWork {
     cancelled: Arc<AtomicBool>,
     /// Interrupts GIO copies.
     cancellable: gio::Cancellable,
-    /// The file the last transcode produced, awaiting its copy. The machine
-    /// always follows a successful transcode with its copy, and that copy
-    /// deletes the file whether it succeeded or not, so no other path has to.
-    transcoded: Option<PathBuf>,
+    /// Completed transcodes awaiting their matching indexed copy.
+    transcoded: HashMap<usize, PathBuf>,
+    /// Encodes already running ahead of the machine's current transfer.
+    /// Their cancellation and both staged-output cleanup paths live in
+    /// `device_sync_transcode_prefetch.rs` beside this type's `Drop` impl.
+    transcode_ahead: HashMap<usize, transcode_prefetch::PendingTranscode>,
     /// The effects `Event::Start` unlocked, awaiting the first main-loop turn.
     pending: Vec<Effect>,
     /// What this run did, recorded as it happens (MTP-20).
     log: RunLog,
+}
+
+impl PlannedWork {
+    fn transfer(&self, index: usize) -> Option<TransferOperation> {
+        self.machine.borrow().transfers().get(index).cloned()
+    }
 }
 
 fn transcode_profile(action: TransferAction) -> Option<TranscodeProfile> {
@@ -176,6 +184,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
             finish_sync(&runtime, &work, outcome);
             return;
         }
+        transcode_prefetch::fill(&runtime, &mut work, &effect);
         let event = effects::perform(&runtime, &mut work, effect).await;
         if !is_current_run(&runtime, &work) {
             return;
@@ -232,10 +241,7 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
                 // final byte count is discarded and the displayed rate freezes.
                 if matches!(
                     phase,
-                    PlannedSyncPhase::Syncing {
-                        step: SyncStep::Copying | SyncStep::WritingAnalysis,
-                        ..
-                    }
+                    PlannedSyncPhase::Syncing { step, .. } if step.reports_transfer_rate()
                 ) {
                     device.mtp_rate.begin_copy(Instant::now());
                 } else {
@@ -246,6 +252,12 @@ fn publish_phase(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork) {
         }
     }
     runtime.notify();
+}
+
+#[cfg(test)]
+#[test]
+fn lyrics_writes_keep_the_mtp_rate_baseline_active() {
+    assert!(SyncStep::WritingLyrics.reports_transfer_rate());
 }
 
 fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: SyncOutcome) {
@@ -581,7 +593,8 @@ impl DeviceSyncRuntime {
                     playlists_storage: target.storage_id,
                     cancelled,
                     cancellable,
-                    transcoded: None,
+                    transcoded: HashMap::new(),
+                    transcode_ahead: HashMap::new(),
                     pending,
                     log,
                 }
@@ -614,3 +627,76 @@ impl DeviceSyncRuntime {
 mod effects;
 #[path = "device_sync_run_log.rs"]
 mod run_log;
+#[path = "device_sync_transcode_effect.rs"]
+mod transcode_effect;
+#[path = "device_sync_transcode_prefetch.rs"]
+mod transcode_prefetch;
+
+#[cfg(test)]
+pub(crate) struct PrefetchCleanupEvidence {
+    pub(crate) cancelled: bool,
+    pub(crate) pending_drained: bool,
+    pub(crate) existed_until_encoder_stopped: bool,
+}
+
+#[cfg(test)]
+impl DeviceSyncRuntime {
+    pub(crate) fn supersede_current_run_for_test(&self, device_id: &str) {
+        if let Some(device) = self
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.machine = None;
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) async fn cancel_prefetch_for_test(staged_path: PathBuf) -> PrefetchCleanupEvidence {
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let (release, released) = async_channel::bounded(1);
+    let observed_path = staged_path.clone();
+    let existed_until_encoder_stopped = Rc::new(Cell::new(false));
+    let observed = existed_until_encoder_stopped.clone();
+    let handle = gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
+        let _ = released.recv().await;
+        observed.set(observed_path.exists());
+        Ok(TranscodedFile {
+            path: observed_path,
+            size_bytes: 0,
+        })
+    });
+    let mut pending = HashMap::from([(
+        0,
+        transcode_prefetch::PendingTranscode {
+            handle,
+            run_cancellation: cancellation.clone(),
+            staged_path: staged_path.clone(),
+        },
+    )]);
+    transcode_prefetch::cancel_all(&mut pending);
+    let _ = release.send(()).await;
+    for _ in 0..100 {
+        if existed_until_encoder_stopped.get() && !staged_path.exists() {
+            break;
+        }
+        gtk4::glib::timeout_future(Duration::from_millis(1)).await;
+    }
+    PrefetchCleanupEvidence {
+        cancelled: cancellation.load(std::sync::atomic::Ordering::SeqCst),
+        pending_drained: pending.is_empty(),
+        existed_until_encoder_stopped: existed_until_encoder_stopped.get(),
+    }
+}
+
+#[cfg(test)]
+pub(crate) async fn transcode_without_prefetch_for_test(
+    backend: &dyn DeviceBackend,
+    device_id: &str,
+    entry: &reprise_core::device_sync::DesiredManagedFile,
+    action: TransferAction,
+) -> Result<TranscodedFile, String> {
+    transcode_effect::without_prefetch_for_test(backend, device_id, entry, action).await
+}

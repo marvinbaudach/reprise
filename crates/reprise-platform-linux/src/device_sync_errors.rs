@@ -10,8 +10,8 @@ pub enum CopyOutcome {
 pub enum WriteStep {
     ResolveStorage,
     CreateDirectories,
-    CopyPartial,
-    VerifyPartial,
+    CopyTarget,
+    VerifyTarget,
     Publish,
 }
 
@@ -20,8 +20,8 @@ impl fmt::Display for WriteStep {
         formatter.write_str(match self {
             Self::ResolveStorage => "resolving the target storage",
             Self::CreateDirectories => "creating the destination directory",
-            Self::CopyPartial => "copying the partial file",
-            Self::VerifyPartial => "verifying the partial file",
+            Self::CopyTarget => "copying the destination file",
+            Self::VerifyTarget => "verifying the destination file",
             Self::Publish => "publishing the destination file",
         })
     }
@@ -57,7 +57,7 @@ impl fmt::Display for DeviceIoError {
         match self {
             Self::InvalidRelativePath => formatter.write_str("invalid managed device path"),
             Self::SizeMismatch { expected, actual } => formatter.write_fmt(format_args!(
-                "partial device file has {actual} bytes, expected {expected}"
+                "device file has {actual} bytes, expected {expected}"
             )),
             Self::PublishNotApplied { name } => formatter.write_fmt(format_args!(
                 "the device acknowledged publishing {name} but the file never appeared"

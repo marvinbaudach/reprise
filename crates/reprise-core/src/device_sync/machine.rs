@@ -18,7 +18,13 @@ use std::collections::HashSet;
 
 use super::ledger::WorkLedger;
 use super::phase_transitions;
-use super::{DesiredManagedFile, DeviceFileRecord, MirrorPlan, SelectionSource, TransferAction};
+use super::{
+    AnalysisSidecarWrite, DesiredManagedFile, DeviceFileRecord, MirrorPlan, SelectionSource,
+    TransferAction,
+};
+
+#[path = "machine_sidecars.rs"]
+mod sidecars;
 
 /// The step a run is currently working on.
 ///
@@ -30,8 +36,18 @@ pub enum SyncStep {
     Transcoding,
     Copying,
     WritingAnalysis,
+    WritingLyrics,
     WritingPlaylists,
     WritingTrackMetadata,
+}
+
+impl SyncStep {
+    pub fn reports_transfer_rate(self) -> bool {
+        matches!(
+            self,
+            Self::Copying | Self::WritingAnalysis | Self::WritingLyrics
+        )
+    }
 }
 
 /// The externally visible progress of a run.
@@ -68,7 +84,7 @@ pub enum TransferSource {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     /// Delete leftover partial files under the device root.
-    CleanPartials,
+    CleanPartials(Vec<String>),
     Transcode {
         index: usize,
         action: TransferAction,
@@ -84,6 +100,9 @@ pub enum Effect {
         device_size: u64,
     },
     WriteAnalysis {
+        index: usize,
+    },
+    WriteLyrics {
         index: usize,
     },
     WritePlaylist {
@@ -150,6 +169,7 @@ pub enum Event {
         copied: u64,
     },
     AnalysisWritten(Result<u64, String>),
+    LyricsWritten(Result<u64, String>),
     PlaylistWritten(Result<(), String>),
     PlaylistRecorded(Result<(), String>),
     TrackRemoved(Result<(), String>),
@@ -177,6 +197,7 @@ pub(super) enum Awaiting {
     Copy(usize),
     RecordFile(usize),
     WriteAnalysis(usize),
+    WriteLyrics(usize),
     WritePlaylist(usize),
     RecordPlaylist(usize),
     RemovePlaylist(usize),
@@ -220,7 +241,7 @@ impl DeviceSyncMachine {
             .iter()
             .map(|write| write.source.clone())
             .collect();
-        let ledger = WorkLedger::for_plan(&plan, false);
+        let ledger = sidecars::work_ledger(&plan, false);
         Self {
             device_id,
             plan,
@@ -244,7 +265,7 @@ impl DeviceSyncMachine {
 
     pub fn with_track_metadata_list(mut self) -> Self {
         self.writes_track_metadata_list = true;
-        self.ledger = WorkLedger::for_plan(&self.plan, true);
+        self.ledger = sidecars::work_ledger(&self.plan, true);
         self
     }
 
@@ -315,7 +336,7 @@ impl DeviceSyncMachine {
             (Awaiting::Start, Event::Start) => {
                 self.phase = self.opening_phase();
                 self.awaiting = Awaiting::Partials;
-                vec![Effect::CleanPartials]
+                vec![Effect::CleanPartials(self.plan.partial_paths.clone())]
             }
             (Awaiting::Partials, Event::PartialsCleaned(result)) => {
                 if let Err(error) = result {
@@ -380,6 +401,16 @@ impl DeviceSyncMachine {
                     }
                 }
                 self.enter_analysis_writes(index + 1)
+            }
+            (Awaiting::WriteLyrics(index), Event::LyricsWritten(result)) => {
+                match result {
+                    Ok(bytes) => self.ledger.complete_unit(bytes),
+                    Err(error) => {
+                        self.terminal_error = Some(error);
+                        self.ledger.complete_unit(0);
+                    }
+                }
+                self.enter_lyrics_writes(index + 1)
             }
             (Awaiting::WritePlaylist(index), Event::PlaylistWritten(result)) => match result {
                 Ok(()) => {
@@ -480,7 +511,7 @@ impl DeviceSyncMachine {
     fn observe_copy_progress(&mut self, copied: u64) {
         if !matches!(
             self.awaiting,
-            Awaiting::Copy(_) | Awaiting::WriteAnalysis(_)
+            Awaiting::Copy(_) | Awaiting::WriteAnalysis(_) | Awaiting::WriteLyrics(_)
         ) {
             return;
         }
@@ -547,23 +578,6 @@ impl DeviceSyncMachine {
 
     fn advance_past_transfer(&mut self, index: usize) -> Vec<Effect> {
         self.enter_transfers(index + 1)
-    }
-
-    fn enter_analysis_writes(&mut self, from: usize) -> Vec<Effect> {
-        if self.cancelled {
-            return self.finish();
-        }
-        let Some(write) = self.plan.analysis_writes.get(from) else {
-            return self.enter_playlists();
-        };
-        self.ledger.begin_unit(write.size_bytes);
-        self.phase = phase_transitions::syncing(
-            &self.ledger,
-            SyncStep::WritingAnalysis,
-            write.device_path.clone(),
-        );
-        self.awaiting = Awaiting::WriteAnalysis(from);
-        vec![Effect::WriteAnalysis { index: from }]
     }
 
     fn enter_playlists(&mut self) -> Vec<Effect> {
@@ -734,21 +748,6 @@ impl DeviceSyncMachine {
             failed_tracks: self.failures.clone(),
             verified_sources: self.verified_sources(),
         })]
-    }
-
-    /// The phase a run shows before its first step reports anything.
-    ///
-    /// Partial cleanup runs first but has no step of its own, so the run opens
-    /// on whichever step will actually do the first visible work. Naming a
-    /// step that runs later — as this did with `Removing` — tells the user the
-    /// run is doing something it has not started.
-    fn opening_phase(&self) -> PlannedSyncPhase {
-        phase_transitions::opening(
-            &self.transfers,
-            &self.plan,
-            &self.ledger,
-            self.writes_track_metadata_list,
-        )
     }
 
     fn fail_track(&mut self, track_id: i64) {

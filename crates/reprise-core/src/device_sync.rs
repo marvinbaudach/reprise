@@ -424,6 +424,9 @@ mod mirror_inventory_truth_tests;
 mod mirror_tests;
 
 #[cfg(test)]
+#[path = "device_sync/machine_lyrics_tests.rs"]
+mod machine_lyrics_tests;
+#[cfg(test)]
 #[path = "device_sync/machine_tests.rs"]
 mod machine_tests;
 

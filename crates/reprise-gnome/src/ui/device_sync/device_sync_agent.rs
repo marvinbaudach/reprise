@@ -290,6 +290,7 @@ fn agent_phase(phase: PlannedSyncPhase) -> (AgentDeviceSyncPhase, String) {
                 SyncStep::Transcoding => AgentDeviceSyncPhase::Transcoding,
                 SyncStep::Copying => AgentDeviceSyncPhase::Copying,
                 SyncStep::WritingAnalysis => AgentDeviceSyncPhase::WritingAnalysis,
+                SyncStep::WritingLyrics => AgentDeviceSyncPhase::WritingLyrics,
                 SyncStep::WritingPlaylists => AgentDeviceSyncPhase::WritingPlaylists,
                 SyncStep::WritingTrackMetadata => AgentDeviceSyncPhase::WritingTrackMetadata,
             },
@@ -315,6 +316,26 @@ mod tests {
                 AgentDeviceSyncWarning::UnavailableNotOnDevice,
                 AgentDeviceSyncWarning::UnsafeManagedItem,
             ]
+        );
+    }
+
+    #[test]
+    fn lyrics_writes_have_their_own_agent_phase() {
+        let phase = PlannedSyncPhase::Syncing {
+            step: SyncStep::WritingLyrics,
+            done: 0,
+            total: 1,
+            current_track: "Artist/Album/01 Song.lrc".into(),
+            unit_bytes_done: 0,
+            unit_bytes_total: 42,
+        };
+
+        assert_eq!(
+            agent_phase(phase),
+            (
+                AgentDeviceSyncPhase::WritingLyrics,
+                "Artist/Album/01 Song.lrc".into(),
+            )
         );
     }
 }

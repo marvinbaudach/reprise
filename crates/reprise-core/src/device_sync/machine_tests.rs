@@ -139,7 +139,7 @@ fn mtp_18_a_run_opens_on_the_step_that_actually_runs_first() {
 
     let (machine, effects) = start(plan);
 
-    assert_eq!(effects, vec![Effect::CleanPartials]);
+    assert_eq!(effects, vec![Effect::CleanPartials(Vec::new())]);
     assert_eq!(
         machine.phase(),
         &PlannedSyncPhase::Syncing {
@@ -672,7 +672,7 @@ fn a_playlist_that_is_no_longer_mirrored_is_deleted_and_forgotten() {
 fn an_empty_plan_finishes_without_touching_the_device() {
     let (mut machine, effects) = start(empty_plan());
 
-    assert_eq!(effects, vec![Effect::CleanPartials]);
+    assert_eq!(effects, vec![Effect::CleanPartials(Vec::new())]);
     assert_eq!(
         machine.dispatch(Event::PartialsCleaned(Ok(()))),
         vec![Effect::Finished(SyncOutcome::Completed {

@@ -465,7 +465,7 @@ fn successful_event(
     effect: Effect,
 ) -> Option<Event> {
     Some(match effect {
-        Effect::CleanPartials => Event::PartialsCleaned(Ok(())),
+        Effect::CleanPartials(_) => Event::PartialsCleaned(Ok(())),
         Effect::CopyTrack { bytes, .. } => {
             machine.dispatch(Event::CopyProgress { copied: bytes / 2 });
             phases.push(machine.phase().clone());

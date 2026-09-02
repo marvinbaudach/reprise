@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -330,64 +329,32 @@ impl DeviceStorage {
         &self,
         storage_id: Option<StorageId>,
         target_path: &str,
+        partial_paths: &[String],
     ) -> Result<u32, DeviceIoError> {
         let storage = self.resolve_target_storage(storage_id).await?;
         let managed_root = Self::managed_child(&storage, target_path, &[])?;
-        let mut pending = VecDeque::from([managed_root.clone()]);
         let mut removed = 0_u32;
-        while let Some(directory) = pending.pop_front() {
-            let enumerator = match directory
-                .enumerate_children_future(
-                    "standard::name,standard::type",
-                    gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
-                    gio::glib::Priority::DEFAULT,
-                )
-                .await
-            {
-                Ok(enumerator) => enumerator,
-                Err(error) if error.matches(gio::IOErrorEnum::NotFound) => continue,
-                Err(error) => {
-                    warn_cleanup_failure(&managed_root, &directory, &error, "enumerate directory");
-                    continue;
-                }
+        for relative_path in partial_paths {
+            if !relative_path.ends_with(PARTIAL_SUFFIX) {
+                continue;
+            }
+            let Ok(components) = safe_relative_components(relative_path) else {
+                tracing::warn!(
+                    path = %relative_path,
+                    "device sync: ignored an invalid listed partial path"
+                );
+                continue;
             };
-            loop {
-                let batch = match enumerator
-                    .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
-                    .await
-                {
-                    Ok(batch) => batch,
-                    Err(error) => {
-                        // This handles remote enumerators disappearing between batches. Local
-                        // chmod fixtures cannot fail after open; coverage would require an
-                        // injectable GFileEnumerator.
-                        warn_cleanup_failure(
-                            &managed_root,
-                            &directory,
-                            &error,
-                            "continue enumerating directory",
-                        );
-                        break;
-                    }
-                };
-                if batch.is_empty() {
-                    break;
-                }
-                for info in batch {
-                    let child = directory.child(info.name());
-                    if info.file_type() == gio::FileType::Directory {
-                        pending.push_back(child);
-                    } else if info.name().to_string_lossy().ends_with(PARTIAL_SUFFIX) {
-                        match child.delete_future(gio::glib::Priority::DEFAULT).await {
-                            Ok(()) => removed = removed.saturating_add(1),
-                            Err(error) => warn_cleanup_failure(
-                                &managed_root,
-                                &child,
-                                &error,
-                                "delete partial file",
-                            ),
-                        }
-                    }
+            let partial = components
+                .iter()
+                .fold(managed_root.clone(), |parent, component| {
+                    parent.child(component)
+                });
+            match partial.delete_future(gio::glib::Priority::DEFAULT).await {
+                Ok(()) => removed = removed.saturating_add(1),
+                Err(error) if error.matches(gio::IOErrorEnum::NotFound) => {}
+                Err(error) => {
+                    warn_cleanup_failure(&managed_root, &partial, &error, "delete partial file");
                 }
             }
         }
@@ -436,18 +403,11 @@ impl DeviceStorage {
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let target = Self::managed_child(&storage, target_path, &components)?;
-        let target_name = components.last().expect("validated nonempty path");
-        let partial_components = components[..components.len() - 1]
-            .iter()
-            .cloned()
-            .chain([format!("{target_name}{PARTIAL_SUFFIX}")])
-            .collect::<Vec<_>>();
-        let partial = Self::managed_child(&storage, target_path, &partial_components)?;
         let progress = Rc::new(RefCell::new(progress));
         let callback_progress = progress.clone();
         let (sender, receiver) = async_channel::bounded(1);
         source.copy_async(
-            &partial,
+            &target,
             gio::FileCopyFlags::OVERWRITE,
             gio::glib::Priority::DEFAULT,
             Some(cancellable),
@@ -458,27 +418,14 @@ impl DeviceStorage {
                 let _ = sender.try_send(result);
             },
         );
-        let copied = receiver
-            .recv()
-            .await
-            .map_err(|_| DeviceIoError::InvalidRelativePath.during(WriteStep::CopyPartial))?;
-        if let Err(error) = copied {
-            delete_if_present(&partial).await;
-            return Err(DeviceIoError::from(error).during(WriteStep::CopyPartial));
-        }
-        let actual_size = target_size(&partial)
-            .await
-            .map_err(|error| error.during(WriteStep::VerifyPartial))?
-            .unwrap_or(0);
-        if actual_size != expected_size {
-            delete_if_present(&partial).await;
-            return Err(DeviceIoError::SizeMismatch {
-                expected: expected_size,
-                actual: actual_size,
+        let copied = match receiver.recv().await {
+            Ok(copied) => copied,
+            Err(_) => {
+                delete_if_present(&target).await;
+                return Err(DeviceIoError::InvalidRelativePath.during(WriteStep::CopyTarget));
             }
-            .during(WriteStep::VerifyPartial));
-        }
-        publish(&partial, &target, expected_size).await?;
+        };
+        finish_managed_copy(&target, cancellable, copied, expected_size).await?;
         (progress.borrow_mut())(expected_size, expected_size);
         Ok(CopyOutcome::Copied)
     }
@@ -615,6 +562,28 @@ async fn target_size(file: &gio::File) -> Result<Option<u64>, DeviceIoError> {
     }
 }
 
+async fn finish_managed_copy(
+    target: &gio::File,
+    cancellable: &gio::Cancellable,
+    copied: Result<(), gio::glib::Error>,
+    expected_size: u64,
+) -> Result<(), DeviceIoError> {
+    if let Err(error) = copied {
+        delete_if_present(target).await;
+        return Err(DeviceIoError::from(error).during(WriteStep::CopyTarget));
+    }
+    if cancellable.is_cancelled() {
+        delete_if_present(target).await;
+        let error = gio::glib::Error::new(gio::IOErrorEnum::Cancelled, "Operation cancelled");
+        return Err(DeviceIoError::from(error).during(WriteStep::CopyTarget));
+    }
+    if let Err(error) = verify_file(target, expected_size, WriteStep::VerifyTarget).await {
+        delete_if_present(target).await;
+        return Err(error);
+    }
+    Ok(())
+}
+
 /// Moves a finished `.part` file onto its final name and proves it landed.
 ///
 /// Both steps exist because of how MTP answers an overwriting rename: gvfs reports success, drops the previous file, and never applies the new
@@ -650,6 +619,14 @@ async fn publish(
 
 /// Confirms that a published file is on the device with the bytes we sent.
 async fn verify_published(file: &gio::File, expected_size: u64) -> Result<(), DeviceIoError> {
+    verify_file(file, expected_size, WriteStep::Publish).await
+}
+
+async fn verify_file(
+    file: &gio::File,
+    expected_size: u64,
+    step: WriteStep,
+) -> Result<(), DeviceIoError> {
     match target_size(file).await {
         Ok(Some(actual)) if actual == expected_size => Ok(()),
         Ok(Some(actual)) => Err(DeviceIoError::SizeMismatch {
@@ -664,7 +641,7 @@ async fn verify_published(file: &gio::File, expected_size: u64) -> Result<(), De
         }),
         Err(error) => Err(error),
     }
-    .map_err(|error| error.during(WriteStep::Publish))
+    .map_err(|error| error.during(step))
 }
 
 async fn delete_if_present(file: &gio::File) {
@@ -673,6 +650,54 @@ async fn delete_if_present(file: &gio::File) {
             tracing::warn!(%error, "failed to remove partial device sync file");
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn a_mid_copy_error_discards_the_incomplete_final_file() {
+    let (temp, _storage) = tests::fixture();
+    let target_path = temp.path().join("incomplete.opus");
+    std::fs::write(&target_path, b"truncated").unwrap();
+    let target = gio::File::for_path(&target_path);
+    let copy_error = gio::glib::Error::new(gio::IOErrorEnum::Failed, "injected copy failure");
+
+    let result = tests::run(finish_managed_copy(
+        &target,
+        &gio::Cancellable::new(),
+        Err(copy_error),
+        99,
+    ));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CopyTarget,
+            ..
+        })
+    ));
+    assert!(!target_path.exists());
+}
+
+#[cfg(test)]
+#[test]
+fn cancellation_after_a_successful_copy_discards_the_final_file() {
+    let (temp, _storage) = tests::fixture();
+    let target_path = temp.path().join("cancelled.opus");
+    std::fs::write(&target_path, b"complete").unwrap();
+    let target = gio::File::for_path(&target_path);
+    let cancellable = gio::Cancellable::new();
+    cancellable.cancel();
+
+    let result = tests::run(finish_managed_copy(&target, &cancellable, Ok(()), 8));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CopyTarget,
+            ..
+        })
+    ));
+    assert!(!target_path.exists());
 }
 
 #[cfg(test)]
