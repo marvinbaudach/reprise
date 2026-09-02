@@ -92,23 +92,17 @@ fn playlist_record(id: i64) -> DevicePlaylistRecord {
 }
 
 fn empty_plan() -> MirrorPlan {
-    MirrorPlan {
-        per_playlist: Vec::new(),
-        desired_files: Vec::new(),
-        copy: Vec::new(),
-        replace: Vec::new(),
-        analysis_writes: Vec::new(),
-        remove: Vec::new(),
-        retained_unavailable: Vec::new(),
-        retained_stable: Vec::new(),
-        playlist_writes: Vec::new(),
-        playlist_removals: Vec::new(),
-        transfer_bytes: 0,
-        bytes_freed: 0,
-        target_bytes: 0,
-        blockers: Vec::new(),
-        warnings: Vec::new(),
-    }
+    MirrorPlan::default()
+}
+
+fn replacement_plan() -> MirrorPlan {
+    let mut plan = empty_plan();
+    plan.replace.push(MirrorReplacement {
+        existing: existing(1, "Album Artist/Album/03 Title.mp3"),
+        desired: desired(1, TransferAction::CopyOriginal, 100),
+    });
+    plan.transfer_bytes = 100;
+    plan
 }
 
 /// Drives the machine through a whole run, answering every effect with the
@@ -432,14 +426,9 @@ fn a_failed_transcode_fails_its_track_without_attempting_the_copy() {
 
 #[test]
 fn a_replaced_path_is_deleted_after_the_planned_removals_not_with_its_copy() {
-    let mut plan = empty_plan();
-    plan.replace.push(MirrorReplacement {
-        existing: existing(1, "Reprise/old.mp3"),
-        desired: desired(1, TransferAction::CopyOriginal, 100),
-    });
+    let mut plan = replacement_plan();
     plan.remove
         .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
-    plan.transfer_bytes = 100;
 
     let (mut machine, _) = start(plan);
     machine.dispatch(Event::PartialsCleaned(Ok(())));
@@ -454,7 +443,7 @@ fn a_replaced_path_is_deleted_after_the_planned_removals_not_with_its_copy() {
     assert_eq!(
         machine.dispatch(Event::FileForgotten(Ok(()))),
         vec![Effect::RemoveReplacedFile {
-            device_path: "Reprise/old.mp3".into(),
+            device_path: "Album Artist/Album/03 Title.mp3".into(),
         }],
         "only then is the superseded path deleted"
     );
@@ -462,12 +451,7 @@ fn a_replaced_path_is_deleted_after_the_planned_removals_not_with_its_copy() {
 
 #[test]
 fn a_failed_inventory_row_fails_the_track_and_keeps_the_old_file() {
-    let mut plan = empty_plan();
-    plan.replace.push(MirrorReplacement {
-        existing: existing(1, "Reprise/old.mp3"),
-        desired: desired(1, TransferAction::CopyOriginal, 100),
-    });
-    plan.transfer_bytes = 100;
+    let plan = replacement_plan();
 
     let (mut machine, _) = start(plan);
     machine.dispatch(Event::PartialsCleaned(Ok(())));
@@ -718,14 +702,9 @@ fn a_failed_removal_does_not_stop_the_removals_after_it() {
 
 #[test]
 fn a_failed_removal_still_lets_a_superseded_path_be_cleaned_up() {
-    let mut plan = empty_plan();
-    plan.replace.push(MirrorReplacement {
-        existing: existing(1, "Reprise/old.mp3"),
-        desired: desired(1, TransferAction::CopyOriginal, 100),
-    });
+    let mut plan = replacement_plan();
     plan.remove
         .push(ManagedRemoval::Inventory(existing(9, "Reprise/9.opus")));
-    plan.transfer_bytes = 100;
 
     let (mut machine, _) = start(plan);
     machine.dispatch(Event::PartialsCleaned(Ok(())));
@@ -735,10 +714,32 @@ fn a_failed_removal_still_lets_a_superseded_path_be_cleaned_up() {
     assert_eq!(
         machine.dispatch(Event::TrackRemoved(Err("device is busy".into()))),
         vec![Effect::RemoveReplacedFile {
-            device_path: "Reprise/old.mp3".into(),
+            device_path: "Album Artist/Album/03 Title.mp3".into(),
         }],
         "the superseded copy is still deleted after a failed removal"
     );
+}
+
+#[test]
+fn a_deferred_replacement_removal_names_its_own_removing_phase() {
+    let plan = replacement_plan();
+    let (mut machine, _) = start(plan);
+    machine.dispatch(Event::PartialsCleaned(Ok(())));
+    machine.dispatch(Event::TrackCopied(Ok(100)));
+    assert_eq!(
+        machine.dispatch(Event::FileRecorded(Ok(()))),
+        vec![Effect::RemoveReplacedFile {
+            device_path: "Album Artist/Album/03 Title.mp3".into(),
+        }]
+    );
+    assert!(matches!(
+        machine.phase(),
+        PlannedSyncPhase::Syncing {
+            step: SyncStep::Removing,
+            current_track,
+            ..
+        } if current_track == "Title — Album Artist"
+    ));
 }
 
 #[test]

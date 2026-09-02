@@ -1,5 +1,7 @@
 //! Translatable copy and compact formatting for Android synchronization.
 
+use reprise_core::device_sync::SyncStep;
+
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -156,6 +158,17 @@ pub fn sync_activity(step: &str, current_track: &str) -> String {
         return step.to_string();
     }
     format!("{step} {current_track}")
+}
+
+pub(in crate::ui) fn step_glyph(step: &SyncStep) -> &'static str {
+    match step {
+        SyncStep::Transcoding => "⟳ transcoding ·",
+        SyncStep::Copying => "↑",
+        SyncStep::WritingAnalysis => "↑ analysis ·",
+        SyncStep::Removing => "− removing ·",
+        SyncStep::WritingPlaylists => "≡",
+        SyncStep::WritingTrackMetadata => "≡ metadata ·",
+    }
 }
 
 /// `28 of 82 · 340.0 MiB of 1.2 GiB · ~2 min left · Immortal`

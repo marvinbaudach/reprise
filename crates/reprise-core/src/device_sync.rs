@@ -428,6 +428,10 @@ mod mirror_tests;
 mod machine_tests;
 
 #[cfg(test)]
+#[path = "device_sync/phase_transitions_tests.rs"]
+mod phase_transitions_tests;
+
+#[cfg(test)]
 mod tests {
     use std::path::{Component, Path};
 

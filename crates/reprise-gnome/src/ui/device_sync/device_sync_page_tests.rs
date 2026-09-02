@@ -238,6 +238,44 @@ fn mtp_60_copy_progress_separates_the_live_mtp_rate_from_track_text() {
 }
 
 #[test]
+fn the_dock_detail_distinguishes_removing_from_copying() {
+    use crate::ui::device_sync::device_sync_dock::DockReading;
+
+    fn detail_for(step: crate::ui::device_sync_runtime::SyncStep) -> String {
+        let mut running = device();
+        running.sync_phase = PlannedSyncPhase::Syncing {
+            step,
+            done: 0,
+            total: 1,
+            current_track: "Immortal — Lorna Shore".into(),
+            unit_bytes_done: 0,
+            unit_bytes_total: 0,
+        };
+        let DockReading::Running {
+            step,
+            current_track,
+            ..
+        } = DockReading::for_device(&running)
+        else {
+            panic!("syncing device must have a running dock reading");
+        };
+        device_sync_strings::sync_activity(
+            device_sync_strings::step_glyph(&step),
+            current_track.as_deref().unwrap_or(""),
+        )
+    }
+
+    assert_eq!(
+        detail_for(crate::ui::device_sync_runtime::SyncStep::Removing),
+        "− removing · Immortal — Lorna Shore"
+    );
+    assert_eq!(
+        detail_for(crate::ui::device_sync_runtime::SyncStep::Copying),
+        "↑ Immortal — Lorna Shore"
+    );
+}
+
+#[test]
 fn mtp_24_transfer_profile_heading_names_its_music_only_scope() {
     assert_eq!(
         super::device_sync_page_layout::MUSIC_TRANSFER_PROFILE_HEADING,

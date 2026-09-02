@@ -192,7 +192,10 @@ pub(super) fn card_subtitle(device: &DeviceView, now: DateTime<Utc>) -> String {
             current_track,
             ..
         } => {
-            let mut activity = device_sync_strings::sync_activity(step_glyph(step), current_track);
+            let mut activity = device_sync_strings::sync_activity(
+                device_sync_strings::step_glyph(step),
+                current_track,
+            );
             if matches!(step, SyncStep::Copying | SyncStep::WritingAnalysis)
                 && device.bytes_per_second > 0
             {
@@ -244,17 +247,6 @@ fn with_storage_prefix(prefix: Option<String>, activity: String) -> String {
     match prefix {
         Some(prefix) => format!("{prefix} · {activity}"),
         None => activity,
-    }
-}
-
-pub(super) fn step_glyph(step: &SyncStep) -> &'static str {
-    match step {
-        SyncStep::Transcoding => "⟳ transcoding ·",
-        SyncStep::Copying => "↑",
-        SyncStep::WritingAnalysis => "↑ analysis ·",
-        SyncStep::Removing => "−",
-        SyncStep::WritingPlaylists => "≡",
-        SyncStep::WritingTrackMetadata => "≡ metadata ·",
     }
 }
 
