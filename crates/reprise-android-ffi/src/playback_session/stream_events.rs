@@ -20,22 +20,41 @@ use super::SessionInner;
 const TRACK_UNAVAILABLE_SKIPPED: &str = "Track unavailable — skipped";
 const TOO_MANY_UNPLAYABLE_TRACKS: &str = "Playback stopped — too many unplayable tracks";
 
-fn fault_notice_text(notice: PlaybackFaultNotice) -> &'static str {
+fn fault_notice_text(notice: PlaybackFaultNotice, title: Option<&str>) -> String {
     match notice {
-        PlaybackFaultNotice::TrackUnavailableSkipped | PlaybackFaultNotice::CouldNotPlaySkipped => {
-            TRACK_UNAVAILABLE_SKIPPED
+        PlaybackFaultNotice::TrackUnavailableSkipped => TRACK_UNAVAILABLE_SKIPPED.to_owned(),
+        PlaybackFaultNotice::CouldNotPlaySkipped => {
+            format!("Could not play {} — skipping", title.unwrap_or("track"))
         }
     }
 }
 
 impl SessionInner {
-    pub(super) fn handle_event(&self, event: StreamEvent) {
+    pub(super) fn handle_event(&self, event: StreamEvent, missing: Option<bool>) {
         enum FollowUp {
             None,
             Start,
             Feed(Option<String>),
             Stop,
         }
+
+        let fault_title = if matches!(&event.event, PlayerEvent::Error(_)) && missing == Some(false)
+        {
+            let track_id = self
+                .state
+                .lock()
+                .ok()
+                .and_then(|state| state.queue.current());
+            track_id.and_then(|track_id| {
+                self.library
+                    .track_by_id(track_id)
+                    .ok()
+                    .flatten()
+                    .map(|track| (track_id, track.title))
+            })
+        } else {
+            None
+        };
 
         let (follow_up, play_to_record, queue_to_save) = {
             let Ok(mut state) = self.state.lock() else {
@@ -104,9 +123,12 @@ impl SessionInner {
                 }
                 PlayerEvent::Error(message) => {
                     tracing::warn!(%message, "Android playback backend reported an error");
-                    let policy = playback_fault_policy(true);
-                    state.snapshot.fault_notice =
-                        Some(fault_notice_text(policy.notices[0]).to_owned());
+                    let policy = playback_fault_policy(!missing.unwrap_or(false));
+                    let title = fault_title
+                        .as_ref()
+                        .filter(|(track_id, _)| Some(*track_id) == state.queue.current())
+                        .map(|(_, title)| title.as_str());
+                    state.snapshot.fault_notice = Some(fault_notice_text(policy.notices[0], title));
                     state.snapshot.fault_notice_count =
                         state.snapshot.fault_notice_count.saturating_add(1);
                     state.current_loaded = false;

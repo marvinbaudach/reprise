@@ -594,6 +594,9 @@ internal fun BrowseScreen(
                     // Re-readable state, not timed acknowledgements; see TransientMessage.
                     browseError?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
+                    if (!(nowPlayingExpanded && playingTrackId != null && shownTrack != null)) {
+                        playback.faultNotice?.let { BrowseErrorLine(it.text) }
+                    }
                     ArtistPhotoLibraryStatus(
                         offerVisible = shouldOfferArtistPhotos(
                             onlineSourcesEnabled, artistPhotoOfferSettled, state.artists.total,

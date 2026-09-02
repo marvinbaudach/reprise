@@ -9,6 +9,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import java.io.File
+import java.io.FileNotFoundException
 import uniffi.reprise_android_ffi.AndroidEqualizerBand
 import uniffi.reprise_android_ffi.AndroidEqualizerBandCapability
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
@@ -57,6 +58,26 @@ internal fun playbackErrorSummary(errorCodeName: String, error: Throwable): Stri
         proposedEnd
     }
     return summary.substring(0, end) + "…"
+}
+
+internal fun isMissingFilePlaybackError(error: PlaybackException): Boolean {
+    if (error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND) {
+        return true
+    }
+    val seen = mutableListOf<Throwable>(error)
+    var cause = error.cause
+    while (cause != null) {
+        val current = cause
+        if (seen.any { previous -> previous === current }) {
+            return false
+        }
+        if (current is FileNotFoundException) {
+            return true
+        }
+        seen += current
+        cause = current.cause
+    }
+    return false
 }
 
 /** Media3 implementation of the foreign half of Core's PlaybackBackend. */
@@ -127,7 +148,12 @@ internal class Media3PlaybackPort(
         override fun onPlayerError(error: PlaybackException) {
             val summary = playbackErrorSummary(error.errorCodeName, error)
             Log.e(TAG, summary, error)
-            emit(AndroidPlayerEvent.Error(summary))
+            emit(
+                AndroidPlayerEvent.Error(
+                    message = summary,
+                    missing = isMissingFilePlaybackError(error),
+                ),
+            )
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {

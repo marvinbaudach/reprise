@@ -174,6 +174,7 @@ fn fb_6_fault_advance_is_saved_for_the_next_process() {
         23,
         AndroidPlayerEvent::Error {
             message: "decoder failed".to_owned(),
+            missing: true,
         },
     );
     assert_eq!(

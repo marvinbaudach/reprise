@@ -462,11 +462,11 @@ impl AndroidPlaybackSession {
             ),
         });
         let weak = Arc::downgrade(&inner);
-        let backend = AndroidPlaybackBackend::new(
+        let backend = AndroidPlaybackBackend::new_with_faults(
             port,
-            Box::new(move |event| {
+            Box::new(move |event, missing| {
                 if let Some(inner) = weak.upgrade() {
-                    inner.handle_event(event);
+                    inner.handle_event(event, missing);
                 }
             }),
         )

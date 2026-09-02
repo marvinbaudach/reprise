@@ -740,6 +740,7 @@ fn playback_event_bridge_delivers_ordered_core_events_with_production_generation
         8,
         AndroidPlayerEvent::Error {
             message: "decoder failed".to_owned(),
+            missing: true,
         },
     );
 

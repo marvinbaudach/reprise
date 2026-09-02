@@ -1,8 +1,12 @@
 use super::test_support::{
-    recording_session, PortCall, FAILING_PLAY_URI, SYNCHRONOUS_BUFFERING_URI,
+    library_in, recording_session, PortCall, RecordingListener, RecordingPort, FAILING_PLAY_URI,
+    SYNCHRONOUS_BUFFERING_URI,
 };
 use crate::playback::{AndroidPlaybackState, AndroidPlayerEvent};
-use crate::AndroidRepeatMode;
+use crate::{AndroidPlaybackSession, AndroidRepeatMode};
+use std::path::Path;
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex};
 
 // UX FB-6: a faulted queue item produces one availability notice and starts
 // the next bounded candidate instead of ending playback.
@@ -28,6 +32,7 @@ fn fb_6_fault_on_a_multi_track_queue_advances_and_keeps_playing() {
         23,
         AndroidPlayerEvent::Error {
             message: "ERROR_CODE_IO_UNSPECIFIED: Source error".to_owned(),
+            missing: true,
         },
     );
 
@@ -72,6 +77,7 @@ fn fb_6_a_successful_skip_keeps_its_notice_after_the_replacement_plays() {
         23,
         AndroidPlayerEvent::Error {
             message: "missing file".to_owned(),
+            missing: true,
         },
     );
     bridge.emit(
@@ -87,6 +93,111 @@ fn fb_6_a_successful_skip_keeps_its_notice_after_the_replacement_plays() {
         Some("Track unavailable — skipped")
     );
     assert_eq!(snapshot.fault_notice_count, 1);
+}
+
+// UX FB-6: each fault is a distinct acknowledgement even when the copy is
+// identical, so Android can restart the visible message lifetime.
+#[test]
+fn fb_6_each_fault_raises_the_notice_count() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(
+            vec![7, 8, 9],
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+                "content://provider/third.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+
+    for message in ["first fault", "second fault"] {
+        bridge.emit(
+            23,
+            AndroidPlayerEvent::Error {
+                message: message.to_owned(),
+                missing: true,
+            },
+        );
+    }
+
+    assert_eq!(fixture.session.snapshot().unwrap().fault_notice_count, 2);
+}
+
+// UX FB-6: a backend fault for bytes that still exist names the track rather
+// than falsely claiming that it became unavailable.
+#[test]
+fn fb_6_a_file_that_exists_but_will_not_play_names_the_track() {
+    let directory = tempfile::tempdir().unwrap();
+    let music = directory.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    let path = music.join("broken.flac");
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../android/app/src/main/assets/sine.flac");
+    std::fs::copy(fixture, &path).unwrap();
+    reprise_core::library::tag_edit::apply_patch_to_file(
+        &path,
+        &reprise_core::library::tag_edit::TagPatch {
+            title: Some("Unplayable Song".to_owned()),
+            artist: Some("Test Artist".to_owned()),
+            album: Some("Test Album".to_owned()),
+            album_artist: Some("Test Artist".to_owned()),
+            year: Some(Some(2026)),
+            track_no: Some(Some(1)),
+            genre: Some("Test".to_owned()),
+        },
+    )
+    .unwrap();
+    let database = reprise_core::db::Db::open_migrated(Some(
+        &directory.path().join(crate::DATABASE_FILE_NAME),
+    ))
+    .unwrap();
+    reprise_core::library::scanner::scan_folder(&database, &music).unwrap();
+    let track = reprise_core::queries::query_library_text_search(
+        &database,
+        "",
+        reprise_core::queries::WindowRange {
+            offset: 0,
+            limit: 1,
+        },
+    )
+    .unwrap()
+    .rows
+    .remove(0);
+    drop(database);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let bridge = Arc::new(Mutex::new(None));
+    let session = AndroidPlaybackSession::new(
+        library_in(directory.path()),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::clone(&bridge),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    session
+        .play_tracks(vec![track.id], vec![track.path], 0)
+        .unwrap();
+
+    bridge.lock().unwrap().clone().unwrap().emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "decoder failed".to_owned(),
+            missing: false,
+        },
+    );
+
+    assert_eq!(
+        session.snapshot().unwrap().fault_notice.as_deref(),
+        Some("Could not play Unplayable Song — skipping")
+    );
 }
 
 // UX FB-6: repeat-one repeats a track after a successful finish, but a fault
@@ -114,6 +225,7 @@ fn fb_6_repeat_one_does_not_retry_the_faulted_track() {
         23,
         AndroidPlayerEvent::Error {
             message: "decoder failed".to_owned(),
+            missing: true,
         },
     );
 
@@ -156,6 +268,7 @@ fn fb_6_every_faulting_track_stops_at_the_latched_bound() {
         23,
         AndroidPlayerEvent::Error {
             message: "decoder failed".to_owned(),
+            missing: true,
         },
     );
     assert!(fixture.session.remove_upcoming_track(0, 9).unwrap());
@@ -165,6 +278,7 @@ fn fb_6_every_faulting_track_stops_at_the_latched_bound() {
             23,
             AndroidPlayerEvent::Error {
                 message: "decoder failed".to_owned(),
+                missing: true,
             },
         );
     }
@@ -177,6 +291,7 @@ fn fb_6_every_faulting_track_stops_at_the_latched_bound() {
         23,
         AndroidPlayerEvent::Error {
             message: "decoder failed".to_owned(),
+            missing: true,
         },
     );
 
@@ -211,6 +326,7 @@ fn fb_6_fault_on_the_last_track_stops_at_queue_exhaustion() {
         23,
         AndroidPlayerEvent::Error {
             message: "decoder failed".to_owned(),
+            missing: true,
         },
     );
 
@@ -248,6 +364,7 @@ fn play_5b_successful_start_resets_the_consecutive_fault_run() {
         23,
         AndroidPlayerEvent::Error {
             message: "first fault".to_owned(),
+            missing: true,
         },
     );
     assert_eq!(fixture.session.snapshot().unwrap().current_index, Some(1));
@@ -264,6 +381,7 @@ fn play_5b_successful_start_resets_the_consecutive_fault_run() {
         23,
         AndroidPlayerEvent::Error {
             message: "later fault".to_owned(),
+            missing: true,
         },
     );
 
@@ -290,6 +408,7 @@ fn fb_6_a_new_queue_resets_the_prior_fault_bound() {
         23,
         AndroidPlayerEvent::Error {
             message: "old queue fault".to_owned(),
+            missing: true,
         },
     );
 
@@ -309,6 +428,7 @@ fn fb_6_a_new_queue_resets_the_prior_fault_bound() {
         23,
         AndroidPlayerEvent::Error {
             message: "new queue fault".to_owned(),
+            missing: true,
         },
     );
 
@@ -336,6 +456,7 @@ fn fb_6_a_new_queue_clears_the_prior_fault_notice_before_confirmation() {
         23,
         AndroidPlayerEvent::Error {
             message: "old queue fault".to_owned(),
+            missing: true,
         },
     );
     assert_eq!(
@@ -434,6 +555,7 @@ fn buffering_from_the_failed_stream_cannot_revive_a_stopped_snapshot() {
         23,
         AndroidPlayerEvent::Error {
             message: "decoder failed".to_owned(),
+            missing: true,
         },
     );
     bridge.emit(
