@@ -60,19 +60,33 @@ THEME_TITLE="${SHOWREEL_THEME_TITLE:-Reprise Theme}"
 # The dwell is what the film sees; the probe adds its own resolve time on top and
 # reports the difference, because that difference is the whole reason it exists.
 #
-# These defaults are a starting point, not a measurement. Replace them from
-# `probe --list` on the build being filmed.
+# Measured against the app on 2026-09-02, not guessed. The bottom bar is
+# Titles / Artists / Queue — there is no Albums tab; an artist's albums live on
+# the artist page, which is where the film's "albums" moment happens. The
+# artist list holds 83 rows and Lorna Shore is deep in it: one 400 ms swipe
+# moves seven rows and one 90 ms fling overshoots from B to U, so scrolling to
+# it is not steerable inside a 9.6 s shot. The search is, and it shows a real
+# feature of the app rather than a scrollbar. The search is per tab — in the
+# Artists tab it searches artists — and BACK dismisses the keyboard while
+# keeping the results, which is the only reason a shot can follow it.
 STEPS_GESTURE=${SHOWREEL_STEPS_GESTURE:-'
-titles	Titles		1.5
-artists	Artists		1.5
-artist	'"$ARTIST"'	--contains	1.8
-album			--class android.widget.Button --nth 1	1.8
-play	Play 	--contains	3.0
+artists	Artists	-	1.2
+search	Search library	--contains	0.8
+type	text:lorna	-	1.0
+keyboard	key:BACK	-	0.6
+artist	'"$ARTIST"'	--contains	1.6
+album	I Feel the Everblack	--contains	1.6
+play	Play 	--contains	2.5
 '}
 
 STEPS_NOWPLAYING=${SHOWREEL_STEPS_NOWPLAYING:-'
-open	'"$THEME_TITLE"'	--contains	3.5
-spectrum	Cover artwork	--contains	12.0
+titles	Titles	-	1.0
+search	Search library	--contains	0.8
+type	text:'"${THEME_TITLE// /%s}"'	-	1.0
+keyboard	key:BACK	-	0.6
+play	'"$THEME_TITLE"'	--contains	3.0
+open	tap:400,2020	-	3.5
+spectrum	tap:540,925	-	12.0
 '}
 
 t0=$(date +%s.%N)
@@ -86,6 +100,28 @@ mark() {
 snapshot() {
   adb shell uiautomator dump /sdcard/showreel-ui.xml >/dev/null
   adb shell cat /sdcard/showreel-ui.xml >"$DUMP"
+}
+
+# A step whose target carries a prefix is a gesture, not a lookup: there is
+# nothing on screen to resolve, so it is cached verbatim and replayed as-is.
+#
+#   swipe:x1,y1,x2,y2,ms   a scroll or a fling
+#   text:lorna             typed into whatever has focus (spaces as %s)
+#   key:BACK               a key event — BACK dismisses the keyboard and keeps
+#                          the results, which is what a shot wants
+#   tap:x,y                a tap where no label can pick the target out: the
+#                          mini player carries the same title as the result row
+#                          that started it, and the Now Playing square's own
+#                          label is not stable across builds
+gesture() {
+  local kind=${1%%:*} args=${1#*:}
+  case $kind in
+    # shellcheck disable=SC2086  # the tuples are deliberately word-split
+    swipe) adb shell input swipe ${args//,/ } ;;
+    tap) adb shell input tap ${args//,/ } ;;
+    text) adb shell input text "$args" ;;
+    key) adb shell input keyevent "$args" ;;
+  esac
 }
 
 steps_for() {
@@ -106,6 +142,20 @@ probe() {
     [[ -n ${label:-} ]] || continue
     local t_start
     t_start=$(now)
+    # `-` is how a step says "no ui-find options". It has to be written out:
+    # IFS=$'\t' collapses runs of tabs, so an empty field between two tabs
+    # simply vanishes and every field after it shifts left by one.
+    [[ $opts == - ]] && opts=''
+
+    if [[ ${target:-} == swipe:* || ${target:-} == text:* || ${target:-} == key:* || ${target:-} == tap:* ]]; then
+      printf '%s\t%s\t%s\n' "$label" "$target" "$dwell" >>"$CACHE"
+      gesture "$target"
+      printf 'probe: %-10s %-30s dwell %s\n' "$label" "$target" "$dwell" >&2
+      dwelled=$(echo "$dwelled + $dwell" | bc)
+      sleep "$dwell"
+      continue
+    fi
+
     snapshot
     local xy
     # shellcheck disable=SC2086  # opts is deliberately word-split
@@ -153,8 +203,12 @@ take() {
   while IFS=$'\t' read -r label xy dwell; do
     [[ -n ${label:-} ]] || continue
     mark "$label"
-    # shellcheck disable=SC2086
-    adb shell input tap $xy
+    if [[ $xy == swipe:* || $xy == text:* || $xy == key:* || $xy == tap:* ]]; then
+      gesture "$xy"
+    else
+      # shellcheck disable=SC2086
+      adb shell input tap $xy
+    fi
     sleep "$dwell"
   done <"$CACHE"
   mark end

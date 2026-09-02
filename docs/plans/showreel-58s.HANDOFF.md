@@ -367,3 +367,73 @@ ground; replace it with the cards' ink `#EAF2F1`, exactly as `cardkit.py` does.
   reads "Search albums and artists". Album tiles carry album names, not the word
   "Album". So run `probe --list` on the build being filmed and fill
   `SHOWREEL_STEPS_GESTURE` from what it prints, before believing the defaults.
+
+## Amendment, 2026-09-02 — the desktop tour is shot, with the panel open
+
+**The user reversed the info-panel decision**: the right-hand column stays in the
+picture. `roh-gnome-tour-2026-09-02-panelopen.mp4` (150.6 s, 2880x1800, VERDICT
+PASS, seven stations, no retries) is in `SHOWREEL_DIR`. Build: the `origin/dev`
+nightly `8a5c36227c`. Player dressed and paused, *Welcome to the Family* at 0:04.
+
+**How the panel is actually controlled, measured today and contradicting both
+earlier claims.** The lever is the DB key written while the app is **stopped**,
+and it works in both directions — `1` came up OPEN (28 widgets right of x=1400),
+`0` came up CLOSED (0). What is *not* a lever is the header toggle: a real
+pointer click closes the panel, and the same click does not re-open it, because
+the header bar re-lays-out when the panel goes and the cached coordinate then
+lands on nothing. The 58 s handover called the toggle inert and the DB key
+overwritten; on `0.1.127` it is the other way round for the toggle and only
+half-true for the key — the app writes its own state back when the responsive
+split view re-shows the sidebar, which is what defeated the first attempt.
+
+**`desk.raise_by_search()` failed twice and cost an aborted run.** It is not
+reliable on this session. `scripts/showreel/await-take-gnome4.sh` is the answer:
+it waits for `active-window.py` to see Reprise, settles six seconds — a take
+whose first move lands right after a human click retries its first stations —
+and then execs `take-gnome4.py`. Run it in its own systemd unit.
+
+**Never `systemctl stop` the await unit while it is running.** Stopping it kills
+the take it exec'd. One take died at station three that way.
+
+**Page turns, measured with `find-page-turns.py`** (all ratios 185-3552 against
+a threshold of 4; in-point = turn - 1.9):
+
+| station | mark | turn | in-point |
+|---|---|---|---|
+| library | 11.63 | 12.33 | 10.43 |
+| podcasts | 32.90 | 36.50 | 34.60 |
+| youtube | 53.14 | 56.99 | 55.09 |
+| radio | 71.65 | 76.15 | 74.25 |
+| releases | 92.45 | 97.15 | 95.25 |
+| concerts | 113.69 | 118.34 | 116.44 |
+| stats | 135.81 | 139.96 | 138.06 |
+
+The lag from mark to turn is 3.6-4.7 s here, not the 1.9-2.6 s the 2026-08-29
+control arm found. The in-point rule is anchored on the **turn**, not the lag, so
+it still holds — but a lag this different is worth noticing rather than
+explaining away.
+
+**Shot 01 has no page turn and needs one.** The app started on Music, so clicking
+Music changed nothing: frames at 10.43 s and 14.5 s are the same page, and the
+"turn" the detector found is the sidebar row's own highlight (its peak, 0.39, is
+the weakest of the seven — the others are 1.2-7.7). The whole re-record exists
+because shots had no visible cause; this one has a hand and no consequence. Fix
+is cheap: leave the app on another page and shoot `--limit 1`.
+
+**The device handover is not shot.** `--limit 7` deliberately skips it: the phone
+was not attached, so there is no `Sync now` and no bar to travel. It needs its own
+take, which is fine — a film cut separates it from the stations anyway.
+
+**Concerts shows three rows** under a `Zurich · 500 km` filter, with "509 concerts
+hidden" under them. It reads sparse. Nobody has decided whether that is what the
+shot should say.
+
+**Shot 01 is fixed by a pickup take.** `roh-gnome-pickup-music-2026-09-02.mp4`
+(28.1 s, VERDICT PASS) was shot with the app left on My Stats, so the click on
+Music turns the page for real. Measured: turn 18.54, peak **3.42**, ratio 1268 —
+inside the band of the genuine turns (1.2-7.7), against the 0.39 the first take's
+Music "turn" produced. In-point **16.64**.
+
+So the desk half is cut from two files: shot 01 from the pickup take at 16.64,
+shots 02-05 from `roh-gnome-tour-2026-09-02-panelopen.mp4` at 34.60 (podcasts),
+95.25 (releases), 116.44 (concerts), 138.06 (stats).

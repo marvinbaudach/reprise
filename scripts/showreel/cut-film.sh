@@ -93,16 +93,30 @@ listed() { [[ -n ${LIST_OFF:-} ]] && return 0; printf "file '%s'\n" "$O/s-$1.mp4
 
 # A desktop shot. `over` is the caption layer, already built by the caller, so
 # one function serves callouts, bursts and statements without branching on kind.
-desk() { # take name start dur dir zoom fx fy over [dip] [ease]
-  local take=$1 name=$2 start=$3 dur=$4 dir=$5 zoom=$6 fx=$7 fy=$8 over=$9 dip=${10:-} ease=${11:-lin}
-  local input="$IN1" pre=""
+#
+# `speed` is a time-lapse factor, not the push's easing curve — that is `ease`,
+# the one after it. At speed N the shot reads `dur * N` seconds of source
+# starting at `start` and compresses them back to `dur` seconds of output: the
+# decode window (`-t`) grows, but the frame budget (`-frames:v`, and therefore
+# everything measured in output frames — the push, the dip, the caption) does
+# not. `setpts=PTS/N` has to run before `fps=30` and before the push: zoompan
+# stamps its own timestamps from an internal counter, so anything upstream of
+# it that only rewrote PTS without also being resampled by an `fps` filter is
+# silently discarded.
+desk() { # take name start dur dir zoom fx fy over [dip] [ease] [speed]
+  local take=$1 name=$2 start=$3 dur=$4 dir=$5 zoom=$6 fx=$7 fy=$8 over=$9 dip=${10:-} ease=${11:-lin} speed=${12:-1}
+  local input="$IN1" pre="" decode=$dur
   # The new pickup take carries no SCROLL-LOG badge — that was a debug overlay
   # on the take this one replaces. Patching it now would copy a strip of pixels
   # over an image that has nothing wrong with it, so T2 is passed through.
   [[ $take == T2 ]] && input="$IN2"
   [[ $take == TM ]] && input="$INM"
+  if [[ $speed != 1 ]]; then
+    decode=$(python3 -c "print(round($dur * $speed, 3))")
+    pre="setpts=PTS/$speed,fps=30,"
+  fi
   # Take 3 was shot without the SCROLL-LOG badge, so it needs no patch.
-  ffmpeg -v error -ss "$start" -t "$dur" -i "$input" \
+  ffmpeg -v error -ss "$start" -t "$decode" -i "$input" \
     -vf "fps=30,$CROP,$pre$(film2_push "$(frames "$dur")" "$dir" "$zoom" "$STAGE_W" "$FILM2_STAGE_H" "$fx" "$fy" "$ease"),$PAD,$over,$(film2_bug)$(film2_dip "$dip" "$dur"),format=yuv420p" \
     "${ENC[@]}" -frames:v "$(frames "$dur")" -y "$O/s-$name.mp4"
   listed "$name"
@@ -163,10 +177,17 @@ bridge() { # name deskstart phonestart
   local dhalf=${SHOWREEL_BRIDGE_DESK:-6.8} phalf=1.2 xf=0.2
   local dur
   dur=$(python3 -c "print(round($dhalf + $phalf - $xf, 3))")
+  # The sync's own progress bar takes minutes to move; take-gnome4.py films it
+  # long on purpose (SYNC_DWELL) and this is where that footage is compressed
+  # back down. SHOWREEL_BRIDGE_SPEED is a time-lapse factor on the desk half
+  # only — the phone half and the slide are unaffected, and dhalf, and
+  # therefore the slide's own offset at dhalf - xf, do not move: the shot still
+  # lands at 6.8 s of output, it just carries dhalf * speed seconds of source.
+  local speed=${SHOWREEL_BRIDGE_SPEED:-1}
   LIST_OFF=1
   case ${SHOWREEL_BRIDGE:-devicesync} in
     # The visualiser panel, at the right edge of the window.
-    visualizer) desk T1 "$name-a" "$dstart" "$dhalf" in 2.2 1.00 0.574 null "" accel ;;
+    visualizer) desk T1 "$name-a" "$dstart" "$dhalf" in 2.2 1.00 0.574 null "" accel "$speed" ;;
     # No push at all. The device page carries the claim in its own furniture —
     # MTP connected, the playlists, and at the bottom the transfer actually
     # running — and a push to 1.4 towards the top takes the transfer out of the
@@ -182,7 +203,8 @@ bridge() { # name deskstart phonestart
     # the transfer counting up — so the words are spent on the claim the picture
     # cannot make on its own: it is not a companion app, it is the same core.
     *)          desk T1 "$name-a" "$dstart" "$dhalf" hold 0.00 0.50 0.50 \
-                     "$(film2_callout 'A second frontend' 'the same core, now on Android' "$dhalf")" ;;
+                     "$(film2_callout 'A second frontend' 'the same core, now on Android' "$dhalf")" \
+                     "" lin "$speed" ;;
   esac
   phone "$name-b" "$pstart" "$phalf" hold 0.00 null ""
   LIST_OFF=
