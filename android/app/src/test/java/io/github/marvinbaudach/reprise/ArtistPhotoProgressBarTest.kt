@@ -319,6 +319,30 @@ class ArtistPhotoProgressBarTest {
     }
 
     @Test
+    fun failedCompletionStillLeavesAfterTheCardLeavesAndReentersComposition() {
+        var dismissals = 0
+        val present = mutableStateOf(true)
+        val update = ArtistPhotoProgress(14, ArtistPhotoProgressPhase.COMPLETE, 397, 15, 412)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                if (present.value) {
+                    ArtistPhotoProgressBar(progress = update, dismiss = { dismissals += 1 })
+                }
+            }
+        }
+
+        compose.mainClock.advanceTimeBy(5_000)
+        compose.runOnUiThread { present.value = false }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.runOnUiThread { present.value = true }
+        compose.mainClock.advanceTimeBy(10_001)
+        compose.waitForIdle()
+
+        assertEquals(1, dismissals)
+    }
+
+    @Test
     fun onlineSourcesUsesTheSameProgressLabels() {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
