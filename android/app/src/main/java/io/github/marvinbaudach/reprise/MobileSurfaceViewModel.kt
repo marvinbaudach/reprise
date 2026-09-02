@@ -237,6 +237,10 @@ internal class MobileSurfaceViewModel : ViewModel() {
     }
 
     fun openSearch() {
+        // The queue is the one tab a filter never reaches (see selectTab
+        // above), so opening the field here would collect text that then
+        // silently seeds whichever tab the listener swipes to next.
+        if (selectedTab == BrowseTab.QUEUE) return
         searchVisible = true
     }
 

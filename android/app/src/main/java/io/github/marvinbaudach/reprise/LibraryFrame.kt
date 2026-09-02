@@ -60,6 +60,7 @@ import io.github.marvinbaudach.reprise.ui.theme.MaterialSymbolsRoundedFilled
 
 @Composable
 internal fun LibrarySummaryActions(
+    tab: BrowseTab,
     summary: () -> String,
     searching: Boolean,
     toggleSearch: () -> Unit,
@@ -91,8 +92,11 @@ internal fun LibrarySummaryActions(
         )
         // Only while the field is shut. Once it is open it carries its own
         // trailing action — clear the text, then close — and a second cross
-        // one row below it says the same thing twice.
-        if (!searching) {
+        // one row below it says the same thing twice. The queue is also
+        // exempt: it is the one tab a filter never reaches (see
+        // MobileSurfaceViewModel.selectTab), so no button here offers a field
+        // that would do nothing but silently seed the next tab's filter.
+        if (!searching && tab != BrowseTab.QUEUE) {
             IconButton(
                 onClick = toggleSearch,
                 modifier = Modifier.size(48.dp).testTag("library-summary-search"),
