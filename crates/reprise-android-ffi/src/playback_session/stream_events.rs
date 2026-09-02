@@ -20,22 +20,41 @@ use super::SessionInner;
 const TRACK_UNAVAILABLE_SKIPPED: &str = "Track unavailable — skipped";
 const TOO_MANY_UNPLAYABLE_TRACKS: &str = "Playback stopped — too many unplayable tracks";
 
-fn fault_notice_text(notice: PlaybackFaultNotice) -> &'static str {
+fn fault_notice_text(notice: PlaybackFaultNotice, title: Option<&str>) -> String {
     match notice {
-        PlaybackFaultNotice::TrackUnavailableSkipped | PlaybackFaultNotice::CouldNotPlaySkipped => {
-            TRACK_UNAVAILABLE_SKIPPED
+        PlaybackFaultNotice::TrackUnavailableSkipped => TRACK_UNAVAILABLE_SKIPPED.to_owned(),
+        PlaybackFaultNotice::CouldNotPlaySkipped => {
+            format!("Could not play {} — skipping", title.unwrap_or("track"))
         }
     }
 }
 
 impl SessionInner {
-    pub(super) fn handle_event(&self, event: StreamEvent) {
+    pub(super) fn handle_event(&self, event: StreamEvent, missing: Option<bool>) {
         enum FollowUp {
             None,
             Start,
             Feed(Option<String>),
             Stop,
         }
+
+        let fault_title = if matches!(&event.event, PlayerEvent::Error(_)) && missing == Some(false)
+        {
+            let track_id = self
+                .state
+                .lock()
+                .ok()
+                .and_then(|state| state.queue.current());
+            track_id.and_then(|track_id| match self.library.track_by_id(track_id) {
+                Ok(track) => track.map(|track| (track_id, track.title)),
+                Err(error) => {
+                    tracing::warn!(%error, "could not read faulted Android track title");
+                    None
+                }
+            })
+        } else {
+            None
+        };
 
         let (follow_up, play_to_record, queue_to_save) = {
             let Ok(mut state) = self.state.lock() else {
@@ -104,8 +123,11 @@ impl SessionInner {
                 }
                 PlayerEvent::Error(message) => {
                     tracing::warn!(%message, "Android playback backend reported an error");
-                    let policy = playback_fault_policy(true);
-                    state.snapshot.error = Some(fault_notice_text(policy.notices[0]).to_owned());
+                    let policy = playback_fault_policy(!missing.unwrap_or(false));
+                    let title = fault_title
+                        .as_ref()
+                        .filter(|(track_id, _)| Some(*track_id) == state.queue.current())
+                        .map(|(_, title)| title.as_str());
                     state.current_loaded = false;
                     let queue_len = state.queue.len();
                     let skip_limit = *state.fault_skip_limit.get_or_insert(queue_len);
@@ -113,10 +135,15 @@ impl SessionInner {
                     let repeated_fault_bound_reached = state.consecutive_faults > 1
                         && should_stop_skipping(state.consecutive_faults, skip_limit);
                     if repeated_fault_bound_reached {
+                        state.snapshot.fault_notice = None;
                         state.snapshot.error = Some(TOO_MANY_UNPLAYABLE_TRACKS.to_owned());
                         state.stop();
                         (FollowUp::Stop, None, None)
                     } else if policy.skip {
+                        state.snapshot.fault_notice =
+                            Some(fault_notice_text(policy.notices[0], title));
+                        state.snapshot.fault_notice_count =
+                            state.snapshot.fault_notice_count.saturating_add(1);
                         let faulted_track_id = state.queue.current();
                         let next_track = state
                             .queue
@@ -172,7 +199,12 @@ impl SessionInner {
         match follow_up {
             FollowUp::None => self.notify(),
             FollowUp::Start => {
-                let _ = self.start_current();
+                if let Err(error) = self.start_current() {
+                    tracing::warn!(%error, "could not start the next Android queue item");
+                    // `start_current` can return before its own notification if
+                    // the queue changed between this event and the follow-up.
+                    self.notify();
+                }
             }
             FollowUp::Feed(next_uri) => {
                 if let Ok(backend) = self.backend() {

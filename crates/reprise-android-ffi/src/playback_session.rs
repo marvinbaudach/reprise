@@ -52,6 +52,10 @@ pub struct AndroidPlaybackSnapshot {
     pub shuffled: bool,
     pub repeat: AndroidRepeatMode,
     pub error: Option<String>,
+    #[uniffi(default = None)]
+    pub fault_notice: Option<String>,
+    #[uniffi(default = 0)]
+    pub fault_notice_count: u64,
 }
 
 #[uniffi::export(callback_interface)]
@@ -96,6 +100,8 @@ impl SessionState {
                 shuffled: false,
                 repeat: AndroidRepeatMode::Off,
                 error: None,
+                fault_notice: None,
+                fault_notice_count: 0,
             },
             stream: StreamGeneration::INITIAL,
             current_loaded: false,
@@ -135,6 +141,8 @@ impl SessionState {
                 shuffled: restored.queue.is_shuffled(),
                 repeat,
                 error: None,
+                fault_notice: None,
+                fault_notice_count: 0,
             },
             queue: restored.queue,
             history: history::HistoryState::default(),
@@ -205,6 +213,7 @@ impl SessionState {
         self.consecutive_faults = 0;
         self.fault_skip_limit = None;
         self.snapshot.error = None;
+        self.snapshot.fault_notice = None;
     }
 
     fn stop(&mut self) {
@@ -453,11 +462,11 @@ impl AndroidPlaybackSession {
             ),
         });
         let weak = Arc::downgrade(&inner);
-        let backend = AndroidPlaybackBackend::new(
+        let backend = AndroidPlaybackBackend::new_with_faults(
             port,
-            Box::new(move |event| {
+            Box::new(move |event, missing| {
                 if let Some(inner) = weak.upgrade() {
-                    inner.handle_event(event);
+                    inner.handle_event(event, missing);
                 }
             }),
         )
