@@ -227,6 +227,78 @@ class MobileSurfaceStateTest {
         assertFalse(state.searchVisible)
     }
 
+    /**
+     * Regression for two albums sharing one anchor: ALBUM_TRACKS is a single
+     * [LibraryListKey], so without an owner keeping album A's row would leak
+     * into album B the first time B has enough rows to hold it.
+     */
+    @Test
+    fun twoAlbumsKeepTheirOwnScrollAnchor() {
+        val state = MobileSurfaceViewModel()
+        val albumA = "Radiohead OK Computer"
+        val albumB = "Radiohead In Rainbows"
+
+        state.updateScroll(
+            LibraryListKey.ALBUM_TRACKS,
+            LibraryScrollPosition(firstVisibleItemIndex = 30, itemOffsetFraction = 0.5f),
+            owner = albumA,
+        )
+
+        assertEquals(
+            LibraryScrollPosition(),
+            state.scrollPosition(LibraryListKey.ALBUM_TRACKS, owner = albumB),
+        )
+        assertEquals(
+            LibraryScrollPosition(firstVisibleItemIndex = 30, itemOffsetFraction = 0.5f),
+            state.scrollPosition(LibraryListKey.ALBUM_TRACKS, owner = albumA),
+        )
+    }
+
+    /** [twoAlbumsKeepTheirOwnScrollAnchor], for two artist pages sharing ARTIST_ALBUMS. */
+    @Test
+    fun twoArtistPagesKeepTheirOwnScrollAnchor() {
+        val state = MobileSurfaceViewModel()
+        val artistA = "Slowdive"
+        val artistB = "Mogwai"
+
+        state.updateScroll(
+            LibraryListKey.ARTIST_ALBUMS,
+            LibraryScrollPosition(firstVisibleItemIndex = 12, itemOffsetFraction = 0.75f),
+            owner = artistA,
+        )
+
+        assertEquals(
+            LibraryScrollPosition(),
+            state.scrollPosition(LibraryListKey.ARTIST_ALBUMS, owner = artistB),
+        )
+        assertEquals(
+            LibraryScrollPosition(firstVisibleItemIndex = 12, itemOffsetFraction = 0.75f),
+            state.scrollPosition(LibraryListKey.ARTIST_ALBUMS, owner = artistA),
+        )
+    }
+
+    /** The good behaviour this change must not break: reopening keeps its place. */
+    @Test
+    fun reopeningTheSameAlbumFindsItsAnchorAgain() {
+        val state = MobileSurfaceViewModel()
+        val album = "Boards of Canada Music Has the Right to Children"
+
+        state.updateScroll(
+            LibraryListKey.ALBUM_TRACKS,
+            LibraryScrollPosition(firstVisibleItemIndex = 7, itemOffsetFraction = 0.1f),
+            owner = album,
+        )
+        // Leaving the album clears the composition's anchor read, not the
+        // stored one — this call stands in for a fresh AlbumDetailPage asking
+        // for the same album again.
+        val reopened = state.scrollPosition(LibraryListKey.ALBUM_TRACKS, owner = album)
+
+        assertEquals(
+            LibraryScrollPosition(firstVisibleItemIndex = 7, itemOffsetFraction = 0.1f),
+            reopened,
+        )
+    }
+
     @Test
     fun selectingQueueMovesThePagerWithoutOverwritingTheStoredLibraryDestination() {
         val remembered = mutableListOf<BrowseTab>()

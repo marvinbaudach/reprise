@@ -165,6 +165,7 @@ internal fun AlbumDetailPage(
                 lastRequestedOffset = albumRequestedOffset,
                 play = play,
                 loadMore = loadMoreAlbumTracks,
+                owner = selectedAlbum.album.identity(),
             )
         }
     }
@@ -306,6 +307,7 @@ private fun ArtistDetailSections(
     loadMoreTracks: (LibraryWindowRange) -> Unit,
 ) {
     val key = LibraryListKey.ARTIST_ALBUMS
+    val owner = artist.name
     val head = rememberArtistArtworkVisual(
         name = artist.name,
         representativeUri = artist.representativeUri,
@@ -318,9 +320,9 @@ private fun ArtistDetailSections(
     val itemCount = albumItemCount + trackContent.size +
         (if (albumContinuation == null) 0 else 1) +
         (if (untaggedTracks.rows.isEmpty()) 0 else 1) + 1
-    val anchor = surfaceState.scrollPosition(key).within(itemCount)
+    val anchor = surfaceState.scrollPosition(key, owner).within(itemCount)
     val listState = rememberLibraryListState(anchor)
-    ObserveLibraryListAnchor(key, listState, surfaceState)
+    ObserveLibraryListAnchor(key, listState, surfaceState, owner)
     val metrics = libraryFrameMetrics(surfaceLayout)
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val portraitCenterFraction = if (maxHeight.value > 0f) {
@@ -344,7 +346,7 @@ private fun ArtistDetailSections(
                 item(key = "artist-albums-heading") { SectionHeading("Albums") }
                 items(
                     albums.rows,
-                    key = { album -> "artist-album-${album.artist}\u0000${album.title}" },
+                    key = { album -> "artist-album-${album.identity()}" },
                 ) { album -> AlbumRow(album, openAlbum) }
                 albumContinuation?.let { request ->
                     item(key = "artist-albums-load-${request.offset}") {

@@ -79,10 +79,11 @@ internal fun TrackRows(
     subtitle: TrackRowSubtitle = TrackRowSubtitle.ARTIST_AND_ALBUM,
     onFavouriteChanged: (LibraryTrack, Boolean) -> Unit = { _, _ -> },
     queueActions: QueueRowActions? = null,
+    owner: String = "",
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
     val content = trackListContent(tracks, lastRequestedOffset)
-    val anchor = surfaceState.scrollPosition(listKey).within(content.size)
+    val anchor = surfaceState.scrollPosition(listKey, owner).within(content.size)
     val rowKey: (TrackListContent) -> Any = if (queueActions == null) {
         TrackListContent::libraryRowKey
     } else {
@@ -101,7 +102,7 @@ internal fun TrackRows(
 
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val gridState = rememberLibraryGridState(anchor)
-        ObserveLibraryGridAnchor(listKey, gridState, surfaceState)
+        ObserveLibraryGridAnchor(listKey, gridState, surfaceState, owner)
         SideEffect {
             reorder.windowOrder = order
             reorder.haptics = haptics
@@ -150,7 +151,7 @@ internal fun TrackRows(
     }
 
     val listState = rememberLibraryListState(anchor)
-    ObserveLibraryListAnchor(listKey, listState, surfaceState)
+    ObserveLibraryListAnchor(listKey, listState, surfaceState, owner)
     var viewportTopPx by remember { mutableFloatStateOf(0f) }
     var viewportBottomPx by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
