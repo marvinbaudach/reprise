@@ -7,6 +7,7 @@ import android.view.KeyEvent
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +61,36 @@ class MainActivityVolumeKeyTrackSwitchTest {
         assertEquals(emptyList<String>(), application.controls.transportCommands)
     }
 
+    @Test
+    fun repeatDownWhilePlayingIsConsumed() {
+        publishPlayingTrack()
+        val downTime = SystemClock.uptimeMillis()
+        compose.activity.dispatchKeyEvent(
+            keyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_UP),
+        )
+
+        val repeatConsumed = compose.activity.dispatchKeyEvent(
+            keyEvent(
+                downTime = downTime,
+                eventTime = downTime + 1,
+                action = KeyEvent.ACTION_DOWN,
+                keyCode = KeyEvent.KEYCODE_VOLUME_UP,
+                repeatCount = 1,
+            ),
+        )
+
+        assertTrue(repeatConsumed)
+    }
+
+    @Test
+    fun canceledUpAfterLongPressWhilePlayingIsConsumed() {
+        publishPlayingTrack()
+
+        val upConsumed = dispatchLongPress(KeyEvent.KEYCODE_VOLUME_UP)
+
+        assertTrue(upConsumed)
+    }
+
     private fun publishPlayingTrack() {
         application.service.publish(m9bSnapshot(1))
         shadowOf(Looper.getMainLooper()).idle()
@@ -72,7 +103,7 @@ class MainActivityVolumeKeyTrackSwitchTest {
         compose.activity.dispatchKeyEvent(keyEvent(downTime, downTime + 1, KeyEvent.ACTION_UP, keyCode))
     }
 
-    private fun dispatchLongPress(keyCode: Int) {
+    private fun dispatchLongPress(keyCode: Int): Boolean {
         val downTime = SystemClock.uptimeMillis()
         compose.activity.dispatchKeyEvent(keyEvent(downTime, downTime, KeyEvent.ACTION_DOWN, keyCode))
         compose.activity.dispatchKeyEvent(
@@ -85,9 +116,10 @@ class MainActivityVolumeKeyTrackSwitchTest {
                 flags = KeyEvent.FLAG_LONG_PRESS,
             ),
         )
-        compose.activity.dispatchKeyEvent(
+        val upConsumed = compose.activity.dispatchKeyEvent(
             keyEvent(downTime, downTime + 2, KeyEvent.ACTION_UP, keyCode),
         )
+        return upConsumed
     }
 
     private fun keyEvent(

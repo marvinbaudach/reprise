@@ -24,15 +24,17 @@ class VolumeKeyTrackSwitchTest {
     }
 
     @Test
-    fun trackedShortPressRestoresOneVolumeStep() {
-        val switch = VolumeKeyTrackSwitch(isPlaying = { true })
+    fun trackedShortPressRestoresOneVolumeStepForBothKeys() {
+        listOf(VolumeKey.UP, VolumeKey.DOWN).forEach { key ->
+            val switch = VolumeKeyTrackSwitch(isPlaying = { true })
 
-        switch.onDown(VolumeKey.DOWN, true)
+            switch.onDown(key, true)
 
-        assertEquals(
-            VolumeKeyAction.AdjustVolume(VolumeKey.DOWN),
-            switch.onUp(VolumeKey.DOWN, wasTracking = true, wasCanceled = false),
-        )
+            assertEquals(
+                VolumeKeyAction.AdjustVolume(key),
+                switch.onUp(key, wasTracking = true, wasCanceled = false),
+            )
+        }
     }
 
     @Test
