@@ -301,6 +301,24 @@ class ArtistPhotoProgressBarTest {
     }
 
     @Test
+    fun failedCompletionDismissesAfterTheLongerDelay() {
+        var dismissals = 0
+        compose.mainClock.autoAdvance = false
+        show(
+            ArtistPhotoProgress(13, ArtistPhotoProgressPhase.COMPLETE, 397, 15, 412),
+            dismiss = { dismissals += 1 },
+        )
+
+        compose.mainClock.advanceTimeBy(4_001)
+        compose.waitForIdle()
+        assertEquals(0, dismissals)
+
+        compose.mainClock.advanceTimeBy(6_000)
+        compose.waitForIdle()
+        assertEquals(1, dismissals)
+    }
+
+    @Test
     fun onlineSourcesUsesTheSameProgressLabels() {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
