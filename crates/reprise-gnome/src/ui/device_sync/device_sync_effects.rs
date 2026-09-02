@@ -114,47 +114,7 @@ pub(super) async fn perform(
             Event::PartialsCleaned(result)
         }
         Effect::Transcode { index, action } => {
-            let entry = transfer(work, index).desired.clone();
-            let profile =
-                transcode_profile(action).expect("a transcode effect must name a transcode action");
-            let extension = match profile {
-                TranscodeProfile::Opus160 => "opus",
-                TranscodeProfile::Mp3(_) => "mp3",
-            };
-            let request = TranscodeRequest {
-                source: entry.track.source_path.clone(),
-                output: reprise_core::device_sync::staging::temporary_path(
-                    &work.device_id,
-                    entry.track.id,
-                    extension,
-                ),
-                profile,
-                metadata: reprise_platform_linux::device_transfer::AudioMetadata::for_track(
-                    &entry.track,
-                ),
-            };
-            match runtime
-                .backend
-                .transcode_track(request, work.cancelled.clone())
-                .await
-            {
-                Ok(file) => {
-                    let size = file.size_bytes;
-                    work.transcoded = Some(file.path);
-                    Event::Transcoded(Ok(size))
-                }
-                Err(error) => {
-                    tracing::warn!(track_id = entry.track.id, %error, "device audio transcode failed");
-                    work.log.note(
-                        runtime,
-                        DeviationKind::Failed,
-                        Some(entry.track.id),
-                        &entry.device_path,
-                        format!("transcode failed: {error}"),
-                    );
-                    Event::Transcoded(Err(error))
-                }
-            }
+            transcode_effect::perform(runtime, work, index, action).await
         }
         Effect::CopyTrack {
             index,
@@ -164,7 +124,7 @@ pub(super) async fn perform(
             let entry = transfer(work, index).desired.clone();
             let (path, temporary) = match source {
                 TransferSource::Original => (entry.track.source_path.clone(), false),
-                TransferSource::Transcoded => match work.transcoded.take() {
+                TransferSource::Transcoded => match work.transcoded.remove(&index) {
                     Some(path) => (path, true),
                     None => {
                         return Event::TrackCopied(Err(

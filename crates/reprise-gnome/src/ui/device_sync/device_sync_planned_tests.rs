@@ -461,7 +461,7 @@ fn failed_replacement_inventory_preserves_the_old_device_path() {
 }
 
 #[test]
-fn planned_transcodes_finish_before_each_corresponding_device_copy_starts() {
+fn planned_transcodes_start_ahead_before_each_corresponding_device_copy_starts() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);
@@ -479,7 +479,7 @@ fn planned_transcodes_finish_before_each_corresponding_device_copy_starts() {
             .iter()
             .map(|(_, operation)| *operation)
             .collect::<Vec<_>>();
-        assert_eq!(operations, ["transcode", "copy", "transcode", "copy"]);
+        assert_eq!(operations, ["transcode", "transcode", "copy", "copy"]);
     });
 }
 

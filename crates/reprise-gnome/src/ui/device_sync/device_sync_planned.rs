@@ -6,7 +6,7 @@
 //! run, performs the I/O and database writes the machine asks for, and feeds
 //! the outcome back.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Instant;
 
@@ -82,10 +82,10 @@ struct PlannedWork {
     cancelled: Arc<AtomicBool>,
     /// Interrupts GIO copies.
     cancellable: gio::Cancellable,
-    /// The file the last transcode produced, awaiting its copy. The machine
-    /// always follows a successful transcode with its copy, and that copy
-    /// deletes the file whether it succeeded or not, so no other path has to.
-    transcoded: Option<PathBuf>,
+    /// Completed transcodes awaiting their matching indexed copy.
+    transcoded: HashMap<usize, PathBuf>,
+    /// Encodes already running ahead of the machine's current transfer.
+    transcode_ahead: HashMap<usize, transcode_prefetch::PendingTranscode>,
     /// The effects `Event::Start` unlocked, awaiting the first main-loop turn.
     pending: Vec<Effect>,
     /// What this run did, recorded as it happens (MTP-20).
@@ -176,6 +176,7 @@ async fn run_planned_sync(weak: Weak<DeviceSyncRuntime>, mut work: PlannedWork) 
             finish_sync(&runtime, &work, outcome);
             return;
         }
+        transcode_prefetch::fill(&runtime, &mut work, &effect);
         let event = effects::perform(&runtime, &mut work, effect).await;
         if !is_current_run(&runtime, &work) {
             return;
@@ -581,7 +582,8 @@ impl DeviceSyncRuntime {
                     playlists_storage: target.storage_id,
                     cancelled,
                     cancellable,
-                    transcoded: None,
+                    transcoded: HashMap::new(),
+                    transcode_ahead: HashMap::new(),
                     pending,
                     log,
                 }
@@ -614,3 +616,7 @@ impl DeviceSyncRuntime {
 mod effects;
 #[path = "device_sync_run_log.rs"]
 mod run_log;
+#[path = "device_sync_transcode_effect.rs"]
+mod transcode_effect;
+#[path = "device_sync_transcode_prefetch.rs"]
+mod transcode_prefetch;
