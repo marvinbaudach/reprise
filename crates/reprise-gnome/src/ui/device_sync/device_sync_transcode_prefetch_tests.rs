@@ -64,18 +64,89 @@ fn transcode_ahead_starts_the_next_encode_before_the_current_copy_and_keeps_path
 }
 
 #[test]
-fn cancelling_with_prefetches_outstanding_discards_every_staged_output() {
+fn cancelling_waits_for_the_encoder_before_discarding_its_staged_output() {
     run(async {
         let temp = tempfile::tempdir().unwrap();
         let staged_path = temp.path().join("prefetched.opus");
         write_fake_output(&staged_path).unwrap();
 
-        let cancelled = cancel_prefetch_for_test(staged_path.clone()).await;
+        let cleanup = cancel_prefetch_for_test(staged_path.clone()).await;
 
-        assert!(cancelled);
+        assert!(cleanup.cancelled);
+        assert!(cleanup.pending_drained);
+        assert!(cleanup.existed_until_encoder_stopped);
         assert!(
             !staged_path.exists(),
-            "cancel_all itself must discard the staged output"
+            "cancel_all must discard the staged output after the encoder stops"
+        );
+    });
+}
+
+#[test]
+fn an_unprefetched_transcode_runs_inline_and_produces_the_staged_file() {
+    run(async {
+        let (temp, _conn) = fixture();
+        let source = temp.path().join("1.flac");
+        let backend = FakeBackend::new(vec![], 0);
+        let entry = reprise_core::device_sync::DesiredManagedFile {
+            track: reprise_core::device_sync::SyncTrack {
+                id: 1,
+                source_path: source,
+                original_name: "1.flac".into(),
+                title: "Track 1".into(),
+                artist: "Artist".into(),
+                album: "Album".into(),
+                album_artist: "Artist".into(),
+                track_number: Some(1),
+                duration_ms: 1_000,
+                bitrate_kbps: Some(1_000),
+                size_bytes: 100,
+                source_mtime: 0,
+            },
+            device_path: "Artist/Album/01 Track 1.opus".into(),
+            target_bytes: 100,
+            profile_fingerprint: "opus-160".into(),
+            action: reprise_core::device_sync::TransferAction::TranscodeOpus160,
+        };
+
+        let output = transcode_without_prefetch_for_test(
+            &backend,
+            "a",
+            &entry,
+            reprise_core::device_sync::TransferAction::TranscodeOpus160,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(backend.state.transcode_starts.borrow().len(), 1);
+        assert!(output.path.exists());
+        reprise_core::device_sync::staging::discard(&output.path);
+    });
+}
+
+#[test]
+fn a_superseded_run_discards_a_transcode_completed_before_its_ownership_check() {
+    run(async {
+        let (temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 0));
+        let staged_path = temp.path().join("completed-before-supersession.opus");
+        backend.return_transcode_from(staged_path.clone());
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        let weak_runtime = Rc::downgrade(&runtime);
+        backend.observe_transcode_completion(Rc::new(move |_| {
+            if let Some(runtime) = weak_runtime.upgrade() {
+                runtime.supersede_current_run_for_test("a");
+            }
+        }));
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        assert!(
+            !staged_path.exists(),
+            "the superseded run's Drop must drain completed transcodes"
         );
     });
 }

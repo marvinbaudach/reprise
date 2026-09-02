@@ -677,7 +677,8 @@ fn replacement_keeps_lyrics_sidecar(work: &PlannedWork, replaced_path: &str) -> 
 }
 
 fn transfer(work: &PlannedWork, index: usize) -> TransferOperation {
-    work.machine.borrow().transfers()[index].clone()
+    work.transfer(index)
+        .expect("the sync machine emitted an invalid transfer index")
 }
 
 fn playlist_write(work: &PlannedWork, index: usize) -> reprise_core::device_sync::PlaylistWrite {

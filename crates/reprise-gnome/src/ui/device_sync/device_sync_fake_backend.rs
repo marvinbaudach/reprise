@@ -29,6 +29,7 @@ use crate::ui::device_sync::device_sync_runtime::*;
 pub(super) type TestFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 type DeviceSubscriber = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
 type DeleteObserver = Rc<dyn Fn(&str)>;
+type TranscodeObserver = Rc<dyn Fn(&std::path::Path)>;
 
 #[derive(Clone)]
 struct CopyGate {
@@ -93,6 +94,8 @@ pub(super) struct FakeState {
     transcode_probe_error: RefCell<Option<String>>,
     transcode_delay_ms: Cell<u64>,
     transcode_failures: RefCell<HashMap<PathBuf, String>>,
+    transcode_observer: RefCell<Option<TranscodeObserver>>,
+    transcode_output_override: RefCell<Option<PathBuf>>,
     cleanup_error: RefCell<Option<String>>,
     sidecar_replace_error: RefCell<Option<String>>,
     analysis_sidecar_replace_error: RefCell<Option<String>>,
@@ -155,6 +158,14 @@ impl FakeBackend {
             .transcode_failures
             .borrow_mut()
             .insert(source, error.into());
+    }
+
+    pub(super) fn observe_transcode_completion(&self, observer: TranscodeObserver) {
+        self.state.transcode_observer.replace(Some(observer));
+    }
+
+    pub(super) fn return_transcode_from(&self, path: PathBuf) {
+        self.state.transcode_output_override.replace(Some(path));
     }
 
     /// Came in with the dev merge: `MTP-21`'s proven-transfer work publishes
@@ -585,8 +596,19 @@ impl DeviceBackend for FakeBackend {
             {
                 return Err(error);
             }
+            let output = state
+                .transcode_output_override
+                .borrow()
+                .clone()
+                .unwrap_or_else(|| request.output.clone());
+            if output != request.output {
+                transcode_prefetch_tests::write_fake_output(&output)?;
+            }
+            if let Some(observer) = state.transcode_observer.borrow().clone() {
+                observer(&output);
+            }
             Ok(TranscodedFile {
-                path: request.output,
+                path: output,
                 size_bytes: 100,
             })
         })

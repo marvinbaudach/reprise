@@ -8,7 +8,7 @@ pub(super) const TRANSCODE_AHEAD: usize = 3;
 
 pub(super) struct PendingTranscode {
     pub(super) handle: gtk4::glib::JoinHandle<Result<TranscodedFile, String>>,
-    pub(super) cancellation: Arc<AtomicBool>,
+    pub(super) run_cancellation: Arc<AtomicBool>,
     pub(super) staged_path: PathBuf,
 }
 
@@ -35,7 +35,9 @@ pub(super) fn fill(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effe
         .take(TRANSCODE_AHEAD.saturating_sub(work.transcode_ahead.len()))
         .collect::<Vec<_>>();
     for (index, profile) in candidates {
-        let entry = work.machine.borrow().transfers()[index].desired.clone();
+        let Some(entry) = work.transfer(index).map(|transfer| transfer.desired) else {
+            continue;
+        };
         let extension = match profile {
             TranscodeProfile::Opus160 => "opus",
             TranscodeProfile::Mp3(_) => "mp3",
@@ -62,7 +64,7 @@ pub(super) fn fill(runtime: &Rc<DeviceSyncRuntime>, work: &mut PlannedWork, effe
             index,
             PendingTranscode {
                 handle,
-                cancellation,
+                run_cancellation: cancellation,
                 staged_path,
             },
         );
@@ -81,10 +83,23 @@ fn first_candidate(effect: &Effect) -> Option<usize> {
 
 pub(super) fn cancel_all(pending: &mut HashMap<usize, PendingTranscode>) {
     for (_, transcode) in pending.drain() {
-        transcode.cancellation.store(true, Ordering::SeqCst);
-        transcode.handle.abort();
-        reprise_core::device_sync::staging::discard(&transcode.staged_path);
+        transcode.run_cancellation.store(true, Ordering::SeqCst);
+        discard_after_completion(transcode.handle, transcode.staged_path);
     }
+}
+
+/// The real backend's GLib future receives the result of a separate encoder
+/// thread. Awaiting it before removal prevents unlinking an output that thread
+/// can still be writing. The backend's closed-channel path remains the fallback
+/// if its receive future is destroyed instead of completing.
+fn discard_after_completion(
+    handle: gtk4::glib::JoinHandle<Result<TranscodedFile, String>>,
+    staged_path: PathBuf,
+) {
+    gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
+        let _ = handle.await;
+        reprise_core::device_sync::staging::discard(&staged_path);
+    });
 }
 
 impl Drop for PlannedWork {

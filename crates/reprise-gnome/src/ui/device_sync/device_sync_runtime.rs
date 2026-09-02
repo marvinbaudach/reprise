@@ -563,5 +563,6 @@ mod target_actions;
 pub(super) use picker::*;
 #[cfg(test)]
 pub(super) use planned::{
-    cancel_prefetch_for_test, record_rejected_start, RunLog, SyncInitiator, SyncStartError,
+    cancel_prefetch_for_test, record_rejected_start, transcode_without_prefetch_for_test, RunLog,
+    SyncInitiator, SyncStartError,
 };
