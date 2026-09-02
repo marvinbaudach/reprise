@@ -6318,6 +6318,11 @@ msgstr ""
 
 #: crates/reprise-view/src/device_sync.rs:78
 #, rust-format
+msgid "Writing lyrics · {done} of {total}"
+msgstr ""
+
+#: crates/reprise-view/src/device_sync.rs:78
+#, rust-format
 msgid "Writing playlists · {done} of {total}"
 msgstr ""
 
