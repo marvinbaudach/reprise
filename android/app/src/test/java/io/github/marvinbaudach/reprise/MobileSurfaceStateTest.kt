@@ -210,6 +210,23 @@ class MobileSurfaceStateTest {
         )
     }
 
+    /**
+     * The queue is the one tab a filter never reaches (see selectTab). If
+     * openSearch ever opened the field there, text typed into it would sit
+     * unseen — `search()` still saves it via `updateSearch` — and surface as
+     * a silent filter on whichever tab the listener swipes to next.
+     */
+    @Test
+    fun openingSearchOnQueueDoesNothingSoNoFilterCanBeSeededThere() {
+        val state = MobileSurfaceViewModel()
+
+        state.selectTab(BrowseTab.QUEUE)
+        state.openSearch()
+
+        assertEquals(BrowseTab.QUEUE, state.selectedTab)
+        assertFalse(state.searchVisible)
+    }
+
     @Test
     fun selectingQueueMovesThePagerWithoutOverwritingTheStoredLibraryDestination() {
         val remembered = mutableListOf<BrowseTab>()

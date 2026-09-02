@@ -584,6 +584,7 @@ internal fun BrowseScreen(
                         )
                     }
                     LibrarySummaryActions(
+                        tab = selectedTab,
                         summary = summary,
                         searching = searchVisible,
                         toggleSearch = ::toggleSearch,
