@@ -8,6 +8,13 @@ Status: design approved, ready for planning
 Holding a hardware volume key in the Reprise Android app moves to the next or
 previous track. A short press keeps changing the volume exactly as before.
 
+
+> **Outcome 2026-09-02:** built and shipped as #806, then reverted. The scope
+> below — in-app only — is precisely what the owner did not want. The successor
+> takes the **Media3 remote volume** route rejected in this document; the
+> rejection reasoning stays accurate and is now a cost to design around rather
+> than a reason to stop.
+
 ## Scope
 
 In-app only: the gesture is active while a Reprise activity is in the
