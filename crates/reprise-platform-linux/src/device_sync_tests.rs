@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::future::Future;
 use std::io::Write;
@@ -378,12 +378,12 @@ fn replace_track_overwrites_a_changed_file_even_when_its_size_is_unchanged() {
 }
 
 #[test]
-fn replacement_verifies_the_partial_size_before_overwriting_the_final_file() {
+fn replacement_verifies_the_target_size_and_deletes_it_on_mismatch() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
     fs::write(temp.path().join("source.flac"), b"short").unwrap();
     let final_path = temp.path().join("Music/Reprise/Road/7-source.flac");
-    fs::write(&final_path, b"known-good").unwrap();
+    fs::write(&final_path, b"old").unwrap();
 
     let result = run(storage.replace_managed(
         None,
@@ -398,21 +398,13 @@ fn replacement_verifies_the_partial_size_before_overwriting_the_final_file() {
     assert!(matches!(
         &result,
         Err(DeviceIoError::DuringWrite {
-            step: WriteStep::VerifyPartial,
+            step: WriteStep::Publish,
             source,
         }) if matches!(source.as_ref(), DeviceIoError::SizeMismatch {
             expected: 6, actual: 5
         })
     ));
-    assert_eq!(
-        result.unwrap_err().to_string(),
-        "verifying the partial file failed: partial device file has 5 bytes, expected 6"
-    );
-    assert_eq!(fs::read(final_path).unwrap(), b"known-good");
-    assert!(!temp
-        .path()
-        .join("Music/Reprise/Road/7-source.flac.part")
-        .exists());
+    assert!(!final_path.exists());
 }
 
 #[test]
@@ -473,7 +465,7 @@ fn mtp_21_a_published_file_is_proven_by_its_expected_byte_count() {
 }
 
 #[test]
-fn mtp_21_a_rename_that_left_nothing_behind_is_reported_not_believed() {
+fn mtp_21_a_copy_that_left_nothing_behind_is_reported_not_believed() {
     let (temp, _storage) = fixture();
     let missing = gio::File::for_path(temp.path().join("never-arrived.opus"));
 
@@ -492,7 +484,7 @@ fn mtp_21_a_rename_that_left_nothing_behind_is_reported_not_believed() {
 }
 
 #[test]
-fn mtp_21_replacing_an_existing_track_publishes_it_without_leaving_a_partial() {
+fn mtp_21_replacing_an_existing_track_writes_the_final_name_without_litter() {
     let (temp, storage) = fixture();
     fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
     fs::write(temp.path().join("source.flac"), b"new!").unwrap();
@@ -544,11 +536,14 @@ fn mtp_21_rewriting_a_playlist_replaces_it_without_leaving_a_partial() {
 }
 
 #[test]
-fn pre_cancelled_copy_leaves_no_partial_file() {
+fn pre_cancelled_copy_leaves_no_target_file() {
     let (temp, storage) = fixture();
     fs::write(temp.path().join("source.flac"), vec![1_u8; 1024]).unwrap();
     let cancellable = gio::Cancellable::new();
     cancellable.cancel();
+    let target = temp.path().join("Music/Reprise/Road/1-source.flac");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    fs::write(&target, b"old").unwrap();
     let result = run(storage.replace_managed(
         None,
         "/Music/Reprise",
@@ -569,10 +564,38 @@ fn pre_cancelled_copy_leaves_no_partial_file() {
         .unwrap_err()
         .to_string()
         .starts_with("copying the partial file failed: device I/O failed:"));
-    assert!(!temp
-        .path()
-        .join("Music/Reprise/Road/1-source.flac.part")
-        .exists());
+    assert!(!target.exists());
+}
+
+#[test]
+fn copy_cancelled_after_progress_leaves_no_file_at_the_final_name() {
+    let (temp, storage) = fixture();
+    let source = temp.path().join("source.flac");
+    fs::write(&source, vec![1_u8; 8 * 1024 * 1024]).unwrap();
+    let target = temp.path().join("Music/Reprise/Road/1-source.flac");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    fs::write(&target, b"old").unwrap();
+    let cancellable = gio::Cancellable::new();
+    let cancel_on_progress = cancellable.clone();
+    let saw_progress = Rc::new(Cell::new(false));
+    let observed = saw_progress.clone();
+
+    let result = run(storage.replace_managed(
+        None,
+        "/Music/Reprise",
+        &gio::File::for_path(source),
+        "Road/1-source.flac",
+        8 * 1024 * 1024,
+        &cancellable,
+        move |copied, _total| {
+            observed.set(observed.get() || copied > 0);
+            cancel_on_progress.cancel();
+        },
+    ));
+
+    assert!(saw_progress.get());
+    assert!(result.is_err());
+    assert!(!target.exists());
 }
 
 #[test]

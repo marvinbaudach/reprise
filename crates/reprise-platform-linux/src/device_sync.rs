@@ -397,18 +397,11 @@ impl DeviceStorage {
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let target = Self::managed_child(&storage, target_path, &components)?;
-        let target_name = components.last().expect("validated nonempty path");
-        let partial_components = components[..components.len() - 1]
-            .iter()
-            .cloned()
-            .chain([format!("{target_name}{PARTIAL_SUFFIX}")])
-            .collect::<Vec<_>>();
-        let partial = Self::managed_child(&storage, target_path, &partial_components)?;
         let progress = Rc::new(RefCell::new(progress));
         let callback_progress = progress.clone();
         let (sender, receiver) = async_channel::bounded(1);
         source.copy_async(
-            &partial,
+            &target,
             gio::FileCopyFlags::OVERWRITE,
             gio::glib::Priority::DEFAULT,
             Some(cancellable),
@@ -419,27 +412,14 @@ impl DeviceStorage {
                 let _ = sender.try_send(result);
             },
         );
-        let copied = receiver
-            .recv()
-            .await
-            .map_err(|_| DeviceIoError::InvalidRelativePath.during(WriteStep::CopyPartial))?;
-        if let Err(error) = copied {
-            delete_if_present(&partial).await;
-            return Err(DeviceIoError::from(error).during(WriteStep::CopyPartial));
-        }
-        let actual_size = target_size(&partial)
-            .await
-            .map_err(|error| error.during(WriteStep::VerifyPartial))?
-            .unwrap_or(0);
-        if actual_size != expected_size {
-            delete_if_present(&partial).await;
-            return Err(DeviceIoError::SizeMismatch {
-                expected: expected_size,
-                actual: actual_size,
+        let copied = match receiver.recv().await {
+            Ok(copied) => copied,
+            Err(_) => {
+                delete_if_present(&target).await;
+                return Err(DeviceIoError::InvalidRelativePath.during(WriteStep::CopyPartial));
             }
-            .during(WriteStep::VerifyPartial));
-        }
-        publish(&partial, &target, expected_size).await?;
+        };
+        finish_managed_copy(&target, cancellable, copied, expected_size).await?;
         (progress.borrow_mut())(expected_size, expected_size);
         Ok(CopyOutcome::Copied)
     }
@@ -576,6 +556,28 @@ async fn target_size(file: &gio::File) -> Result<Option<u64>, DeviceIoError> {
     }
 }
 
+async fn finish_managed_copy(
+    target: &gio::File,
+    cancellable: &gio::Cancellable,
+    copied: Result<(), gio::glib::Error>,
+    expected_size: u64,
+) -> Result<(), DeviceIoError> {
+    if let Err(error) = copied {
+        delete_if_present(target).await;
+        return Err(DeviceIoError::from(error).during(WriteStep::CopyPartial));
+    }
+    if cancellable.is_cancelled() {
+        delete_if_present(target).await;
+        let error = gio::glib::Error::new(gio::IOErrorEnum::Cancelled, "Operation cancelled");
+        return Err(DeviceIoError::from(error).during(WriteStep::CopyPartial));
+    }
+    if let Err(error) = verify_published(target, expected_size).await {
+        delete_if_present(target).await;
+        return Err(error);
+    }
+    Ok(())
+}
+
 /// Moves a finished `.part` file onto its final name and proves it landed.
 ///
 /// Both steps exist because of how MTP answers an overwriting rename: gvfs reports success, drops the previous file, and never applies the new
@@ -634,6 +636,32 @@ async fn delete_if_present(file: &gio::File) {
             tracing::warn!(%error, "failed to remove partial device sync file");
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn a_mid_copy_error_discards_the_incomplete_final_file() {
+    let (temp, _storage) = tests::fixture();
+    let target_path = temp.path().join("incomplete.opus");
+    std::fs::write(&target_path, b"truncated").unwrap();
+    let target = gio::File::for_path(&target_path);
+    let copy_error = gio::glib::Error::new(gio::IOErrorEnum::Failed, "injected copy failure");
+
+    let result = tests::run(finish_managed_copy(
+        &target,
+        &gio::Cancellable::new(),
+        Err(copy_error),
+        99,
+    ));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CopyPartial,
+            ..
+        })
+    ));
+    assert!(!target_path.exists());
 }
 
 #[cfg(test)]
