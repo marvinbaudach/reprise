@@ -338,7 +338,13 @@ impl DeviceStorage {
             if !relative_path.ends_with(PARTIAL_SUFFIX) {
                 continue;
             }
-            let components = safe_relative_components(relative_path)?;
+            let Ok(components) = safe_relative_components(relative_path) else {
+                tracing::warn!(
+                    path = %relative_path,
+                    "device sync: ignored an invalid listed partial path"
+                );
+                continue;
+            };
             let partial = components
                 .iter()
                 .fold(managed_root.clone(), |parent, component| {
@@ -416,7 +422,7 @@ impl DeviceStorage {
             Ok(copied) => copied,
             Err(_) => {
                 delete_if_present(&target).await;
-                return Err(DeviceIoError::InvalidRelativePath.during(WriteStep::CopyPartial));
+                return Err(DeviceIoError::InvalidRelativePath.during(WriteStep::CopyTarget));
             }
         };
         finish_managed_copy(&target, cancellable, copied, expected_size).await?;
@@ -564,14 +570,14 @@ async fn finish_managed_copy(
 ) -> Result<(), DeviceIoError> {
     if let Err(error) = copied {
         delete_if_present(target).await;
-        return Err(DeviceIoError::from(error).during(WriteStep::CopyPartial));
+        return Err(DeviceIoError::from(error).during(WriteStep::CopyTarget));
     }
     if cancellable.is_cancelled() {
         delete_if_present(target).await;
         let error = gio::glib::Error::new(gio::IOErrorEnum::Cancelled, "Operation cancelled");
-        return Err(DeviceIoError::from(error).during(WriteStep::CopyPartial));
+        return Err(DeviceIoError::from(error).during(WriteStep::CopyTarget));
     }
-    if let Err(error) = verify_published(target, expected_size).await {
+    if let Err(error) = verify_file(target, expected_size, WriteStep::VerifyTarget).await {
         delete_if_present(target).await;
         return Err(error);
     }
@@ -613,6 +619,14 @@ async fn publish(
 
 /// Confirms that a published file is on the device with the bytes we sent.
 async fn verify_published(file: &gio::File, expected_size: u64) -> Result<(), DeviceIoError> {
+    verify_file(file, expected_size, WriteStep::Publish).await
+}
+
+async fn verify_file(
+    file: &gio::File,
+    expected_size: u64,
+    step: WriteStep,
+) -> Result<(), DeviceIoError> {
     match target_size(file).await {
         Ok(Some(actual)) if actual == expected_size => Ok(()),
         Ok(Some(actual)) => Err(DeviceIoError::SizeMismatch {
@@ -627,7 +641,7 @@ async fn verify_published(file: &gio::File, expected_size: u64) -> Result<(), De
         }),
         Err(error) => Err(error),
     }
-    .map_err(|error| error.during(WriteStep::Publish))
+    .map_err(|error| error.during(step))
 }
 
 async fn delete_if_present(file: &gio::File) {
@@ -657,7 +671,29 @@ fn a_mid_copy_error_discards_the_incomplete_final_file() {
     assert!(matches!(
         result,
         Err(DeviceIoError::DuringWrite {
-            step: WriteStep::CopyPartial,
+            step: WriteStep::CopyTarget,
+            ..
+        })
+    ));
+    assert!(!target_path.exists());
+}
+
+#[cfg(test)]
+#[test]
+fn cancellation_after_a_successful_copy_discards_the_final_file() {
+    let (temp, _storage) = tests::fixture();
+    let target_path = temp.path().join("cancelled.opus");
+    std::fs::write(&target_path, b"complete").unwrap();
+    let target = gio::File::for_path(&target_path);
+    let cancellable = gio::Cancellable::new();
+    cancellable.cancel();
+
+    let result = tests::run(finish_managed_copy(&target, &cancellable, Ok(()), 8));
+
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CopyTarget,
             ..
         })
     ));

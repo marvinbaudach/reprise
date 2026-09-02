@@ -395,15 +395,10 @@ fn replacement_verifies_the_target_size_and_deletes_it_on_mismatch() {
         |_copied, _total| {},
     ));
 
-    assert!(matches!(
-        &result,
-        Err(DeviceIoError::DuringWrite {
-            step: WriteStep::Publish,
-            source,
-        }) if matches!(source.as_ref(), DeviceIoError::SizeMismatch {
-            expected: 6, actual: 5
-        })
-    ));
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "verifying the destination file failed: device file has 5 bytes, expected 6"
+    );
     assert!(!final_path.exists());
 }
 
@@ -556,14 +551,14 @@ fn pre_cancelled_copy_leaves_no_target_file() {
     assert!(matches!(
         &result,
         Err(DeviceIoError::DuringWrite {
-            step: WriteStep::CopyPartial,
+            step: WriteStep::CopyTarget,
             ..
         })
     ));
     assert!(result
         .unwrap_err()
         .to_string()
-        .starts_with("copying the partial file failed: device I/O failed:"));
+        .starts_with("copying the destination file failed: device I/O failed:"));
     assert!(!target.exists());
 }
 
@@ -608,6 +603,7 @@ fn cleanup_partials_removes_only_orphaned_part_files_under_the_managed_root() {
     fs::write(temp.path().join("Music/outside.part"), b"outside").unwrap();
 
     let listed = [
+        "../outside.part".into(),
         "Road/unfinished.opus.part".into(),
         "Road/finished.opus".into(),
     ];
