@@ -68,7 +68,7 @@ pub enum TransferSource {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     /// Delete leftover partial files under the device root.
-    CleanPartials,
+    CleanPartials(Vec<String>),
     Transcode {
         index: usize,
         action: TransferAction,
@@ -315,7 +315,7 @@ impl DeviceSyncMachine {
             (Awaiting::Start, Event::Start) => {
                 self.phase = self.opening_phase();
                 self.awaiting = Awaiting::Partials;
-                vec![Effect::CleanPartials]
+                vec![Effect::CleanPartials(self.plan.partial_paths.clone())]
             }
             (Awaiting::Partials, Event::PartialsCleaned(result)) => {
                 if let Err(error) = result {

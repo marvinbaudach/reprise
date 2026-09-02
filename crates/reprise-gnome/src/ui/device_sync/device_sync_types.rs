@@ -58,6 +58,7 @@ pub trait DeviceBackend {
         _root_uri: String,
         _target_path: String,
         _storage_id: Option<StorageId>,
+        _partial_paths: Vec<String>,
     ) -> BackendFuture<u32> {
         Box::pin(async { Ok(0) })
     }

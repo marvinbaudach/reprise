@@ -99,10 +99,11 @@ impl DeviceBackend for GioDeviceBackend {
         root_uri: String,
         target_path: String,
         storage_id: Option<StorageId>,
+        partial_paths: Vec<String>,
     ) -> BackendFuture<u32> {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
-                .cleanup_partials_in(storage_id, &target_path)
+                .cleanup_partials_in(storage_id, &target_path, &partial_paths)
                 .await
                 .map_err(|error| error.to_string())
         })

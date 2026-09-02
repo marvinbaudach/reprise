@@ -34,6 +34,7 @@ impl DeviceBackend for FailingCopyBackend {
                     ..Default::default()
                 },
                 managed_files: Vec::new(),
+                ..DeviceStorageInspection::default()
             })
         })
     }

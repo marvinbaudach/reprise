@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -330,64 +329,26 @@ impl DeviceStorage {
         &self,
         storage_id: Option<StorageId>,
         target_path: &str,
+        partial_paths: &[String],
     ) -> Result<u32, DeviceIoError> {
         let storage = self.resolve_target_storage(storage_id).await?;
         let managed_root = Self::managed_child(&storage, target_path, &[])?;
-        let mut pending = VecDeque::from([managed_root.clone()]);
         let mut removed = 0_u32;
-        while let Some(directory) = pending.pop_front() {
-            let enumerator = match directory
-                .enumerate_children_future(
-                    "standard::name,standard::type",
-                    gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
-                    gio::glib::Priority::DEFAULT,
-                )
-                .await
-            {
-                Ok(enumerator) => enumerator,
-                Err(error) if error.matches(gio::IOErrorEnum::NotFound) => continue,
+        for relative_path in partial_paths {
+            if !relative_path.ends_with(PARTIAL_SUFFIX) {
+                continue;
+            }
+            let components = safe_relative_components(relative_path)?;
+            let partial = components
+                .iter()
+                .fold(managed_root.clone(), |parent, component| {
+                    parent.child(component)
+                });
+            match partial.delete_future(gio::glib::Priority::DEFAULT).await {
+                Ok(()) => removed = removed.saturating_add(1),
+                Err(error) if error.matches(gio::IOErrorEnum::NotFound) => {}
                 Err(error) => {
-                    warn_cleanup_failure(&managed_root, &directory, &error, "enumerate directory");
-                    continue;
-                }
-            };
-            loop {
-                let batch = match enumerator
-                    .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
-                    .await
-                {
-                    Ok(batch) => batch,
-                    Err(error) => {
-                        // This handles remote enumerators disappearing between batches. Local
-                        // chmod fixtures cannot fail after open; coverage would require an
-                        // injectable GFileEnumerator.
-                        warn_cleanup_failure(
-                            &managed_root,
-                            &directory,
-                            &error,
-                            "continue enumerating directory",
-                        );
-                        break;
-                    }
-                };
-                if batch.is_empty() {
-                    break;
-                }
-                for info in batch {
-                    let child = directory.child(info.name());
-                    if info.file_type() == gio::FileType::Directory {
-                        pending.push_back(child);
-                    } else if info.name().to_string_lossy().ends_with(PARTIAL_SUFFIX) {
-                        match child.delete_future(gio::glib::Priority::DEFAULT).await {
-                            Ok(()) => removed = removed.saturating_add(1),
-                            Err(error) => warn_cleanup_failure(
-                                &managed_root,
-                                &child,
-                                &error,
-                                "delete partial file",
-                            ),
-                        }
-                    }
+                    warn_cleanup_failure(&managed_root, &partial, &error, "delete partial file");
                 }
             }
         }

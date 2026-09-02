@@ -6,7 +6,9 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use reprise_core::device_sync::{DeviceStorageAccess, StorageId, SyncTarget, DEFAULT_TARGET_PATH};
+use reprise_core::device_sync::{
+    DeviceStorageAccess, ManagedDeviceFile, StorageId, SyncTarget, DEFAULT_TARGET_PATH,
+};
 use reprise_core::library::m3u::M3uEntry;
 use tempfile::TempDir;
 
@@ -161,6 +163,12 @@ fn managed_readback_keeps_byte_preserved_originals_with_unlisted_extensions() {
         b"partial",
     )
     .unwrap();
+    fs::write(
+        temp.path()
+            .join("Music/Reprise/Artist/Album/01 Original.lrc"),
+        b"lyrics",
+    )
+    .unwrap();
 
     let inspection = run(storage.inspect(&default_target())).unwrap();
     assert_eq!(
@@ -172,6 +180,17 @@ fn managed_readback_keeps_byte_preserved_originals_with_unlisted_extensions() {
         ["Artist/Album/01 Original.aiff", "Originals.m3u8"]
     );
     assert_eq!(inspection.snapshot.reprise_music_bytes, 46);
+    assert_eq!(
+        inspection.partial_paths,
+        ["Artist/Album/unfinished.aiff.part"]
+    );
+    assert_eq!(
+        inspection.lyrics_files,
+        [ManagedDeviceFile {
+            relative_path: "Artist/Album/01 Original.lrc".into(),
+            size_bytes: 6,
+        }]
+    );
 }
 
 #[test]
@@ -559,128 +578,85 @@ fn pre_cancelled_copy_leaves_no_partial_file() {
 #[test]
 fn cleanup_partials_removes_only_orphaned_part_files_under_the_managed_root() {
     let (temp, storage) = fixture();
-    fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
-    fs::write(
-        temp.path().join("Music/Reprise/Road/unfinished.opus.part"),
-        b"partial",
-    )
-    .unwrap();
-    fs::write(
-        temp.path().join("Music/Reprise/Road/finished.opus"),
-        b"finished",
-    )
-    .unwrap();
+    let managed = temp.path().join("Music/Reprise/Road");
+    fs::create_dir_all(&managed).unwrap();
+    fs::write(managed.join("unfinished.opus.part"), b"partial").unwrap();
+    fs::write(managed.join("finished.opus"), b"finished").unwrap();
     fs::write(temp.path().join("Music/outside.part"), b"outside").unwrap();
 
+    let listed = [
+        "Road/unfinished.opus.part".into(),
+        "Road/finished.opus".into(),
+    ];
     assert_eq!(
-        run(storage.cleanup_partials_in(None, "/Music/Reprise")).unwrap(),
+        run(storage.cleanup_partials_in(None, "/Music/Reprise", &listed)).unwrap(),
         1
     );
-    assert!(!temp
-        .path()
-        .join("Music/Reprise/Road/unfinished.opus.part")
-        .exists());
-    assert!(temp
-        .path()
-        .join("Music/Reprise/Road/finished.opus")
-        .exists());
+    assert!(!managed.join("unfinished.opus.part").exists());
+    assert!(managed.join("finished.opus").exists());
     assert!(temp.path().join("Music/outside.part").exists());
 }
 
 #[test]
 fn cleanup_partials_silently_accepts_a_missing_managed_root() {
     let (_temp, storage) = fixture();
-
-    let (result, warnings) =
-        capture_warnings(|| run(storage.cleanup_partials_in(None, "/Music/Reprise")));
-
+    let (result, warnings) = capture_warnings(|| {
+        run(storage.cleanup_partials_in(None, "/Music/Reprise", &["missing.opus.part".into()]))
+    });
     assert_eq!(result.unwrap(), 0);
     assert_eq!(warnings, "");
 }
 
 #[test]
-fn cleanup_partials_continues_after_one_delete_fails() {
+fn cleanup_partials_uses_only_listed_paths_and_continues_after_a_delete_failure() {
     let (temp, storage) = fixture();
     if fs::metadata(temp.path()).unwrap().uid() == 0 {
         eprintln!("skipped permission-based test under a root test runner");
         return;
     }
-    let protected = temp.path().join("Music/Reprise/Protected");
-    let writable = temp.path().join("Music/Reprise/Writable");
+    let root = temp.path().join("Music/Reprise");
+    let protected = root.join("Protected");
+    let writable = root.join("Deep/Writable");
+    let unreadable = root.join("Unreadable");
     fs::create_dir_all(&protected).unwrap();
     fs::create_dir_all(&writable).unwrap();
-    let protected_partial = protected.join("left-behind.opus.part");
-    let writable_partial = writable.join("removed.opus.part");
-    fs::write(&protected_partial, b"partial").unwrap();
-    fs::write(&writable_partial, b"partial").unwrap();
-    fs::set_permissions(&protected, fs::Permissions::from_mode(0o500)).unwrap();
-
-    let result = run(storage.cleanup_partials_in(None, "/Music/Reprise"));
-
-    fs::set_permissions(&protected, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(result.as_ref().ok(), Some(&1));
-    assert!(protected_partial.exists());
-    assert!(!writable_partial.exists());
-}
-
-#[test]
-fn cleanup_partials_continues_after_one_directory_cannot_be_enumerated() {
-    let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
-    let unreadable = temp.path().join("Music/Reprise/Unreadable");
-    let writable = temp.path().join("Music/Reprise/Deep/Writable");
     fs::create_dir_all(&unreadable).unwrap();
-    fs::create_dir_all(&writable).unwrap();
-    let writable_partial = writable.join("removed.opus.part");
-    fs::write(&writable_partial, b"partial").unwrap();
+    fs::write(protected.join("left-behind.opus.part"), b"partial").unwrap();
+    fs::write(writable.join("removed.opus.part"), b"partial").unwrap();
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o500)).unwrap();
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
 
-    let result = run(storage.cleanup_partials_in(None, "/Music/Reprise"));
+    let listed = [
+        "Protected/left-behind.opus.part".into(),
+        "Deep/Writable/removed.opus.part".into(),
+    ];
+    let (result, warnings) =
+        capture_warnings(|| run(storage.cleanup_partials_in(None, "/Music/Reprise", &listed)));
 
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o700)).unwrap();
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(result.as_ref().ok(), Some(&1));
-    assert!(!writable_partial.exists());
+    assert!(protected.join("left-behind.opus.part").exists());
+    assert!(!writable.join("removed.opus.part").exists());
+    assert!(warnings.contains("Protected/left-behind.opus.part"));
+    assert!(warnings.contains("action=\"delete partial file\""));
 }
 
 #[test]
-fn cleanup_partials_root_enumeration_warning_names_the_managed_root() {
-    let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
-    let managed_root = temp.path().join("Music/Reprise");
-    fs::create_dir_all(&managed_root).unwrap();
-    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o000)).unwrap();
-
-    let (result, warnings) =
-        capture_warnings(|| run(storage.cleanup_partials_in(None, "/Music/Reprise")));
-
-    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(result.as_ref().ok(), Some(&0));
-    assert!(warnings.contains(gio::File::for_path(&managed_root).uri().as_str()));
-    assert!(warnings.contains("action=\"enumerate directory\""));
-}
-
-#[test]
-fn cleanup_partials_still_fails_before_the_walk_when_storage_cannot_be_resolved() {
+fn cleanup_partials_rejects_an_invalid_storage_or_target_path() {
     let (_temp, storage) = fixture();
-
-    let result = run(storage.cleanup_partials_in(Some(StorageId(u32::MAX)), "/Music/Reprise"));
-
-    assert!(matches!(result, Err(DeviceIoError::StorageNotFound)));
-}
-
-#[test]
-fn cleanup_partials_still_fails_before_the_walk_when_the_target_path_is_invalid() {
-    let (_temp, storage) = fixture();
-
-    let result = run(storage.cleanup_partials_in(None, "../outside"));
-
-    assert!(matches!(result, Err(DeviceIoError::InvalidRelativePath)));
+    assert!(matches!(
+        run(storage.cleanup_partials_in(
+            Some(StorageId(u32::MAX)),
+            "/Music/Reprise",
+            &["unfinished.opus.part".into()],
+        )),
+        Err(DeviceIoError::StorageNotFound)
+    ));
+    assert!(matches!(
+        run(storage.cleanup_partials_in(None, "../outside", &["unfinished.opus.part".into()])),
+        Err(DeviceIoError::InvalidRelativePath)
+    ));
 }
 
 #[test]

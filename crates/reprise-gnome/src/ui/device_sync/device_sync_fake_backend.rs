@@ -77,8 +77,12 @@ pub(super) struct FakeState {
     /// layer uses, not just what `device.targets` records in memory.
     pub(super) transfer_storage_ids: RefCell<Vec<(String, Option<StorageId>)>>,
     pub(super) inspection_roots: RefCell<Vec<String>>,
+    pub(super) managed_root_enumerations: Cell<u32>,
     pub(super) last_inspected_target: RefCell<Option<SyncTarget>>,
     pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
+    pub(super) partial_paths: RefCell<Vec<String>>,
+    pub(super) lyrics_files: RefCell<Vec<ManagedDeviceFile>>,
+    pub(super) cleaned_partials: RefCell<Vec<String>>,
     pub(super) ejected: RefCell<Vec<String>>,
     pub(super) planned_operations: RefCell<Vec<(String, &'static str)>>,
     available_bytes: Cell<Option<u64>>,
@@ -290,6 +294,11 @@ impl DeviceBackend for FakeBackend {
         let gate = self.state.inspection_gate.borrow_mut().take();
         let inspection_error = self.state.inspection_error.borrow_mut().take();
         let managed_files = self.state.managed_files.borrow().clone();
+        let partial_paths = self.state.partial_paths.borrow().clone();
+        let lyrics_files = self.state.lyrics_files.borrow().clone();
+        self.state
+            .managed_root_enumerations
+            .set(self.state.managed_root_enumerations.get().saturating_add(1));
         self.state.inspection_roots.borrow_mut().push(root_uri);
         self.state.last_inspected_target.replace(Some(target));
         Box::pin(async move {
@@ -315,6 +324,8 @@ impl DeviceBackend for FakeBackend {
                     ..DeviceStorageSnapshot::default()
                 },
                 managed_files,
+                partial_paths,
+                lyrics_files,
             })
         })
     }
@@ -486,9 +497,26 @@ impl DeviceBackend for FakeBackend {
         _root_uri: String,
         _target_path: String,
         _storage_id: Option<StorageId>,
+        partial_paths: Vec<String>,
     ) -> BackendFuture<u32> {
         let error = self.state.cleanup_error.borrow().clone();
-        Box::pin(async move { error.map_or(Ok(0), Err) })
+        let state = self.state.clone();
+        Box::pin(async move {
+            if let Some(error) = error {
+                return Err(error);
+            }
+            let partial_paths = partial_paths
+                .into_iter()
+                .filter(|path| path.ends_with(".part"))
+                .collect::<Vec<_>>();
+            let removed = u32::try_from(partial_paths.len()).unwrap_or(u32::MAX);
+            state
+                .partial_paths
+                .borrow_mut()
+                .retain(|candidate| !partial_paths.iter().any(|removed| removed == candidate));
+            state.cleaned_partials.borrow_mut().extend(partial_paths);
+            Ok(removed)
+        })
     }
 
     fn probe_transcode(&self, _profile: TranscodeProfile) -> Result<(), String> {

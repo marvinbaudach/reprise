@@ -208,6 +208,37 @@ fn mtp_5_partial_cleanup_failure_blocks_every_planned_write() {
 }
 
 #[test]
+fn one_sync_recursively_enumerates_the_managed_root_once() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend
+            .state
+            .partial_paths
+            .replace(vec!["Road/unfinished.opus.part".into()]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        let enumerations_before = backend.state.managed_root_enumerations.get();
+        let (_subscription, completed) =
+            signal_when(&runtime, |state| state.devices[0].last_sync.is_some());
+
+        runtime.sync_now("a").unwrap();
+        completed.recv().await.unwrap();
+
+        assert_eq!(
+            backend.state.managed_root_enumerations.get() - enumerations_before,
+            1
+        );
+        assert_eq!(
+            backend.state.cleaned_partials.borrow().as_slice(),
+            ["Road/unfinished.opus.part"]
+        );
+        assert_eq!(runtime.devices()[0].page.changes.removals, 0);
+    });
+}
+
+#[test]
 fn known_read_only_target_is_rejected_at_the_runtime_boundary() {
     run(async {
         let (_temp, conn) = fixture();

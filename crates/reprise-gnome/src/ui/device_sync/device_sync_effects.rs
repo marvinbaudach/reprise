@@ -100,13 +100,14 @@ pub(super) async fn perform(
 ) -> Event {
     match effect {
         Effect::Finished(_) => unreachable!("the driver handles Finished before calling perform"),
-        Effect::CleanPartials => {
+        Effect::CleanPartials(partial_paths) => {
             let result = runtime
                 .backend
                 .cleanup_partials(
                     work.root_uri.clone(),
                     work.playlists_path.clone(),
                     work.playlists_storage,
+                    partial_paths,
                 )
                 .await
                 .map(|_| ());

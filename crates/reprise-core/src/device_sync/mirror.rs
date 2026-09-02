@@ -65,8 +65,17 @@ pub struct MirrorInput {
     pub inventory: Vec<DeviceFileRecord>,
     pub playlist_inventory: Vec<DevicePlaylistRecord>,
     pub managed_files: Vec<ManagedDeviceFile>,
+    pub partial_paths: Vec<String>,
+    pub lyrics_files: Vec<ManagedDeviceFile>,
     pub managed_files_scanned: bool,
     pub desktop_analyses: Vec<DesktopAnalysis>,
+}
+
+struct ManagedTreeInventory {
+    managed_files: Vec<ManagedDeviceFile>,
+    partial_paths: Vec<String>,
+    lyrics_files: Vec<ManagedDeviceFile>,
+    scanned: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,6 +146,8 @@ pub struct MirrorPlan {
     pub copy: Vec<DesiredManagedFile>,
     pub replace: Vec<MirrorReplacement>,
     pub analysis_writes: Vec<AnalysisSidecarWrite>,
+    pub partial_paths: Vec<String>,
+    pub lyrics_files: Vec<ManagedDeviceFile>,
     pub remove: Vec<ManagedRemoval>,
     pub retained_unavailable: Vec<DeviceFileRecord>,
     pub retained_stable: Vec<DeviceFileRecord>,
@@ -197,8 +208,12 @@ pub fn plan_mirror(input: MirrorInput) -> MirrorPlan {
         input.profile,
         input.inventory,
         input.playlist_inventory,
-        input.managed_files,
-        input.managed_files_scanned,
+        ManagedTreeInventory {
+            managed_files: input.managed_files,
+            partial_paths: input.partial_paths,
+            lyrics_files: input.lyrics_files,
+            scanned: input.managed_files_scanned,
+        },
         &input.desktop_analyses,
     )
 }
@@ -208,10 +223,15 @@ fn build_plan(
     profile: TransferProfile,
     mut inventory: Vec<DeviceFileRecord>,
     mut playlist_inventory: Vec<DevicePlaylistRecord>,
-    mut managed_files: Vec<ManagedDeviceFile>,
-    managed_files_scanned: bool,
+    managed_tree: ManagedTreeInventory,
     desktop_analyses: &[DesktopAnalysis],
 ) -> MirrorPlan {
+    let ManagedTreeInventory {
+        mut managed_files,
+        mut partial_paths,
+        mut lyrics_files,
+        scanned: managed_files_scanned,
+    } = managed_tree;
     inventory.sort_by(|left, right| {
         left.track_id
             .cmp(&right.track_id)
@@ -223,6 +243,12 @@ fn build_plan(
             .then_with(|| left.device_path.cmp(&right.device_path))
     });
     managed_files.sort_by(|left, right| {
+        left.relative_path
+            .cmp(&right.relative_path)
+            .then_with(|| left.size_bytes.cmp(&right.size_bytes))
+    });
+    partial_paths.sort();
+    lyrics_files.sort_by(|left, right| {
         left.relative_path
             .cmp(&right.relative_path)
             .then_with(|| left.size_bytes.cmp(&right.size_bytes))
@@ -291,6 +317,8 @@ fn build_plan(
             .iter()
             .fold(0_u64, |sum, file| sum.saturating_add(file.target_bytes)),
         desired_files,
+        partial_paths,
+        lyrics_files,
         ..MirrorPlan::default()
     };
     file_changes::plan_file_changes(

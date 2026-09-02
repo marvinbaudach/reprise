@@ -50,6 +50,8 @@ fn input(selected: Vec<SelectionSource>, playlists: Vec<MirrorPlaylistSnapshot>)
         inventory: Vec::new(),
         playlist_inventory: Vec::new(),
         managed_files: Vec::new(),
+        partial_paths: Vec::new(),
+        lyrics_files: Vec::new(),
         managed_files_scanned: false,
         desktop_analyses: Vec::new(),
     }
