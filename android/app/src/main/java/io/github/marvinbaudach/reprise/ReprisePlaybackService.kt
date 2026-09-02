@@ -117,7 +117,7 @@ open class ReprisePlaybackService : MediaSessionService() {
         mutableSleepTimerStates.value = sleepTimer.state()
         val session = MediaSession.Builder(
             this,
-            CoreControlledPlayer(player, mediaSessionCommands),
+            CoreControlledPlayer(player, mediaSessionCommands, this),
         ).build()
         mediaSession = session
         // Handing the session to the service is what puts Media3 in charge of
