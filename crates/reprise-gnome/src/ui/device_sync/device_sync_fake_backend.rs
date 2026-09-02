@@ -372,6 +372,9 @@ impl DeviceBackend for FakeBackend {
             reprise_core::device_sync::track_metadata_list::FILE_NAME
                 | reprise_core::device_sync::listen_report::ACKNOWLEDGEMENT_FILE_NAME
         );
+        let is_lyrics = reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(
+            std::path::Path::new(&relative_target),
+        );
         let is_playlists_target = state
             .last_inspected_target
             .borrow()
@@ -460,14 +463,19 @@ impl DeviceBackend for FakeBackend {
                 return Err("cancelled".into());
             }
             if is_playlists_target {
-                let mut managed_files = state.managed_files.borrow_mut();
-                if let Some(file) = managed_files
+                let files = if is_lyrics {
+                    &state.lyrics_files
+                } else {
+                    &state.managed_files
+                };
+                let mut files = files.borrow_mut();
+                if let Some(file) = files
                     .iter_mut()
                     .find(|file| file.relative_path == relative_target)
                 {
                     file.size_bytes = expected_size;
                 } else {
-                    managed_files.push(ManagedDeviceFile {
+                    files.push(ManagedDeviceFile {
                         relative_path: relative_target.clone(),
                         size_bytes: expected_size,
                     });
@@ -679,6 +687,43 @@ impl DeviceBackend for FakeBackend {
             Ok(())
         })
     }
+}
+
+#[test]
+fn a_second_sync_with_unchanged_lyrics_does_not_replace_the_sidecar_again() {
+    super::run(async {
+        let (temp, conn) = super::fixture();
+        std::fs::write(temp.path().join("1.lrc"), b"[00:01.00]Lyrics\n").unwrap();
+        super::select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        super::settle().await;
+
+        runtime.sync_now("a").unwrap();
+        let total = match runtime.devices()[0].sync_phase {
+            PlannedSyncPhase::Syncing { total, .. } => total,
+            ref phase => panic!("the run must expose its work total, got {phase:?}"),
+        };
+        assert_eq!(
+            total, 4,
+            "audio, analysis, lyrics, and playlist are four work units"
+        );
+        super::settle().await;
+        std::fs::write(temp.path().join("1.flac"), vec![1_u8; 101]).unwrap();
+        runtime.refresh_contents("a");
+        super::settle().await;
+        runtime.sync_now("a").unwrap();
+        super::settle().await;
+
+        let lyrics_copies = backend
+            .state
+            .managed_copies
+            .borrow()
+            .iter()
+            .filter(|(_, path)| path.ends_with(".lrc"))
+            .count();
+        assert_eq!(lyrics_copies, 1);
+    });
 }
 
 pub(super) fn descriptor(id: &str, reconnectable: bool) -> DeviceDescriptor {

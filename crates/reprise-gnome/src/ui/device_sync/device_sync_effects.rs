@@ -192,15 +192,6 @@ pub(super) async fn perform(
             }
             match result {
                 Ok(_) => {
-                    copy_lyrics_sidecar(
-                        runtime,
-                        work,
-                        &entry.track.source_path,
-                        &entry.device_path,
-                        &work.playlists_path,
-                        work.playlists_storage,
-                    )
-                    .await;
                     work.log.copied(bytes);
                     Event::TrackCopied(Ok(bytes))
                 }
@@ -255,6 +246,10 @@ pub(super) async fn perform(
                 );
             }
             Event::AnalysisWritten(result)
+        }
+        Effect::WriteLyrics { index } => {
+            let planned = work.machine.borrow().plan().lyrics_writes[index].clone();
+            Event::LyricsWritten(copy_lyrics_sidecar(runtime, work, &planned).await)
         }
         Effect::WritePlaylist {
             index,
@@ -573,44 +568,32 @@ pub(super) async fn write_track_metadata_list(
 
 pub(super) async fn copy_lyrics_sidecar(
     runtime: &Rc<DeviceSyncRuntime>,
-    work: &PlannedWork,
-    source_path: &Path,
-    device_path: &str,
-    target_path: &str,
-    storage_id: Option<StorageId>,
-) {
-    let Some(sidecar) =
-        reprise_core::device_sync::lyrics_sidecar::paths_for_track(source_path, device_path)
-    else {
-        return;
-    };
-    let Some(source_bytes) =
-        reprise_core::device_sync::lyrics_sidecar::source_file_size(&sidecar.source_path)
-    else {
-        return;
-    };
+    work: &mut PlannedWork,
+    planned: &reprise_core::device_sync::mirror::LyricsSidecarWrite,
+) -> Result<u64, String> {
     let result = runtime
         .backend
         .replace_track(
             work.device_id.clone(),
             work.root_uri.clone(),
-            target_path.to_string(),
-            storage_id,
-            sidecar.source_path.clone(),
-            sidecar.device_path.clone(),
-            source_bytes,
+            work.playlists_path.clone(),
+            work.playlists_storage,
+            planned.source_path.clone(),
+            planned.device_path.clone(),
+            planned.size_bytes,
             work.cancellable.clone(),
-            Rc::new(|_, _| {}),
+            copy_progress(runtime, work),
         )
         .await;
-    if let Err(error) = result {
+    result.map(|_| planned.size_bytes).map_err(|error| {
         tracing::warn!(
-            source_path = %sidecar.source_path.display(),
-            device_path = sidecar.device_path,
+            source_path = %planned.source_path.display(),
+            device_path = planned.device_path,
             %error,
             "could not copy lyrics sidecar to device"
         );
-    }
+        error
+    })
 }
 
 /// Removes the `.lrc` that travelled with `device_path` — but only when the

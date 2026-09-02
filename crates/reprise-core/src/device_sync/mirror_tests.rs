@@ -93,6 +93,9 @@ fn synced_audio_input() -> MirrorInput {
     mirror_input
 }
 
+#[path = "mirror_lyrics_tests.rs"]
+mod lyrics_tests;
+
 #[test]
 fn a_resident_analysis_of_the_expected_size_plans_no_write() {
     let mut mirror_input = synced_audio_input();

@@ -11,6 +11,8 @@ use super::{SyncTrack, TransferAction, TransferProfile};
 
 #[path = "mirror_file_changes.rs"]
 mod file_changes;
+#[path = "mirror_lyrics.rs"]
+mod lyrics;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnavailableTrack {
@@ -102,6 +104,15 @@ pub struct AnalysisSidecarWrite {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LyricsSidecarWrite {
+    pub track_id: i64,
+    pub source_path: std::path::PathBuf,
+    pub device_path: String,
+    pub size_bytes: u64,
+    pub existing_size_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ManagedRemoval {
     Inventory(DeviceFileRecord),
     Orphan(ManagedDeviceFile),
@@ -146,8 +157,8 @@ pub struct MirrorPlan {
     pub copy: Vec<DesiredManagedFile>,
     pub replace: Vec<MirrorReplacement>,
     pub analysis_writes: Vec<AnalysisSidecarWrite>,
+    pub lyrics_writes: Vec<LyricsSidecarWrite>,
     pub partial_paths: Vec<String>,
-    pub lyrics_files: Vec<ManagedDeviceFile>,
     pub remove: Vec<ManagedRemoval>,
     pub retained_unavailable: Vec<DeviceFileRecord>,
     pub retained_stable: Vec<DeviceFileRecord>,
@@ -318,7 +329,6 @@ fn build_plan(
             .fold(0_u64, |sum, file| sum.saturating_add(file.target_bytes)),
         desired_files,
         partial_paths,
-        lyrics_files,
         ..MirrorPlan::default()
     };
     file_changes::plan_file_changes(
@@ -334,6 +344,7 @@ fn build_plan(
         &mut plan,
     );
     plan_analysis_sidecars(desktop_analyses, &managed_files, &mut plan);
+    lyrics::plan_lyrics_sidecars(&lyrics_files, &managed_files, &mut plan);
     plan_playlists(
         playlists,
         &desired_by_id,
