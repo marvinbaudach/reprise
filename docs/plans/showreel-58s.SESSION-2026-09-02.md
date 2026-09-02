@@ -1,10 +1,29 @@
-# Handover — the 58.2 s showreel, session of 2026-09-02
+# Handover — the 58.2 s showreel, sessions of 2026-09-02
 
-**The desktop half is shot. The phone half is now blocked on the phone itself:**
-the analysis that shot 13 needs exists, and the device was held by another
-session. Read `showreel-58s.HANDOFF.md` for the film's shape, the music
-and the cut arithmetic — none of that changed. This file is what this session
-established, decided and broke.
+**Every shot but one is in the can. The one that is missing is the Concerts
+station, and it is missing because a take needs a human click that never
+landed on the right window.** Read `showreel-58s.HANDOFF.md` for the film's
+shape, the music and the cut arithmetic — none of that changed. This file is
+what the two sessions of 2026-09-02 established, decided and broke.
+
+## Where it stands, right now
+
+| shot | state |
+|---|---|
+| 01 Music, 02 Podcasts, 03 Releases, 05 My Stats | shot, `VERDICT PASS` |
+| 04 Concerts | **needs re-shooting** at the new radius, see below |
+| 09 handover / sync | shot, 78 s of live transfer |
+| 12 phone navigation | shot, `roh-android-gesture.mp4` |
+| 13 phone visualiser | shot, `roh-android-nowplaying.mp4` |
+| the cut | not started; `cut-film.sh` still names files that do not exist |
+
+Nothing is running and nothing is held: the `showreel-await` unit was stopped,
+the device lock is free, the wake locks this work took are released. Reprise
+itself is still running on the desktop (pid outside any unit) with the info
+panel open, which is the state a take wants.
+
+**The one uncommitted change** is `scripts/showreel/await-take-gnome4.sh` —
+committed with this handover; see the Concerts section for what it fixes.
 
 Everything below was measured on this machine today, against the `origin/dev`
 nightly `8a5c36227c` on the desktop and the release APK built from the same
@@ -294,9 +313,9 @@ and not the mini player's bare `Play`.
 
 ## What is left
 
-1. The theme song's `.reprise-analysis` is written and verified locally. What
-   is left is on the phone: push it beside the mp3, re-index, play, confirm the
-   spectrum. Blocked only on the device lock.
+1. ~~The theme song's `.reprise-analysis`.~~ **Done and confirmed on the
+   phone.** The one standing caveat: a device sync deletes both the track and
+   its sidecar, so re-push and rescan before any re-take of shot 13.
 2. ~~`probe gesture`, then `take gesture` — shot 12.~~ **Shot 12 is in the can:**
    `roh-android-gesture.mp4`, 17.97 s, marks in
    `~/.cache/reprise-showreel/timeline-android-gesture.tsv` (begin 4.01, artists
@@ -328,10 +347,9 @@ and not the mini player's bare `Play`.
    put the visualiser 0.6 s ahead of the music and gave no hint of it.
 6. Cut with `SHOWREEL_BRIDGE_SPEED` set, score, and check the duration is
    58.200.
-7. Decide the Concerts shot. It currently shows three rows under a
-   `Zurich · 500 km` filter with "509 concerts hidden" beneath them, which reads
-   sparse. Nobody has ruled on whether that is what the shot should say. Put to
-   the user on 2026-09-02 and still unanswered.
+7. ~~Decide the Concerts shot.~~ **Decided: 1000 km.** The setting is written;
+   what is left is one take. **This is the only filming still open** — see the
+   section below for the command and the trap that cost the first attempt.
 
 ## One process failure, recorded because it could have cost a take
 
@@ -344,3 +362,56 @@ because two sessions once installed different builds in the same second and one
 of them filmed the other's. A phone take is a lease over the whole measurement;
 re-acquire it before every stretch, and check `device-lock status` rather than
 assuming the lease from an hour ago is still yours.
+
+
+## The Concerts shot: decided, set, and not yet in the can
+
+The shot used to show three rows under `Zurich · 500 km` with "509 concerts
+hidden" under them, which reads sparse. The choice was put as 2000 km against
+1000 km. **1000 km wins on two measurements, and neither is a matter of taste.**
+
+Counting `concert_events` by great-circle distance from the stored location
+(47.3744, 8.5410):
+
+| radius | concerts in frame |
+|---|---|
+| 500 km | 4 |
+| **1000 km** | **45** |
+| 1500 km | 79 |
+| 2000 km | 79 |
+
+2000 km shows nothing that 1500 does not — beyond that there is nothing until
+North America. And the app's own presets are `[100, 250, 500, 1000]`
+(`crates/reprise-core/src/location.rs:23`): 2000 is a value the filter bar
+cannot offer, so a film showing it would be showing something the viewer cannot
+reach. 45 rows overflow the visible list either way.
+
+`concerts.filter.radius_km` is set to `1000` in `~/.local/share/reprise/`
+`reprise.db`. It was already 1000 when this session looked — the 500 km in the
+existing take predates whatever changed it. The header will read
+`Zürich · 1000 km` (`strings_concerts.rs:95`). The value is a string holding an
+f64 in `settings(key, value)`, and it is read when the Concerts page opens
+rather than at startup, so writing it with the app running is enough.
+
+**How to shoot it:**
+
+    systemd-run --user --unit=showreel-await --same-dir \
+      --setenv=WAYLAND_DISPLAY="$WAYLAND_DISPLAY" --setenv=DISPLAY="$DISPLAY" \
+      --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" --setenv=XDG_CURRENT_DESKTOP=GNOME \
+      --setenv=SHOWREEL_STATIONS=concerts --setenv=SHOWREEL_SYNC_DWELL=3 \
+      scripts/showreel/await-take-gnome4.sh
+
+then click the Reprise window and leave it in front. `SHOWREEL_STATIONS=concerts`
+shoots that station alone; the handover station still runs afterwards because it
+is not part of the station list, which is why the sync dwell is turned down to
+3 s. Output lands in `~/.cache/reprise-showreel/roh-gnome-tour.mp4.mp4` — the
+work directory, not `~/Videos`, so the good tour take is not at risk.
+
+**The trap this cost a take to find.** `active-window.py` reports every window
+AT-SPI marks active, and a browser behind the app counts. The first attempt took
+the first hit, settled its six seconds, and filmed 45 seconds of a browser
+playing a video; only the take's own focus guard called it (`VERDICT FAIL`,
+`FAIL concerts: lost focus`). The wrapper now asks again on the far side of the
+settle and keeps waiting instead of shooting when Reprise is no longer in front.
+Whatever was in front at the click is not necessarily in front six seconds
+later.

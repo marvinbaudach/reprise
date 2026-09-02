@@ -37,7 +37,15 @@ for _ in $(seq 1 "$WAIT_TICKS"); do
   if python3 scripts/showreel/active-window.py 2>/dev/null | grep -qi '^reprise'; then
     printf 'await: Reprise is active; settling %s s before the first move\n' "$SETTLE" >&2
     sleep "$SETTLE"
-    exec python3 scripts/showreel/take-gnome4.py "$@" >"$LOG" 2>&1
+    # The signal is loose, so it is checked again on the far side of the settle.
+    # A run on 2026-09-02 took the first hit, shot 45 s of a browser playing a
+    # video, and only the take's own focus guard called it FAIL. Whatever was in
+    # front at the click is not necessarily in front six seconds later; asking
+    # twice costs nothing and keeps the wait running instead of burning a take.
+    if python3 scripts/showreel/active-window.py 2>/dev/null | grep -qi '^reprise'; then
+      exec python3 scripts/showreel/take-gnome4.py "$@" >"$LOG" 2>&1
+    fi
+    printf 'await: Reprise lost the front during the settle; still waiting\n' >&2
   fi
   sleep 2
 done
