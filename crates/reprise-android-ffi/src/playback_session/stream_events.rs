@@ -105,7 +105,10 @@ impl SessionInner {
                 PlayerEvent::Error(message) => {
                     tracing::warn!(%message, "Android playback backend reported an error");
                     let policy = playback_fault_policy(true);
-                    state.snapshot.error = Some(fault_notice_text(policy.notices[0]).to_owned());
+                    state.snapshot.fault_notice =
+                        Some(fault_notice_text(policy.notices[0]).to_owned());
+                    state.snapshot.fault_notice_count =
+                        state.snapshot.fault_notice_count.saturating_add(1);
                     state.current_loaded = false;
                     let queue_len = state.queue.len();
                     let skip_limit = *state.fault_skip_limit.get_or_insert(queue_len);

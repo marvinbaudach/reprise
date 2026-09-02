@@ -102,6 +102,8 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
             shuffled: false,
             repeat: AndroidRepeatMode::Off,
             error: None,
+            fault_notice: None,
+            fault_notice_count: 0,
         }
     );
     assert_eq!(
@@ -182,6 +184,8 @@ fn an_empty_session_snapshot_has_no_current_track_identity() {
             shuffled: false,
             repeat: AndroidRepeatMode::Off,
             error: None,
+            fault_notice: None,
+            fault_notice_count: 0,
         }
     );
 }
@@ -258,6 +262,8 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
             shuffled: false,
             repeat: AndroidRepeatMode::Off,
             error: None,
+            fault_notice: None,
+            fault_notice_count: 0,
         }
     );
     assert_eq!(

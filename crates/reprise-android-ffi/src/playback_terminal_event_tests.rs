@@ -37,7 +37,7 @@ fn fb_6_fault_on_a_multi_track_queue_advances_and_keeps_playing() {
     assert_eq!(snapshot.current_track_id, Some(8));
     assert_eq!(snapshot.automatic_advance_count, 0);
     assert_eq!(
-        snapshot.error.as_deref(),
+        snapshot.fault_notice.as_deref(),
         Some("Track unavailable — skipped")
     );
     assert_eq!(
@@ -48,6 +48,45 @@ fn fb_6_fault_on_a_multi_track_queue_advances_and_keeps_playing() {
             PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
         ]
     );
+}
+
+// UX FB-6: the replacement track confirming playback does not erase the
+// one-shot notice raised for the track that was skipped.
+#[test]
+fn fb_6_a_successful_skip_keeps_its_notice_after_the_replacement_plays() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(
+            vec![7, 8],
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::Error {
+            message: "missing file".to_owned(),
+        },
+    );
+    bridge.emit(
+        23,
+        AndroidPlayerEvent::StateChanged {
+            state: AndroidPlaybackState::Playing,
+        },
+    );
+
+    let snapshot = fixture.session.snapshot().unwrap();
+    assert_eq!(
+        snapshot.fault_notice.as_deref(),
+        Some("Track unavailable — skipped")
+    );
+    assert_eq!(snapshot.fault_notice_count, 1);
 }
 
 // UX FB-6: repeat-one repeats a track after a successful finish, but a fault
@@ -180,7 +219,7 @@ fn fb_6_fault_on_the_last_track_stops_at_queue_exhaustion() {
     assert_eq!(snapshot.current_index, None);
     assert_eq!(snapshot.current_track_id, None);
     assert_eq!(
-        snapshot.error.as_deref(),
+        snapshot.fault_notice.as_deref(),
         Some("Track unavailable — skipped")
     );
     assert_eq!(fixture.calls.lock().unwrap().as_slice(), &[PortCall::Stop]);
@@ -232,7 +271,7 @@ fn play_5b_successful_start_resets_the_consecutive_fault_run() {
     assert_eq!(snapshot.state, AndroidPlaybackState::Playing);
     assert_eq!(snapshot.current_index, Some(0));
     assert_eq!(
-        snapshot.error.as_deref(),
+        snapshot.fault_notice.as_deref(),
         Some("Track unavailable — skipped")
     );
 }
@@ -278,7 +317,7 @@ fn fb_6_a_new_queue_resets_the_prior_fault_bound() {
     assert_eq!(snapshot.current_index, Some(1));
     assert_eq!(snapshot.current_track_id, Some(9));
     assert_eq!(
-        snapshot.error.as_deref(),
+        snapshot.fault_notice.as_deref(),
         Some("Track unavailable — skipped")
     );
 }
@@ -300,7 +339,7 @@ fn fb_6_a_new_queue_clears_the_prior_fault_notice_before_confirmation() {
         },
     );
     assert_eq!(
-        fixture.session.snapshot().unwrap().error.as_deref(),
+        fixture.session.snapshot().unwrap().fault_notice.as_deref(),
         Some("Track unavailable — skipped")
     );
 
@@ -319,7 +358,7 @@ fn fb_6_a_new_queue_clears_the_prior_fault_notice_before_confirmation() {
     let snapshot = fixture.session.snapshot().unwrap();
     assert_eq!(snapshot.state, AndroidPlaybackState::Playing);
     assert_eq!(snapshot.current_track_id, Some(8));
-    assert_eq!(snapshot.error, None);
+    assert_eq!(snapshot.fault_notice, None);
 }
 
 #[test]
@@ -407,7 +446,7 @@ fn buffering_from_the_failed_stream_cannot_revive_a_stopped_snapshot() {
     let snapshot = fixture.session.snapshot().unwrap();
     assert_eq!(snapshot.state, AndroidPlaybackState::Stopped);
     assert_eq!(
-        snapshot.error.as_deref(),
+        snapshot.fault_notice.as_deref(),
         Some("Track unavailable — skipped")
     );
 }
