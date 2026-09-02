@@ -43,6 +43,10 @@
 #   scripts/showreel/take-android3.sh probe gesture
 #   scripts/showreel/take-android3.sh take gesture
 set -euo pipefail
+# `bc` prints 3.6 and a German locale's printf reads that as an invalid number,
+# which aborts the probe after the first step. The numbers here are timings, not
+# anything a reader picks a decimal comma for.
+export LC_ALL=C
 cd "$(git rev-parse --show-toplevel)"
 source scripts/showreel/common.sh
 
@@ -79,12 +83,24 @@ album	I Feel the Everblack	--contains	1.6
 play	Play 	--contains	2.5
 '}
 
+# Before a `take nowplaying`: leave the Now Playing square on the COVER. The
+# shot is cover-first, and the tap is what brings the spectrum in — the other
+# way round it swaps the spectrum away. The choice is stored on the phone and
+# survives a restart, but every take flips it, so two takes in a row show
+# opposite things unless the square is tapped back between them. Check with one
+# screenshot of the open sheet; there is no read-out anywhere else.
+#
+# The result row is matched by its artist-and-album line, not by the title. The
+# title is also the text standing in the search field one row above it, so
+# `--contains "Reprise Theme"` resolves to the field: the take taps the search
+# box, the keyboard comes back, and every step after that types into it. Seen on
+# 2026-09-02, and it fails silently — the probe reports a hit either way.
 STEPS_NOWPLAYING=${SHOWREEL_STEPS_NOWPLAYING:-'
 titles	Titles	-	1.0
 search	Search library	--contains	0.8
 type	text:'"${THEME_TITLE// /%s}"'	-	1.0
 keyboard	key:BACK	-	0.6
-play	'"$THEME_TITLE"'	--contains	3.0
+play	Reprise • Reprise	--contains	3.0
 open	tap:400,2020	-	3.5
 spectrum	tap:540,925	-	12.0
 '}
@@ -115,8 +131,12 @@ snapshot() {
 #                          label is not stable across builds
 gesture() {
   local kind=${1%%:*} args=${1#*:}
+  # The coordinate tuples are deliberately word-split into separate arguments.
+  # The directive sits in front of the whole case: shellcheck rejects one placed
+  # in front of a single branch, and rejecting it makes the rest of the file
+  # unparseable rather than merely unchecked.
+  # shellcheck disable=SC2086
   case $kind in
-    # shellcheck disable=SC2086  # the tuples are deliberately word-split
     swipe) adb shell input swipe ${args//,/ } ;;
     tap) adb shell input tap ${args//,/ } ;;
     text) adb shell input text "$args" ;;
@@ -138,7 +158,10 @@ steps_for() {
 probe() {
   : >"$CACHE"
   local walked=0 dwelled=0
-  while IFS=$'\t' read -r label target opts dwell; do
+  # The step list is read on file descriptor 3, not on stdin. `adb shell` reads
+  # stdin and swallows whatever is left of it, so a loop fed on stdin walks its
+  # first step and then quietly ends — a take that looks like it ran.
+  while IFS=$'\t' read -r -u 3 label target opts dwell; do
     [[ -n ${label:-} ]] || continue
     local t_start
     t_start=$(now)
@@ -166,18 +189,36 @@ probe() {
       return 1
     fi
     printf '%s\t%s\t%s\n' "$label" "$xy" "$dwell" >>"$CACHE"
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086  # ui-find prints "x y", two arguments on purpose
     adb shell input tap $xy
     printf 'probe: %-10s %-8s resolve %.1fs dwell %s\n' \
       "$label" "$xy" "$(echo "$(now) - $t_start" | bc)" "$dwell" >&2
     walked=$(echo "$walked + $(now) - $t_start" | bc)
     dwelled=$(echo "$dwelled + $dwell" | bc)
     sleep "$dwell"
-  done < <(steps_for "$MODE")
+  done 3< <(steps_for "$MODE")
 
   printf 'probe: resolving costs %.1f s, the shot itself is %.1f s.\n' \
     "$walked" "$dwelled" >&2
   printf 'probe: cached %s — `take` replays it with no dumps.\n' "$CACHE" >&2
+}
+
+# Ends the recorder and waits for it to finalize the file.
+#
+# SIGINT does not reach scrcpy here — it keeps recording, `wait` never returns,
+# and the take runs until something outside kills it. Measured on scrcpy 4.1:
+# a 19 s shot produced a 119 s file. SIGTERM ends it and the mp4 is finalized;
+# the bounded wait is there so a recorder that ignores that too cannot hold the
+# session, and SIGKILL is deliberately not sent — it would leave the file
+# without its moov atom, which is a lost take rather than a long one.
+stop_scrcpy() {
+  local pid=$1 waited=0
+  kill -TERM "$pid" 2>/dev/null || true
+  while kill -0 "$pid" 2>/dev/null && ((waited < 100)); do
+    sleep 0.2
+    waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null || true
 }
 
 # --- take --------------------------------------------------------------------
@@ -195,27 +236,28 @@ take() {
   local scrcpy_pid=$!
   # Killing by pattern kills the calling shell here — the pattern matches this
   # script's own command line. Keep the pid.
-  trap 'kill -INT "$scrcpy_pid" 2>/dev/null || true; wait "$scrcpy_pid" 2>/dev/null || true' EXIT
+  trap 'stop_scrcpy "$scrcpy_pid"' EXIT
   sleep 4.0   # the first second of an scrcpy file is junk; let the stream settle
 
   mark begin
   sleep 1.5
-  while IFS=$'\t' read -r label xy dwell; do
+  # Same file descriptor 3 as the probe, and for the same reason: the taps in
+  # this loop are `adb shell` calls.
+  while IFS=$'\t' read -r -u 3 label xy dwell; do
     [[ -n ${label:-} ]] || continue
     mark "$label"
     if [[ $xy == swipe:* || $xy == text:* || $xy == key:* || $xy == tap:* ]]; then
       gesture "$xy"
     else
-      # shellcheck disable=SC2086
+      # shellcheck disable=SC2086  # the cached centre is "x y", two arguments
       adb shell input tap $xy
     fi
     sleep "$dwell"
-  done <"$CACHE"
+  done 3<"$CACHE"
   mark end
   sleep 2.0
 
-  kill -INT "$scrcpy_pid" 2>/dev/null || true
-  wait "$scrcpy_pid" 2>/dev/null || true
+  stop_scrcpy "$scrcpy_pid"
   trap - EXIT
 
   # A take that walked off its path looks exactly like one that did not, until

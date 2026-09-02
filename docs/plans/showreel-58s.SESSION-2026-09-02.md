@@ -219,6 +219,42 @@ The step list now in the script, all labels read off the running app:
 `Play ` with the trailing space matters: it matches `Play I Feel the Everblack…`
 and not the mini player's bare `Play`.
 
+## Traps found while shooting the phone (2026-09-02, evening)
+
+- **`take-android3.sh` walked exactly one step and reported success.** The step
+  loop read its list on stdin and `adb shell` swallowed the rest of it. Both
+  loops now read on file descriptor 3. This is the failure the probe was meant
+  to make impossible and it looked identical to a clean run.
+- **A German locale aborted the probe after step one.** `bc` prints `3.6` and
+  `printf %.1f` under `de_DE` calls that an invalid number. The script exports
+  `LC_ALL=C`. Note that these are two independent bugs with the same symptom:
+  the locale one fired first and hid the stdin one behind it. A run that stops
+  after one step is not evidence of either in particular.
+- **`kill -INT` does not stop scrcpy 4.1 here.** The recorder kept running and
+  `wait` never returned: a 19 s shot produced a 119 s file, and the take only
+  ended when something outside killed it. `stop_scrcpy` sends SIGTERM and waits
+  with a bound. SIGKILL is deliberately not sent — it would leave the mp4
+  without its moov atom, which is a lost take rather than a long one.
+- **`scripts/check-shell.sh` did not pass**, contrary to what the earlier note
+  in this file said: a `# shellcheck disable` in front of a single `case` branch
+  made the whole file unparseable. It passes now.
+- **Do not match the result row by its title.** The title is also the text
+  standing in the search field one row above it, so `--contains "Reprise Theme"`
+  resolved to the field: the take tapped the search box, the keyboard came back,
+  and every step after that typed into it. The row is matched by
+  `Reprise • Reprise` instead.
+- **The Now Playing square must be left on the cover before a take**, and every
+  take flips it. The choice is stored on the phone and does survive a restart —
+  two takes in a row showed the spectrum first for exactly this reason. There is
+  no read-out; one screenshot of the open sheet is the check.
+- **Let the artist photos finish downloading first.** A "Downloading artist
+  photos 3/5" banner appeared during the first probe, pushed the page down
+  between the dump and the tap, and the Play button was missed. It is also not
+  something the shot should show.
+- **A device sync deletes the theme song and its sidecar**, and one ran three
+  times during this session (20:02, 21:11, and once more mid-probe). Check both
+  files immediately before every take.
+
 ## Traps found today
 
 - **The info panel's only reliable lever is the DB key written while the app is
@@ -261,23 +297,38 @@ and not the mini player's bare `Play`.
 1. The theme song's `.reprise-analysis` is written and verified locally. What
    is left is on the phone: push it beside the mp3, re-index, play, confirm the
    spectrum. Blocked only on the device lock.
-2. `probe gesture`, then `take gesture` — shot 12.
-3. `probe nowplaying`, then `take nowplaying` — shot 13, with the theme playing.
-   One thing to settle first: the step list assumes the square starts on the
-   cover and the tap swaps in the spectrum. On the phone as it stands the
-   spectrum is already showing when playback begins, so that tap would swap the
-   wrong way. Find the visualiser choice (`AndroidVisualizerChoice.COVER` in
-   `NowPlayingSheet.kt`) and set it to the cover before the take, or drop the
-   step. A tap at `540,925` was followed by the sheet closing — but the track
-   also ended in the same second, so that is not a measurement of what the tap
-   does. Settle it with one tap in the middle of a long song; it costs seconds
-   and no take.
-4. Measure both phone in-points on the finished cut by the two-band method in
+2. ~~`probe gesture`, then `take gesture` — shot 12.~~ **Shot 12 is in the can:**
+   `roh-android-gesture.mp4`, 17.97 s, marks in
+   `~/.cache/reprise-showreel/timeline-android-gesture.tsv` (begin 4.01, artists
+   5.52, search 6.98, type 8.06, keyboard 9.60, artist 10.60, album 12.48, play
+   14.26, end 17.11). Artists tab, search "lorna", the artist page with four
+   albums, the album's track list, and the tap that starts it.
+3. ~~`probe nowplaying`, then `take nowplaying` — shot 13.~~ **Shot 13 is in the
+   can:** `roh-android-nowplaying.mp4`, ~30 s, marks in
+   `timeline-android-nowplaying.tsv` (open 14.02, spectrum 17.65, end 29.81).
+   The sheet opens on the Reprise cover and the tap at 17.65 brings the spectrum
+   in, swinging to the theme. That was settled, not assumed — see the traps
+   below.
+4. **Rewire `cut-film.sh` to the takes that exist.** It still names
+   `roh-gnome-tour.mp4`, `roh-gnome-pickup.mp4` and one single
+   `roh-android-bed.mp4` for both phone shots. On disk there are now five files
+   and the phone half is two separate takes:
+
+       IN1  roh-gnome-tour-2026-09-02-panelopen.mp4
+       IN2  roh-gnome-pickup-music-2026-09-02.mp4
+       bridge roh-gnome-handover-sync-2026-09-02.mp4
+       12   roh-android-gesture.mp4       (marks in timeline-android-gesture.tsv)
+       13   roh-android-nowplaying.mp4    (open 14.02, spectrum 17.65)
+
+   Shot 12 wants an in-point a little before its first mark; shot 13 wants the
+   cover on screen before the tap at 17.65, so its in-point is around 15.
+
+5. Measure both phone in-points on the finished cut by the two-band method in
    `showreel-56s.HANDOFF.md`. The on-screen clock is not good enough: it once
    put the visualiser 0.6 s ahead of the music and gave no hint of it.
-5. Cut with `SHOWREEL_BRIDGE_SPEED` set, score, and check the duration is
+6. Cut with `SHOWREEL_BRIDGE_SPEED` set, score, and check the duration is
    58.200.
-6. Decide the Concerts shot. It currently shows three rows under a
+7. Decide the Concerts shot. It currently shows three rows under a
    `Zurich · 500 km` filter with "509 concerts hidden" beneath them, which reads
    sparse. Nobody has ruled on whether that is what the shot should say. Put to
    the user on 2026-09-02 and still unanswered.
