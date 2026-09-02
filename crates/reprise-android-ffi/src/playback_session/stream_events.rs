@@ -45,12 +45,12 @@ impl SessionInner {
                 .lock()
                 .ok()
                 .and_then(|state| state.queue.current());
-            track_id.and_then(|track_id| {
-                self.library
-                    .track_by_id(track_id)
-                    .ok()
-                    .flatten()
-                    .map(|track| (track_id, track.title))
+            track_id.and_then(|track_id| match self.library.track_by_id(track_id) {
+                Ok(track) => track.map(|track| (track_id, track.title)),
+                Err(error) => {
+                    tracing::warn!(%error, "could not read faulted Android track title");
+                    None
+                }
             })
         } else {
             None
@@ -128,9 +128,6 @@ impl SessionInner {
                         .as_ref()
                         .filter(|(track_id, _)| Some(*track_id) == state.queue.current())
                         .map(|(_, title)| title.as_str());
-                    state.snapshot.fault_notice = Some(fault_notice_text(policy.notices[0], title));
-                    state.snapshot.fault_notice_count =
-                        state.snapshot.fault_notice_count.saturating_add(1);
                     state.current_loaded = false;
                     let queue_len = state.queue.len();
                     let skip_limit = *state.fault_skip_limit.get_or_insert(queue_len);
@@ -138,10 +135,15 @@ impl SessionInner {
                     let repeated_fault_bound_reached = state.consecutive_faults > 1
                         && should_stop_skipping(state.consecutive_faults, skip_limit);
                     if repeated_fault_bound_reached {
+                        state.snapshot.fault_notice = None;
                         state.snapshot.error = Some(TOO_MANY_UNPLAYABLE_TRACKS.to_owned());
                         state.stop();
                         (FollowUp::Stop, None, None)
                     } else if policy.skip {
+                        state.snapshot.fault_notice =
+                            Some(fault_notice_text(policy.notices[0], title));
+                        state.snapshot.fault_notice_count =
+                            state.snapshot.fault_notice_count.saturating_add(1);
                         let faulted_track_id = state.queue.current();
                         let next_track = state
                             .queue
@@ -197,7 +199,12 @@ impl SessionInner {
         match follow_up {
             FollowUp::None => self.notify(),
             FollowUp::Start => {
-                let _ = self.start_current();
+                if let Err(error) = self.start_current() {
+                    tracing::warn!(%error, "could not start the next Android queue item");
+                    // `start_current` can return before its own notification if
+                    // the queue changed between this event and the follow-up.
+                    self.notify();
+                }
             }
             FollowUp::Feed(next_uri) => {
                 if let Ok(backend) = self.backend() {

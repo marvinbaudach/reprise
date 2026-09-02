@@ -301,6 +301,8 @@ fn fb_6_every_faulting_track_stops_at_the_latched_bound() {
         snapshot.error.as_deref(),
         Some("Playback stopped — too many unplayable tracks")
     );
+    assert_eq!(snapshot.fault_notice, None);
+    assert_eq!(snapshot.fault_notice_count, 3);
 }
 
 // UX FB-6: faulting the final queue item still stops because no successor
