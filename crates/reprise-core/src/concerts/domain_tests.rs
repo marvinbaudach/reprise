@@ -159,14 +159,11 @@ fn config_defaults_are_bounded() {
 }
 
 #[test]
-fn conc_9a_bandsintown_identifier_prefers_stored_then_environment_then_default() {
+fn conc_9a_bandsintown_identifier_requires_stored_or_environment_configuration() {
     let conn = conn();
 
     let credentials = config::credentials_with_env(conn.conn(), |_| None, None).unwrap();
-    assert_eq!(
-        credentials.bandsintown_app_id.as_deref(),
-        Some("io.github.marvinbaudach.Reprise")
-    );
+    assert_eq!(credentials.bandsintown_app_id, None);
 
     let credentials =
         config::credentials_with_env(conn.conn(), |_| Some("environment".into()), None).unwrap();
