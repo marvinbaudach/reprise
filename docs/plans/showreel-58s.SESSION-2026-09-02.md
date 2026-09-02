@@ -55,7 +55,7 @@ right-hand info panel **open**, player dressed and paused.
 | 01 Music | pickup take | 18.54 | **16.64** |
 | 02 Podcasts | tour take | 36.50 | 34.60 |
 | 03 Releases | tour take | 97.15 | 95.25 |
-| 04 Concerts | concerts take | 43.23 | **41.33** |
+| 04 Concerts | concerts take | 38.12 | **36.22** |
 | 05 My Stats | tour take | 139.96 | 138.06 |
 
 Every turn's peak-to-background ratio is 185–3552 against a threshold of 4. The
@@ -440,10 +440,27 @@ it as well as two frames side by side.** Look at the frames.
 **Run three drove Releases first, then Concerts.** `SHOWREEL_STATIONS` filters
 `STATIONS` in place, so the order is the sidebar's, not the string's: `stats`
 sorts after `concerts` and would have been shot second. `releases,concerts`
-gives a real page to leave. The take retried Concerts once (marks at 29.02 and
-40.23) — the first click landed while a playlist page was up — and it is the
-**second** turn, at 43.23, that is the shot. In-point 41.33, peak 2.88, ratio
-310.
+gives a real page to leave.
+
+**Run three was still wrong, and only a frame said so.** It retried Concerts
+(marks at 29.02 and 40.23) and the shot was cut from the second turn at 43.23 —
+in-point 41.33, peak 2.88, ratio 310, everything the rule asks for. But the
+1.9 s lead is not neutral footage: it shows *the page before*, and here that
+page was the **"Like Lorna Shore" playlist**, because a stray click had opened
+it mid-take. The film cut Releases → a playlist track list for 1.9 s under the
+caption *Concerts nearby* → Concerts. Thirty-five percent of the shot on a page
+that appears nowhere else in the film, with the wrong words over it — which is
+the exact failure `cut-film.sh`'s own comment describes and the re-record exists
+to end. **`VERDICT PASS`, a clean ratio and a real page turn do not add up to a
+usable shot.** Nothing but looking at the first frame catches this: the contact
+sheet missed it by sampling 0.4 s after the turn.
+
+**Run four is the take.** Same command, but the human focus click went on the
+window's header bar rather than into the sidebar — that stray sidebar click is
+what had opened the playlist and forced the retry. No retry this time:
+releases turns at 18.59 (peak 2.67, ratio 3347), concerts at 38.12 (peak 3.60,
+ratio 766). **In-point 36.22**, and the 1.9 s before the turn is the Releases
+page, which is the page the sidebar walk is leaving.
 
 What the shot now holds: `Zurich · 1000 km`, **45 of 524 concerts**, the list
 full to the bottom of the window, and a status line reading "Up to date —
@@ -454,10 +471,13 @@ saved concerts from 22:20" — the same page, the same radius, a different
 sentence. **A status line is part of the shot**; check it before keeping a take.
 
 One continuity break, knowingly kept: shot 04 comes from its own take, so the
-player bar under it carries a different track (*Perish feat. Christian Roche*,
+player bar under it carries a different track (*Where Do We Go From Here*,
 playing) than the four shots around it (*Welcome to the Family*, paused), and
-the info panel a different cover. Shot 01 already had this — it is the pickup
-take — and at 5.4 s a shot nobody has told to look at the player bar.
+the info panel a different cover. Its 1.9 s lead is also a second view of the
+Releases page that shot 03 has just left, so the cut at 19.2 is a jump on the
+same page. Both were weighed against the alternative — a shot whose click has
+no visible cause — and lost to it. Shot 01 already carries the same break, for
+the same reason: it is the pickup take.
 
 ## The phone's visualiser is 43.4 s out of step with the bed
 

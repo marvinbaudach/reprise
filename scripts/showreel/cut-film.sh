@@ -321,7 +321,7 @@ card introcard 00-intro
 desk T2 01-hook   "${SHOWREEL_IN_HOOK:-16.64}"      5.4 hold 0.00 0.50 0.50 "$(film2_statement 'One player. Everything you listen to.' 0.4 5.4)"
 desk T1 02-podcasts "${SHOWREEL_IN_PODCASTS:-34.60}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 5.4)"
 desk T1 03-releases "${SHOWREEL_IN_RELEASES:-95.25}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'New releases' 'from the artists you keep' 5.4)"
-desk TC 04-concerts "${SHOWREEL_IN_CONCERTS:-41.33}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Concerts nearby' 'for the same artists' 5.4)"
+desk TC 04-concerts "${SHOWREEL_IN_CONCERTS:-36.22}" 5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Concerts nearby' 'for the same artists' 5.4)"
 desk T1 05-stats    "${SHOWREEL_IN_STATS:-138.06}"    5.4 hold 0.00 0.50 0.50 "$(film2_callout 'Your listening, counted' '' 5.4)"
 # The agent shot is out. It asked the viewer to read a prompt, a page and a
 # highlighted fourteen-pixel row inside four and a half seconds, and what it

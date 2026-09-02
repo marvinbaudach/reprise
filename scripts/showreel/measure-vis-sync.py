@@ -130,8 +130,8 @@ def main():
     ap.add_argument('cut')
     ap.add_argument('start', type=float)
     ap.add_argument('dur', type=float)
-    ap.add_argument('--crop', default='300:300:810:390',
-                    help='W:H:X:Y of the spectrum square in the 1920x1080 frame')
+    ap.add_argument('--crop', default='220:210:850:285',
+                    help='W:H:X:Y of the spectrum square in the 1920x1080 frame. The\n                         default is measured off the finished cut of 2026-09-02 and\n                         moves if shot 13 is ever reframed or given a push.')
     ap.add_argument('--max-lag', type=float, default=2.0)
     args = ap.parse_args()
 
