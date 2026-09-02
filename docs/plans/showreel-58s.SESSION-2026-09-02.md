@@ -1,7 +1,8 @@
 # Handover — the 58.2 s showreel, session of 2026-09-02
 
-**The desktop half is shot. The phone half is blocked on one thing, and it is
-not the phone.** Read `showreel-58s.HANDOFF.md` for the film's shape, the music
+**The desktop half is shot. The phone half is now blocked on the phone itself:**
+the analysis that shot 13 needs exists, and the device was held by another
+session. Read `showreel-58s.HANDOFF.md` for the film's shape, the music
 and the cut arithmetic — none of that changed. This file is what this session
 established, decided and broke.
 
@@ -67,7 +68,7 @@ had a hand and no consequence.
   the viewer hears.
 - **The menu navigation is part of the shot**, not just the destination.
 
-## The blocker: the theme song has no analysis, so it has no spectrum
+## The theme song's analysis: what it needed, and how it was made
 
 The phone carries **708 `.reprise-analysis` sidecars**, one per track, written by
 the device sync itself (its phase is literally `writing_analysis`). A track
@@ -82,21 +83,54 @@ so as things stand shot 13 would show an empty square. There is no CLI that
 writes one: `reprise-cli` is not installed and there is no `reprise-worker` in
 `~/.local/bin`.
 
-**The route that must be taken:** put the file through the desktop library and
-let device sync produce the sidecar the way it does for every other track.
-Sketch, none of it done yet:
+**The route that was taken instead — no library change, no sync.** The sync
+route above is not the only one, and reading the code showed why. The sidecar is
+produced from data the desktop already holds, not from anything the transfer
+creates: `AnalysisSidecar::for_track` in
+`crates/reprise-core/src/device_sync/analysis_sidecar.rs` reads
+`track_spectrograms.data` and `tracks.waveform_peaks` out of the database and
+encodes them. The bytes come from decoding the source file, and that decode is
+`GstreamerWaveformBackend` in `crates/reprise-platform-linux/src/waveform.rs` —
+reachable without a library, a playlist or a device.
 
-1. copy `~/.cache/reprise-showreel/theme/Reprise Theme.mp3` under
-   `library_root` = `/home/marvin/Music`;
-2. rescan the desktop library so it is a real track;
-3. put it in a playlist and select that playlist as a sync source;
-4. sync, which writes both the transcoded file and its `.reprise-analysis`;
-5. delete the hand-pushed copy at
-   `/sdcard/Music/Reprise/Reprise/Reprise/Reprise Theme.mp3` so there is no
-   duplicate.
+The phone side does not object to a hand-made sidecar. Its scanner pairs the two
+files by device-relative path with the extension replaced
+(`crates/reprise-core/src/library/scanner_mobile_sync.rs`), and the import in
+`crates/reprise-core/src/device_sync/mobile_import.rs` uses the sidecar's own
+fingerprint only as an idempotency token: the render data is stored against the
+fingerprint of the file **on the phone**, read from the phone's database. There
+is no hash and no duration check. All 708 existing sidecars were computed from a
+desktop source and lie beside a transcoded phone file, so a sidecar computed
+from the very file that is on the phone is the more faithful case, not a
+smuggled one.
 
-This adds a track and a playlist to the user's own library. It is reversible and
-it is the only route that produces the feature the film is meant to show.
+So there is now a tool: `cargo run -p reprise-platform-linux --example
+analysis_sidecar -- "<audio file>"` writes `<audio file>.reprise-analysis`
+beside its input, decoding with the same backend the backfill uses, encoding
+with the same Core serializer, and refusing to write anything it cannot decode
+back. Nothing else in the repo could produce a sidecar standalone; `reprise-cli`
+has no such subcommand.
+
+**Done for the theme song.**
+`~/.cache/reprise-showreel/theme/Reprise Theme.reprise-analysis`, 29 012 bytes:
+1165 spectrogram frames of 24 bands, 1000 waveform peaks, 52 bytes of header.
+The arithmetic checks out from the other side — 58.2 s at the format's 20 Hz is
+1164 frames — and the content is real rather than silence: band values run
+0–236, mean 138, and the per-second means track the music, including the drop to
+31 in the final second where the theme fades.
+
+**What is left of it, and why it has not happened:** push the file to
+`/sdcard/Music/Reprise/Reprise/Reprise/Reprise Theme.reprise-analysis`,
+re-index the phone's library so the scanner registers the pairing, then play the
+track and confirm the spectrum. All three need the phone, and the phone was held
+by another session (`device-lock … HELD by swipe-cover`) which was itself in the
+middle of a device-sync measurement. Nothing was pushed and nothing was read
+from the device.
+
+The old sync route — copy into `library_root`, rescan, playlist, sync, delete
+the hand-pushed copy — is recorded here only as the fallback if the pairing
+turns out not to register. It changes the user's library and it is not needed
+unless that happens.
 
 ## The theme song itself
 
@@ -115,6 +149,11 @@ invisible on this ground; replace it with the cards' ink `#EAF2F1`, exactly as
 
 All uncommitted except where noted; `scripts/check-shell.sh` passes.
 
+- **`crates/reprise-platform-linux/examples/analysis_sidecar.rs`** (new) — the
+  only way in this repo to write a `.reprise-analysis` without a device sync.
+  Decodes with `GstreamerWaveformBackend`, encodes with Core's own serializer,
+  and decodes its own output before writing, because a sidecar that will not
+  parse is not an error on the phone — it is a silent plain seek bar.
 - **`scripts/showreel/ui-find.py`** (new, committed) — resolves a tappable
   element from a live `uiautomator dump` by label and prints its centre; exits 2
   by name when the label is absent. Validated against the running app.
@@ -204,8 +243,9 @@ and not the mini player's bare `Play`.
 
 ## What is left
 
-1. Get the theme song a `.reprise-analysis` by the route above. Until then
-   shot 13 has no spectrum, and the spectrum is the shot.
+1. The theme song's `.reprise-analysis` is written and verified locally. What
+   is left is on the phone: push it beside the mp3, re-index, play, confirm the
+   spectrum. Blocked only on the device lock.
 2. `probe gesture`, then `take gesture` — shot 12.
 3. `probe nowplaying`, then `take nowplaying` — shot 13, with the theme playing.
 4. Measure both phone in-points on the finished cut by the two-band method in
@@ -215,7 +255,8 @@ and not the mini player's bare `Play`.
    58.200.
 6. Decide the Concerts shot. It currently shows three rows under a
    `Zurich · 500 km` filter with "509 concerts hidden" beneath them, which reads
-   sparse. Nobody has ruled on whether that is what the shot should say.
+   sparse. Nobody has ruled on whether that is what the shot should say. Put to
+   the user on 2026-09-02 and still unanswered.
 
 ## One process failure, recorded because it could have cost a take
 
