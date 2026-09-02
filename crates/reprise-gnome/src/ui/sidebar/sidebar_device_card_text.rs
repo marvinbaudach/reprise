@@ -250,11 +250,6 @@ fn with_storage_prefix(prefix: Option<String>, activity: String) -> String {
     }
 }
 
-#[cfg(test)]
-// Compatibility seam for the pre-existing sidebar activity tests; production
-// callers use the shared device-sync vocabulary directly.
-pub(super) use device_sync_strings::step_glyph;
-
 /// Design 7c's two "has work" states, kept distinct from the aggregate
 /// balance formatter used for the tooltip (`MTP-22`'s "To copy N files ·
 /// X" wording) because the card's leading sentence is deliberately terser:

@@ -265,8 +265,9 @@ fn the_dock_detail_distinguishes_removing_from_copying() {
         )
     }
 
-    assert!(
-        detail_for(crate::ui::device_sync_runtime::SyncStep::Removing).starts_with("− removing ·")
+    assert_eq!(
+        detail_for(crate::ui::device_sync_runtime::SyncStep::Removing),
+        "− removing · Immortal — Lorna Shore"
     );
     assert_eq!(
         detail_for(crate::ui::device_sync_runtime::SyncStep::Copying),

@@ -92,20 +92,24 @@ pub(super) fn removal_activity(removal: &ManagedRemoval) -> String {
         ManagedRemoval::Inventory(file) => &file.device_path,
         ManagedRemoval::Orphan(file) => &file.relative_path,
     };
+    removal_name(path)
+}
+
+pub(super) fn removal_name(path: &str) -> String {
     let components = path.split('/').collect::<Vec<_>>();
     if components.len() < 2 {
-        return path.clone();
+        return path.to_owned();
     }
     let Some(file_name) = components.last() else {
-        return path.clone();
+        return path.to_owned();
     };
     let Some((stem, _)) = file_name.rsplit_once('.') else {
-        return path.clone();
+        return path.to_owned();
     };
     let without_collision = strip_collision_suffix(stem);
     let title = strip_track_number(without_collision);
     if title.is_empty() || title == without_collision {
-        return path.clone();
+        return path.to_owned();
     }
     match components.first().filter(|_| components.len() >= 3) {
         Some(artist) if !artist.is_empty() => format!("{title} — {artist}"),
@@ -117,7 +121,7 @@ fn strip_track_number(value: &str) -> &str {
     let Some((number, title)) = value.split_once(' ') else {
         return value;
     };
-    if matches!(number.len(), 2 | 3) && number.bytes().all(|byte| byte.is_ascii_digit()) {
+    if number.len() >= 2 && number.bytes().all(|byte| byte.is_ascii_digit()) {
         title
     } else {
         value

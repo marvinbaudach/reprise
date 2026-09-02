@@ -50,6 +50,27 @@ fn a_three_digit_track_number_is_not_part_of_the_removed_title() {
 }
 
 #[test]
+fn a_four_digit_track_number_written_by_device_track_path_is_not_part_of_the_removed_title() {
+    let path = device_track_path(
+        &DevicePathMetadata {
+            album_artist: "Artist".into(),
+            artist: "Artist".into(),
+            album: "Album".into(),
+            track_number: Some(1_000),
+            title: "Title".into(),
+            source_path: PathBuf::from("/music/Title.flac"),
+        },
+        Some("opus"),
+        1,
+    );
+
+    assert_eq!(
+        removal_activity(&inventory_removal(&path)),
+        "Title — Artist"
+    );
+}
+
+#[test]
 fn a_collision_suffix_is_not_part_of_the_removed_title() {
     assert_eq!(
         removal_activity(&inventory_removal(

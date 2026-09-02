@@ -687,8 +687,8 @@ impl DeviceSyncMachine {
         };
         let device_path = device_path.clone();
         // The replacement already owns this counted unit; deletion adds none.
-        self.phase =
-            phase_transitions::syncing(&self.ledger, SyncStep::Removing, device_path.clone());
+        let activity = phase_transitions::removal_name(&device_path);
+        self.phase = phase_transitions::syncing(&self.ledger, SyncStep::Removing, activity);
         self.awaiting = Awaiting::RemoveReplacedFile(from);
         vec![Effect::RemoveReplacedFile { device_path }]
     }

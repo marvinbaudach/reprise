@@ -98,7 +98,7 @@ fn empty_plan() -> MirrorPlan {
 fn replacement_plan() -> MirrorPlan {
     let mut plan = empty_plan();
     plan.replace.push(MirrorReplacement {
-        existing: existing(1, "Reprise/old.mp3"),
+        existing: existing(1, "Album Artist/Album/03 Title.mp3"),
         desired: desired(1, TransferAction::CopyOriginal, 100),
     });
     plan.transfer_bytes = 100;
@@ -443,7 +443,7 @@ fn a_replaced_path_is_deleted_after_the_planned_removals_not_with_its_copy() {
     assert_eq!(
         machine.dispatch(Event::FileForgotten(Ok(()))),
         vec![Effect::RemoveReplacedFile {
-            device_path: "Reprise/old.mp3".into(),
+            device_path: "Album Artist/Album/03 Title.mp3".into(),
         }],
         "only then is the superseded path deleted"
     );
@@ -714,7 +714,7 @@ fn a_failed_removal_still_lets_a_superseded_path_be_cleaned_up() {
     assert_eq!(
         machine.dispatch(Event::TrackRemoved(Err("device is busy".into()))),
         vec![Effect::RemoveReplacedFile {
-            device_path: "Reprise/old.mp3".into(),
+            device_path: "Album Artist/Album/03 Title.mp3".into(),
         }],
         "the superseded copy is still deleted after a failed removal"
     );
@@ -729,7 +729,7 @@ fn a_deferred_replacement_removal_names_its_own_removing_phase() {
     assert_eq!(
         machine.dispatch(Event::FileRecorded(Ok(()))),
         vec![Effect::RemoveReplacedFile {
-            device_path: "Reprise/old.mp3".into(),
+            device_path: "Album Artist/Album/03 Title.mp3".into(),
         }]
     );
     assert!(matches!(
@@ -738,7 +738,7 @@ fn a_deferred_replacement_removal_names_its_own_removing_phase() {
             step: SyncStep::Removing,
             current_track,
             ..
-        } if current_track == "Reprise/old.mp3"
+        } if current_track == "Title — Album Artist"
     ));
 }
 
