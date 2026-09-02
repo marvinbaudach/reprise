@@ -10,7 +10,9 @@ internal class VolumeKeyActivityHandler(
     isPlaying: () -> Boolean,
 ) {
     private val trackSwitch = VolumeKeyTrackSwitch(isPlaying)
-    private val audioManager by lazy { context.getSystemService(AudioManager::class.java) }
+    private val audioManager: AudioManager? by lazy {
+        context.getSystemService(AudioManager::class.java)
+    }
     private var surfaceControls: PlaybackControls? = null
 
     /** Keep transport commands on the same injected controls used by the rendered surface. */
@@ -27,7 +29,10 @@ internal class VolumeKeyActivityHandler(
             }
             VolumeKeyAction.Ignore -> true
             VolumeKeyAction.Passthrough -> null
-            else -> null
+            VolumeKeyAction.SkipNext,
+            VolumeKeyAction.SkipPrevious,
+            is VolumeKeyAction.AdjustVolume,
+            -> null
         }
     }
 
@@ -44,7 +49,9 @@ internal class VolumeKeyActivityHandler(
             }
             VolumeKeyAction.Ignore -> true
             VolumeKeyAction.Passthrough -> null
-            else -> null
+            VolumeKeyAction.StartTracking,
+            is VolumeKeyAction.AdjustVolume,
+            -> null
         }
     }
 
@@ -58,7 +65,9 @@ internal class VolumeKeyActivityHandler(
             )
         ) {
             is VolumeKeyAction.AdjustVolume -> {
-                audioManager.adjustStreamVolume(
+                // Pass through if the service is absent so the volume key never becomes dead.
+                val manager = audioManager ?: return null
+                manager.adjustStreamVolume(
                     AudioManager.STREAM_MUSIC,
                     action.key.adjustDirection(),
                     AudioManager.FLAG_SHOW_UI,
@@ -67,7 +76,10 @@ internal class VolumeKeyActivityHandler(
             }
             VolumeKeyAction.Ignore -> true
             VolumeKeyAction.Passthrough -> null
-            else -> null
+            VolumeKeyAction.StartTracking,
+            VolumeKeyAction.SkipNext,
+            VolumeKeyAction.SkipPrevious,
+            -> null
         }
     }
 
