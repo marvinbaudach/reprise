@@ -192,7 +192,10 @@ pub(super) fn card_subtitle(device: &DeviceView, now: DateTime<Utc>) -> String {
             current_track,
             ..
         } => {
-            let mut activity = device_sync_strings::sync_activity(step_glyph(step), current_track);
+            let mut activity = device_sync_strings::sync_activity(
+                device_sync_strings::step_glyph(step),
+                current_track,
+            );
             if matches!(step, SyncStep::Copying | SyncStep::WritingAnalysis)
                 && device.bytes_per_second > 0
             {
@@ -247,16 +250,10 @@ fn with_storage_prefix(prefix: Option<String>, activity: String) -> String {
     }
 }
 
-pub(super) fn step_glyph(step: &SyncStep) -> &'static str {
-    match step {
-        SyncStep::Transcoding => "⟳ transcoding ·",
-        SyncStep::Copying => "↑",
-        SyncStep::WritingAnalysis => "↑ analysis ·",
-        SyncStep::Removing => "−",
-        SyncStep::WritingPlaylists => "≡",
-        SyncStep::WritingTrackMetadata => "≡ metadata ·",
-    }
-}
+#[cfg(test)]
+// Compatibility seam for the pre-existing sidebar activity tests; production
+// callers use the shared device-sync vocabulary directly.
+pub(super) use device_sync_strings::step_glyph;
 
 /// Design 7c's two "has work" states, kept distinct from the aggregate
 /// balance formatter used for the tooltip (`MTP-22`'s "To copy N files ·
