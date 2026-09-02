@@ -2,7 +2,7 @@
 slug: the-sync-stops-paying-per-file
 worktree: /home/marvin/Projects/reprise-the-sync-stops-paying-per-file
 branch: feature/the-sync-stops-paying-per-file
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-02
 ---
