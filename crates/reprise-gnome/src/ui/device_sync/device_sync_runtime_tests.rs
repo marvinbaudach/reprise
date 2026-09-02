@@ -28,6 +28,8 @@ const SETTLE_UNTIL_TIMEOUT: Duration = Duration::from_secs(5);
 mod fake_backend;
 use fake_backend::*;
 
+#[path = "device_sync_agent_log_tests.rs"]
+mod agent_log_tests;
 #[path = "device_sync_memory_tests.rs"]
 mod memory_tests;
 #[path = "device_sync_presence_tests.rs"]
