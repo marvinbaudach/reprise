@@ -20,7 +20,7 @@ class NowPlayingPanelsTest {
         )
 
         assertEquals(listOf(6, 7, 8), window.panels.map { it.index })
-        assertEquals(listOf(10L, 11L, 12L), window.panels.map { it.track.id })
+        assertEquals(listOf(10L, 11L, 12L), window.panels.map { it.track?.id })
         assertEquals(6, window.firstIndex)
         assertEquals(8, window.lastIndex)
     }
@@ -54,8 +54,8 @@ class NowPlayingPanelsTest {
 
         val advanced = window.withCurrentPanel(next.copy(title = "Answered track"), currentIndex = 5)
 
-        assertEquals(listOf(21L, 22L), advanced.panels.map { panel -> panel.track.id })
-        assertEquals("Answered track", advanced.panels.last().track.title)
+        assertEquals(listOf(21L, 22L), advanced.panels.map { panel -> panel.track?.id })
+        assertEquals("Answered track", advanced.panels.last().track?.title)
         assertEquals(3, advanced.firstIndex)
         assertEquals(5, advanced.lastIndex)
     }

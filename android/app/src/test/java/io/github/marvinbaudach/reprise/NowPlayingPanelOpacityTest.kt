@@ -21,7 +21,6 @@ class NowPlayingPanelOpacityTest {
         val neighbour = nowPlayingPanelOpacity(
             visualizerOpacity = 1f,
             near = 0f,
-            hasVisualizer = false,
         )
 
         assertEquals(0f, neighbour.cover, tolerance)
@@ -33,7 +32,6 @@ class NowPlayingPanelOpacityTest {
             nowPlayingPanelOpacity(
                 visualizerOpacity = 1f,
                 near = 1f - step / 10f,
-                hasVisualizer = true,
             ).cover
         }
 
@@ -44,36 +42,33 @@ class NowPlayingPanelOpacityTest {
     }
 
     @Test
-    fun `a panel without a spectrum shows the plate instead of a hole`() {
+    fun `a halfway neighbour divides the visualizer between bars and plate`() {
         val neighbour = nowPlayingPanelOpacity(
             visualizerOpacity = 1f,
             near = 0.5f,
-            hasVisualizer = false,
         )
 
-        assertEquals(0f, neighbour.bars, tolerance)
-        assertEquals(1f, neighbour.plate, tolerance)
+        assertTrue(neighbour.bars > 0f)
+        assertTrue(neighbour.plate > 0f)
+        assertEquals(1f, neighbour.bars + neighbour.plate, tolerance)
     }
 
     @Test
     fun `bars and plate always add up to the visualizer crossfade`() {
         for (visualizerStep in 0..10) {
             for (nearStep in 0..10) {
-                for (hasVisualizer in listOf(true, false)) {
-                    val visualizer = visualizerStep / 10f
-                    val layers = nowPlayingPanelOpacity(
-                        visualizerOpacity = visualizer,
-                        near = nearStep / 10f,
-                        hasVisualizer = hasVisualizer,
-                    )
+                val visualizer = visualizerStep / 10f
+                val layers = nowPlayingPanelOpacity(
+                    visualizerOpacity = visualizer,
+                    near = nearStep / 10f,
+                )
 
-                    assertEquals(
-                        "gap at visualizer=$visualizer near=${nearStep / 10f} engine=$hasVisualizer",
-                        visualizer,
-                        layers.bars + layers.plate,
-                        tolerance,
-                    )
-                }
+                assertEquals(
+                    "gap at visualizer=$visualizer near=${nearStep / 10f}",
+                    visualizer,
+                    layers.bars + layers.plate,
+                    tolerance,
+                )
             }
         }
     }
@@ -85,7 +80,6 @@ class NowPlayingPanelOpacityTest {
                 val layers = nowPlayingPanelOpacity(
                     visualizerOpacity = visualizerStep / 10f,
                     near = nearStep / 10f,
-                    hasVisualizer = true,
                 )
 
                 listOf(layers.cover, layers.bars, layers.plate).forEach { alpha ->
@@ -101,7 +95,6 @@ class NowPlayingPanelOpacityTest {
             val layers = nowPlayingPanelOpacity(
                 visualizerOpacity = 0f,
                 near = nearStep / 10f,
-                hasVisualizer = true,
             )
 
             assertEquals(1f, layers.cover, tolerance)
@@ -115,7 +108,6 @@ class NowPlayingPanelOpacityTest {
         val centre = nowPlayingPanelOpacity(
             visualizerOpacity = 1f,
             near = 1f,
-            hasVisualizer = true,
         )
 
         assertEquals(1f, centre.bars, tolerance)
@@ -128,11 +120,42 @@ class NowPlayingPanelOpacityTest {
         val layers = nowPlayingPanelOpacity(
             visualizerOpacity = 1.4f,
             near = -0.3f,
-            hasVisualizer = true,
         )
 
         assertEquals(0f, layers.cover, tolerance)
         assertEquals(0f, layers.bars, tolerance)
         assertEquals(1f, layers.plate, tolerance)
+    }
+
+    @Test
+    fun `non-finite inputs produce sane opacities`() {
+        val layers = nowPlayingPanelOpacity(
+            visualizerOpacity = Float.NaN,
+            near = Float.NaN,
+        )
+
+        assertEquals(1f, layers.cover, tolerance)
+        assertEquals(0f, layers.bars, tolerance)
+        assertEquals(0f, layers.plate, tolerance)
+    }
+
+    @Test
+    fun `bars fall faster than linearly as a panel leaves the centre`() {
+        val visualizer = 0.8f
+        val bars = listOf(1f, 0.75f, 0.5f, 0.25f, 0f).map { near ->
+            nowPlayingPanelOpacity(
+                visualizerOpacity = visualizer,
+                near = near,
+            ).bars
+        }
+
+        assertTrue(
+            "bars did not decrease monotonically: $bars",
+            bars.zipWithNext().all { (a, b) -> a > b },
+        )
+        assertTrue(
+            "midpoint bars did not fall faster than linearly: $bars",
+            bars[2] < 0.5f * visualizer,
+        )
     }
 }

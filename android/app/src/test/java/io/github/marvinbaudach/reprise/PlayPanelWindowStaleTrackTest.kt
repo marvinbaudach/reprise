@@ -2,8 +2,6 @@ package io.github.marvinbaudach.reprise
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -38,7 +36,7 @@ class PlayPanelWindowStaleTrackTest {
     }
 
     @Test
-    fun `a disagreeing pair does not write the window at all`() {
+    fun `a disagreeing pair advances geometry without stamping its track`() {
         val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
 
         val advanced = settled.advancedTo(
@@ -47,7 +45,8 @@ class PlayPanelWindowStaleTrackTest {
             trackIsStale = true,
         )
 
-        assertNull("a stale pair must leave the window alone", advanced)
+        assertEquals(listOf(5, 6), advanced.panels.map(PlayPanel::index))
+        assertEquals(60L, advanced.panels.single { it.index == 6 }.track?.id)
     }
 
     @Test
@@ -61,7 +60,7 @@ class PlayPanelWindowStaleTrackTest {
 
         assertEquals(
             50L,
-            stamped.panels.single { it.index == 6 }.track.id,
+            stamped.panels.single { it.index == 6 }.track?.id,
         )
     }
 
@@ -76,17 +75,20 @@ class PlayPanelWindowStaleTrackTest {
         )
 
         assertNotNull(advanced)
-        assertEquals(60L, advanced!!.panels.single { it.index == 6 }.track.id)
+        assertEquals(60L, advanced.panels.single { it.index == 6 }.track?.id)
     }
 
     @Test
-    fun `waiting keeps the settled window untouched`() {
+    fun `waiting keeps every retained track at its original index`() {
         val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
-        val before = settled.panels.map { it.index to it.track.id }
+        val before = settled.panels.map { it.index to it.track?.id }
 
-        settled.advancedTo(track(50L), currentIndex = 6, trackIsStale = true)
+        val advanced = settled.advancedTo(track(50L), currentIndex = 6, trackIsStale = true)
 
-        assertEquals(before, settled.panels.map { it.index to it.track.id })
+        assertEquals(
+            before.filter { (index, _) -> index >= 5 },
+            advanced.panels.map { it.index to it.track?.id },
+        )
     }
 
     @Test
@@ -100,10 +102,7 @@ class PlayPanelWindowStaleTrackTest {
         )
 
         assertNotNull(advanced)
-        assertTrue(
-            "a card more than one step away stayed in the window: ${advanced!!.panels}",
-            advanced.panels.all { kotlin.math.abs(it.index - 6) <= 1 },
-        )
+        assertEquals(listOf(5, 6), advanced.panels.map(PlayPanel::index))
     }
 
     @Test
@@ -116,6 +115,7 @@ class PlayPanelWindowStaleTrackTest {
             trackIsStale = true,
         )
 
-        assertNull(advanced)
+        assertEquals(listOf(4, 5), advanced.panels.map(PlayPanel::index))
+        assertEquals(40L, advanced.panels.single { it.index == 4 }.track?.id)
     }
 }

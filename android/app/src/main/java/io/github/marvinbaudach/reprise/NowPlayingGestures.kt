@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 
 internal data class PlayPanel(
     val index: Int,
-    val track: LibraryTrack,
+    val track: LibraryTrack?,
 )
 
 internal data class PlayPanelWindow(
@@ -61,22 +61,41 @@ internal fun PlayPanelWindow.withCurrentPanel(
     )
 }
 
+private fun PlayPanelWindow.withCurrentPlaceholder(currentIndex: Int): PlayPanelWindow {
+    val indexIsKnown = currentIndex in firstIndex..lastIndex
+    val reachable = panels.filter { panel -> abs(panel.index - currentIndex) <= 1 }
+    return PlayPanelWindow(
+        panels = if (reachable.any { panel -> panel.index == currentIndex }) {
+            reachable
+        } else {
+            (reachable + PlayPanel(currentIndex, null)).sortedBy(PlayPanel::index)
+        },
+        firstIndex = if (indexIsKnown) firstIndex else currentIndex,
+        lastIndex = if (indexIsKnown) lastIndex else currentIndex,
+    )
+}
+
 /**
- * The window this pair should produce, or `null` while the pair disagrees.
+ * The window this pair should produce.
  *
  * `track` and `currentIndex` arrive from two sources — the index follows the
  * player, the track follows the metadata query answering for it — so between a
  * track change and its answer they describe different songs. [trackIsStale]
- * says so. Writing a window from a disagreeing pair stamps the outgoing track
- * onto the incoming card, and the settle animation then carries the old cover
- * into the centre. Returning `null` keeps the last agreeing window on screen
- * until the pair catches up.
+ * says so. Writing a populated panel from a disagreeing pair stamps the
+ * outgoing track onto the incoming card, and the settle animation then carries
+ * the old cover into the centre. A stale pair therefore advances only the
+ * geometry, adding a content-free centre panel when the fetched window does not
+ * already know that index.
  */
 internal fun PlayPanelWindow.advancedTo(
     track: LibraryTrack,
     currentIndex: Int,
     trackIsStale: Boolean,
-): PlayPanelWindow? = if (trackIsStale) null else withCurrentPanel(track, currentIndex)
+): PlayPanelWindow = if (trackIsStale) {
+    withCurrentPlaceholder(currentIndex)
+} else {
+    withCurrentPanel(track, currentIndex)
+}
 
 internal fun playPanelWindow(
     currentIndex: Int,
@@ -103,9 +122,10 @@ internal fun playPanelWindow(
  * answering for it. [trackIsStale] says the pair does not agree yet. Writing the
  * window from a disagreeing pair puts the outgoing track on the incoming card —
  * the settle animation then carries the old cover into the centre, which is the
- * flash a swipe to the next song used to show. So the window waits: the effect
- * keys on `track.id`, and staleness clears exactly when that id catches up, so
- * the skipped work runs on the very next pass with a pair that agrees.
+ * flash a swipe to the next song used to show. While stale, the window advances
+ * only its geometry and skips the reload. The effect keys on `track.id`, and
+ * staleness clears exactly when that id catches up, so the skipped work runs on
+ * the very next pass with a pair that agrees.
  */
 @Composable
 internal fun rememberPlayPanelWindow(
@@ -116,7 +136,13 @@ internal fun rememberPlayPanelWindow(
 ): PlayPanelWindow {
     var generation by remember { mutableStateOf(0L) }
     var window by remember {
-        mutableStateOf(placeholderPlayPanelWindow(track, currentIndex))
+        mutableStateOf(
+            if (trackIsStale) {
+                PlayPanelWindow(listOf(PlayPanel(currentIndex, null)), currentIndex, currentIndex)
+            } else {
+                placeholderPlayPanelWindow(track, currentIndex)
+            },
+        )
     }
     LaunchedEffect(track.id, currentIndex, controls, trackIsStale) {
         // The generation moves on every pass, waiting ones included: a load
@@ -124,12 +150,10 @@ internal fun rememberPlayPanelWindow(
         // is gone. Bumping before the wait drops it, so it cannot land a window
         // built around an index the player has already left.
         val requestGeneration = ++generation
-        // Both writes below read the pair, so the wait covers both: the stamp
-        // that would put the outgoing track on the incoming card, and the
-        // reload underneath it, which locates the window by the same track id.
-        val advanced = window.advancedTo(track, currentIndex, trackIsStale)
-            ?: return@LaunchedEffect
-        window = advanced
+        window = window.advancedTo(track, currentIndex, trackIsStale)
+        // The reload locates the window by the stale track id, so it waits even
+        // though the content-free geometry above is safe to publish.
+        if (trackIsStale) return@LaunchedEffect
         controls.loadUpcomingTracks(LibraryWindowRange(-2, 3)) { outcome ->
             if (generation != requestGeneration) return@loadUpcomingTracks
             outcome.getOrNull()?.rows?.let { rows ->

@@ -31,21 +31,18 @@ internal data class NowPlayingPanelOpacity(
  * in as it left, so a swipe with the visualizer on showed two album covers the
  * visualizer was supposed to have replaced.
  *
- * Only the playing track has PCM to draw, so [hasVisualizer] decides whether
- * this panel can show bars at all, and the bars that do show still fall off
- * with [near] so a card leaving the centre quietens rather than cuts. Whatever
- * the bars do not take, the plate does: `bars + plate` is always
- * [visualizerOpacity], so a panel with no spectrum of its own shows a blank
- * card instead of a hole where the cover used to be.
+ * The bars/plate split follows the geometric [near] falloff alone. A neighbour
+ * panel's bars come from that track's precomputed offline spectrogram rather
+ * than live PCM. Whatever the bars do not take, the plate does: `bars + plate`
+ * is always [visualizerOpacity].
  */
 internal fun nowPlayingPanelOpacity(
     visualizerOpacity: Float,
     near: Float,
-    hasVisualizer: Boolean,
 ): NowPlayingPanelOpacity {
-    val visualizer = visualizerOpacity.coerceIn(0f, 1f)
-    val closeness = near.coerceIn(0f, 1f)
-    val bars = if (hasVisualizer) visualizer * closeness.pow(BARS_FALLOFF) else 0f
+    val visualizer = if (visualizerOpacity.isFinite()) visualizerOpacity.coerceIn(0f, 1f) else 0f
+    val closeness = if (near.isFinite()) near.coerceIn(0f, 1f) else 0f
+    val bars = visualizer * closeness.pow(BARS_FALLOFF)
     return NowPlayingPanelOpacity(
         cover = 1f - visualizer,
         bars = bars,
