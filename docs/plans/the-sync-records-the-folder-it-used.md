@@ -1,3 +1,11 @@
+---
+slug: the-sync-records-the-folder-it-used
+worktree: /home/marvin/Projects/reprise-mtp-ledger
+branch: fix/the-sync-records-the-folder-it-used
+phase: planned
+codex_session:
+created: 2026-09-02
+---
 # The sync records the folder it used
 
 Follow-up to `mtp-directory-error-2026-09-02.findings.md`, whose "Implemented
