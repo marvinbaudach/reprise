@@ -353,3 +353,89 @@ audio file's ledger row is the single inventory record for the track.
 
 The on-device arm remains unverified because no phone was attached for this
 follow-up.
+## Measured on the device, 2026-09-02 23:15
+
+Phone attached, `device-lock` held, target `/Music/Reprise`. 2158 files listed
+via `adb shell find`, 785 ledger rows read from `device_files` for serial
+`59100DLCQ006SB`.
+
+### The premise holds: gvfs matches MTP names exactly
+
+The whole adoption design rests on it, so it was measured rather than assumed:
+
+```
+$ gio info "mtp://…/Music/Reprise/Emmure/Speaker Of The Dead"
+display name: Speaker Of The Dead
+type: directory
+
+$ gio info "mtp://…/Music/Reprise/Emmure/Speaker of the Dead"
+gio: …/Emmure/Speaker%20of%20the%20Dead: File not found
+
+$ gio info "mtp://…/Music/Reprise/Emmure/Speaker of the Dead/02 Area 64-66.opus"
+gio: …/02%20Area%2064-66.opus: File not found
+```
+
+The second path is a **live ledger row**. gvfs does not fold case; the resident
+folder is invisible under the spelling the ledger recorded.
+
+### The orphan bug is live, not theoretical — 77 rows
+
+77 of the 785 ledger rows, spread over **11 distinct directories**, name a path
+that `gio` cannot resolve:
+
+| ledger records | device has |
+|---|---|
+| `Emmure/Speaker of the Dead` | `Emmure/Speaker Of The Dead` |
+| `Emmure/Slave to the Game` | `Emmure/Slave To The Game` |
+| `Emmure/Goodbye to the Gallows` | `Emmure/Goodbye To The Gallows` |
+| `Asking Alexandria/Stand Up and Scream` | `Asking Alexandria/Stand Up And Scream` |
+| `Chelsea Grin/Desolation of Eden` | `Chelsea Grin/Desolation Of Eden` |
+| `Lorna Shore/I Feel the Everblack Festering Within Me` | `Lorna Shore/I Feel The Everblack Festering Within Me` |
+| `Carnifex/Graveside Confessions` | `Carnifex/GRAVESIDE CONFESSIONS` |
+| `Immortal Disfigurement/King` | `Immortal Disfigurement/KING` |
+| `Fight the Fade/Isolationist` | `Fight The Fade/Isolationist` |
+| `Fight the Fade/APOPHYSITIS (deluxe edition)` | `Fight The Fade/APOPHYSITIS (Deluxe Edition)` |
+| `Bring Me the Horizon/Count Your Blessings _ Repented` | `Bring Me The Horizon/Count Your Blessings _ Repented` |
+
+`delete_managed` takes the ledger path, so deselecting any of those 77 tracks
+returns `Ok(false)` and leaves the file on the phone. Every folded key resolves
+to exactly one device directory (0 of 785 rows point at a folder that is absent
+in every spelling), so the adoption is unambiguous in all 11 cases.
+
+### Run 81's two spellings were an MTP artifact, not two folders
+
+**0 of 2158 device files** live in a directory that exists under two spellings
+side by side. The `deleted` events of run 81 listed
+`Emmure/Speaker Of The Dead/02 …` beside `Emmure/Speaker of the Dead/05 …`,
+which was read as two resident folders; on the filesystem there is one. This
+matters because `DirectorySpelling::Ambiguous` and the majority vote in
+`build_directory_spellings` were designed against the belief that they were
+real.
+
+### The drift causes no re-planning — and that is the problem
+
+Run 115 planned **0**. `compute_delta` (`delta.rs:52-58`) calls a track
+unchanged when five fields match, `device_path` among them — and the candidate
+carries the same drifted spelling the ledger does, because ledger and device
+scan tie in `build_directory_spellings` and the vote falls to `Ambiguous`, so
+nothing is adopted at planning time. Both sides are consistently wrong, so the
+delta is empty.
+
+The consequence for the fix in
+`the-sync-records-the-folder-it-used.md`: **it is forward-only.** It corrects
+the path for files that get copied from now on, and these 77 are never copied
+again precisely because nothing plans them. No code path rewrites
+`device_files.device_path` from a device scan — `upsert_device_file`
+(`settings.rs:462`) is reached only from `Effect::RecordFile`, i.e. after a copy.
+
+### Follow-up worth its own plan
+
+Break the tie in `build_directory_spellings` in favour of the device scan
+instead of counting ledger and scan equally. The device is ground truth; the
+majority vote treats a stale ledger as an equal witness. Weighting the scan
+higher makes the 77 rows adopt the resident spelling at planning time, which is
+the only route that heals them without re-copying 77 files over MTP at ~2.79 s
+per unit.
+
+Not attempted here, and deliberately not folded into the current branch.
+
