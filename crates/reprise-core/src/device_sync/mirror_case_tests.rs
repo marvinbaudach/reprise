@@ -265,6 +265,25 @@ fn new_album_adopts_the_resident_artist_spelling() {
 }
 
 #[test]
+fn new_track_ignores_an_ambiguous_ancestor_of_its_new_directory() {
+    let wanted = case_track(9, "Current Artist", "New Album", "Track 9");
+    let mut mirror_input = selected_input(wanted);
+    mirror_input.managed_files = vec![
+        managed("CURRENT ARTIST/Existing Album/01 One.mp3"),
+        managed("current artist/Existing Album/02 Two.mp3"),
+    ];
+    mirror_input.managed_files_scanned = true;
+
+    let plan = plan_mirror(mirror_input);
+
+    assert_eq!(plan.copy.len(), 1);
+    assert_eq!(
+        plan.copy[0].device_path,
+        "Current Artist/New Album/09 Track 9.mp3"
+    );
+}
+
+#[test]
 fn equal_directory_counts_plan_neither_arrival_analysis_nor_removal() {
     let wanted = case_track(9, "Tie Artist", "Tie Album", "Track 9");
     let source = SelectionSource::Playlist(10);
@@ -459,6 +478,29 @@ fn resident_recorded_path_still_wins_over_the_directory_majority() {
 }
 
 #[test]
+fn unscanned_recorded_path_still_wins_over_the_ledger_majority() {
+    let wanted = case_track(9, "Canonical Artist", "Album", "Track 9");
+    let canonical_path = "Canonical Artist/Album/09 Track 9.mp3";
+    let mut mirror_input = selected_input(wanted.clone());
+    mirror_input
+        .inventory
+        .push(inventory(&wanted, canonical_path, "copy-original-v1"));
+    for id in 1..=2 {
+        let sibling = case_track(id, "CANONICAL ARTIST", "Album", &format!("Sibling {id}"));
+        let sibling_path = format!("CANONICAL ARTIST/Album/{id:02} Sibling {id}.mp3");
+        mirror_input
+            .inventory
+            .push(inventory(&sibling, &sibling_path, "copy-original-v1"));
+    }
+
+    let plan = plan_mirror(mirror_input);
+
+    assert!(plan.copy.is_empty());
+    assert!(plan.replace.is_empty());
+    assert_eq!(plan.desired_files[0].device_path, canonical_path);
+}
+
+#[test]
 fn case_variant_managed_sibling_is_replaced_without_orphan_removal() {
     let wanted = case_track(1, "Bring Me the Horizon", "Album", "Track 1");
     let known = "Bring Me the Horizon/Album/01 Track 1.mp3";
@@ -468,6 +510,7 @@ fn case_variant_managed_sibling_is_replaced_without_orphan_removal() {
         .inventory
         .push(inventory(&wanted, known, "copy-original-v1"));
     mirror_input.managed_files.push(managed(resident));
+    mirror_input.managed_files_scanned = true;
 
     let plan = plan_mirror(mirror_input);
 

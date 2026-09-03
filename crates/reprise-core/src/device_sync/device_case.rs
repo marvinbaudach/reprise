@@ -25,11 +25,12 @@ pub(super) enum DirectorySpelling {
 pub(super) fn adopt_resident_spelling(
     desired_path: &str,
     own_inventory_path: Option<&str>,
+    managed_files_scanned: bool,
     resident_paths: &BTreeSet<&str>,
     directory_spellings: &HashMap<String, DirectorySpelling>,
 ) -> ResidentSpelling {
     if let Some(path) = own_inventory_path
-        .filter(|path| resident_paths.contains(*path))
+        .filter(|path| !managed_files_scanned || resident_paths.contains(*path))
         .filter(|path| folds_equal(path, desired_path))
     {
         return ResidentSpelling::Adopt(path.to_owned());
@@ -50,7 +51,10 @@ pub(super) fn adopt_resident_spelling(
             ResidentSpelling::Adopt(format!("{directory}{suffix}/{file_name}"))
         }
         DirectorySpelling::Resident(_) => ResidentSpelling::Keep,
-        DirectorySpelling::Ambiguous { .. } => ResidentSpelling::Ambiguous,
+        DirectorySpelling::Ambiguous { .. } if desired_prefix == desired_directory => {
+            ResidentSpelling::Ambiguous
+        }
+        DirectorySpelling::Ambiguous { .. } => ResidentSpelling::Keep,
     }
 }
 
@@ -60,8 +64,9 @@ pub(super) fn rewrite_desired_paths(
     inventory: &[DeviceFileRecord],
     inventory_by_id: &HashMap<i64, DeviceFileRecord>,
     managed_files: &[ManagedDeviceFile],
+    managed_files_scanned: bool,
 ) -> Vec<String> {
-    let spellings = build_directory_spellings(inventory, managed_files);
+    let spellings = build_directory_spellings(inventory, managed_files, managed_files_scanned);
     let resident_paths = managed_files
         .iter()
         .map(|file| file.relative_path.as_str())
@@ -74,7 +79,13 @@ pub(super) fn rewrite_desired_paths(
         let own_path = inventory_by_id
             .get(&track_id)
             .map(|file| file.device_path.as_str());
-        match adopt_resident_spelling(&desired_path, own_path, &resident_paths, &spellings) {
+        match adopt_resident_spelling(
+            &desired_path,
+            own_path,
+            managed_files_scanned,
+            &resident_paths,
+            &spellings,
+        ) {
             ResidentSpelling::Adopt(path) => desired.get_mut(&track_id).unwrap().device_path = path,
             ResidentSpelling::Keep => {}
             ResidentSpelling::Ambiguous => {
@@ -108,24 +119,43 @@ pub(super) fn rewrite_desired_paths(
 fn build_directory_spellings(
     inventory: &[DeviceFileRecord],
     managed_files: &[ManagedDeviceFile],
+    managed_files_scanned: bool,
 ) -> HashMap<String, DirectorySpelling> {
     let mut counts = BTreeMap::<String, BTreeMap<String, usize>>::new();
-    for path in managed_files
-        .iter()
-        .map(|file| file.relative_path.as_str())
-        .collect::<BTreeSet<_>>()
-    {
-        record_directory_ancestors(path, &mut counts, |_| true);
-    }
-    let resident_directories = counts.keys().cloned().collect::<BTreeSet<_>>();
-    for path in inventory
-        .iter()
-        .map(|file| file.device_path.as_str())
-        .collect::<BTreeSet<_>>()
-    {
-        record_directory_ancestors(path, &mut counts, |folded_directory| {
-            !resident_directories.contains(folded_directory)
-        });
+    if managed_files_scanned {
+        for path in managed_files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<BTreeSet<_>>()
+        {
+            record_directory_ancestors(path, &mut counts, |_| true);
+        }
+        let resident_directories = counts.keys().cloned().collect::<BTreeSet<_>>();
+        for path in inventory
+            .iter()
+            .map(|file| file.device_path.as_str())
+            .collect::<BTreeSet<_>>()
+        {
+            record_directory_ancestors(path, &mut counts, |folded_directory| {
+                !resident_directories.contains(folded_directory)
+            });
+        }
+    } else {
+        for path in inventory
+            .iter()
+            .map(|file| file.device_path.as_str())
+            .chain(managed_files.iter().map(|file| file.relative_path.as_str()))
+            .collect::<BTreeSet<_>>()
+        {
+            let Some((directory, _)) = path.rsplit_once('/') else {
+                continue;
+            };
+            *counts
+                .entry(fold_path(directory))
+                .or_default()
+                .entry(directory.to_owned())
+                .or_default() += 1;
+        }
     }
     counts
         .into_iter()
@@ -191,7 +221,7 @@ fn ambiguous_spellings<'a>(
     spellings: &'a HashMap<String, DirectorySpelling>,
 ) -> Option<(&'a str, &'a str)> {
     let (directory, _) = desired_path.rsplit_once('/')?;
-    match matching_directory_spelling(directory, spellings)?.1 {
+    match spellings.get(&fold_path(directory))? {
         DirectorySpelling::Ambiguous { first, second } => Some((first, second)),
         DirectorySpelling::Resident(_) => None,
     }
