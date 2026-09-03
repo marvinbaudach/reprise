@@ -9,6 +9,20 @@ use reprise_core::up_next::{QueueItem, UpNextQueue};
 
 use crate::ui::player_controller::{NowPlaying, PlayerController};
 
+pub(in crate::ui) enum StoppedPlayTarget {
+    Greeting(Vec<i64>),
+    Item(QueueItem),
+}
+
+impl StoppedPlayTarget {
+    pub(in crate::ui) fn item(&self) -> Option<QueueItem> {
+        match self {
+            Self::Greeting(ids) => ids.first().copied().map(QueueItem::Track),
+            Self::Item(item) => Some(*item),
+        }
+    }
+}
+
 fn validated_up_next(
     mut up_next: UpNextQueue,
     current: Option<QueueItem>,
@@ -41,7 +55,6 @@ impl PlayerController {
         (self.up_next.borrow().clone(), self.current_up_next.get())
     }
 
-    #[allow(dead_code)] // Wired into startup restoration in Task 5.
     pub(in crate::ui) fn restore_session_queue(
         &self,
         snapshot: QueueSnapshot,
@@ -90,13 +103,11 @@ impl PlayerController {
         // outlive its context.
         *self.play_origin.borrow_mut() = play_origin;
         *self.pending_random_start.borrow_mut() = None;
-        let mut random_library_empty = false;
         if current_up_next.is_none() {
             let random_ids = (self.random_start_chooser.borrow_mut())(&self.conn);
             match random_ids {
                 Ok(ids) if ids.is_empty() => {
                     self.library_has_tracks.set(false);
-                    random_library_empty = true;
                 }
                 Ok(ids) => {
                     self.library_has_tracks.set(true);
@@ -111,11 +122,7 @@ impl PlayerController {
 
         let greeting_track = self.pending_random_start_track_id().map(QueueItem::Track);
         let greeting_armed = greeting_track.is_some();
-        let queue_has_tracks = !random_library_empty
-            && (!self.queue.borrow().is_empty()
-                || !self.up_next.borrow().is_empty()
-                || current_up_next.is_some()
-                || greeting_armed);
+        let queue_has_tracks = self.has_playable_item();
         let shuffled = self.queue.borrow().is_shuffled();
         let repeat = self.queue.borrow().repeat();
         let current = current_up_next
@@ -216,6 +223,39 @@ impl PlayerController {
             .borrow()
             .as_ref()
             .and_then(|ids| ids.first().copied())
+    }
+
+    pub(in crate::ui) fn stopped_play_target(&self) -> Option<StoppedPlayTarget> {
+        let greeting = self.pending_random_start.borrow().clone();
+        greeting.map(StoppedPlayTarget::Greeting).or_else(|| {
+            self.current_up_next
+                .get()
+                .or_else(|| self.queue.borrow().current().map(QueueItem::Track))
+                .map(StoppedPlayTarget::Item)
+        })
+    }
+
+    pub(in crate::ui) fn start_stopped_play_target(
+        self: &std::rc::Rc<Self>,
+        target: StoppedPlayTarget,
+        change: crate::ui::current_track_selection::CurrentTrackChange,
+    ) {
+        match target {
+            StoppedPlayTarget::Greeting(ids) => {
+                self.play_from_view(ids, 0, super::play_origin::PlayOrigin::library());
+            }
+            StoppedPlayTarget::Item(item) => self.start_current_item(item, change),
+        }
+    }
+
+    pub(in crate::ui) fn has_playable_item(&self) -> bool {
+        self.pending_random_start
+            .borrow()
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
+            || self.current_up_next.get().is_some()
+            || !self.queue.borrow().is_empty()
+            || !self.up_next.borrow().is_empty()
     }
 
     #[cfg(test)]

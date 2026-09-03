@@ -316,17 +316,27 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status;
-        if status == MprisPlaybackStatus::Stopped {
-            let pending_random_start = self.pending_random_start.borrow_mut().take();
-            if let Some(ids) = pending_random_start {
-                self.play_from_view(ids, 0, super::play_origin::PlayOrigin::library());
-                return;
-            }
+        let stopped_target = (status == MprisPlaybackStatus::Stopped)
+            .then(|| self.stopped_play_target())
+            .flatten();
+        if matches!(
+            &stopped_target,
+            Some(super::session_player::StoppedPlayTarget::Greeting(_))
+        ) {
+            self.start_stopped_play_target(
+                stopped_target.expect("matched greeting target"),
+                crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+            );
+            return;
         }
-        let current = self
-            .current_up_next
-            .get()
-            .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+        let current = stopped_target
+            .as_ref()
+            .and_then(super::session_player::StoppedPlayTarget::item)
+            .or_else(|| {
+                self.current_up_next
+                    .get()
+                    .or_else(|| self.queue.borrow().current().map(QueueItem::Track))
+            });
         let has_pending = !self.up_next.borrow().is_empty();
         match toggle_action(
             status,
@@ -335,7 +345,9 @@ impl PlayerController {
             self.restored_placement_intact.get(),
         ) {
             ToggleAction::StartCurrent(change) => {
-                if let Some(item) = current {
+                if let Some(target) = stopped_target {
+                    self.start_stopped_play_target(target, change);
+                } else if let Some(item) = current {
                     self.start_current_item(item, change);
                 }
             }
@@ -387,10 +399,7 @@ impl PlayerController {
             }
         };
         self.library_has_tracks.set(available);
-        let queue_has_tracks = self.current_up_next.get().is_some()
-            || !self.queue.borrow().is_empty()
-            || !self.up_next.borrow().is_empty();
-        self.sync_transport_enabled(queue_has_tracks);
+        self.sync_transport_enabled(self.has_playable_item());
     }
 
     /// PLAY-14 Previous follows playback history in every mode. Episode

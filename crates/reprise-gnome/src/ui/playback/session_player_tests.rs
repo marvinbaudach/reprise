@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::WidgetExt;
-use reprise_core::media_integration::MprisPlaybackStatus;
+use reprise_core::media_integration::{MprisCommand, MprisPlaybackStatus};
 use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError, PlaybackState};
 use reprise_core::queue::{QueueSnapshot, Repeat};
 use reprise_core::up_next::{QueueItem, UpNextQueue};
@@ -189,6 +189,50 @@ fn first_play_starts_the_track_shown_by_the_random_greeting() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn mpris_play_starts_the_greeting_instead_of_the_restored_track() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/restored.flac', 'Restored', 'Artist', 120000, 0);
+             INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (9, '/music/greeting.flac', 'Greeting', 'Artist', 120000, 0);",
+        )
+        .unwrap();
+    let played_paths = Rc::new(RefCell::new(Vec::new()));
+    let controller = controller_with_db(
+        test_root.path(),
+        conn,
+        Box::new(RecordingPlayback {
+            played_paths: played_paths.clone(),
+        }),
+    );
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![9, 7]));
+    controller.restore_session_queue(
+        QueueSnapshot {
+            ids: vec![7],
+            order: vec![0],
+            position: Some(0),
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+
+    controller.handle_mpris_command(MprisCommand::Play);
+
+    assert_eq!(played_paths.borrow().as_slice(), ["/music/greeting.flac"]);
+    assert_eq!(controller.session_queue_snapshot().ids, vec![9, 7]);
+    assert_eq!(controller.pending_random_start_track_id(), None);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn startup_with_a_non_empty_library_shows_a_track_and_stays_stopped() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
@@ -215,6 +259,68 @@ fn startup_with_a_non_empty_library_shows_a_track_and_stays_stopped() {
         controller.session_playback_status(),
         MprisPlaybackStatus::Stopped
     );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn refreshing_library_availability_keeps_an_armed_greeting_playable() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/greeting.flac', 'Greeting', 'Artist', 120000, 0)",
+            [],
+        )
+        .unwrap();
+    let controller = controller_with_db(test_root.path(), conn, Box::new(SilentPlayback));
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
+    controller.restore_session_queue(empty_snapshot(), UpNextQueue::default(), None, None);
+
+    controller.refresh_library_availability();
+
+    assert_eq!(controller.pending_random_start_track_id(), Some(7));
+    assert!(controller.bar.prev_button.is_sensitive());
+    assert!(controller.bar.next_button.is_sensitive());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn empty_random_library_keeps_a_retained_restored_queue_playable() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks
+                 (id, path, title, artist, duration_ms, added_at, missing_since, missing_reason)
+             VALUES
+                 (7, '/media/offline/restored.flac', 'Restored', 'Artist', 120000, 0,
+                  1, 'unmounted');",
+        )
+        .unwrap();
+    let controller = controller_with_db(test_root.path(), conn, Box::new(SilentPlayback));
+
+    controller.restore_session_queue(
+        QueueSnapshot {
+            ids: vec![7],
+            order: vec![0],
+            position: Some(0),
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+
+    assert_eq!(controller.session_queue_snapshot().ids, vec![7]);
+    assert_eq!(controller.pending_random_start_track_id(), None);
+    assert!(!controller.library_has_tracks.get());
+    assert!(controller.bar.widget().is_sensitive());
 }
 
 #[test]

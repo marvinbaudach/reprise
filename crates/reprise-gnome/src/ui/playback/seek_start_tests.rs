@@ -124,6 +124,46 @@ fn stopped_restored_track_marks_the_clicked_waveform_position_until_play() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn stopped_greeting_scrub_applies_to_the_greeting_when_play_starts() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/restored.flac', 'Restored', 'Artist', 120000, 0);
+             INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (9, '/music/greeting.flac', 'Greeting', 'Artist', 120000, 0);",
+        )
+        .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![9, 7]));
+    controller.restore_session_queue(
+        QueueSnapshot {
+            position: Some(0),
+            ids: vec![7],
+            order: vec![0],
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+
+    controller.seek_or_start(30_000);
+    controller.toggle_pause();
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/greeting.flac"]
+    );
+    assert_eq!(calls.sought_positions.borrow().as_slice(), [30_000]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn stopped_track_mark_applies_when_the_same_track_starts_directly() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
