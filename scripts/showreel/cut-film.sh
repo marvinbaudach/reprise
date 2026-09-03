@@ -45,10 +45,14 @@ source scripts/showreel/film2.sh
 # So the stations are walked once, in cut order, in a single take:
 # SHOWREEL_STATIONS=library,podcasts,youtube,releases,concerts,stats. The app
 # is left on Radio before it starts, which is why the film opens on a page it
-# never returns to. The sync shot stays a take of its own, because the transfer
-# has to be running before the camera arrives, and that is minutes.
+# never returns to. The handover's device page is the same walk's last station,
+# so the desk half and the bridge come out of one continuous run.
 IN1="${SHOWREEL_TOUR_TAKE:-$SHOWREEL_DIR/roh-gnome-tour-2026-09-03.mp4}"
-INB="${SHOWREEL_SYNC_TAKE:-$SHOWREEL_DIR/roh-gnome-handover-sync-2026-09-02.mp4}"
+# The device page is the last station of that same walk, so the handover leads
+# with My Stats — the shot before it — exactly like every other shot does. It
+# used to be a take of its own because the shot was a transfer that had to be
+# running before the camera arrived; it is not a transfer any more.
+INB="${SHOWREEL_SYNC_TAKE:-$IN1}"
 # The phone is two takes now, not one bed take, because the app draws the cover
 # and the spectrum into the same square and swaps them on a tap: one take
 # cannot both navigate to a track and hold a cover that becomes a visualiser.
@@ -57,7 +61,7 @@ INB="${SHOWREEL_SYNC_TAKE:-$SHOWREEL_DIR/roh-gnome-handover-sync-2026-09-02.mp4}
 # while the handset played this film's own bed — that, and nothing else, is
 # what lets the bars be claimed to move in time with the music.
 INA="${SHOWREEL_ANDROID_TAKE:-$SHOWREEL_DIR/roh-android-gesture.mp4}"
-INV="${SHOWREEL_ANDROID_VIS_TAKE:-$SHOWREEL_DIR/roh-android-nowplaying2.mp4}"
+INV="${SHOWREEL_ANDROID_VIS_TAKE:-$SHOWREEL_DIR/roh-android-nowplaying3.mp4}"
 # The MCP take, shot by take-mcp.sh. Optional on purpose: the rest of the film
 # has to stay renderable when that take is missing or has to be reshot.
 INM="${SHOWREEL_MCP_TAKE:-$SHOWREEL_DIR/roh-gnome-mcp.mp4}"
@@ -198,17 +202,20 @@ bridge() { # name deskstart phonestart
   local dhalf=${SHOWREEL_BRIDGE_DESK:-6.8} phalf=1.2 xf=0.2
   local dur
   dur=$(python3 -c "print(round($dhalf + $phalf - $xf, 3))")
-  # The sync's own progress bar takes minutes to move; take-gnome4.py films it
-  # long on purpose (SYNC_DWELL) and this is where that footage is compressed
-  # back down. SHOWREEL_BRIDGE_SPEED is a time-lapse factor on the desk half
-  # only — the phone half and the slide are unaffected, and dhalf, and
-  # therefore the slide's own offset at dhalf - xf, do not move: the shot still
-  # lands at 6.8 s of output, it just carries dhalf * speed seconds of source.
-  # 8x by decision, not by default-to-nothing: at normal speed the shot sits on
-  # "Syncing · 0 of 74 files, 0%" for its whole 6.8 s and the one thing it is
-  # there to show — time passing on a real transfer — does not happen. At 8x the
-  # same 6.8 s of output carries 54.4 s of the take and the counter walks.
-  local speed=${SHOWREEL_BRIDGE_SPEED:-8}
+  # SHOWREEL_BRIDGE_SPEED is a time-lapse factor on the desk half only — the
+  # phone half and the slide are unaffected, and dhalf, and therefore the
+  # slide's own offset at dhalf - xf, do not move: the shot still lands at 6.8 s
+  # of output, it just carries dhalf * speed seconds of source.
+  #
+  # 1x now, and that is a decision about what the shot shows. It used to be 8x,
+  # because the shot was a transfer already under way and a real transfer's
+  # progress bar takes minutes to move: at normal speed it sat on "Syncing ·
+  # 0 of 74 files, 0%" for the whole 6.8 s, and at 8x the counter walked. The
+  # shot is not a transfer any more — it is the device page standing still,
+  # with MTP connected, the playlists and the transfer profile on it — so there
+  # is nothing to compress, and a time-lapse would only make a still page's
+  # clock jump. Set it back to 8 if the shot is ever filmed mid-sync again.
+  local speed=${SHOWREEL_BRIDGE_SPEED:-1}
   LIST_OFF=1
   case ${SHOWREEL_BRIDGE:-devicesync} in
     # The visualiser panel, at the right edge of the window.
@@ -321,32 +328,35 @@ card introcard 00-intro
 # mark plus a constant from a take script that wrote its mark at a different
 # moment.
 #
-# Measured on roh-gnome-tour-2026-09-03.mp4: turns at 8.35, 18.70, 29.68,
-# 40.30, 51.35, 62.34, every peak-to-background ratio 280 or better against a
-# threshold of 4, and the lag from mark to turn 1.90–2.35 s across all six —
-# a spread of half a second, where the 2026-09-02 take ran 3.6 to 4.7.
-desk T1 01-hook     "${SHOWREEL_IN_HOOK:-6.45}"      4.5 hold 0.00 0.50 0.50 "$(film2_statement 'One player. Everything you listen to.' 0.4 4.5)"
-desk T1 02-podcasts "${SHOWREEL_IN_PODCASTS:-16.80}" 4.5 hold 0.00 0.50 0.50 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 4.5)"
-desk T1 03-youtube  "${SHOWREEL_IN_YOUTUBE:-27.78}"  4.5 hold 0.00 0.50 0.50 "$(film2_callout 'YouTube channels' 'new videos, played as audio' 4.5)"
-desk T1 04-releases "${SHOWREEL_IN_RELEASES:-38.40}" 4.5 hold 0.00 0.50 0.50 "$(film2_callout 'New releases' 'from the artists you keep' 4.5)"
-desk T1 05-concerts "${SHOWREEL_IN_CONCERTS:-49.45}" 4.5 hold 0.00 0.50 0.50 "$(film2_callout 'Concerts nearby' 'for the same artists' 4.5)"
-desk T1 06-stats    "${SHOWREEL_IN_STATS:-60.44}"    4.5 hold 0.00 0.50 0.50 "$(film2_callout 'Your listening, counted' '' 4.5)"
+# Measured on roh-gnome-tour-2026-09-03.mp4: turns at 8.93, 20.12, 31.23,
+# 41.96, 52.83, 64.30 and 73.78 for the device page, every peak-to-background
+# ratio 630 or better against a threshold of 4, and the lag from mark to turn
+# 2.20–2.60 s across all seven — where the 2026-09-02 take ran 3.6 to 4.7.
+desk T1 01-hook     "${SHOWREEL_IN_HOOK:-7.03}"      4.5 hold 0.00 0.50 0.50 "$(film2_statement 'One player. Everything you listen to.' 0.4 4.5)"
+desk T1 02-podcasts "${SHOWREEL_IN_PODCASTS:-18.22}" 4.5 hold 0.00 0.50 0.50 "$(film2_callout 'Podcasts' 'shows, episodes, where you stopped' 4.5)"
+desk T1 03-youtube  "${SHOWREEL_IN_YOUTUBE:-29.33}"  4.5 hold 0.00 0.50 0.50 "$(film2_callout 'YouTube channels' 'new videos, played as audio' 4.5)"
+desk T1 04-releases "${SHOWREEL_IN_RELEASES:-40.06}" 4.5 hold 0.00 0.50 0.50 "$(film2_callout 'New releases' 'from the artists you keep' 4.5)"
+desk T1 05-concerts "${SHOWREEL_IN_CONCERTS:-50.93}" 4.5 hold 0.00 0.50 0.50 "$(film2_callout 'Concerts nearby' 'for the same artists' 4.5)"
+desk T1 06-stats    "${SHOWREEL_IN_STATS:-62.40}"    4.5 hold 0.00 0.50 0.50 "$(film2_callout 'Your listening, counted' '' 4.5)"
 # The agent shot is out. It asked the viewer to read a prompt, a page and a
 # highlighted fourteen-pixel row inside four and a half seconds, and what it
 # actually delivered was two screens of text going past. What MCP does is worth
 # a film of its own; it is not worth the last shot before the handover. mcp()
 # stays below, and putting the shot back is this one line.
-# The in-point follows the choice: in the 2026-08-29 tour the device row is
-# clicked at 123.3 and the page is up from about 124.5, with a sync already
-# running on it — the phone auto-syncs when it is plugged in, so the tour
-# arrived to find the transfer under way rather than starting one.
-# The sync take is its own recording: Sync now is clicked at 10.63 and the
-# transfer then runs for 78 s. The desk half starts after the click, so what is
-# on screen is a transfer already under way rather than a button being pressed —
-# and at 8x it carries 54.4 s of that transfer, which ends at 66.4, well inside
-# the take. The phone half is the navigation take 1.2 s before shot 12's own
-# in-point, so the slide hands over to a picture that then simply continues.
-bridge 09-handover "${SHOWREEL_BRIDGE_IN:-12.0}" \
+# The device page is the seventh station of the same walk, and it is filmed
+# with nothing running on it: take-gnome4.py drives to the page and holds
+# (SHOWREEL_SYNC_DWELL), and its Sync-now click is off by default. The page
+# turns at 73.78, so this in-point leads with My Stats, and the shot is the
+# page itself — MTP connected, last synced, the playlists chosen for the
+# device, Opus 160 in the transfer profile.
+#
+# It used to be a transfer, filmed mid-sync and run at 8x so the counter walked.
+# A film whose every other shot holds still had one shot with a progress bar
+# racing in it, and the desk shots behind it carried the sync's own card in the
+# sidebar. Both are gone; the phone in the handover is connected, not busy.
+# The phone half is the navigation take 1.2 s before shot 12's own in-point, so
+# the slide hands over to a picture that then simply continues.
+bridge 09-handover "${SHOWREEL_BRIDGE_IN:-71.88}" \
        "${SHOWREEL_PHONE_IN:-$(python3 -c "print(round(${SHOWREEL_PHONE_NAV_IN:-5.0} - 1.2, 3))")}"
 
 # -------------------------------------------------------------------- the phone
@@ -363,16 +373,17 @@ bridge 09-handover "${SHOWREEL_BRIDGE_IN:-12.0}" \
 # everywhere. The navigation is the desktop's job; what the phone has to show is
 # that the music plays there and that the visualiser is the same one.
 #
-# 8.4 s each, where it was 9.6 and 7.2. The pair still ends at 54.6, so the end
-# card does not move; the 1.2 s comes off the navigation, which had room, and
-# goes to the visualiser, which did not: the bars now hold for six seconds
-# before the square is tapped back to the cover, and the cover is the last
-# picture before the end card.
+# 7.2 and 9.6, where it was 9.6 and 7.2. The pair still ends at 54.6, so the
+# end card does not move; the navigation gives up 2.4 s, which it had, and the
+# visualiser takes them, which it needed: the bars hold for a little over seven
+# seconds before the square is tapped back to the cover, and the cover is the
+# last picture before the end card. That order is the point of the shot — the
+# visualiser is what the phone is here to show, and the cover is where it lands.
 #
 # Shot 12's take: begin 4.01, Artists 5.52, search 6.98, typing 8.06, keyboard
-# away 9.60, the artist 10.60, the album 12.48, play 14.26. An in-point of 6.2
-# opens on the artist list with the search about to be tapped, and still holds
-# the track list after the music starts.
+# away 9.60, the artist 10.60, the album 12.48, play 14.26. An in-point of 7.4
+# opens with the search field just tapped and still holds the track list after
+# the music starts; the only thing it gives up is the reach for the Artists tab.
 #
 # Shot 13 is the one shot whose timing is measured rather than chosen, and the
 # on-screen clock is not good enough to measure it: aligning by the readout once
@@ -393,10 +404,10 @@ bridge 09-handover "${SHOWREEL_BRIDGE_IN:-12.0}" \
 # every film second, so a picture that leads leads more — take the slope over
 # two renders rather than reasoning about the direction, and re-measure after
 # any change to this shot or to the bed.
-phone PA 12-android-nav "${SHOWREEL_PHONE_NAV_IN:-6.2}" 8.4 hold 0.00 \
-  "$(film2_callout 'Reprise on Android' 'the same library, in your hand' 8.4)"
-phone PV 13-android-vis "${SHOWREEL_PHONE_VIS_IN:-56.915}" 8.4 hold 0.00 \
-  "$(film2_callout 'The same visuals' 'in time with the music' 8.4)" out
+phone PA 12-android-nav "${SHOWREEL_PHONE_NAV_IN:-7.4}" 7.2 hold 0.00 \
+  "$(film2_callout 'Reprise on Android' 'the same library, in your hand' 7.2)"
+phone PV 13-android-vis "${SHOWREEL_PHONE_VIS_IN:-55.751}" 9.6 hold 0.00 \
+  "$(film2_callout 'The same visuals' 'in time with the music' 9.6)" out
 
 card endcard 14-end
 
