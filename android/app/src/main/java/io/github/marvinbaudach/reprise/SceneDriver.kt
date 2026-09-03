@@ -141,7 +141,13 @@ internal class SceneDriver(
         newFrame: Boolean,
         frameFraction: Float,
     ): FloatArray? {
-        if (!analysed) return if (frameSinkNeedsSnapshot) EMPTY_BANDS else null
+        // Never hand the engine an empty snapshot: `ingestBands` (see
+        // visualSceneFrameSink) treats any call, even with zero bands, as a real
+        // frame and starts drawing a flat/silent scene instead of staying empty.
+        // A track with no stored spectrogram has nothing to snapshot, so this
+        // tick reports nothing at all — the caller's cover stays up until live
+        // audio actually arrives via engine.tick().
+        if (!analysed) return null
         if (newFrame || frameSinkNeedsSnapshot) return state.motionBands
         if (frameFraction == lastFrameFraction) return null
         return state.motionBandsWithin(frameFraction)
@@ -179,7 +185,6 @@ internal class SceneDriver(
         const val measuredPositionIntervalMs = 500L
         private const val NANOS_PER_MILLISECOND = 1_000_000L
         private const val NANOS_PER_SECOND = 1_000_000_000.0
-        private val EMPTY_BANDS = FloatArray(0)
     }
 }
 

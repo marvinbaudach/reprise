@@ -1,5 +1,7 @@
 package io.github.marvinbaudach.reprise
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -69,7 +71,6 @@ import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 
 private const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
@@ -172,6 +173,69 @@ internal fun nowPlayingProgressTransform(
         scaleX = 1f - offset * 0.06f,
     )
 }
+
+internal data class NowPlayingVisualBlend(
+    val coverOpacity: Float,
+    val barsOpacity: Float,
+)
+
+/**
+ * Decides between a panel's cover and its bars from data availability alone.
+ *
+ * This used to be `near`, the panel's distance from the pager's centre —
+ * which meant a neighbour with its spectrogram already loaded still showed
+ * its cover, and the panel that had just become current could lose its bars
+ * again mid-swipe, before it settled back to `near == 1`. Distance is still
+ * used elsewhere (scale, blur, saturation): it earns a panel's depth, not
+ * whether it is allowed to show what it already has.
+ *
+ * [dataAvailability] carries the animation, not this function: it is 0 or 1
+ * at rest, and only spends time strictly between them while a caller fades
+ * one into the other. `visualizerOpacity == 0` still forces the cover — a
+ * listener who chose cover mode is not offering an opinion on data
+ * availability.
+ */
+internal fun nowPlayingVisualBlend(
+    visualizerOpacity: Float,
+    dataAvailability: Float,
+): NowPlayingVisualBlend {
+    val availability = dataAvailability.coerceIn(0f, 1f)
+    val bars = visualizerOpacity.coerceIn(0f, 1f) * availability
+    return NowPlayingVisualBlend(coverOpacity = 1f - bars, barsOpacity = bars)
+}
+
+/**
+ * Whether a panel has a real scene to draw as bars right now.
+ *
+ * A stored spectrogram always counts. The live panel additionally counts once
+ * its own engine has actually captured a real, non-empty frame — never on the
+ * mere fact of being live: a track the desktop never analysed starts with
+ * nothing to scene, and this stays false until live audio produces that first
+ * frame. Getting this wrong opened the bars slot the instant a panel became
+ * live, before its engine had anything to show, which painted an empty (flat
+ * or black) scene over the cover during the crossfade.
+ */
+internal fun panelHasVisualData(
+    storedFrameCount: Int,
+    isLivePanel: Boolean,
+    hasCapturedLiveScene: Boolean,
+): Boolean = storedFrameCount > 0 || (isLivePanel && hasCapturedLiveScene)
+
+/**
+ * Whether the live panel still has to poll for its first real scene.
+ *
+ * `sceneBytes()` is the only place [FrozenSceneBytes] learns that real data
+ * has landed, so the live panel must keep evaluating it even while
+ * [panelHasVisualData] is still false — otherwise it could never leave that
+ * state. Scoped to the live panel, and only while bars were actually asked
+ * for, so a neighbour or a panel viewed in pure cover mode never pays for a
+ * scene it will not draw.
+ */
+internal fun panelAwaitsFirstLiveScene(
+    visualizerOpacity: Float,
+    isLivePanel: Boolean,
+    hasCapturedLiveScene: Boolean,
+): Boolean = visualizerOpacity > 0f && isLivePanel && !hasCapturedLiveScene
 
 internal fun shouldRequestHighVisualizerFrameRate(
     visualizerOpacity: Float,
@@ -348,8 +412,19 @@ private fun NowPlayingPanelLayer(
     val glow = nowPlayingGlowTransform(panel.index, positionPx, widthPx)
     val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
     val near = max(0f, 1f - min(1f, distance))
-    val coverOpacity = 1f - visualizerOpacity * near.pow(1.6f)
-    val barsOpacity = visualizerOpacity * near.pow(1.4f)
+    val frozenScene = rememberFrozenSceneBytes(panel.track.id)
+    val isLivePanel = panel.index == currentIndex
+    val hasVisualData = panelHasVisualData(frames.frameCount, isLivePanel, frozenScene.hasCapturedScene)
+    val dataAvailability by animateFloatAsState(
+        targetValue = if (hasVisualData) 1f else 0f,
+        // Shares its timing with the visualizerOpacity toggle for a matching feel, not because it
+        // is the same event: this fades one panel's data arriving, not the cover/visualizer mode.
+        animationSpec = tween(VISUALIZER_CROSSFADE_MS),
+        label = "now playing panel data availability",
+    )
+    val blend = nowPlayingVisualBlend(visualizerOpacity, dataAvailability)
+    val coverOpacity = blend.coverOpacity
+    val barsOpacity = blend.barsOpacity
     val barHeight = 0.3f + near * 0.7f
     val coverShadow = rememberCoverShadowBitmap()
     val density = LocalDensity.current
@@ -412,7 +487,12 @@ private fun NowPlayingPanelLayer(
                 opacity = coverOpacity,
             )
         }
-        if (visualEngine != null && barsOpacity > 0f) {
+        val awaitingFirstLiveScene = panelAwaitsFirstLiveScene(
+            visualizerOpacity,
+            isLivePanel,
+            frozenScene.hasCapturedScene,
+        )
+        if (visualEngine != null && (barsOpacity > 0f || awaitingFirstLiveScene)) {
             Canvas(
                 Modifier
                     .size(COVER_SIZE_DP.dp)
@@ -421,7 +501,9 @@ private fun NowPlayingPanelLayer(
                 observeSceneFrame(drawRevision)
                 val center = Offset(size.width / 2f, size.height / 2f)
                 drawPlayedVisualizer(
-                    buffer = visualEngine.sceneBytes(size.width, size.height),
+                    buffer = frozenScene.latestOrFrozen(
+                        visualEngine.sceneBytes(size.width, size.height),
+                    ),
                     center = center,
                     side = size.width,
                     radius = COVER_RADIUS_DP.dp.toPx(),
@@ -467,6 +549,41 @@ internal fun updateVisualSceneEngine(
 ) {
     engine.setPlaying(playback.visualizerActive)
     engine.setAccent(accent.red, accent.green, accent.blue)
+}
+
+@Composable
+private fun rememberFrozenSceneBytes(trackId: Long): FrozenSceneBytes =
+    remember(trackId) { FrozenSceneBytes() }
+
+/**
+ * Keeps a panel's last drawn scene buffer alive across its own engine swaps.
+ *
+ * A panel's [VisualSceneEngine] is replaced the moment it crosses into (or
+ * out of) the live slot — see [visualSceneFactoryForPanel] — and a freshly
+ * live engine reports an empty scene ([VisualSceneEngine.sceneBytes]) until
+ * it has ingested its first frame (`has_ingested` on the Rust side). Keyed on
+ * the panel's own track rather than on the engine, this instance survives
+ * exactly that swap and hands back the panel's last non-empty picture in the
+ * gap, so the transition never draws nothing.
+ */
+internal class FrozenSceneBytes {
+    private var lastNonEmpty: ByteArray = ByteArray(0)
+
+    /**
+     * True once a real, non-empty scene has been drawn at least once.
+     *
+     * Used to decide whether a live panel is allowed to show bars at all: a
+     * track with no stored spectrogram starts with nothing to scene, and this
+     * stays false — keeping the cover up — until live audio produces the first
+     * real frame.
+     */
+    val hasCapturedScene: Boolean
+        get() = lastNonEmpty.isNotEmpty()
+
+    fun latestOrFrozen(scene: ByteArray): ByteArray {
+        if (scene.isNotEmpty()) lastNonEmpty = scene
+        return lastNonEmpty
+    }
 }
 
 internal fun visualSceneFrameSink(engine: VisualSceneEngine): SceneFrameSink =
