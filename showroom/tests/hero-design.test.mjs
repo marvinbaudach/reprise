@@ -102,6 +102,11 @@ test('the header and hero offer one in-page route to availability', async () => 
   );
   assert.match(mobile, /\.site-header__source,\s*\.site-header__split\s*\{[^}]*display: none;/);
   assert.match(mobile, /\.site-header__hire\s*\{[^}]*padding: 9px 14px;/);
+
+  // A backdrop blur behind a fixed, lifted header is a compositing pass on every
+  // scrolled frame. The lightbox already refuses it at this width; so does this.
+  const phones = chromeCss.slice(chromeCss.indexOf('@media (max-width: 720px)'));
+  assert.match(phones, /\.site-header\[data-lifted="true"\]\s*\{[^}]*backdrop-filter: none;/);
 });
 
 test('the reveal pass never hides what it has already shown', async () => {
