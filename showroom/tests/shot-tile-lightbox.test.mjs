@@ -30,7 +30,8 @@ test('ShotTile owns the still frame the loading sweep and the zoom cue', async (
     'utf8',
   );
 
-  assert.equal((html.match(/<button[^>]+class="[^"]*shot-tile[^"]*"/g) ?? []).length, 11);
+  // The hero pair. The nine mosaic tiles left the page when the film took CH.03.
+  assert.equal((html.match(/<button[^>]+class="[^"]*shot-tile[^"]*"/g) ?? []).length, 2);
   for (const attribute of ['data-shot', 'data-sweep', 'data-zoom']) {
     assert.match(html, new RegExp(`${attribute}=""`));
   }
