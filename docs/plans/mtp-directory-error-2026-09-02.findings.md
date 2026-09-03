@@ -335,13 +335,13 @@ replacement cleanup compares the previous ledger path with the recorded path
 rather than with the plan. An adopted spelling therefore cannot make a run
 delete the file it just wrote.
 
-The ancestor concern needs no additional planning state. A regression with one
-ledger row and one device-scan entry carrying the same adopted spelling proves
-that their two votes resolve to `DirectorySpelling::Resident`; the resulting
-delta has no copy or removal. The earlier ambiguity came from the ledger voting
-for the planned spelling while the scan voted for the adopted one. Recording
-the write outcome removes that disagreement, while the runtime directory walk
-continues to handle a missing album below a drifted artist directory.
+The ancestor concern needs no additional planning state. The production
+planning regression reaches `adopt_resident_spelling`, which checks the track's
+own inventory path before consulting `directory_spellings`. When that recorded
+path folds equal to the freshly computed desired path, the planner adopts it
+immediately. `plan_file_changes` then compares the adopted path with the same
+inventory row and plans no transfer. The runtime directory walk continues to
+handle a missing album below a drifted artist directory.
 
 The agent command bridge now logs successful Start and Cancel commands with the
 resolved device id. Future sync runs initiated through the MCP surface can
@@ -415,11 +415,15 @@ real.
 ### The drift causes no re-planning — and that is the problem
 
 Run 115 planned **0**. `compute_delta` (`delta.rs:52-58`) calls a track
-unchanged when five fields match, `device_path` among them — and the candidate
-carries the same drifted spelling the ledger does, because ledger and device
-scan tie in `build_directory_spellings` and the vote falls to `Ambiguous`, so
-nothing is adopted at planning time. Both sides are consistently wrong, so the
-delta is empty.
+unchanged when five fields match, `device_path` among them. Production planning
+gets that matching path earlier: `adopt_resident_spelling`
+(`device_case.rs:30-32`) checks `own_inventory_path` first, and the stale ledger
+path folds equal to the newly computed desired path because both came from the
+same canonical `device_track_path` naming. The planner therefore adopts the
+ledger spelling immediately and never consults `directory_spellings`.
+`plan_file_changes` (`mirror.rs:288-313`) then compares that adopted path with
+the identical inventory value and plans nothing. Both sides are consistently
+wrong, so the delta is empty.
 
 The consequence for the fix in
 `the-sync-records-the-folder-it-used.md`: **it is forward-only.** It corrects
@@ -430,12 +434,24 @@ again precisely because nothing plans them. No code path rewrites
 
 ### Follow-up worth its own plan
 
-Break the tie in `build_directory_spellings` in favour of the device scan
-instead of counting ledger and scan equally. The device is ground truth; the
-majority vote treats a stale ledger as an equal witness. Weighting the scan
-higher makes the 77 rows adopt the resident spelling at planning time, which is
-the only route that heals them without re-copying 77 files over MTP at ~2.79 s
-per unit.
+The healing route has to address the `own_inventory_path` short-circuit: when a
+track's recorded path folds equal to the desired path but does not exist on the
+device, the resident scan must be able to correct that stale spelling. Weighting
+the device scan above the ledger in `build_directory_spellings` would not heal
+the 77 rows, because the planner returns from the own-inventory check before the
+vote is reached. The design belongs in a separate plan.
 
 Not attempted here, and deliberately not folded into the current branch.
 
+## Accepted review follow-ups (2026-09-03)
+
+- The track metadata list now serializes paths from the recorded
+  `DeviceFileRecord` rows, with the planned path as the fallback when a track
+  has no row. This removes the contradiction between the ledger and the file
+  content the device reads (finding 3).
+- The caller's `gio::Cancellable` now reaches directory creation and enumeration,
+  and cancellation is checked before the retry delay and before the second
+  creation attempt (finding 4).
+- Lossy UTF-8 conversion while folding device entry names was reviewed and
+  deliberately left unchanged. It is a pre-existing pattern shared with
+  `storage_root`, not part of this focused correction (finding 10).
