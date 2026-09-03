@@ -47,6 +47,7 @@ pub use browser::{
     StorageKind, StorageOption, TargetPreview, TargetRelocation,
 };
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use device_case::fold_path;
 pub use device_presence::{
     project_device_presence, project_device_sessions, remembered_device_status,
     stable_device_identity, DetectedDevice, DeviceSessionProjection, DeviceSessionState,
