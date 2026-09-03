@@ -2,7 +2,7 @@
 slug: the-sync-records-the-folder-it-used
 worktree: /home/marvin/Projects/reprise-mtp-ledger
 branch: fix/the-sync-records-the-folder-it-used
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-02
 ---
