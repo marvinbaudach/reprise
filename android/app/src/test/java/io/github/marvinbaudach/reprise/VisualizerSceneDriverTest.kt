@@ -163,7 +163,11 @@ class VisualizerSceneDriverTest {
     }
 
     @Test
-    fun noAnalysisIsDeclaredOnceAndThePowerGateWithholdsEveryVisualizerFrame() {
+    fun noAnalysisNeverDeclaresAnEmptySnapshotAndThePowerGateWithholdsEveryVisualizerFrame() {
+        // A track with no stored spectrogram has nothing to snapshot, ever — handing the sink an
+        // empty FloatArray would tell `ingestBands` a real (if silent) frame arrived, and the
+        // native engine would start scening one instead of leaving the caller's cover up. So this
+        // driver only ever reports null while unanalysed, on the very first tick included.
         val frames = SpectrogramFrames(24, 20, ByteArray(0))
         val received = mutableListOf<FloatArray?>()
         var allowed = true
@@ -182,7 +186,7 @@ class VisualizerSceneDriverTest {
         driver.tick()
 
         assertEquals(2, received.size)
-        assertTrue(received.first()!!.isEmpty())
+        assertNull(received.first())
         assertNull(received.last())
     }
 
