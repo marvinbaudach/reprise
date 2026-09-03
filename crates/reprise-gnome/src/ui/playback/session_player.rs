@@ -235,7 +235,7 @@ impl PlayerController {
 
     /// The item the stopped bar, marker and seek-start paths present. This
     /// non-consuming projection keeps those surfaces on the same decision as
-    /// [`stopped_play_target`] without cloning a greeting's complete queue.
+    /// [`Self::stopped_play_target`] without cloning a greeting's complete queue.
     pub(in crate::ui) fn stopped_play_target_item(&self) -> Option<QueueItem> {
         self.pending_random_start_track_id()
             .map(QueueItem::Track)
