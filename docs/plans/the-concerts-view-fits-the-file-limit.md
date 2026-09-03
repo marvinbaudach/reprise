@@ -2,7 +2,7 @@
 slug: the-concerts-view-fits-the-file-limit
 worktree: /home/marvin/Projects/reprise-the-concerts-view-fits-the-file-limit
 branch: feature/the-concerts-view-fits-the-file-limit
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-03
 ---
