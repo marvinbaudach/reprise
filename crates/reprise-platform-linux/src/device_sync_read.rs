@@ -59,13 +59,23 @@ impl DeviceStorage {
         for relative_path in relative_paths {
             let components = safe_relative_components(relative_path)?;
             let file = Self::managed_child(&storage, target_path, &components)?;
-            match target_size(&file).await {
-                Ok(Some(size_bytes)) if size_bytes > 0 => recovered.push(ManagedDeviceFile {
-                    relative_path: relative_path.clone(),
-                    size_bytes,
-                }),
+            match file
+                .query_info_future(
+                    "standard::type,standard::size",
+                    gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                    gio::glib::Priority::DEFAULT,
+                )
+                .await
+            {
+                Ok(info) if info.file_type() == gio::FileType::Regular && info.size() > 0 => {
+                    recovered.push(ManagedDeviceFile {
+                        relative_path: relative_path.clone(),
+                        size_bytes: info.size() as u64,
+                    });
+                }
                 Ok(_) => {}
-                Err(error) => return Err(error),
+                Err(error) if error.matches(gio::IOErrorEnum::NotFound) => {}
+                Err(error) => return Err(error.into()),
             }
         }
         Ok(recovered)
@@ -88,5 +98,21 @@ mod tests {
 
         assert!(matches!(result, Err(DeviceIoError::InvalidRelativePath)));
         assert!(!temp.path().join("Music/outside").exists());
+    }
+
+    #[test]
+    fn probe_managed_does_not_recover_a_directory_at_a_track_path() {
+        let (temp, storage) = super::super::tests::fixture();
+        let directory = temp.path().join("Music/Reprise/Artist/Track.opus");
+        std::fs::create_dir_all(&directory).unwrap();
+
+        let recovered = super::super::tests::run(storage.probe_managed(
+            None,
+            "/Music/Reprise",
+            &["Artist/Track.opus".into()],
+        ))
+        .unwrap();
+
+        assert!(recovered.is_empty());
     }
 }

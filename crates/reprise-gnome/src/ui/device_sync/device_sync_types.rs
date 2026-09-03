@@ -35,6 +35,10 @@ pub trait DeviceBackend {
     ) -> BackendFuture<Option<Vec<u8>>> {
         Box::pin(async { Err("device reads are unavailable".into()) })
     }
+    /// A real backend must return every present, non-empty regular file among
+    /// the requested paths and report a whole-probe failure as `Err`. The
+    /// empty default is compatibility-only: the caller can keep
+    /// `residency_proven` disarmed on failure only when this contract is kept.
     fn probe_managed_files(
         &self,
         _root_uri: String,
@@ -44,6 +48,11 @@ pub trait DeviceBackend {
     ) -> BackendFuture<Vec<ManagedDeviceFile>> {
         Box::pin(async { Ok(Vec::new()) })
     }
+    /// A real backend must prove that the managed target is a directory before
+    /// path probes can arm residency and return `false` or `Err` otherwise.
+    /// The optimistic default is compatibility-only: the caller's
+    /// `residency_proven` handling depends on a real backend keeping this
+    /// contract.
     fn managed_target_exists(
         &self,
         _root_uri: String,

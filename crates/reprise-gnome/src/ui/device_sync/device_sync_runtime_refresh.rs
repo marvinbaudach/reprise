@@ -113,10 +113,24 @@ impl DeviceSyncRuntime {
                                 )
                             {
                                 let sidecar_key = sidecar.to_lowercase();
-                                if !walked.contains(&sidecar_key)
-                                    && doubtful_keys.insert(sidecar_key)
-                                {
-                                    doubtful.push(sidecar);
+                                if !walked.contains(&sidecar_key) {
+                                    let has_analysis = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
+                                        &runtime.conn,
+                                        file.track_id,
+                                    ) {
+                                        Ok(analysis) => analysis.is_some(),
+                                        Err(error) => {
+                                            tracing::warn!(
+                                                track_id = file.track_id,
+                                                %error,
+                                                "could not load analysis sidecar data for device scan repair"
+                                            );
+                                            false
+                                        }
+                                    };
+                                    if has_analysis && doubtful_keys.insert(sidecar_key) {
+                                        doubtful.push(sidecar);
+                                    }
                                 }
                             }
                         }

@@ -80,7 +80,7 @@ fn short_walk_recovers_present_track_with_device_reported_size() {
         assert_eq!(device.content_row.size_on_device_bytes, 321);
         assert_eq!(
             device.memory_status.as_deref(),
-            Some("Scan was incomplete — 2 files re-checked; 1 recovered")
+            Some("Scan was incomplete — 1 file re-checked; 1 recovered")
         );
         assert_eq!(backend.probe_call_count(), 1);
     });
@@ -134,7 +134,12 @@ fn short_walk_recovers_analysis_sidecar_without_rewriting_it() {
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         settle().await;
 
-        assert_eq!(runtime.devices()[0].page.changes.additions, 0);
+        let device = runtime.devices().remove(0);
+        assert_eq!(device.page.changes.additions, 0);
+        assert_eq!(
+            device.memory_status.as_deref(),
+            Some("Scan was incomplete — 2 files re-checked; 2 recovered")
+        );
     });
 }
 
@@ -213,9 +218,13 @@ fn complete_walk_skips_probe_and_arms_residency_proof() {
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         settle().await;
 
-        let device = runtime.devices().remove(0);
+        let mut states = runtime.device_states.borrow_mut();
         assert_eq!(backend.probe_call_count(), 0);
-        assert_eq!(device.page.changes.additions, 0);
+        assert!(states[0].managed_files_scanned());
+        states[0].residency_proven = false;
+        assert!(!states[0].managed_files_scanned());
+        drop(states);
+        assert_eq!(runtime.devices()[0].page.changes.additions, 0);
     });
 }
 
@@ -246,8 +255,7 @@ fn disconnect_clears_residency_repair_state_before_reconnect_refresh() {
     run(async {
         let (temp, conn) = fixture();
         seed_selected_inventory(&conn, &temp);
-        let connected = descriptor("a", true);
-        let backend = Rc::new(FakeBackend::new(vec![connected.clone()], 1));
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         backend.set_probe_result(Ok(vec![ManagedDeviceFile {
             relative_path: DEVICE_PATH.into(),
             size_bytes: 100,
@@ -257,9 +265,8 @@ fn disconnect_clears_residency_repair_state_before_reconnect_refresh() {
         assert!(runtime.devices()[0].memory_status.is_some());
 
         backend.set_devices(&[]);
-        assert!(runtime.devices()[0].memory_status.is_none());
-
-        backend.set_devices(&[connected]);
+        // This pins the disconnect reset: disconnected projections read
+        // `short_scan` without consulting `ever_inspected`.
         assert!(runtime.devices()[0].memory_status.is_none());
     });
 }

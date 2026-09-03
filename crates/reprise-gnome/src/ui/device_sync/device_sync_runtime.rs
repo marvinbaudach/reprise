@@ -39,7 +39,7 @@ mod types;
 use rate::MtpRateMeter;
 pub use types::*;
 
-struct DeviceState {
+pub(super) struct DeviceState {
     descriptor: DeviceDescriptor,
     connected: bool,
     session_state: DeviceSessionState,
@@ -60,7 +60,7 @@ struct DeviceState {
     /// inventory itself is rebuilt live from MTP on every connect, so
     /// "verified" cannot outlive the connection it was verified on.
     ever_inspected: bool,
-    residency_proven: bool,
+    pub(super) residency_proven: bool,
     short_scan: Option<(usize, usize)>,
     target: SyncTarget,
     settings: DeviceSettings,
@@ -241,7 +241,7 @@ impl DeviceState {
         self.machine.is_some()
     }
 
-    fn managed_files_scanned(&self) -> bool {
+    pub(super) fn managed_files_scanned(&self) -> bool {
         self.ever_inspected && self.scan_error.is_none() && self.residency_proven
     }
 
@@ -257,7 +257,7 @@ impl DeviceState {
 pub struct DeviceSyncRuntime {
     conn: Rc<Db>,
     backend: Rc<dyn DeviceBackend>,
-    device_states: RefCell<Vec<DeviceState>>,
+    pub(super) device_states: RefCell<Vec<DeviceState>>,
     subscribers: RefCell<HashMap<u64, StateCallback>>,
     next_subscription_id: Cell<u64>,
     weak_self: RefCell<Weak<Self>>,
