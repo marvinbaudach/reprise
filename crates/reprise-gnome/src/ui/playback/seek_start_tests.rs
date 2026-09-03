@@ -89,6 +89,7 @@ fn stopped_restored_track_marks_the_clicked_waveform_position_until_play() {
             [],
         )
         .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
     controller.restore_session_queue(
         QueueSnapshot {
             position: Some(0),
@@ -208,6 +209,7 @@ fn repeat_one_restart_does_not_apply_a_stopped_track_mark() {
             [],
         )
         .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
     controller.restore_session_queue(
         QueueSnapshot {
             position: Some(0),
@@ -318,6 +320,7 @@ fn stopped_restored_track_retries_the_clicked_position_once_after_preroll() {
             [],
         )
         .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
     controller.restore_session_queue(
         QueueSnapshot {
             position: Some(0),

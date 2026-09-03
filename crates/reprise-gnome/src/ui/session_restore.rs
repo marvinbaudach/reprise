@@ -82,11 +82,12 @@ pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &Ses
         let playback = player.map_or(MprisPlaybackStatus::Stopped, |player| {
             player.session_playback_status()
         });
-        let runtime_queue = player.map(|player| player.session_queue_snapshot());
+        let pending_random_start_track_id =
+            player.and_then(|player| player.pending_random_start_track_id());
         let runtime_current_up_next = player.map(|player| player.session_up_next_snapshot().1);
         tracing::info!(
             ?state,
-            ?runtime_queue,
+            ?pending_random_start_track_id,
             ?runtime_current_up_next,
             playback = playback.as_str(),
             "session restore report"

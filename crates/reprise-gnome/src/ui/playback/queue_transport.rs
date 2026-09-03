@@ -316,6 +316,13 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status;
+        if status == MprisPlaybackStatus::Stopped {
+            let pending_random_start = self.pending_random_start.borrow_mut().take();
+            if let Some(ids) = pending_random_start {
+                self.play_from_view(ids, 0, super::play_origin::PlayOrigin::library());
+                return;
+            }
+        }
         let current = self
             .current_up_next
             .get()
@@ -397,6 +404,7 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(self: &Rc<Self>) {
+        self.dismiss_random_start_greeting();
         if self.forward_from_history() {
             return;
         }
@@ -423,6 +431,7 @@ impl PlayerController {
         start_index: usize,
         origin: super::play_origin::PlayOrigin,
     ) {
+        *self.pending_random_start.borrow_mut() = None;
         self.queue.borrow_mut().set_tracks(ids, start_index);
         self.current_up_next.set(None);
         self.deferred_queue_purge_id.set(None);

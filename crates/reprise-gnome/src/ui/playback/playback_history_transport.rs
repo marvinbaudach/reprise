@@ -97,6 +97,7 @@ impl PlayerController {
     /// PLAY-14: seek to the current item's start or navigate actual playback
     /// history; never restart the current item to implement a rewind.
     pub(in crate::ui) fn previous_from_history(self: &Rc<Self>) {
+        self.dismiss_random_start_greeting();
         let position_ms = self.current_position_ms();
         let action = {
             let state = self.history.borrow();

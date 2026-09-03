@@ -228,6 +228,10 @@ pub struct PlayerController {
     pub(in crate::ui) conn: Rc<Db>,
     /// Injectable ordering boundary for the random track shown at startup.
     pub(in crate::ui) random_start_chooser: RefCell<Box<RandomStartChooser>>,
+    /// Full library snapshot behind the stopped startup greeting. It is kept
+    /// separate from `queue` until the user explicitly presses Play, so a
+    /// launch-and-close cannot replace the persisted playback context.
+    pub(in crate::ui) pending_random_start: RefCell<Option<Vec<i64>>>,
     /// `(track_id, duration_ms)` of the track currently loaded, set by
     /// `play_track_id` and cleared once play tracking has been evaluated for
     /// it (see `evaluate_play_tracking`). `None` when no track is loaded.
@@ -458,6 +462,7 @@ impl PlayerController {
             random_start_chooser: RefCell::new(Box::new(
                 reprise_core::queries::query_random_live_track_ids,
             )),
+            pending_random_start: RefCell::new(None),
             current_track: Cell::new(None),
             max_position_ms: Cell::new(0),
             listenbrainz,
@@ -620,6 +625,7 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        *self.pending_random_start.borrow_mut() = None;
         let start_position_ms = self.take_pending_start_mark(Some(QueueItem::Track(id)));
         self.clear_pending_local_seek();
         self.evaluate_play_tracking();
