@@ -2,7 +2,7 @@
 slug: the-player-bar-greets-you-with-a-random-track
 worktree: /home/marvin/Projects/reprise-the-player-bar-greets-you-with-a-random-track
 branch: feature/the-player-bar-greets-you-with-a-random-track
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-09-03
 ---
