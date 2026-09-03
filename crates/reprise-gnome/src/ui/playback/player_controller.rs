@@ -254,10 +254,11 @@ pub struct PlayerController {
     /// Cached library availability used to keep idle Play reachable without
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
-    /// START-4 one-shot for a loaded track that is already selected and
-    /// centered by startup routing. Random startup greetings clear this flag:
-    /// their track was chosen independently of the restored browser place.
-    /// Also cleared by the first `present_track`.
+    /// START-4 one-shot for an item already selected and centered by startup
+    /// routing, including a startup greeting. Greeting Play never consults
+    /// this flag: it reaches `play_track_id` as `PlaybackStarted`, whose
+    /// NAV-10b reveal policy is already `MarkerOnly`. Also cleared by the
+    /// first `present_track`.
     pub(in crate::ui) restored_placement_intact: Cell<bool>,
     /// A waveform position selected before playback starts, bound to the
     /// exact queue item that may consume it on the next start attempt.

@@ -88,9 +88,10 @@ fn remove_direct_episode_now_playing(
 
 /// `restored_placement_intact` says the loaded track is still exactly where
 /// startup routing put it: selected and centered, never played (START-4).
-/// A random startup greeting explicitly clears it because its track and the
-/// restored browser place are independent. Every start from Stopped without
-/// this one-shot keeps NAV-10b's explicit-transport reveal.
+/// START-4 places a greeting the same way, but greeting Play bypasses this
+/// decision and reaches `play_track_id` as `PlaybackStarted`, whose NAV-10b
+/// reveal policy is already `MarkerOnly`. Other starts from Stopped without
+/// this one-shot keep NAV-10b's explicit-transport reveal.
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,

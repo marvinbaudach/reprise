@@ -121,17 +121,17 @@ impl PlayerController {
         self.notify_queue_changed();
 
         let greeting_track = self.pending_random_start_track_id().map(QueueItem::Track);
-        let greeting_armed = greeting_track.is_some();
         let queue_has_tracks = self.has_playable_item();
         let shuffled = self.queue.borrow().is_shuffled();
         let repeat = self.queue.borrow().repeat();
         let current = current_up_next
             .or(greeting_track)
             .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
-        // Only an armed greeting is independent of the restored browser
-        // place. Every ordinary restored item keeps START-4's one-shot.
-        self.restored_placement_intact
-            .set(current.is_some() && !greeting_armed);
+        // START-4 places a greeting through the track list exactly like any
+        // restored item. Keep that placement reflected here even though
+        // greeting Play bypasses this one-shot and reaches `play_track_id` as
+        // `PlaybackStarted`, which NAV-10b already maps to `MarkerOnly`.
+        self.restored_placement_intact.set(current.is_some());
         self.sync_transport_enabled(queue_has_tracks);
         self.sync_shuffle_indicator(shuffled);
         self.sync_repeat_indicator(repeat);

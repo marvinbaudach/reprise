@@ -304,7 +304,10 @@ fn startup_with_a_non_empty_library_shows_a_track_and_stays_stopped() {
     assert_eq!(controller.bar.title_label.text(), "Greeting");
     assert!(controller.bar.widget().is_sensitive());
     assert_eq!(controller.current_play_origin(), None);
-    assert!(!controller.restored_placement_intact.get());
+    assert!(
+        controller.restored_placement_intact.get(),
+        "START-4 placed the greeting; its Play path bypasses this inert one-shot"
+    );
     assert_eq!(
         controller.session_playback_status(),
         MprisPlaybackStatus::Stopped
