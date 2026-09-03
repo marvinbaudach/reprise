@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, readdir, readFile, stat } from 'node:fs/promises';
+import { access, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
@@ -10,13 +10,6 @@ async function prerenderedPage() {
   return readFile(outputPath, 'utf8');
 }
 
-async function builtCss() {
-  const assets = join(showroomRoot, 'dist', 'assets');
-  const stylesheet = (await readdir(assets)).find((entry) => entry.endsWith('.css'));
-  assert.ok(stylesheet);
-  return readFile(join(assets, stylesheet), 'utf8');
-}
-
 test('the prerendered page opens with real GNOME and Android product media', async () => {
   const html = await prerenderedPage();
 
@@ -25,102 +18,38 @@ test('the prerendered page opens with real GNOME and Android product media', asy
   assert.match(html, /Reprise on Android showing the audio-reactive Now Playing scene/);
 });
 
-test('the product gallery names every shipped surface and remains useful without JavaScript', async () => {
+test('the screenshot mosaic left the page to the film, without leaving the tree', async () => {
   const html = await prerenderedPage();
-  const expectedSurfaces = [
-    'Music library',
-    'Podcasts',
-    'YouTube',
-    'Radio discovery',
-    'Library Doctor',
-    'Device sync',
-    'Layout controls',
-    'Listening statistics',
-    'Android library',
-    'Now Playing',
-  ];
 
-  assert.match(html, /data-showcase="product-gallery"/);
-  for (const surface of expectedSurfaces) {
-    assert.match(html, new RegExp(`>${surface}<`));
-  }
+  // CH.03 used to close on nine screenshots of the same surfaces the film now
+  // walks through. Keeping both would say it twice, once in stills and once in
+  // motion, so the mosaic came off the page — unmounted, not deleted. Putting it
+  // back is one import and one element in ChapterThree.tsx.
+  assert.doesNotMatch(html, /data-showcase="product-gallery"/);
+  assert.doesNotMatch(html, /data-layout="design-mosaic"/);
+  assert.match(html, /data-showcase="showreel-film"/);
+  await access(join(showroomRoot, 'src', 'components', 'showcase', 'ProductGallery.tsx'));
+});
 
-  const screenshots = [...html.matchAll(/<img\b[^>]*class="[^"]*product-shot[^"]*"[^>]*>/g)];
-  assert.equal(screenshots.length, 11);
-  for (const [tag] of screenshots) {
+test('every screenshot the page ships is copied into the build and stays below one megabyte', async () => {
+  const html = await prerenderedPage();
+  const screenshots = [...html.matchAll(/<img\b[^>]*class="[^"]*product-shot[^"]*"[^>]*>/g)].map(
+    ([tag]) => tag,
+  );
+
+  // The hero pair, and nothing under it any more.
+  assert.equal(screenshots.length, 2);
+  for (const tag of screenshots) {
     assert.match(tag, /\balt="[^"]{12,}"/);
     assert.match(tag, /\bwidth="\d+"/);
     assert.match(tag, /\bheight="\d+"/);
   }
-});
 
-test('the gallery uses the five design mosaic rows and their exact flex ratios', async () => {
-  const html = await prerenderedPage();
-  const css = await builtCss();
-  const gallery = html.match(
-    /<section[^>]+data-showcase="product-gallery"[\s\S]+?<\/section>/,
-  )?.[0];
-
-  assert.ok(gallery);
-  assert.match(gallery, /data-layout="design-mosaic"/);
-  assert.equal((gallery.match(/class="mosaic-row"/g) ?? []).length, 5);
-  assert.equal((gallery.match(/<button[^>]+class="[^"]*shot-tile/g) ?? []).length, 9);
-  let previousSurfaceIndex = -1;
-  for (const surface of [
-    'Podcasts',
-    'Android library',
-    'YouTube',
-    'Radio discovery',
-    'Library Doctor',
-    'Artwork mode',
-    'Device sync',
-    'Layout controls',
-    'Listening statistics',
-  ]) {
-    const surfaceIndex = gallery.indexOf(`>${surface}<`);
-    assert.ok(surfaceIndex > previousSurfaceIndex, `${surface} is out of design order`);
-    previousSurfaceIndex = surfaceIndex;
-  }
-  assert.doesNotMatch(gallery, / style=/);
-  assert.doesNotMatch(gallery, /tabindex=|aria-describedby=/);
-  assert.match(css, /\.mosaic\{[^}]*gap:clamp\(1\.2rem,\.9rem \+ 1\.4vw,2\.4rem\)/);
-  assert.match(
-    css,
-    /\.mosaic-frame\{[^}]*max-width:78rem[^}]*padding-inline:clamp\(1\.25rem,4vw,4rem\)/,
-  );
-  // Lightning CSS (Vite 8's minifier) sorts declarations inside a block, so the
-  // row is checked for what it carries rather than for the order it carries it in.
-  const row = css.match(/\.mosaic-row\{[^}]*\}/)?.[0];
-  assert.ok(row, '.mosaic-row must exist in the built CSS');
-  for (const declaration of ['display:flex', 'flex-wrap:wrap']) {
-    assert.ok(row.includes(declaration), `.mosaic-row must carry ${declaration}`);
-  }
-  // Lightning CSS (Vite 8's minifier) drops the flex-shrink when it is the
-  // default 1, so `flex:1.62 1 340px` is printed as `flex:1.62 340px`. Both
-  // spellings are the same box; the ratio is what this test owns.
-  assert.match(css, /\.mosaic-tile--gnome-podcasts\{[^}]*flex:1\.62 (?:1 )?340px/);
-  assert.match(css, /\.mosaic-tile--android-library\{[^}]*flex:\.58 (?:1 )?190px/);
-  assert.match(css, /\.mosaic-tile--gnome-library-doctor\{[^}]*flex:1\.7 (?:1 )?360px/);
-  assert.match(css, /\.mosaic-tile--android-cover\{[^}]*flex:\.55 (?:1 )?180px/);
-  assert.match(
-    css,
-    // `flex:1 1 320px` is the same box as the minifier's `flex:320px` — grow and
-    // shrink are both 1 by default once a basis is given.
-    /\.mosaic-tile--gnome-youtube,\.mosaic-tile--gnome-radio,\.mosaic-tile--gnome-device-sync\{[^}]*flex:(?:1 (?:1 )?)?320px/,
-  );
-  assert.match(css, /\.mosaic-tile--gnome-layout-controls\{[^}]*flex:1\.05 (?:1 )?320px/);
-  assert.match(css, /\.mosaic-tile--gnome-listening-stats\{[^}]*width:100%/);
-  assert.doesNotMatch(css, /scroll-snap-type/);
-  assert.doesNotMatch(css, /\.mosaic\{[^}]*overflow-x:auto/);
-});
-
-test('every gallery asset is copied into the deployable build and stays below one megabyte', async () => {
-  const html = await prerenderedPage();
   const sources = [
     ...html.matchAll(/<img\b[^>]*class="[^"]*product-shot[^"]*"[^>]*src="([^"]+)"/g),
   ].map((match) => match[1]);
 
-  assert.equal(new Set(sources).size, 11);
+  assert.equal(new Set(sources).size, 2);
   for (const source of sources) {
     const relativePath = source.replace(/^\/reprise\//, '');
     const assetPath = join(showroomRoot, 'dist', relativePath);

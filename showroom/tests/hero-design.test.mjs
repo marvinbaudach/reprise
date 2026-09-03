@@ -39,7 +39,14 @@ test('the design hero opens with two screenshot buttons', async () => {
   // this test owns is that the rule carries all three.
   const phone = css.match(/\.hero-product__phone\{[^}]*\}/)?.[0];
   assert.ok(phone, '.hero-product__phone must exist in the built CSS');
-  for (const declaration of ['right:-5%', 'bottom:-6%', 'width:24%']) {
+  // The lean is capped at the room the frame actually has: below roughly 800px
+  // 5% of the frame is wider than --frame-pad, and the tile was drawn outside
+  // the window and clipped. `max` keeps -5% wherever it fits.
+  for (const declaration of [
+    'right:max(-5%, calc(-1 * var(--frame-pad)))',
+    'bottom:-6%',
+    'width:24%',
+  ]) {
     assert.ok(phone.includes(declaration), `.hero-product__phone must carry ${declaration}`);
   }
   const visualizer = css.match(/\.hero-product__visualizer\{[^}]*\}/)?.[0];
@@ -90,7 +97,7 @@ test('the header and hero offer one in-page route to availability', async () => 
   );
 
   const mobile = chromeCss.slice(
-    chromeCss.indexOf('@media (max-width: 46rem)'),
+    chromeCss.indexOf('@media (max-width: 70rem)'),
     chromeCss.indexOf('@media (max-width: 26.5rem)'),
   );
   assert.match(mobile, /\.site-header__source,\s*\.site-header__split\s*\{[^}]*display: none;/);

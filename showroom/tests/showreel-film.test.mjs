@@ -21,18 +21,19 @@ const filmFiles = [
 ];
 
 /** The cut, to the frame. Every caption cue has to land inside it. */
-const FILM_SECONDS = 60.0;
+const FILM_SECONDS = 58.2;
 
-test('CH.03 does not carry the film yet', async () => {
+test('CH.03 closes on the film, in place of the mosaic it replaced', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const chapter = html.match(/<section id="ch-03"[\s\S]+?<section id="ch-04"/)?.[0];
   assert.ok(chapter);
 
-  // The film is finished code but not finished work. Keep it off the public
-  // page until someone decides it is ready, without treating it as abandoned.
-  assert.doesNotMatch(chapter, /data-showcase="showreel-film"/);
-  assert.doesNotMatch(chapter, /<video/);
-  assert.match(chapter, /data-layout="design-mosaic"/);
+  // The film is the chapter's closing statement now. The screenshot mosaic it
+  // replaced must be gone from the page — leaving both would say the same thing
+  // twice, once in stills and once in motion.
+  assert.match(chapter, /data-showcase="showreel-film"/);
+  assert.match(chapter, /<video/);
+  assert.doesNotMatch(chapter, /data-layout="design-mosaic"/);
 });
 
 test('the film never starts itself', async () => {
@@ -72,6 +73,20 @@ test('every file the film section names is present in the repository', async () 
     const info = await stat(join(filmDir, name));
     assert.ok(info.size > 0, `${name} is empty`);
   }
+});
+
+test('the ladder stays a ladder, and no step of it runs away', async () => {
+  // Mounting the film puts these bytes into the deploy, and nothing in CI weighs
+  // them. A visitor downloads exactly one encode, so the cap is per file — but
+  // the smaller step has to stay the smaller step, or the ladder is decoration.
+  const weigh = async (name) => (await stat(join(filmDir, name))).size;
+
+  for (const name of ['showreel-1080.mp4', 'showreel-1080.webm']) {
+    assert.ok((await weigh(name)) < 8_000_000, `${name} exceeds eight megabytes`);
+  }
+  assert.ok((await weigh('showreel-720.mp4')) < (await weigh('showreel-1080.mp4')));
+  assert.ok((await weigh('showreel-720.webm')) < (await weigh('showreel-1080.webm')));
+  assert.ok((await weigh('showreel-poster.webp')) < 200_000);
 });
 
 test('the caption cues stay inside the cut and never run backwards', async () => {

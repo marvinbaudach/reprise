@@ -1,5 +1,5 @@
 import { SpectralSeekTrack } from '../seek/MeasuredSeekTrack';
-import { ProductGallery } from '../showcase/ProductGallery';
+import { ShowreelFilm } from '../showcase/ShowreelFilm';
 import './chapters.css';
 
 interface ChapterThreeProps {
@@ -39,7 +39,7 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
         <SpectralSeekTrack reducedMotion={reducedMotion} />
       </div>
 
-      <ProductGallery />
+      <ShowreelFilm />
     </section>
   );
 }

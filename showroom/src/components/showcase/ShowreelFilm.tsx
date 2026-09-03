@@ -59,7 +59,7 @@ export function ShowreelFilm() {
     <div className="frame film-frame">
       <header className="film-heading">
         <h3 id="film-heading" data-reveal>
-          Sixty seconds. Both apps, and an agent writing into the library.
+          Fifty-eight seconds. The desktop, the phone, and the sync between them.
         </h3>
         <p data-reveal>Screen recordings of the running apps — nothing rebuilt for the camera</p>
       </header>
@@ -102,8 +102,8 @@ export function ShowreelFilm() {
         </div>
 
         <figcaption className="film__caption">
-          Instant search, lyrics, podcasts, the Library Doctor, listening statistics — then the same
-          library and the same visualizer on Android.
+          Podcasts, YouTube channels, new releases, concerts nearby and your listening counted —
+          then the library synced to the phone over MTP, and the same visualizer running on Android.
         </figcaption>
       </figure>
     </div>

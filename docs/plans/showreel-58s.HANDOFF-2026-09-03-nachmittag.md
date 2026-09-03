@@ -187,3 +187,75 @@ cannot be removed without a reshoot.
 **v1–v4 are all stale, the canonical names too.** `reprise-showreel-58s.mp4`
 and `-scored.mp4` (09:59) are the morning cut. Nothing was promoted — that
 waits on the ruling.
+
+## The film is on the showcase page — 2026-09-03, 14:50
+
+v5 was accepted and mounted. What that took, and what it moved:
+
+- **`ChapterThree.tsx` closes on `<ShowreelFilm />` where it closed on
+  `<ProductGallery />`.** The mosaic walked the same surfaces in stills that the
+  film now walks in motion, so the page said it twice. The component, its CSS
+  and `GALLERY_MOSAIC_*` stay in the tree — unmounted, not deleted; putting it
+  back is one import and one element. `product-gallery.test.mjs` now guards
+  exactly that state.
+- **The encodes moved from `showroom/media/showreel/` to
+  `showroom/public/media/showreel/`.** That directory pair *is* the deploy
+  switch: Vite copies `public/` into `dist/`, and `pages.yml` uploads `dist`.
+  `showreel-film.test.mjs` already owned the coupling and needed no help.
+  `POSTER_AT=9.5` puts the poster on the Podcasts shot — the frame where the
+  whole window is lit and the callout is legible.
+- **The copy and the caption track were written for the old 60 s cut** and named
+  search, lyrics, the Library Doctor and the MCP shot, none of which are in v5.
+  Both rewritten from the boundaries the cut actually has: 3.0 · 7.5 · 12.0 ·
+  16.5 · 21.0 · 25.5 · 30.0 · 37.8 · 45.0 · 54.6 · 58.2, eleven cues.
+- `FILM_SECONDS` is 58.2, and a new test caps each encode and keeps the 720
+  step below the 1080 step — mounting the film put 13.5 MB into a deploy that
+  has no asset-size gate at all.
+
+### The mobile pass, and what it actually found
+
+Measured, not reasoned: headless Chromium over CDP, both faces loaded, CPU
+throttled 4×, every element's rect against the viewport, at 280 · 300 · 320 ·
+360 · 390 · 414 · 600 · 736 · 760 · 800 · 900 · 1024 · 1120 · 1280 · 1440 px.
+
+`html, body { overflow-x: clip }` (global.css) means overflow never shows up as
+a scrollbar or a document `scrollWidth` — it is swallowed silently. So
+`scrollWidth === clientWidth` proves nothing here, and the offenders have to be
+found by walking rects. Three did:
+
+1. **`.site-header__hire` was outside the window from 737px to about 1105px.**
+   The nav collapsed at 46rem, but the full row — mark, wordmark, Alpha, five
+   chapter links, Source, hire pill — needs ~1105px of client width, because
+   `--frame-pad` grows with the viewport and eats the rest. A phone in landscape
+   and a 1024px tablet had the call to action entirely off screen. Breakpoint
+   moved to 70rem.
+2. **`.hero-product__phone { right: -5% }`** drew the tile 2–3px outside the
+   window between 736 and 800px, where 5% of the frame exceeds `--frame-pad`.
+   Now `right: max(-5%, calc(-1 * var(--frame-pad)))` — the lean survives
+   wherever it fits.
+3. **`.incident-panel`** ran 20px past the page below 300px: `minmax(17.5rem,
+   1fr)` keeps its track minimum even when the container is narrower. Now
+   `minmax(min(17.5rem, 100%), 1fr)`, the pattern `.hero__grid` already uses.
+
+At 280px the hire pill was still 7px out with everything else hidden, so the
+header gap drops to 12px under 26.5rem.
+
+**Scroll smoothness measured clean, before and after** — median 16.6–16.8 ms,
+p99 ≤ 25 ms, no frame over 32 ms, no long tasks, idle and with the film playing,
+portrait and landscape. The one change made on judgement rather than on a
+reading: the fixed header carried `backdrop-filter: blur(14px)` for the whole
+page below the hero, which is a compositing pass per scrolled frame on a phone —
+the exact trade `lightbox.css` already refuses under 720px. The header now
+refuses it there too and closes its ground instead. A headless harness cannot
+reproduce a phone's compositor, so this is precedent, not measurement.
+
+### Left over
+
+- **1.9 MB of screenshots ship without being referenced.** The nine mosaic
+  captures and their ladders are still in `public/media/showroom`; the page uses
+  eight files of the 46 there. `capture-ladder.test.mjs` still asserts every
+  ladder step exists on disk, so deleting them is a decision about the data, not
+  a cleanup — it was not made here.
+- The film is on the page but nothing is promoted to the canonical
+  `reprise-showreel-58s.mp4` / `-scored.mp4` names: those still hold the
+  09:59 morning cut.
