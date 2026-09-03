@@ -1,0 +1,156 @@
+package io.github.marvinbaudach.reprise
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Test
+
+/**
+ * What the swipe window may do while the track and the index disagree.
+ *
+ * The index follows the player and moves the moment `next()` is called; the
+ * track follows the metadata query answering for it and arrives later. In that
+ * gap the pair describes two different songs, and a window written from it puts
+ * the outgoing track on the incoming card — the settle animation then carries
+ * the old cover into the centre, which is the flash a swipe used to show.
+ */
+class PlayPanelWindowStaleTrackTest {
+
+    private fun track(id: Long) = LibraryTrack(
+        id = id,
+        uri = "content://tracks/$id",
+        title = "Track $id",
+        artist = "Artist $id",
+        album = "Album $id",
+        durationMs = 180_000,
+        playCount = 0,
+        rating = 0,
+    )
+
+    private fun window(vararg panels: Pair<Int, Long>): PlayPanelWindow {
+        val entries = panels.map { (index, id) -> PlayPanel(index, track(id)) }
+        return PlayPanelWindow.from(entries)
+    }
+
+    @Test
+    fun `a disagreeing pair advances geometry without stamping its track`() {
+        val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
+
+        val advanced = settled.advancedTo(
+            track = track(50L),
+            currentIndex = 6,
+            trackIsStale = true,
+        )
+
+        assertEquals(listOf(5, 6), advanced.panels.map(PlayPanel::index))
+        assertEquals(60L, advanced.panels.single { it.index == 6 }.track?.id)
+    }
+
+    @Test
+    fun `writing a disagreeing pair is what puts the old cover on the new card`() {
+        val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
+
+        // The defect the guard exists for: asked directly, the window happily
+        // stamps the outgoing track onto the index the swipe is settling on.
+        // This is why the caller must wait rather than write.
+        val stamped = settled.withCurrentPanel(track = track(50L), currentIndex = 6)
+
+        assertEquals(
+            50L,
+            stamped.panels.single { it.index == 6 }.track?.id,
+        )
+    }
+
+    @Test
+    fun `an agreeing pair writes the window as before`() {
+        val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
+
+        val advanced = settled.advancedTo(
+            track = track(60L),
+            currentIndex = 6,
+            trackIsStale = false,
+        )
+
+        assertNotNull(advanced)
+        assertEquals(60L, advanced.panels.single { it.index == 6 }.track?.id)
+    }
+
+    @Test
+    fun `every advance sequence keeps the panel window contiguous`() {
+        assertContiguous(
+            playPanelWindow(currentIndex = 5, currentTrackId = -1L, rows = listOf(track(50L))),
+            "prefetch response without the current track",
+        )
+
+        var handoff = window(4 to 40L, 5 to 50L, 6 to 60L)
+        for (index in 6..8) {
+            handoff = handoff.advancedTo(track(60L), index, trackIsStale = true)
+        }
+        handoff = handoff.advancedTo(track(80L), currentIndex = 8, trackIsStale = false)
+        assertContiguous(handoff, "three stale advances followed by their metadata answer")
+
+        for (stepCount in 1..4) {
+            for (staleMask in 0 until (1 shl stepCount)) {
+                var advanced = window(4 to 40L, 5 to 50L, 6 to 60L)
+                for (step in 1..stepCount) {
+                    val index = 6 + step
+                    val trackIsStale = staleMask and (1 shl (step - 1)) != 0
+                    advanced = advanced.advancedTo(
+                        track = track(index * 10L),
+                        currentIndex = index,
+                        trackIsStale = trackIsStale,
+                    )
+                }
+                assertContiguous(advanced, "steps=$stepCount staleMask=$staleMask")
+            }
+        }
+    }
+
+    @Test
+    fun `waiting keeps every retained track at its original index`() {
+        val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
+        val before = settled.panels.map { it.index to it.track?.id }
+
+        val advanced = settled.advancedTo(track(50L), currentIndex = 6, trackIsStale = true)
+
+        assertEquals(
+            before.filter { (index, _) -> index >= 5 },
+            advanced.panels.map { it.index to it.track?.id },
+        )
+    }
+
+    @Test
+    fun `the pair that agrees keeps only the reachable neighbours`() {
+        val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
+
+        val advanced = settled.advancedTo(
+            track = track(60L),
+            currentIndex = 6,
+            trackIsStale = false,
+        )
+
+        assertNotNull(advanced)
+        assertEquals(listOf(5, 6), advanced.panels.map(PlayPanel::index))
+    }
+
+    @Test
+    fun `stepping back waits on a disagreeing pair too`() {
+        val settled = window(4 to 40L, 5 to 50L, 6 to 60L)
+
+        val advanced = settled.advancedTo(
+            track = track(50L),
+            currentIndex = 4,
+            trackIsStale = true,
+        )
+
+        assertEquals(listOf(4, 5), advanced.panels.map(PlayPanel::index))
+        assertEquals(40L, advanced.panels.single { it.index == 4 }.track?.id)
+    }
+
+    private fun assertContiguous(window: PlayPanelWindow, scenario: String) {
+        assertEquals(
+            scenario,
+            (window.firstIndex..window.lastIndex).toList(),
+            window.panels.map(PlayPanel::index),
+        )
+    }
+}

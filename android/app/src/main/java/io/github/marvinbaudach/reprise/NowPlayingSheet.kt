@@ -79,6 +79,7 @@ internal fun NowPlayingSheet(
     playback: PlaybackUiState,
     surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
     surfaceState: MobileSurfaceViewModel = viewModel(),
+    trackIsStale: Boolean = false,
     close: () -> Unit,
 ) {
     val metrics = nowPlayingMetrics(surfaceLayout)
@@ -86,7 +87,7 @@ internal fun NowPlayingSheet(
     val motion = LocalAmbientMotionController.current
     val visualizerPreference = LocalVisualizerPreference.current
     val currentIndex = playback.currentIndex ?: 0
-    val panelWindow = rememberPlayPanelWindow(track, currentIndex, controls)
+    val panelWindow = rememberPlayPanelWindow(track, currentIndex, controls, trackIsStale)
     val positionPx = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
     val gestureScope = rememberCoroutineScope()

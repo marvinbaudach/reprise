@@ -129,10 +129,14 @@ class NowPlayingGesturesTest {
         val currentIndex = mutableIntStateOf(1)
         compose.setContent {
             val window = rememberPlayPanelWindow(track.value, currentIndex.intValue, controls)
-            Text(window.panels.joinToString(",") { panel -> panel.track.id.toString() })
+            Text(
+                window.panels.joinToString(",") { panel ->
+                    "${panel.index}:${panel.track?.id ?: "pending"}"
+                },
+            )
         }
         compose.waitForIdle()
-        compose.onNodeWithText("829,830,831").assertIsDisplayed()
+        compose.onNodeWithText("0:829,1:830,2:831").assertIsDisplayed()
 
         compose.runOnUiThread {
             track.value = gestureTrack(id = 831, title = "Next song")
@@ -140,7 +144,154 @@ class NowPlayingGesturesTest {
         }
         compose.waitForIdle()
 
-        compose.onNodeWithText("830,831").assertIsDisplayed()
+        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
+    }
+
+    @Test
+    fun an_index_that_moves_before_its_track_answers_does_not_restamp_the_window() {
+        val controls = DelayedPanelWindowControls()
+        val track = mutableStateOf(gestureTrack())
+        val currentIndex = mutableIntStateOf(1)
+        val trackIsStale = mutableStateOf(false)
+        compose.setContent {
+            val window = rememberPlayPanelWindow(
+                track.value,
+                currentIndex.intValue,
+                controls,
+                trackIsStale.value,
+            )
+            Text(
+                window.panels.joinToString(",") { panel ->
+                    "${panel.index}:${panel.track?.id ?: "pending"}"
+                },
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("0:829,1:830,2:831").assertIsDisplayed()
+
+        // The player has moved on; the metadata query has not answered yet, so
+        // the track still describes the song the swipe is leaving behind.
+        compose.runOnUiThread {
+            currentIndex.intValue = 2
+            trackIsStale.value = true
+        }
+        compose.waitForIdle()
+
+        // 830 is the outgoing track. Stamping it at index 2 is what used to
+        // carry the old cover into the centre; the prefetched 831 stays there.
+        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
+
+        // The answer lands: the pair agrees again and the window catches up.
+        compose.runOnUiThread {
+            track.value = gestureTrack(id = 831, title = "Next song")
+            trackIsStale.value = false
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
+    }
+
+    @Test
+    fun two_stale_external_advances_keep_an_unstamped_panel_at_the_live_index() {
+        val controls = DelayedPanelWindowControls()
+        val currentIndex = mutableIntStateOf(1)
+        val trackIsStale = mutableStateOf(false)
+        compose.setContent {
+            val window = rememberPlayPanelWindow(
+                gestureTrack(),
+                currentIndex.intValue,
+                controls,
+                trackIsStale.value,
+            )
+            Text(
+                "${window.firstIndex}..${window.lastIndex}|" +
+                    window.panels.joinToString(",") { panel ->
+                        "${panel.index}:${panel.track?.id ?: "pending"}"
+                    },
+            )
+        }
+        compose.waitForIdle()
+
+        compose.runOnUiThread {
+            currentIndex.intValue = 2
+            trackIsStale.value = true
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("1..2|1:830,2:831").assertIsDisplayed()
+
+        compose.runOnUiThread { currentIndex.intValue = 3 }
+        compose.waitForIdle()
+        compose.onNodeWithText("2..3|2:831,3:pending").assertIsDisplayed()
+        assertEquals(1, controls.requestCount)
+    }
+
+    @Test
+    fun a_drag_can_settle_to_the_retained_neighbour_after_two_stale_advances() {
+        val window = windowAfterStaleAdvances(2, 3)
+        val gesture = PlayGestureState(
+            width = 400f,
+            height = 800f,
+            animationsEnabled = true,
+            currentIndex = 3,
+            firstIndex = window.firstIndex,
+            lastIndex = window.lastIndex,
+        ).apply {
+            begin(horizontalAllowed = true, verticalAllowed = true)
+            dragBy(deltaX = 89f, deltaY = 0f)
+        }
+
+        assertEquals(PlayGestureDecision.PREVIOUS, gesture.settle(0f, 0f))
+    }
+
+    @Test
+    fun three_stale_advances_fill_the_gap_with_a_content_free_panel() {
+        val window = windowAfterStaleAdvances(2, 3, 4)
+
+        assertEquals(listOf(2, 3, 4), window.panels.map(PlayPanel::index))
+        assertEquals(listOf(831L, null, null), window.panels.map { panel -> panel.track?.id })
+    }
+
+    @Test
+    fun an_initially_stale_track_starts_with_an_unstamped_centre_panel() {
+        val controls = DelayedPanelWindowControls()
+        compose.setContent {
+            val window = rememberPlayPanelWindow(
+                gestureTrack(),
+                currentIndex = 5,
+                controls,
+                trackIsStale = true,
+            )
+            Text("${window.panels.single().index}:${window.panels.single().track?.id ?: "pending"}")
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("5:pending").assertIsDisplayed()
+        assertEquals(0, controls.requestCount)
+    }
+
+    @Test
+    fun a_callback_abandoned_by_a_stale_pass_cannot_overwrite_the_window() {
+        val controls = HoldingPanelWindowControls()
+        val trackIsStale = mutableStateOf(false)
+        compose.setContent {
+            val window = rememberPlayPanelWindow(
+                gestureTrack(),
+                currentIndex = 1,
+                controls,
+                trackIsStale.value,
+            )
+            Text(window.panels.joinToString(",") { panel -> "${panel.index}:${panel.track?.id}" })
+        }
+        compose.waitForIdle()
+        assertEquals(1, controls.requestCount)
+
+        compose.runOnUiThread { trackIsStale.value = true }
+        compose.waitForIdle()
+        assertEquals(1, controls.requestCount)
+
+        compose.runOnUiThread { controls.releaseFirst() }
+        compose.waitForIdle()
+        compose.onNodeWithText("1:830").assertIsDisplayed()
     }
 
     @Test
@@ -497,6 +648,17 @@ private class RecordingVisualizerPreference(
     }
 }
 
+private fun windowAfterStaleAdvances(vararg indices: Int): PlayPanelWindow =
+    indices.fold(
+        playPanelWindow(
+            currentIndex = 1,
+            currentTrackId = 830,
+            rows = (829L..831L).map { id -> gestureTrack(id, "Song $id") },
+        ),
+    ) { window, index ->
+        window.advancedTo(gestureTrack(), index, trackIsStale = true)
+    }
+
 private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
     var created = 0
         private set
@@ -521,19 +683,46 @@ private class RecordingVisualEngineFactory : VisualSceneEngineFactory {
 }
 
 private class DelayedPanelWindowControls : PlaybackControls by DisconnectedPlaybackControls {
-    private var requests = 0
+    var requestCount = 0
+        private set
 
     override fun loadUpcomingTracks(
         window: LibraryWindowRange,
         report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
     ) {
-        requests += 1
-        if (requests != 1) return
+        requestCount += 1
+        if (requestCount != 1) return
         report(
             Result.success(
                 LibraryWindow(
                     rows = (829L..833L).map { id -> gestureTrack(id, "Song $id") },
                     total = 5,
+                    hasMore = false,
+                ),
+            ),
+        )
+    }
+}
+
+private class HoldingPanelWindowControls : PlaybackControls by DisconnectedPlaybackControls {
+    var requestCount = 0
+        private set
+    private val heldReports = mutableListOf<(Result<LibraryWindow<LibraryTrack>>) -> Unit>()
+
+    override fun loadUpcomingTracks(
+        window: LibraryWindowRange,
+        report: (Result<LibraryWindow<LibraryTrack>>) -> Unit,
+    ) {
+        requestCount += 1
+        heldReports += report
+    }
+
+    fun releaseFirst() {
+        heldReports.removeFirst().invoke(
+            Result.success(
+                LibraryWindow(
+                    rows = (829L..831L).map { id -> gestureTrack(id, "Song $id") },
+                    total = 3,
                     hasMore = false,
                 ),
             ),

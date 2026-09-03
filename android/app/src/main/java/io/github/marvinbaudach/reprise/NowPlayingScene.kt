@@ -69,9 +69,8 @@ import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 
-private const val COVER_SIZE_DP = 272
+internal const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
 private const val PLAYED_CENTRE_FRACTION = 0.34f
 private const val TITLE_TO_ARTIST_GAP_DP = 6
@@ -86,7 +85,7 @@ private val SATURATION_FILTERS by lazy {
     }
 }
 
-private fun cachedSaturationFilter(saturation: Float): ColorFilter? {
+internal fun cachedSaturationFilter(saturation: Float): ColorFilter? {
     if (saturation.toRawBits() == 1f.toRawBits()) return null
     val channel = (saturation.coerceIn(0f, 1f) * MAXIMUM_COLOR_CHANNEL).roundToInt()
     return SATURATION_FILTERS[channel]
@@ -234,34 +233,40 @@ internal fun NowPlayingScene(
         SideEffect { onCoverBounds(reportedCoverBounds) }
         Box(Modifier.fillMaxSize().testTag("now-playing-scene")) {
             panels.forEach { panel ->
-                key(panel.track.id, panel.index) {
-                    NowPlayingPanelLayer(
-                        panel = panel,
-                        currentIndex = currentIndex,
-                        positionPx = positionPx,
-                        widthPx = widthPx,
-                        playback = playback,
-                        motion = motion,
-                        visualizerOpacity = visualizerOpacity,
-                        coverTop = coverTop,
-                    )
-                    SceneTitle(
-                        track = panel.track,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .offset(y = titleTop)
-                            .requiredWidth(titleWidth)
-                            .graphicsLayer {
-                                translationX = nowPlayingTitleTranslation(
-                                    positionPx = positionPx - panel.index * widthPx,
-                                    widthPx = widthPx,
-                                )
-                                alpha = max(
-                                    0f,
-                                    1f - abs(panel.index - positionPx / widthPx) * 1.35f,
-                                )
-                            },
-                    )
+                key(panel.track?.id, panel.index) {
+                    val panelTrack = panel.track
+                    if (panelTrack == null) {
+                        EmptyNowPlayingPanelLayer(panel.index, positionPx, widthPx, coverTop)
+                    } else {
+                        NowPlayingPanelLayer(
+                            panelIndex = panel.index,
+                            track = panelTrack,
+                            currentIndex = currentIndex,
+                            positionPx = positionPx,
+                            widthPx = widthPx,
+                            playback = playback,
+                            motion = motion,
+                            visualizerOpacity = visualizerOpacity,
+                            coverTop = coverTop,
+                        )
+                        SceneTitle(
+                            track = panelTrack,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .offset(y = titleTop)
+                                .requiredWidth(titleWidth)
+                                .graphicsLayer {
+                                    translationX = nowPlayingTitleTranslation(
+                                        positionPx = positionPx - panel.index * widthPx,
+                                        widthPx = widthPx,
+                                    )
+                                    alpha = max(
+                                        0f,
+                                        1f - abs(panel.index - positionPx / widthPx) * 1.35f,
+                                    )
+                                },
+                        )
+                    }
                 }
             }
         }
@@ -315,7 +320,8 @@ internal fun NowPlayingScene(
 
 @Composable
 private fun NowPlayingPanelLayer(
-    panel: PlayPanel,
+    panelIndex: Int,
+    track: LibraryTrack,
     currentIndex: Int,
     positionPx: Float,
     widthPx: Float,
@@ -325,32 +331,40 @@ private fun NowPlayingPanelLayer(
     coverTop: androidx.compose.ui.unit.Dp,
 ) {
     val artwork = rememberTrackArtworkVisual(
-        panel.track.uri,
+        track.uri,
         AndroidArtworkSize.NOW_PLAYING,
-        panel.track.title,
-        panel.track.artist,
+        track.title,
+        track.artist,
     )
     val fog = rememberCoverFogBitmap(artwork?.image, AmbientTrueBlack)
-    val frames = rememberSpectrogram(panel.track.id)
+    val frames = rememberSpectrogram(track.id)
     val state = remember(frames) { SceneState(frames) }
     val accent = artwork?.ambientColors?.first?.toComposeColor()
         ?: MaterialTheme.colorScheme.primary
     val visualEngine = rememberVisualSceneEngine(
-        panel.track.id,
+        track.id,
         playback,
         accent,
-        live = panel.index == currentIndex,
+        live = panelIndex == currentIndex,
     )
     val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
     val drawRevision = DriveScene(frames, state, playback, motion, frameSink)
     val power = motion.sceneRenderPower()
-    val transform = nowPlayingPanelTransform(panel.index, positionPx, widthPx)
-    val glow = nowPlayingGlowTransform(panel.index, positionPx, widthPx)
-    val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
+    val transform = nowPlayingPanelTransform(panelIndex, positionPx, widthPx)
+    val glow = nowPlayingGlowTransform(panelIndex, positionPx, widthPx)
+    val distance = if (widthPx > 0f) abs(panelIndex - positionPx / widthPx) else 0f
     val near = max(0f, 1f - min(1f, distance))
-    val coverOpacity = 1f - visualizerOpacity * near.pow(1.6f)
-    val barsOpacity = visualizerOpacity * near.pow(1.4f)
+    val layers = nowPlayingPanelOpacity(
+        visualizerOpacity = visualizerOpacity,
+        near = near,
+    )
+    val coverOpacity = layers.cover
+    val barsOpacity = layers.bars
+    val plateOpacity = layers.plate
     val barHeight = 0.3f + near * 0.7f
+    // The same surface the sheet already uses for a card that carries no
+    // artwork, so the plate does not invent a second placeholder tone.
+    val plateColor = MaterialTheme.colorScheme.surfaceContainer
     val coverShadow = rememberCoverShadowBitmap()
     val density = LocalDensity.current
     val saturationFilter = cachedSaturationFilter(transform.saturation)
@@ -410,6 +424,15 @@ private fun NowPlayingPanelLayer(
                 fallback = AmbientTrueBlack,
                 shadow = coverShadow,
                 opacity = coverOpacity,
+            )
+            // What the spectrum cannot cover, the plate does: a panel with no
+            // PCM of its own reads as a waiting card rather than a hole.
+            drawPlayedCover(
+                artwork = null,
+                center = center,
+                fallback = plateColor,
+                shadow = null,
+                opacity = plateOpacity,
             )
         }
         if (visualEngine != null && barsOpacity > 0f) {
