@@ -95,7 +95,7 @@ fn managed(path: &str) -> ManagedDeviceFile {
 }
 
 #[test]
-fn resident_case_spelling_prevents_transfer_and_owns_the_analysis_path() {
+fn matching_adopted_ledger_and_scan_plans_no_audio_transfer() {
     let wanted = case_track(1, "Bring Me the Horizon", "Sempiternal", "Track 1");
     let resident = "Bring Me The Horizon/Sempiternal/01 Track 1.mp3";
     let mut mirror_input = selected_input(wanted.clone());

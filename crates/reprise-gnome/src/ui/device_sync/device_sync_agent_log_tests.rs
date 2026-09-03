@@ -76,7 +76,14 @@ fn successful_agent_start_and_cancel_are_attributed_in_the_log() {
     });
 
     let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
-    assert!(log.contains("device sync started from agent"), "{log}");
-    assert!(log.contains("device sync cancelled from agent"), "{log}");
-    assert!(log.contains("device_id=\"a\""), "{log}");
+    let started = log
+        .lines()
+        .find(|line| line.contains("device sync started from agent"))
+        .unwrap_or_else(|| panic!("missing start attribution: {log}"));
+    assert!(started.contains("device_id=\"a\""), "{started}");
+    let cancelled = log
+        .lines()
+        .find(|line| line.contains("device sync cancelled from agent"))
+        .unwrap_or_else(|| panic!("missing cancel attribution: {log}"));
+    assert!(cancelled.contains("device_id=\"a\""), "{cancelled}");
 }
