@@ -49,7 +49,7 @@ INB="${SHOWREEL_SYNC_TAKE:-$SHOWREEL_DIR/roh-gnome-handover-sync-2026-09-02.mp4}
 # while the handset played this film's own bed — that, and nothing else, is
 # what lets the bars be claimed to move in time with the music.
 INA="${SHOWREEL_ANDROID_TAKE:-$SHOWREEL_DIR/roh-android-gesture.mp4}"
-INV="${SHOWREEL_ANDROID_VIS_TAKE:-$SHOWREEL_DIR/roh-android-nowplaying.mp4}"
+INV="${SHOWREEL_ANDROID_VIS_TAKE:-$SHOWREEL_DIR/roh-android-nowplaying2.mp4}"
 # The MCP take, shot by take-mcp.sh. Optional on purpose: the rest of the film
 # has to stay renderable when that take is missing or has to be reshot.
 INM="${SHOWREEL_MCP_TAKE:-$SHOWREEL_DIR/roh-gnome-mcp.mp4}"
@@ -418,7 +418,7 @@ bridge 09-handover "${SHOWREEL_BRIDGE_IN:-12.0}" \
 # to be read before that tap, which is what puts it around 15.
 phone PA 12-android-nav "${SHOWREEL_PHONE_NAV_IN:-5.0}" 9.6 hold 0.00 \
   "$(film2_callout 'Reprise on Android' 'the same library, in your hand' 9.6)"
-phone PV 13-android-vis "${SHOWREEL_PHONE_VIS_IN:-15.0}" 7.2 hold 0.00 \
+phone PV 13-android-vis "${SHOWREEL_PHONE_VIS_IN:-56.915}" 7.2 hold 0.00 \
   "$(film2_callout 'The same visuals' 'in time with the music' 7.2)" out
 
 card endcard 14-end
