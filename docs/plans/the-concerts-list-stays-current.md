@@ -2,7 +2,7 @@
 slug: the-concerts-list-stays-current
 worktree: /home/marvin/Projects/reprise-the-concerts-list-stays-current
 branch: feature/the-concerts-list-stays-current
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-02
 ---
