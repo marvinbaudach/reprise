@@ -34,7 +34,15 @@ use crate::ui::source_error_banner::SourceErrorBanner;
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
 const FAILURE_PAGE: &str = "failure";
-const REFRESH_TIMER_SECONDS: u32 = 60 * 60;
+// How often the refresh *decision* is re-evaluated, not how often we fetch —
+// `concerts::refresh_due` owns that and needs `FETCH_TTL_SECONDS` (1 h) plus a
+// per-install jitter of up to 10 min to have passed. This tick must therefore
+// stay well below the TTL: at an hourly tick, the one right after a refresh has
+// elapsed exactly 1 h, loses to the jitter, and the next chance is an hour later —
+// which turns the hourly refresh into a stable two-hour one for every install
+// whose jitter is non-zero. A tick that finds nothing due costs one
+// `SELECT MAX(last_attempt_at)`, so ticking often is cheap.
+const REFRESH_TIMER_SECONDS: u32 = 10 * 60;
 
 type Callback = Rc<dyn Fn()>;
 

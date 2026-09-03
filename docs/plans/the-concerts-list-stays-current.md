@@ -2,7 +2,7 @@
 slug: the-concerts-list-stays-current
 worktree: /home/marvin/Projects/reprise-the-concerts-list-stays-current
 branch: feature/the-concerts-list-stays-current
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-09-02
 ---
@@ -100,6 +100,16 @@ In `crates/reprise-core/src/concerts/refresh.rs`:
   `jitter_seconds` is a stable hash of the seed, so an unchanged 2h jitter would
   turn "hourly" into 1–3h — and permanently ~3h for an install whose hash lands
   high.
+
+In `crates/reprise-gnome/src/ui/concerts/concerts_view.rs`:
+
+- `REFRESH_TIMER_SECONDS`: `60 * 60` → `10 * 60`. The timer decides how often
+  `refresh_due` is *asked*, not how often we fetch. At an hourly tick the tick
+  right after a refresh has `elapsed` of exactly one hour, loses to the jitter,
+  and the next chance is an hour later — the refresh then re-anchors
+  `last_attempt_at` on the tick boundary, so it stays a two-hour cadence forever
+  for every install whose jitter is non-zero. A tick with nothing due costs one
+  `SELECT MAX(last_attempt_at)`, so the shorter period adds no provider traffic.
 
 Quota check (no change needed, recorded so the next reader does not redo it):
 `MAX_ARTISTS_PER_RUN = 30` bounds a run, so hourly runs mean ~30 artists ×
