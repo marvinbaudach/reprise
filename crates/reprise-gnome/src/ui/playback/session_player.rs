@@ -129,7 +129,7 @@ impl PlayerController {
             .or(greeting_track)
             .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
         // Only an armed greeting is independent of the restored browser
-        // place. Every ordinary restored item keeps START-3's one-shot.
+        // place. Every ordinary restored item keeps START-4's one-shot.
         self.restored_placement_intact
             .set(current.is_some() && !greeting_armed);
         self.sync_transport_enabled(queue_has_tracks);
@@ -208,6 +208,14 @@ impl PlayerController {
             .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
         self.restored_placement_intact.set(current.is_some());
         self.sync_stopped_item(current);
+        self.sync_transport_enabled(self.has_playable_item());
+        // Drop the greeting marker before restoring the queue's real current
+        // item. A stopped notification clears the marker when there is no
+        // current item to replace it with.
+        self.notify_playback_state_changed(PlaybackState::Stopped);
+        self.notify_current_track(
+            crate::ui::current_track_selection::CurrentTrackChange::SessionRestore,
+        );
         dismissed
     }
 
@@ -225,14 +233,21 @@ impl PlayerController {
             .and_then(|ids| ids.first().copied())
     }
 
+    /// The item the stopped bar, marker and seek-start paths present. This
+    /// non-consuming projection keeps those surfaces on the same decision as
+    /// [`stopped_play_target`] without cloning a greeting's complete queue.
+    pub(in crate::ui) fn stopped_play_target_item(&self) -> Option<QueueItem> {
+        self.pending_random_start_track_id()
+            .map(QueueItem::Track)
+            .or_else(|| self.current_up_next.get())
+            .or_else(|| self.queue.borrow().current().map(QueueItem::Track))
+    }
+
     pub(in crate::ui) fn stopped_play_target(&self) -> Option<StoppedPlayTarget> {
         let greeting = self.pending_random_start.borrow().clone();
-        greeting.map(StoppedPlayTarget::Greeting).or_else(|| {
-            self.current_up_next
-                .get()
-                .or_else(|| self.queue.borrow().current().map(QueueItem::Track))
-                .map(StoppedPlayTarget::Item)
-        })
+        greeting
+            .map(StoppedPlayTarget::Greeting)
+            .or_else(|| self.stopped_play_target_item().map(StoppedPlayTarget::Item))
     }
 
     pub(in crate::ui) fn start_stopped_play_target(

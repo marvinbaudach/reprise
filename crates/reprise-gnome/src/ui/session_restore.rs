@@ -46,7 +46,7 @@ pub(super) fn apply_initial_geometry(window: &adw::ApplicationWindow, state: &Se
     }
 }
 
-/// The place a normal start routes to (START-3): the last valid browser place.
+/// The place a normal start routes to (START-4): the last valid browser place.
 /// Back/Forward stacks stay session-local, but the visible destination owns
 /// its complete refinements, anchor, and selection across a restart.
 pub(super) fn startup_place(state: &SessionState) -> reprise_core::browser::BrowserPlace {
@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn start_3_missing_browser_place_falls_back_to_the_library_root() {
+    fn start_4_missing_browser_place_falls_back_to_the_library_root() {
         let state = SessionState {
             browser_place: None,
             library_root: None,
@@ -569,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn start_3_startup_place_restores_the_last_browser_place() {
+    fn start_4_startup_place_restores_the_last_browser_place() {
         let mut remembered = reprise_core::browser::BrowserPlace::from(ViewSource::Playlist(7));
         let state = remembered
             .track_state_mut()

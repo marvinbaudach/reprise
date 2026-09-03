@@ -35,7 +35,7 @@ pub(in crate::ui) use queue_context_window::QueueContextWindow;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
     /// Carries the reveal the loaded track earns when it starts — the one
-    /// decision that separates a cold start from every later Play (START-3).
+    /// decision that separates a cold start from every later Play (START-4).
     StartCurrent(CurrentTrackChange),
     StartPending,
     StartRandom,
@@ -87,7 +87,7 @@ fn remove_direct_episode_now_playing(
 }
 
 /// `restored_placement_intact` says the loaded track is still exactly where
-/// startup routing put it: selected and centered, never played (START-3).
+/// startup routing put it: selected and centered, never played (START-4).
 /// A random startup greeting explicitly clears it because its track and the
 /// restored browser place are independent. Every start from Stopped without
 /// this one-shot keeps NAV-10b's explicit-transport reveal.
@@ -319,16 +319,16 @@ impl PlayerController {
         let stopped_target = (status == MprisPlaybackStatus::Stopped)
             .then(|| self.stopped_play_target())
             .flatten();
-        if matches!(
-            &stopped_target,
-            Some(super::session_player::StoppedPlayTarget::Greeting(_))
-        ) {
-            self.start_stopped_play_target(
-                stopped_target.expect("matched greeting target"),
-                crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
-            );
-            return;
-        }
+        let stopped_target = match stopped_target {
+            Some(target @ super::session_player::StoppedPlayTarget::Greeting(_)) => {
+                self.start_stopped_play_target(
+                    target,
+                    crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                );
+                return;
+            }
+            other => other,
+        };
         let current = stopped_target
             .as_ref()
             .and_then(super::session_player::StoppedPlayTarget::item)

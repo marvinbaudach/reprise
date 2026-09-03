@@ -254,7 +254,7 @@ pub struct PlayerController {
     /// Cached library availability used to keep idle Play reachable without
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
-    /// START-3 one-shot for a loaded track that is already selected and
+    /// START-4 one-shot for a loaded track that is already selected and
     /// centered by startup routing. Random startup greetings clear this flag:
     /// their track was chosen independently of the restored browser place.
     /// Also cleared by the first `present_track`.
@@ -633,7 +633,7 @@ impl PlayerController {
         // Ordinary queue playback leaves preview mode (INST-4b).
         self.leave_external_for_queue();
         // Whatever the start placed, this presentation supersedes it: from
-        // here on the ordinary NAV-10b reveal policy applies again (START-3).
+        // here on the ordinary NAV-10b reveal policy applies again (START-4).
         self.restored_placement_intact.set(false);
 
         let summary = {

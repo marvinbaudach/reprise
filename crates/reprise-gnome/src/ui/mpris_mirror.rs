@@ -470,7 +470,7 @@ impl PlayerController {
                     target,
                     crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
                 ),
-                None if self.has_playable_item() => {
+                None if !self.up_next.borrow().is_empty() => {
                     self.advance_playback(crate::ui::up_next_transport::AdvanceReason::Manual);
                 }
                 None => {

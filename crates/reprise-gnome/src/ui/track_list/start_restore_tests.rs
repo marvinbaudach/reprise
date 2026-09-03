@@ -1,4 +1,4 @@
-//! START-3 display tests: a normal start marks, selects, and centers the
+//! START-4 display tests: a normal start marks, selects, and centers the
 //! restored loaded track like a paused song without taking keyboard focus.
 //!
 //! Included as a child module of `current_track_selection` (see the bottom of
@@ -10,6 +10,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use reprise_core::browser::{BrowserPlace, LibraryScope, TrackCollection, TrackViewState};
+use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError, PlaybackState};
+use reprise_core::queue::{QueueSnapshot, Repeat};
+use reprise_core::up_next::UpNextQueue;
 
 use super::*;
 
@@ -84,9 +87,135 @@ fn centered_value(track_list: &TrackList, position: u32) -> Option<f64> {
     )
 }
 
+struct SilentPlayback;
+
+impl PlaybackBackend for SilentPlayback {
+    fn play(&self, _: &str) -> Result<(), PlaybackError> {
+        panic!("startup restore must not play")
+    }
+
+    fn play_uri(&self, _: &str) -> Result<(), PlaybackError> {
+        panic!("startup restore must not play external media")
+    }
+
+    fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
+        panic!("startup restore must not toggle playback")
+    }
+
+    fn seek_to(&self, _: i64) -> Result<(), PlaybackError> {
+        panic!("startup restore must not seek")
+    }
+
+    fn set_volume(&self, _: f64) {}
+
+    fn set_audio_effects(&self, _: AudioEffects) -> Result<(), PlaybackError> {
+        Ok(())
+    }
+
+    fn stop(&self) -> Result<(), PlaybackError> {
+        panic!("startup restore must not stop")
+    }
+
+    fn set_next(&self, _: Option<&str>) {}
+
+    fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
+}
+
+fn count_now_playing(widget: &gtk4::Widget) -> usize {
+    let mut count = usize::from(widget.has_css_class("now-playing"));
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        count += count_now_playing(&current);
+        child = current.next_sibling();
+    }
+    count
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn start_3_loaded_track_is_selected_centered_and_marked_paused() {
+fn start_4_random_greeting_is_the_marked_selected_and_centered_startup_track() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let fixture_conn = crate::test_db::connection(&conn);
+    let tx = fixture_conn.unchecked_transaction().unwrap();
+    for id in 1..=100 {
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) \
+             VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+            (
+                id,
+                format!("/synthetic/{id:03}.flac"),
+                format!("Track {id:03}"),
+            ),
+        )
+        .unwrap();
+    }
+    tx.commit().unwrap();
+    let track_list = Rc::new(TrackList::new(
+        conn.clone(),
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        crate::ui::track_list::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    ));
+    let controller = crate::ui::playback::test_support::controller_with_db(
+        test_root.path(),
+        conn,
+        Box::new(SilentPlayback),
+    );
+    wire(Some(&controller), &track_list);
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![80, 20]));
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(320)
+        .child(track_list.widget())
+        .build();
+    window.present();
+
+    controller.restore_session_queue(
+        QueueSnapshot {
+            ids: vec![20],
+            order: vec![0],
+            position: Some(0),
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+    controller.notify_restored_current_track();
+    track_list.center_loaded_track();
+
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        let centered = centered_value(&track_list, 79).is_some_and(|target| {
+            (adjustment.value() - target).abs() <= centering_tolerance(&track_list)
+        });
+        track_list.shared.selection.is_selected(79)
+            && count_now_playing(&track_list.shared.column_view.clone().upcast()) > 0
+            && centered
+    });
+
+    assert_eq!(track_list.shared.playing_track_id.get(), Some(80));
+    assert!(track_list.shared.selection.is_selected(79));
+    assert!(!track_list.shared.selection.is_selected(19));
+    assert!(count_now_playing(&track_list.shared.column_view.clone().upcast()) > 0);
+    let expected = centered_value(&track_list, 79).unwrap();
+    assert!(
+        (adjustment.value() - expected).abs() <= centering_tolerance(&track_list),
+        "the greeting row was not centered: actual {}, expected {expected}",
+        adjustment.value()
+    );
+
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn start_4_loaded_track_is_selected_centered_and_marked_paused() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (track_list, window) = synthetic_track_list(100);
@@ -139,7 +268,7 @@ fn start_3_loaded_track_is_selected_centered_and_marked_paused() {
     assert_eq!(
         track_list.shared.selection.selection().size(),
         1,
-        "START-3 gives the restored loaded track the sole selection"
+        "START-4 gives the loaded startup item the sole selection"
     );
     assert!(track_list.shared.selection.is_selected(position));
 
@@ -148,7 +277,7 @@ fn start_3_loaded_track_is_selected_centered_and_marked_paused() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn start_3_absent_loaded_track_does_not_move_the_live_viewport() {
+fn start_4_absent_loaded_track_does_not_move_the_live_viewport() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (track_list, window) = synthetic_track_list(100);
