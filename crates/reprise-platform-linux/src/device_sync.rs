@@ -21,7 +21,7 @@ mod paths;
 mod projection;
 #[path = "device_sync_read.rs"]
 mod read;
-use directories::{child_of, ensure_directory};
+use directories::{child_of, ensure_directory, resolve_directory};
 pub use errors::{CopyOutcome, DeviceIoError, WriteStep};
 pub use identity::{
     descriptor_from_mount, is_placeholder_name, project_descriptor, usb_facts_for_address,
@@ -342,7 +342,7 @@ impl DeviceStorage {
         partial_paths: &[String],
     ) -> Result<u32, DeviceIoError> {
         let storage = self.resolve_target_storage(storage_id).await?;
-        let managed_root = Self::managed_child(&storage, target_path, &[])?;
+        let managed_root = Self::resolve_managed_child(&storage, target_path, &[]).await?;
         let mut removed = 0_u32;
         for relative_path in partial_paths {
             if !relative_path.ends_with(PARTIAL_SUFFIX) {
@@ -380,7 +380,7 @@ impl DeviceStorage {
     ) -> Result<bool, DeviceIoError> {
         let components = safe_relative_components(relative_path)?;
         let storage = self.resolve_target_storage(storage_id).await?;
-        let target = Self::managed_child(&storage, target_path, &components)?;
+        let target = Self::resolve_managed_child(&storage, target_path, &components).await?;
         match target.delete_future(gio::glib::Priority::DEFAULT).await {
             Ok(()) => Ok(true),
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(false),
@@ -410,7 +410,12 @@ impl DeviceStorage {
             .await
             .map_err(|error| error.during(WriteStep::ResolveStorage))?;
         let directories = self
-            .ensure_managed_directories(&storage, target_path, &components[..components.len() - 1])
+            .ensure_managed_directories(
+                &storage,
+                target_path,
+                &components[..components.len() - 1],
+                Some(cancellable),
+            )
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let directory = child_of(&storage, &directories.components);
@@ -460,7 +465,7 @@ impl DeviceStorage {
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let directories = self
-            .ensure_managed_directories(&storage, target_path, &[])
+            .ensure_managed_directories(&storage, target_path, &[], None)
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let directory = child_of(&storage, &directories.components);
@@ -488,7 +493,9 @@ impl DeviceStorage {
     ) -> Result<Vec<M3uEntry>, DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
         let storage = self.storage_root().await?;
-        let file = Self::managed_child(&storage, target_path, &[format!("{playlist}.m3u8")])?;
+        let file =
+            Self::resolve_managed_child(&storage, target_path, &[format!("{playlist}.m3u8")])
+                .await?;
         match file.load_contents_future().await {
             Ok((bytes, _)) => Ok(parse_m3u(&String::from_utf8_lossy(&bytes))),
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(Vec::new()),
@@ -508,17 +515,18 @@ impl DeviceStorage {
         storage: &gio::File,
         target_path: &str,
         relative_directories: &[String],
+        cancellable: Option<&gio::Cancellable>,
     ) -> Result<ResolvedDirectories, DeviceIoError> {
         let mut current = storage.clone();
         let mut components = Vec::new();
         for component in safe_target_components(target_path)? {
-            let component = ensure_directory(&current, component).await?;
+            let component = ensure_directory(&current, component, cancellable).await?;
             current = current.child(&component);
             components.push(component);
         }
         let mut relative = Vec::new();
         for component in relative_directories.iter().cloned() {
-            let component = ensure_directory(&current, component).await?;
+            let component = ensure_directory(&current, component, cancellable).await?;
             current = current.child(&component);
             components.push(component.clone());
             relative.push(component);
@@ -532,6 +540,25 @@ impl DeviceStorage {
     /// `<storage>/<target_path>/<relative…>`, e.g. `<storage>/Music/Selected/<relative…>`. Takes the
     /// storage root resolved by [`Self::storage_root`] rather than reaching for `self.root`, which on
     /// MTP is the (unwritable) volume list.
+    async fn resolve_managed_child(
+        storage: &gio::File,
+        target_path: &str,
+        relative_components: &[String],
+    ) -> Result<gio::File, DeviceIoError> {
+        let mut current = storage.clone();
+        let mut directories = safe_target_components(target_path)?;
+        if let Some((_, parents)) = relative_components.split_last() {
+            directories.extend(parents.iter().cloned());
+        }
+        for desired in directories {
+            let component = resolve_directory(&current, desired).await;
+            current = current.child(component);
+        }
+        Ok(relative_components
+            .last()
+            .map_or(current.clone(), |name| current.child(name)))
+    }
+
     fn managed_child(
         storage: &gio::File,
         target_path: &str,

@@ -354,15 +354,17 @@ fn managed_write_refuses_to_choose_between_two_fold_equal_directories() {
     fs::write(temp.path().join("source.flac"), b"audio").unwrap();
     fs::set_permissions(&artist, fs::Permissions::from_mode(0o500)).unwrap();
 
-    let result = run(storage.replace_managed(
-        None,
-        "/Music/Reprise",
-        &gio::File::for_path(temp.path().join("source.flac")),
-        "Emmure/Speaker of the Dead/13 song.flac",
-        5,
-        &gio::Cancellable::new(),
-        |_, _| {},
-    ));
+    let (result, warnings) = capture_warnings(|| {
+        run(storage.replace_managed(
+            None,
+            "/Music/Reprise",
+            &gio::File::for_path(temp.path().join("source.flac")),
+            "Emmure/Speaker of the Dead/13 song.flac",
+            5,
+            &gio::Cancellable::new(),
+            |_, _| {},
+        ))
+    });
 
     fs::set_permissions(&artist, fs::Permissions::from_mode(0o700)).unwrap();
     assert!(matches!(
@@ -380,6 +382,10 @@ fn managed_write_refuses_to_choose_between_two_fold_equal_directories() {
         .join("SPEAKER OF THE DEAD")
         .join("13 song.flac")
         .exists());
+    assert!(
+        warnings.contains("refused to choose between fold-equal resident directories"),
+        "{warnings}"
+    );
 }
 
 /// A playlist writes into the same managed folder, so it has to follow the same
@@ -653,7 +659,7 @@ fn mtp_21_rewriting_a_playlist_replaces_it_without_leaving_a_partial() {
 }
 
 #[test]
-fn pre_cancelled_copy_leaves_no_target_file() {
+fn pre_cancelled_copy_stops_before_touching_the_existing_target() {
     let (temp, storage) = fixture();
     fs::write(temp.path().join("source.flac"), vec![1_u8; 1024]).unwrap();
     let cancellable = gio::Cancellable::new();
@@ -673,15 +679,55 @@ fn pre_cancelled_copy_leaves_no_target_file() {
     assert!(matches!(
         &result,
         Err(DeviceIoError::DuringWrite {
-            step: WriteStep::CopyTarget,
-            ..
-        })
+            step: WriteStep::CreateDirectories,
+            source,
+        }) if matches!(source.as_ref(), DeviceIoError::Io(error) if error.matches(gio::IOErrorEnum::Cancelled))
     ));
     assert!(result
         .unwrap_err()
         .to_string()
-        .starts_with("copying the destination file failed: device I/O failed:"));
-    assert!(!target.exists());
+        .starts_with("creating the destination directory failed: device I/O failed:"));
+    assert_eq!(fs::read(target).unwrap(), b"old");
+}
+
+#[test]
+fn cancelled_directory_creation_returns_before_the_retry_delay() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
+        return;
+    }
+    let managed_root = temp.path().join("Music/Reprise");
+    fs::create_dir_all(&managed_root).unwrap();
+    fs::write(temp.path().join("source.flac"), b"audio").unwrap();
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o500)).unwrap();
+    let cancellable = gio::Cancellable::new();
+    cancellable.cancel();
+    let started = std::time::Instant::now();
+
+    let result = run(storage.replace_managed(
+        None,
+        "/Music/Reprise",
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Blocked/song.flac",
+        5,
+        &cancellable,
+        |_, _| {},
+    ));
+
+    let elapsed = started.elapsed();
+    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(matches!(
+        &result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CreateDirectories,
+            source,
+        }) if matches!(source.as_ref(), DeviceIoError::Io(error) if error.matches(gio::IOErrorEnum::Cancelled))
+    ));
+    assert!(
+        elapsed < std::time::Duration::from_millis(200),
+        "cancelled directory pass waited {elapsed:?}"
+    );
 }
 
 #[test]
@@ -816,6 +862,19 @@ fn delete_track_is_scoped_to_the_managed_root_and_reports_absence() {
         run(storage.delete_managed(None, "/Music/Reprise", "../outside.opus")),
         Err(DeviceIoError::InvalidRelativePath)
     ));
+}
+
+#[test]
+fn delete_track_adopts_the_resident_spelling_without_creating_directories() {
+    let (temp, storage) = fixture();
+    let resident = temp.path().join("Music/REPRISE/Road");
+    fs::create_dir_all(&resident).unwrap();
+    let track = resident.join("finished.opus");
+    fs::write(&track, b"finished").unwrap();
+
+    assert!(run(storage.delete_managed(None, "/Music/Reprise", "Road/finished.opus")).unwrap());
+    assert!(!track.exists());
+    assert!(!temp.path().join("Music/Reprise").exists());
 }
 
 #[test]
