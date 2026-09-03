@@ -26,10 +26,9 @@ fn concerts_location_reference_copy_distinguishes_missing_and_stored_values() {
 fn stored_credentials_are_preferred_and_similar_count_clamps() {
     let conn = crate::test_db::open().unwrap();
     let credentials = reprise_core::concerts::config::credentials(&conn).unwrap();
-    assert_eq!(
-        credentials.bandsintown_app_id.as_deref(),
-        Some("io.github.marvinbaudach.Reprise")
-    );
+    // Bandsintown denies every unregistered app id, so nothing is bundled any
+    // more: without a stored one the provider stays unconfigured.
+    assert_eq!(credentials.bandsintown_app_id, None);
 
     reprise_core::library::settings::set_setting(
         &conn,

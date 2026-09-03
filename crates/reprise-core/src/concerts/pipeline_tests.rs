@@ -534,7 +534,7 @@ fn reconcile_removes_cancelled_events_and_preserves_seen_state() {
         &conn,
         &[Box::new(second)],
         NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
-        90_000,
+        1_000 + 60 * 60,
         false,
     )
     .unwrap();
@@ -608,7 +608,7 @@ fn failed_refresh_preserves_cached_events_and_events_found() {
         &conn,
         &[Box::new(FailingEventsProvider)],
         NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
-        90_000,
+        1_000 + 60 * 60,
         false,
     )
     .unwrap();
