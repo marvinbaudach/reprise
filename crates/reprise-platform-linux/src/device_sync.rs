@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gio::prelude::*;
+use reprise_core::device_sync::fold_path;
 use reprise_core::device_sync::safe_component;
 use reprise_core::device_sync::StorageId;
 use reprise_core::library::m3u::{parse_m3u, M3uEntry};
@@ -30,6 +32,10 @@ pub(crate) use identity::{mount_display_name, usb_serial_from_volume_identifier}
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;
 const PARTIAL_SUFFIX: &str = ".part";
+/// How long a directory creation waits before its one retry. Long enough for
+/// the device to finish whatever it was busy with, short enough that a run
+/// meeting a genuinely broken target still ends in reasonable time.
+const DIRECTORY_RETRY_DELAY: Duration = Duration::from_millis(250);
 
 type DeviceCallback = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
 
@@ -399,10 +405,13 @@ impl DeviceStorage {
             .resolve_target_storage(storage_id)
             .await
             .map_err(|error| error.during(WriteStep::ResolveStorage))?;
-        self.ensure_managed_directories(&storage, target_path, &components[..components.len() - 1])
+        let directories = self
+            .ensure_managed_directories(&storage, target_path, &components[..components.len() - 1])
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
-        let target = Self::managed_child(&storage, target_path, &components)?;
+        let directory = child_of(&storage, &directories);
+        let target_name = components.last().expect("validated nonempty path");
+        let target = directory.child(target_name);
         let progress = Rc::new(RefCell::new(progress));
         let callback_progress = progress.clone();
         let (sender, receiver) = async_channel::bounded(1);
@@ -442,15 +451,13 @@ impl DeviceStorage {
             .resolve_target_storage(storage_id)
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
-        self.ensure_managed_directories(&storage, target_path, &[])
+        let directories = self
+            .ensure_managed_directories(&storage, target_path, &[])
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
-        let final_file = Self::managed_child(&storage, target_path, &[format!("{playlist}.m3u8")])?;
-        let partial = Self::managed_child(
-            &storage,
-            target_path,
-            &[format!("{playlist}.m3u8{PARTIAL_SUFFIX}")],
-        )?;
+        let directory = child_of(&storage, &directories);
+        let final_file = directory.child(format!("{playlist}.m3u8"));
+        let partial = directory.child(format!("{playlist}.m3u8{PARTIAL_SUFFIX}"));
         let expected_size = contents.len() as u64;
         partial
             .replace_contents_future(
@@ -481,28 +488,30 @@ impl DeviceStorage {
         }
     }
 
+    /// Creates every directory above a managed file and reports the spelling each
+    /// one actually has on the device.
+    ///
+    /// The returned components replace the desired ones for the file itself:
+    /// gvfs matches MTP folder names exactly, so adopting a resident spelling
+    /// without rebuilding the file path underneath it only moves the failure one
+    /// step later.
     async fn ensure_managed_directories(
         &self,
         storage: &gio::File,
         target_path: &str,
         relative_directories: &[String],
-    ) -> Result<(), DeviceIoError> {
+    ) -> Result<Vec<String>, DeviceIoError> {
         let mut current = storage.clone();
+        let mut resolved = Vec::new();
         for component in safe_target_components(target_path)?
             .into_iter()
             .chain(relative_directories.iter().cloned())
         {
-            current = current.child(component);
-            match current
-                .make_directory_future(gio::glib::Priority::DEFAULT)
-                .await
-            {
-                Ok(()) => {}
-                Err(error) if error.matches(gio::IOErrorEnum::Exists) => {}
-                Err(error) => return Err(error.into()),
-            }
+            let component = ensure_directory(&current, component).await?;
+            current = current.child(&component);
+            resolved.push(component);
         }
-        Ok(())
+        Ok(resolved)
     }
 
     /// `<storage>/<target_path>/<relative…>`, e.g. `<storage>/Music/Selected/<relative…>`. Takes the
@@ -518,6 +527,126 @@ impl DeviceStorage {
             .chain(relative_components.iter().cloned())
             .fold(storage.clone(), |parent, component| parent.child(component)))
     }
+}
+
+/// `<parent>/<components…>`, following the spellings the device reported.
+fn child_of(storage: &gio::File, components: &[String]) -> gio::File {
+    components
+        .iter()
+        .fold(storage.clone(), |parent, component| parent.child(component))
+}
+
+/// Creates one directory under `parent` and returns the name it ends up having
+/// there, which is not always the one that was asked for.
+///
+/// Only `G_IO_ERROR_EXISTS` used to be tolerated here. Android's emulated
+/// storage is case-insensitive, so creating `Speaker of the Dead` next to a
+/// resident `Speaker Of The Dead` is not a new folder at all — and libmtp
+/// answers that with `Could not send object info` rather than `EXISTS`, which
+/// killed the whole track. Every other failure is the device being flaky on its
+/// own; those heal on a repeat.
+async fn ensure_directory(parent: &gio::File, desired: String) -> Result<String, DeviceIoError> {
+    let error = match parent
+        .child(&desired)
+        .make_directory_future(gio::glib::Priority::DEFAULT)
+        .await
+    {
+        Ok(()) => return Ok(desired),
+        Err(error) if error.matches(gio::IOErrorEnum::Exists) => return Ok(desired),
+        Err(error) => error,
+    };
+    if let Some(resident) = resident_fold_equal_directory(parent, &desired).await {
+        if resident != desired {
+            tracing::warn!(
+                desired = %desired,
+                resident = %resident,
+                "device sync: adopted the resident spelling of a directory the device already has"
+            );
+        }
+        return Ok(resident);
+    }
+    gio::glib::timeout_future(DIRECTORY_RETRY_DELAY).await;
+    match parent
+        .child(&desired)
+        .make_directory_future(gio::glib::Priority::DEFAULT)
+        .await
+    {
+        Ok(()) => Ok(desired),
+        Err(retry) if retry.matches(gio::IOErrorEnum::Exists) => Ok(desired),
+        // The retry's error says nothing the first one did not; the caller is
+        // told what actually went wrong the first time.
+        Err(_) => Err(error.into()),
+    }
+}
+
+/// The name a fold-equal directory already carries under `parent`, if exactly
+/// one does.
+///
+/// This has to read a listing: querying the desired name would miss the
+/// collision, because that name is precisely the one that is not there. Two
+/// resident spellings side by side leave the choice open — the device really
+/// does report both as separate MTP folders — and inventing one is the call
+/// `device_case` refuses to make as well.
+async fn resident_fold_equal_directory(parent: &gio::File, desired: &str) -> Option<String> {
+    let enumerator = match parent
+        .enumerate_children_future(
+            ENUMERATE_ATTRIBUTES,
+            gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+            gio::glib::Priority::DEFAULT,
+        )
+        .await
+    {
+        Ok(enumerator) => enumerator,
+        Err(error) => {
+            warn_unreadable_listing(desired, &error);
+            return None;
+        }
+    };
+    let folded = fold_path(desired);
+    let mut resident = Vec::new();
+    loop {
+        let batch = match enumerator
+            .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
+            .await
+        {
+            Ok(batch) => batch,
+            // A remote enumerator can disappear between batches, and then a
+            // resident spelling that is really there looks like an absent one.
+            Err(error) => {
+                warn_unreadable_listing(desired, &error);
+                return None;
+            }
+        };
+        if batch.is_empty() {
+            break;
+        }
+        for info in batch {
+            if info.file_type() != gio::FileType::Directory {
+                continue;
+            }
+            let name = info.name().to_string_lossy().into_owned();
+            if name == desired {
+                return Some(name);
+            }
+            if fold_path(&name) == folded {
+                resident.push(name);
+            }
+        }
+    }
+    match resident.as_slice() {
+        [single] => Some(single.clone()),
+        _ => None,
+    }
+}
+
+/// Says why a directory could not be adopted, so a run that ends in the
+/// original creation error still names the step that gave up on rescuing it.
+fn warn_unreadable_listing(desired: &str, error: &gio::glib::Error) {
+    tracing::warn!(
+        desired = %desired,
+        %error,
+        "device sync: could not list the parent directory, so no resident spelling was adopted"
+    );
 }
 
 fn warn_cleanup_failure(

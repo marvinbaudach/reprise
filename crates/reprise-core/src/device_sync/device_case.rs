@@ -151,7 +151,7 @@ fn folds_equal(left: &str, right: &str) -> bool {
 /// Folds the path differences a case-insensitive phone treats as spelling
 /// variants. Curly quotation marks are normalized here beside case so every
 /// resident-path comparison shares one definition.
-pub(super) fn fold_path(path: &str) -> String {
+pub fn fold_path(path: &str) -> String {
     path.chars()
         .flat_map(char::to_lowercase)
         .map(|character| match character {

@@ -296,6 +296,108 @@ fn managed_write_names_destination_directory_creation_failures() {
         .starts_with("creating the destination directory failed: device I/O failed:"));
 }
 
+/// A phone whose storage is case-insensitive already owns the folder under
+/// another spelling, and libmtp answers that with `Could not send object info`
+/// rather than `EXISTS`. Here the unwritable parent stands in for that generic
+/// failure: the copy must find the resident spelling and land inside it.
+#[test]
+fn managed_write_adopts_a_resident_directory_that_only_differs_in_case() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
+        return;
+    }
+    let artist = temp.path().join("Music/Reprise/Emmure");
+    let resident = artist.join("Speaker Of The Dead");
+    fs::create_dir_all(&resident).unwrap();
+    fs::write(temp.path().join("source.flac"), b"audio").unwrap();
+    fs::set_permissions(&artist, fs::Permissions::from_mode(0o500)).unwrap();
+
+    let outcome = run(storage.replace_managed(
+        None,
+        "/Music/Reprise",
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Emmure/Speaker of the Dead/13 song.flac",
+        5,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ));
+
+    fs::set_permissions(&artist, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(outcome.unwrap(), CopyOutcome::Copied);
+    assert_eq!(fs::read(resident.join("13 song.flac")).unwrap(), b"audio");
+    assert!(!artist.join("Speaker of the Dead").exists());
+}
+
+/// Two resident spellings side by side leave the choice open, and inventing one
+/// would write the file where nothing later looks for it. The failure stands.
+#[test]
+fn managed_write_refuses_to_choose_between_two_fold_equal_directories() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
+        return;
+    }
+    let artist = temp.path().join("Music/Reprise/Emmure");
+    fs::create_dir_all(artist.join("Speaker Of The Dead")).unwrap();
+    fs::create_dir_all(artist.join("SPEAKER OF THE DEAD")).unwrap();
+    fs::write(temp.path().join("source.flac"), b"audio").unwrap();
+    fs::set_permissions(&artist, fs::Permissions::from_mode(0o500)).unwrap();
+
+    let result = run(storage.replace_managed(
+        None,
+        "/Music/Reprise",
+        &gio::File::for_path(temp.path().join("source.flac")),
+        "Emmure/Speaker of the Dead/13 song.flac",
+        5,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ));
+
+    fs::set_permissions(&artist, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(matches!(
+        result,
+        Err(DeviceIoError::DuringWrite {
+            step: WriteStep::CreateDirectories,
+            ..
+        })
+    ));
+    assert!(!artist
+        .join("Speaker Of The Dead")
+        .join("13 song.flac")
+        .exists());
+    assert!(!artist
+        .join("SPEAKER OF THE DEAD")
+        .join("13 song.flac")
+        .exists());
+}
+
+/// A playlist writes into the same managed folder, so it has to follow the same
+/// resident spelling instead of creating a second one beside it.
+#[test]
+fn playlist_write_follows_the_resident_spelling_of_its_target_folder() {
+    let (temp, storage) = fixture();
+    if fs::metadata(temp.path()).unwrap().uid() == 0 {
+        eprintln!("skipped permission-based test under a root test runner");
+        return;
+    }
+    let music = temp.path().join("Music");
+    let resident = music.join("REPRISE");
+    fs::create_dir_all(&resident).unwrap();
+    fs::set_permissions(&music, fs::Permissions::from_mode(0o500)).unwrap();
+
+    let result =
+        run(storage.replace_playlist(None, "/Music/Reprise", "Road", b"#EXTM3U\n".to_vec()));
+
+    fs::set_permissions(&music, fs::Permissions::from_mode(0o700)).unwrap();
+    result.unwrap();
+    assert_eq!(
+        fs::read_to_string(resident.join("Road.m3u8")).unwrap(),
+        "#EXTM3U\n"
+    );
+    assert!(!music.join("Reprise").exists());
+}
+
 #[test]
 fn managed_write_names_target_storage_resolution_failures() {
     let (temp, storage) = fixture();
