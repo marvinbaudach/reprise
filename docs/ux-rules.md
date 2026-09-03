@@ -5630,9 +5630,10 @@ available. The player plays only finished files.
   value; empty values do not count. Bandsintown remains available as an
   optional credential row independently of this.
 - **CONC-9a** [active] [core] [gtk] — Concerts never asks the user for
-  credentials. Ticketmaster comes from its bundled build value. Bandsintown
-  uses a built-in public project identifier, with a stored legacy value and
-  then the runtime environment taking precedence in that order. No credential
+  credentials. Ticketmaster comes from a stored legacy value, then the runtime
+  environment, then its bundled build value. Bandsintown has no built-in
+  identifier: it contributes a provider only when a stored value or the runtime
+  environment supplies an app id, and is otherwise simply absent. No credential
   value appears in the UI, logs, or error messages.
 - **CONC-10** [replaced by CONC-14] — Every Concerts row shares a common
   vertical center. The artist stands as a single-line group on the same
