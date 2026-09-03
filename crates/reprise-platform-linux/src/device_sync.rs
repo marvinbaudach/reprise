@@ -556,13 +556,15 @@ async fn ensure_directory(parent: &gio::File, desired: String) -> Result<String,
         Err(error) => error,
     };
     if let Some(resident) = resident_fold_equal_directory(parent, &desired).await {
-        if resident != desired {
-            tracing::warn!(
-                desired = %desired,
-                resident = %resident,
-                "device sync: adopted the resident spelling of a directory the device already has"
-            );
-        }
+        // Also worth a line when the resident name *is* the desired one: the
+        // device answered an error for a directory that is demonstrably there,
+        // and that is the whole reason this rescue exists.
+        tracing::warn!(
+            desired = %desired,
+            resident = %resident,
+            first_error = %error,
+            "device sync: creating this directory failed, but a fold-equal one is already on the device"
+        );
         return Ok(resident);
     }
     gio::glib::timeout_future(DIRECTORY_RETRY_DELAY).await;
@@ -571,12 +573,18 @@ async fn ensure_directory(parent: &gio::File, desired: String) -> Result<String,
         .make_directory_future(gio::glib::Priority::DEFAULT)
         .await
     {
-        Ok(()) => Ok(desired),
-        Err(retry) if retry.matches(gio::IOErrorEnum::Exists) => Ok(desired),
+        Ok(()) => {}
+        Err(retry) if retry.matches(gio::IOErrorEnum::Exists) => {}
         // The retry's error says nothing the first one did not; the caller is
         // told what actually went wrong the first time.
-        Err(_) => Err(error.into()),
+        Err(_) => return Err(error.into()),
     }
+    tracing::warn!(
+        desired = %desired,
+        first_error = %error,
+        "device sync: the device refused this directory once and accepted it on the retry"
+    );
+    Ok(desired)
 }
 
 /// The name a fold-equal directory already carries under `parent`, if exactly

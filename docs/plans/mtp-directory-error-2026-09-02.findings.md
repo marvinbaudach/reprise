@@ -287,3 +287,43 @@ the only route that heals them without re-copying 77 files over MTP at ~2.79 s
 per unit.
 
 Not attempted here, and deliberately not folded into the current branch.
+
+## Device confirmation (2026-09-03, Pixel 10 Pro XL over MTP)
+
+`examples/probe_case_adoption.rs` builds the collision on the device and asks
+for the fold-equal spelling. Each run uses a fresh folder pair, because a
+leftover from an earlier run makes `make_directory` answer `EXISTS` and the
+probe would prove nothing. Everything it writes lives under
+`/Music/Reprise Probe` and is removed again; the music library is never
+touched.
+
+Control arm — `origin/dev` code, pair `Alpha Beta C1` / `alpha beta C1`:
+
+```
+seed OK: Copied
+PROBE ERR: creating the destination directory failed: device I/O failed:
+           libmtp error:  Could not send object info.
+```
+
+That is the field error verbatim, reproduced on demand.
+
+Fix arm — same commit as this branch, pair `Alpha Beta F3` / `alpha beta F3`:
+
+```
+WARN device sync: creating this directory failed, but a fold-equal one is
+     already on the device desired=alpha beta F3 resident=alpha beta F3
+     first_error=libmtp error:  Could not send object info.
+PROBE OK: Copied
+landed at alpha beta F3/probe.bin: yes (4096 bytes)
+```
+
+So the first `make_directory` fails exactly as before, the listing rescue finds
+a usable directory, and the copy lands. What the run also shows: the device
+reports the folder under the **attempted** spelling as well, so the rescue hits
+its exact-name branch rather than a differently-spelled resident one. That
+branch used to stay silent — it now logs like every other adoption, because a
+directory the device errors on while demonstrably having it is precisely what
+this rescue is for.
+
+The retry-after-backoff path never fired in these runs; it stays in for cause 2,
+which the earlier `Publish`/`CopyPartial` failures document.
