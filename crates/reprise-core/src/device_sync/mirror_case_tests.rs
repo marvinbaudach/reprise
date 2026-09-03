@@ -169,21 +169,61 @@ fn resident_typographic_apostrophe_spelling_is_adopted() {
 }
 
 #[test]
-fn authoritative_scan_accepts_the_resident_case_variant_of_the_inventory_path() {
-    let wanted = case_track(1, "Carnifex", "Graveside Confessions", "Track 1");
-    let inventory_path = "Carnifex/Graveside Confessions/01 Track 1.mp3";
-    let resident_path = "Carnifex/GRAVESIDE CONFESSIONS/01 Track 1.mp3";
+fn stale_recorded_path_loses_to_the_resident_device_path() {
+    let mut wanted = case_track(1, "Artist", "Album of Things", "x");
+    wanted.source_path = "/music/x.flac".into();
+    wanted.original_name = "x.flac".into();
+    wanted.bitrate_kbps = None;
+    let inventory_path = "Artist/Album of Things/01 x.opus";
+    let resident_path = "Artist/Album Of Things/01 x.opus";
     let mut mirror_input = selected_input(wanted.clone());
+    mirror_input.profile = TransferProfile::Opus160;
     mirror_input
         .inventory
-        .push(inventory(&wanted, inventory_path, "copy-original-v1"));
+        .push(inventory(&wanted, inventory_path, "opus-vbr-160-v1"));
     mirror_input.managed_files.push(managed(resident_path));
     mirror_input.managed_files_scanned = true;
 
     let plan = plan_mirror(mirror_input);
 
     assert!(plan.copy.is_empty());
-    assert!(plan.replace.is_empty());
+    assert_eq!(plan.replace.len(), 1);
+    assert_eq!(plan.replace[0].existing.device_path, inventory_path);
+    assert_eq!(plan.replace[0].desired.device_path, resident_path);
+    assert_eq!(plan.desired_files[0].device_path, resident_path);
+}
+
+#[test]
+fn healed_track_is_planned_exactly_once() {
+    let wanted = case_track(1, "Artist", "Album of Things", "Track 1");
+    let stale_path = "Artist/Album of Things/01 Track 1.mp3";
+    let resident_path = "Artist/Album Of Things/01 Track 1.mp3";
+    let mut first_input = selected_input(wanted.clone());
+    first_input
+        .inventory
+        .push(inventory(&wanted, stale_path, "copy-original-v1"));
+    first_input.managed_files.push(managed(resident_path));
+    first_input.managed_files_scanned = true;
+
+    let first_plan = plan_mirror(first_input);
+
+    assert_eq!(first_plan.replace.len(), 1);
+    assert_eq!(first_plan.replace[0].desired.device_path, resident_path);
+    assert!(first_plan.remove.is_empty());
+
+    let mut second_input = selected_input(wanted.clone());
+    second_input
+        .inventory
+        .push(inventory(&wanted, resident_path, "copy-original-v1"));
+    second_input.managed_files.push(managed(resident_path));
+    second_input.managed_files_scanned = true;
+
+    let second_plan = plan_mirror(second_input);
+
+    assert!(second_plan.copy.is_empty());
+    assert!(second_plan.replace.is_empty());
+    assert!(second_plan.remove.is_empty());
+    assert_eq!(second_plan.desired_files[0].device_path, resident_path);
 }
 
 #[test]
@@ -203,6 +243,24 @@ fn new_track_uses_the_majority_resident_directory_spelling() {
     assert_eq!(
         plan.copy[0].device_path,
         "CURRENT ARTIST/Current Album/09 Track 9.mp3"
+    );
+}
+
+#[test]
+fn new_album_adopts_the_resident_artist_spelling() {
+    let wanted = case_track(9, "Current Artist", "New Album", "Track 9");
+    let mut mirror_input = selected_input(wanted);
+    mirror_input
+        .managed_files
+        .push(managed("CURRENT ARTIST/Existing Album/01 One.mp3"));
+    mirror_input.managed_files_scanned = true;
+
+    let plan = plan_mirror(mirror_input);
+
+    assert_eq!(plan.copy.len(), 1);
+    assert_eq!(
+        plan.copy[0].device_path,
+        "CURRENT ARTIST/New Album/09 Track 9.mp3"
     );
 }
 
@@ -378,7 +436,7 @@ fn unavailable_track_is_retained_at_its_minority_inventory_spelling() {
 }
 
 #[test]
-fn own_inventory_path_beats_the_directory_majority() {
+fn resident_recorded_path_still_wins_over_the_directory_majority() {
     let wanted = case_track(9, "Minority Artist", "Album", "Track 9");
     let minority_path = "Minority Artist/Album/09 Track 9.mp3";
     let mut mirror_input = selected_input(wanted.clone());
@@ -391,6 +449,7 @@ fn own_inventory_path_beats_the_directory_majority() {
         managed("MINORITY ARTIST/Album/02 Other.mp3"),
         managed("MINORITY ARTIST/Album/03 Other.mp3"),
     ];
+    mirror_input.managed_files_scanned = true;
 
     let plan = plan_mirror(mirror_input);
 
@@ -400,7 +459,7 @@ fn own_inventory_path_beats_the_directory_majority() {
 }
 
 #[test]
-fn case_variant_managed_sibling_is_not_an_orphan_removal() {
+fn case_variant_managed_sibling_is_replaced_without_orphan_removal() {
     let wanted = case_track(1, "Bring Me the Horizon", "Album", "Track 1");
     let known = "Bring Me the Horizon/Album/01 Track 1.mp3";
     let resident = "Bring Me The Horizon/Album/01 Track 1.mp3";
@@ -413,6 +472,7 @@ fn case_variant_managed_sibling_is_not_an_orphan_removal() {
     let plan = plan_mirror(mirror_input);
 
     assert!(plan.copy.is_empty());
-    assert!(plan.replace.is_empty());
+    assert_eq!(plan.replace.len(), 1);
+    assert_eq!(plan.replace[0].desired.device_path, resident);
     assert!(plan.remove.is_empty());
 }
