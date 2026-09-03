@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use reprise_core::device_sync::browser::StorageOption;
-use reprise_core::device_sync::{DeviceStorageInspection, StorageId, SyncTarget};
+use reprise_core::device_sync::{
+    DeviceStorageInspection, ManagedDeviceFile, StorageId, SyncTarget,
+};
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceDescriptor, DeviceMonitor, DeviceStorage,
 };
@@ -60,6 +62,21 @@ impl DeviceBackend for GioDeviceBackend {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
                 .read_managed(storage_id, &target_path, &relative_path)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn probe_managed_files(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+        relative_paths: Vec<String>,
+    ) -> BackendFuture<Vec<ManagedDeviceFile>> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .probe_managed(storage_id, &target_path, &relative_paths)
                 .await
                 .map_err(|error| error.to_string())
         })

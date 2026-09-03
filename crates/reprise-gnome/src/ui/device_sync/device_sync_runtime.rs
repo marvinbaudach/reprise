@@ -60,6 +60,8 @@ struct DeviceState {
     /// inventory itself is rebuilt live from MTP on every connect, so
     /// "verified" cannot outlive the connection it was verified on.
     ever_inspected: bool,
+    residency_proven: bool,
+    short_scan: Option<(usize, usize)>,
     target: SyncTarget,
     settings: DeviceSettings,
     sync_phase: PlannedSyncPhase,
@@ -105,6 +107,8 @@ impl DeviceState {
             scan_generation: 0,
             scan_error: None,
             ever_inspected: false,
+            residency_proven: false,
+            short_scan: None,
             target,
             settings,
             sync_phase,
@@ -196,8 +200,13 @@ impl DeviceState {
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
             rememberable: self.descriptor.persistent_id.is_some(),
-            memory_status: (self.connected && self.descriptor.persistent_id.is_none())
-                .then(device_sync_strings::unrememberable_device_status),
+            memory_status: if self.connected && self.descriptor.persistent_id.is_none() {
+                Some(device_sync_strings::unrememberable_device_status())
+            } else {
+                self.short_scan.map(|(doubtful, recovered)| {
+                    device_sync_strings::short_scan(doubtful, recovered)
+                })
+            },
             session_state: self.session_state.clone(),
             storage: self.storage.clone(),
             storage_measured: self.ever_inspected,
@@ -252,6 +261,17 @@ pub struct DeviceSyncRuntime {
 }
 
 impl DeviceSyncRuntime {
+    #[cfg(test)]
+    pub(super) fn residency_is_proven(&self, device_id: &str) -> bool {
+        self.device_states
+            .borrow()
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
+            .is_some_and(|device| {
+                device.ever_inspected && device.scan_error.is_none() && device.residency_proven
+            })
+    }
+
     pub fn new(conn: &Rc<Db>, monitor: DeviceMonitor) -> Rc<Self> {
         Self::with_backend(
             conn,

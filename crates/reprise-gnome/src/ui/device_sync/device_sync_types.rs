@@ -35,6 +35,15 @@ pub trait DeviceBackend {
     ) -> BackendFuture<Option<Vec<u8>>> {
         Box::pin(async { Err("device reads are unavailable".into()) })
     }
+    fn probe_managed_files(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+        _relative_paths: Vec<String>,
+    ) -> BackendFuture<Vec<ManagedDeviceFile>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
     /// Copies (or overwrites) `source_path` to `relative_target` under
     /// `target_path` on `storage_id` (`None` falls back to the same
     /// "prefer internal" default used before a target was ever repointed),

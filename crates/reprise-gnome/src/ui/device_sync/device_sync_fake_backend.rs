@@ -81,6 +81,8 @@ pub(super) struct FakeState {
     pub(super) managed_root_enumerations: Cell<u32>,
     pub(super) last_inspected_target: RefCell<Option<SyncTarget>>,
     pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
+    pub(super) probe_result: RefCell<Option<Result<Vec<ManagedDeviceFile>, String>>>,
+    pub(super) probe_calls: Cell<usize>,
     /// Test-only platform outcomes for requested paths whose directory spelling
     /// is adopted by the device backend.
     copy_path_overrides: RefCell<HashMap<String, String>>,
@@ -385,6 +387,25 @@ impl DeviceBackend for FakeBackend {
                 Some(error) => Err(error),
                 None => Ok(report),
             }
+        })
+    }
+
+    fn probe_managed_files(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+        relative_paths: Vec<String>,
+    ) -> TestFuture<Vec<ManagedDeviceFile>> {
+        self.state
+            .probe_calls
+            .set(self.state.probe_calls.get().saturating_add(1));
+        let result = self.state.probe_result.borrow().clone();
+        Box::pin(async move {
+            let mut files = result.unwrap_or_else(|| Ok(Vec::new()))?;
+            files
+                .retain(|file| file.size_bytes > 0 && relative_paths.contains(&file.relative_path));
+            Ok(files)
         })
     }
 
@@ -774,14 +795,3 @@ impl DeviceBackend for FakeBackend {
 mod lyrics_gate_tests;
 #[path = "device_sync_transcode_prefetch_tests.rs"]
 mod transcode_prefetch_tests;
-
-pub(super) fn descriptor(id: &str, reconnectable: bool) -> DeviceDescriptor {
-    DeviceDescriptor {
-        id: id.into(),
-        persistent_id: reconnectable.then(|| id.to_string()),
-        name: format!("Phone {id}"),
-        root_uri: format!("mtp://{id}"),
-        icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
-        reconnectable,
-    }
-}

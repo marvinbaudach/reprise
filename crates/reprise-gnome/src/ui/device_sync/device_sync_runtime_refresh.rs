@@ -1,7 +1,8 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use reprise_core::device_sync::settings::{
-    mark_device_playlists_synced, record_device_verification,
+    load_device_files, mark_device_playlists_synced, record_device_verification,
 };
 use reprise_core::device_sync::{
     aggregate_balance, should_auto_start, AutoStartFacts, DeviceStorageInspection, SelectionSource,
@@ -62,6 +63,10 @@ impl DeviceSyncRuntime {
             device.scan_generation = device.scan_generation.saturating_add(1);
             device.scanning = true;
             device.scan_error = None;
+            if just_connected {
+                device.residency_proven = false;
+                device.short_scan = None;
+            }
             Some((device.descriptor.root_uri.clone(), device.scan_generation))
         };
         self.notify();
@@ -72,10 +77,107 @@ impl DeviceSyncRuntime {
         let weak = self.weak_self.borrow().clone();
         let id = device_id.to_string();
         gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
-            let result = backend.inspect(root_uri, target).await;
+            let mut result = backend.inspect(root_uri.clone(), target.clone()).await;
             let Some(runtime) = weak.upgrade() else {
                 return;
             };
+            let current_generation = runtime
+                .device_states
+                .borrow()
+                .iter()
+                .find(|device| device.descriptor.id == id)
+                .is_some_and(|device| device.scan_generation == generation);
+            if !current_generation {
+                return;
+            }
+            let mut residency_proven = false;
+            let mut clear_short_scan = false;
+            let mut short_scan = None;
+            if let Ok(inspection) = &mut result {
+                match load_device_files(&runtime.conn, &id) {
+                    Ok(inventory) => {
+                        let walked = inspection
+                            .managed_files
+                            .iter()
+                            .map(|file| file.relative_path.to_lowercase())
+                            .collect::<HashSet<_>>();
+                        let mut doubtful_keys = HashSet::new();
+                        let mut doubtful = Vec::new();
+                        for file in inventory
+                            .iter()
+                            .filter(|file| !walked.contains(&file.device_path.to_lowercase()))
+                        {
+                            if doubtful_keys.insert(file.device_path.to_lowercase()) {
+                                doubtful.push(file.device_path.clone());
+                            }
+                            if let Some(sidecar) =
+                                reprise_core::device_sync::analysis_sidecar::device_path_for_track(
+                                    &file.device_path,
+                                )
+                            {
+                                if doubtful_keys.insert(sidecar.to_lowercase()) {
+                                    doubtful.push(sidecar);
+                                }
+                            }
+                        }
+                        let doubtful_count = doubtful.len();
+                        if doubtful_count == 0 {
+                            residency_proven = true;
+                            clear_short_scan = true;
+                        } else {
+                            if doubtful_count > inventory.len() {
+                                tracing::warn!(
+                                    doubtful = doubtful_count,
+                                    inventory = inventory.len(),
+                                    "device scan doubtful set is implausibly large"
+                                );
+                            }
+                            match backend
+                                .probe_managed_files(
+                                    root_uri,
+                                    target.path,
+                                    target.storage_id,
+                                    doubtful,
+                                )
+                                .await
+                            {
+                                Ok(recovered) => {
+                                    let recovered_count = recovered.len();
+                                    inspection.managed_files.extend(recovered);
+                                    residency_proven = true;
+                                    if recovered_count > 0 {
+                                        tracing::warn!(
+                                            doubtful = doubtful_count,
+                                            recovered = recovered_count,
+                                            "device scan came back short"
+                                        );
+                                        short_scan = Some((doubtful_count, recovered_count));
+                                    }
+                                }
+                                Err(error) => {
+                                    tracing::warn!(
+                                        %error,
+                                        doubtful = doubtful_count,
+                                        "device scan residency could not be proven"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "device scan residency inventory could not be loaded");
+                    }
+                }
+            }
+            let current_generation = runtime
+                .device_states
+                .borrow()
+                .iter()
+                .find(|device| device.descriptor.id == id)
+                .is_some_and(|device| device.scan_generation == generation);
+            if !current_generation {
+                return;
+            }
             let verified_track_count = result
                 .as_ref()
                 .ok()
@@ -107,8 +209,17 @@ impl DeviceSyncRuntime {
                             device.lyrics_files = lyrics_files;
                             device.scan_error = None;
                             device.ever_inspected = true;
+                            device.residency_proven = residency_proven;
+                            if clear_short_scan {
+                                device.short_scan = None;
+                            } else if short_scan.is_some() {
+                                device.short_scan = short_scan;
+                            }
                         }
-                        Err(error) => device.scan_error = Some(error),
+                        Err(error) => {
+                            device.scan_error = Some(error);
+                            device.residency_proven = false;
+                        }
                     }
                 }
             }
