@@ -139,3 +139,51 @@ is a claim about one lucky window rather than about the shot.
    `the-film-waits-outside-the-deploy.md`.
 3. The handset is still a narrow strip in a 16:9 frame. The emulator route is
    costed in `showreel-58s.SESSION-2026-09-03.md`; the user chose to leave it.
+
+## Correction, 14:20 — v4 was cut with the old script
+
+The user rejected `…-scored-v4.mp4` as outdated, and it was. Everything above
+describes the cut correctly; **v4 is not that cut.** Its segments
+(`~/.cache/reprise-showreel/cut35`, written 13:56–13:58) are
+`s-03-releases`, five desk shots at 5.4 s, no YouTube, phone 9.6 + 7.2 — the
+shot list of `/home/marvin/Projects/reprise/scripts/showreel/cut-film.sh`
+(mtime 2026-09-02 19:47, uncommitted on another branch's checkout), not of this
+worktree's HEAD. `$SHOWREEL_WORK/cut35` is a fixed path shared by every copy of
+the script, so the wrong checkout wrote the right cache.
+
+**Why it passed unnoticed: 5 × 5.4 = 27.0 and 6 × 4.5 = 27.0, and the phone
+pair is 16.8 s in either order.** Both plans total exactly 58.200000 s, so
+`ffprobe duration` verifies nothing here. The discriminating check is
+`cut35/list.txt` — 11 entries, `s-03-youtube` among them — and the per-segment
+durations 3.0 / 4.5 × 6 / 7.8 / 7.2 / 9.6 / 3.6.
+
+Re-cut from this worktree with no environment at all:
+
+    bash scripts/showreel/cut-film.sh ~/Videos/reprise-showreel/reprise-showreel-58s-v5.mp4
+    SCRATCH=$HOME/.cache/reprise-showreel/score-v5 SHOWREEL_BPM=120 \
+      SHOWREEL_ARC=0 SHOWREEL_DROP=0 SHOWREEL_ALIGN=0 SHOWREEL_WINDOW=0 \
+      bash scripts/showreel/score.sh \
+        ~/.cache/reprise-showreel/musik/bed-final-58s.wav \
+        ~/Videos/reprise-showreel/reprise-showreel-58s-v5.mp4 \
+        ~/Videos/reprise-showreel/reprise-showreel-58s-scored-v5.mp4
+
+→ `reprise-showreel-58s-scored-v5.mp4`, 58.200000 s, −16.1 LUFS, −4.5 dBTP,
+LRA 4.4. Frame checks: 14.5 s is the YouTube page under "YouTube channels",
+47.0 s is the spectrum under "The same visuals".
+
+The in-points were re-measured against the take on disk before the re-cut, in
+case the prose had drifted there too. It had not — `find-page-turns.py` on
+`roh-gnome-tour-2026-09-03.mp4` gives turns 8.93 / 20.12 / 31.23 / 41.96 /
+52.83 / 64.30 / 73.78, ratios 630–3833, lag 2.20–2.60 s. Minus 1.9 those are
+exactly HEAD's defaults, bridge included.
+
+**One thing the desk take carries that the text above does not mention:** the
+sidebar device card reads "Pixel 10 Pro XL · Playlists updating" and the status
+line "Refreshing podcasts…" in the desk shots. That is not the `Syncing · N %`
+card the take was waiting out — the AT-SPI gate only matches names starting
+with `Syncing`, and this phase is named differently. It is in all six shots and
+cannot be removed without a reshoot.
+
+**v1–v4 are all stale, the canonical names too.** `reprise-showreel-58s.mp4`
+and `-scored.mp4` (09:59) are the morning cut. Nothing was promoted — that
+waits on the ruling.
