@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# The film: 60.0 s for a landing page, which is exactly 100 beats at 100 BPM.
+# The film: 58.2 s for a landing page, against a 120 BPM bed — 0.5 s to the beat.
 #
-# Every boundary is a multiple of 0.6 s, so the film can be laid against a bed
-# later without a single cut falling between two beats. The shot list and the
-# reasoning behind it are in docs/plans/showreel-30s.md.
+# It was 60.0 s at 100 BPM, and every boundary was a multiple of that bed's
+# 0.6 s. Both numbers changed when the bed did (2026-09-03), and the grid moved
+# with them: the six desk shots run 4.5 s, which is not a multiple of 0.6 but is
+# exactly nine beats of the bed that is actually under them. The rest of this
+# file still reads in beats — check them against 0.5, not 0.6. The shot list and
+# the reasoning behind it are in docs/plans/showreel-30s.md; what the 58.2 s cut
+# is made of is in docs/plans/showreel-58s.HANDOFF-2026-09-03-nachmittag.md.
 #
 # Two things distinguish this cut from the 32 s one it replaces.
 #
