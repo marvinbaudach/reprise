@@ -315,6 +315,7 @@ fn build_plan(
         &inventory,
         &inventory_by_id,
         &managed_files,
+        managed_files_scanned,
     );
     desired_files = desired_by_id.values().cloned().collect();
     desired_files.sort_by_key(|file| file.track.id);

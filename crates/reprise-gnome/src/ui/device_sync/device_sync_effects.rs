@@ -151,9 +151,12 @@ pub(super) async fn perform(
                 reprise_core::device_sync::staging::discard(&path);
             }
             match result {
-                Ok(_) => {
+                Ok(CopyOutcome::Copied { relative_path }) => {
                     work.log.copied(bytes);
-                    Event::TrackCopied(Ok(bytes))
+                    Event::TrackCopied(Ok(CopiedTrack {
+                        device_size: bytes,
+                        device_path: relative_path,
+                    }))
                 }
                 Err(error) => {
                     tracing::warn!(track_id = entry.track.id, %error, "device transfer failed");
@@ -168,7 +171,11 @@ pub(super) async fn perform(
                 }
             }
         }
-        Effect::RecordFile { index, device_size } => {
+        Effect::RecordFile {
+            index,
+            device_size,
+            device_path,
+        } => {
             if !work.persist_device_state {
                 return Event::FileRecorded(Ok(()));
             }
@@ -179,7 +186,7 @@ pub(super) async fn perform(
                 source_path: entry.track.source_path.to_string_lossy().into_owned(),
                 source_size: entry.track.size_bytes,
                 source_mtime: entry.track.source_mtime,
-                device_path: entry.device_path.clone(),
+                device_path,
                 device_size,
                 profile_fingerprint: entry.profile_fingerprint.clone(),
                 pinned: false,
@@ -492,14 +499,24 @@ pub(super) async fn write_track_metadata_list(
         .into_iter()
         .map(|track| (track.id, track))
         .collect::<std::collections::HashMap<_, _>>();
+    let recorded_paths =
+        reprise_core::device_sync::settings::load_device_files(&runtime.conn, &work.device_id)
+            .map_err(|error| format!("could not read device inventory: {error}"))?
+            .into_iter()
+            .map(|record| (record.track_id, record.device_path))
+            .collect::<std::collections::HashMap<_, _>>();
     let mut entries = Vec::with_capacity(desired_files.len());
     for desired in desired_files {
         let Some(track) = tracks.get(&desired.track.id) else {
             continue;
         };
+        let device_path = recorded_paths
+            .get(&desired.track.id)
+            .cloned()
+            .unwrap_or(desired.device_path);
         entries.push(
             reprise_core::device_sync::track_metadata_list::TrackMetadataEntry {
-                device_path: desired.device_path,
+                device_path,
                 rating: track.rating,
                 play_count: track.play_count,
             },

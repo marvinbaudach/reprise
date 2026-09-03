@@ -87,7 +87,13 @@ impl DeviceSyncRuntime {
                     .ok_or_else(|| {
                         format!("device '{device_name}' is absent, disconnected, or ambiguous")
                     })?;
-                self.sync_now(&device_id).map_err(|error| error.to_string())
+                match self.sync_now(&device_id) {
+                    Ok(()) => {
+                        tracing::info!(device_id, "device sync started from agent");
+                        Ok(())
+                    }
+                    Err(error) => Err(error.to_string()),
+                }
             }
             AgentDeviceSyncCommand::Cancel { device_name } => {
                 let device_id = self
@@ -97,6 +103,7 @@ impl DeviceSyncRuntime {
                         format!("device '{device_name}' is absent, disconnected, or ambiguous")
                     })?;
                 self.cancel_current(&device_id);
+                tracing::info!(device_id, "device sync cancelled from agent");
                 Ok(())
             }
             AgentDeviceSyncCommand::Eject { device_name } => {

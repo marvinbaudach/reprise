@@ -16,8 +16,8 @@ use reprise_core::device_sync::settings::{
 };
 use reprise_core::device_sync::sync_log::{DeviationKind, RunStart};
 use reprise_core::device_sync::{
-    DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan, StorageId, SyncOutcome,
-    TransferAction, TransferOperation, TransferSource,
+    CopiedTrack, DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan, StorageId,
+    SyncOutcome, TransferAction, TransferOperation, TransferSource,
 };
 
 use super::*;
