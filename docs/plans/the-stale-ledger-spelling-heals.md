@@ -2,7 +2,7 @@
 slug: the-stale-ledger-spelling-heals
 worktree: /home/marvin/Projects/reprise-mtp-ledger
 branch: fix/the-sync-records-the-folder-it-used
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-03
 ---
