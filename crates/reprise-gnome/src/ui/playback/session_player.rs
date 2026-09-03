@@ -90,6 +90,21 @@ impl PlayerController {
         // restorable queue never reaches this line, so a stale origin can't
         // outlive its context.
         *self.play_origin.borrow_mut() = play_origin;
+        if current_up_next.is_none() {
+            let random_ids = (self.random_start_chooser.borrow_mut())(&self.conn);
+            match random_ids {
+                Ok(ids) => {
+                    let has_tracks = !ids.is_empty();
+                    self.library_has_tracks.set(has_tracks);
+                    self.queue.borrow_mut().set_tracks(ids, 0);
+                    *self.play_origin.borrow_mut() =
+                        has_tracks.then(super::play_origin::PlayOrigin::library);
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "could not build random startup playback snapshot");
+                }
+            }
+        }
         self.notify_queue_changed();
 
         let queue_has_tracks = !self.queue.borrow().is_empty()
@@ -99,9 +114,9 @@ impl PlayerController {
         let repeat = self.queue.borrow().repeat();
         let current =
             current_up_next.or_else(|| self.queue.borrow().current().map(QueueItem::Track));
-        // START-3 centers this item once the startup routing has built the
-        // view; the first Play must not center it a second time.
-        self.restored_placement_intact.set(current.is_some());
+        // The startup greeting was chosen independently of the restored
+        // browser place, so the first Play follows the ordinary reveal path.
+        self.restored_placement_intact.set(false);
         self.sync_transport_enabled(queue_has_tracks);
         self.sync_shuffle_indicator(shuffled);
         self.sync_repeat_indicator(repeat);
@@ -167,6 +182,14 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn set_random_start_chooser_for_test(
+        &self,
+        chooser: impl FnMut(&reprise_core::db::Db) -> Result<Vec<i64>, rusqlite::Error> + 'static,
+    ) {
+        *self.random_start_chooser.borrow_mut() = Box::new(chooser);
     }
 }
 

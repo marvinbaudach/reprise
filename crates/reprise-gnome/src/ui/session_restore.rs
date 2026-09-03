@@ -82,8 +82,12 @@ pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &Ses
         let playback = player.map_or(MprisPlaybackStatus::Stopped, |player| {
             player.session_playback_status()
         });
+        let runtime_queue = player.map(|player| player.session_queue_snapshot());
+        let runtime_current_up_next = player.map(|player| player.session_up_next_snapshot().1);
         tracing::info!(
             ?state,
+            ?runtime_queue,
+            ?runtime_current_up_next,
             playback = playback.as_str(),
             "session restore report"
         );
@@ -99,7 +103,7 @@ fn arm_play(player: &Rc<PlayerController>) {
         let Some(player) = player.upgrade() else {
             return;
         };
-        tracing::info!("{PLAY_ENV}: activating restored play button");
+        tracing::info!("{PLAY_ENV}: activating startup play button");
         player.bar.smoke_activate_play_pause();
     });
 }

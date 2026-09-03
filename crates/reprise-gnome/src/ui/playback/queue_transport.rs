@@ -86,12 +86,11 @@ fn remove_direct_episode_now_playing(
     }
 }
 
-/// `restored_placement_intact` says the loaded track is still exactly where a
-/// normal start put it: selected and centered, never played (START-3). Its
-/// first Play only starts the audio, because the viewport is already the one
-/// the reveal would scroll to — and a glide onto the value the list already
-/// holds is the second visible centering this bug report is about. Every other
-/// start from Stopped keeps NAV-10b's explicit-transport reveal.
+/// `restored_placement_intact` says the loaded track is still exactly where
+/// startup routing put it: selected and centered, never played (START-3).
+/// A random startup greeting explicitly clears it because its track and the
+/// restored browser place are independent. Every start from Stopped without
+/// this one-shot keeps NAV-10b's explicit-transport reveal.
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,

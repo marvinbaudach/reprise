@@ -188,10 +188,10 @@ use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_core::waveform::RenderDataBackend;
 
-use super::player_controller_types::ViewRefillIds;
 pub(in crate::ui) use super::player_controller_types::{
     PlayerControllerBackends, StartPlayback, VisibleView,
 };
+use super::player_controller_types::{RandomStartChooser, ViewRefillIds};
 
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
@@ -226,6 +226,8 @@ pub struct PlayerController {
     /// that sibling module can reach it) to resolve/mark tracks on a
     /// playback failure.
     pub(in crate::ui) conn: Rc<Db>,
+    /// Injectable ordering boundary for the random track shown at startup.
+    pub(in crate::ui) random_start_chooser: RefCell<Box<RandomStartChooser>>,
     /// `(track_id, duration_ms)` of the track currently loaded, set by
     /// `play_track_id` and cleared once play tracking has been evaluated for
     /// it (see `evaluate_play_tracking`). `None` when no track is loaded.
@@ -248,12 +250,10 @@ pub struct PlayerController {
     /// Cached library availability used to keep idle Play reachable without
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
-    /// START-3: the restored track is still sitting where the start put it —
-    /// selected and centered — and has not been played yet. The first Play
-    /// therefore only has to start the audio; centering it again is the second
-    /// visible scroll START-3 exists to avoid. Cleared by the first
-    /// `present_track`, which is the moment any placement stops being the
-    /// startup one.
+    /// START-3 one-shot for a loaded track that is already selected and
+    /// centered by startup routing. Random startup greetings clear this flag:
+    /// their track was chosen independently of the restored browser place.
+    /// Also cleared by the first `present_track`.
     pub(in crate::ui) restored_placement_intact: Cell<bool>,
     /// A waveform position selected before playback starts, bound to the
     /// exact queue item that may consume it on the next start attempt.
@@ -455,6 +455,9 @@ impl PlayerController {
             bar: PlayerBar::new(),
             compact_player: CompactPlayer::new(),
             conn,
+            random_start_chooser: RefCell::new(Box::new(
+                reprise_core::queries::query_random_live_track_ids,
+            )),
             current_track: Cell::new(None),
             max_position_ms: Cell::new(0),
             listenbrainz,
