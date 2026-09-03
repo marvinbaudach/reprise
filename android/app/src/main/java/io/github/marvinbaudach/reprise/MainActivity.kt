@@ -348,14 +348,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
+                    val faultNotices = PlaybackFaultNoticeObserver(
+                        this, { playbackState.value }, { playbackState.value = it },
+                    )
                     boundService.flatMapLatest { service ->
                         service?.playbackSnapshots ?: flowOf(null)
                     }.collect { snapshot ->
-                        if (snapshot != null) {
-                            playbackState.value = snapshot.toUiState().copy(
-                                sleepTimer = playbackState.value.sleepTimer,
-                            )
-                        }
+                        if (snapshot != null) faultNotices.accept(snapshot)
                     }
                 }
                 launch {
@@ -494,6 +493,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        playbackState.value = playbackState.value.copy(faultNotice = null)
         playbackBindWatchdog?.cancel()
         playbackBindWatchdog = null
         boundService.value = null

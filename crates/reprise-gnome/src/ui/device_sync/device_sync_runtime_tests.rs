@@ -22,10 +22,14 @@ use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest
 
 use super::device_sync_runtime::*;
 
+const SETTLE_UNTIL_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[path = "device_sync_fake_backend.rs"]
 mod fake_backend;
 use fake_backend::*;
 
+#[path = "device_sync_agent_log_tests.rs"]
+mod agent_log_tests;
 #[path = "device_sync_memory_tests.rs"]
 mod memory_tests;
 #[path = "device_sync_presence_tests.rs"]
@@ -81,6 +85,14 @@ fn run(future: impl Future<Output = ()>) {
 
 async fn settle() {
     for _ in 0..100 {
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+    }
+}
+
+async fn settle_until(label: &str, condition: impl Fn() -> bool) {
+    let deadline = std::time::Instant::now() + SETTLE_UNTIL_TIMEOUT;
+    while !condition() {
+        assert!(std::time::Instant::now() < deadline, "timed out: {label}");
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
     }
 }
@@ -308,6 +320,8 @@ mod inflight_tests;
 mod listen_report_tests;
 #[path = "device_sync_lyrics_sidecar_tests.rs"]
 mod lyrics_sidecar_tests;
+#[path = "device_sync_migration_tests.rs"]
+mod migration_tests;
 #[path = "device_sync_picker_tests.rs"]
 mod picker_tests;
 #[path = "device_sync_planned_tests.rs"]

@@ -98,9 +98,13 @@ impl DeviceSyncRuntime {
                         Ok(DeviceStorageInspection {
                             snapshot,
                             managed_files,
+                            partial_paths,
+                            lyrics_files,
                         }) => {
                             device.storage = snapshot;
                             device.managed_files = managed_files;
+                            device.partial_paths = partial_paths;
+                            device.lyrics_files = lyrics_files;
                             device.scan_error = None;
                             device.ever_inspected = true;
                         }

@@ -139,6 +139,27 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
     });
 }
 
+#[test]
+fn adopted_copy_path_is_recorded() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let requested = "Artist/Unknown Album/00 Track 1.opus";
+        let adopted = "ARTIST/Unknown Album/00 Track 1.opus";
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.return_copy_at(requested, adopted);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let files = reprise_core::device_sync::settings::load_device_files(&conn, "a").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].device_path, adopted);
+    });
+}
+
 /// `MTP-23`: once the folder browser (`MTP-31`) has persisted a
 /// storage for the Playlists target, `sync_now`'s actual transfer must
 /// carry that `storage_id` through to the backend — not silently
@@ -204,6 +225,37 @@ fn mtp_5_partial_cleanup_failure_blocks_every_planned_write() {
         let failure = device.sync_error.unwrap();
         assert!(failure.message.contains("injected cleanup failure"));
         assert!(failure.failed_tracks.is_empty());
+    });
+}
+
+#[test]
+fn one_sync_recursively_enumerates_the_managed_root_once() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend
+            .state
+            .partial_paths
+            .replace(vec!["Road/unfinished.opus.part".into()]);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        let enumerations_before = backend.state.managed_root_enumerations.get();
+        let (_subscription, completed) =
+            signal_when(&runtime, |state| state.devices[0].last_sync.is_some());
+
+        runtime.sync_now("a").unwrap();
+        completed.recv().await.unwrap();
+
+        assert_eq!(
+            backend.state.managed_root_enumerations.get() - enumerations_before,
+            1
+        );
+        assert_eq!(
+            backend.state.cleaned_partials.borrow().as_slice(),
+            ["Road/unfinished.opus.part"]
+        );
+        assert_eq!(runtime.devices()[0].page.changes.removals, 0);
     });
 }
 
@@ -430,7 +482,7 @@ fn failed_replacement_inventory_preserves_the_old_device_path() {
 }
 
 #[test]
-fn planned_transcodes_finish_before_each_corresponding_device_copy_starts() {
+fn planned_transcodes_start_ahead_before_each_corresponding_device_copy_starts() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1, 2]);
@@ -448,7 +500,7 @@ fn planned_transcodes_finish_before_each_corresponding_device_copy_starts() {
             .iter()
             .map(|(_, operation)| *operation)
             .collect::<Vec<_>>();
-        assert_eq!(operations, ["transcode", "copy", "transcode", "copy"]);
+        assert_eq!(operations, ["transcode", "transcode", "copy", "copy"]);
     });
 }
 

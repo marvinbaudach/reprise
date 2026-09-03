@@ -26,13 +26,13 @@ test('the prerendered document has a direct keyboard route into its single main 
   }
 });
 
-test('motion, the in-flow gallery, and social previews survive the production build', async () => {
+test('motion, the in-flow film, and social previews survive the production build', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.skip-link:focus-visible/);
-  assert.match(html, /data-layout="design-mosaic"/);
+  assert.match(html, /data-showcase="showreel-film"/);
   assert.doesNotMatch(html, /product-gallery-hint|Use arrow keys, drag, or scroll/);
   assert.equal((html.match(/loading="eager"/g) ?? []).length, 2);
   assert.match(html, /property="og:title"/);

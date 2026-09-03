@@ -24,6 +24,8 @@ pub struct DeviceStorageSnapshot {
 pub struct DeviceStorageInspection {
     pub snapshot: DeviceStorageSnapshot,
     pub managed_files: Vec<ManagedDeviceFile>,
+    pub partial_paths: Vec<String>,
+    pub lyrics_files: Vec<ManagedDeviceFile>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

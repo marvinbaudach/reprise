@@ -100,60 +100,21 @@ pub(super) async fn perform(
 ) -> Event {
     match effect {
         Effect::Finished(_) => unreachable!("the driver handles Finished before calling perform"),
-        Effect::CleanPartials => {
+        Effect::CleanPartials(partial_paths) => {
             let result = runtime
                 .backend
                 .cleanup_partials(
                     work.root_uri.clone(),
                     work.playlists_path.clone(),
                     work.playlists_storage,
+                    partial_paths,
                 )
                 .await
                 .map(|_| ());
             Event::PartialsCleaned(result)
         }
         Effect::Transcode { index, action } => {
-            let entry = transfer(work, index).desired.clone();
-            let profile =
-                transcode_profile(action).expect("a transcode effect must name a transcode action");
-            let extension = match profile {
-                TranscodeProfile::Opus160 => "opus",
-                TranscodeProfile::Mp3(_) => "mp3",
-            };
-            let request = TranscodeRequest {
-                source: entry.track.source_path.clone(),
-                output: reprise_core::device_sync::staging::temporary_path(
-                    &work.device_id,
-                    entry.track.id,
-                    extension,
-                ),
-                profile,
-                metadata: reprise_platform_linux::device_transfer::AudioMetadata::for_track(
-                    &entry.track,
-                ),
-            };
-            match runtime
-                .backend
-                .transcode_track(request, work.cancelled.clone())
-                .await
-            {
-                Ok(file) => {
-                    let size = file.size_bytes;
-                    work.transcoded = Some(file.path);
-                    Event::Transcoded(Ok(size))
-                }
-                Err(error) => {
-                    tracing::warn!(track_id = entry.track.id, %error, "device audio transcode failed");
-                    work.log.note(
-                        runtime,
-                        DeviationKind::Failed,
-                        Some(entry.track.id),
-                        &entry.device_path,
-                        format!("transcode failed: {error}"),
-                    );
-                    Event::Transcoded(Err(error))
-                }
-            }
+            transcode_effect::perform(runtime, work, index, action).await
         }
         Effect::CopyTrack {
             index,
@@ -163,7 +124,7 @@ pub(super) async fn perform(
             let entry = transfer(work, index).desired.clone();
             let (path, temporary) = match source {
                 TransferSource::Original => (entry.track.source_path.clone(), false),
-                TransferSource::Transcoded => match work.transcoded.take() {
+                TransferSource::Transcoded => match work.transcoded.remove(&index) {
                     Some(path) => (path, true),
                     None => {
                         return Event::TrackCopied(Err(
@@ -190,18 +151,12 @@ pub(super) async fn perform(
                 reprise_core::device_sync::staging::discard(&path);
             }
             match result {
-                Ok(_) => {
-                    copy_lyrics_sidecar(
-                        runtime,
-                        work,
-                        &entry.track.source_path,
-                        &entry.device_path,
-                        &work.playlists_path,
-                        work.playlists_storage,
-                    )
-                    .await;
+                Ok(CopyOutcome::Copied { relative_path }) => {
                     work.log.copied(bytes);
-                    Event::TrackCopied(Ok(bytes))
+                    Event::TrackCopied(Ok(CopiedTrack {
+                        device_size: bytes,
+                        device_path: relative_path,
+                    }))
                 }
                 Err(error) => {
                     tracing::warn!(track_id = entry.track.id, %error, "device transfer failed");
@@ -216,7 +171,11 @@ pub(super) async fn perform(
                 }
             }
         }
-        Effect::RecordFile { index, device_size } => {
+        Effect::RecordFile {
+            index,
+            device_size,
+            device_path,
+        } => {
             if !work.persist_device_state {
                 return Event::FileRecorded(Ok(()));
             }
@@ -227,7 +186,7 @@ pub(super) async fn perform(
                 source_path: entry.track.source_path.to_string_lossy().into_owned(),
                 source_size: entry.track.size_bytes,
                 source_mtime: entry.track.source_mtime,
-                device_path: entry.device_path.clone(),
+                device_path,
                 device_size,
                 profile_fingerprint: entry.profile_fingerprint.clone(),
                 pinned: false,
@@ -254,6 +213,20 @@ pub(super) async fn perform(
                 );
             }
             Event::AnalysisWritten(result)
+        }
+        Effect::WriteLyrics { index } => {
+            let planned = work.machine.borrow().plan().lyrics_writes[index].clone();
+            let result = copy_lyrics_sidecar(runtime, work, &planned).await;
+            if let Err(error) = &result {
+                work.log.note(
+                    runtime,
+                    DeviationKind::Failed,
+                    Some(planned.track_id),
+                    &planned.device_path,
+                    error.clone(),
+                );
+            }
+            Event::LyricsWritten(result)
         }
         Effect::WritePlaylist {
             index,
@@ -526,14 +499,24 @@ pub(super) async fn write_track_metadata_list(
         .into_iter()
         .map(|track| (track.id, track))
         .collect::<std::collections::HashMap<_, _>>();
+    let recorded_paths =
+        reprise_core::device_sync::settings::load_device_files(&runtime.conn, &work.device_id)
+            .map_err(|error| format!("could not read device inventory: {error}"))?
+            .into_iter()
+            .map(|record| (record.track_id, record.device_path))
+            .collect::<std::collections::HashMap<_, _>>();
     let mut entries = Vec::with_capacity(desired_files.len());
     for desired in desired_files {
         let Some(track) = tracks.get(&desired.track.id) else {
             continue;
         };
+        let device_path = recorded_paths
+            .get(&desired.track.id)
+            .cloned()
+            .unwrap_or(desired.device_path);
         entries.push(
             reprise_core::device_sync::track_metadata_list::TrackMetadataEntry {
-                device_path: desired.device_path,
+                device_path,
                 rating: track.rating,
                 play_count: track.play_count,
             },
@@ -572,44 +555,32 @@ pub(super) async fn write_track_metadata_list(
 
 pub(super) async fn copy_lyrics_sidecar(
     runtime: &Rc<DeviceSyncRuntime>,
-    work: &PlannedWork,
-    source_path: &Path,
-    device_path: &str,
-    target_path: &str,
-    storage_id: Option<StorageId>,
-) {
-    let Some(sidecar) =
-        reprise_core::device_sync::lyrics_sidecar::paths_for_track(source_path, device_path)
-    else {
-        return;
-    };
-    let Some(source_bytes) =
-        reprise_core::device_sync::lyrics_sidecar::source_file_size(&sidecar.source_path)
-    else {
-        return;
-    };
+    work: &mut PlannedWork,
+    planned: &reprise_core::device_sync::mirror::LyricsSidecarWrite,
+) -> Result<u64, String> {
     let result = runtime
         .backend
         .replace_track(
             work.device_id.clone(),
             work.root_uri.clone(),
-            target_path.to_string(),
-            storage_id,
-            sidecar.source_path.clone(),
-            sidecar.device_path.clone(),
-            source_bytes,
+            work.playlists_path.clone(),
+            work.playlists_storage,
+            planned.source_path.clone(),
+            planned.device_path.clone(),
+            planned.size_bytes,
             work.cancellable.clone(),
-            Rc::new(|_, _| {}),
+            copy_progress(runtime, work),
         )
         .await;
-    if let Err(error) = result {
+    result.map(|_| planned.size_bytes).map_err(|error| {
         tracing::warn!(
-            source_path = %sidecar.source_path.display(),
-            device_path = sidecar.device_path,
+            source_path = %planned.source_path.display(),
+            device_path = planned.device_path,
             %error,
             "could not copy lyrics sidecar to device"
         );
-    }
+        error
+    })
 }
 
 /// Removes the `.lrc` that travelled with `device_path` — but only when the
@@ -723,7 +694,8 @@ fn replacement_keeps_lyrics_sidecar(work: &PlannedWork, replaced_path: &str) -> 
 }
 
 fn transfer(work: &PlannedWork, index: usize) -> TransferOperation {
-    work.machine.borrow().transfers()[index].clone()
+    work.transfer(index)
+        .expect("the sync machine emitted an invalid transfer index")
 }
 
 fn playlist_write(work: &PlannedWork, index: usize) -> reprise_core::device_sync::PlaylistWrite {
