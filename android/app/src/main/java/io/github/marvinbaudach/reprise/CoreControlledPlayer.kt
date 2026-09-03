@@ -69,19 +69,33 @@ internal class CoreControlledPlayer(
         return DeviceInfo(DeviceInfo.PLAYBACK_TYPE_REMOTE, 0, maxVolume)
     }
 
-    override fun getAvailableCommands(): Player.Commands {
-        val availableCommands = super.getAvailableCommands().buildUpon()
+    override fun getAvailableCommands(): Player.Commands =
+        super.getAvailableCommands().buildUpon()
             .add(Player.COMMAND_GET_DEVICE_VOLUME)
             .add(Player.COMMAND_SET_DEVICE_VOLUME)
             .add(Player.COMMAND_ADJUST_DEVICE_VOLUME)
             .add(Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS)
             .add(Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS)
             .build()
-        Log.i(
-            VOLUME_SPIKE_LOG_TAG,
-            "getAvailableCommands deviceVolumeCommands=all nanos=${System.nanoTime()}",
-        )
-        return availableCommands
+
+    // NOT part of the spike surface: this override is the fix, and it outlives
+    // the instrumentation above it. `ForwardingPlayer.isCommandAvailable(int)`
+    // does not consult `getAvailableCommands()` — it asks the wrapped player,
+    // which plays to local output and answers false for the device-volume
+    // commands. Media3's volume provider asks exactly that method and drops the
+    // adjust silently, so none of the overrides below were ever reached.
+    // Derived from `getAvailableCommands()` rather than a hand-written list so
+    // the two answers cannot drift apart, which is the failure being fixed.
+    override fun isCommandAvailable(command: Int): Boolean {
+        val available = getAvailableCommands().contains(command)
+        if (command in DEVICE_VOLUME_ADJUST_COMMANDS) {
+            Log.i(
+                VOLUME_SPIKE_LOG_TAG,
+                "isCommandAvailable command=$command available=$available " +
+                    "nanos=${System.nanoTime()}",
+            )
+        }
+        return available
     }
 
     override fun getDeviceVolume(): Int {
@@ -170,5 +184,13 @@ internal class CoreControlledPlayer(
 
     private companion object {
         const val VOLUME_SPIKE_LOG_TAG = "VolSpike"
+
+        // The two commands Media3's volume provider guards the adjust with;
+        // logging only these keeps the fix's evidence out of a flood, because
+        // `isCommandAvailable` is asked for every command in many places.
+        val DEVICE_VOLUME_ADJUST_COMMANDS = setOf(
+            Player.COMMAND_ADJUST_DEVICE_VOLUME,
+            Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,
+        )
     }
 }
