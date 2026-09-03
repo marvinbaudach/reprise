@@ -320,6 +320,8 @@ mod inflight_tests;
 mod listen_report_tests;
 #[path = "device_sync_lyrics_sidecar_tests.rs"]
 mod lyrics_sidecar_tests;
+#[path = "device_sync_migration_tests.rs"]
+mod migration_tests;
 #[path = "device_sync_picker_tests.rs"]
 mod picker_tests;
 #[path = "device_sync_planned_tests.rs"]

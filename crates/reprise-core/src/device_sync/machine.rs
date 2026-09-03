@@ -394,6 +394,7 @@ impl DeviceSyncMachine {
         };
         self.transcoded_bytes = None;
         self.copied_bytes = None;
+        self.copied_device_path = None;
         match operation.desired.action {
             TransferAction::CopyOriginal => self.start_copy(from),
             action @ (TransferAction::TranscodeOpus160 | TransferAction::TranscodeMp3(_)) => {
