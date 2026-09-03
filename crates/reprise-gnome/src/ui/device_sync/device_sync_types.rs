@@ -44,6 +44,14 @@ pub trait DeviceBackend {
     ) -> BackendFuture<Vec<ManagedDeviceFile>> {
         Box::pin(async { Ok(Vec::new()) })
     }
+    fn managed_target_exists(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+    ) -> BackendFuture<bool> {
+        Box::pin(async { Ok(true) })
+    }
     /// Copies (or overwrites) `source_path` to `relative_target` under
     /// `target_path` on `storage_id` (`None` falls back to the same
     /// "prefer internal" default used before a target was ever repointed),

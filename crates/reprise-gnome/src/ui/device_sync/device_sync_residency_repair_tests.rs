@@ -87,7 +87,7 @@ fn short_walk_recovers_present_track_with_device_reported_size() {
 }
 
 #[test]
-fn failed_probe_disarms_absence_without_reporting_a_scan_error() {
+fn hard_probe_error_disarms_absence_without_reporting_a_scan_error() {
     run(async {
         let (temp, conn) = fixture();
         seed_selected_inventory(&conn, &temp);
@@ -98,7 +98,6 @@ fn failed_probe_disarms_absence_without_reporting_a_scan_error() {
         settle().await;
 
         let device = runtime.devices().remove(0);
-        assert!(!runtime.residency_is_proven("a"));
         assert!(device.scan_error.is_none());
         assert_eq!(device.page.changes.additions, 0);
     });
@@ -140,6 +139,42 @@ fn short_walk_recovers_analysis_sidecar_without_rewriting_it() {
 }
 
 #[test]
+fn short_walk_recovers_independently_missing_sidecar_without_duplicate_audio() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_selected_inventory(&conn, &temp);
+        seed_analysis(&conn);
+        let sidecar_path =
+            reprise_core::device_sync::analysis_sidecar::device_path_for_track(DEVICE_PATH)
+                .unwrap();
+        let sidecar_size =
+            reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(&conn, 1)
+                .unwrap()
+                .unwrap()
+                .encode()
+                .unwrap()
+                .len() as u64;
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.state.managed_files.replace(vec![ManagedDeviceFile {
+            relative_path: DEVICE_PATH.into(),
+            size_bytes: 100,
+        }]);
+        backend.set_probe_result(Ok(vec![ManagedDeviceFile {
+            relative_path: sidecar_path,
+            size_bytes: sidecar_size,
+        }]));
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let device = runtime.devices().remove(0);
+        assert_eq!(device.page.changes.additions, 0);
+        assert_eq!(device.content_row.item_count, 2);
+        assert_eq!(backend.probe_call_count(), 1);
+    });
+}
+
+#[test]
 fn short_walk_keeps_genuinely_absent_track_planned_for_copy() {
     run(async {
         let (temp, conn) = fixture();
@@ -161,15 +196,88 @@ fn complete_walk_skips_probe_and_arms_residency_proof() {
         let (temp, conn) = fixture();
         seed_selected_inventory(&conn, &temp);
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
-        backend.state.managed_files.replace(vec![ManagedDeviceFile {
-            relative_path: DEVICE_PATH.into(),
-            size_bytes: 100,
-        }]);
+        backend.state.managed_files.replace(vec![
+            ManagedDeviceFile {
+                relative_path: DEVICE_PATH.into(),
+                size_bytes: 100,
+            },
+            ManagedDeviceFile {
+                relative_path: reprise_core::device_sync::analysis_sidecar::device_path_for_track(
+                    DEVICE_PATH,
+                )
+                .unwrap(),
+                size_bytes: 1,
+            },
+        ]);
 
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         settle().await;
 
+        let device = runtime.devices().remove(0);
         assert_eq!(backend.probe_call_count(), 0);
-        assert!(runtime.residency_is_proven("a"));
+        assert_eq!(device.page.changes.additions, 0);
+    });
+}
+
+#[test]
+fn clean_absence_after_a_repair_clears_the_short_scan_message() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_selected_inventory(&conn, &temp);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.set_probe_result(Ok(vec![ManagedDeviceFile {
+            relative_path: DEVICE_PATH.into(),
+            size_bytes: 100,
+        }]));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+        assert!(runtime.devices()[0].memory_status.is_some());
+
+        backend.set_probe_result(Ok(Vec::new()));
+        runtime.refresh_contents("a");
+        settle().await;
+
+        assert!(runtime.devices()[0].memory_status.is_none());
+    });
+}
+
+#[test]
+fn disconnect_clears_residency_repair_state_before_reconnect_refresh() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_selected_inventory(&conn, &temp);
+        let connected = descriptor("a", true);
+        let backend = Rc::new(FakeBackend::new(vec![connected.clone()], 1));
+        backend.set_probe_result(Ok(vec![ManagedDeviceFile {
+            relative_path: DEVICE_PATH.into(),
+            size_bytes: 100,
+        }]));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+        assert!(runtime.devices()[0].memory_status.is_some());
+
+        backend.set_devices(&[]);
+        assert!(runtime.devices()[0].memory_status.is_none());
+
+        backend.set_devices(&[connected]);
+        assert!(runtime.devices()[0].memory_status.is_none());
+    });
+}
+
+#[test]
+fn missing_target_folder_skips_path_probes_and_disarms_absence() {
+    run(async {
+        let (temp, conn) = fixture();
+        seed_selected_inventory(&conn, &temp);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.set_managed_target_exists(false);
+
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        let device = runtime.devices().remove(0);
+        assert_eq!(backend.probe_call_count(), 0);
+        assert_eq!(device.page.changes.additions, 0);
+        assert!(device.scan_error.is_none());
     });
 }

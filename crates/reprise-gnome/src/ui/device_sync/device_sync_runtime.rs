@@ -241,6 +241,10 @@ impl DeviceState {
         self.machine.is_some()
     }
 
+    fn managed_files_scanned(&self) -> bool {
+        self.ever_inspected && self.scan_error.is_none() && self.residency_proven
+    }
+
     fn is_busy(&self) -> bool {
         self.is_active() || self.sync_phase == PlannedSyncPhase::Finishing
     }
@@ -261,17 +265,6 @@ pub struct DeviceSyncRuntime {
 }
 
 impl DeviceSyncRuntime {
-    #[cfg(test)]
-    pub(super) fn residency_is_proven(&self, device_id: &str) -> bool {
-        self.device_states
-            .borrow()
-            .iter()
-            .find(|device| device.descriptor.id == device_id)
-            .is_some_and(|device| {
-                device.ever_inspected && device.scan_error.is_none() && device.residency_proven
-            })
-    }
-
     pub fn new(conn: &Rc<Db>, monitor: DeviceMonitor) -> Rc<Self> {
         Self::with_backend(
             conn,

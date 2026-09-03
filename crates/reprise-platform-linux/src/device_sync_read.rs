@@ -4,6 +4,28 @@ use super::*;
 use reprise_core::device_sync::ManagedDeviceFile;
 
 impl DeviceStorage {
+    /// Reports whether the resolved managed target folder currently exists.
+    pub async fn managed_target_exists(
+        &self,
+        storage_id: Option<StorageId>,
+        target_path: &str,
+    ) -> Result<bool, DeviceIoError> {
+        let storage = self.resolve_target_storage(storage_id).await?;
+        let target = Self::managed_child(&storage, target_path, &[])?;
+        match target
+            .query_info_future(
+                gio::FILE_ATTRIBUTE_STANDARD_TYPE,
+                gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                gio::glib::Priority::DEFAULT,
+            )
+            .await
+        {
+            Ok(info) => Ok(info.file_type() == gio::FileType::Directory),
+            Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     /// Reads one managed file without manufacturing an error for absence.
     ///
     /// A phone report is optional input to a synchronization run: malformed
@@ -35,26 +57,36 @@ impl DeviceStorage {
         let storage = self.resolve_target_storage(storage_id).await?;
         let mut recovered = Vec::new();
         for relative_path in relative_paths {
-            let result = safe_relative_components(relative_path)
-                .and_then(|components| Self::managed_child(&storage, target_path, &components));
-            let file = match result {
-                Ok(file) => file,
-                Err(error) => {
-                    tracing::debug!(path = %relative_path, %error, "device sync: could not probe managed file");
-                    continue;
-                }
-            };
+            let components = safe_relative_components(relative_path)?;
+            let file = Self::managed_child(&storage, target_path, &components)?;
             match target_size(&file).await {
                 Ok(Some(size_bytes)) if size_bytes > 0 => recovered.push(ManagedDeviceFile {
                     relative_path: relative_path.clone(),
                     size_bytes,
                 }),
                 Ok(_) => {}
-                Err(error) => {
-                    tracing::debug!(path = %relative_path, %error, "device sync: could not probe managed file");
-                }
+                Err(error) => return Err(error),
             }
         }
         Ok(recovered)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn probe_managed_rejects_paths_outside_the_managed_root() {
+        let (temp, storage) = super::super::tests::fixture();
+
+        let result = super::super::tests::run(storage.probe_managed(
+            None,
+            "/Music/Reprise",
+            &["../outside".into()],
+        ));
+
+        assert!(matches!(result, Err(DeviceIoError::InvalidRelativePath)));
+        assert!(!temp.path().join("Music/outside").exists());
     }
 }

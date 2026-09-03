@@ -82,6 +82,20 @@ impl DeviceBackend for GioDeviceBackend {
         })
     }
 
+    fn managed_target_exists(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+    ) -> BackendFuture<bool> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .managed_target_exists(storage_id, &target_path)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,

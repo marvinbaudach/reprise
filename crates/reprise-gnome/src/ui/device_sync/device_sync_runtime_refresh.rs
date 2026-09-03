@@ -91,7 +91,6 @@ impl DeviceSyncRuntime {
                 return;
             }
             let mut residency_proven = false;
-            let mut clear_short_scan = false;
             let mut short_scan = None;
             if let Ok(inspection) = &mut result {
                 match load_device_files(&runtime.conn, &id) {
@@ -103,11 +102,9 @@ impl DeviceSyncRuntime {
                             .collect::<HashSet<_>>();
                         let mut doubtful_keys = HashSet::new();
                         let mut doubtful = Vec::new();
-                        for file in inventory
-                            .iter()
-                            .filter(|file| !walked.contains(&file.device_path.to_lowercase()))
-                        {
-                            if doubtful_keys.insert(file.device_path.to_lowercase()) {
+                        for file in &inventory {
+                            let audio_key = file.device_path.to_lowercase();
+                            if !walked.contains(&audio_key) && doubtful_keys.insert(audio_key) {
                                 doubtful.push(file.device_path.clone());
                             }
                             if let Some(sidecar) =
@@ -115,7 +112,10 @@ impl DeviceSyncRuntime {
                                     &file.device_path,
                                 )
                             {
-                                if doubtful_keys.insert(sidecar.to_lowercase()) {
+                                let sidecar_key = sidecar.to_lowercase();
+                                if !walked.contains(&sidecar_key)
+                                    && doubtful_keys.insert(sidecar_key)
+                                {
                                     doubtful.push(sidecar);
                                 }
                             }
@@ -123,42 +123,55 @@ impl DeviceSyncRuntime {
                         let doubtful_count = doubtful.len();
                         if doubtful_count == 0 {
                             residency_proven = true;
-                            clear_short_scan = true;
                         } else {
-                            if doubtful_count > inventory.len() {
-                                tracing::warn!(
-                                    doubtful = doubtful_count,
-                                    inventory = inventory.len(),
-                                    "device scan doubtful set is implausibly large"
-                                );
-                            }
                             match backend
-                                .probe_managed_files(
-                                    root_uri,
-                                    target.path,
+                                .managed_target_exists(
+                                    root_uri.clone(),
+                                    target.path.clone(),
                                     target.storage_id,
-                                    doubtful,
                                 )
                                 .await
                             {
-                                Ok(recovered) => {
-                                    let recovered_count = recovered.len();
-                                    inspection.managed_files.extend(recovered);
-                                    residency_proven = true;
-                                    if recovered_count > 0 {
-                                        tracing::warn!(
-                                            doubtful = doubtful_count,
-                                            recovered = recovered_count,
-                                            "device scan came back short"
-                                        );
-                                        short_scan = Some((doubtful_count, recovered_count));
+                                Ok(true) => match backend
+                                    .probe_managed_files(
+                                        root_uri,
+                                        target.path,
+                                        target.storage_id,
+                                        doubtful,
+                                    )
+                                    .await
+                                {
+                                    Ok(recovered) => {
+                                        let recovered_count = recovered.len();
+                                        inspection.managed_files.extend(recovered);
+                                        residency_proven = true;
+                                        if recovered_count > 0 {
+                                            tracing::warn!(
+                                                doubtful = doubtful_count,
+                                                recovered = recovered_count,
+                                                "device scan came back short"
+                                            );
+                                            short_scan =
+                                                Some((doubtful_count, recovered_count));
+                                        }
                                     }
-                                }
+                                    Err(error) => {
+                                        tracing::warn!(
+                                            %error,
+                                            doubtful = doubtful_count,
+                                            "device scan residency could not be proven"
+                                        );
+                                    }
+                                },
+                                Ok(false) => tracing::warn!(
+                                    doubtful = doubtful_count,
+                                    "device scan target folder is unavailable"
+                                ),
                                 Err(error) => {
                                     tracing::warn!(
                                         %error,
                                         doubtful = doubtful_count,
-                                        "device scan residency could not be proven"
+                                        "device scan target folder could not be checked"
                                     );
                                 }
                             }
@@ -210,15 +223,12 @@ impl DeviceSyncRuntime {
                             device.scan_error = None;
                             device.ever_inspected = true;
                             device.residency_proven = residency_proven;
-                            if clear_short_scan {
-                                device.short_scan = None;
-                            } else if short_scan.is_some() {
-                                device.short_scan = short_scan;
-                            }
+                            device.short_scan = short_scan;
                         }
                         Err(error) => {
                             device.scan_error = Some(error);
                             device.residency_proven = false;
+                            device.short_scan = None;
                         }
                     }
                 }

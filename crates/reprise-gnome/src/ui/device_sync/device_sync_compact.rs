@@ -153,7 +153,7 @@ impl DeviceSyncRuntime {
                     device.managed_files.clone(),
                     device.partial_paths.clone(),
                     device.lyrics_files.clone(),
-                    device.ever_inspected && device.scan_error.is_none() && device.residency_proven,
+                    device.managed_files_scanned(),
                     device.last_sync,
                     device.last_verified_size_bytes,
                 )
