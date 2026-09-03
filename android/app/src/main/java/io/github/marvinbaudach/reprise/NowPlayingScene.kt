@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -292,6 +294,7 @@ internal fun NowPlayingScene(
         val progressTransform = nowPlayingProgressTransform(currentIndex, positionPx, widthPx)
         val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
         val titleTop = maxHeight * PLAYED_CENTRE_FRACTION + 156.dp
+        val displayWidth = maxWidth
         val titleWidth = maxWidth * TITLE_PANEL_WIDTH_RATIO
         val reportedCoverBounds = with(density) {
             playedCoverRect(
@@ -318,6 +321,7 @@ internal fun NowPlayingScene(
                     )
                     SceneTitle(
                         track = panel.track,
+                        displayWidth = displayWidth,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .offset(y = titleTop)
@@ -690,41 +694,52 @@ private fun PlayedHeader(
 @Composable
 private fun SceneTitle(
     track: LibraryTrack,
+    displayWidth: Dp,
     modifier: Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // The title takes the height it needs rather than always reserving two
-        // lines: the reservation left a visible hole under every one-line title,
-        // and it was buying less than it looked. Everything below this block —
-        // seek bar, transport — is placed against the screen height, so a title
-        // growing to a second line moves the artist line and nothing else.
-        Text(
-            text = track.title,
-            modifier = Modifier.testTag("now-playing-title"),
-            style = TextStyle(
-                fontSize = 24.sp,
-                lineHeight = 29.sp,
-                fontWeight = FontWeight.SemiBold,
-            ),
-            color = NowPlayingOnBackdrop,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(TITLE_TO_ARTIST_GAP_DP.dp))
-        Text(
-            text = track.artist.ifBlank { "Unknown artist" },
-            style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Light),
-            color = NowPlayingOnBackdrop.copy(alpha = 0.62f),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    // The block this sits in is deliberately wider than the display — that
+    // surplus is what lets the title travel faster than the cover during a
+    // swipe. The text must not inherit it: laid out against the panel width a
+    // long title still fits, so its ellipsis never fires and the glyphs run off
+    // both edges of the screen. The block keeps the parallax, this column keeps
+    // the display's own width.
+    Box(modifier = modifier, contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier
+                .width(displayWidth)
+                .padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // The title takes the height it needs rather than always reserving
+            // two lines: the reservation left a visible hole under every
+            // one-line title, and it was buying less than it looked. Everything
+            // below this block — seek bar, transport — is placed against the
+            // screen height, so a title growing to a second line moves the
+            // artist line and nothing else.
+            Text(
+                text = track.title,
+                modifier = Modifier.testTag("now-playing-title"),
+                style = TextStyle(
+                    fontSize = 24.sp,
+                    lineHeight = 29.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = NowPlayingOnBackdrop,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(TITLE_TO_ARTIST_GAP_DP.dp))
+            Text(
+                text = track.artist.ifBlank { "Unknown artist" },
+                modifier = Modifier.testTag("now-playing-artist"),
+                style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Light),
+                color = NowPlayingOnBackdrop.copy(alpha = 0.62f),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
