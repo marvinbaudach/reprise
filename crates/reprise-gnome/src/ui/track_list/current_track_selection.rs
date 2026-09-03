@@ -200,10 +200,8 @@ impl PlayerController {
 
     pub(in crate::ui) fn notify_current_track(&self, change: CurrentTrackChange) {
         let current = self
-            .current_up_next
-            .get()
-            .and_then(reprise_core::up_next::QueueItem::track_id)
-            .or_else(|| self.queue.borrow().current());
+            .stopped_play_target_item()
+            .and_then(reprise_core::up_next::QueueItem::track_id);
         if let Some(track_id) = current {
             self.notify_current_track_changed(track_id, None, change);
         }
@@ -305,7 +303,7 @@ impl TrackList {
         self.shared.playing_track_id.set(Some(track_id));
         if change == CurrentTrackChange::SessionRestore {
             // Intentionally set before lookup: the class is inert without a matching row.
-            // START-3: a restored track is loaded but not running, so its row
+            // START-4: a startup item is loaded but not running, so its row
             // must look exactly like a mid-session pause — same marker, same
             // frozen equaliser. `restore_session_queue` fans out a
             // `Stopped` before this runs (session_player.rs), which is why

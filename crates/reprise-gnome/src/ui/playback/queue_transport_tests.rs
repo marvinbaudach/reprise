@@ -80,12 +80,12 @@ fn stopped_toggle_starts_current_queue_track_without_autoplay() {
     );
 }
 
-// START-3: a normal start already selected and centered the loaded track, so
+// START-4: a normal start already selected and centered the loaded track, so
 // the Play that starts it must not scroll the list a second time. Only that
 // first Play is exempt — once anything has been presented, the flag is gone
 // and NAV-10b's explicit-transport reveal applies again.
 #[test]
-fn start_3_first_play_after_a_restart_does_not_reveal_the_loaded_track_again() {
+fn start_4_first_play_after_a_restart_does_not_reveal_the_loaded_track_again() {
     let restored = Some(reprise_core::up_next::QueueItem::Track(42));
 
     assert_eq!(

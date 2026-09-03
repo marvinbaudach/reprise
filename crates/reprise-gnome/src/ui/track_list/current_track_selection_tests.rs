@@ -411,11 +411,11 @@ fn queue_does_not_highlight_a_pending_duplicate_of_the_current_track() {
     );
 }
 
-/// START-3: the restored track is loaded, not running. It gets the marker,
+/// START-4: the startup item is loaded, not running. It gets the marker,
 /// but the viewport belongs to the startup centering — never to this
 /// callback, which fires before the target view even exists.
 #[test]
-fn start_3_session_restore_marks_without_moving_the_viewport() {
+fn start_4_session_restore_marks_without_moving_the_viewport() {
     assert_eq!(
         reveal_policy(CurrentTrackChange::SessionRestore, false),
         TrackRevealPolicy::MarkerOnly

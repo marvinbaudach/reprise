@@ -133,7 +133,7 @@ result.
   click, "Music" is highlighted.
 - **NAV-2a** [planned] [core] — The stack does not survive the session
   (session restore retains the visible destination, but not its history —
-  see START-3 and BROWSE-12);
+  see START-4 and BROWSE-12);
   Back with no stack entries is disabled, never a no-op.
 - **NAV-3** [planned] [e2e] — Clickable metadata is the same everywhere:
   in every track list (Library, Playlist, Queue, Album detail, Top
@@ -151,7 +151,7 @@ result.
   changes also preserve the scroll + selection of the mode being left.
   The scroll anchor consists of track/album ID plus offset, never a raw
   pixel value; re-sort and insert therefore keep content at its
-  position. START-3 restores, across restarts, the last visible browser
+  position. START-4 restores, across restarts, the last visible browser
   location including scroll position; no history stack is reconstructed.
 - **NAV-6** [replaced by NAV-6a] [e2e] — Search (Ctrl+F) filters the current
   view live; Esc clears and closes. Search never navigates on its own.
@@ -1572,16 +1572,23 @@ result.
   show the last known holdings normally (Root-Guard hasn't marked
   anything), only the StatusPage/card reports the state. No blank
   screen.
-- **START-3** [active] [gtk] — Normal start restores the last valid browser
+- **START-3** [replaced by START-4] — Normal start previously presented the
+  last loaded track or episode paused and made the first Play start that exact
+  item.
+- **START-4** [active] [gtk] — Normal start restores the last valid browser
   destination, including its local refinements, but never reconstructs the
-  Back/Forward stack and never autoplays. The last loaded track or episode is
-  presented paused; the first Play starts that exact item through a fresh
-  playable source, applying an episode's existing resume position, and leaves
-  the viewport exactly as the start placed it (NAV-10b). If its stable ID belongs to the
-  restored destination, that row becomes the sole selection and is centered
-  without taking keyboard focus; grouped podcast and YouTube sources expand
-  the required group and preview window first. An unavailable item leaves the
-  destination's own selection and viewport untouched.
+  Back/Forward stack and never autoplays. A pending Play-Next item takes
+  precedence and is restored exactly as START-3 specified. Otherwise a live
+  library track chosen at random is presented stopped as the startup greeting.
+  The greeting carries the same marker, sole selection, and centring treatment
+  as a restored track: if it belongs to the restored destination its row is
+  selected and centered without taking keyboard focus; if it does not, the
+  destination's own selection and viewport stay untouched (NAV-10b). The first
+  Play consumes the greeting into a fresh library-random playback snapshot;
+  Previous or Next discards it and follows the restored queue. A restored
+  episode still applies its saved resume position and expands its required
+  podcast or YouTube group and preview window first. Merely launching and
+  closing the app never replaces the persisted queue.
 
 ## J. Queue view
 
@@ -3550,8 +3557,8 @@ property is set and yet nothing happens.
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.
 - **NAV-10b** [active] [gtk] — **Marking and scrolling are separate.**
-  Every visible instance of the loaded track carries the same playback
-  marker, from one implementation (`ui/playing_marker.rs`) serving every
+  Every visible instance of the item presented by the player bar carries the
+  same playback marker, from one implementation (`ui/playing_marker.rs`) serving every
   surface that lists playable items: the track table, the podcast groups,
   the YouTube channel detail, and the radio table. Its order is the same in
   every surface: artwork, marker, then the title in the playback-accent
@@ -3561,10 +3568,15 @@ property is set and yet nothing happens.
   the list marker. Double-click/Enter on an already-visible row does not
   change the viewport. Play from Stopped as well as explicit Previous/Next
   center the new track without stealing focus or selection — except for the
-  one Play that starts a restored session, whose track START-3 already
-  selected and centered at startup: that row is placed, so starting it only
-  starts the audio. Centring it again would be a second visible scroll on a
+  one Play that starts a restored session, whose pending Play-Next item or
+  startup greeting START-4 already selected and centered: that row is placed,
+  so starting it only starts the audio. Centring it again would be a second visible scroll on a
   viewport that is already the target.
+  At startup the loaded track therefore means the greeting, never the hidden
+  current item of the untouched persisted queue. Previous or Next discarding
+  the greeting moves the marker to the concrete restored-queue target. A
+  greeting outside the restored destination leaves that destination's
+  selection and viewport untouched.
   In a list with section headers, "centered" means centered in the complete
   content geometry including every header above the row, never in an imagined
   headerless row sequence. A reveal in a stationary list targets the exact
@@ -6041,7 +6053,7 @@ listening statistics.
   revealed — group expanded, row centered — on entering the view and when the
   loaded item changed outside the view, the latter only if no scroll movement
   has occurred for 1.5 seconds. Activating a row never reveals, because the row
-  was visible. A reveal changes neither focus nor selection, except START-3's
+  was visible. A reveal changes neither focus nor selection, except START-4's
   one cold-start restoration, which makes the restored episode the sole
   selection without taking focus. A collapsed group's ten-episode preview
   window opens when the loaded episode sits past it; an item hidden by the

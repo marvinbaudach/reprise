@@ -9,6 +9,20 @@ use reprise_core::up_next::{QueueItem, UpNextQueue};
 
 use crate::ui::player_controller::{NowPlaying, PlayerController};
 
+pub(in crate::ui) enum StoppedPlayTarget {
+    Greeting(Vec<i64>),
+    Item(QueueItem),
+}
+
+impl StoppedPlayTarget {
+    pub(in crate::ui) fn item(&self) -> Option<QueueItem> {
+        match self {
+            Self::Greeting(ids) => ids.first().copied().map(QueueItem::Track),
+            Self::Item(item) => Some(*item),
+        }
+    }
+}
+
 fn validated_up_next(
     mut up_next: UpNextQueue,
     current: Option<QueueItem>,
@@ -33,7 +47,6 @@ fn validated_up_next(
 }
 
 impl PlayerController {
-    #[allow(dead_code)] // Wired into the close handler in Task 5.
     pub(in crate::ui) fn session_queue_snapshot(&self) -> QueueSnapshot {
         self.queue.borrow().snapshot()
     }
@@ -42,7 +55,6 @@ impl PlayerController {
         (self.up_next.borrow().clone(), self.current_up_next.get())
     }
 
-    #[allow(dead_code)] // Wired into startup restoration in Task 5.
     pub(in crate::ui) fn restore_session_queue(
         &self,
         snapshot: QueueSnapshot,
@@ -90,23 +102,54 @@ impl PlayerController {
         // restorable queue never reaches this line, so a stale origin can't
         // outlive its context.
         *self.play_origin.borrow_mut() = play_origin;
+        *self.pending_random_start.borrow_mut() = None;
+        if current_up_next.is_none() {
+            let random_ids = (self.random_start_chooser.borrow_mut())(&self.conn);
+            match random_ids {
+                Ok(ids) if ids.is_empty() => {
+                    self.library_has_tracks.set(false);
+                }
+                Ok(ids) => {
+                    self.library_has_tracks.set(true);
+                    *self.pending_random_start.borrow_mut() = Some(ids);
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "could not build random startup playback snapshot");
+                }
+            }
+        }
         self.notify_queue_changed();
 
-        let queue_has_tracks = !self.queue.borrow().is_empty()
-            || !self.up_next.borrow().is_empty()
-            || current_up_next.is_some();
+        let greeting_track = self.pending_random_start_track_id().map(QueueItem::Track);
+        let queue_has_tracks = self.has_playable_item();
         let shuffled = self.queue.borrow().is_shuffled();
         let repeat = self.queue.borrow().repeat();
-        let current =
-            current_up_next.or_else(|| self.queue.borrow().current().map(QueueItem::Track));
-        // START-3 centers this item once the startup routing has built the
-        // view; the first Play must not center it a second time.
+        let current = current_up_next
+            .or(greeting_track)
+            .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+        // START-4 places a greeting through the track list exactly like any
+        // restored item. Keep that placement reflected here even though
+        // greeting Play bypasses this one-shot and reaches `play_track_id` as
+        // `PlaybackStarted`, which NAV-10b already maps to `MarkerOnly`.
         self.restored_placement_intact.set(current.is_some());
         self.sync_transport_enabled(queue_has_tracks);
         self.sync_shuffle_indicator(shuffled);
         self.sync_repeat_indicator(repeat);
         self.sync_state(PlaybackState::Stopped);
 
+        self.sync_stopped_item(current);
+        tracing::info!(
+            queue_len = self.queue.borrow().len(),
+            up_next_len = self.up_next.borrow().len(),
+            ?current_up_next,
+            ?current,
+            greeting_track_id = ?self.pending_random_start_track_id(),
+            playback = "Stopped",
+            "session queue restored"
+        );
+    }
+
+    fn sync_stopped_item(&self, current: Option<QueueItem>) {
         let summary = current.and_then(|item| {
             let id = item.track_id()?;
             let conn = &self.conn;
@@ -152,14 +195,28 @@ impl PlayerController {
             }
         }
         self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
-        tracing::info!(
-            queue_len = self.queue.borrow().len(),
-            up_next_len = self.up_next.borrow().len(),
-            ?current_up_next,
-            ?current,
-            playback = "Stopped",
-            "session queue restored"
+    }
+
+    pub(in crate::ui) fn dismiss_random_start_greeting(&self) -> bool {
+        let dismissed = self.pending_random_start.borrow_mut().take().is_some();
+        if !dismissed {
+            return false;
+        }
+        let current = self
+            .current_up_next
+            .get()
+            .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+        self.restored_placement_intact.set(current.is_some());
+        self.sync_stopped_item(current);
+        self.sync_transport_enabled(self.has_playable_item());
+        // Drop the greeting marker before restoring the queue's real current
+        // item. A stopped notification clears the marker when there is no
+        // current item to replace it with.
+        self.notify_playback_state_changed(PlaybackState::Stopped);
+        self.notify_current_track(
+            crate::ui::current_track_selection::CurrentTrackChange::SessionRestore,
         );
+        dismissed
     }
 
     pub(in crate::ui) fn session_playback_status(&self) -> MprisPlaybackStatus {
@@ -167,6 +224,61 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status
+    }
+
+    pub(in crate::ui) fn pending_random_start_track_id(&self) -> Option<i64> {
+        self.pending_random_start
+            .borrow()
+            .as_ref()
+            .and_then(|ids| ids.first().copied())
+    }
+
+    /// The item the stopped bar, marker and seek-start paths present. This
+    /// non-consuming projection keeps those surfaces on the same decision as
+    /// [`stopped_play_target`] without cloning a greeting's complete queue.
+    pub(in crate::ui) fn stopped_play_target_item(&self) -> Option<QueueItem> {
+        self.pending_random_start_track_id()
+            .map(QueueItem::Track)
+            .or_else(|| self.current_up_next.get())
+            .or_else(|| self.queue.borrow().current().map(QueueItem::Track))
+    }
+
+    pub(in crate::ui) fn stopped_play_target(&self) -> Option<StoppedPlayTarget> {
+        let greeting = self.pending_random_start.borrow().clone();
+        greeting
+            .map(StoppedPlayTarget::Greeting)
+            .or_else(|| self.stopped_play_target_item().map(StoppedPlayTarget::Item))
+    }
+
+    pub(in crate::ui) fn start_stopped_play_target(
+        self: &std::rc::Rc<Self>,
+        target: StoppedPlayTarget,
+        change: crate::ui::current_track_selection::CurrentTrackChange,
+    ) {
+        match target {
+            StoppedPlayTarget::Greeting(ids) => {
+                self.play_from_view(ids, 0, super::play_origin::PlayOrigin::library());
+            }
+            StoppedPlayTarget::Item(item) => self.start_current_item(item, change),
+        }
+    }
+
+    pub(in crate::ui) fn has_playable_item(&self) -> bool {
+        self.pending_random_start
+            .borrow()
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
+            || self.current_up_next.get().is_some()
+            || !self.queue.borrow().is_empty()
+            || !self.up_next.borrow().is_empty()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn set_random_start_chooser_for_test(
+        &self,
+        chooser: impl FnMut(&reprise_core::db::Db) -> Result<Vec<i64>, rusqlite::Error> + 'static,
+    ) {
+        *self.random_start_chooser.borrow_mut() = Box::new(chooser);
     }
 }
 

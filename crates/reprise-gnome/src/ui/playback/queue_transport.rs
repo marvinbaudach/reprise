@@ -35,7 +35,7 @@ pub(in crate::ui) use queue_context_window::QueueContextWindow;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
     /// Carries the reveal the loaded track earns when it starts — the one
-    /// decision that separates a cold start from every later Play (START-3).
+    /// decision that separates a cold start from every later Play (START-4).
     StartCurrent(CurrentTrackChange),
     StartPending,
     StartRandom,
@@ -86,12 +86,12 @@ fn remove_direct_episode_now_playing(
     }
 }
 
-/// `restored_placement_intact` says the loaded track is still exactly where a
-/// normal start put it: selected and centered, never played (START-3). Its
-/// first Play only starts the audio, because the viewport is already the one
-/// the reveal would scroll to — and a glide onto the value the list already
-/// holds is the second visible centering this bug report is about. Every other
-/// start from Stopped keeps NAV-10b's explicit-transport reveal.
+/// `restored_placement_intact` says the loaded track is still exactly where
+/// startup routing put it: selected and centered, never played (START-4).
+/// START-4 places a greeting the same way, but greeting Play bypasses this
+/// decision and reaches `play_track_id` as `PlaybackStarted`, whose NAV-10b
+/// reveal policy is already `MarkerOnly`. Other starts from Stopped without
+/// this one-shot keep NAV-10b's explicit-transport reveal.
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,
@@ -317,10 +317,27 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status;
-        let current = self
-            .current_up_next
-            .get()
-            .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+        let stopped_target = (status == MprisPlaybackStatus::Stopped)
+            .then(|| self.stopped_play_target())
+            .flatten();
+        let stopped_target = match stopped_target {
+            Some(target @ super::session_player::StoppedPlayTarget::Greeting(_)) => {
+                self.start_stopped_play_target(
+                    target,
+                    crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                );
+                return;
+            }
+            other => other,
+        };
+        let current = stopped_target
+            .as_ref()
+            .and_then(super::session_player::StoppedPlayTarget::item)
+            .or_else(|| {
+                self.current_up_next
+                    .get()
+                    .or_else(|| self.queue.borrow().current().map(QueueItem::Track))
+            });
         let has_pending = !self.up_next.borrow().is_empty();
         match toggle_action(
             status,
@@ -329,7 +346,9 @@ impl PlayerController {
             self.restored_placement_intact.get(),
         ) {
             ToggleAction::StartCurrent(change) => {
-                if let Some(item) = current {
+                if let Some(target) = stopped_target {
+                    self.start_stopped_play_target(target, change);
+                } else if let Some(item) = current {
                     self.start_current_item(item, change);
                 }
             }
@@ -381,10 +400,7 @@ impl PlayerController {
             }
         };
         self.library_has_tracks.set(available);
-        let queue_has_tracks = self.current_up_next.get().is_some()
-            || !self.queue.borrow().is_empty()
-            || !self.up_next.borrow().is_empty();
-        self.sync_transport_enabled(queue_has_tracks);
+        self.sync_transport_enabled(self.has_playable_item());
     }
 
     /// PLAY-14 Previous follows playback history in every mode. Episode
@@ -398,6 +414,7 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(self: &Rc<Self>) {
+        self.dismiss_random_start_greeting();
         if self.forward_from_history() {
             return;
         }
@@ -424,6 +441,7 @@ impl PlayerController {
         start_index: usize,
         origin: super::play_origin::PlayOrigin,
     ) {
+        *self.pending_random_start.borrow_mut() = None;
         self.queue.borrow_mut().set_tracks(ids, start_index);
         self.current_up_next.set(None);
         self.deferred_queue_purge_id.set(None);
