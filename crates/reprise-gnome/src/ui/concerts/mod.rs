@@ -17,8 +17,12 @@ mod concerts_location_columns;
 mod concerts_model;
 pub(in crate::ui) mod concerts_presentation;
 mod concerts_search;
+mod concerts_sorting;
 mod concerts_status_cells;
 mod concerts_view;
+mod concerts_view_refresh;
+mod concerts_view_render;
+mod concerts_view_state;
 mod concerts_worker;
 pub(super) mod css;
 
