@@ -17,11 +17,7 @@ const filmFiles = [
   'showreel-720.webm',
   'showreel-poster.jpg',
   'showreel-poster.webp',
-  'showreel.vtt',
 ];
-
-/** The cut, to the frame. Every caption cue has to land inside it. */
-const FILM_SECONDS = 58.2;
 
 test('CH.03 closes on the film, in place of the mosaic it replaced', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
@@ -69,6 +65,19 @@ test('the film runs once, with sound, and offers itself again', async () => {
   assert.match(source, /currentTime = 0/);
 });
 
+test('nothing is left of the caption track', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'ShowreelFilm.tsx'),
+    'utf8',
+  );
+
+  // The CC toggle went unused, so the track went with it. A <track> that comes
+  // back without its `showreel.vtt` would be a 404 on every play.
+  assert.doesNotMatch(source, /<track/);
+  assert.doesNotMatch(source, /textTracks/);
+  assert.doesNotMatch(source, /\.vtt/);
+});
+
 test('the encodes are served exactly when the film is on the page', async () => {
   const publicFilmDir = join(showroomRoot, 'public', 'media', 'showreel');
 
@@ -89,7 +98,6 @@ test('every file the film section names is present in the repository', async () 
     'showreel-720.mp4',
     'showreel-1080.mp4',
     'showreel-poster.webp',
-    'showreel.vtt',
   ]) {
     const info = await stat(join(filmDir, name));
     assert.ok(info.size > 0, `${name} is empty`);
@@ -108,27 +116,4 @@ test('the ladder stays a ladder, and no step of it runs away', async () => {
   assert.ok((await weigh('showreel-720.mp4')) < (await weigh('showreel-1080.mp4')));
   assert.ok((await weigh('showreel-720.webm')) < (await weigh('showreel-1080.webm')));
   assert.ok((await weigh('showreel-poster.webp')) < 200_000);
-});
-
-test('the caption cues stay inside the cut and never run backwards', async () => {
-  const vtt = await readFile(join(filmDir, 'showreel.vtt'), 'utf8');
-  assert.match(vtt, /^WEBVTT/);
-
-  const seconds = (stamp) => {
-    const [h, m, s] = stamp.split(':');
-    return Number(h) * 3600 + Number(m) * 60 + Number(s);
-  };
-  const cues = [...vtt.matchAll(/^(\d\d:\d\d:\d\d\.\d\d\d) --> (\d\d:\d\d:\d\d\.\d\d\d)$/gm)].map(
-    ([, from, to]) => [seconds(from), seconds(to)],
-  );
-
-  assert.ok(cues.length >= 10, `expected the shot list, found ${cues.length} cues`);
-  let previousEnd = 0;
-  for (const [from, to] of cues) {
-    assert.ok(from < to, `a cue at ${from}s does not move forward`);
-    assert.ok(from >= previousEnd, `a cue at ${from}s starts before the one before it ended`);
-    assert.ok(to <= FILM_SECONDS, `a cue ends at ${to}s, past the ${FILM_SECONDS}s cut`);
-    previousEnd = to;
-  }
-  assert.equal(previousEnd, FILM_SECONDS, 'the last cue has to reach the end of the cut');
 });

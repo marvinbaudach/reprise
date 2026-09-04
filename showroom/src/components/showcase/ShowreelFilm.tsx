@@ -26,7 +26,6 @@ export function ShowreelFilm() {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [ended, setEnded] = useState(false);
-  const [captionsShowing, setCaptionsShowing] = useState(false);
 
   /**
    * Only the autoplay policy is worth a second attempt, and only once: a start
@@ -65,16 +64,6 @@ export function ShowreelFilm() {
     if (!next && video.paused) start(video);
   }, [start]);
 
-  const toggleCaptions = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const track = video.textTracks[0];
-    if (!track) return;
-    const next = track.mode !== 'showing';
-    track.mode = next ? 'showing' : 'hidden';
-    setCaptionsShowing(next);
-  }, []);
-
   // Having run out is a state of its own: the button stops offering a Play the
   // reader has already had and offers the film again instead.
   const playIcon = playing ? '❙❙' : ended ? '↻' : '▶';
@@ -90,6 +79,9 @@ export function ShowreelFilm() {
       </header>
 
       <figure className="film" data-showcase="showreel-film" aria-labelledby="film-heading">
+        {/* biome-ignore lint/a11y/useMediaCaption: The film has no dialogue — it is screen
+            recordings over music, and the figcaption below is its text equivalent. The WebVTT
+            track and its CC toggle went unused and were removed rather than left to rot. */}
         <video
           ref={videoRef}
           className="film__video"
@@ -110,7 +102,6 @@ export function ShowreelFilm() {
           <source src={`${FILM_BASE}showreel-1080.webm`} type="video/webm" />
           <source src={`${FILM_BASE}showreel-720.mp4`} type="video/mp4" media={SMALL_VIEWPORT} />
           <source src={`${FILM_BASE}showreel-1080.mp4`} type="video/mp4" />
-          <track kind="captions" srcLang="en" label="English" src={`${FILM_BASE}showreel.vtt`} />
         </video>
 
         <div className="film__controls">
@@ -121,10 +112,6 @@ export function ShowreelFilm() {
           <button type="button" className="film__control" onClick={toggleSound}>
             <span aria-hidden="true">{muted ? '🔊' : '🔇'}</span>
             {muted ? 'Sound on' : 'Sound off'}
-          </button>
-          <button type="button" className="film__control" onClick={toggleCaptions}>
-            <span aria-hidden="true">CC</span>
-            {captionsShowing ? 'Captions off' : 'Captions on'}
           </button>
         </div>
 
