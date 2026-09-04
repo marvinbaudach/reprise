@@ -2,7 +2,7 @@
 slug: the-sync-stops-recopying-what-is-there
 worktree: /home/marvin/Projects/reprise-the-sync-stops-recopying-what-is-there
 branch: feature/the-sync-stops-recopying-what-is-there
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-03
 ---
