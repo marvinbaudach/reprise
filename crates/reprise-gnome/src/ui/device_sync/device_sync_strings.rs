@@ -423,6 +423,22 @@ const NEXT_CONNECTION_PREVIEW: &str =
     N_!("Next connection: {copies} · {replacements} · {playlists} · {size} to transfer");
 const OFFLINE_REMOVAL_NOTE: &str =
     N_!("Files to remove are settled when the device is next inspected.");
+const SHORT_SCAN_ONE: &str =
+    N_!("Scan was incomplete — {doubtful} file re-checked; {recovered} recovered");
+const SHORT_SCAN_MANY: &str =
+    N_!("Scan was incomplete — {doubtful} files re-checked; {recovered} recovered");
+
+pub fn short_scan(doubtful: usize, recovered: usize) -> String {
+    plural(
+        SHORT_SCAN_ONE,
+        SHORT_SCAN_MANY,
+        doubtful,
+        &[
+            ("doubtful", &doubtful.to_string()),
+            ("recovered", &recovered.to_string()),
+        ],
+    )
+}
 
 pub fn legacy_media_notice(path: &str) -> String {
     formatted(LEGACY_MEDIA_NOTICE, &[("path", path)])

@@ -5,9 +5,9 @@ use std::path::Path;
 #[path = "db_handle.rs"]
 mod handle;
 pub use crate::db_spectrogram::{
-    get_track_spectrogram, get_waveform_peaks, pending_render_data_tracks, set_track_render_data,
-    set_track_spectrogram, set_waveform_peaks, track_source_fingerprint, PendingRenderDataTrack,
-    SpectrogramStoreOutcome,
+    complete_render_data_track_ids, get_track_spectrogram, get_waveform_peaks,
+    pending_render_data_tracks, set_track_render_data, set_track_spectrogram, set_waveform_peaks,
+    track_source_fingerprint, PendingRenderDataTrack, SpectrogramStoreOutcome,
 };
 pub use handle::Db;
 

@@ -69,6 +69,8 @@ impl DeviceSyncRuntime {
                 state.scan_generation = state.scan_generation.saturating_add(1);
                 state.scan_error = None;
                 state.ever_inspected = false;
+                state.residency_proven = false;
+                state.short_scan = None;
                 state.storage = DeviceStorageSnapshot::default();
                 state.managed_files.clear();
                 state.verified_managed_track_count = None;
