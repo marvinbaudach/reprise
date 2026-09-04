@@ -157,6 +157,10 @@ impl PlayerController {
             ExternalMedia::Radio { .. } => unreachable!("restored episode contains radio media"),
         };
 
+        // Queue restoration runs first and may have armed a random track
+        // greeting. The durable episode is the restored session item, so the
+        // greeting must not resurface after episode transport changes.
+        *self.pending_random_start.borrow_mut() = None;
         self.sync_lyrics_track(None);
         self.current_track.set(None);
         self.max_position_ms.set(0);
@@ -351,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn start_3_first_play_reopens_only_a_restored_episode() {
+    fn start_4_first_play_reopens_only_a_restored_episode() {
         let saved = SessionEpisode {
             episode_id: 7,
             origin: SessionEpisodeOrigin::Direct,

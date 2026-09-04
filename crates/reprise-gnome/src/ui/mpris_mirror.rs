@@ -458,32 +458,25 @@ impl PlayerController {
     /// `PlayPause`, it must not stop an already-playing track. Reads the
     /// current status from the MPRIS mirror (kept current by `update_mpris_
     /// mirror`) rather than adding a new `Player` query method purely for
-    /// this: paused resumes via `toggle_pause`; stopped starts the queue's
-    /// current track via `play_track_id`, if there is one; already playing
+    /// this: paused resumes via `toggle_pause`; stopped starts the shared
+    /// stopped target, including an armed startup greeting; already playing
     /// is a no-op.
     fn mpris_play(self: &Rc<Self>) {
         match self.mpris_status() {
             MprisPlaybackStatus::Playing => {}
             MprisPlaybackStatus::Paused => self.toggle_pause(),
-            MprisPlaybackStatus::Stopped => {
-                let current = self
-                    .current_up_next
-                    .get()
-                    .and_then(reprise_core::up_next::QueueItem::track_id)
-                    .or_else(|| self.queue.borrow().current());
-                match current {
-                    Some(id) => self.play_track_id_with_change(
-                        id,
-                        crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
-                    ),
-                    None if !self.up_next.borrow().is_empty() => {
-                        self.advance_playback(crate::ui::up_next_transport::AdvanceReason::Manual);
-                    }
-                    None => {
-                        tracing::debug!("MPRIS Play: queue is empty; nothing to play");
-                    }
+            MprisPlaybackStatus::Stopped => match self.stopped_play_target() {
+                Some(target) => self.start_stopped_play_target(
+                    target,
+                    crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                ),
+                None if !self.up_next.borrow().is_empty() => {
+                    self.advance_playback(crate::ui::up_next_transport::AdvanceReason::Manual);
                 }
-            }
+                None => {
+                    tracing::debug!("MPRIS Play: queue is empty; nothing to play");
+                }
+            },
         }
     }
 

@@ -188,10 +188,10 @@ use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_core::waveform::RenderDataBackend;
 
-use super::player_controller_types::ViewRefillIds;
 pub(in crate::ui) use super::player_controller_types::{
     PlayerControllerBackends, StartPlayback, VisibleView,
 };
+use super::player_controller_types::{RandomStartChooser, ViewRefillIds};
 
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
@@ -226,6 +226,12 @@ pub struct PlayerController {
     /// that sibling module can reach it) to resolve/mark tracks on a
     /// playback failure.
     pub(in crate::ui) conn: Rc<Db>,
+    /// Injectable ordering boundary for the random track shown at startup.
+    pub(in crate::ui) random_start_chooser: RefCell<Box<RandomStartChooser>>,
+    /// Full library snapshot behind the stopped startup greeting. It is kept
+    /// separate from `queue` until the user explicitly presses Play, so a
+    /// launch-and-close cannot replace the persisted playback context.
+    pub(in crate::ui) pending_random_start: RefCell<Option<Vec<i64>>>,
     /// `(track_id, duration_ms)` of the track currently loaded, set by
     /// `play_track_id` and cleared once play tracking has been evaluated for
     /// it (see `evaluate_play_tracking`). `None` when no track is loaded.
@@ -248,12 +254,11 @@ pub struct PlayerController {
     /// Cached library availability used to keep idle Play reachable without
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
-    /// START-3: the restored track is still sitting where the start put it —
-    /// selected and centered — and has not been played yet. The first Play
-    /// therefore only has to start the audio; centering it again is the second
-    /// visible scroll START-3 exists to avoid. Cleared by the first
-    /// `present_track`, which is the moment any placement stops being the
-    /// startup one.
+    /// START-4 one-shot for an item already selected and centered by startup
+    /// routing, including a startup greeting. Greeting Play never consults
+    /// this flag: it reaches `play_track_id` as `PlaybackStarted`, whose
+    /// NAV-10b reveal policy is already `MarkerOnly`. Also cleared by the
+    /// first `present_track`.
     pub(in crate::ui) restored_placement_intact: Cell<bool>,
     /// A waveform position selected before playback starts, bound to the
     /// exact queue item that may consume it on the next start attempt.
@@ -455,6 +460,10 @@ impl PlayerController {
             bar: PlayerBar::new(),
             compact_player: CompactPlayer::new(),
             conn,
+            random_start_chooser: RefCell::new(Box::new(
+                reprise_core::queries::query_random_live_track_ids,
+            )),
+            pending_random_start: RefCell::new(None),
             current_track: Cell::new(None),
             max_position_ms: Cell::new(0),
             listenbrainz,
@@ -617,6 +626,7 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        *self.pending_random_start.borrow_mut() = None;
         let start_position_ms = self.take_pending_start_mark(Some(QueueItem::Track(id)));
         self.clear_pending_local_seek();
         self.evaluate_play_tracking();
@@ -624,7 +634,7 @@ impl PlayerController {
         // Ordinary queue playback leaves preview mode (INST-4b).
         self.leave_external_for_queue();
         // Whatever the start placed, this presentation supersedes it: from
-        // here on the ordinary NAV-10b reveal policy applies again (START-3).
+        // here on the ordinary NAV-10b reveal policy applies again (START-4).
         self.restored_placement_intact.set(false);
 
         let summary = {

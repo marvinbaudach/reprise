@@ -19,10 +19,7 @@ impl PlayerController {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status;
         if status == MprisPlaybackStatus::Stopped {
-            let current = self
-                .current_up_next
-                .get()
-                .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+            let current = self.stopped_play_target_item();
             if let Some(item) = current {
                 self.pending_start_mark.set(Some((item, position_ms)));
                 let duration_ms = self

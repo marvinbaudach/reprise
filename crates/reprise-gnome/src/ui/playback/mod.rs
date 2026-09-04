@@ -30,6 +30,8 @@ mod seek_start;
 #[cfg(test)]
 mod seek_start_tests;
 pub(crate) mod session_player;
+#[cfg(test)]
+mod session_player_tests;
 pub(in crate::ui) mod source_item_identity;
 #[cfg(test)]
 pub(in crate::ui) mod test_support;
