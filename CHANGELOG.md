@@ -4,6 +4,50 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.139] - 2026-09-04
+
+### Playback
+
+- Starting Reprise greets you with a random track from the library in the player
+  bar, stopped — instead of the position you left behind. Nothing autoplays, and
+  the restored queue stays exactly as it was until you press Play.
+
+### Discovery
+
+- Concerts refreshes again. A provider that fails no longer aborts the artists a
+  working provider could have resolved, and the list is checked hourly rather
+  than once a day.
+- Bandsintown now needs an app id of your own. The identifier the app used to
+  ship is rejected by the service, so an unconfigured Bandsintown is simply
+  absent instead of failing every request.
+
+### Device sync
+
+- The copy uses the folder the phone already has. A folder that differs only in
+  capitalisation is no longer created beside the resident one, the path the copy
+  actually used comes back from the device, and stale entries heal once the
+  phone has been scanned.
+- A short device walk is no longer read as proof that a file is gone, so tracks
+  already on the phone are not copied a second time.
+- Sync stops paying a fixed cost three to four times per file and drops a second
+  full walk of the device nobody needed.
+- A sync that removes files from the phone says so, instead of showing a bare
+  device path under a heading reading "Syncing".
+
+### Android
+
+- The Now Playing card keeps its own picture through a track change, instead of
+  briefly wearing its neighbour's.
+- A faulty track that is skipped says so on Android too — the notice used to be
+  wiped by the replacement track milliseconds later.
+- The artist-photo card leaves when photos are simply missing, instead of
+  standing at "64 / 66" for the rest of the session.
+- Every album and every artist page keeps its own scroll position. They used to
+  share one saved place per kind of list.
+- Searching the Artists tab answers with artists; an open album page no longer
+  answers in their place.
+- The queue keeps its filter to itself: search is no longer offered there.
+
 ## [0.1.126] - 2026-09-02
 
 ### Playback
