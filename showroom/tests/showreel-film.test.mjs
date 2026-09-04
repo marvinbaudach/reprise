@@ -63,6 +63,10 @@ test('the film runs once, with sound, and offers itself again', async () => {
   // has to offer the film again from the top.
   assert.match(element, /onEnded=/);
   assert.match(source, /currentTime = 0/);
+
+  // The cut fades its end card to black, so the true last frame is an empty
+  // rectangle. Coming to rest has to mean the card, not the black after it.
+  assert.match(source, /duration - END_CARD_HOLD_SECONDS/);
 });
 
 test('nothing is left of the caption track', async () => {

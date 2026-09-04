@@ -14,6 +14,18 @@ const FILM_BASE = `${BASE_URL}media/showreel/`;
 const SMALL_VIEWPORT = '(max-width: 900px)';
 
 /**
+ * How far before the end the playhead is parked once the film has run out.
+ *
+ * The cut ends on a card and then fades that card to black, so the true last
+ * frame is nothing at all — a film left sitting there rests on an empty
+ * rectangle. Measured on the deployed 58.208 s encode: the card is at full
+ * brightness from 54.6 s through 57.7 s and only the final half second dips,
+ * so seven tenths clears the fade with room to spare and still lands inside
+ * the card of a cut that ends a little differently.
+ */
+const END_CARD_HOLD_SECONDS = 0.7;
+
+/**
  * The film beside the screenshot gallery.
  *
  * It costs nothing until the reader asks it to play, and every start comes from
@@ -33,9 +45,11 @@ export function ShowreelFilm() {
    * so it is repeated muted. Any other rejection — no playable source, a
    * torn-down element — would fail again just as quietly.
    */
-  const start = useCallback((video: HTMLVideoElement) => {
-    // Sitting on the last frame, the only sensible start is from the top.
-    if (video.ended) video.currentTime = 0;
+  const start = useCallback((video: HTMLVideoElement, fromTheTop: boolean) => {
+    // Sitting on the end card, the only sensible start is from the top. The
+    // element's own `ended` cannot answer this: parking the playhead on the
+    // card clears it, so the film's own state has to be the one asked.
+    if (fromTheTop) video.currentTime = 0;
     void video.play().catch((error: unknown) => {
       const blockedOverSound = error instanceof DOMException && error.name === 'NotAllowedError';
       if (!blockedOverSound || video.muted) return;
@@ -48,11 +62,11 @@ export function ShowreelFilm() {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      start(video);
+      start(video, ended);
     } else {
       video.pause();
     }
-  }, [start]);
+  }, [start, ended]);
 
   const toggleSound = useCallback(() => {
     const video = videoRef.current;
@@ -61,8 +75,8 @@ export function ShowreelFilm() {
     video.muted = next;
     // Turning the sound on is the clearest statement of intent there is, so it
     // also starts the film if it happens to be sitting still.
-    if (!next && video.paused) start(video);
-  }, [start]);
+    if (!next && video.paused) start(video, ended);
+  }, [start, ended]);
 
   // Having run out is a state of its own: the button stops offering a Play the
   // reader has already had and offers the film again instead.
@@ -95,7 +109,16 @@ export function ShowreelFilm() {
             setEnded(false);
           }}
           onPause={() => setPlaying(false)}
-          onEnded={() => setEnded(true)}
+          onEnded={(event) => {
+            setEnded(true);
+            // Rest on the card the film closes with, not on the black it fades
+            // to afterwards. A seek here leaves the element paused, and the
+            // poster stays gone because playback has already begun.
+            const video = event.currentTarget;
+            if (Number.isFinite(video.duration)) {
+              video.currentTime = Math.max(0, video.duration - END_CARD_HOLD_SECONDS);
+            }
+          }}
           onVolumeChange={(event) => setMuted(event.currentTarget.muted)}
         >
           <source src={`${FILM_BASE}showreel-720.webm`} type="video/webm" media={SMALL_VIEWPORT} />
