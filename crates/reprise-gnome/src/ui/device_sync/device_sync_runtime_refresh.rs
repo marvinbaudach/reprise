@@ -100,6 +100,17 @@ impl DeviceSyncRuntime {
                             .iter()
                             .map(|file| file.relative_path.to_lowercase())
                             .collect::<HashSet<_>>();
+                        let analysed_track_ids =
+                            match reprise_core::db::complete_render_data_track_ids(&runtime.conn) {
+                                Ok(track_ids) => track_ids,
+                                Err(error) => {
+                                    tracing::warn!(
+                                        %error,
+                                        "could not load analysis sidecar data for device scan repair"
+                                    );
+                                    HashSet::new()
+                                }
+                            };
                         let mut doubtful_keys = HashSet::new();
                         let mut doubtful = Vec::new();
                         for file in &inventory {
@@ -113,24 +124,11 @@ impl DeviceSyncRuntime {
                                 )
                             {
                                 let sidecar_key = sidecar.to_lowercase();
-                                if !walked.contains(&sidecar_key) {
-                                    let has_analysis = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
-                                        &runtime.conn,
-                                        file.track_id,
-                                    ) {
-                                        Ok(analysis) => analysis.is_some(),
-                                        Err(error) => {
-                                            tracing::warn!(
-                                                track_id = file.track_id,
-                                                %error,
-                                                "could not load analysis sidecar data for device scan repair"
-                                            );
-                                            false
-                                        }
-                                    };
-                                    if has_analysis && doubtful_keys.insert(sidecar_key) {
-                                        doubtful.push(sidecar);
-                                    }
+                                if !walked.contains(&sidecar_key)
+                                    && analysed_track_ids.contains(&file.track_id)
+                                    && doubtful_keys.insert(sidecar_key)
+                                {
+                                    doubtful.push(sidecar);
                                 }
                             }
                         }
