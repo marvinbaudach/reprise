@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.138" date="2026-09-04" type="stable">
+      <description>
+        <p>Greets you with a random track from your library in the player bar instead of the position you left, gets Concerts refreshing again, stops device sync from re-copying and re-creating what the phone already holds while making it markedly faster, and on Android keeps every list's own place, answers an artist search with artists, and says when a faulty track was skipped.</p>
+        <p xml:lang="de">Begrüßt dich in der Wiedergabeleiste mit einem zufälligen Titel aus deiner Sammlung statt mit der zuletzt verlassenen Stelle, bringt Konzerte wieder zum Aktualisieren, hindert die Gerätesynchronisierung daran, erneut zu kopieren und anzulegen, was auf dem Telefon schon liegt — und macht sie dabei deutlich schneller —, und lässt unter Android jede Liste ihren eigenen Platz behalten, eine Künstlersuche mit Künstlern antworten und einen übersprungenen fehlerhaften Titel zu Wort kommen.</p>
+      </description>
+    </release>
     <release version="0.1.126" date="2026-09-02" type="stable">
       <description>
         <p>Keeps playback going when a queued file has gone missing, lets a click on the stopped waveform choose where the next play starts, stops device sync from deleting and renaming files it means to keep, carries the whole Now Playing screen with an Android swipe, asks before fetching artist photos, and adds a Spanish translation.</p>
