@@ -16,24 +16,44 @@ const SMALL_VIEWPORT = '(max-width: 900px)';
 /**
  * The film beside the screenshot gallery.
  *
- * It costs nothing until the reader asks it to play. It starts muted because a
- * landing page does not make noise at a reader who did not ask for it.
+ * It costs nothing until the reader asks it to play, and every start comes from
+ * a click — which is what lets it play with sound, since a browser grants an
+ * unmuted start only to a user gesture. It runs once and stays on its last
+ * frame; the play button then offers it again from the top.
  */
 export function ShowreelFilm() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const [ended, setEnded] = useState(false);
   const [captionsShowing, setCaptionsShowing] = useState(false);
+
+  /**
+   * Only the autoplay policy is worth a second attempt, and only once: a start
+   * the browser refused over the sound is still a start the reader asked for,
+   * so it is repeated muted. Any other rejection — no playable source, a
+   * torn-down element — would fail again just as quietly.
+   */
+  const start = useCallback((video: HTMLVideoElement) => {
+    // Sitting on the last frame, the only sensible start is from the top.
+    if (video.ended) video.currentTime = 0;
+    void video.play().catch((error: unknown) => {
+      const blockedOverSound = error instanceof DOMException && error.name === 'NotAllowedError';
+      if (!blockedOverSound || video.muted) return;
+      video.muted = true;
+      void video.play().catch(() => undefined);
+    });
+  }, []);
 
   const toggle = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      void video.play().catch(() => undefined);
+      start(video);
     } else {
       video.pause();
     }
-  }, []);
+  }, [start]);
 
   const toggleSound = useCallback(() => {
     const video = videoRef.current;
@@ -42,8 +62,8 @@ export function ShowreelFilm() {
     video.muted = next;
     // Turning the sound on is the clearest statement of intent there is, so it
     // also starts the film if it happens to be sitting still.
-    if (!next && video.paused) void video.play().catch(() => undefined);
-  }, []);
+    if (!next && video.paused) start(video);
+  }, [start]);
 
   const toggleCaptions = useCallback(() => {
     const video = videoRef.current;
@@ -54,6 +74,11 @@ export function ShowreelFilm() {
     track.mode = next ? 'showing' : 'hidden';
     setCaptionsShowing(next);
   }, []);
+
+  // Having run out is a state of its own: the button stops offering a Play the
+  // reader has already had and offers the film again instead.
+  const playIcon = playing ? '❙❙' : ended ? '↻' : '▶';
+  const playLabel = playing ? 'Pause' : ended ? 'Watch again' : 'Play';
 
   return (
     <div className="frame film-frame">
@@ -71,12 +96,14 @@ export function ShowreelFilm() {
           poster={`${FILM_BASE}showreel-poster.webp`}
           preload="none"
           playsInline
-          loop
-          muted
           width={1920}
           height={1080}
-          onPlay={() => setPlaying(true)}
+          onPlay={() => {
+            setPlaying(true);
+            setEnded(false);
+          }}
           onPause={() => setPlaying(false)}
+          onEnded={() => setEnded(true)}
           onVolumeChange={(event) => setMuted(event.currentTarget.muted)}
         >
           <source src={`${FILM_BASE}showreel-720.webm`} type="video/webm" media={SMALL_VIEWPORT} />
@@ -88,8 +115,8 @@ export function ShowreelFilm() {
 
         <div className="film__controls">
           <button type="button" className="film__control" onClick={toggle}>
-            <span aria-hidden="true">{playing ? '❙❙' : '▶'}</span>
-            {playing ? 'Pause' : 'Play'}
+            <span aria-hidden="true">{playIcon}</span>
+            {playLabel}
           </button>
           <button type="button" className="film__control" onClick={toggleSound}>
             <span aria-hidden="true">{muted ? '🔊' : '🔇'}</span>

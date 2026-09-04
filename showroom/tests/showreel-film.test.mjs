@@ -48,6 +48,27 @@ test('the film never starts itself', async () => {
   assert.doesNotMatch(source, /useEffect/);
 });
 
+test('the film runs once, with sound, and offers itself again', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'ShowreelFilm.tsx'),
+    'utf8',
+  );
+  // Up to the first <source>: the arrow functions in the handlers make a
+  // non-greedy match on `>` stop inside the open tag.
+  const element = source.match(/<video[\s\S]+?<source/)?.[0];
+  assert.ok(element);
+
+  // A reader who presses play asked for the film, sound included, and asked for
+  // it once — so neither attribute may come back onto the element.
+  assert.doesNotMatch(element, /^\s*muted$/m);
+  assert.doesNotMatch(element, /^\s*loop$/m);
+
+  // Running out is a state of its own: the last frame stays up, and the button
+  // has to offer the film again from the top.
+  assert.match(element, /onEnded=/);
+  assert.match(source, /currentTime = 0/);
+});
+
 test('the encodes are served exactly when the film is on the page', async () => {
   const publicFilmDir = join(showroomRoot, 'public', 'media', 'showreel');
 
