@@ -2,7 +2,7 @@
 slug: the-updates-popover-stops-updating-forever
 worktree: /home/marvin/Projects/reprise-the-updates-popover-stops-updating-forever
 branch: feature/the-updates-popover-stops-updating-forever
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-05
 ---
