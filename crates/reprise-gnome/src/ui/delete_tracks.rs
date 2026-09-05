@@ -402,40 +402,72 @@ fn finish(
     worker_ms: u128,
 ) {
     let removed = report.removed_ids.len();
-    let mutated_started = std::time::Instant::now();
     let callback = shared.on_library_mutated.borrow().clone();
-    if let Some(callback) = callback {
-        callback(&report.removed_ids);
-    }
-    let mutated_ms = mutated_started.elapsed().as_millis();
-    let advance_started = std::time::Instant::now();
     let player = shared.player.borrow().upgrade();
-    if let Some(player) = player {
-        player.advance_after_user_catalog_delete(&report.removed_ids);
-    }
-    let advance_ms = advance_started.elapsed().as_millis();
-    let browse_bar_started = std::time::Instant::now();
-    shared.browse_bar.refresh();
-    let browse_bar_ms = browse_bar_started.elapsed().as_millis();
-    let reload_started = std::time::Instant::now();
-    reload_after_catalog_delete(shared, &report.removed_ids, reload_state);
-    let reload_ms = reload_started.elapsed().as_millis();
+    let timings = finish_steps(
+        || {
+            if let Some(callback) = callback {
+                callback(&report.removed_ids);
+            }
+        },
+        || {
+            if let Some(player) = player {
+                player.advance_after_user_catalog_delete(&report.removed_ids);
+            }
+        },
+        || reload_after_catalog_delete(shared, &report.removed_ids, reload_state),
+        || {
+            show_toast(
+                shared,
+                &strings::delete_result_toast(removed, report.failures, mode == DeleteMode::Trash),
+            );
+        },
+    );
     tracing::info!(
         worker_ms,
-        mutated_ms,
-        advance_ms,
-        browse_bar_ms,
-        reload_ms,
-        main_thread_ms = mutated_ms + advance_ms + browse_bar_ms + reload_ms,
+        mutated_ms = timings.mutated_ms,
+        advance_ms = timings.advance_ms,
+        browse_bar_ms = 0_u128,
+        reload_ms = timings.reload_ms,
+        main_thread_ms = timings.mutated_ms + timings.advance_ms + timings.reload_ms,
         removed,
         failed = report.failures,
         trashed = mode == DeleteMode::Trash,
         "delete batch completed"
     );
-    show_toast(
-        shared,
-        &strings::delete_result_toast(removed, report.failures, mode == DeleteMode::Trash),
-    );
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct FinishTimings {
+    mutated_ms: u128,
+    advance_ms: u128,
+    reload_ms: u128,
+}
+
+fn finish_steps(
+    purge: impl FnOnce(),
+    advance: impl FnOnce(),
+    reload: impl FnOnce(),
+    toast: impl FnOnce(),
+) -> FinishTimings {
+    let mutated_started = std::time::Instant::now();
+    purge();
+    let mutated_ms = mutated_started.elapsed().as_millis();
+
+    let advance_started = std::time::Instant::now();
+    advance();
+    let advance_ms = advance_started.elapsed().as_millis();
+
+    let reload_started = std::time::Instant::now();
+    reload();
+    let reload_ms = reload_started.elapsed().as_millis();
+
+    toast();
+    FinishTimings {
+        mutated_ms,
+        advance_ms,
+        reload_ms,
+    }
 }
 
 pub(super) fn arm_smoke(shared: &Rc<Shared>) {
@@ -618,6 +650,54 @@ mod tests {
         let restored = surviving_delete_anchor(anchor, &[1, 2, 3, 4, 5], &[1, 2, 4, 5]);
 
         assert_eq!(restored.anchor, Some((4, 7.5)));
+    }
+
+    #[test]
+    fn finish_orders_reload_before_the_deferred_refreshes() {
+        use std::cell::RefCell;
+
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let deferred = Rc::new(RefCell::new(None));
+        let record = |name| {
+            let calls = calls.clone();
+            move || calls.borrow_mut().push(name)
+        };
+
+        finish_steps(
+            {
+                let purge = record("purge");
+                let sidebar = record("sidebar_refresh");
+                let browse_bar = record("browse_bar_refresh");
+                let deferred = deferred.clone();
+                move || {
+                    purge();
+                    *deferred.borrow_mut() = Some(Box::new(move || {
+                        sidebar();
+                        browse_bar();
+                    }) as Box<dyn FnOnce()>);
+                }
+            },
+            record("advance"),
+            record("reload"),
+            record("toast"),
+        );
+
+        assert_eq!(&*calls.borrow(), &["purge", "advance", "reload", "toast"]);
+        deferred
+            .borrow_mut()
+            .take()
+            .expect("refreshes must be deferred")();
+        assert_eq!(
+            &*calls.borrow(),
+            &[
+                "purge",
+                "advance",
+                "reload",
+                "toast",
+                "sidebar_refresh",
+                "browse_bar_refresh",
+            ]
+        );
     }
 }
 
