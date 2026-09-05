@@ -61,6 +61,8 @@ pub fn latest_fetched_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Er
 /// The newest start of any artist check or counted completion. Background
 /// cadence uses this timestamp so an all-failed check still postpones the
 /// next attempt, while the footer keeps using the last counted completion.
+/// Since every New Releases surface shares the ledger, a manual Releases-view
+/// check also postpones the Updates popover's next background check.
 pub fn last_check_started_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
     let latest_attempt = crate::artist_news_ledger::latest_attempt(db.conn())?;
     let latest_completion = crate::library::settings::get_new_releases_last_completed_at(db)?;
