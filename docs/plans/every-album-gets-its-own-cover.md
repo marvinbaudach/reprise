@@ -2,7 +2,7 @@
 slug: every-album-gets-its-own-cover
 worktree: /home/marvin/Projects/reprise-every-album-gets-its-own-cover
 branch: feature/every-album-gets-its-own-cover
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-05
 ---
