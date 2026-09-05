@@ -6,6 +6,7 @@
 // against any implementation at all, and one for "shown" can never pass. Only
 // `state.button` (parentless here) and `state.badge` (below the button) may be
 // read either way. STYLE-1's rule applies: prove the result, not the property.
+use super::popover_fetch::{FetchPlan, FetchTrigger};
 use super::*;
 use reprise_core::db::Db;
 
@@ -33,6 +34,26 @@ fn opening_the_popover_never_requests_navigation() {
 
     assert_eq!(effect.seen_ids, ["one", "two"]);
     assert!(!effect.navigates);
+}
+
+#[test]
+fn nr_41_a_background_check_never_forces_and_the_reload_does() {
+    assert_eq!(
+        FetchPlan::for_trigger(FetchTrigger::Background),
+        FetchPlan {
+            include_concerts: false,
+            force: false,
+        },
+        "a background check must neither include Concerts nor force New Releases"
+    );
+    assert_eq!(
+        FetchPlan::for_trigger(FetchTrigger::Manual),
+        FetchPlan {
+            include_concerts: true,
+            force: true,
+        },
+        "the footer reload must force both feeds"
+    );
 }
 
 #[test]

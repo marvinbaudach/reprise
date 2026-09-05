@@ -24,6 +24,7 @@ use crate::ui::feed_footer::FeedFooter;
 
 #[path = "popover_fetch.rs"]
 mod popover_fetch;
+use popover_fetch::FetchTrigger;
 
 /// How often the background timer re-checks staleness while the module is
 /// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
@@ -235,7 +236,7 @@ impl NewReleasesPopover {
         let weak = Rc::downgrade(self);
         self.footer.connect_reload(move || {
             if let Some(state) = weak.upgrade() {
-                state.start_fetch(true);
+                state.start_fetch(FetchTrigger::Manual);
             }
         });
 
@@ -456,7 +457,7 @@ impl NewReleasesPopover {
             reprise_core::artist_news::jitter_seconds(&self.database_path.to_string_lossy());
         let due = reprise_core::artist_news::refresh_due(latest, now, jitter);
         if periodic_fetch_due(enabled, self.fetching.get(), due) {
-            self.start_fetch(false);
+            self.start_fetch(FetchTrigger::Background);
         }
     }
 
@@ -515,7 +516,7 @@ impl NewReleasesPopover {
         if enabled {
             self.start_refresh_timer();
             if !self.fetch_completed() {
-                self.start_fetch(false);
+                self.start_fetch(FetchTrigger::Background);
             } else {
                 self.render(false, false);
             }
@@ -611,6 +612,8 @@ pub(in crate::ui) fn install(
 
 fn fetch_from_database(
     database_path: &Path,
+    force: bool,
+    on_progress: &mut dyn FnMut(reprise_core::artist_news::RefreshProgress),
 ) -> Result<reprise_core::artist_news::RefreshReport, reprise_core::artist_news::NewsError> {
     let conn = reprise_core::db::Db::open_migrated(Some(database_path))
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
@@ -622,7 +625,7 @@ fn fetch_from_database(
     let today = chrono::Local::now().date_naive();
     let scope = reprise_core::artist_news::configured_fetch_scope(&conn)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
-    reprise_core::artist_news::refresh(&conn, today, scope, true)
+    reprise_core::artist_news::refresh_with_progress(&conn, today, scope, force, on_progress)
 }
 
 #[cfg(test)]

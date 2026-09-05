@@ -8,17 +8,45 @@ use super::{fetch_from_database, NewReleasesPopover};
 use crate::ui::concerts::ConcertsRequest;
 use crate::ui::one_shot_task;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FetchTrigger {
+    Background,
+    Manual,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct FetchPlan {
+    pub include_concerts: bool,
+    pub force: bool,
+}
+
+impl FetchPlan {
+    pub(super) fn for_trigger(trigger: FetchTrigger) -> Self {
+        match trigger {
+            FetchTrigger::Background => Self {
+                include_concerts: false,
+                force: false,
+            },
+            FetchTrigger::Manual => Self {
+                include_concerts: true,
+                force: true,
+            },
+        }
+    }
+}
+
 impl NewReleasesPopover {
-    pub(super) fn start_fetch(self: &Rc<Self>, include_concerts: bool) {
+    pub(super) fn start_fetch(self: &Rc<Self>, trigger: FetchTrigger) {
         if self.fetching.get() {
             return;
         }
+        let plan = FetchPlan::for_trigger(trigger);
         let news_enabled = reprise_core::modules::is_enabled(
             &self.conn,
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        let concerts_enabled = include_concerts
+        let concerts_enabled = plan.include_concerts
             && reprise_core::modules::is_enabled(
                 &self.conn,
                 &reprise_core::modules::CONCERTS_MODULE,
@@ -44,17 +72,17 @@ impl NewReleasesPopover {
         self.render(false, false);
 
         if news_enabled {
-            self.start_news_fetch();
+            self.start_news_fetch(plan.force);
         }
         if concerts_enabled {
             self.start_concerts_fetch();
         }
     }
 
-    fn start_news_fetch(self: &Rc<Self>) {
+    fn start_news_fetch(self: &Rc<Self>, force: bool) {
         let database_path = self.database_path.clone();
         let result = one_shot_task::spawn("reprise-new-releases", move || {
-            fetch_from_database(&database_path)
+            fetch_from_database(&database_path, force, &mut |_| {})
         });
         let Ok(receiver) = result else {
             self.finish_feed(Feed::NewReleases, true);
