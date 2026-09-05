@@ -1,7 +1,6 @@
 //! Shared live-state footer for network-backed feeds.
 
 use std::cell::Cell;
-use std::rc::Rc;
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gtk4::glib;
@@ -141,7 +140,7 @@ pub(in crate::ui) struct FeedFooter {
     reload: gtk4::Button,
     progress: gtk4::ProgressBar,
     pulse_generation: PulseGeneration,
-    running_pulse: Rc<Cell<Option<u64>>>,
+    last_progress: Cell<Option<FeedFooterProgress>>,
 }
 
 impl FeedFooter {
@@ -188,7 +187,7 @@ impl FeedFooter {
             reload,
             progress,
             pulse_generation: PulseGeneration::default(),
-            running_pulse: Rc::new(Cell::new(None)),
+            last_progress: Cell::new(None),
         }
     }
 
@@ -223,11 +222,6 @@ impl FeedFooter {
         self.progress.is_visible()
     }
 
-    #[cfg(test)]
-    fn pulse_is_running(&self) -> bool {
-        self.running_pulse.get().is_some()
-    }
-
     fn apply_presentation(&self, value: &FeedFooterPresentation) {
         self.root.set_visible(value.visible);
         self.label.set_label(&value.text);
@@ -239,56 +233,60 @@ impl FeedFooter {
         self.progress.set_visible(value.progress.is_some());
         match value.progress {
             Some(FeedFooterProgress::Fraction(fraction)) => {
+                self.last_progress.set(value.progress);
                 self.cancel_pulsing();
                 self.progress.set_fraction(fraction);
             }
             Some(FeedFooterProgress::Indeterminate) => self.start_pulsing(),
-            None => self.cancel_pulsing(),
+            None => {
+                self.last_progress.set(None);
+                self.cancel_pulsing();
+            }
         }
     }
 
     fn start_pulsing(&self) {
+        if self
+            .last_progress
+            .replace(Some(FeedFooterProgress::Indeterminate))
+            == Some(FeedFooterProgress::Indeterminate)
+        {
+            return;
+        }
         let generation = self.pulse_generation.start();
         self.progress.set_fraction(0.0);
         if !crate::ui::motion::animations_enabled() {
-            self.running_pulse.set(None);
             return;
         }
-        self.progress.pulse();
-        self.running_pulse.set(Some(generation));
+        pulse(&self.progress);
 
         let progress = self.progress.downgrade();
         let pulse_generation = self.pulse_generation.clone();
-        let running_pulse = self.running_pulse.clone();
         glib::timeout_add_local(PULSE_INTERVAL, move || {
             if !pulse_generation.is_current(generation) {
-                if running_pulse.get() == Some(generation) {
-                    running_pulse.set(None);
-                }
                 return glib::ControlFlow::Break;
             }
             let Some(progress) = progress.upgrade() else {
-                if running_pulse.get() == Some(generation) {
-                    running_pulse.set(None);
-                }
                 return glib::ControlFlow::Break;
             };
             if !crate::ui::motion::animations_enabled() {
                 progress.set_fraction(0.0);
-                if running_pulse.get() == Some(generation) {
-                    running_pulse.set(None);
-                }
                 return glib::ControlFlow::Break;
             }
-            progress.pulse();
+            pulse(&progress);
             glib::ControlFlow::Continue
         });
     }
 
     fn cancel_pulsing(&self) {
         self.pulse_generation.cancel();
-        self.running_pulse.set(None);
     }
+}
+
+fn pulse(progress: &gtk4::ProgressBar) {
+    let next = progress.fraction() + progress.pulse_step();
+    progress.set_fraction(if next > 1.0 { 0.0 } else { next });
+    progress.pulse();
 }
 
 pub(in crate::ui) fn css() -> String {
@@ -394,6 +392,9 @@ mod tests {
         let animations_were_enabled = settings.is_gtk_enable_animations();
         settings.set_gtk_enable_animations(true);
         let footer = FeedFooter::new();
+        let window = gtk4::Window::builder().child(footer.widget()).build();
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
 
         footer.apply_presentation(&presentation(
             FeedFooterState::Fetching {
@@ -402,9 +403,23 @@ mod tests {
             },
             now(),
         ));
-        assert!(
-            footer.pulse_is_running(),
-            "an indeterminate footer must keep a pulse timer running"
+        let first_fraction = wait_for_fraction_change(&footer.progress, 0.0);
+        let second_fraction = wait_for_fraction_change(&footer.progress, first_fraction);
+        assert_ne!(
+            first_fraction, second_fraction,
+            "an indeterminate footer must visibly pulse more than once"
+        );
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        assert_eq!(
+            footer.progress.fraction(),
+            second_fraction,
+            "rerendering the same indeterminate state must not restart the pulse"
         );
 
         footer.apply_presentation(&presentation(
@@ -414,10 +429,7 @@ mod tests {
             },
             now(),
         ));
-        assert!(
-            !footer.pulse_is_running(),
-            "determinate progress must stop the pulse timer"
-        );
+        assert_fraction_stays(&footer.progress, 0.5);
 
         footer.apply_presentation(&presentation(
             FeedFooterState::Fetching {
@@ -427,10 +439,36 @@ mod tests {
             now(),
         ));
         footer.apply_presentation(&presentation(FeedFooterState::NeverFetched, now()));
-        assert!(
-            !footer.pulse_is_running(),
-            "leaving progress entirely must stop the pulse timer"
-        );
+        assert_fraction_stays(&footer.progress, footer.progress.fraction());
         settings.set_gtk_enable_animations(animations_were_enabled);
+    }
+
+    fn wait_for_fraction_change(progress: &gtk4::ProgressBar, previous: f64) -> f64 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        loop {
+            while glib::MainContext::default().iteration(false) {}
+            let current = progress.fraction();
+            if current != previous {
+                return current;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "progress fraction never changed from {previous}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    fn assert_fraction_stays(progress: &gtk4::ProgressBar, expected: f64) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+        while std::time::Instant::now() < deadline {
+            while glib::MainContext::default().iteration(false) {}
+            assert_eq!(
+                progress.fraction(),
+                expected,
+                "a non-indeterminate footer must stop changing the progress fraction"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }
