@@ -23,7 +23,8 @@ impl FetchOutcome {
         }
     }
 
-    fn from_str(value: &str) -> Self {
+    /// Unknown stored values deliberately count as failed so they never make a cache fresh.
+    fn parse_stored(value: &str) -> Self {
         match value {
             "ok" => Self::Ok,
             "unmatched" => Self::Unmatched,
@@ -95,7 +96,7 @@ pub(crate) fn last_attempt(
             let outcome = row.get::<_, String>(1)?;
             Ok(LedgerAttempt {
                 at,
-                outcome: FetchOutcome::from_str(&outcome),
+                outcome: FetchOutcome::parse_stored(&outcome),
             })
         },
     )
