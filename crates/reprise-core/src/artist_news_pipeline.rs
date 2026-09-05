@@ -297,12 +297,31 @@ where
             .map_err(database_error)?;
         transaction.commit().map_err(database_error)
     })();
-    refresh_result?;
-    reconciliation_result?;
-    crate::artist_news_history::enforce_retention(db, now).map_err(database_error)?;
-    if report.failures.is_empty() || report.artists_fetched > 0 {
-        crate::library::settings::set_new_releases_last_completed_at(db, (hooks.completion_time)())
-            .map_err(database_error)?;
+    let finish_result = refresh_result
+        .and(reconciliation_result)
+        .and_then(|()| {
+            crate::artist_news_history::enforce_retention(db, now).map_err(database_error)
+        })
+        .and_then(|()| {
+            if report.failures.is_empty() || report.artists_fetched > 0 {
+                crate::library::settings::set_new_releases_last_completed_at(
+                    db,
+                    (hooks.completion_time)(),
+                )
+                .map_err(database_error)?;
+            }
+            Ok(())
+        });
+    if let Err(error) = finish_result {
+        tracing::warn!(
+            queued = report.artists_queued,
+            fetched = report.artists_fetched,
+            unmatched = report.unmatched,
+            failed = report.failed,
+            %error,
+            "New Releases: check aborted"
+        );
+        return Err(error);
     }
     tracing::info!(
         queued = report.artists_queued,
