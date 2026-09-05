@@ -1,6 +1,7 @@
 use crate::db_grandfather::grandfather_network_features;
 use rusqlite::Connection;
 use std::path::Path;
+
 #[path = "db_handle.rs"]
 mod handle;
 pub use crate::db_spectrogram::{
@@ -761,39 +762,38 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::library::settings::migrate_v80(conn)?;
     crate::db_sync_log::migrate_v81(conn)?;
     crate::db_sort_indexes::migrate_v82(conn)?;
-    if conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))? < 83 {
-        let tx = conn.unchecked_transaction()?;
-        tx.execute(
-            "DELETE FROM settings WHERE key = 'startup_tasks.completed.covers'",
-            [],
-        )?;
-        tx.pragma_update(None, "user_version", 83)?;
-        tx.commit()?;
-    }
+    crate::db_cover_download::migrate_v83(conn)?;
     Ok(())
 }
 
 #[cfg(test)]
-#[path = "db_ai_jobs_migration_tests.rs"]
-mod ai_jobs_migration_tests;
-#[cfg(test)]
-#[path = "db_change_log_migration_tests.rs"]
-mod change_log_migration_tests;
-#[cfg(test)]
-#[path = "db_migration_repair_tests.rs"]
-mod migration_repair_tests;
-#[cfg(test)]
-#[path = "db_network_migration_tests.rs"]
-mod network_migration_tests;
+#[path = "db_tests.rs"]
+mod tests;
+
 #[cfg(test)]
 #[path = "db_recent_migration_tests.rs"]
 mod recent_migration_tests;
+
 #[cfg(test)]
-#[path = "library/settings_geometry_migration_tests.rs"]
-mod settings_geometry_migration_tests;
+#[path = "db_network_migration_tests.rs"]
+mod network_migration_tests;
+
 #[cfg(test)]
 #[path = "db_stats_migration_tests.rs"]
 mod stats_migration_tests;
+
 #[cfg(test)]
-#[path = "db_tests.rs"]
-mod tests;
+#[path = "db_migration_repair_tests.rs"]
+mod migration_repair_tests;
+
+#[cfg(test)]
+#[path = "db_change_log_migration_tests.rs"]
+mod change_log_migration_tests;
+
+#[cfg(test)]
+#[path = "db_ai_jobs_migration_tests.rs"]
+mod ai_jobs_migration_tests;
+
+#[cfg(test)]
+#[path = "library/settings_geometry_migration_tests.rs"]
+mod settings_geometry_migration_tests;

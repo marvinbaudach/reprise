@@ -562,38 +562,15 @@ fn resolution_format_three_reopens_downloads_settled_by_format_two() {
 }
 
 #[test]
-fn cover_download_migration_reopens_only_the_cover_startup_task() {
-    let cache = tempfile::tempdir().unwrap();
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate_with_cache_dirs(&conn, cache.path(), cache.path()).unwrap();
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, 'cover'), (?2, 'spectrogram')",
-        [
-            "startup_tasks.completed.covers",
-            "startup_tasks.completed.spectrogram",
-        ],
-    )
-    .unwrap();
-    conn.pragma_update(None, "user_version", 82).unwrap();
-
-    crate::db::migrate_with_cache_dirs(&conn, cache.path(), cache.path()).unwrap();
-
-    let cover_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM settings WHERE key = 'startup_tasks.completed.covers'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let spectrogram_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM settings WHERE key = 'startup_tasks.completed.spectrogram'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(cover_count, 0);
-    assert_eq!(spectrogram_count, 1);
+fn musicbrainz_release_query_escapes_lucene_special_characters() {
+    assert_eq!(
+        crate::cover_download::escape_lucene(r#"A+ -!():^[x]{y}~*?"quote\slash"#),
+        r#"A\+ \-\!\(\)\:\^\[x\]\{y\}\~\*\?\"quote\\slash"#
+    );
+    assert_eq!(
+        crate::cover_download::musicbrainz_search_url("A+B", r#"Best? "Hits""#),
+        "https://musicbrainz.org/ws/2/release?query=artist%3A%22A%5C%2BB%22%20AND%20release%3A%22Best%5C%3F%20%5C%22Hits%5C%22%22&fmt=json&limit=5"
+    );
 }
 
 #[test]
