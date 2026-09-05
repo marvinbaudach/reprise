@@ -1764,6 +1764,10 @@ result.
   remains a neutral dim caption and "Clear all" is absent. Music retains
   FIL-1c's place semantics and existing preference-driven idle visibility;
   every counting base remains the current place, never the whole library.
+  Named exception: Releases treats its five-year Album-and-EP startup scope
+  as the neutral default, so it keeps the count dim and offers no "Clear all"
+  until the reader changes that scope; choosing the widest scope is itself a
+  clearable change, and the dedicated "Show widest" recovery still reaches it.
 - **FIL-3** [replaced by FIL-3a] [gtk] — End-of-results row: below the last
   row of a restricted track list (≥ 1 hit) sits the hidden-track count and a
   Show all pill.
