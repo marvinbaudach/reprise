@@ -83,8 +83,9 @@ pub(in crate::ui) fn present(
     bitrates: &[Option<u32>],
     browse: Option<BrowseSnapshot>,
     on_write_started: Rc<dyn Fn()>,
-    on_saved: impl Fn(Vec<TrackWrite>, TagBatchReport) + Clone + 'static,
+    on_saved: impl Fn(Vec<TrackWrite>, TagBatchReport, u128, usize) + Clone + 'static,
 ) {
+    let build_started = std::time::Instant::now();
     let Some(mode) = EditorMode::new(tracks.len()) else {
         tracing::warn!("tag editor called with empty track list");
         return;
@@ -200,10 +201,11 @@ pub(in crate::ui) fn present(
     let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
     focus_guard.bind_dialog(&form.dialog, &form.title_row);
     form.dialog.present(Some(parent));
-    tracing::debug!(
-        track_count,
+    tracing::info!(
+        build_ms = build_started.elapsed().as_millis(),
+        tracks = track_count,
         is_multi = mode.is_multi(),
-        "redesigned tag editor presented"
+        "tag editor presented"
     );
 }
 

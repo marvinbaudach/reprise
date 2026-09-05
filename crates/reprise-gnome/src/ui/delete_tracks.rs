@@ -189,6 +189,12 @@ fn start_worker(
     mode: DeleteMode,
     reload_state: CatalogDeleteReloadState,
 ) {
+    let worker_started = std::time::Instant::now();
+    tracing::info!(
+        tracks = tracks.len(),
+        mode = ?mode,
+        "delete confirmed"
+    );
     let db_path = shared.conn.path();
     let Some(db_path) = db_path else {
         show_toast(shared, &strings::text(strings::DELETE_DATABASE_UNAVAILABLE));
@@ -215,7 +221,13 @@ fn start_worker(
             return;
         };
         match result {
-            Ok(report) => finish(&shared, &report, mode, reload_state),
+            Ok(report) => finish(
+                &shared,
+                &report,
+                mode,
+                reload_state,
+                worker_started.elapsed().as_millis(),
+            ),
             Err(error) => {
                 tracing::warn!(%error, "removal worker could not open database");
                 show_toast(
@@ -380,19 +392,34 @@ fn finish(
     report: &DeleteReport,
     mode: DeleteMode,
     reload_state: CatalogDeleteReloadState,
+    worker_ms: u128,
 ) {
     let removed = report.removed_ids.len();
+    let mutated_started = std::time::Instant::now();
     let callback = shared.on_library_mutated.borrow().clone();
     if let Some(callback) = callback {
         callback(&report.removed_ids);
     }
+    let mutated_ms = mutated_started.elapsed().as_millis();
+    let advance_started = std::time::Instant::now();
     let player = shared.player.borrow().upgrade();
     if let Some(player) = player {
         player.advance_after_user_catalog_delete(&report.removed_ids);
     }
+    let advance_ms = advance_started.elapsed().as_millis();
+    let browse_bar_started = std::time::Instant::now();
     shared.browse_bar.refresh();
+    let browse_bar_ms = browse_bar_started.elapsed().as_millis();
+    let reload_started = std::time::Instant::now();
     reload_after_catalog_delete(shared, &report.removed_ids, reload_state);
+    let reload_ms = reload_started.elapsed().as_millis();
     tracing::info!(
+        worker_ms,
+        mutated_ms,
+        advance_ms,
+        browse_bar_ms,
+        reload_ms,
+        main_thread_ms = mutated_ms + advance_ms + browse_bar_ms + reload_ms,
         removed,
         failed = report.failures,
         trashed = mode == DeleteMode::Trash,
