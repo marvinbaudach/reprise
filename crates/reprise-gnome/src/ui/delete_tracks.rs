@@ -264,11 +264,18 @@ fn run_delete(
             }
         }
         DeleteMode::Trash => {
-            let report = reprise_core::library::trash_tracks::trash_tracks_with(
-                db,
-                tracks,
-                reprise_platform_linux::trash::delete,
-            );
+            let report = match reprise_platform_linux::trash::Session::open() {
+                Ok(session) => {
+                    reprise_core::library::trash_tracks::trash_tracks_with(db, tracks, |path| {
+                        session.delete(path)
+                    })
+                }
+                Err(error) => {
+                    reprise_core::library::trash_tracks::trash_tracks_with(db, tracks, |_| {
+                        Err(error.clone())
+                    })
+                }
+            };
             for failure in &report.failures {
                 tracing::warn!(id = failure.id, path = %failure.path.display(), error = %failure.error, "move-to-trash failed");
             }

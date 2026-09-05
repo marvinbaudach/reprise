@@ -29,29 +29,56 @@ fn backend_for(flatpak_info_present: bool) -> Backend {
     }
 }
 
-/// Moves `path` to the desktop trash without ever permanently deleting it.
-pub fn delete(path: &Path) -> Result<(), String> {
-    match backend_for(Path::new(FLATPAK_INFO).is_file()) {
-        Backend::Host => trash::delete(path).map_err(|error| error.to_string()),
-        Backend::Portal => portal_delete(path),
+enum SessionBackend {
+    Host,
+    Portal(zbus::blocking::Proxy<'static>),
+}
+
+/// Reusable trash backend state for one caller-defined batch.
+pub struct Session {
+    backend: SessionBackend,
+}
+
+impl Session {
+    pub fn open() -> Result<Self, String> {
+        let backend = match backend_for(Path::new(FLATPAK_INFO).is_file()) {
+            Backend::Host => SessionBackend::Host,
+            Backend::Portal => {
+                let connection = zbus::blocking::Connection::session().map_err(|error| {
+                    format!("could not connect to session bus for Trash portal: {error}")
+                })?;
+                let proxy = zbus::blocking::Proxy::new_owned(
+                    connection,
+                    PORTAL_DESTINATION,
+                    PORTAL_PATH,
+                    PORTAL_INTERFACE,
+                )
+                .map_err(|error| format!("could not create Trash portal proxy: {error}"))?;
+                SessionBackend::Portal(proxy)
+            }
+        };
+        Ok(Self { backend })
+    }
+
+    pub fn delete(&self, path: &Path) -> Result<(), String> {
+        match &self.backend {
+            SessionBackend::Host => trash::delete(path).map_err(|error| error.to_string()),
+            SessionBackend::Portal(proxy) => portal_delete(proxy, path),
+        }
     }
 }
 
-fn portal_delete(path: &Path) -> Result<(), String> {
+/// Moves `path` to the desktop trash without ever permanently deleting it.
+pub fn delete(path: &Path) -> Result<(), String> {
+    Session::open()?.delete(path)
+}
+
+fn portal_delete(proxy: &zbus::blocking::Proxy<'_>, path: &Path) -> Result<(), String> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
         .open(path)
         .map_err(|error| format!("could not open file read/write for Trash portal: {error}"))?;
-    let connection = zbus::blocking::Connection::session()
-        .map_err(|error| format!("could not connect to session bus for Trash portal: {error}"))?;
-    let proxy = zbus::blocking::Proxy::new(
-        &connection,
-        PORTAL_DESTINATION,
-        PORTAL_PATH,
-        PORTAL_INTERFACE,
-    )
-    .map_err(|error| format!("could not create Trash portal proxy: {error}"))?;
     let result: u32 = proxy
         .call("TrashFile", &Fd::from(&file))
         .map_err(|error| format!("Trash portal call failed: {error}"))?;
@@ -80,5 +107,18 @@ mod tests {
     fn only_portal_result_one_is_success() {
         assert!(portal_result(1).is_ok());
         assert!(portal_result(0).is_err());
+    }
+
+    #[test]
+    fn host_session_deletes_each_path_and_reports_per_file_failures() {
+        assert_eq!(backend_for(false), Backend::Host);
+        let session = Session::open().expect("host trash session");
+        let temp = tempfile::tempdir().unwrap();
+        let existing = temp.path().join("existing.flac");
+        let missing = temp.path().join("missing.flac");
+        std::fs::write(&existing, b"scratch").unwrap();
+
+        assert!(session.delete(&existing).is_ok());
+        assert!(session.delete(&missing).is_err());
     }
 }
