@@ -2817,6 +2817,20 @@ the panel).
   route.
   Test: `nr_40_release_menu_has_one_primary_action_and_single_row_navigation`
   (`ui/releases/releases_menu.rs`).
+- **NR-41** [active] [core] [gtk] — A background New Releases check
+  (popover show, hourly tick, app start) spends requests only on artists whose
+  last successful or unmatched check is older than the seven-day cache
+  window; a failed artist is due again at the next check. Only the footer's
+  reload button forces every queued artist. A finished check counts as the
+  most recent check even when some artists failed — its timestamp advances
+  and the next background check waits the regular interval — while a check in
+  which no artist succeeded, or that aborted, keeps the previous age (NET-3).
+  The next background check is always measured from the last check's start,
+  whatever its outcome. NR-37's footer progress is unchanged.
+  Tests: `nr_41_a_failed_artist_is_due_again_at_the_next_check`,
+  `nr_41_a_partially_failed_check_still_advances_the_checked_timestamp`
+  (`reprise-core`), `nr_41_a_background_check_never_forces_and_the_reload_does`
+  (`ui/updates/popover_tests.rs`).
 
 ## S. Surfaces & Geometry
 
