@@ -290,7 +290,7 @@ where
     refresh_result?;
     reconciliation_result?;
     crate::artist_news_history::enforce_retention(db, now).map_err(database_error)?;
-    if report.failures.is_empty() {
+    if report.failures.is_empty() || report.artists_fetched > 0 {
         crate::library::settings::set_new_releases_last_completed_at(db, (hooks.completion_time)())
             .map_err(database_error)?;
     }
