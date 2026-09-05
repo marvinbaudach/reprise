@@ -308,23 +308,26 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
         .borrow()
         .clone()
         .unwrap_or_else(|| Rc::new(|| {}));
-    tag_editor::present(
+    let _ = tag_editor::present(
         &window,
         &conn,
         tracks,
         bitrates,
         browse,
-        on_write_started,
-        move |writes, report, write_ms, tracks| {
-            finish_apply(
-                &shared_for_saved,
-                &writes,
-                &report,
-                ApplyOrigin::TrackList,
-                Some(opened_reload.clone()),
-                write_ms,
-                tracks,
-            );
+        &shared.cover_loader,
+        tag_editor::PresentCallbacks {
+            on_write_started,
+            on_saved: move |writes: Vec<TrackWrite>, report, write_ms, tracks| {
+                finish_apply(
+                    &shared_for_saved,
+                    &writes,
+                    &report,
+                    ApplyOrigin::TrackList,
+                    Some(opened_reload.clone()),
+                    write_ms,
+                    tracks,
+                );
+            },
         },
     );
 }
@@ -358,23 +361,26 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         .borrow()
         .clone()
         .unwrap_or_else(|| Rc::new(|| {}));
-    tag_editor::present(
+    let _ = tag_editor::present(
         &window,
         &conn,
         vec![session_track],
         &[seed.bitrate_kbps],
         None,
-        on_write_started,
-        move |writes, report, write_ms, tracks| {
-            finish_apply(
-                &shared_for_saved,
-                &writes,
-                &report,
-                ApplyOrigin::ImportHint,
-                None,
-                write_ms,
-                tracks,
-            );
+        &shared.cover_loader,
+        tag_editor::PresentCallbacks {
+            on_write_started,
+            on_saved: move |writes: Vec<TrackWrite>, report, write_ms, tracks| {
+                finish_apply(
+                    &shared_for_saved,
+                    &writes,
+                    &report,
+                    ApplyOrigin::ImportHint,
+                    None,
+                    write_ms,
+                    tracks,
+                );
+            },
         },
     );
 }
