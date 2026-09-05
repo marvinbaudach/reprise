@@ -95,7 +95,9 @@ pub use crate::artist_news_view::{
 /// latest fetch timestamp) lives in `artist_news_refresh`; re-exported here
 /// so existing callers keep using `artist_news::{refresh_due, jitter_seconds,
 /// latest_fetched_at}`.
-pub use crate::artist_news_refresh::{jitter_seconds, latest_fetched_at, refresh_due};
+pub use crate::artist_news_refresh::{
+    jitter_seconds, last_check_started_at, latest_fetched_at, refresh_due,
+};
 
 pub(crate) fn normalize(value: &str) -> String {
     value

@@ -17,13 +17,14 @@ use super::concerts_section::ConcertsSection;
 #[cfg(test)]
 use super::feed_row;
 use super::feed_snapshot;
-use super::footer_state::{aggregate as aggregate_footer_state, ActiveFeed};
+use super::footer_state::{aggregate as aggregate_footer_state, ActiveFeed, FeedProgress};
 use super::release_row;
 use super::shell;
 use crate::ui::feed_footer::FeedFooter;
 
 #[path = "popover_fetch.rs"]
 mod popover_fetch;
+use popover_fetch::FetchTrigger;
 
 /// How often the background timer re-checks staleness while the module is
 /// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
@@ -116,6 +117,7 @@ struct NewReleasesPopover {
     /// The fetch currently in flight across both feeds, or the finished one
     /// whose outcome the footer is still showing.
     run: RefCell<FeedRefresh>,
+    progress: RefCell<FeedProgress>,
     news_loaded_this_visit: Cell<bool>,
     concerts_loaded_this_visit: Cell<bool>,
     dismissed_concert_ids: RefCell<HashSet<i64>>,
@@ -165,6 +167,7 @@ impl NewReleasesPopover {
             footer,
             fetching: Cell::new(false),
             run: RefCell::new(FeedRefresh::start(&[])),
+            progress: RefCell::new(FeedProgress::default()),
             news_loaded_this_visit: Cell::new(false),
             concerts_loaded_this_visit: Cell::new(false),
             dismissed_concert_ids: RefCell::new(HashSet::new()),
@@ -235,7 +238,7 @@ impl NewReleasesPopover {
         let weak = Rc::downgrade(self);
         self.footer.connect_reload(move || {
             if let Some(state) = weak.upgrade() {
-                state.start_fetch(true);
+                state.start_fetch(FetchTrigger::Manual);
             }
         });
 
@@ -397,6 +400,8 @@ impl NewReleasesPopover {
             let run = self.run.borrow();
             failed || run.has_failed(Feed::NewReleases) || run.has_failed(Feed::Concerts)
         };
+        let progress = *self.progress.borrow();
+        let fetching_progress = self.fetching.get().then_some(progress);
         let footer_state = aggregate_footer_state(
             ActiveFeed {
                 active: news_enabled,
@@ -409,7 +414,7 @@ impl NewReleasesPopover {
                 loaded_this_visit: self.concerts_loaded_this_visit.get(),
             },
             reprise_core::online_sources::is_enabled(&self.conn).unwrap_or(false),
-            self.fetching.get(),
+            fetching_progress,
             run_failed,
             concerts_enabled && !concerts.credentials,
         );
@@ -448,7 +453,7 @@ impl NewReleasesPopover {
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        let latest = reprise_core::artist_news::latest_fetched_at(&self.conn)
+        let latest = reprise_core::artist_news::last_check_started_at(&self.conn)
             .ok()
             .flatten();
         let now = chrono::Utc::now().timestamp();
@@ -456,7 +461,7 @@ impl NewReleasesPopover {
             reprise_core::artist_news::jitter_seconds(&self.database_path.to_string_lossy());
         let due = reprise_core::artist_news::refresh_due(latest, now, jitter);
         if periodic_fetch_due(enabled, self.fetching.get(), due) {
-            self.start_fetch(false);
+            self.start_fetch(FetchTrigger::Background);
         }
     }
 
@@ -515,7 +520,7 @@ impl NewReleasesPopover {
         if enabled {
             self.start_refresh_timer();
             if !self.fetch_completed() {
-                self.start_fetch(false);
+                self.start_fetch(FetchTrigger::Background);
             } else {
                 self.render(false, false);
             }
@@ -611,6 +616,8 @@ pub(in crate::ui) fn install(
 
 fn fetch_from_database(
     database_path: &Path,
+    force: bool,
+    on_progress: &mut dyn FnMut(reprise_core::artist_news::RefreshProgress),
 ) -> Result<reprise_core::artist_news::RefreshReport, reprise_core::artist_news::NewsError> {
     let conn = reprise_core::db::Db::open_migrated(Some(database_path))
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
@@ -622,7 +629,7 @@ fn fetch_from_database(
     let today = chrono::Local::now().date_naive();
     let scope = reprise_core::artist_news::configured_fetch_scope(&conn)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
-    reprise_core::artist_news::refresh(&conn, today, scope, true)
+    reprise_core::artist_news::refresh_with_progress(&conn, today, scope, force, on_progress)
 }
 
 #[cfg(test)]
