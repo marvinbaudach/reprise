@@ -448,7 +448,7 @@ impl NewReleasesPopover {
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        let latest = reprise_core::artist_news::latest_fetched_at(&self.conn)
+        let latest = reprise_core::artist_news::last_check_started_at(&self.conn)
             .ok()
             .flatten();
         let now = chrono::Utc::now().timestamp();

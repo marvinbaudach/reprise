@@ -73,6 +73,7 @@ pub(crate) fn record_attempt(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn last_attempt_at(
     conn: &Connection,
     artist_key: &str,

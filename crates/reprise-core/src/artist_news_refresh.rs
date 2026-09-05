@@ -58,6 +58,15 @@ pub fn latest_fetched_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Er
     Ok(latest_completion.or(latest_attempt))
 }
 
+/// The newest start of any artist check or counted completion. Background
+/// cadence uses this timestamp so an all-failed check still postpones the
+/// next attempt, while the footer keeps using the last counted completion.
+pub fn last_check_started_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
+    let latest_attempt = crate::artist_news_ledger::latest_attempt(db.conn())?;
+    let latest_completion = crate::library::settings::get_new_releases_last_completed_at(db)?;
+    Ok(latest_attempt.max(latest_completion))
+}
+
 /// Captures the old ledger-derived age before a refresh can append a failed
 /// attempt. Once seeded, only successful whole runs move this timestamp.
 pub(crate) fn seed_completion_from_legacy_ledger(
@@ -74,7 +83,7 @@ pub(crate) fn seed_completion_from_legacy_ledger(
 
 #[cfg(test)]
 mod tests {
-    use super::{jitter_seconds, latest_fetched_at, refresh_due};
+    use super::{jitter_seconds, last_check_started_at, latest_fetched_at, refresh_due};
 
     fn migrated_conn() -> crate::db::Db {
         crate::db::Db::open_in_memory().unwrap()
@@ -154,5 +163,29 @@ mod tests {
         record_ledger_attempt(&conn, "artist two", 5_000);
         record_ledger_attempt(&conn, "artist three", 2_500);
         assert_eq!(latest_fetched_at(&conn).unwrap(), Some(5_000));
+    }
+
+    #[test]
+    fn last_check_started_at_prefers_the_newest_of_attempt_and_completion() {
+        let with_attempt = migrated_conn();
+        crate::library::settings::set_new_releases_last_completed_at(&with_attempt, 100).unwrap();
+        record_ledger_attempt(&with_attempt, "artist", 500);
+        assert_eq!(
+            last_check_started_at(&with_attempt).unwrap(),
+            Some(500),
+            "a newer artist attempt must win over the last counted completion"
+        );
+
+        let completion_only = migrated_conn();
+        crate::library::settings::set_new_releases_last_completed_at(&completion_only, 100)
+            .unwrap();
+        assert_eq!(
+            last_check_started_at(&completion_only).unwrap(),
+            Some(100),
+            "the completion must be used when no artist attempt exists"
+        );
+
+        let empty = migrated_conn();
+        assert_eq!(last_check_started_at(&empty).unwrap(), None);
     }
 }
