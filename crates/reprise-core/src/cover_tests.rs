@@ -535,6 +535,68 @@ fn an_entry_written_before_the_unknown_state_is_not_believed() {
 }
 
 #[test]
+fn resolution_format_three_reopens_downloads_settled_by_format_two() {
+    let dir = tempfile::tempdir().unwrap();
+    let album = format!("Format Three {}", fastrand::u64(..));
+    let track = tagged_track_with_cover(dir.path(), "v2.flac", &album, solid_png([3, 6, 9]));
+    let index = resolution_index_path(&track, ThumbnailSize::List);
+    let format_two_stamp = format!(
+        "2:{}:{}:{}:{}",
+        mtime_nanos(&track),
+        std::fs::metadata(&track).unwrap().len(),
+        mtime_nanos(dir.path()),
+        mtime_nanos(&crate::cover_download::publish_marker())
+    );
+    write_resolution_body(
+        &index,
+        &format_two_stamp,
+        &format!("{RESOLUTION_UNKNOWN}\n{DOWNLOAD_EXHAUSTED}"),
+    );
+
+    assert!(
+        !download_marked_unavailable(&track, ThumbnailSize::List),
+        "format-two settlement predates cross-album collision detection"
+    );
+
+    std::fs::remove_file(index).ok();
+}
+
+#[test]
+fn cover_download_migration_reopens_only_the_cover_startup_task() {
+    let cache = tempfile::tempdir().unwrap();
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate_with_cache_dirs(&conn, cache.path(), cache.path()).unwrap();
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, 'cover'), (?2, 'spectrogram')",
+        [
+            "startup_tasks.completed.covers",
+            "startup_tasks.completed.spectrogram",
+        ],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 82).unwrap();
+
+    crate::db::migrate_with_cache_dirs(&conn, cache.path(), cache.path()).unwrap();
+
+    let cover_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'startup_tasks.completed.covers'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let spectrogram_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'startup_tasks.completed.spectrogram'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(cover_count, 0);
+    assert_eq!(spectrogram_count, 1);
+}
+
+#[test]
 fn a_sidecar_cover_appearing_undoes_a_remembered_absence() {
     // "No cover" is remembered too, so a coverless track costs three stats
     // instead of a tag read. It must not survive a cover showing up.
