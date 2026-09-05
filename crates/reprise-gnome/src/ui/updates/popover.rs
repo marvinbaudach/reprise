@@ -17,7 +17,7 @@ use super::concerts_section::ConcertsSection;
 #[cfg(test)]
 use super::feed_row;
 use super::feed_snapshot;
-use super::footer_state::{aggregate as aggregate_footer_state, ActiveFeed};
+use super::footer_state::{aggregate as aggregate_footer_state, ActiveFeed, FeedProgress};
 use super::release_row;
 use super::shell;
 use crate::ui::feed_footer::FeedFooter;
@@ -117,6 +117,7 @@ struct NewReleasesPopover {
     /// The fetch currently in flight across both feeds, or the finished one
     /// whose outcome the footer is still showing.
     run: RefCell<FeedRefresh>,
+    progress: RefCell<FeedProgress>,
     news_loaded_this_visit: Cell<bool>,
     concerts_loaded_this_visit: Cell<bool>,
     dismissed_concert_ids: RefCell<HashSet<i64>>,
@@ -166,6 +167,7 @@ impl NewReleasesPopover {
             footer,
             fetching: Cell::new(false),
             run: RefCell::new(FeedRefresh::start(&[])),
+            progress: RefCell::new(FeedProgress::default()),
             news_loaded_this_visit: Cell::new(false),
             concerts_loaded_this_visit: Cell::new(false),
             dismissed_concert_ids: RefCell::new(HashSet::new()),
@@ -398,6 +400,8 @@ impl NewReleasesPopover {
             let run = self.run.borrow();
             failed || run.has_failed(Feed::NewReleases) || run.has_failed(Feed::Concerts)
         };
+        let progress = *self.progress.borrow();
+        let fetching_progress = self.fetching.get().then_some(progress);
         let footer_state = aggregate_footer_state(
             ActiveFeed {
                 active: news_enabled,
@@ -410,7 +414,7 @@ impl NewReleasesPopover {
                 loaded_this_visit: self.concerts_loaded_this_visit.get(),
             },
             reprise_core::online_sources::is_enabled(&self.conn).unwrap_or(false),
-            self.fetching.get(),
+            fetching_progress,
             run_failed,
             concerts_enabled && !concerts.credentials,
         );

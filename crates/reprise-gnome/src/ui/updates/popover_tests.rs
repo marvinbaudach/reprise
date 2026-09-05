@@ -273,15 +273,65 @@ fn nr_37_the_popover_footer_reports_the_older_of_both_feeds() {
     };
 
     assert_eq!(
-        aggregate_footer_state(news, concerts, true, false, false, false),
+        aggregate_footer_state(news, concerts, true, None, false, false),
         crate::ui::feed_footer::FeedFooterState::Cached { at: 100 }
     );
     assert_eq!(
-        aggregate_footer_state(news, concerts, true, true, false, false),
+        aggregate_footer_state(
+            news,
+            concerts,
+            true,
+            Some(FeedProgress::default()),
+            false,
+            false
+        ),
         crate::ui::feed_footer::FeedFooterState::Fetching {
             checked: 0,
             total: 0
         }
+    );
+}
+
+#[test]
+fn nr_37_the_popover_footer_shows_determinate_progress_from_both_feeds() {
+    let active = ActiveFeed {
+        active: true,
+        latest: None,
+        loaded_this_visit: false,
+    };
+
+    assert_eq!(
+        aggregate_footer_state(
+            active,
+            active,
+            true,
+            Some(FeedProgress {
+                news: (12, 50),
+                concerts: (3, 20),
+            }),
+            false,
+            false,
+        ),
+        crate::ui::feed_footer::FeedFooterState::Fetching {
+            checked: 15,
+            total: 70,
+        },
+        "the Updates footer must sum New Releases and Concerts progress"
+    );
+    assert_eq!(
+        aggregate_footer_state(
+            active,
+            active,
+            true,
+            Some(FeedProgress::default()),
+            false,
+            false,
+        ),
+        crate::ui::feed_footer::FeedFooterState::Fetching {
+            checked: 0,
+            total: 0,
+        },
+        "the footer must stay indeterminate until the first progress event"
     );
 }
 
