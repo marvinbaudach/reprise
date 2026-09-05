@@ -455,8 +455,7 @@ impl<M: FilterModel> FilterBar<M> {
             .collect()
     }
 
-    #[cfg(test)]
-    fn count_text(&self) -> String {
+    pub(in crate::ui) fn count_text(&self) -> String {
         self.result_label.text().to_string()
     }
 }
