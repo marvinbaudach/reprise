@@ -173,11 +173,11 @@ fn fetch_collision_pair(
 
 fn cover_status(
     tag: &CoverTag,
-    source: &CoverSource,
+    _source: &CoverSource,
     observed_embedded: &mut HashMap<String, u64>,
     observed_fingerprints: &mut HashMap<u64, (String, String, String, Option<String>)>,
 ) -> CoverStatus {
-    let CoverSource::Embedded(bytes) = source else {
+    let Some(bytes) = tag.picture.as_deref() else {
         return CoverStatus::Covered;
     };
     let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref())
@@ -519,6 +519,49 @@ mod tests {
                     "First Artist".into(),
                     "First Album".into(),
                     Some("first-release-mbid".into()),
+                )),
+            }
+        );
+    }
+
+    #[test]
+    fn downloaded_cover_keeps_embedded_art_in_cross_album_collision_detection() {
+        let mut observed_by_album = HashMap::new();
+        let mut observed_by_fingerprint = HashMap::new();
+        let covered_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("Covered Artist".into()),
+            album: Some("Covered Album".into()),
+            release_mbid: Some("covered-release-mbid".into()),
+        };
+        let colliding_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("Retry Artist".into()),
+            album: Some("Retry Album".into()),
+            release_mbid: None,
+        };
+
+        assert_eq!(
+            cover_status(
+                &covered_tag,
+                &CoverSource::FolderImage(PathBuf::from("/cache/covered.jpg")),
+                &mut observed_by_album,
+                &mut observed_by_fingerprint,
+            ),
+            CoverStatus::Covered
+        );
+        assert_eq!(
+            cover_status(
+                &colliding_tag,
+                &CoverSource::Embedded(vec![1, 2, 3]),
+                &mut observed_by_album,
+                &mut observed_by_fingerprint,
+            ),
+            CoverStatus::NeedsSharedCover {
+                also: Some((
+                    "Covered Artist".into(),
+                    "Covered Album".into(),
+                    Some("covered-release-mbid".into()),
                 )),
             }
         );
