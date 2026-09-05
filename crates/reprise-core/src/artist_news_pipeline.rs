@@ -207,6 +207,11 @@ where
                 let mbid = match resolve_artist_mbid(conn, &candidate, hooks.fetch, &mut report)? {
                     MbidResolution::Found(mbid) => mbid,
                     MbidResolution::Failed(error) => {
+                        tracing::warn!(
+                            artist = %candidate.name,
+                            %error,
+                            "New Releases: artist check failed"
+                        );
                         record_failure(&mut report, error);
                         crate::artist_news_ledger::record_attempt(
                             conn,
@@ -235,6 +240,11 @@ where
                 let discography = match fetch_release_discography(&mbid, today, hooks.fetch) {
                     Ok(discography) => discography,
                     Err(error) => {
+                        tracing::warn!(
+                            artist = %candidate.name,
+                            %error,
+                            "New Releases: artist check failed"
+                        );
                         record_failure(&mut report, error);
                         crate::artist_news_ledger::record_attempt(
                             conn,
@@ -294,6 +304,13 @@ where
         crate::library::settings::set_new_releases_last_completed_at(db, (hooks.completion_time)())
             .map_err(database_error)?;
     }
+    tracing::info!(
+        queued = report.artists_queued,
+        fetched = report.artists_fetched,
+        unmatched = report.unmatched,
+        failed = report.failed,
+        "New Releases: check finished"
+    );
     Ok(report)
 }
 
