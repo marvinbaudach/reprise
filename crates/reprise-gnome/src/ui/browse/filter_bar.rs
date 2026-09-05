@@ -70,6 +70,8 @@ pub(in crate::ui) struct SelectionDescriptor {
     pub facet_id: String,
     pub value_id: String,
     pub label: String,
+    removable: bool,
+    css_class: Option<&'static str>,
 }
 
 impl SelectionDescriptor {
@@ -82,6 +84,23 @@ impl SelectionDescriptor {
             facet_id: facet_id.into(),
             value_id: value_id.into(),
             label: label.into(),
+            removable: true,
+            css_class: None,
+        }
+    }
+
+    pub(in crate::ui) fn action(
+        facet_id: impl Into<String>,
+        value_id: impl Into<String>,
+        label: impl Into<String>,
+        css_class: &'static str,
+    ) -> Self {
+        Self {
+            facet_id: facet_id.into(),
+            value_id: value_id.into(),
+            label: label.into(),
+            removable: false,
+            css_class: Some(css_class),
         }
     }
 
@@ -139,6 +158,10 @@ pub(in crate::ui) trait FilterModel: 'static {
 
     fn persist(&self, _previous: &Self::Filter, _filter: &Self::Filter) -> Result<(), String> {
         Ok(())
+    }
+
+    fn activate_selection(&self, _selection: &SelectionDescriptor) -> bool {
+        false
     }
 }
 
@@ -386,14 +409,24 @@ impl<M: FilterModel> FilterBar<M> {
             self.chips.remove(&child);
         }
         for selection in self.model.selections(&self.filter()) {
-            let button = gtk4::Button::with_label(&format!("{}  ×", selection.label));
+            let label = if selection.removable {
+                format!("{}  ×", selection.label)
+            } else {
+                selection.label.clone()
+            };
+            let button = gtk4::Button::with_label(&label);
             button.add_css_class("flat");
             button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
+            if let Some(css_class) = selection.css_class {
+                button.add_css_class(css_class);
+            }
             button.set_size_request(-1, 20);
             let weak = Rc::downgrade(self);
             button.connect_clicked(move |_| {
                 if let Some(bar) = weak.upgrade() {
-                    bar.remove(&selection.facet_id, &selection.value_id);
+                    if !bar.model.activate_selection(&selection) {
+                        bar.remove(&selection.facet_id, &selection.value_id);
+                    }
                 }
             });
             self.chips.append(&button);

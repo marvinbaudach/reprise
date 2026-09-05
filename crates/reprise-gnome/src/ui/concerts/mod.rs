@@ -12,6 +12,7 @@ mod concerts_empty_state;
 mod concerts_end_of_results;
 mod concerts_failure_ui;
 mod concerts_filter_bar;
+mod concerts_filter_model;
 mod concerts_location_banner;
 mod concerts_location_columns;
 mod concerts_model;
