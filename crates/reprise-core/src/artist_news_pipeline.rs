@@ -461,16 +461,23 @@ fn persist_artist_match(
     Ok(())
 }
 
-/// Freshness is judged by the last *attempt* recorded in the ledger, not by
-/// the newest release we happened to store. An artist with nothing to report
-/// stores no release — judging by releases meant re-fetching them forever.
+/// Freshness is judged by the last successful or unmatched attempt recorded
+/// in the ledger, not by the newest release we happened to store. An artist
+/// with nothing to report stores no release, while a failed artist must be due
+/// again at the next check.
 fn artist_cache_is_fresh(
     conn: &Connection,
     artist_key: &str,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
-    let last_attempt = crate::artist_news_ledger::last_attempt_at(conn, artist_key)?;
-    Ok(last_attempt.is_some_and(|attempt| now.saturating_sub(attempt).max(0) <= FETCH_TTL_SECONDS))
+    let last_attempt = crate::artist_news_ledger::last_attempt(conn, artist_key)?;
+    Ok(last_attempt.is_some_and(|attempt| {
+        matches!(
+            attempt.outcome,
+            crate::artist_news_ledger::FetchOutcome::Ok
+                | crate::artist_news_ledger::FetchOutcome::Unmatched
+        ) && now.saturating_sub(attempt.at).max(0) <= FETCH_TTL_SECONDS
+    }))
 }
 
 fn sync_releases(

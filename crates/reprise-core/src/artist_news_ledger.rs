@@ -22,6 +22,20 @@ impl FetchOutcome {
             FetchOutcome::Failed => "failed",
         }
     }
+
+    fn from_str(value: &str) -> Self {
+        match value {
+            "ok" => Self::Ok,
+            "unmatched" => Self::Unmatched,
+            _ => Self::Failed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LedgerAttempt {
+    pub at: i64,
+    pub outcome: FetchOutcome,
 }
 
 /// Records one attempt. A later attempt that could not resolve an MBID keeps
@@ -63,11 +77,28 @@ pub(crate) fn last_attempt_at(
     conn: &Connection,
     artist_key: &str,
 ) -> Result<Option<i64>, rusqlite::Error> {
+    Ok(last_attempt(conn, artist_key)?.map(|attempt| attempt.at))
+}
+
+pub(crate) fn last_attempt(
+    conn: &Connection,
+    artist_key: &str,
+) -> Result<Option<LedgerAttempt>, rusqlite::Error> {
     conn.query_row(
-        "SELECT last_attempt_at FROM artist_news_fetch WHERE artist_key = ?1",
+        "SELECT last_attempt_at, last_outcome
+         FROM artist_news_fetch
+         WHERE artist_key = ?1",
         [artist_key],
-        |row| row.get::<_, Option<i64>>(0),
+        |row| {
+            let at = row.get(0)?;
+            let outcome = row.get::<_, String>(1)?;
+            Ok(LedgerAttempt {
+                at,
+                outcome: FetchOutcome::from_str(&outcome),
+            })
+        },
     )
+    .map(Some)
     .or_else(|error| match error {
         rusqlite::Error::QueryReturnedNoRows => Ok(None),
         other => Err(other),
@@ -163,6 +194,25 @@ mod tests {
     fn unknown_key_has_no_attempt() {
         let conn = conn();
         assert_eq!(last_attempt_at(&conn, "nobody").unwrap(), None);
+    }
+
+    #[test]
+    fn unknown_outcome_is_read_as_failed() {
+        let conn = conn();
+        conn.execute(
+            "INSERT INTO artist_news_fetch
+               (artist_key, last_attempt_at, last_outcome, releases_found)
+             VALUES ('artist', 100, 'future-value', 0)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            last_attempt(&conn, "artist").unwrap(),
+            Some(LedgerAttempt {
+                at: 100,
+                outcome: FetchOutcome::Failed,
+            })
+        );
     }
 
     #[test]
