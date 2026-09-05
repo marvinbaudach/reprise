@@ -1,8 +1,13 @@
 //! Shared live-state footer for network-backed feeds.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use chrono::{DateTime, Datelike, Local, Timelike};
+use gtk4::glib;
 use gtk4::prelude::*;
 
+use crate::ui::scan::scan_progress::{PulseGeneration, PULSE_INTERVAL};
 use crate::ui::strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +140,8 @@ pub(in crate::ui) struct FeedFooter {
     label: gtk4::Label,
     reload: gtk4::Button,
     progress: gtk4::ProgressBar,
+    pulse_generation: PulseGeneration,
+    running_pulse: Rc<Cell<Option<u64>>>,
 }
 
 impl FeedFooter {
@@ -180,6 +187,8 @@ impl FeedFooter {
             label,
             reload,
             progress,
+            pulse_generation: PulseGeneration::default(),
+            running_pulse: Rc::new(Cell::new(None)),
         }
     }
 
@@ -214,6 +223,11 @@ impl FeedFooter {
         self.progress.is_visible()
     }
 
+    #[cfg(test)]
+    fn pulse_is_running(&self) -> bool {
+        self.running_pulse.get().is_some()
+    }
+
     fn apply_presentation(&self, value: &FeedFooterPresentation) {
         self.root.set_visible(value.visible);
         self.label.set_label(&value.text);
@@ -225,11 +239,55 @@ impl FeedFooter {
         self.progress.set_visible(value.progress.is_some());
         match value.progress {
             Some(FeedFooterProgress::Fraction(fraction)) => {
+                self.cancel_pulsing();
                 self.progress.set_fraction(fraction);
             }
-            Some(FeedFooterProgress::Indeterminate) => self.progress.pulse(),
-            None => {}
+            Some(FeedFooterProgress::Indeterminate) => self.start_pulsing(),
+            None => self.cancel_pulsing(),
         }
+    }
+
+    fn start_pulsing(&self) {
+        let generation = self.pulse_generation.start();
+        self.progress.set_fraction(0.0);
+        if !crate::ui::motion::animations_enabled() {
+            self.running_pulse.set(None);
+            return;
+        }
+        self.progress.pulse();
+        self.running_pulse.set(Some(generation));
+
+        let progress = self.progress.downgrade();
+        let pulse_generation = self.pulse_generation.clone();
+        let running_pulse = self.running_pulse.clone();
+        glib::timeout_add_local(PULSE_INTERVAL, move || {
+            if !pulse_generation.is_current(generation) {
+                if running_pulse.get() == Some(generation) {
+                    running_pulse.set(None);
+                }
+                return glib::ControlFlow::Break;
+            }
+            let Some(progress) = progress.upgrade() else {
+                if running_pulse.get() == Some(generation) {
+                    running_pulse.set(None);
+                }
+                return glib::ControlFlow::Break;
+            };
+            if !crate::ui::motion::animations_enabled() {
+                progress.set_fraction(0.0);
+                if running_pulse.get() == Some(generation) {
+                    running_pulse.set(None);
+                }
+                return glib::ControlFlow::Break;
+            }
+            progress.pulse();
+            glib::ControlFlow::Continue
+        });
+    }
+
+    fn cancel_pulsing(&self) {
+        self.pulse_generation.cancel();
+        self.running_pulse.set(None);
     }
 }
 
@@ -325,5 +383,54 @@ mod tests {
 
         assert_eq!(footer.dot.width(), 6);
         assert_eq!(footer.dot.height(), 6);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn conc_15_an_indeterminate_footer_keeps_pulsing_until_the_state_changes() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let animations_were_enabled = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(true);
+        let footer = FeedFooter::new();
+
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        assert!(
+            footer.pulse_is_running(),
+            "an indeterminate footer must keep a pulse timer running"
+        );
+
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 1,
+                total: 2,
+            },
+            now(),
+        ));
+        assert!(
+            !footer.pulse_is_running(),
+            "determinate progress must stop the pulse timer"
+        );
+
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        footer.apply_presentation(&presentation(FeedFooterState::NeverFetched, now()));
+        assert!(
+            !footer.pulse_is_running(),
+            "leaving progress entirely must stop the pulse timer"
+        );
+        settings.set_gtk_enable_animations(animations_were_enabled);
     }
 }
