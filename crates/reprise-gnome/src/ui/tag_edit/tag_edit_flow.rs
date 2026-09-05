@@ -522,6 +522,7 @@ fn finish_apply(
     tracks: usize,
 ) {
     let reload_started = std::time::Instant::now();
+    let mut delta = false;
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
     if updated > 0 {
@@ -566,14 +567,32 @@ fn finish_apply(
                 .map(|write| write.id)
                 .collect();
             if has_pre_save_view {
-                refresh_after_tag_mutation_with_view_ids(
-                    shared,
-                    &tag_changed_ids,
-                    &tag_changed_paths,
-                    save_anchor,
+                let after_ids = shared.current_view_ids();
+                let generation = shared.model.generation();
+                delta = tag_save_refresh::tag_save_model_change(
                     &live_reload.view_ids,
-                    shared.current_view_ids(),
-                );
+                    &after_ids,
+                    &report.updated_ids,
+                    generation,
+                )
+                .is_some();
+                if delta {
+                    refresh_after_tag_mutation_with_view_ids(
+                        shared,
+                        &tag_changed_ids,
+                        &tag_changed_paths,
+                        save_anchor,
+                        &live_reload.view_ids,
+                        after_ids,
+                    );
+                } else {
+                    refresh_after_tag_mutation_with_anchor(
+                        shared,
+                        &tag_changed_ids,
+                        &tag_changed_paths,
+                        save_anchor,
+                    );
+                }
             } else {
                 refresh_after_tag_mutation_with_anchor(
                     shared,
@@ -598,7 +617,7 @@ fn finish_apply(
         write_ms,
         tracks,
         reload_ms = reload_started.elapsed().as_millis(),
-        delta = false,
+        delta,
         updated,
         failed,
         "tag-edit batch completed"
