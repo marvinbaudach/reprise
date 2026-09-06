@@ -173,3 +173,26 @@ green on the converted tree.
   stays on its own bar; say so and keep the other conversions.
 - A task that needs `ui/track_list/**` or `ui/window/**` stops and reports; a
   view constructor signature change is replaced by a setter.
+
+## Refactor-pass disposition
+
+- **B2 fifth commit — dropped.** `BrowseBar` exceeds the abort criterion with
+  three independent special cases outside `FilterModel`: its source/place
+  zone and callbacks, the database-backed searchable value chooser with row
+  counts, and the sticky Library-only "Hide AI music" filter. Preserving its
+  frozen public signatures would therefore leave a wrapper larger than the
+  plan permits. Commit `4bfebfceb0` only imported the canonical chooser page
+  constants; it did not partially convert `BrowseBar`.
+- **B4 — deferred.** The original strand did not attempt the one-delta-reload
+  task or record an abort. This review-finding pass is restricted to the
+  accepted findings and was explicitly instructed not to attempt B4, so no
+  `list_store_delta.rs` or source-model reload path was changed.
+
+## Post-merge follow-ups
+
+- **Finding 14 — release sorting ownership.** Reconcile the duplicate release
+  comparison logic after merge: either remove the now-unused
+  `reprise_core::artist_news::sort_release_rows_by_display_text` helper or
+  have `ReleaseRowSortKey` delegate to Core's comparison functions. This
+  strand does not own `reprise-core`, so this pass deliberately made no Core
+  change.
