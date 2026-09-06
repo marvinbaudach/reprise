@@ -28,6 +28,8 @@ the session measures and writes §M below; pass 2 = A2–A4 against the numbers.
 - Reads but never edits: `crates/reprise-gnome/src/ui/track_list/**` (the
   delete display tests are the guard, not the subject), `ui/sidebar/**`.
 - Does not touch `ui/tag_edit/**` (strand B).
+- Refactor-pass extension: `crates/reprise-gnome/src/ui/window/window_now_playing_wiring.rs`
+  for the single Now Playing queue-listener registration call only.
 
 ## Pass 1 — instrumentation
 
@@ -203,3 +205,9 @@ mother plan's §6 leftover decision is made with.
 
 State per task what moved, what stayed under the threshold and why, the §M
 numbers, and R1 (the loaded-track totals) for the mother plan's §5.
+
+## Refactor
+
+- A1: made Now Playing deferral explicit at registration and replaced positional listener timing labels with registration identities.
+- A2: renamed the synchronous cost to `now_playing_enqueue_ms` and added `now_playing_deferred_ms` timing inside the idle callback.
+- A4: clear the recorded track prefeed together with the backend prefeed before presenting a queued episode.
