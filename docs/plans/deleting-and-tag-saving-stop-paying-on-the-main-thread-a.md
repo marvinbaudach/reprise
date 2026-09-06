@@ -2,7 +2,7 @@
 slug: deleting-and-tag-saving-stop-paying-on-the-main-thread-a
 worktree: /home/marvin/Projects/reprise-deleting-and-tag-saving-stop-paying-on-the-main-thread-a
 branch: feature/deleting-and-tag-saving-stop-paying-on-the-main-thread-a
-phase: planned
+phase: coded
 codex_session:
 created: 2026-09-06
 ---
@@ -175,7 +175,29 @@ for 13 rows — the second notification after the advance). `player_load_ms` and
 
 
 
-_pass 2 / acceptance table goes here._
+### Pass 2 acceptance (2026-09-06, worktree binary at `d19c55c020`, runs A7–A9; control = mother §0 fix arm F1–F3)
+
+Medians (range) over three runs, ms; load avg ≈ 3 (strand B's Codex in parallel).
+
+| Gesture | `mutated_ms` ctrl → A | `now_playing_ms` (sync part) | `advance_ms` ctrl → A | `present_ms` | `queue_notify_ms` | `reload_ms` ctrl → A | purge → completed ctrl → A |
+|---|---|---|---|---|---|---|---|
+| G1 delete 1 non-loaded | 50 → **0** | 0 | 0 → 0 | – | – | 11 → 20 (11–21) | 63 → **22 (13–23)** |
+| G2 delete 1 loaded | 40 → **5 (0–5)** | 0 | 8 → **4 (3–4)** | 3 | 0 | 55 → 60 (44–64) | 107 → **72 (50–76)** |
+| G3 delete 13 incl. loaded | 54 → **0** | 0 | 47 → **5 (3–5)** | 4 | 0 | 68 → 73 (59–75) | 172 → **80 (64–82)** |
+
+**Gates:** G1 (`mutated_ms` < 10 on every gesture) **met** — 0 / 5 / 0.
+G2 (`advance_ms` < 20 for the 13-row gesture) **met** — 5. G3 (one non-loaded
+row, purge → completed < 30 ms) **met** — 22 (13–23). Scroll writes after the
+delete unchanged (0 / 2 / 2, largest 36 px, as on control). The Now-Playing
+panel after G3 shows the same queue as before (screenshot
+`runs/A7/3-after-G3.png`); NAV-10b guard green per Codex.
+
+**R1 (reported, not gated):** the loaded-track totals are now 72 ms (1 row)
+and 80 ms (13 rows), of which the reload is 60 / 73 — the reload (re-centring
+the new current track) is now ≥ 80 % of both spans. That is the number the
+mother plan's §6 leftover decision is made with.
+
+
 
 ## Report
 
