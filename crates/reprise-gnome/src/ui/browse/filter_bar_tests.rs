@@ -12,7 +12,9 @@ struct TestFilter {
 }
 
 #[derive(Default)]
-struct TestModel;
+struct TestModel {
+    fail_persistence: bool,
+}
 
 impl FilterModel for TestModel {
     type Filter = TestFilter;
@@ -85,10 +87,18 @@ impl FilterModel for TestModel {
             count => format!("{count} items"),
         })
     }
+
+    fn persist(&self, _previous: &Self::Filter, _filter: &Self::Filter) -> Result<(), String> {
+        if self.fail_persistence {
+            Err("read-only settings store".into())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 fn bar() -> Rc<FilterBar<TestModel>> {
-    FilterBar::new(TestModel)
+    FilterBar::new(TestModel::default())
 }
 
 #[test]
@@ -156,4 +166,24 @@ fn count_line_names_zero_one_and_many() {
     assert_eq!(bar.count_text(), "1 item");
     bar.set_counts(3, 3);
     assert_eq!(bar.count_text(), "3 items");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn persistence_failure_keeps_the_visible_filter_and_notifies_the_caller() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = FilterBar::new(TestModel {
+        fail_persistence: true,
+    });
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    bar.set_on_changed({
+        let changes = changes.clone();
+        move |filter| changes.borrow_mut().push(filter)
+    });
+
+    bar.select("kind", "album");
+
+    assert_eq!(bar.filter().selections, [("kind".into(), "album".into())]);
+    assert_eq!(&*changes.borrow(), &[bar.filter()]);
 }
