@@ -308,6 +308,7 @@ impl PlayerController {
     pub(in crate::ui) fn feed_next(&self) {
         let transition = settings::get_track_transition(&self.conn);
         if transition == TrackTransition::Off {
+            self.prefed_next_track.set(None);
             self.player.set_next(None);
             return;
         }
@@ -332,13 +333,15 @@ impl PlayerController {
                     .is_none_or(|ids| ids.contains(&id)),
             })
         };
-        let path = next_item.and_then(prefeed_track_id).and_then(|id| {
+        let prefed_track = next_item.and_then(prefeed_track_id);
+        let path = prefed_track.and_then(|id| {
             let conn = &self.conn;
             queries::query_track_summary(conn, id)
                 .ok()
                 .flatten()
                 .map(|summary| summary.path)
         });
+        self.prefed_next_track.set(path.as_ref().and(prefed_track));
         self.player.set_next(path.as_deref());
     }
 

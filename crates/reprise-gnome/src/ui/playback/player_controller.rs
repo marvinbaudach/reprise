@@ -183,18 +183,16 @@ use super::player_callbacks::{
     OnBassChanged, OnNowPlayingPanelStateChanged, OnNowPlayingPanelTrackChanged,
     OnSongVisualSpectrumChanged,
 };
-use reprise_core::queries;
-use reprise_core::queue::Queue;
-use reprise_core::up_next::{QueueItem, UpNextQueue};
-use reprise_core::waveform::RenderDataBackend;
-
 pub(in crate::ui) use super::player_controller_types::{
     PlayerControllerBackends, StartPlayback, VisibleView,
 };
 use super::player_controller_types::{RandomStartChooser, ViewRefillIds};
-
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
+use reprise_core::queries;
+use reprise_core::queue::Queue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
+use reprise_core::waveform::RenderDataBackend;
 
 // `PlayerController::volume`'s initial value is the core media-integration
 // `DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
@@ -265,6 +263,7 @@ pub struct PlayerController {
     pub(in crate::ui) pending_start_mark: Cell<Option<(QueueItem, i64)>>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<QueueItem>>,
+    pub(in crate::ui) prefed_next_track: Cell<Option<i64>>,
     /// PLAY-14 runtime playback history and navigation one-shot flag.
     pub(in crate::ui) history: RefCell<super::playback_history_transport::HistoryState>,
     /// Catalog id removed while its player-owned snapshot remains loaded.
@@ -475,6 +474,7 @@ impl PlayerController {
             pending_start_mark: Cell::new(None),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
+            prefed_next_track: Cell::new(None),
             history: RefCell::default(),
             deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),

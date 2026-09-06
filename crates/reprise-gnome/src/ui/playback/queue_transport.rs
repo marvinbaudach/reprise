@@ -185,10 +185,6 @@ fn apply_queue_reorder(
     }
 }
 impl PlayerController {
-    pub(in crate::ui) fn add_on_queue_changed(&self, callback: impl Fn() + 'static) {
-        self.queue_changed.borrow_mut().push(Rc::new(callback));
-    }
-
     /// Returns every live playback-model id rejected by the core retention
     /// predicate after a scan. The caller feeds these ids into the same
     /// purge path as hard deletes and auto-clean.
@@ -246,30 +242,6 @@ impl PlayerController {
             self.notify_queue_changed();
         }
         changed
-    }
-
-    pub(in crate::ui) fn notify_queue_changed(&self) {
-        let up_next_len = self.up_next.borrow().len();
-        let ((), mirror_ms) = super::instrumentation::timed(|| self.update_agent_queue_mirror());
-        // Fixed order: queue model, sidebar/Queue refresh, Now Playing panel.
-        let callbacks = self.queue_changed.borrow().clone();
-        let listener_times = super::instrumentation::time_queue_listeners(callbacks);
-        // The up-next front / queue order may have changed, so the upcoming
-        // track changed: re-feed the gapless next. All up-next edits funnel
-        // through here. `feed_next` only takes short, sequential borrows, and
-        // every caller of `notify_queue_changed` holds no live borrow across
-        // it (see `## Queue borrow discipline`).
-        let ((), feed_ms) = super::instrumentation::timed(|| self.feed_next());
-        tracing::info!(
-            up_next_len,
-            mirror_ms,
-            listeners_ms = listener_times.total_ms,
-            queue_model_ms = listener_times.queue_model_ms,
-            sidebar_queue_reload_ms = listener_times.sidebar_queue_reload_ms,
-            now_playing_ms = listener_times.now_playing_ms,
-            feed_ms,
-            "up next changed"
-        );
     }
 
     pub(in crate::ui) fn start_current_item(
@@ -730,6 +702,7 @@ impl PlayerController {
         if ids.is_empty() {
             return;
         }
+        self.clear_prefed_next_if_removed(ids);
         let playing = self.now_playing.borrow().as_ref().map(|track| track.id);
         let plan = queue_purge_plan(ids, playing);
         let playing_from_up_next = plan.after_loaded_track.is_some()
