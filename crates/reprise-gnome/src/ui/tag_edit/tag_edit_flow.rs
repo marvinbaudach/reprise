@@ -559,20 +559,14 @@ fn finish_apply(
             anchor
         };
         if !tag_changed_paths.is_empty() {
-            let tag_changed_ids: Vec<i64> = writes
-                .iter()
-                .filter(|write| {
-                    !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id)
-                })
-                .map(|write| write.id)
-                .collect();
+            let tag_changed_ids = tag_save_refresh::tag_changed_ids(writes, &report.updated_ids);
             if has_pre_save_view {
                 let after_ids = shared.current_view_ids();
                 let generation = shared.model.generation();
                 delta = tag_save_refresh::tag_save_model_change(
                     &live_reload.view_ids,
                     &after_ids,
-                    &report.updated_ids,
+                    &tag_changed_ids,
                     generation,
                 )
                 .is_some();

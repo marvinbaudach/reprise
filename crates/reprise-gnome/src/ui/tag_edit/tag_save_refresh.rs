@@ -28,6 +28,14 @@ pub(super) fn tag_save_model_change(
     changed_range(before, after, written, generation)
 }
 
+pub(super) fn tag_changed_ids(writes: &[TrackWrite], updated_ids: &[i64]) -> Vec<i64> {
+    writes
+        .iter()
+        .filter(|write| !write.patch.tags.is_empty() && updated_ids.contains(&write.id))
+        .map(|write| write.id)
+        .collect()
+}
+
 pub(super) fn plan(
     writes: &[TrackWrite],
     updated_ids: &[i64],
@@ -159,6 +167,20 @@ mod tests {
                 rating: None,
             },
         }
+    }
+
+    #[test]
+    fn mixed_tag_and_rating_save_builds_the_delta_from_tag_writes_only() {
+        let writes = [rating_write(1, 4), tag_write(2)];
+
+        let tag_ids = tag_changed_ids(&writes, &[1, 2]);
+        let change = tag_save_model_change(&[1, 2, 3], &[1, 2, 3], &tag_ids, 11)
+            .expect("the tag write must request a one-row delta");
+
+        assert_eq!(tag_ids, vec![2]);
+        assert_eq!(change.position, 1);
+        assert_eq!(change.removed, 1);
+        assert_eq!(change.added, 1);
     }
 
     #[test]
