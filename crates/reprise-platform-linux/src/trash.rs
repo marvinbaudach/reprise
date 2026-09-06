@@ -35,13 +35,21 @@ enum SessionBackend {
 }
 
 /// Reusable trash backend state for one caller-defined batch.
+///
+/// The portal proxy is intentionally opened once and is not reconnected after
+/// a mid-batch failure. Callers receive that failure for each affected file
+/// and commit only the files the portal confirmed as trashed.
 pub struct Session {
     backend: SessionBackend,
 }
 
 impl Session {
     pub fn open() -> Result<Self, String> {
-        let backend = match backend_for(Path::new(FLATPAK_INFO).is_file()) {
+        Self::open_for_backend(backend_for(Path::new(FLATPAK_INFO).is_file()))
+    }
+
+    fn open_for_backend(backend: Backend) -> Result<Self, String> {
+        let backend = match backend {
             Backend::Host => SessionBackend::Host,
             Backend::Portal => {
                 let connection = zbus::blocking::Connection::session().map_err(|error| {
@@ -61,8 +69,18 @@ impl Session {
     }
 
     pub fn delete(&self, path: &Path) -> Result<(), String> {
+        self.delete_with_host(path, |path| {
+            trash::delete(path).map_err(|error| error.to_string())
+        })
+    }
+
+    fn delete_with_host(
+        &self,
+        path: &Path,
+        host_delete: impl FnOnce(&Path) -> Result<(), String>,
+    ) -> Result<(), String> {
         match &self.backend {
-            SessionBackend::Host => trash::delete(path).map_err(|error| error.to_string()),
+            SessionBackend::Host => host_delete(path),
             SessionBackend::Portal(proxy) => portal_delete(proxy, path),
         }
     }
@@ -110,15 +128,23 @@ mod tests {
     }
 
     #[test]
-    fn host_session_deletes_each_path_and_reports_per_file_failures() {
-        assert_eq!(backend_for(false), Backend::Host);
-        let session = Session::open().expect("host trash session");
+    fn host_session_reports_per_file_results_without_using_the_desktop_trash() {
+        let session = Session::open_for_backend(Backend::Host).expect("host trash session");
         let temp = tempfile::tempdir().unwrap();
         let existing = temp.path().join("existing.flac");
         let missing = temp.path().join("missing.flac");
         std::fs::write(&existing, b"scratch").unwrap();
 
-        assert!(session.delete(&existing).is_ok());
-        assert!(session.delete(&missing).is_err());
+        assert!(session
+            .delete_with_host(&existing, |path| {
+                std::fs::remove_file(path).map_err(|error| error.to_string())
+            })
+            .is_ok());
+        assert!(session
+            .delete_with_host(&missing, |path| {
+                std::fs::remove_file(path).map_err(|error| error.to_string())
+            })
+            .is_err());
+        assert!(!existing.exists());
     }
 }
