@@ -14,7 +14,7 @@ members = [
 default-members = ["crates/reprise-gnome"]
 
 [workspace.package]
-version = "0.1.143"
+version = "0.1.144"
 authors = ["Marvin Baudach"]
 edition = "2021"
 # gtk-rs 0.22 and gstreamer-rs 0.25 set the current dependency floor.
