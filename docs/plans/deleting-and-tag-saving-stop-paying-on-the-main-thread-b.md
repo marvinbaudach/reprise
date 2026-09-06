@@ -2,7 +2,7 @@
 slug: deleting-and-tag-saving-stop-paying-on-the-main-thread-b
 worktree: /home/marvin/Projects/reprise-deleting-and-tag-saving-stop-paying-on-the-main-thread-b
 branch: feature/deleting-and-tag-saving-stop-paying-on-the-main-thread-b
-phase: planned
+phase: coded
 codex_session:
 created: 2026-09-06
 ---
@@ -210,7 +210,25 @@ current track in the grill, item 7), and the hold must not pin a value that
 `apply()` stood down from. Ownership extended by
 `ui/track_list/restore_intent.rs` and `ui/track_list/adjustment_hold.rs`.
 
-_pass 4 / acceptance table goes here._
+### Pass 4 acceptance (2026-09-06, worktree binary at `7c2dd4c485`, runs B10–B12; control = B7–B9)
+
+| Field | G4 Genre, 8 rows | G5 Artist, 8 rows |
+|---|---|---|
+| `delta` | true (3/3) | false (3/3), expected |
+| `write_ms` | 118 (97–119) | 100 (80–103) |
+| `reload_ms` | 203 (197–219) | 344 (328–344) — was 270 |
+| scroll writes ≤ 500 ms after completion | 0 | 0 (the anchor write lands after the window) |
+| adjustment after the save | unchanged (46 260 px) | **46 260 → 86 058 px**, one write, no `JUMP-TO-TOP` |
+| first edited row in viewport | n/a | **yes** — all 8 edited rows visible, first one at row 10 of the viewport (`runs/B10/9-after-G5.png`) |
+
+**G4 met, G5 met.** R2 (for the mother plan's §5): after a sort-field save
+there is exactly one adjustment write, from the pre-save position to the
+first edited row's new position (46 260 → 86 058 px in this gesture); the
+Genre save writes nothing. The G5 reload is 344 ms against 270 before the fix
+(reported, not gated; the mother plan keeps the loaded-track reload out of
+scope).
+
+
 
 
 
