@@ -407,14 +407,15 @@ fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
     .expect("the settled library must expose measured rows");
     let row_height = crate::ui::list_geometry::RowHeight::new(row_height)
         .unwrap_or_else(|| panic!("the measured row height must be positive; got {row_height}"));
-    let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(row_height);
     let anchor = crate::ui::tag_edit::tag_reload_anchor::post_save_reload_anchor(
         anchor,
         &edited_ids,
         &writes,
         "artist",
         &old_ids,
-        &layout,
+        Some(&crate::ui::list_geometry_layout::ListLayout::rows_only(
+            row_height,
+        )),
     );
     let anchor_id = anchor.anchor.map(|(track_id, _)| track_id).unwrap();
     assert_eq!(anchor_id, edited_ids[0]);
@@ -486,14 +487,13 @@ fn tag_1_artist_save_beyond_the_browse_window_keeps_the_first_edited_row_visible
             },
         })
         .collect::<Vec<_>>();
-    let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(row_height);
     let anchor = crate::ui::tag_edit::tag_reload_anchor::post_save_reload_anchor(
         opened_anchor,
         &edited_ids,
         &writes,
         "artist",
         &opened_view_ids,
-        &layout,
+        None,
     );
     assert_eq!(
         anchor.anchor.map(|(track_id, _)| track_id),

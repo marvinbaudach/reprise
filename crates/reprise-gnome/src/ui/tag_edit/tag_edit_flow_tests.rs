@@ -98,7 +98,7 @@ fn tag_1_query_reload_keeps_the_scroll_anchor_from_editor_open() {
     let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
         crate::ui::list_geometry::RowHeight::new(20.0).unwrap(),
     );
-    let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], &layout);
+    let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], Some(&layout));
 
     assert_eq!(restored.selected_ids, vec![61]);
     assert_eq!(

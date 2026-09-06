@@ -44,7 +44,7 @@ pub(in crate::ui) fn post_save_reload_anchor(
     writes: &[TrackWrite],
     sort_field: &str,
     old_view_ids: &[i64],
-    layout: &ListLayout,
+    layout: Option<&ListLayout>,
 ) -> ReloadAnchor {
     opened.selected_ids = updated_ids.to_vec();
     let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
@@ -59,7 +59,19 @@ pub(in crate::ui) fn post_save_reload_anchor(
     }) else {
         return opened;
     };
-    reload_restore::reanchor_on_track(opened, first_edited_id, old_view_ids, layout)
+    match layout {
+        Some(layout) => {
+            reload_restore::reanchor_on_track(opened, first_edited_id, old_view_ids, layout)
+        }
+        None => {
+            // Dialog completion can run between allocations, when the live
+            // view cannot provide a layout. The edited identity is still the
+            // stable truth: put it at the viewport top instead of silently
+            // restoring the unrelated pre-save pixel region.
+            opened.anchor = Some((first_edited_id, 0.0));
+            opened
+        }
+    }
 }
 
 #[cfg(test)]
@@ -102,7 +114,7 @@ mod tests {
             &writes,
             "artist",
             &[10, 20, 30, 40],
-            &rows_only(),
+            Some(&rows_only()),
         );
 
         assert_eq!(restored.selected_ids, vec![40]);
@@ -126,7 +138,7 @@ mod tests {
             &writes,
             "artist",
             &[10, 20, 30, 40],
-            &rows_only(),
+            Some(&rows_only()),
         );
 
         assert_eq!(restored.anchor, Some((20, 4.0)));
@@ -161,7 +173,7 @@ mod tests {
             &writes,
             "artist",
             &[10, 20, 30, 40, 50],
-            &rows_only(),
+            Some(&rows_only()),
         );
 
         assert_eq!(

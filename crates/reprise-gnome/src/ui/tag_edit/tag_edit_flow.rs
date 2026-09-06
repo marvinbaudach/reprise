@@ -562,20 +562,14 @@ fn finish_apply(
             live_reload.anchor.row_height,
             live_reload.view_ids.len(),
         );
-        let save_anchor = if let Some(layout) = layout.as_ref() {
-            post_save_reload_anchor(
-                live_reload.anchor,
-                &report.updated_ids,
-                writes,
-                &sort_field,
-                &live_reload.view_ids,
-                layout,
-            )
-        } else {
-            let mut anchor = live_reload.anchor;
-            anchor.selected_ids = report.updated_ids.clone();
-            anchor
-        };
+        let save_anchor = post_save_reload_anchor(
+            live_reload.anchor,
+            &report.updated_ids,
+            writes,
+            &sort_field,
+            &live_reload.view_ids,
+            layout.as_ref(),
+        );
         if !tag_changed_paths.is_empty() {
             reload_deferred = true;
             let tag_changed_ids = tag_save_refresh::tag_changed_ids(writes, &report.updated_ids);
