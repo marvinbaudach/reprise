@@ -146,7 +146,7 @@ echo "== Shared filter grammar =="
 
 check_single_filter_definition() {
   local name=$1 matches actual
-  matches=$(rg --no-heading --line-number "const ${name}\\b" "$frontend/ui" --glob '*.rs' || true)
+  matches=$(frontend_code | rg "const ${name}\\b" || true)
   actual=$(wc -l <<<"$matches")
   if [[ -z $matches ]]; then
     actual=0
