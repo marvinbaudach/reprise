@@ -32,3 +32,37 @@ impl WiringScratch {
             .expect("section search wiring must run first")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn runtime_wiring_groups_remain_in_load_bearing_order() {
+        let source = include_str!("../window_runtime_wiring.rs");
+        let wire_body = source
+            .split_once("pub(in crate::ui) fn wire")
+            .expect("runtime wire function must exist")
+            .1;
+        let mut cursor = 0;
+
+        for call in [
+            "deferred_sources::wire_deferred_sources",
+            "library_doctor::wire_library_doctor",
+            "compact_mode::wire_compact_mode",
+            "menu::wire_menu",
+            "playing_source::wire_playing_source",
+            "nav_back::wire_nav_back",
+            "section_search::wire_section_search",
+            "clear_all::wire_clear_all",
+            "listeners::wire_listeners",
+            "view_session::wire_view_session",
+            "close::wire_close",
+            "session_restore::wire_session_restore",
+            "deep_link::wire_deep_link",
+        ] {
+            let offset = wire_body[cursor..]
+                .find(call)
+                .unwrap_or_else(|| panic!("{call} must follow the preceding wiring group"));
+            cursor += offset + call.len();
+        }
+    }
+}
