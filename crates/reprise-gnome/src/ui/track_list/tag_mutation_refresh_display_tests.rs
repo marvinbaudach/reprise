@@ -22,8 +22,8 @@ use super::super::track_list_reload::capture_reload_anchor;
 use super::super::TrackList;
 use super::{refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_view_ids};
 
-const ROWS: i64 = 300;
-const ANCHOR_ROW: u32 = 200;
+const ROWS: i64 = 1_929;
+const ANCHOR_ROW: u32 = 1_028;
 /// A jump smaller than this is row-snapping noise, not the reported
 /// "flies to the top of the library" — the same threshold
 /// `track_list_builder`'s `REPRISE_DEBUG_SCROLL` diagnostic uses.
@@ -237,6 +237,30 @@ fn save_refresh(fixture: &Fixture) {
         &[written.id],
         &[PathBuf::from(&written.path)],
         anchor,
+    );
+}
+
+/// Runs the same unchanged-order delta requested by a Genre save under a
+/// title sort. The full id projection is captured on both sides just as the
+/// real dialog completion does before it defers the GTK refresh.
+fn delta_save_refresh(fixture: &Fixture) {
+    let before_ids = fixture.track_list.shared.current_view_ids();
+    let written = fixture
+        .track_list
+        .shared
+        .model
+        .track_at(ANCHOR_ROW)
+        .unwrap();
+    let mut anchor = capture_reload_anchor(&fixture.track_list.shared);
+    anchor.selected_ids = vec![written.id];
+    let after_ids = fixture.track_list.shared.current_view_ids();
+    refresh_after_tag_mutation_with_view_ids(
+        &fixture.track_list.shared,
+        &[written.id],
+        &[PathBuf::from(&written.path)],
+        anchor,
+        &before_ids,
+        after_ids,
     );
 }
 
@@ -539,10 +563,24 @@ fn tag_1_tag_save_refresh_paints_no_frame_at_the_table_top() {
     // assertion below would then pass on an empty sample set. Write the tag
     // the real save writes.
     write_artist_to_db(&fixture);
-    save_refresh(&fixture);
+    delta_save_refresh(&fixture);
     crate::ui::test_settle::settle_for(SETTLE);
 
-    assert_no_visible_jump(&samples, before, "the save refresh");
+    let row_height = super::super::display_test_geometry::measured_row_height(
+        &fixture.track_list.shared.column_view,
+    )
+    .expect("the settled library must expose measured rows");
+    let seen = samples.borrow().clone();
+    assert!(!seen.is_empty(), "the allocation cycle was not sampled");
+    let largest_write = seen
+        .iter()
+        .map(|sample| (sample - before).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(
+        largest_write <= row_height,
+        "the delta save moved the adjustment by more than one row during allocation: \
+         before={before}, largest_write={largest_write}, row_height={row_height}, samples={seen:?}"
+    );
     fixture.window.close();
 }
 
@@ -561,7 +599,7 @@ fn tag_1_save_refresh_shows_the_written_tag_on_screen() {
     );
 
     write_artist_to_db(&fixture);
-    save_refresh(&fixture);
+    delta_save_refresh(&fixture);
     crate::ui::test_settle::settle_for(SETTLE);
 
     let labels = visible_labels(&fixture);

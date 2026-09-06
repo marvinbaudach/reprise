@@ -27,6 +27,7 @@ struct ReloadChange {
     model: ModelChange,
     current_ids: Vec<i64>,
     query: ReloadQueryKey,
+    metadata_only: bool,
 }
 
 fn reload_query_key(shared: &Shared) -> ReloadQueryKey {
@@ -69,11 +70,13 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_view_ids(
     after_ids: Vec<i64>,
 ) {
     let generation = shared.model.generation();
+    let metadata_only = before_ids == after_ids;
     let reload_change =
         changed_range(before_ids, &after_ids, ids, generation).map(|model| ReloadChange {
             model,
             current_ids: after_ids,
             query: reload_query_key(shared),
+            metadata_only,
         });
     refresh_with_reload_change(shared, ids, paths, anchor, reload_change);
 }
@@ -106,6 +109,12 @@ fn refresh_with_reload_change(
     {
         let shared = shared.clone();
         gtk4::glib::idle_add_local_once(move || match reload_change {
+            Some(change) if change.metadata_only && change.query == reload_query_key(&shared) => {
+                shared
+                    .model
+                    .invalidate_cached_metadata(change.model.position, change.model.added);
+                shared.reapply_now_playing_markers();
+            }
             Some(change) if change.query == reload_query_key(&shared) => {
                 reload_with_anchor_and_viewport(
                     &shared,

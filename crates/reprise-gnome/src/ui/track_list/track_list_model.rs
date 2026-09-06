@@ -26,9 +26,7 @@
 //! lowest-indexed cached window — not true LRU, just a simple, deterministic
 //! rule that suits the model's largely monotonic scroll access pattern.
 //!
-//! Every fallible path (count query, window query) logs via `tracing::error!`
-//! and returns `None`/`0` rather than panicking — a broken DB connection must
-//! never crash the UI thread.
+//! Fallible queries log and degrade to `None`/`0`; they never crash the UI.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -737,14 +735,19 @@ impl TrackListModel {
         }
     }
 
-    /// Patches the cached `Track`'s rating at `position` IN PLACE, emitting no
-    /// model signal. A star-rating click updates the visible widget first, so
-    /// only the model's cached clone is stale. Emitting a fake one-row
-    /// remove+insert would make GtkColumnView replace the row widget under the
-    /// pointer and snap the viewport back to the top. Patching the cached value
-    /// directly keeps a later scroll-away/back correct without any signal. If
-    /// the covering window is not cached there is nothing to patch: the next
-    /// `track_at` re-reads the already-updated row from SQL.
+    /// Drops cached SQL windows covering a metadata-only row range without
+    /// announcing a structural `GListModel` change.
+    pub(in crate::ui) fn invalidate_cached_metadata(&self, position: u32, len: u32) {
+        let end = position.saturating_add(len);
+        self.imp()
+            .state
+            .borrow_mut()
+            .cache
+            .retain(|start, _| start.saturating_add(WINDOW_SIZE) <= position || *start >= end);
+    }
+
+    /// Patches a cached rating without the fake remove+insert that would
+    /// replace the visible row and move the viewport.
     pub fn set_cached_rating(&self, position: u32, rating: i32) {
         let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
         let offset_in_window = (position - window_start) as usize;

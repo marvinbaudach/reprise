@@ -238,6 +238,31 @@ pub(in crate::ui) enum CellAlignment {
     Numeric,
 }
 
+fn render_text_cell(
+    label: &gtk4::Label,
+    metadata: &QueueItemMetadata,
+    sort_id: &str,
+    render: &dyn Fn(&Track) -> String,
+    shared: &Shared,
+) {
+    let raw = super::queue_item_presentation::track(metadata).map_or_else(
+        || super::queue_item_presentation::cell_text(metadata, sort_id),
+        render,
+    );
+    let markup = if super::match_highlight::is_searchable_column(sort_id) {
+        crate::ui::search_highlight::highlight_from_filter(&raw, &shared.filter, || {
+            crate::ui::search_highlight::accent_palette(label)
+        })
+    } else {
+        None
+    };
+    match markup {
+        Some(markup) => label.set_markup(&markup),
+        None => label.set_text(&raw),
+    }
+    apply_now_playing_item(label, metadata, shared, false);
+}
+
 impl CellAlignment {
     fn xalign(self) -> f32 {
         match self {
@@ -274,6 +299,7 @@ pub(in crate::ui) fn append_column(
     render: impl Fn(&Track) -> String + 'static,
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
+    let render: Rc<dyn Fn(&Track) -> String> = Rc::new(render);
 
     let shared_for_bind = shared.clone();
     let shared_for_unbind = shared.clone();
@@ -320,31 +346,26 @@ pub(in crate::ui) fn append_column(
             return;
         };
         let metadata = boxed.borrow::<QueueItemMetadata>();
-        let raw = super::queue_item_presentation::track(&metadata).map_or_else(
-            || super::queue_item_presentation::cell_text(&metadata, sort_id),
-            &render,
+        render_text_cell(
+            &label,
+            &metadata,
+            sort_id,
+            render.as_ref(),
+            &shared_for_bind,
         );
-        let markup = if super::match_highlight::is_searchable_column(sort_id) {
-            crate::ui::search_highlight::highlight_from_filter(
-                &raw,
-                &shared_for_bind.filter,
-                || crate::ui::search_highlight::accent_palette(&label),
-            )
-        } else {
-            None
-        };
-        match markup {
-            Some(markup) => label.set_markup(&markup),
-            None => label.set_text(&raw),
-        }
-        apply_now_playing_item(&label, &metadata, &shared_for_bind, false);
         let track_id = super::queue_item_presentation::rating_track_id(&metadata);
+        let position = item.position();
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let label = label.clone();
+            let render = render.clone();
             move |shared| {
-                let playing = track_id
-                    .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                toggle_class(&label, NOW_PLAYING_CLASS, playing);
+                if let Some(metadata) = shared.model.queue_item_at(position) {
+                    render_text_cell(&label, &metadata, sort_id, render.as_ref(), shared);
+                } else {
+                    let playing = track_id
+                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
+                    toggle_class(&label, NOW_PLAYING_CLASS, playing);
+                }
             }
         });
     });
