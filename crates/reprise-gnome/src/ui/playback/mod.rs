@@ -11,6 +11,7 @@ mod external_media_position;
 mod external_media_session;
 mod external_media_state;
 mod external_media_toast;
+mod instrumentation;
 pub(in crate::ui) mod library_continuation;
 pub(crate) mod now_playing_wiring;
 pub(crate) mod play_origin;

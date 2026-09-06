@@ -56,6 +56,30 @@ fn browse_11_trashing_loaded_track_requests_immediate_queue_advance() {
 }
 
 #[test]
+fn queue_change_log_carries_phase_timings() {
+    let implementation = include_str!("queue_transport.rs");
+    let method = implementation
+        .split("pub(in crate::ui) fn notify_queue_changed")
+        .nth(1)
+        .expect("notify_queue_changed implementation")
+        .split("pub(in crate::ui) fn start_current_item")
+        .next()
+        .expect("notify_queue_changed body");
+    let event = method
+        .split("tracing::info!(")
+        .nth(1)
+        .expect("up next changed event")
+        .split(");")
+        .next()
+        .expect("up next changed fields");
+
+    assert!(event.contains("mirror_ms"));
+    assert!(event.contains("listeners_ms"));
+    assert!(event.contains("feed_ms"));
+    assert!(event.contains("\"up next changed\""));
+}
+
+#[test]
 fn queue_purge_without_a_loaded_deleted_track_is_immediate() {
     let plan = queue_purge_plan(&[20, 30], Some(10));
 
