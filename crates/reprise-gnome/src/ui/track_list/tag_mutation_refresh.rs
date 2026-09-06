@@ -168,3 +168,6 @@ fn refresh_with_reload_change(
 #[cfg(test)]
 #[path = "tag_mutation_refresh_display_tests.rs"]
 mod display_tests;
+#[cfg(test)]
+#[path = "tag_mutation_refresh_marker_display_tests.rs"]
+mod marker_display_tests;

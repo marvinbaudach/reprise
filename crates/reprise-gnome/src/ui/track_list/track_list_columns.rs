@@ -353,19 +353,22 @@ pub(in crate::ui) fn append_column(
             render.as_ref(),
             &shared_for_bind,
         );
-        let track_id = super::queue_item_presentation::rating_track_id(&metadata);
-        let position = item.position();
+        let weak_item = item.downgrade();
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let label = label.clone();
             let render = render.clone();
             move |shared| {
-                if let Some(metadata) = shared.model.queue_item_at(position) {
-                    render_text_cell(&label, &metadata, sort_id, render.as_ref(), shared);
-                } else {
-                    let playing = track_id
-                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                    toggle_class(&label, NOW_PLAYING_CLASS, playing);
+                let Some(item) = weak_item.upgrade() else {
+                    return;
+                };
+                let position = item.position();
+                if position == gtk4::INVALID_LIST_POSITION {
+                    return;
                 }
+                let Some(metadata) = shared.model.queue_item_at(position) else {
+                    return;
+                };
+                render_text_cell(&label, &metadata, sort_id, render.as_ref(), shared);
             }
         });
     });
