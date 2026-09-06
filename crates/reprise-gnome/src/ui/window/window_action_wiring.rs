@@ -307,10 +307,9 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         // Missing-view tombstone/Undo sends an empty id slice for the
-        // deferred sidebar refresh. Only committed expiry/auto-clean sends
+        // immediate sidebar refresh. Only committed expiry/auto-clean sends
         // hard-purged ids, which are then removed from the playback queue.
         let sidebar_weak = Rc::downgrade(sidebar);
-        let browse_bar_weak = Rc::downgrade(&track_list.shared.browse_bar);
         let player = player.clone();
         let scan_player = player.clone();
         track_list.set_on_scan_queue_purge_ids(move || {
@@ -319,28 +318,18 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 .map_or_else(Vec::new, |player| player.scan_queue_purge_ids())
         });
         track_list.set_on_library_mutated(move |removed_ids| {
-            let sidebar_weak = sidebar_weak.clone();
-            let browse_bar_weak = browse_bar_weak.clone();
-            let refresh_secondary_surfaces = move || {
-                match sidebar_weak.upgrade() {
-                    Some(sidebar) => sidebar.refresh("track removed from library"),
-                    None => {
-                        tracing::warn!("sidebar is gone; skipping refresh after a library removal");
-                    }
+            match sidebar_weak.upgrade() {
+                Some(sidebar) => sidebar.refresh("track removed from library"),
+                None => {
+                    tracing::warn!("sidebar is gone; skipping refresh after a library removal");
                 }
-                match browse_bar_weak.upgrade() {
-                    Some(browse_bar) => browse_bar.refresh(),
-                    None => {
-                        tracing::warn!(
-                            "browse bar is gone; skipping refresh after a library removal"
-                        );
-                    }
-                }
-            };
-            if let Some(player) = &player {
+            }
+            if !removed_ids.is_empty() {
+                let Some(player) = &player else {
+                    return;
+                };
                 player.purge_queue_ids(removed_ids);
             }
-            gtk4::glib::idle_add_local_once(refresh_secondary_surfaces);
         });
     }
     {

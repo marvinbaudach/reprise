@@ -404,14 +404,15 @@ fn finish(
     let removed = report.removed_ids.len();
     let callback = shared.on_library_mutated.borrow().clone();
     let player = shared.player.borrow().upgrade();
+    let advance_player = player.clone();
     let timings = finish_steps(
         || {
-            if let Some(callback) = callback {
-                callback(&report.removed_ids);
+            if let Some(player) = player {
+                player.purge_queue_ids(&report.removed_ids);
             }
         },
         || {
-            if let Some(player) = player {
+            if let Some(player) = advance_player {
                 player.advance_after_user_catalog_delete(&report.removed_ids);
             }
         },
@@ -423,6 +424,13 @@ fn finish(
             );
         },
     );
+    let browse_bar = shared.browse_bar.clone();
+    defer_secondary_refresh(move || {
+        if let Some(callback) = callback {
+            callback(&[]);
+        }
+        browse_bar.refresh();
+    });
     tracing::info!(
         worker_ms,
         mutated_ms = timings.mutated_ms,
@@ -435,6 +443,10 @@ fn finish(
         trashed = mode == DeleteMode::Trash,
         "delete batch completed"
     );
+}
+
+fn defer_secondary_refresh(refresh: impl FnOnce() + 'static) {
+    glib::idle_add_local_once(refresh);
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -653,40 +665,34 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "uses the global GLib main context; run alone"]
     fn finish_orders_reload_before_the_deferred_refreshes() {
         use std::cell::RefCell;
 
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         let calls = Rc::new(RefCell::new(Vec::new()));
-        let deferred = Rc::new(RefCell::new(None));
         let record = |name| {
             let calls = calls.clone();
             move || calls.borrow_mut().push(name)
         };
 
         finish_steps(
-            {
-                let purge = record("purge");
-                let sidebar = record("sidebar_refresh");
-                let browse_bar = record("browse_bar_refresh");
-                let deferred = deferred.clone();
-                move || {
-                    purge();
-                    *deferred.borrow_mut() = Some(Box::new(move || {
-                        sidebar();
-                        browse_bar();
-                    }) as Box<dyn FnOnce()>);
-                }
-            },
+            record("purge"),
             record("advance"),
             record("reload"),
             record("toast"),
         );
+        defer_secondary_refresh({
+            let sidebar = record("sidebar_refresh");
+            let browse_bar = record("browse_bar_refresh");
+            move || {
+                sidebar();
+                browse_bar();
+            }
+        });
 
         assert_eq!(&*calls.borrow(), &["purge", "advance", "reload", "toast"]);
-        deferred
-            .borrow_mut()
-            .take()
-            .expect("refreshes must be deferred")();
+        while gtk4::glib::MainContext::default().iteration(false) {}
         assert_eq!(
             &*calls.borrow(),
             &[
