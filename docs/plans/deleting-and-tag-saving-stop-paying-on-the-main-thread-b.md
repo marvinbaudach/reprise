@@ -77,9 +77,46 @@ display test for the case that was wrong.
 
 ## §M — measurements (written by the session between the passes)
 
-_pass 1: `has_pre_save_view`, `before_len`, `after_len`, `first_mismatch`,
-`view_len`, `snapshot_len` for the Genre save; adjustment writes and their
-sizes after the Genre save and after the Artist save._
+### Pass 1 (2026-09-06, worktree binary at `ea54973291`, runs B1–B3, harness G4 + new G5)
+
+Machine under load during the runs (load avg ≈ 7: strand A's Codex and a
+release build in parallel), so the `*_ms` columns are inflated against the
+mother §0 fix arm (`write_ms` 119 → 308, `reload_ms` 266 → 443). The
+diagnosis fields are load-independent; medians over three runs.
+
+| Field | G4 Genre, 8 rows | G5 Artist, 8 rows |
+|---|---|---|
+| `view_len` / `snapshot_len` (at editor open) | 1929 / **500** | 1929 / **500** |
+| `has_pre_save_view` | true | true |
+| `before_len` / `after_len` | **500** / 1929 | **500** / 1929 |
+| `first_mismatch` | **500** | **500** |
+| `delta` | false (3/3) | false (3/3) |
+| scroll writes ≤ 500 ms after save | 1 | 1 |
+| largest write | 46 260 px (`SCROLL JUMP-TO-TOP`, then 0 → 46 260) | 46 260 px (same pattern) |
+| `build_ms` | 38 (37–48) | 13 (11–22) |
+
+**Diagnosis (B1).** The named candidate is confirmed exactly: `BrowseSnapshot::ids()`
+is capped at 500 rows, so `OpenedReloadState.view_ids` holds the first 500 of
+the 1929 view ids. `first_mismatch = 500 = before_len` means the prefix matches
+and only the length differs — no reorder, no reload between open and save. The
+delta is refused on `before != after` alone. Fix per B1: `view_ids` from
+`shared.current_view_ids()` at open.
+
+**Viewport after the full reload.** Both saves log `SCROLL JUMP-TO-TOP`
+followed by one write 0 → 46 260 px: the model is replaced, the adjustment goes
+to 0 and the anchor restores the previous position. For G4 the screenshot
+after the save shows the same viewport as before (loaded track at y≈542) — the
+46 260 px write is the restore, not a drift; with `delta=true` neither write
+happens.
+
+**G5 (B2).** After the Artist save ("Zz Measured Artist" on the 8 rows directly
+above the loaded track) the viewport shows the loaded track at the top and the
+rows below it; the 8 edited rows moved to the end of the artist order and are
+**not** inside the viewport (screenshot `runs/B1/9-after-G5.png`). The reload
+anchored on the previous scroll position (46 260 px, the loaded track), not on
+the first edited row. G5 is therefore NOT met on the current code; B2 needs
+the code change and a display test. Note that the first edited row was the
+*top* row of the viewport before the save.
 
 _pass 2 / acceptance: `delta`, `reload_ms`, adjustment writes for both saves._
 
