@@ -113,6 +113,8 @@ mod imp {
         /// lists themselves would cost the sorted full-table query this whole
         /// change exists to avoid.
         pub generation: std::cell::Cell<u64>,
+        /// Bumped when cached row metadata is invalidated without reshaping.
+        pub metadata_generation: std::cell::Cell<u64>,
     }
 
     #[glib::object_subclass]
@@ -735,17 +737,6 @@ impl TrackListModel {
         }
     }
 
-    /// Drops cached SQL windows covering a metadata-only row range without
-    /// announcing a structural `GListModel` change.
-    pub(in crate::ui) fn invalidate_cached_metadata(&self, position: u32, len: u32) {
-        let end = position.saturating_add(len);
-        self.imp()
-            .state
-            .borrow_mut()
-            .cache
-            .retain(|start, _| start.saturating_add(WINDOW_SIZE) <= position || *start >= end);
-    }
-
     /// Patches a cached rating without the fake remove+insert that would
     /// replace the visible row and move the viewport.
     pub fn set_cached_rating(&self, position: u32, rating: i32) {
@@ -786,6 +777,9 @@ impl TrackListModel {
         )
     }
 }
+
+#[path = "tag_mutation_refresh_metadata.rs"]
+mod metadata_refresh;
 
 #[cfg(test)]
 #[path = "track_list_model_tests.rs"]

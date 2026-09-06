@@ -111,3 +111,47 @@ fn narrowed_removal_then_marker_reapply_keeps_surviving_cell_text() {
     );
     window.close();
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ordinary_marker_reapply_does_not_rerender_text_cells() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) \
+             VALUES (1, '/synthetic/one.flac', 'Track One', 'Artist One', 0)",
+            [],
+        )
+        .unwrap();
+    let track_list = TrackList::new(
+        Rc::new(conn),
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        super::super::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(320)
+        .child(track_list.widget())
+        .build();
+    window.present();
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(100));
+
+    let column_view: gtk4::Widget = track_list.shared.column_view.clone().upcast();
+    let artist_label = label_with_text(&column_view, "Artist One")
+        .expect("precondition: the artist cell must be realized");
+    artist_label.set_text("render sentinel");
+    track_list.shared.playing_track_id.set(Some(1));
+    track_list.shared.reapply_now_playing_markers();
+
+    assert!(artist_label.has_css_class("now-playing"));
+    assert_eq!(
+        artist_label.text(),
+        "render sentinel",
+        "an ordinary playback change must only toggle the marker class"
+    );
+    window.close();
+}

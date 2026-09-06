@@ -353,11 +353,20 @@ pub(in crate::ui) fn append_column(
             render.as_ref(),
             &shared_for_bind,
         );
+        let track_id = super::queue_item_presentation::rating_track_id(&metadata);
+        let rendered_metadata_generation = Cell::new(shared_for_bind.model.metadata_generation());
         let weak_item = item.downgrade();
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let label = label.clone();
             let render = render.clone();
             move |shared| {
+                let metadata_generation = shared.model.metadata_generation();
+                if metadata_generation == rendered_metadata_generation.get() {
+                    let playing = track_id
+                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
+                    toggle_class(&label, NOW_PLAYING_CLASS, playing);
+                    return;
+                }
                 let Some(item) = weak_item.upgrade() else {
                     return;
                 };
@@ -369,6 +378,7 @@ pub(in crate::ui) fn append_column(
                     return;
                 };
                 render_text_cell(&label, &metadata, sort_id, render.as_ref(), shared);
+                rendered_metadata_generation.set(metadata_generation);
             }
         });
     });
