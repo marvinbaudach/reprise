@@ -143,7 +143,37 @@ listener and closes the accounting inside `present_queue_item` (a
 for the remainder). Then the session measures again (runs A4–A6) and pass 2
 moves exactly the listeners that measure ≥ 5 ms.
 
-_pass 1b table (A4–A6) goes here._
+### Pass 1b (2026-09-06, worktree binary at `5be1f5951a`, runs A4–A6)
+
+Per-listener split of `listeners_ms` (fields from A1b), medians, ms. Each
+delete gesture logs one `up next changed` for the purge; when the loaded track
+was deleted, two more from inside the advance (`present_queue_item`).
+
+| Gesture | `listeners_ms` (purge) | `now_playing_ms` | `queue_model_ms` | `sidebar_queue_reload_ms` | `feed_ms` | advance: `queue_notify_ms` | advance: `other_ms` | `present_ms` |
+|---|---|---|---|---|---|---|---|---|
+| G1 delete 1 non-loaded | 50 (38–54) | **50 (38–54)** | 0 | 0 | 1 (0–2) | – | – | – |
+| G2 delete 1 loaded | 40–57 | **40–57** | 0 | 0 | 0 (0–4) | 5 (5–5) | 2 | 8 |
+| G3 delete 13 incl. loaded | 42–52 | **42–52** | 0 | 0 | 0 | **44 (43–47)** | 2 | 48 |
+
+`queue_notify_ms` inside the advance is the same Now-Playing listener, paid a
+second time when the current index moves (5 ms for the one-row case, 44 ms
+for 13 rows — the second notification after the advance). `player_load_ms` and
+`current_track_ms` stay at 1–2 ms.
+
+**Threshold decision (R-threshold), binding for pass 2:**
+
+- **Moves:** the Now-Playing panel refresh listener (`now_playing_ms`,
+  38–57 ms on every notification). This one listener is the entire purge cost
+  (G1) and the entire advance cost above the player load (G2/G3).
+- **Stays synchronous:** the MPRIS/agent mirror (0 ms), the shared queue
+  model (0 ms), the sidebar queue count / visible-queue reload (0 ms) and
+  `feed_next` (0–4 ms, below the threshold — R-feed's deferred, coalesced feed
+  is **not** implemented; the existing synchronous `set_next(None)` safety
+  step stays and gets its unit test).
+- **Not taken:** A3's point query (`live_ids_ms` 0, `target_ms` 0). No
+  R-equivalence test.
+
+
 
 _pass 2 / acceptance table goes here._
 
