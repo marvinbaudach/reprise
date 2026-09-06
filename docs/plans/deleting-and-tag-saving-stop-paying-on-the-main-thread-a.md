@@ -2,7 +2,7 @@
 slug: deleting-and-tag-saving-stop-paying-on-the-main-thread-a
 worktree: /home/marvin/Projects/reprise-deleting-and-tag-saving-stop-paying-on-the-main-thread-a
 branch: feature/deleting-and-tag-saving-stop-paying-on-the-main-thread-a
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-06
 ---
