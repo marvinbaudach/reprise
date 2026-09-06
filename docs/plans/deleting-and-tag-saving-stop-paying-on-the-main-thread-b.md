@@ -242,3 +242,18 @@ R2 for the mother plan's §5.
 - B1 resolves each registered generic text cell through its live weak `ListItem` before re-rendering, with a narrowed-removal display regression.
 - B2 gates full text rendering on a metadata generation while ordinary playback changes only toggle the marker class, preserving the metadata-only delta refresh.
 - B3 routes `open_editor` through the tested full-view reload-ID selection instead of testing `OpenedReloadState::at_open` with a hand-picked vector.
+
+### Acceptance after the refactor pass (runs B13–B15, 2026-09-07, release binary at `1c8bb07701`)
+
+Same harness, same library (1929 rows). Left = coded-phase acceptance B10–B12, right = B13–B15.
+
+| Field | G4 Genre | G5 Artist (sort field) |
+|---|---|---|
+| `delta` | true 3/3 → true 3/3 | false 3/3 → false 3/3 (expected) |
+| `first_mismatch` | −1 → −1 | 1028/1029/1028 → same |
+| scroll writes after save | 0 → 0 | 0 → 0 |
+| largest write | 0 px → 0 px | 0 px → 0 px |
+| `reload_ms` | 203 (197–219) → 178 (11–202) | 344 (328–344) → 345 (333–368) |
+| first edited row in viewport | n/a | yes, all 8 edited rows visible (`9-after-G5.png`, B15) |
+
+G4 ✓ (delta path, no viewport jump), G5 ✓ (first edited row in viewport). The G5 reload stays at ~345 ms — reported (R2), not gated. The metadata-generation gate (B2 fix) keeps the G4 cell refresh intact: the edited cells show the new value without `items_changed`.
