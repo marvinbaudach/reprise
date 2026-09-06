@@ -431,10 +431,7 @@ fn finish(
         }
         let browse_bar_started = std::time::Instant::now();
         browse_bar.refresh();
-        tracing::info!(
-            browse_bar_ms = browse_bar_started.elapsed().as_millis(),
-            "delete secondary surfaces refreshed"
-        );
+        browse_bar_started.elapsed().as_millis()
     });
     tracing::info!(
         worker_ms,
@@ -449,8 +446,15 @@ fn finish(
     );
 }
 
-fn defer_secondary_refresh(refresh: impl FnOnce() + 'static) {
-    glib::idle_add_local_once(refresh);
+fn defer_secondary_refresh(refresh: impl FnOnce() -> u128 + 'static) {
+    glib::idle_add_local_once(move || {
+        let browse_bar_ms = refresh();
+        tracing::info!(
+            stage = "secondary_surfaces",
+            browse_bar_ms,
+            "delete batch completed"
+        );
+    });
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -536,6 +540,46 @@ fn safe_scratch_tracks(tracks: &[(i64, PathBuf)]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+    struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
+        type Writer = LogWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            LogWriter(Arc::clone(&self.0))
+        }
+    }
+
+    impl Write for LogWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture_info(operation: impl FnOnce()) -> String {
+        let output = CapturedLogs::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(output.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, operation);
+        let bytes = output.0.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
 
     fn insert_track(db: &reprise_core::db::Db, id: i64, path: &Path, title: &str) {
         crate::test_db::connection(db)
@@ -692,6 +736,7 @@ mod tests {
             move || {
                 sidebar();
                 browse_bar();
+                0
             }
         });
 
@@ -708,6 +753,21 @@ mod tests {
                 "browse_bar_refresh",
             ]
         );
+    }
+
+    #[test]
+    #[ignore = "uses the global GLib main context; run alone"]
+    fn deferred_secondary_refresh_logs_measured_browse_bar_field_for_batch_event() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+
+        let logs = capture_info(|| {
+            defer_secondary_refresh(|| 17_u128);
+            while gtk4::glib::MainContext::default().iteration(false) {}
+        });
+
+        assert!(logs.contains("delete batch completed"), "{logs}");
+        assert!(logs.contains("stage=\"secondary_surfaces\""), "{logs}");
+        assert!(logs.contains("browse_bar_ms=17"), "{logs}");
     }
 }
 
