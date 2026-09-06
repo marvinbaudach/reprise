@@ -11,6 +11,12 @@ pub(super) struct OpenedReloadState {
     pub(super) view_ids: Vec<i64>,
 }
 
+impl OpenedReloadState {
+    pub(super) fn at_open(anchor: ReloadAnchor, view_ids: Vec<i64>) -> Self {
+        Self { anchor, view_ids }
+    }
+}
+
 fn write_patches_sort_key(write: &TrackWrite, sort_columns: &[&str]) -> bool {
     let tags = &write.patch.tags;
     (sort_columns.contains(&"title") && tags.title.is_some())

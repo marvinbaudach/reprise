@@ -226,8 +226,7 @@ pub(in crate::ui) fn begin_for_ids(shared: &Rc<Shared>, ids: &[i64]) {
 /// track actually present in it); `None` here already covers the cheap
 /// "nothing to browse" case (0 or 1 visible tracks) without paying for the
 /// tag-data query at all.
-fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot> {
-    let ids = shared.current_view_ids();
+fn browsable_snapshot(shared: &Rc<Shared>, ids: &[i64]) -> Option<tag_editor::BrowseSnapshot> {
     if ids.len() <= 1 {
         return None;
     }
@@ -275,7 +274,7 @@ fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot>
     };
     let mut tracks = Vec::with_capacity(ids.len());
     let mut bitrates = Vec::with_capacity(ids.len());
-    for id in &ids {
+    for id in ids {
         if let Some(track) = by_id.get(id) {
             let (session_track, bitrate) = session_track_from_model(track);
             tracks.push(session_track);
@@ -295,17 +294,12 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     };
     let conn = shared.conn.clone();
     let shared_for_saved = shared.clone();
-    let browse = browsable_snapshot(shared);
-    let view_len = shared.current_view_ids().len();
+    let view_ids = shared.current_view_ids();
+    let browse = browsable_snapshot(shared, &view_ids);
+    let view_len = view_ids.len();
     let snapshot_len = browse.as_ref().map_or(0, |snapshot| snapshot.ids().len());
     tracing::info!(view_len, snapshot_len, "tag editor view snapshot");
-    let opened_reload = OpenedReloadState {
-        anchor: capture_reload_anchor(shared),
-        view_ids: browse
-            .as_ref()
-            .map(tag_editor::BrowseSnapshot::ids)
-            .unwrap_or_default(),
-    };
+    let opened_reload = OpenedReloadState::at_open(capture_reload_anchor(shared), view_ids);
     let on_write_started = shared
         .on_tag_write_started
         .borrow()

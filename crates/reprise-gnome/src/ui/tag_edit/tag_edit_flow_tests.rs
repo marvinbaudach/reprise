@@ -35,6 +35,32 @@ fn tag_edit_view_diagnostics_report_the_first_difference() {
     assert_eq!(first_view_mismatch(&[11, 13], &[11, 13]), -1);
 }
 
+#[test]
+fn tag_edit_reload_state_keeps_the_complete_view_when_browsing_is_capped() {
+    let current_view_ids = (1_i64..=1_929).collect::<Vec<_>>();
+    let browse = tag_editor::BrowseSnapshot {
+        tracks: current_view_ids
+            .iter()
+            .take(500)
+            .map(|id| SessionTrack {
+                id: *id,
+                path: PathBuf::from(format!("/{id}.flac")),
+                tags: EditableTags::default(),
+                rating: 0,
+            })
+            .collect(),
+        bitrates: vec![None; 500],
+    };
+
+    assert_eq!(browse.ids().len(), 500);
+    let opened = OpenedReloadState::at_open(
+        reload_restore::capture(Vec::new(), Some((1_501, 0.0))),
+        current_view_ids.clone(),
+    );
+
+    assert_eq!(opened.view_ids, current_view_ids);
+}
+
 /// TAG-1 (G2): `select_written_tracks` composes entirely from
 /// `reload_restore::positions_for_ids` (already `#[test]`-covered at
 /// Task A's pure-logic level) plus real `gtk4::MultiSelection` widget
