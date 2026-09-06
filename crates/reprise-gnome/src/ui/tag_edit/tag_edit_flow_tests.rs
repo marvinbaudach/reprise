@@ -28,6 +28,13 @@ fn smoke_tag_edit_mode_parses_open_count_and_preserves_title_save() {
     );
 }
 
+#[test]
+fn tag_edit_view_diagnostics_report_the_first_difference() {
+    assert_eq!(first_view_mismatch(&[11, 13, 17], &[11, 19, 17]), 1);
+    assert_eq!(first_view_mismatch(&[11, 13], &[11, 13, 17]), 2);
+    assert_eq!(first_view_mismatch(&[11, 13], &[11, 13]), -1);
+}
+
 /// TAG-1 (G2): `select_written_tracks` composes entirely from
 /// `reload_restore::positions_for_ids` (already `#[test]`-covered at
 /// Task A's pure-logic level) plus real `gtk4::MultiSelection` widget

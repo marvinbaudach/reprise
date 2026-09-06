@@ -296,6 +296,9 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     let conn = shared.conn.clone();
     let shared_for_saved = shared.clone();
     let browse = browsable_snapshot(shared);
+    let view_len = shared.current_view_ids().len();
+    let snapshot_len = browse.as_ref().map_or(0, |snapshot| snapshot.ids().len());
+    tracing::info!(view_len, snapshot_len, "tag editor view snapshot");
     let opened_reload = OpenedReloadState {
         anchor: capture_reload_anchor(shared),
         view_ids: browse
@@ -512,6 +515,15 @@ pub(in crate::ui) fn spawn_save(
     });
 }
 
+fn first_view_mismatch(before: &[i64], after: &[i64]) -> i64 {
+    before
+        .iter()
+        .zip(after)
+        .position(|(before_id, after_id)| before_id != after_id)
+        .or_else(|| (before.len() != after.len()).then(|| before.len().min(after.len())))
+        .map_or(-1, |index| i64::try_from(index).unwrap_or(i64::MAX))
+}
+
 fn finish_apply(
     shared: &Rc<Shared>,
     writes: &[TrackWrite],
@@ -526,15 +538,26 @@ fn finish_apply(
     let mut delta = false;
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
+    let has_pre_save_view = opened_reload
+        .as_ref()
+        .is_some_and(|state| !state.view_ids.is_empty());
+    let before_len = opened_reload
+        .as_ref()
+        .map_or(0, |state| state.view_ids.len());
+    let after_ids = has_pre_save_view.then(|| shared.current_view_ids());
+    let after_len = after_ids.as_ref().map_or(0, Vec::len);
+    let first_mismatch = opened_reload
+        .as_ref()
+        .zip(after_ids.as_ref())
+        .map_or(-1, |(state, after)| {
+            first_view_mismatch(&state.view_ids, after)
+        });
     if updated > 0 {
         let tag_changed_paths: Vec<PathBuf> = writes
             .iter()
             .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
             .map(|write| write.path.clone())
             .collect();
-        let has_pre_save_view = opened_reload
-            .as_ref()
-            .is_some_and(|state| !state.view_ids.is_empty());
         let live_reload = opened_reload.unwrap_or_else(|| OpenedReloadState {
             anchor: capture_reload_anchor(shared),
             view_ids: shared.current_view_ids(),
@@ -563,7 +586,7 @@ fn finish_apply(
             reload_deferred = true;
             let tag_changed_ids = tag_save_refresh::tag_changed_ids(writes, &report.updated_ids);
             if has_pre_save_view {
-                let after_ids = shared.current_view_ids();
+                let after_ids = after_ids.expect("pre-save view has a matching current view");
                 let generation = shared.model.generation();
                 // This records that a delta was requested. The deferred
                 // refresh still revalidates the query and model generation
@@ -620,6 +643,10 @@ fn finish_apply(
             delta,
             updated,
             failed,
+            has_pre_save_view,
+            before_len,
+            after_len,
+            first_mismatch,
             "tag-edit batch completed"
         );
     };
