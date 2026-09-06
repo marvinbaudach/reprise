@@ -81,6 +81,9 @@ const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_mi
 #[derive(Clone, Copy)]
 pub(in crate::ui) enum ReloadViewport {
     PreserveAnchor,
+    /// A sort-field tag save follows the edited row even if playback left a
+    /// deliberate centred destination in this browser place.
+    PostSaveSortAnchor,
     CenterAnchor,
     CenterPlayingTrack,
     CenterPlayingElsePreSearch,
@@ -265,6 +268,17 @@ fn restore_reload_anchor(
 
     if matches!(viewport, ReloadViewport::CenterAnchor) {
         super::reload_anchor_scroll::schedule_centered(
+            shared,
+            captured.anchor,
+            captured.row_height,
+            &current_ids,
+            hold,
+        );
+        return;
+    }
+
+    if matches!(viewport, ReloadViewport::PostSaveSortAnchor) {
+        super::reload_anchor_scroll::schedule_post_save_sort_anchor(
             shared,
             captured.anchor,
             captured.row_height,
@@ -530,6 +544,7 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     let hold = matches!(
         viewport,
         ReloadViewport::PreserveAnchor
+            | ReloadViewport::PostSaveSortAnchor
             | ReloadViewport::CenterAnchor
             | ReloadViewport::RestorePreSearch
             | ReloadViewport::CenterPlayingElsePreSearch

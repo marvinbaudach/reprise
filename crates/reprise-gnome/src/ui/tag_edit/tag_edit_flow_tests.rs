@@ -28,6 +28,40 @@ fn smoke_tag_edit_mode_parses_open_count_and_preserves_title_save() {
     );
 }
 
+#[test]
+fn tag_edit_view_diagnostics_report_the_first_difference() {
+    assert_eq!(first_view_mismatch(&[11, 13, 17], &[11, 19, 17]), 1);
+    assert_eq!(first_view_mismatch(&[11, 13], &[11, 13, 17]), 2);
+    assert_eq!(first_view_mismatch(&[11, 13], &[11, 13]), -1);
+}
+
+#[test]
+fn tag_edit_reload_state_keeps_the_complete_view_when_browsing_is_capped() {
+    let current_view_ids = (1_i64..=1_929).collect::<Vec<_>>();
+    let browse = tag_editor::BrowseSnapshot {
+        tracks: current_view_ids
+            .iter()
+            .take(500)
+            .map(|id| SessionTrack {
+                id: *id,
+                path: PathBuf::from(format!("/{id}.flac")),
+                tags: EditableTags::default(),
+                rating: 0,
+            })
+            .collect(),
+        bitrates: vec![None; 500],
+    };
+
+    assert_eq!(browse.ids().len(), 500);
+    let reload_view_ids = reload_view_ids_at_open(&current_view_ids, Some(&browse));
+    let opened = OpenedReloadState::at_open(
+        reload_restore::capture(Vec::new(), Some((1_501, 0.0))),
+        reload_view_ids,
+    );
+
+    assert_eq!(opened.view_ids, current_view_ids);
+}
+
 /// TAG-1 (G2): `select_written_tracks` composes entirely from
 /// `reload_restore::positions_for_ids` (already `#[test]`-covered at
 /// Task A's pure-logic level) plus real `gtk4::MultiSelection` widget
@@ -65,7 +99,7 @@ fn tag_1_query_reload_keeps_the_scroll_anchor_from_editor_open() {
     let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
         crate::ui::list_geometry::RowHeight::new(20.0).unwrap(),
     );
-    let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], &layout);
+    let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], Some(&layout));
 
     assert_eq!(restored.selected_ids, vec![61]);
     assert_eq!(

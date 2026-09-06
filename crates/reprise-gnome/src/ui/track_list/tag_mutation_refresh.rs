@@ -9,7 +9,7 @@ use reprise_core::view_source::ViewSource;
 use super::reload_restore::ReloadAnchor;
 use super::track_list_model_change::{changed_range, ModelChange};
 use super::track_list_reload::{
-    capture_reload_anchor, reload_with_anchor, reload_with_anchor_and_viewport, ReloadViewport,
+    capture_reload_anchor, reload_with_anchor_and_viewport, ReloadViewport,
 };
 use super::Shared;
 
@@ -27,6 +27,7 @@ struct ReloadChange {
     model: ModelChange,
     current_ids: Vec<i64>,
     query: ReloadQueryKey,
+    metadata_only: bool,
 }
 
 fn reload_query_key(shared: &Shared) -> ReloadQueryKey {
@@ -57,7 +58,29 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_anchor(
     paths: &[PathBuf],
     anchor: ReloadAnchor,
 ) {
-    refresh_with_reload_change(shared, ids, paths, anchor, None);
+    refresh_with_reload_change(
+        shared,
+        ids,
+        paths,
+        anchor,
+        ReloadViewport::PreserveAnchor,
+        None,
+    );
+}
+
+pub(in crate::ui) fn refresh_after_tag_mutation_with_save_anchor(
+    shared: &Rc<Shared>,
+    ids: &[i64],
+    paths: &[PathBuf],
+    anchor: ReloadAnchor,
+    sort_field_changed: bool,
+) {
+    let viewport = if sort_field_changed {
+        ReloadViewport::PostSaveSortAnchor
+    } else {
+        ReloadViewport::PreserveAnchor
+    };
+    refresh_with_reload_change(shared, ids, paths, anchor, viewport, None);
 }
 
 pub(in crate::ui) fn refresh_after_tag_mutation_with_view_ids(
@@ -69,13 +92,22 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_view_ids(
     after_ids: Vec<i64>,
 ) {
     let generation = shared.model.generation();
+    let metadata_only = before_ids == after_ids;
     let reload_change =
         changed_range(before_ids, &after_ids, ids, generation).map(|model| ReloadChange {
             model,
             current_ids: after_ids,
             query: reload_query_key(shared),
+            metadata_only,
         });
-    refresh_with_reload_change(shared, ids, paths, anchor, reload_change);
+    refresh_with_reload_change(
+        shared,
+        ids,
+        paths,
+        anchor,
+        ReloadViewport::PreserveAnchor,
+        reload_change,
+    );
 }
 
 fn refresh_with_reload_change(
@@ -83,6 +115,7 @@ fn refresh_with_reload_change(
     ids: &[i64],
     paths: &[PathBuf],
     anchor: ReloadAnchor,
+    viewport: ReloadViewport,
     reload_change: Option<ReloadChange>,
 ) {
     shared.cover_loader.invalidate_paths(paths);
@@ -106,17 +139,24 @@ fn refresh_with_reload_change(
     {
         let shared = shared.clone();
         gtk4::glib::idle_add_local_once(move || match reload_change {
+            Some(change) if change.metadata_only && change.query == reload_query_key(&shared) => {
+                shared
+                    .model
+                    .invalidate_cached_metadata(change.model.position, change.model.added);
+                shared.reapply_now_playing_markers();
+            }
             Some(change) if change.query == reload_query_key(&shared) => {
                 reload_with_anchor_and_viewport(
                     &shared,
                     &anchor,
-                    ReloadViewport::PreserveAnchor,
+                    viewport,
                     Some(change.model),
                     Some(change.current_ids),
                 );
             }
-            None => reload_with_anchor(&shared, &anchor),
-            Some(_) => reload_with_anchor(&shared, &anchor),
+            None | Some(_) => {
+                reload_with_anchor_and_viewport(&shared, &anchor, viewport, None, None);
+            }
         });
     }
     let callback = shared.on_tags_mutated.borrow().clone();
@@ -128,3 +168,6 @@ fn refresh_with_reload_change(
 #[cfg(test)]
 #[path = "tag_mutation_refresh_display_tests.rs"]
 mod display_tests;
+#[cfg(test)]
+#[path = "tag_mutation_refresh_marker_display_tests.rs"]
+mod marker_display_tests;
