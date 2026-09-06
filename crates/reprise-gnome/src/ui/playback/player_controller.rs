@@ -700,12 +700,15 @@ impl PlayerController {
                         &summary.path,
                     );
                 }
-                let lyrics_result = match start {
-                    StartPlayback::Yes => start_track_for_lyrics(self.player.as_ref(), &summary),
-                    // Gapless: the pipeline is already playing this track, so
-                    // don't restart it — just build the lyrics key.
-                    StartPlayback::No => Ok(lyrics_query_for(&summary)),
-                };
+                let (lyrics_result, player_load_ms) =
+                    super::instrumentation::timed(|| match start {
+                        StartPlayback::Yes => {
+                            start_track_for_lyrics(self.player.as_ref(), &summary)
+                        }
+                        // Gapless: the pipeline is already playing this track, so
+                        // don't restart it — just build the lyrics key.
+                        StartPlayback::No => Ok(lyrics_query_for(&summary)),
+                    });
                 match lyrics_result {
                     Ok(lyrics_query) => {
                         self.sync_lyrics_track(Some(lyrics_query));
@@ -714,12 +717,6 @@ impl PlayerController {
                             self.current_up_next.get() == Some(QueueItem::Track(id)),
                         );
                         self.update_mpris_position(0);
-                        tracing::info!(
-                            track_id = id,
-                            gapless = matches!(start, StartPlayback::No),
-                            from_up_next = self.current_up_next.get() == Some(QueueItem::Track(id)),
-                            "playback started"
-                        );
                         self.begin_scrobble(reprise_core::scrobbling::TrackMetadata {
                             artist_name: summary.artist.clone(),
                             track_name: summary.title.clone(),
@@ -727,7 +724,17 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(id, None, change);
+                        let ((), current_track_ms) = super::instrumentation::timed(|| {
+                            self.notify_current_track_changed(id, None, change);
+                        });
+                        tracing::info!(
+                            track_id = id,
+                            gapless = matches!(start, StartPlayback::No),
+                            from_up_next = self.current_up_next.get() == Some(QueueItem::Track(id)),
+                            player_load_ms,
+                            current_track_ms,
+                            "playback started"
+                        );
                         // The composite Queue view keys its Now Playing row
                         // and Up Next tail off the playhead — every track
                         // change re-partitions it (QUE-1) and shrinks the
