@@ -429,13 +429,17 @@ fn finish(
         if let Some(callback) = callback {
             callback(&[]);
         }
+        let browse_bar_started = std::time::Instant::now();
         browse_bar.refresh();
+        tracing::info!(
+            browse_bar_ms = browse_bar_started.elapsed().as_millis(),
+            "delete secondary surfaces refreshed"
+        );
     });
     tracing::info!(
         worker_ms,
         mutated_ms = timings.mutated_ms,
         advance_ms = timings.advance_ms,
-        browse_bar_ms = 0_u128,
         reload_ms = timings.reload_ms,
         main_thread_ms = timings.mutated_ms + timings.advance_ms + timings.reload_ms,
         removed,
