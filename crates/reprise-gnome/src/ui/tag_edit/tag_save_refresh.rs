@@ -7,12 +7,37 @@ use reprise_core::library::tag_edit::TrackWrite;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
+use crate::ui::track_list::track_list_model_change::{changed_range, ModelChange};
 use crate::ui::track_list::Shared;
+
+pub(super) fn after_deferred_reload(action: impl FnOnce() + 'static) {
+    gtk4::glib::idle_add_local_once(action);
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TagSaveRefresh {
     InPlaceRatings(Vec<(i64, i32)>),
     Reload,
+}
+
+pub(super) fn tag_save_model_change(
+    before: &[i64],
+    after: &[i64],
+    written: &[i64],
+    generation: u64,
+) -> Option<ModelChange> {
+    if before != after {
+        return None;
+    }
+    changed_range(before, after, written, generation)
+}
+
+pub(super) fn tag_changed_ids(writes: &[TrackWrite], updated_ids: &[i64]) -> Vec<i64> {
+    writes
+        .iter()
+        .filter(|write| !write.patch.tags.is_empty() && updated_ids.contains(&write.id))
+        .map(|write| write.id)
+        .collect()
 }
 
 pub(super) fn plan(
@@ -65,6 +90,64 @@ mod tests {
 
     use super::*;
 
+    fn seeded_five_tracks() -> reprise_core::db::Db {
+        let db = crate::test_db::open().unwrap();
+        let conn = crate::test_db::connection(&db);
+        for id in 1_i64..=5 {
+            conn.execute(
+                "INSERT INTO tracks (id,path,title,artist,added_at) VALUES (?1,?2,?3,?4,0)",
+                rusqlite::params![id, format!("/{id}.flac"), format!("Track {id}"), "Artist"],
+            )
+            .unwrap();
+        }
+        db
+    }
+
+    fn artist_sorted_ids(db: &reprise_core::db::Db) -> Vec<i64> {
+        crate::test_db::connection(db)
+            .prepare("SELECT id FROM tracks ORDER BY artist, title, id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, i64>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn tag_save_with_unchanged_order_reloads_by_delta() {
+        let db = seeded_five_tracks();
+        let before = artist_sorted_ids(&db);
+        // Comment is a file tag, not a view-order column. A successful
+        // comment-only write therefore leaves this seeded DB order intact.
+        let after = artist_sorted_ids(&db);
+
+        assert_eq!(
+            tag_save_model_change(&before, &after, &[2, 3], 9),
+            Some(
+                crate::ui::track_list::track_list_model_change::ModelChange {
+                    position: 1,
+                    removed: 2,
+                    added: 2,
+                    before_total: 5,
+                    after_total: 5,
+                    generation: 9,
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn tag_save_that_changes_the_sort_field_falls_back_to_a_full_reload() {
+        let db = seeded_five_tracks();
+        let conn = crate::test_db::connection(&db);
+        let before = artist_sorted_ids(&db);
+        conn.execute("UPDATE tracks SET artist='Zulu' WHERE id=2", [])
+            .unwrap();
+        let after = artist_sorted_ids(&db);
+
+        assert_eq!(tag_save_model_change(&before, &after, &[2], 9), None);
+    }
+
     fn rating_write(id: i64, rating: i32) -> TrackWrite {
         TrackWrite {
             id,
@@ -88,6 +171,38 @@ mod tests {
                 rating: None,
             },
         }
+    }
+
+    #[test]
+    fn mixed_tag_and_rating_save_builds_the_delta_from_tag_writes_only() {
+        let writes = [rating_write(1, 4), tag_write(2)];
+
+        let tag_ids = tag_changed_ids(&writes, &[1, 2]);
+        let change = tag_save_model_change(&[1, 2, 3], &[1, 2, 3], &tag_ids, 11)
+            .expect("the tag write must request a one-row delta");
+
+        assert_eq!(tag_ids, vec![2]);
+        assert_eq!(change.position, 1);
+        assert_eq!(change.removed, 1);
+        assert_eq!(change.added, 1);
+    }
+
+    #[test]
+    #[ignore = "uses the global GLib main context; run alone"]
+    fn batch_telemetry_runs_after_an_already_scheduled_reload() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let reload_calls = calls.clone();
+        gtk4::glib::idle_add_local_once(move || reload_calls.borrow_mut().push("reload"));
+        let telemetry_calls = calls.clone();
+        after_deferred_reload(move || telemetry_calls.borrow_mut().push("telemetry"));
+
+        assert!(calls.borrow().is_empty());
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(&*calls.borrow(), &["reload", "telemetry"]);
     }
 
     #[test]

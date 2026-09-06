@@ -13,7 +13,7 @@
 //! "was: …" line underneath.
 
 use std::cell::Cell;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::gdk;
@@ -22,7 +22,6 @@ use gtk4::pango;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::cover::{self, ThumbnailSize};
 use reprise_core::library::tag_edit::MixedValue;
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
@@ -35,18 +34,21 @@ use crate::ui::tag_editor_state::RATING_MAX;
 /// multi-track, shows a stacked representation with a count badge. No
 /// "Change cover…" affordance (Beschluss #1: v1 never writes covers) — the
 /// old disabled link is gone, not just greyed out.
-pub(in crate::ui) fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool) -> gtk4::Box {
+pub(in crate::ui) fn build_cover_area(
+    tracks: &[(i64, PathBuf)],
+    is_multi: bool,
+) -> (gtk4::Box, gtk4::Picture) {
     const COVER_SIDE: i32 = 120;
 
     let outer = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     outer.set_valign(gtk4::Align::Start);
     outer.add_css_class("reprise-tag-cover-area");
 
+    let (cover, picture) = load_cover_picture();
     if is_multi {
         let overlay = gtk4::Overlay::new();
         overlay.add_css_class("reprise-tag-cover-stack");
 
-        let cover = load_cover_picture(tracks.first().map(|(_, p)| p.as_path()));
         cover.set_size_request(COVER_SIDE, COVER_SIDE);
         overlay.set_child(Some(&cover));
 
@@ -60,17 +62,16 @@ pub(in crate::ui) fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool)
 
         outer.append(&overlay);
     } else {
-        let cover = load_cover_picture(tracks.first().map(|(_, p)| p.as_path()));
         cover.set_size_request(COVER_SIDE, COVER_SIDE);
         outer.append(&cover);
     }
 
-    outer
+    (outer, picture)
 }
 
-/// Loads a cover thumbnail for a track path, returning a `gtk4::Picture`
-/// wrapped in a frame box. Falls back to a placeholder if no cover is found.
-pub(in crate::ui) fn load_cover_picture(track_path: Option<&Path>) -> gtk4::Box {
+/// Returns an empty cover picture in its frame. The shared cover loader fills
+/// it only after the dialog has been presented.
+pub(in crate::ui) fn load_cover_picture() -> (gtk4::Box, gtk4::Picture) {
     let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     frame.add_css_class("reprise-tag-cover");
     frame.set_overflow(gtk4::Overflow::Hidden);
@@ -79,19 +80,8 @@ pub(in crate::ui) fn load_cover_picture(track_path: Option<&Path>) -> gtk4::Box 
     picture.set_content_fit(gtk4::ContentFit::Cover);
     picture.set_can_shrink(true);
 
-    let loaded = track_path
-        .and_then(cover::resolve_source)
-        .and_then(|source| cover::thumbnail(&source, ThumbnailSize::Grid).ok());
-
-    if let Some(thumb_path) = loaded {
-        let texture = gdk::Texture::from_filename(&thumb_path).ok();
-        if let Some(texture) = texture {
-            picture.set_paintable(Some(&texture));
-        }
-    }
-
     frame.append(&picture);
-    frame
+    (frame, picture)
 }
 
 /// Builds the clickable star rating widget. Returns the container box and
@@ -473,6 +463,36 @@ pub(in crate::ui) fn build_field_column(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cover_picture(area: &gtk4::Box) -> gtk4::Picture {
+        let frame = area.first_child().expect("cover area child");
+        frame
+            .first_child()
+            .expect("cover frame child")
+            .downcast::<gtk4::Picture>()
+            .expect("cover picture")
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn build_cover_area_returns_a_placeholder_without_touching_the_file() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let track = temp.path().join("track.flac");
+        std::fs::write(&track, b"not an audio file").unwrap();
+        std::fs::write(temp.path().join("cover.jpg"), vec![0x5a; 20 * 1024 * 1024]).unwrap();
+
+        let started = std::time::Instant::now();
+        let (area, picture) = build_cover_area(&[(1, track)], false);
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(50),
+            "building the placeholder performed cover I/O"
+        );
+        assert_eq!(cover_picture(&area), picture);
+        assert!(picture.paintable().is_none());
+    }
 
     #[test]
     fn tag_3_per_track_fields_render_dash_readonly_in_multi() {

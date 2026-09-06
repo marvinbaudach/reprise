@@ -56,6 +56,7 @@ pub(in crate::ui) struct TagEditorForm {
     pub(in crate::ui) save_btn: gtk4::Button,
     pub(in crate::ui) cancel_btn: gtk4::Button,
     pub(in crate::ui) dialog: adw::Dialog,
+    pub(in crate::ui) cover_picture: gtk4::Picture,
     /// Everything except the header (cover/fields/rating/error label/review
     /// footer/MusicBrainz box/nav row) — disabled wholesale while a save is
     /// in flight (F2) so no field can be edited mid-write.
@@ -138,7 +139,7 @@ impl TagEditorForm {
         header.set_show_end_title_buttons(false);
 
         // --- Cover (left) + Title/Artist/Album (right) ---
-        let cover_area = build_cover_area(tracks, is_multi);
+        let (cover_area, cover_picture) = build_cover_area(tracks, is_multi);
 
         let session_ref = session.borrow();
         let current_id = session_ref.current_track_id();
@@ -383,6 +384,7 @@ impl TagEditorForm {
             save_btn,
             cancel_btn,
             dialog,
+            cover_picture,
             content,
             title_row,
             artist_ac,
