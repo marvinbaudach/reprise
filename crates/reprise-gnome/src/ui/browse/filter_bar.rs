@@ -104,6 +104,20 @@ impl SelectionDescriptor {
         }
     }
 
+    pub(in crate::ui) fn picker(
+        facet_id: impl Into<String>,
+        value_id: impl Into<String>,
+        label: impl Into<String>,
+    ) -> Self {
+        Self {
+            facet_id: facet_id.into(),
+            value_id: value_id.into(),
+            label: label.into(),
+            removable: false,
+            css_class: None,
+        }
+    }
+
     fn pair(&self) -> (String, String) {
         (self.facet_id.clone(), self.value_id.clone())
     }
@@ -424,8 +438,19 @@ impl<M: FilterModel> FilterBar<M> {
             let weak = Rc::downgrade(self);
             button.connect_clicked(move |_| {
                 if let Some(bar) = weak.upgrade() {
-                    if !bar.model.activate_selection(&selection) {
+                    if bar.model.activate_selection(&selection) {
+                        return;
+                    }
+                    if selection.removable {
                         bar.remove(&selection.facet_id, &selection.value_id);
+                    } else if let Some(facet) = bar
+                        .model
+                        .facets()
+                        .into_iter()
+                        .find(|facet| facet.id == selection.facet_id)
+                    {
+                        bar.show_values(facet, true);
+                        bar.popover.popup();
                     }
                 }
             });
@@ -436,7 +461,24 @@ impl<M: FilterModel> FilterBar<M> {
 
     fn rebuild_facets(&self) {
         self.facet_list.remove_all();
-        let facets = self.model.facets();
+        let filter = self.filter();
+        let selections = selection_pairs(&self.model.selections(&filter));
+        let facets = self
+            .model
+            .facets()
+            .into_iter()
+            .filter(|facet| {
+                let selected = selections
+                    .iter()
+                    .any(|(selected_facet, _)| selected_facet.as_str() == facet.id);
+                (!selected || facet.multiple)
+                    && self
+                        .model
+                        .values(facet.id)
+                        .into_iter()
+                        .any(|value| !selections.contains(&(facet.id.to_owned(), value.id)))
+            })
+            .collect::<Vec<_>>();
         for facet in &facets {
             let row = filter_bar_layout::chooser_row(&facet.label);
             row.set_sensitive(facet.enabled);
@@ -448,9 +490,18 @@ impl<M: FilterModel> FilterBar<M> {
         self.chooser_stack.set_visible_child_name(FACET_PAGE);
     }
 
-    fn show_values(&self, facet: FacetDescriptor) {
+    fn show_values(&self, facet: FacetDescriptor, include_selected: bool) {
         self.value_list.remove_all();
-        let values = self.model.values(facet.id);
+        let filter = self.filter();
+        let selections = selection_pairs(&self.model.selections(&filter));
+        let values = self
+            .model
+            .values(facet.id)
+            .into_iter()
+            .filter(|value| {
+                include_selected || !selections.contains(&(facet.id.to_owned(), value.id.clone()))
+            })
+            .collect::<Vec<_>>();
         for value in &values {
             self.value_list
                 .append(&filter_bar_layout::chooser_row(&value.label));
@@ -525,7 +576,7 @@ fn wire<M: FilterModel>(bar: &Rc<FilterBar<M>>) {
             .get(row.index() as usize)
             .cloned();
         if let Some(facet) = facet {
-            bar.show_values(facet);
+            bar.show_values(facet, false);
         }
     });
     let weak = Rc::downgrade(bar);

@@ -136,7 +136,7 @@ impl FilterModel for ReleasesModel {
                 ));
             }
         }
-        selections.push(SelectionDescriptor::new(
+        selections.push(SelectionDescriptor::picker(
             WINDOW_FACET,
             filter.window.setting_value(),
             window_label(filter.window),

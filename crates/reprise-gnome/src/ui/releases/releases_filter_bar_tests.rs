@@ -181,3 +181,49 @@ fn fil_2a_the_default_filter_row_offers_no_clear_all() {
         "widening the scope is a change, and a change is undoable"
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn window_chip_opens_the_inline_picker_without_changing_the_filter() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = ReleasesFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+    let window = gtk4::Window::new();
+    window.set_child(Some(bar.widget()));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    let before = bar.filter();
+    let window_label = window_label(before.window);
+    let window_chip = std::iter::successors(bar.chips.first_child(), gtk4::Widget::next_sibling)
+        .filter_map(|widget| widget.downcast::<gtk4::Button>().ok())
+        .find(|button| button.label().as_deref() == Some(window_label.as_str()))
+        .expect("the permanent window chip is an action without a remove suffix");
+
+    window_chip.emit_clicked();
+
+    assert_eq!(bar.filter(), before);
+    assert_eq!(
+        std::iter::successors(bar.value_list.first_child(), gtk4::Widget::next_sibling).count(),
+        4,
+        "the one-click action opens all four date-window choices"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn add_filter_is_disabled_when_every_addable_release_value_is_selected() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = ReleasesFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+    bar.apply_filter(ReleasesFilter {
+        release_types: ReleaseTypeSelection {
+            album: true,
+            ep: true,
+            single: true,
+        },
+        window: ReleaseWindow::TenYears,
+        hidden: true,
+    });
+
+    assert!(!bar.add_filter.is_sensitive());
+}
