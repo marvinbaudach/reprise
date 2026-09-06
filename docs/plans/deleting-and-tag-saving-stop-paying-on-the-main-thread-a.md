@@ -211,3 +211,15 @@ numbers, and R1 (the loaded-track totals) for the mother plan's §5.
 - A1: made Now Playing deferral explicit at registration and replaced positional listener timing labels with registration identities.
 - A2: renamed the synchronous cost to `now_playing_enqueue_ms` and added `now_playing_deferred_ms` timing inside the idle callback.
 - A4: clear the recorded track prefeed together with the backend prefeed before presenting a queued episode.
+
+### Acceptance after the refactor pass (runs A10–A12, 2026-09-07, release binary at `8a15ec8fbd`)
+
+Same harness, same library (1929 rows). Left column = coded-phase acceptance A7–A9, right = A10–A12 (median, min–max).
+
+| Gesture | `mutated_ms` | `advance_ms` | purge → completed | gate |
+|---|---|---|---|---|
+| G1 delete 1 non-loaded | 0 → 0 | 0 → 0 | 22 (13–23) → 26 (24–26) | G3 < 30 ms ✓ |
+| G2 delete 1 loaded | 5 → 0 | 4 → 4 | 72 (50–76) → 50 (46–88) | R1 |
+| G3 delete 13 incl. loaded | 0 → 0 | 5 → 5 (3–6) | 80 (64–82) → 78 (73–97) | G1 < 10 ✓, G2 < 20 ✓ |
+
+The deferred Now-Playing refresh is now measured on its own (`queue listeners deferred`, `now_playing_deferred_ms`): 37–46 ms per queue change, four per run — the cost that used to sit on the delete's main-thread span. `now_playing_enqueue_ms` reads 0 as expected.
