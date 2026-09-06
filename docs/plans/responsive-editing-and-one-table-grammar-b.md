@@ -2,7 +2,7 @@
 slug: responsive-editing-and-one-table-grammar-b
 worktree: /home/marvin/Projects/reprise-responsive-editing-and-one-table-grammar-b
 branch: feature/responsive-editing-and-one-table-grammar-b
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-05
 ---
