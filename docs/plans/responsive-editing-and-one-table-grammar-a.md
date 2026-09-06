@@ -132,7 +132,7 @@ does not change. Per-file failures keep their `TrashFailure { id, path, error }`
 
 Tests, written first:
 
-- `trash.rs`: `host_session_deletes_each_path_and_reports_per_file_failures`
+- `trash.rs`: `host_session_reports_per_file_results_without_using_the_desktop_trash`
   (tempdir; one existing file, one missing path; assert one `Ok`, one `Err`).
   The portal branch has no bus in the test environment; keep it behind the
   existing backend selection and cover it by the display-free unit test of the
@@ -170,7 +170,8 @@ are read-only for this strand.
 
 Tests, written first:
 
-- `delete_tracks.rs` unit: `finish_orders_reload_before_the_deferred_refreshes`
+- `delete_tracks.rs` ignored display test:
+  `finish_orders_reload_before_the_deferred_refreshes`
   — record the call order through test hooks on `Shared` (the file already
   carries five unit tests with a fake `Shared`); assert
   `[purge, advance, reload, toast, sidebar_refresh, browse_bar_refresh]`.

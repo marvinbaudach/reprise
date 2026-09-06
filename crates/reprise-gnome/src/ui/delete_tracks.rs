@@ -405,6 +405,7 @@ fn finish(
     let callback = shared.on_library_mutated.borrow().clone();
     let player = shared.player.borrow().upgrade();
     let advance_player = player.clone();
+    let browse_bar = shared.browse_bar.clone();
     let timings = finish_steps(
         || {
             if let Some(player) = player {
@@ -423,16 +424,15 @@ fn finish(
                 &strings::delete_result_toast(removed, report.failures, mode == DeleteMode::Trash),
             );
         },
+        move || {
+            if let Some(callback) = callback {
+                callback(&[]);
+            }
+            let browse_bar_started = std::time::Instant::now();
+            browse_bar.refresh();
+            browse_bar_started.elapsed().as_millis()
+        },
     );
-    let browse_bar = shared.browse_bar.clone();
-    defer_secondary_refresh(move || {
-        if let Some(callback) = callback {
-            callback(&[]);
-        }
-        let browse_bar_started = std::time::Instant::now();
-        browse_bar.refresh();
-        browse_bar_started.elapsed().as_millis()
-    });
     tracing::info!(
         worker_ms,
         mutated_ms = timings.mutated_ms,
@@ -469,6 +469,7 @@ fn finish_steps(
     advance: impl FnOnce(),
     reload: impl FnOnce(),
     toast: impl FnOnce(),
+    secondary_refresh: impl FnOnce() -> u128 + 'static,
 ) -> FinishTimings {
     let mutated_started = std::time::Instant::now();
     purge();
@@ -483,6 +484,7 @@ fn finish_steps(
     let reload_ms = reload_started.elapsed().as_millis();
 
     toast();
+    defer_secondary_refresh(secondary_refresh);
     FinishTimings {
         mutated_ms,
         advance_ms,
@@ -729,16 +731,16 @@ mod tests {
             record("advance"),
             record("reload"),
             record("toast"),
+            {
+                let sidebar = record("sidebar_refresh");
+                let browse_bar = record("browse_bar_refresh");
+                move || {
+                    sidebar();
+                    browse_bar();
+                    0
+                }
+            },
         );
-        defer_secondary_refresh({
-            let sidebar = record("sidebar_refresh");
-            let browse_bar = record("browse_bar_refresh");
-            move || {
-                sidebar();
-                browse_bar();
-                0
-            }
-        });
 
         assert_eq!(&*calls.borrow(), &["purge", "advance", "reload", "toast"]);
         while gtk4::glib::MainContext::default().iteration(false) {}
