@@ -20,8 +20,9 @@ session measures and writes §M; pass 2 = B1–B2 against the numbers.
 - Owns: `crates/reprise-gnome/src/ui/tag_edit/**`,
   `crates/reprise-gnome/src/ui/track_list/tag_mutation_refresh*.rs`,
   `crates/reprise-gnome/src/ui/track_list/track_list_model_change.rs`.
-- Since pass 3 also owns `ui/track_list/track_list_reload.rs` and
-  `ui/track_list/reload_anchor_scroll.rs` (see §M).
+- Since pass 3 also owns `ui/track_list/track_list_reload.rs`,
+  `ui/track_list/reload_anchor_scroll.rs`, `ui/track_list/track_list_model.rs`
+  and `ui/track_list/track_list_columns.rs` (see §M).
 - Reads but never edits: `ui/track_list/track_list_geometry.rs`, `ui/scroll_glide.rs`.
 - Does not touch `ui/playback/**` or `ui/delete_tracks*.rs` (strand A).
 
@@ -151,6 +152,24 @@ removed, added)` on `track_list_model.rs:566`; the restore is scheduled from
 ownership for this pass is extended by `ui/track_list/track_list_reload.rs`
 and `ui/track_list/reload_anchor_scroll.rs` (strand A never edits
 `track_list/**`, so the intersection stays empty).
+
+**Pass 3, first run (no commit):** Codex reproduced B3 red in a display test
+(1929 rows, row 1028: adjustment 34 808 → 0) and stopped at the ownership
+boundary: skipping the anchor `scroll_to` does not help, extending the
+`AdjustmentHold` only restores after GTK has already written 0, and a
+synchronous correction re-enters allocation. The cause is in
+`track_list_model.rs`: its delta clears the cached windows and represents a
+metadata refresh as remove+add in `items_changed`, so GTK reallocates the
+realized rows and resets the adjustment. The fix is a non-structural
+metadata-refresh API on the model (like `set_cached_rating`) plus rebinding
+the realized edited cells without `items_changed` (`track_list_columns.rs`).
+B4's cause is confirmed: `track_list_geometry::layout(...)` returns `None`
+during real dialog completion and `tag_edit_flow.rs` then bypasses
+`post_save_reload_anchor`, so the old anchor is restored. The 206 ms "delta"
+reload still runs the complete sorted query and cache swap, then pays GTK
+rebinding synchronously for the realized rows. Ownership extended once more
+(session decision) by `ui/track_list/track_list_model.rs` and
+`ui/track_list/track_list_columns.rs` — strand A never edits `track_list/**`.
 
 _pass 3 / acceptance table goes here._
 
