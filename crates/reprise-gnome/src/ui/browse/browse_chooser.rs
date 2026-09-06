@@ -8,11 +8,10 @@ use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
 
 use super::browse_bar::BrowseBar;
 use super::browse_bar_chips::apply_selection;
+pub(super) use super::filter_bar::{FACET_PAGE, VALUE_PAGE};
 use crate::ui::filter_bar_strings as filter_strings;
 
 pub(super) const POPUP_MIN_HEIGHT: i32 = 200;
-pub(super) const FACET_PAGE: &str = "facets";
-pub(super) const VALUE_PAGE: &str = "values";
 
 pub(super) fn browse_popup_min_height(_option_count: usize) -> i32 {
     POPUP_MIN_HEIGHT

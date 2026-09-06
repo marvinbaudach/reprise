@@ -17,6 +17,7 @@ mod radio_columns_artwork_tests;
 mod radio_context_menu;
 mod radio_empty_state;
 mod radio_filter_bar;
+mod radio_filter_model;
 mod radio_live_cells;
 mod radio_location;
 mod radio_model;
