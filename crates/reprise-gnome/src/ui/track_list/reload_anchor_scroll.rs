@@ -7,6 +7,7 @@ use std::time::Duration;
 use gtk4::glib::prelude::ObjectExt;
 use gtk4::prelude::{AdjustmentExt, ScrollableExt, WidgetExtManual};
 
+use super::restore_intent::RestoreIntent;
 use super::{reload_restore, Shared};
 use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
@@ -32,6 +33,7 @@ enum AnchorPlacement {
 struct RestoreAttempt {
     path: RestorePath,
     placement: AnchorPlacement,
+    intent: RestoreIntent,
 }
 
 enum ApplyResult {
@@ -150,6 +152,25 @@ pub(super) fn schedule(
         current_ids,
         hold,
         AnchorPlacement::PreserveOffset,
+        RestoreIntent::PreserveViewport,
+    );
+}
+
+pub(super) fn schedule_post_save_sort_anchor(
+    shared: &Rc<Shared>,
+    anchor: Option<(i64, f64)>,
+    captured_row_height: Option<RowHeight>,
+    current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
+) {
+    schedule_with_placement(
+        shared,
+        anchor,
+        captured_row_height,
+        current_ids,
+        hold,
+        AnchorPlacement::PreserveOffset,
+        RestoreIntent::PostSaveSortAnchor,
     );
 }
 
@@ -167,6 +188,7 @@ pub(super) fn schedule_centered(
         current_ids,
         hold,
         AnchorPlacement::Center,
+        RestoreIntent::PreserveViewport,
     );
 }
 
@@ -177,6 +199,7 @@ fn schedule_with_placement(
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
     placement: AnchorPlacement,
+    intent: RestoreIntent,
 ) {
     if crate::ui::scroll_probe::restore_after_allocation_enabled()
         && !has_allocated_viewport(shared)
@@ -188,6 +211,7 @@ fn schedule_with_placement(
             current_ids,
             hold,
             placement,
+            intent,
         );
         return;
     }
@@ -203,6 +227,7 @@ fn schedule_with_placement(
         RestoreAttempt {
             path: RestorePath::Initial,
             placement,
+            intent,
         },
     ) {
         ApplyResult::Applied(layout) => Some(layout),
@@ -217,6 +242,7 @@ fn schedule_with_placement(
             current_ids,
             hold,
             placement,
+            intent,
         );
         if !has_allocated_viewport(shared) {
             return;
@@ -403,6 +429,7 @@ fn arm_refinement(
     current_ids: &[i64],
     hold: Option<&AdjustmentHold>,
     placement: AnchorPlacement,
+    intent: RestoreIntent,
 ) {
     let Some(adjustment) = shared.column_view.vadjustment() else {
         return;
@@ -431,6 +458,7 @@ fn arm_refinement(
                 RestoreAttempt {
                     path: RestorePath::PageSize,
                     placement,
+                    intent,
                 },
             );
         });
@@ -464,6 +492,7 @@ fn arm_refinement(
             RestoreAttempt {
                 path: RestorePath::ItemsChanged,
                 placement,
+                intent,
             },
         ) {
             changed_restored.set(true);
@@ -494,6 +523,7 @@ fn arm_refinement(
             RestoreAttempt {
                 path: RestorePath::Idle,
                 placement,
+                intent,
             },
         ) {
             restored.set(true);
@@ -598,13 +628,17 @@ fn apply(
     ) else {
         return ApplyResult::Pending;
     };
-    if super::restore_intent::deliberate_destination_outranks(
+    if super::restore_intent::deliberate_destination_outranks_with_intent(
         shared,
         &adjustment,
         layout.row_height(),
         attempt.path.hold_probe(),
         target,
+        attempt.intent,
     ) {
+        if let Some(hold) = hold {
+            hold.release_now();
+        }
         return ApplyResult::StoodDown;
     }
     if std::env::var_os("REPRISE_SCROLL_PROBE").is_some() {

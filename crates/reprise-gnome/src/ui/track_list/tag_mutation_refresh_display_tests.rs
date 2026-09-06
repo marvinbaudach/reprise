@@ -20,7 +20,10 @@ use libadwaita as adw;
 
 use super::super::track_list_reload::capture_reload_anchor;
 use super::super::TrackList;
-use super::{refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_view_ids};
+use super::{
+    refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_save_anchor,
+    refresh_after_tag_mutation_with_view_ids,
+};
 
 const ROWS: i64 = 1_929;
 const ANCHOR_ROW: u32 = 1_028;
@@ -457,6 +460,40 @@ fn tag_1_artist_save_beyond_the_browse_window_keeps_the_first_edited_row_visible
         .any(|label| label == RESORTED_TITLE));
 
     let old_ids = fixture.track_list.shared.current_view_ids();
+    let loaded_position = old_ids
+        .iter()
+        .position(|id| *id == loaded_id)
+        .expect("the loaded track must remain in the artist-sorted view")
+        as u32;
+    fixture
+        .track_list
+        .shared
+        .playing_track_id
+        .set(Some(loaded_id));
+    super::super::track_reveal::reveal_position(
+        &fixture.track_list.shared,
+        loaded_position,
+        8,
+        super::super::track_reveal::RevealMotion::Glide,
+    );
+    let deliberate_destination = fixture
+        .track_list
+        .shared
+        .scroll_glide
+        .deliberate_destination()
+        .expect("active playback must leave a deliberate centred destination");
+    assert!(
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            fixture
+                .track_list
+                .shared
+                .scroll_glide
+                .destination()
+                .is_none()
+                && (fixture.adjustment.value() - deliberate_destination).abs() <= 0.5
+        },),
+        "the active track did not settle at its deliberate destination"
+    );
     let browse_ids = old_ids.iter().take(500).copied().collect::<Vec<_>>();
     assert_eq!(browse_ids.len(), 500);
     assert!(edited_ids.iter().all(|id| !browse_ids.contains(id)));
@@ -509,14 +546,12 @@ fn tag_1_artist_save_beyond_the_browse_window_keeps_the_first_edited_row_visible
         )
         .unwrap();
     }
-    let new_ids = fixture.track_list.shared.current_view_ids();
-    refresh_after_tag_mutation_with_view_ids(
+    refresh_after_tag_mutation_with_save_anchor(
         &fixture.track_list.shared,
         &edited_ids,
         &[],
         anchor,
-        &opened_view_ids,
-        new_ids,
+        true,
     );
     crate::ui::test_settle::settle_for(SETTLE);
 

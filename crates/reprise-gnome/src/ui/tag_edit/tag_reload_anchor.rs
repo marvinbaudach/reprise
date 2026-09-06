@@ -38,6 +38,27 @@ fn write_patches_sort_key(write: &TrackWrite, sort_columns: &[&str]) -> bool {
         || (sort_columns.contains(&"rating") && write.patch.rating.is_some())
 }
 
+pub(super) fn save_patches_sort_key(
+    updated_ids: &[i64],
+    writes: &[TrackWrite],
+    sort_field: &str,
+) -> bool {
+    first_sort_key_write(updated_ids, writes, sort_field).is_some()
+}
+
+fn first_sort_key_write(
+    updated_ids: &[i64],
+    writes: &[TrackWrite],
+    sort_field: &str,
+) -> Option<i64> {
+    let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
+    updated_ids.iter().copied().find(|updated_id| {
+        writes
+            .iter()
+            .any(|write| write.id == *updated_id && write_patches_sort_key(write, sort_columns))
+    })
+}
+
 pub(in crate::ui) fn post_save_reload_anchor(
     mut opened: ReloadAnchor,
     updated_ids: &[i64],
@@ -47,16 +68,11 @@ pub(in crate::ui) fn post_save_reload_anchor(
     layout: Option<&ListLayout>,
 ) -> ReloadAnchor {
     opened.selected_ids = updated_ids.to_vec();
-    let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
     // The track to anchor on is the first one that can actually move, not
     // merely the first one in the batch: a batch is heterogeneous (renumbering
     // track numbers patches a different field per track), so `updated_ids[0]`
     // may sit still while a later row is the one that jumps.
-    let Some(first_edited_id) = updated_ids.iter().copied().find(|updated_id| {
-        writes
-            .iter()
-            .any(|write| write.id == *updated_id && write_patches_sort_key(write, sort_columns))
-    }) else {
+    let Some(first_edited_id) = first_sort_key_write(updated_ids, writes, sort_field) else {
         return opened;
     };
     match layout {

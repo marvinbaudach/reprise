@@ -38,13 +38,15 @@ use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
-use crate::ui::tag_edit::tag_reload_anchor::{post_save_reload_anchor, OpenedReloadState};
+use crate::ui::tag_edit::tag_reload_anchor::{
+    post_save_reload_anchor, save_patches_sort_key, OpenedReloadState,
+};
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
 use crate::ui::tag_edit::tag_write_admission;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
-    refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_view_ids,
+    refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_view_ids,
 };
 use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
@@ -557,6 +559,7 @@ fn finish_apply(
             view_ids: shared.current_view_ids(),
         });
         let sort_field = shared.sort.borrow().field.clone();
+        let post_save_sort_anchor = save_patches_sort_key(&report.updated_ids, writes, &sort_field);
         let layout = crate::ui::track_list::track_list_geometry::layout(
             shared,
             live_reload.anchor.row_height,
@@ -596,19 +599,21 @@ fn finish_apply(
                         after_ids,
                     );
                 } else {
-                    refresh_after_tag_mutation_with_anchor(
+                    refresh_after_tag_mutation_with_save_anchor(
                         shared,
                         &tag_changed_ids,
                         &tag_changed_paths,
                         save_anchor,
+                        post_save_sort_anchor,
                     );
                 }
             } else {
-                refresh_after_tag_mutation_with_anchor(
+                refresh_after_tag_mutation_with_save_anchor(
                     shared,
                     &tag_changed_ids,
                     &tag_changed_paths,
                     save_anchor,
+                    post_save_sort_anchor,
                 );
             }
         } else {
