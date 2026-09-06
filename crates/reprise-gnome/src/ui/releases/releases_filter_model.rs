@@ -169,6 +169,17 @@ impl FilterModel for ReleasesModel {
         }
     }
 
+    fn is_exhausted(&self, state: &Self::Filter, facet_id: &str) -> bool {
+        match facet_id {
+            TYPE_FACET => {
+                let types = state.filter.release_types;
+                types.album && types.ep && types.single
+            }
+            HIDDEN_FACET => state.filter.hidden,
+            _ => false,
+        }
+    }
+
     fn clear_filter(&self) -> Self::Filter {
         ReleasesState {
             filter: ReleasesFilter::default(),

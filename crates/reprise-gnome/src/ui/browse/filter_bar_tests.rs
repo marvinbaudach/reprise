@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use reprise_view::search_scope::SearchScope;
@@ -14,6 +14,7 @@ struct TestFilter {
 #[derive(Default)]
 struct TestModel {
     fail_persistence: bool,
+    values_calls: Rc<Cell<usize>>,
 }
 
 impl FilterModel for TestModel {
@@ -31,6 +32,7 @@ impl FilterModel for TestModel {
     }
 
     fn values(&self, facet_id: &str) -> Vec<ValueDescriptor> {
+        self.values_calls.set(self.values_calls.get() + 1);
         match facet_id {
             "kind" => vec![ValueDescriptor::new("album", "Album")],
             "place" => vec![ValueDescriptor::new("ch", "Switzerland")],
@@ -175,6 +177,7 @@ fn persistence_failure_keeps_the_visible_filter_and_notifies_the_caller() {
     gtk4::init().unwrap();
     let bar = FilterBar::new(TestModel {
         fail_persistence: true,
+        ..TestModel::default()
     });
     let changes = Rc::new(RefCell::new(Vec::new()));
     bar.set_on_changed({
@@ -186,4 +189,21 @@ fn persistence_failure_keeps_the_visible_filter_and_notifies_the_caller() {
 
     assert_eq!(bar.filter().selections, [("kind".into(), "album".into())]);
     assert_eq!(&*changes.borrow(), &[bar.filter()]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rebuild_does_not_load_facet_values() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let values_calls = Rc::new(Cell::new(0));
+    let bar = FilterBar::new(TestModel {
+        values_calls: values_calls.clone(),
+        ..TestModel::default()
+    });
+    values_calls.set(0);
+
+    bar.refresh();
+
+    assert_eq!(values_calls.get(), 0);
 }

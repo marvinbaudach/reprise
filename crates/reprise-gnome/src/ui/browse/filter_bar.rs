@@ -162,6 +162,10 @@ pub(in crate::ui) trait FilterModel: 'static {
     fn clear_all_label(&self) -> String;
     fn count_text(&self, shown: usize, total: usize, active: bool) -> CountText;
 
+    fn is_exhausted(&self, _filter: &Self::Filter, _facet_id: &str) -> bool {
+        false
+    }
+
     fn clear_filter(&self) -> Self::Filter {
         self.apply("", &[])
     }
@@ -471,12 +475,7 @@ impl<M: FilterModel> FilterBar<M> {
                 let selected = selections
                     .iter()
                     .any(|(selected_facet, _)| selected_facet.as_str() == facet.id);
-                (!selected || facet.multiple)
-                    && self
-                        .model
-                        .values(facet.id)
-                        .into_iter()
-                        .any(|value| !selections.contains(&(facet.id.to_owned(), value.id)))
+                (!selected || facet.multiple) && !self.model.is_exhausted(&filter, facet.id)
             })
             .collect::<Vec<_>>();
         for facet in &facets {
