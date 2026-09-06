@@ -105,6 +105,14 @@ fn play_pending_at(
     Some(selected)
 }
 
+fn clear_episode_prefeed(
+    prefed_next_track: &std::cell::Cell<Option<i64>>,
+    clear_backend: impl FnOnce(),
+) {
+    prefed_next_track.set(None);
+    clear_backend();
+}
+
 impl PlayerController {
     pub(in crate::ui) fn present_queue_item(
         self: &std::rc::Rc<Self>,
@@ -116,7 +124,7 @@ impl PlayerController {
             QueueItem::Track(id) => self.present_track(id, start, change),
             QueueItem::Episode(id) => {
                 debug_assert_eq!(start, StartPlayback::Yes);
-                self.player.set_next(None);
+                clear_episode_prefeed(&self.prefed_next_track, || self.player.set_next(None));
                 self.play_queued_episode(id);
             }
         }
@@ -375,12 +383,26 @@ fn prefeed_track_id(item: QueueItem) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use reprise_core::queue::{Queue, Repeat};
     use reprise_core::up_next::UpNextQueue;
 
     use super::{
-        next_matching_target, next_target, peek_auto_target, play_pending_at, AdvanceReason,
+        clear_episode_prefeed, next_matching_target, next_target, peek_auto_target,
+        play_pending_at, AdvanceReason,
     };
+
+    #[test]
+    fn episode_presentation_clears_the_model_and_backend_prefeed() {
+        let prefed_next_track = Cell::new(Some(17));
+        let backend_cleared = Cell::new(false);
+
+        clear_episode_prefeed(&prefed_next_track, || backend_cleared.set(true));
+
+        assert_eq!(prefed_next_track.get(), None);
+        assert!(backend_cleared.get());
+    }
 
     #[test]
     fn queue_advance_log_carries_phase_timings_and_reason() {
