@@ -21,8 +21,9 @@ session measures and writes §M; pass 2 = B1–B2 against the numbers.
   `crates/reprise-gnome/src/ui/track_list/tag_mutation_refresh*.rs`,
   `crates/reprise-gnome/src/ui/track_list/track_list_model_change.rs`.
 - Since pass 3 also owns `ui/track_list/track_list_reload.rs`,
-  `ui/track_list/reload_anchor_scroll.rs`, `ui/track_list/track_list_model.rs`
-  and `ui/track_list/track_list_columns.rs` (see §M).
+  `ui/track_list/reload_anchor_scroll.rs`, `ui/track_list/track_list_model.rs`,
+  `ui/track_list/track_list_columns.rs`, `ui/track_list/restore_intent.rs` and
+  `ui/track_list/adjustment_hold.rs` (see §M).
 - Reads but never edits: `ui/track_list/track_list_geometry.rs`, `ui/scroll_glide.rs`.
 - Does not touch `ui/playback/**` or `ui/delete_tracks*.rs` (strand A).
 
@@ -171,7 +172,47 @@ rebinding synchronously for the realized rows. Ownership extended once more
 (session decision) by `ui/track_list/track_list_model.rs` and
 `ui/track_list/track_list_columns.rs` — strand A never edits `track_list/**`.
 
-_pass 3 / acceptance table goes here._
+### Pass 3 acceptance (2026-09-06, worktree binary at `436e6e1bee`, runs B7–B9; control = B4–B6)
+
+| Field | G4 Genre, 8 rows | G5 Artist, 8 rows |
+|---|---|---|
+| `delta` | true (3/3) | false (3/3), expected |
+| `write_ms` | 96 (83–107) | 105 (98–112) |
+| `reload_ms` | 201 (11–202) — bimodal, one run 11 ms | 270 (268–287) |
+| scroll writes ≤ 500 ms | **0** — was 1 | 1 |
+| largest write | **0 px** — was 46 260; no `SCROLL JUMP-TO-TOP` for this save any more | 46 305 px (0 → 46 305 after `JUMP-TO-TOP`) |
+| first edited row in viewport after save | n/a | **no** — viewport identical to B1/B4 (`runs/B7/9-after-G5.png`), the value moved by exactly one row (46 260 → 46 305) |
+
+**G4 met** (delta path, no adjustment write). **G5 still not met in the
+app:** the restored value is the old region plus one row height, not the
+first edited track (which sits at the end of the artist order, ≈ 86 000 px).
+Codex's `layout = None` display test is green, so the app takes yet another
+path. Diagnosed next by the session (see below).
+
+**G5 diagnosis (session trace, 2026-09-06).** `post_save_reload_anchor`
+does return `(first_edited_id, 0.0)` for `layout = None`
+(`tag_reload_anchor.rs:66–73`) and it does reach the reload
+(`tag_mutation_refresh.rs:55–62, :127` → `track_list_reload.rs:514–546` →
+`reload_anchor_scroll::schedule`, `:139–154`, `apply()` at `:197`). What the
+app then does and the test does not: playback is active, so
+`scroll_glide.deliberate_destination()` is `Some` (the centred current
+track), and `restore_intent::deliberate_destination_outranks`
+(`restore_intent.rs:10–34`) makes `apply()` return `ApplyResult::StoodDown`
+(`reload_anchor_scroll.rs:601–609`) — the anchor is never applied. The
+`AdjustmentHold` built unconditionally at `track_list_reload.rs:544` was
+seeded with the pre-save value (`adjustment_hold.rs:100–104`) and protects it
+for 250 ms (`SCROLL_ADJUSTMENT_HOLD`), which is the 46 260 → 46 305 px restore
+seen in the log. Codex's display test never sets `playing_track_id`
+(`tag_mutation_refresh_display_tests.rs:451–473`), so the glide never
+outranks anything there. Fix scope: a post-save sort-field anchor must
+outrank the glide's destination (the user chose the edited row over the
+current track in the grill, item 7), and the hold must not pin a value that
+`apply()` stood down from. Ownership extended by
+`ui/track_list/restore_intent.rs` and `ui/track_list/adjustment_hold.rs`.
+
+_pass 4 / acceptance table goes here._
+
+
 
 ## Report
 
