@@ -240,13 +240,13 @@ fn save_refresh(fixture: &Fixture) {
     );
 }
 
-fn year_resorting_library() -> (Fixture, Vec<i64>) {
+fn year_resorting_library(alpha_count: i64, scroll_row: f64) -> (Fixture, Vec<i64>) {
     adw::init().unwrap();
     let conn = crate::test_db::open().unwrap();
     let fixture_conn = crate::test_db::connection(&conn);
     let tx = fixture_conn.unchecked_transaction().unwrap();
     let mut id = 1_i64;
-    for position in 0..150 {
+    for position in 0..alpha_count {
         tx.execute(
             "INSERT INTO tracks (id, path, title, artist, album, year, track_no, added_at) \
              VALUES (?1, ?2, ?3, 'Alpha Artist', 'Earlier', 1980, ?4, 0)",
@@ -340,7 +340,7 @@ fn year_resorting_library() -> (Fixture, Vec<i64>) {
     let row_height =
         super::super::display_test_geometry::measured_row_height(&track_list.shared.column_view)
             .expect("the settled library must expose measured rows");
-    adjustment.set_value(160.0 * row_height);
+    adjustment.set_value(scroll_row * row_height);
     let fixture = Fixture {
         track_list,
         window,
@@ -356,7 +356,7 @@ fn year_resorting_library() -> (Fixture, Vec<i64>) {
 #[ignore = "requires a display; run via xvfb-run"]
 fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
-    let (fixture, edited_ids) = year_resorting_library();
+    let (fixture, edited_ids) = year_resorting_library(150, 160.0);
     assert!(viewport_labels(&fixture)
         .iter()
         .any(|label| label == RESORTED_TITLE));
@@ -416,6 +416,91 @@ fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
             .iter()
             .any(|label| label == RESORTED_TITLE),
         "the edited album moved out of the viewport after its year changed"
+    );
+    fixture.window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn tag_1_artist_save_beyond_the_browse_window_keeps_the_first_edited_row_visible() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let (fixture, target_ids) = year_resorting_library(550, 563.0);
+    let edited_ids = target_ids[..8].to_vec();
+    let loaded_id = target_ids[8];
+    assert!(viewport_labels(&fixture)
+        .iter()
+        .any(|label| label == RESORTED_TITLE));
+
+    let old_ids = fixture.track_list.shared.current_view_ids();
+    let browse_ids = old_ids.iter().take(500).copied().collect::<Vec<_>>();
+    assert_eq!(browse_ids.len(), 500);
+    assert!(edited_ids.iter().all(|id| !browse_ids.contains(id)));
+    let row_height = super::super::display_test_geometry::measured_row_height(
+        &fixture.track_list.shared.column_view,
+    )
+    .expect("the settled library must expose measured rows");
+    let row_height = crate::ui::list_geometry::RowHeight::new(row_height)
+        .unwrap_or_else(|| panic!("the measured row height must be positive; got {row_height}"));
+    let anchor = super::super::reload_restore::capture_with_row_height(
+        edited_ids.clone(),
+        Some((loaded_id, -8.0 * row_height.pixels())),
+        Some(row_height),
+    );
+    let (opened_anchor, opened_view_ids) =
+        crate::ui::tag_edit::tag_reload_anchor::opened_reload_state_for_test(anchor, old_ids);
+    let writes = edited_ids
+        .iter()
+        .map(|edited_id| reprise_core::library::tag_edit::TrackWrite {
+            id: *edited_id,
+            path: PathBuf::from(format!("/synthetic/target-{edited_id}.flac")),
+            patch: reprise_core::library::tag_edit::TrackEditPatch {
+                tags: reprise_core::library::tag_edit::TagPatch {
+                    artist: Some("Zz Measured Artist".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        })
+        .collect::<Vec<_>>();
+    let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(row_height);
+    let anchor = crate::ui::tag_edit::tag_reload_anchor::post_save_reload_anchor(
+        opened_anchor,
+        &edited_ids,
+        &writes,
+        "artist",
+        &opened_view_ids,
+        &layout,
+    );
+    assert_eq!(
+        anchor.anchor.map(|(track_id, _)| track_id),
+        Some(edited_ids[0]),
+        "the reload anchor must follow the first edited row beyond the browse window"
+    );
+
+    let conn = crate::test_db::connection(&fixture.track_list.shared.conn);
+    for edited_id in &edited_ids {
+        conn.execute(
+            "UPDATE tracks SET artist = 'Zz Measured Artist' WHERE id = ?1",
+            [edited_id],
+        )
+        .unwrap();
+    }
+    let new_ids = fixture.track_list.shared.current_view_ids();
+    refresh_after_tag_mutation_with_view_ids(
+        &fixture.track_list.shared,
+        &edited_ids,
+        &[],
+        anchor,
+        &opened_view_ids,
+        new_ids,
+    );
+    crate::ui::test_settle::settle_for(SETTLE);
+
+    assert!(
+        viewport_labels(&fixture)
+            .iter()
+            .any(|label| label == RESORTED_TITLE),
+        "the first edited row moved out of the viewport after its artist changed"
     );
     fixture.window.close();
 }

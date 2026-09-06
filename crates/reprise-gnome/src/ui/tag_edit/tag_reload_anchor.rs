@@ -17,6 +17,15 @@ impl OpenedReloadState {
     }
 }
 
+#[cfg(test)]
+pub(in crate::ui) fn opened_reload_state_for_test(
+    anchor: ReloadAnchor,
+    view_ids: Vec<i64>,
+) -> (ReloadAnchor, Vec<i64>) {
+    let opened = OpenedReloadState::at_open(anchor, view_ids);
+    (opened.anchor, opened.view_ids)
+}
+
 fn write_patches_sort_key(write: &TrackWrite, sort_columns: &[&str]) -> bool {
     let tags = &write.patch.tags;
     (sort_columns.contains(&"title") && tags.title.is_some())
