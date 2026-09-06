@@ -53,9 +53,10 @@ fn tag_edit_reload_state_keeps_the_complete_view_when_browsing_is_capped() {
     };
 
     assert_eq!(browse.ids().len(), 500);
+    let reload_view_ids = reload_view_ids_at_open(&current_view_ids, Some(&browse));
     let opened = OpenedReloadState::at_open(
         reload_restore::capture(Vec::new(), Some((1_501, 0.0))),
-        current_view_ids.clone(),
+        reload_view_ids,
     );
 
     assert_eq!(opened.view_ids, current_view_ids);

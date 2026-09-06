@@ -301,7 +301,8 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     let view_len = view_ids.len();
     let snapshot_len = browse.as_ref().map_or(0, |snapshot| snapshot.ids().len());
     tracing::info!(view_len, snapshot_len, "tag editor view snapshot");
-    let opened_reload = OpenedReloadState::at_open(capture_reload_anchor(shared), view_ids);
+    let reload_view_ids = reload_view_ids_at_open(&view_ids, browse.as_ref());
+    let opened_reload = OpenedReloadState::at_open(capture_reload_anchor(shared), reload_view_ids);
     let on_write_started = shared
         .on_tag_write_started
         .borrow()
@@ -329,6 +330,13 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
             },
         },
     );
+}
+
+fn reload_view_ids_at_open(
+    current_view_ids: &[i64],
+    _browse: Option<&tag_editor::BrowseSnapshot>,
+) -> Vec<i64> {
+    current_view_ids.to_vec()
 }
 
 /// G1-adjacent (import-hint fix): a single-track open by path, used by the
