@@ -2,7 +2,7 @@
 slug: responsive-editing-and-one-table-grammar-a
 worktree: /home/marvin/Projects/reprise-responsive-editing-and-one-table-grammar-a
 branch: feature/responsive-editing-and-one-table-grammar-a
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-09-05
 ---
@@ -199,3 +199,17 @@ expectation is G3, measured after landing (mother §6).
   list-geometry service and is owned by nobody in this plan.
 - If any task needs a file outside the ownership list above, stop and report
   instead of editing it.
+
+## Post-merge follow-ups
+
+- **Review finding 8 — replace the stale scan-watcher source-order guard.**
+  `crates/reprise-gnome/src/ui/scan/scan_watcher.rs` is outside this strand's
+  ownership, so its
+  `catalog_deletion_has_its_own_sidebar_refresh_before_queue_purge` test remains
+  unchanged here. The test only compares lexical positions inside
+  `on_library_mutated`; after the delete-specific deferral was scoped out of
+  that callback, it covers ordinary mutation callers but still says nothing
+  about the confirmed-delete runtime order. Replace it with a runtime-order
+  check (or rename and narrow it to the ordinary callback contract) so the
+  confirmed-delete guard explicitly observes purge and reload before the
+  deferred sidebar and browse-bar refreshes.
