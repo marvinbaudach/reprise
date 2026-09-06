@@ -22,7 +22,7 @@ fn register_deferred_queue_listener_with(
 ) {
     register_queue_listener(
         callbacks,
-        super::instrumentation::NOW_PLAYING_LISTENER,
+        super::instrumentation::NOW_PLAYING_ENQUEUE_LISTENER,
         super::instrumentation::defer_queue_refresh_with(callback, schedule_idle),
     );
 }
@@ -82,7 +82,7 @@ impl PlayerController {
             mirror_ms,
             listeners_ms = listener_times.total_ms,
             synchronous_listeners_ms = listener_times.synchronous_ms,
-            now_playing_ms = listener_times.now_playing_ms,
+            now_playing_enqueue_ms = listener_times.now_playing_enqueue_ms,
             feed_ms,
             "up next changed"
         );

@@ -5,7 +5,7 @@ use std::rc::Rc;
 pub(super) type DeferredTask = Box<dyn FnOnce()>;
 pub(super) type IdleScheduler = Rc<dyn Fn(DeferredTask)>;
 
-pub(super) const NOW_PLAYING_LISTENER: &str = "now_playing";
+pub(super) const NOW_PLAYING_ENQUEUE_LISTENER: &str = "now_playing_enqueue";
 
 #[derive(Clone)]
 pub(super) struct QueueListener {
@@ -25,7 +25,7 @@ impl QueueListener {
 
 pub(super) struct QueueListenerTimes {
     pub(super) synchronous_ms: u128,
-    pub(super) now_playing_ms: u128,
+    pub(super) now_playing_enqueue_ms: u128,
     pub(super) total_ms: u128,
 }
 
@@ -37,7 +37,7 @@ pub(super) fn timed<T>(operation: impl FnOnce() -> T) -> (T, u128) {
 
 pub(super) fn time_queue_listeners(callbacks: Vec<QueueListener>) -> QueueListenerTimes {
     let mut synchronous_ms = 0;
-    let mut now_playing_ms = 0;
+    let mut now_playing_enqueue_ms = 0;
     let mut total_ms = 0;
     for listener in callbacks {
         let ((), elapsed_ms) = timed(|| listener.call());
@@ -47,15 +47,15 @@ pub(super) fn time_queue_listeners(callbacks: Vec<QueueListener>) -> QueueListen
             "queue listener completed"
         );
         total_ms += elapsed_ms;
-        if listener.name == NOW_PLAYING_LISTENER {
-            now_playing_ms += elapsed_ms;
+        if listener.name == NOW_PLAYING_ENQUEUE_LISTENER {
+            now_playing_enqueue_ms += elapsed_ms;
         } else {
             synchronous_ms += elapsed_ms;
         }
     }
     QueueListenerTimes {
         synchronous_ms,
-        now_playing_ms,
+        now_playing_enqueue_ms,
         total_ms,
     }
 }
@@ -77,7 +77,12 @@ pub(super) fn defer_queue_refresh_with(
         let callback = callback.clone();
         schedule_idle(Box::new(move || {
             pending.set(false);
-            callback();
+            let ((), now_playing_deferred_ms) = timed(|| callback());
+            tracing::info!(
+                target: "reprise::ui::playback",
+                now_playing_deferred_ms,
+                "queue listeners deferred"
+            );
         }));
     })
 }
@@ -93,7 +98,33 @@ pub(super) fn remaining_ms(started: std::time::Instant, measured: &[u128]) -> u1
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
+    use std::io;
     use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
+        type Writer = CapturedLogWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            CapturedLogWriter(self.0.clone())
+        }
+    }
+
+    struct CapturedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for CapturedLogWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn several_queue_notifications_coalesce_one_deferred_now_playing_refresh() {
@@ -121,5 +152,39 @@ mod tests {
         assert_eq!(tasks.borrow().len(), 1);
         tasks.borrow_mut().remove(0)();
         assert_eq!(refreshes.get(), 2, "the pending flag resets after the idle");
+    }
+
+    #[test]
+    fn deferred_now_playing_refresh_reports_the_callback_cost_from_inside_the_idle() {
+        let logs = CapturedLogs::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(true)
+            .with_writer(logs.clone())
+            .finish();
+        let tasks = Rc::new(RefCell::new(Vec::<super::DeferredTask>::new()));
+        let schedule = {
+            let tasks = tasks.clone();
+            Rc::new(move |task| tasks.borrow_mut().push(task)) as super::IdleScheduler
+        };
+        let deferred = super::defer_queue_refresh_with(
+            Rc::new(|| std::thread::sleep(std::time::Duration::from_millis(5))),
+            schedule,
+        );
+
+        deferred();
+        tracing::subscriber::with_default(subscriber, || tasks.borrow_mut().remove(0)());
+
+        let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+        assert!(output.contains("reprise::ui::playback"));
+        assert!(output.contains("queue listeners deferred"));
+        let elapsed = output
+            .split("now_playing_deferred_ms=")
+            .nth(1)
+            .and_then(|value| value.split_whitespace().next())
+            .and_then(|value| value.parse::<u128>().ok())
+            .expect("deferred callback timing field");
+        assert!(elapsed >= 4, "the timing must include the slow callback");
     }
 }
