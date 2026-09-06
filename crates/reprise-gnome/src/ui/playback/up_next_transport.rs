@@ -421,6 +421,8 @@ mod tests {
 
         assert!(event.contains("player_load_ms"));
         assert!(event.contains("current_track_ms"));
+        assert!(event.contains("queue_notify_ms"));
+        assert!(event.contains("other_ms"));
         assert!(event.contains("\"playback started\""));
     }
 

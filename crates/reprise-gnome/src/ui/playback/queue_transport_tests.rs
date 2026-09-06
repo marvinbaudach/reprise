@@ -75,6 +75,9 @@ fn queue_change_log_carries_phase_timings() {
 
     assert!(event.contains("mirror_ms"));
     assert!(event.contains("listeners_ms"));
+    assert!(event.contains("queue_model_ms"));
+    assert!(event.contains("sidebar_queue_reload_ms"));
+    assert!(event.contains("now_playing_ms"));
     assert!(event.contains("feed_ms"));
     assert!(event.contains("\"up next changed\""));
 }

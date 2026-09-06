@@ -626,6 +626,8 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        let presentation_started = std::time::Instant::now();
+        let mut queue_notify_ms = 0;
         *self.pending_random_start.borrow_mut() = None;
         let start_position_ms = self.take_pending_start_mark(Some(QueueItem::Track(id)));
         self.clear_pending_local_seek();
@@ -636,12 +638,10 @@ impl PlayerController {
         // Whatever the start placed, this presentation supersedes it: from
         // here on the ordinary NAV-10b reveal policy applies again (START-4).
         self.restored_placement_intact.set(false);
-
         let summary = {
             let conn = &self.conn;
             queries::query_track_summary(conn, id)
         };
-
         match summary {
             Ok(Some(summary)) => {
                 // Read out before `now_playing` is overwritten below — the
@@ -650,7 +650,6 @@ impl PlayerController {
                 // same id (see the module's `## Track-change notification`
                 // doc section).
                 let previous_id = self.now_playing.borrow().as_ref().map(|np| np.id);
-
                 if let Some(deleted) = self
                     .deferred_queue_purge_id
                     .get()
@@ -662,7 +661,9 @@ impl PlayerController {
                         self.current_up_next.set(None);
                     }
                     if context_changed {
-                        self.notify_queue_changed();
+                        let ((), elapsed_ms) =
+                            super::instrumentation::timed(|| self.notify_queue_changed());
+                        queue_notify_ms += elapsed_ms;
                     }
                 }
 
@@ -727,19 +728,13 @@ impl PlayerController {
                         let ((), current_track_ms) = super::instrumentation::timed(|| {
                             self.notify_current_track_changed(id, None, change);
                         });
-                        tracing::info!(
-                            track_id = id,
-                            gapless = matches!(start, StartPlayback::No),
-                            from_up_next = self.current_up_next.get() == Some(QueueItem::Track(id)),
-                            player_load_ms,
-                            current_track_ms,
-                            "playback started"
-                        );
                         // The composite Queue view keys its Now Playing row
                         // and Up Next tail off the playhead — every track
                         // change re-partitions it (QUE-1) and shrinks the
                         // QUE-5 counter.
-                        self.notify_queue_changed();
+                        let ((), elapsed_ms) =
+                            super::instrumentation::timed(|| self.notify_queue_changed());
+                        queue_notify_ms += elapsed_ms;
                         self.consecutive_skips.set(0);
                         self.failure_skip_limit.set(0);
                         self.flush_episode_skip_toast();
@@ -767,6 +762,20 @@ impl PlayerController {
                         // off to it gaplessly when this one is about to finish.
                         self.feed_next();
                         self.apply_local_start_mark(QueueItem::Track(id), start_position_ms);
+                        let other_ms = super::instrumentation::remaining_ms(
+                            presentation_started,
+                            &[player_load_ms, current_track_ms, queue_notify_ms],
+                        );
+                        tracing::info!(
+                            track_id = id,
+                            gapless = matches!(start, StartPlayback::No),
+                            from_up_next = self.current_up_next.get() == Some(QueueItem::Track(id)),
+                            player_load_ms,
+                            current_track_ms,
+                            queue_notify_ms,
+                            other_ms,
+                            "playback started"
+                        );
                     }
                     Err(error) => {
                         tracing::error!(%error, path = %summary.path, track_id = id, "failed to start playback");

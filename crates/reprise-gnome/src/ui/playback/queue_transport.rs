@@ -251,12 +251,9 @@ impl PlayerController {
     pub(in crate::ui) fn notify_queue_changed(&self) {
         let up_next_len = self.up_next.borrow().len();
         let ((), mirror_ms) = super::instrumentation::timed(|| self.update_agent_queue_mirror());
-        let ((), listeners_ms) = super::instrumentation::timed(|| {
-            let callbacks = self.queue_changed.borrow().clone();
-            for callback in callbacks {
-                callback();
-            }
-        });
+        // Fixed order: queue model, sidebar/Queue refresh, Now Playing panel.
+        let callbacks = self.queue_changed.borrow().clone();
+        let listener_times = super::instrumentation::time_queue_listeners(callbacks);
         // The up-next front / queue order may have changed, so the upcoming
         // track changed: re-feed the gapless next. All up-next edits funnel
         // through here. `feed_next` only takes short, sequential borrows, and
@@ -266,7 +263,10 @@ impl PlayerController {
         tracing::info!(
             up_next_len,
             mirror_ms,
-            listeners_ms,
+            listeners_ms = listener_times.total_ms,
+            queue_model_ms = listener_times.queue_model_ms,
+            sidebar_queue_reload_ms = listener_times.sidebar_queue_reload_ms,
+            now_playing_ms = listener_times.now_playing_ms,
             feed_ms,
             "up next changed"
         );
