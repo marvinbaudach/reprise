@@ -123,7 +123,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     // Navigation is not part of the Compose BOM. 2.9.8 is the newest stable
     // Navigation release compatible with the BOM's stable Compose 1.11 line.
-    implementation("androidx.navigation:navigation-compose:2.9.8")
+    implementation("androidx.navigation:navigation-compose:2.10.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material3:material3-window-size-class")
     implementation("androidx.compose.ui:ui")
