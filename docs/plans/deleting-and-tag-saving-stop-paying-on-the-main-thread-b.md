@@ -20,8 +20,9 @@ session measures and writes §M; pass 2 = B1–B2 against the numbers.
 - Owns: `crates/reprise-gnome/src/ui/tag_edit/**`,
   `crates/reprise-gnome/src/ui/track_list/tag_mutation_refresh*.rs`,
   `crates/reprise-gnome/src/ui/track_list/track_list_model_change.rs`.
-- Reads but never edits: `ui/track_list/track_list_reload.rs`,
-  `ui/track_list/track_list_geometry.rs`, `ui/scroll_glide.rs`.
+- Since pass 3 also owns `ui/track_list/track_list_reload.rs` and
+  `ui/track_list/reload_anchor_scroll.rs` (see §M).
+- Reads but never edits: `ui/track_list/track_list_geometry.rs`, `ui/scroll_glide.rs`.
 - Does not touch `ui/playback/**` or `ui/delete_tracks*.rs` (strand A).
 
 ## Pass 1 — diagnosis
@@ -118,7 +119,40 @@ the first edited row. G5 is therefore NOT met on the current code; B2 needs
 the code change and a display test. Note that the first edited row was the
 *top* row of the viewport before the save.
 
-_pass 2 / acceptance: `delta`, `reload_ms`, adjustment writes for both saves._
+### Pass 2 acceptance (2026-09-06, worktree binary at `30aed5fe52`, runs B4–B6; control = B1–B3)
+
+| Field | G4 Genre, 8 rows | G5 Artist, 8 rows |
+|---|---|---|
+| `delta` | **true (3/3)** — was false | false (3/3), expected: sort field |
+| `first_mismatch` | -1 | 1028 (the edited rows moved) |
+| `write_ms` | 121 (105–129) — was 308 under load | 98 (85–132) |
+| `reload_ms` | **206 (205–209)** — was 443 (full reload under load; mother §0 full reload idle: 266) | 88 (86–266) |
+| scroll writes ≤ 500 ms | 1 | 1 |
+| largest write | **46 260 px** (`SCROLL JUMP-TO-TOP`, then 0 → 46 260) — unchanged | 46 260 px — unchanged |
+| first edited row in viewport after save | n/a | **no** — viewport identical to B1 (loaded track at top, edited rows at the end of the list, `runs/B4/9-after-G5.png`) |
+
+**G4 half met, G5 not met.** The delta path is taken, but the view still
+runs the full `query matched 1929 tracks` query before the completion line, the
+adjustment still drops to 0 during allocation (`SCROLL JUMP-TO-TOP` is logged
+when the value falls by > 80 px, `track_list_builder.rs:171–184`) and is then
+restored to exactly the pre-save value. For G5 the restored value is the
+*same* 46 260 px although 8 rows above the anchor left that region — a raw
+value restore, not a track anchor, so the display test that passes in pass 2
+models something the app does not do. Code pointers from the trace (not yet
+verified as the cause): on the delta path `tag_mutation_refresh.rs:110–116`
+requests `PreserveAnchor`; `track_list_reload.rs:530–549` creates the
+`AdjustmentHold` only when `viewport != Top` and `captured.anchor.is_some()`,
+then `run_query` (`:545`, logs `query matched`) and `items_changed(position,
+removed, added)` on `track_list_model.rs:566`; the restore is scheduled from
+`reload_anchor_scroll.rs:139–154`. Also odd: `reload_ms` on the delta path
+(206) is above the full reload of G5 (88).
+
+**Pass 3 (session decision):** a third Codex run against these numbers. The
+ownership for this pass is extended by `ui/track_list/track_list_reload.rs`
+and `ui/track_list/reload_anchor_scroll.rs` (strand A never edits
+`track_list/**`, so the intersection stays empty).
+
+_pass 3 / acceptance table goes here._
 
 ## Report
 
