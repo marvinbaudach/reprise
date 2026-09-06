@@ -522,6 +522,7 @@ fn finish_apply(
     tracks: usize,
 ) {
     let reload_started = std::time::Instant::now();
+    let mut reload_deferred = false;
     let mut delta = false;
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
@@ -559,10 +560,14 @@ fn finish_apply(
             anchor
         };
         if !tag_changed_paths.is_empty() {
+            reload_deferred = true;
             let tag_changed_ids = tag_save_refresh::tag_changed_ids(writes, &report.updated_ids);
             if has_pre_save_view {
                 let after_ids = shared.current_view_ids();
                 let generation = shared.model.generation();
+                // This records that a delta was requested. The deferred
+                // refresh still revalidates the query and model generation
+                // and may conservatively fall back to a full reload.
                 delta = tag_save_refresh::tag_save_model_change(
                     &live_reload.view_ids,
                     &after_ids,
@@ -607,15 +612,22 @@ fn finish_apply(
             }
         }
     }
-    tracing::info!(
-        write_ms,
-        tracks,
-        reload_ms = reload_started.elapsed().as_millis(),
-        delta,
-        updated,
-        failed,
-        "tag-edit batch completed"
-    );
+    let log_completed = move || {
+        tracing::info!(
+            write_ms,
+            tracks,
+            reload_ms = reload_started.elapsed().as_millis(),
+            delta,
+            updated,
+            failed,
+            "tag-edit batch completed"
+        );
+    };
+    if reload_deferred {
+        tag_save_refresh::after_deferred_reload(log_completed);
+    } else {
+        log_completed();
+    }
 
     if report.failures.is_empty() {
         // ImportHint (the "Open in Tag Editor" fix for an import HINT row)

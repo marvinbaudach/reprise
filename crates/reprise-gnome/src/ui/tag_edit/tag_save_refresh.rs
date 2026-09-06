@@ -10,6 +10,10 @@ use reprise_core::view_source::ViewSource;
 use crate::ui::track_list::track_list_model_change::{changed_range, ModelChange};
 use crate::ui::track_list::Shared;
 
+pub(super) fn after_deferred_reload(action: impl FnOnce() + 'static) {
+    gtk4::glib::idle_add_local_once(action);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TagSaveRefresh {
     InPlaceRatings(Vec<(i64, i32)>),
@@ -181,6 +185,24 @@ mod tests {
         assert_eq!(change.position, 1);
         assert_eq!(change.removed, 1);
         assert_eq!(change.added, 1);
+    }
+
+    #[test]
+    #[ignore = "uses the global GLib main context; run alone"]
+    fn batch_telemetry_runs_after_an_already_scheduled_reload() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let reload_calls = calls.clone();
+        gtk4::glib::idle_add_local_once(move || reload_calls.borrow_mut().push("reload"));
+        let telemetry_calls = calls.clone();
+        after_deferred_reload(move || telemetry_calls.borrow_mut().push("telemetry"));
+
+        assert!(calls.borrow().is_empty());
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(&*calls.borrow(), &["reload", "telemetry"]);
     }
 
     #[test]
