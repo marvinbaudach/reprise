@@ -291,7 +291,7 @@ pub struct PlayerController {
     pub(in crate::ui) listen_event_recorded: RefCell<Option<Rc<dyn Fn()>>>,
     /// Queue-change fan-out for the sidebar/Queue view and the Now Playing
     /// panel. Callbacks are cloned out before invocation for reentrancy.
-    pub(in crate::ui) queue_changed: RefCell<Vec<Rc<dyn Fn()>>>,
+    pub(super) queue_changed: RefCell<Vec<super::instrumentation::QueueListener>>,
     /// Loaded-track fan-out for every surface that carries the shared
     /// playback marker — the track table and the My Stats songs card. A list,
     /// not a slot: NAV-10b wants *every* visible instance marked, so a second

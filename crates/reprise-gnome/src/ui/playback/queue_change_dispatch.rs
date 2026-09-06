@@ -5,7 +5,27 @@ use std::rc::Rc;
 
 use super::player_controller::PlayerController;
 
-const NOW_PLAYING_QUEUE_LISTENER_INDEX: usize = 2;
+fn register_queue_listener(
+    callbacks: &std::cell::RefCell<Vec<super::instrumentation::QueueListener>>,
+    name: &'static str,
+    callback: Rc<dyn Fn()>,
+) {
+    callbacks
+        .borrow_mut()
+        .push(super::instrumentation::QueueListener::new(name, callback));
+}
+
+fn register_deferred_queue_listener_with(
+    callbacks: &std::cell::RefCell<Vec<super::instrumentation::QueueListener>>,
+    callback: Rc<dyn Fn()>,
+    schedule_idle: super::instrumentation::IdleScheduler,
+) {
+    register_queue_listener(
+        callbacks,
+        super::instrumentation::NOW_PLAYING_LISTENER,
+        super::instrumentation::defer_queue_refresh_with(callback, schedule_idle),
+    );
+}
 
 pub(super) fn clear_removed_prefed_next(
     prefed_next: &Cell<Option<i64>>,
@@ -24,14 +44,23 @@ pub(super) fn clear_removed_prefed_next(
 }
 
 impl PlayerController {
+    #[track_caller]
     pub(in crate::ui) fn add_on_queue_changed(&self, callback: impl Fn() + 'static) {
-        let mut callbacks = self.queue_changed.borrow_mut();
-        let callback = Rc::new(callback) as Rc<dyn Fn()>;
-        if callbacks.len() == NOW_PLAYING_QUEUE_LISTENER_INDEX {
-            callbacks.push(super::instrumentation::defer_queue_refresh(callback));
-        } else {
-            callbacks.push(callback);
-        }
+        register_queue_listener(
+            &self.queue_changed,
+            std::panic::Location::caller().file(),
+            Rc::new(callback),
+        );
+    }
+
+    pub(in crate::ui) fn add_on_queue_changed_deferred(&self, callback: impl Fn() + 'static) {
+        register_deferred_queue_listener_with(
+            &self.queue_changed,
+            Rc::new(callback),
+            Rc::new(|task| {
+                gtk4::glib::idle_add_local_once(task);
+            }),
+        );
     }
 
     pub(super) fn clear_prefed_next_if_removed(&self, ids: &[i64]) {
@@ -43,7 +72,6 @@ impl PlayerController {
     pub(in crate::ui) fn notify_queue_changed(&self) {
         let up_next_len = self.up_next.borrow().len();
         let ((), mirror_ms) = super::instrumentation::timed(|| self.update_agent_queue_mirror());
-        // Fixed order: queue model, sidebar/Queue refresh, deferred Now Playing panel.
         let callbacks = self.queue_changed.borrow().clone();
         let listener_times = super::instrumentation::time_queue_listeners(callbacks);
         // Measurements kept the gapless pre-feed synchronous. Every caller
@@ -53,11 +81,54 @@ impl PlayerController {
             up_next_len,
             mirror_ms,
             listeners_ms = listener_times.total_ms,
-            queue_model_ms = listener_times.queue_model_ms,
-            sidebar_queue_reload_ms = listener_times.sidebar_queue_reload_ms,
+            synchronous_listeners_ms = listener_times.synchronous_ms,
             now_playing_ms = listener_times.now_playing_ms,
             feed_ms,
             "up next changed"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    #[test]
+    fn deferred_registration_wraps_that_listener_after_any_number_of_earlier_listeners() {
+        let callbacks = RefCell::new(Vec::new());
+        let synchronous_calls = Rc::new(Cell::new(0));
+        for _ in 0..4 {
+            let synchronous_calls = synchronous_calls.clone();
+            super::register_queue_listener(
+                &callbacks,
+                "synchronous",
+                Rc::new(move || synchronous_calls.set(synchronous_calls.get() + 1)),
+            );
+        }
+        let deferred_calls = Rc::new(Cell::new(0));
+        let tasks = Rc::new(RefCell::new(Vec::<
+            super::super::instrumentation::DeferredTask,
+        >::new()));
+        let schedule = {
+            let tasks = tasks.clone();
+            Rc::new(move |task| tasks.borrow_mut().push(task))
+                as super::super::instrumentation::IdleScheduler
+        };
+        let callback = {
+            let deferred_calls = deferred_calls.clone();
+            Rc::new(move || deferred_calls.set(deferred_calls.get() + 1)) as Rc<dyn Fn()>
+        };
+        super::register_deferred_queue_listener_with(&callbacks, callback, schedule);
+
+        for listener in callbacks.borrow().iter() {
+            listener.call();
+        }
+
+        assert_eq!(synchronous_calls.get(), 4);
+        assert_eq!(deferred_calls.get(), 0, "only the explicit listener defers");
+        assert_eq!(tasks.borrow().len(), 1);
+        tasks.borrow_mut().remove(0)();
+        assert_eq!(deferred_calls.get(), 1);
     }
 }

@@ -2,12 +2,29 @@
 
 use std::rc::Rc;
 
-type DeferredTask = Box<dyn FnOnce()>;
-type IdleScheduler = Rc<dyn Fn(DeferredTask)>;
+pub(super) type DeferredTask = Box<dyn FnOnce()>;
+pub(super) type IdleScheduler = Rc<dyn Fn(DeferredTask)>;
+
+pub(super) const NOW_PLAYING_LISTENER: &str = "now_playing";
+
+#[derive(Clone)]
+pub(super) struct QueueListener {
+    name: &'static str,
+    callback: Rc<dyn Fn()>,
+}
+
+impl QueueListener {
+    pub(super) fn new(name: &'static str, callback: Rc<dyn Fn()>) -> Self {
+        Self { name, callback }
+    }
+
+    pub(super) fn call(&self) {
+        (self.callback)();
+    }
+}
 
 pub(super) struct QueueListenerTimes {
-    pub(super) queue_model_ms: u128,
-    pub(super) sidebar_queue_reload_ms: u128,
+    pub(super) synchronous_ms: u128,
     pub(super) now_playing_ms: u128,
     pub(super) total_ms: u128,
 }
@@ -18,17 +35,28 @@ pub(super) fn timed<T>(operation: impl FnOnce() -> T) -> (T, u128) {
     (result, started.elapsed().as_millis())
 }
 
-pub(super) fn time_queue_listeners(callbacks: Vec<Rc<dyn Fn()>>) -> QueueListenerTimes {
-    let mut elapsed = Vec::with_capacity(callbacks.len());
-    for callback in callbacks {
-        let ((), elapsed_ms) = timed(|| callback());
-        elapsed.push(elapsed_ms);
+pub(super) fn time_queue_listeners(callbacks: Vec<QueueListener>) -> QueueListenerTimes {
+    let mut synchronous_ms = 0;
+    let mut now_playing_ms = 0;
+    let mut total_ms = 0;
+    for listener in callbacks {
+        let ((), elapsed_ms) = timed(|| listener.call());
+        tracing::info!(
+            listener = listener.name,
+            elapsed_ms,
+            "queue listener completed"
+        );
+        total_ms += elapsed_ms;
+        if listener.name == NOW_PLAYING_LISTENER {
+            now_playing_ms += elapsed_ms;
+        } else {
+            synchronous_ms += elapsed_ms;
+        }
     }
     QueueListenerTimes {
-        queue_model_ms: elapsed.first().copied().unwrap_or(0),
-        sidebar_queue_reload_ms: elapsed.get(1).copied().unwrap_or(0),
-        now_playing_ms: elapsed.get(2).copied().unwrap_or(0),
-        total_ms: elapsed.iter().sum(),
+        synchronous_ms,
+        now_playing_ms,
+        total_ms,
     }
 }
 
@@ -36,16 +64,10 @@ pub(super) fn time_queue_listeners(callbacks: Vec<Rc<dyn Fn()>>) -> QueueListene
 /// work. The flag belongs to the wrapper, so every notification source shares
 /// one pending refresh and a refresh-triggered notification can enqueue the
 /// next idle instead of being lost.
-pub(super) fn defer_queue_refresh(callback: Rc<dyn Fn()>) -> Rc<dyn Fn()> {
-    defer_queue_refresh_with(
-        callback,
-        Rc::new(|task| {
-            gtk4::glib::idle_add_local_once(task);
-        }),
-    )
-}
-
-fn defer_queue_refresh_with(callback: Rc<dyn Fn()>, schedule_idle: IdleScheduler) -> Rc<dyn Fn()> {
+pub(super) fn defer_queue_refresh_with(
+    callback: Rc<dyn Fn()>,
+    schedule_idle: IdleScheduler,
+) -> Rc<dyn Fn()> {
     let pending = Rc::new(std::cell::Cell::new(false));
     Rc::new(move || {
         if pending.replace(true) {
