@@ -66,11 +66,8 @@ impl ConcertsModel {
         self.on_open_location.replace(Some(Rc::new(callback)));
     }
 
-    pub(super) fn persisted_state(&self, query: String) -> Result<ConcertsState, rusqlite::Error> {
-        Ok(ConcertsState {
-            filter: config::persisted_filter(&self.conn)?,
-            query,
-        })
+    pub(super) fn db(&self) -> &Db {
+        &self.conn
     }
 }
 

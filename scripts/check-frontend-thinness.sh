@@ -142,6 +142,30 @@ check_budget threads 'thread::spawn|thread::Builder'
 check_ban gstreamer 'gstreamer|\bgst::|use gst\b'
 check_ban zbus 'zbus'
 
+echo "== Shared filter grammar =="
+
+check_single_filter_definition() {
+  local name=$1 matches actual
+  matches=$(rg --no-heading --line-number "const ${name}\\b" "$frontend/ui" --glob '*.rs' || true)
+  actual=$(wc -l <<<"$matches")
+  if [[ -z $matches ]]; then
+    actual=0
+  fi
+  if (( actual != 1 )); then
+    echo "frontend thinness: $name must have exactly one definition, found $actual" >&2
+    if [[ -n $matches ]]; then
+      echo "$matches" >&2
+    fi
+    failed=1
+  else
+    echo "  $name: one definition"
+  fi
+}
+
+check_single_filter_definition FILTER_BAR_MIN_HEIGHT
+check_single_filter_definition FACET_PAGE
+check_single_filter_definition VALUE_PAGE
+
 # Business workers are counted as whole files rather than call sites: the
 # unit that has to move into the core is the worker, not the line.
 worker_files=$(find "$frontend" -name '*worker*.rs' -not -name '*_tests.rs' | wc -l)
@@ -208,8 +232,8 @@ crates/reprise-cli/tests/common/mod.rs:1
 crates/reprise-core/src/library/playlists.rs:5
 crates/reprise-gnome/examples/row_loss_dump_repro.rs:2
 crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:1
+crates/reprise-gnome/src/ui/browse/filter_bar.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_columns.rs:1
-crates/reprise-gnome/src/ui/concerts/concerts_filter_bar.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_model.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_presentation.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_view.rs:1

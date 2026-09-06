@@ -10,7 +10,7 @@ use reprise_core::concerts::config;
 use reprise_core::concerts::{ConcertFilter, DateHorizon};
 use reprise_core::db::Db;
 
-use super::concerts_filter_model::ConcertsModel;
+use super::concerts_filter_model::{ConcertsModel, ConcertsState};
 use crate::ui::browse::filter_bar::FilterBar;
 #[cfg(test)]
 use crate::ui::filter_bar_layout;
@@ -202,7 +202,10 @@ impl ConcertsFilterBar {
     }
 
     pub(super) fn reload_persisted(self: &Rc<Self>) -> Result<(), rusqlite::Error> {
-        let state = self.inner.model().persisted_state(self.query())?;
+        let state = ConcertsState {
+            filter: config::persisted_filter(self.inner.model().db())?,
+            query: self.query(),
+        };
         self.inner.replace_filter(state);
         Ok(())
     }

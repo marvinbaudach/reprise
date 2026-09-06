@@ -20,8 +20,6 @@ use crate::ui::strings;
 enum TypeChip {
     Album,
     Ep,
-    #[allow(dead_code)]
-    Single,
 }
 
 #[cfg(test)]
@@ -37,10 +35,6 @@ fn toggle_type(
         },
         TypeChip::Ep => ReleaseTypeSelection {
             ep: active,
-            ..selection
-        },
-        TypeChip::Single => ReleaseTypeSelection {
-            single: active,
             ..selection
         },
     }
