@@ -1,5 +1,7 @@
 //! Tests for queue_transport.rs (extracted to keep the source under the 800-line gate).
 
+use std::cell::Cell;
+
 use super::*;
 
 /// Context queue seeded with `ids`, currently playing the one at
@@ -53,6 +55,52 @@ fn browse_11_trashing_loaded_track_requests_immediate_queue_advance() {
     assert!(should_advance_after_user_delete(&[10, 20], Some(10)));
     assert!(!should_advance_after_user_delete(&[20], Some(10)));
     assert!(!should_advance_after_user_delete(&[10], None));
+}
+
+#[test]
+fn purge_of_the_prefed_next_track_clears_set_next_synchronously() {
+    let prefed_next = Cell::new(Some(20));
+    let cleared = Cell::new(false);
+
+    assert!(
+        crate::ui::playback::queue_change_dispatch::clear_removed_prefed_next(
+            &prefed_next,
+            &[20, 30],
+            || cleared.set(true),
+        )
+    );
+
+    assert!(
+        cleared.get(),
+        "set_next(None) must run before purge returns"
+    );
+    assert_eq!(prefed_next.get(), None);
+}
+
+#[test]
+fn queue_change_log_carries_phase_timings() {
+    let implementation = include_str!("queue_change_dispatch.rs");
+    let method = implementation
+        .split("pub(in crate::ui) fn notify_queue_changed")
+        .nth(1)
+        .expect("notify_queue_changed implementation")
+        .split("pub(in crate::ui) fn start_current_item")
+        .next()
+        .expect("notify_queue_changed body");
+    let event = method
+        .split("tracing::info!(")
+        .nth(1)
+        .expect("up next changed event")
+        .split(");")
+        .next()
+        .expect("up next changed fields");
+
+    assert!(event.contains("mirror_ms"));
+    assert!(event.contains("listeners_ms"));
+    assert!(event.contains("synchronous_listeners_ms"));
+    assert!(event.contains("now_playing_enqueue_ms"));
+    assert!(event.contains("feed_ms"));
+    assert!(event.contains("\"up next changed\""));
 }
 
 #[test]
