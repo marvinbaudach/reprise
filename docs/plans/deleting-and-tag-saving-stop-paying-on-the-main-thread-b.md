@@ -236,3 +236,9 @@ scope).
 
 State the diagnosed cause of the refusal, what changed, the §M tables, and
 R2 for the mother plan's §5.
+
+## Refactor
+
+- B1 resolves each registered generic text cell through its live weak `ListItem` before re-rendering, with a narrowed-removal display regression.
+- B2 gates full text rendering on a metadata generation while ordinary playback changes only toggle the marker class, preserving the metadata-only delta refresh.
+- B3 routes `open_editor` through the tested full-view reload-ID selection instead of testing `OpenedReloadState::at_open` with a hand-picked vector.
