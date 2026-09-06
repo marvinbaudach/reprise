@@ -99,9 +99,51 @@ allowance added.
 
 ## §M — measurements (written by the session between the passes)
 
-_pass 1 table goes here: per gesture, `mutated_ms` with `mirror_ms` /
-`listeners_ms` / `feed_ms`; `advance_ms` with `live_ids_ms` / `target_ms` /
-`present_ms`; medians over three runs, control = mother §0 fix arm._
+### Pass 1 (2026-09-06, worktree binary at `e9a33a3af1`, runs A1–A3; control = mother §0 fix arm F1–F3)
+
+Medians over three runs, ms. Load avg 3–5 during the runs (strand B's Codex
+in parallel); the control columns were measured on an idle machine, so totals
+within ±15 ms of control are noise, not movement.
+
+| Gesture | `mutated_ms` ctrl → A | `mirror_ms` | `listeners_ms` | `feed_ms` | `advance_ms` ctrl → A | `live_ids_ms` | `target_ms` | `present_ms` | `player_load_ms` | `current_track_ms` | total ctrl → A |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| G1 delete 1 non-loaded | 50 → 42 | 0 | **42** (41–47) | 0 | 0 → 0 | – | – | – | – | – | 63 → 58 |
+| G2 delete 1 loaded | 40 → 55 | 0 | **40** (purge) | 0–5 | 8 → 8 | 0 | 0 | 8 | 0 | 1 | 107 → 122 |
+| G3 delete 13 incl. loaded | 54 → 50 | 0 | **60** (purge) + **42** (inside the advance) | 0 | 47 → 54 | 0 | 0 | **49–55** | 1 | 1 | 172 → 170 |
+
+Per-run detail (`parse.py runs/A1/app.log`): every delete gesture logs one
+`up next changed` for the purge and, when the loaded track was deleted, two
+more from inside the advance (`present_queue_item`), of which one costs
+≈ 42 ms and the other ≈ 3 ms.
+
+**What this says against the plan's expectations:**
+
+- `feed_next` is **not** the mover: `feed_ms` is 0 in 17 of 18 samples (one
+  5 ms). By R-threshold it stays synchronous; R-feed's deferred/coalesced feed
+  is not needed for any caller. The synchronous safety step (`set_next(None)`
+  when the pre-fed item is among the removed ids) is already what the code
+  does today and stays.
+- The mirror costs 0.
+- **The listeners are the whole purge cost**: `listeners_ms` 40–60 ≈
+  `mutated_ms`. The line does not yet say *which* listener (sidebar queue
+  count, `reload_queue_if_visible`, now-playing, shared queue model).
+- `query_live_track_ids` is **not** the advance cost: `live_ids_ms` 0 and
+  `target_ms` 0 in every sample. A3's point query is therefore **not** taken
+  (R-threshold); R-equivalence does not apply.
+- The advance cost is inside `present_queue_item`: `present_ms` 49–55 for 13
+  rows, 8 for one row, of which `player_load_ms` + `current_track_ms` are 1–2.
+  The ≈ 42 ms `up next changed` logged from inside the advance accounts for the
+  rest — the same listener cost, paid a second time when the current index
+  moves.
+
+**Consequence for pass 2 (session decision, R-threshold):** one more
+instrumentation step before anything moves — A1b splits `listeners_ms` per
+listener and closes the accounting inside `present_queue_item` (a
+`queue_notify_ms` for the `notify_queue_changed` it triggers, plus an `other_ms`
+for the remainder). Then the session measures again (runs A4–A6) and pass 2
+moves exactly the listeners that measure ≥ 5 ms.
+
+_pass 1b table (A4–A6) goes here._
 
 _pass 2 / acceptance table goes here._
 
