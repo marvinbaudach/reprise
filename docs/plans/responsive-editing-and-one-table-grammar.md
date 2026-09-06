@@ -2,7 +2,7 @@
 slug: responsive-editing-and-one-table-grammar
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-05
 strands: a,b,c
