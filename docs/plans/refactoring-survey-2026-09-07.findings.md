@@ -24,19 +24,30 @@ The most valuable finding of this survey is a **negative** one, in §4.
 
 ## 1. Landed in this pass
 
-Branch `chore/cleanup-2026-09-07`, five commits, 134 insertions against 185
-deletions across 24 files. Verified with `cargo clippy --workspace
---all-targets -- -D warnings` clean, 2,946 Rust tests, the full Android gate
-(99 suites, 605 tests), `check-architecture.sh`, `check-frontend-thinness.sh`
-and `check-shell.sh` — all green.
+Branch `chore/cleanup-2026-09-07`, seven commits. Verified with `cargo clippy
+--workspace --all-targets -- -D warnings` clean, 2,946 Rust tests, the full
+Android gate (99 suites, 605 tests), plus `check-architecture.sh`,
+`check-frontend-thinness.sh`, `check-shell.sh` and `check-project-quality.sh`
+— all green.
+
+Three reviewers went over the diff afterwards and found four things, all now
+fixed. The one that mattered: the first version of the duration fix carried a
+doc comment claiming "a change to one contract fails the other side's test",
+and nothing made that true — two hand-copied tables of numbers is a plea, not a
+mechanism. `scripts/check-duration-format-parity.sh` now is the mechanism; it
+reads the assertions out of both files and fails the architecture gate on
+divergence, and it was proven to fall before it was trusted. The review also
+caught a fresh wrong claim I had put into `AGENTS.md` about which crate
+produces the analysis sidecars — in the very file being corrected for wrong
+claims. Also fixed.
 
 - **A real Android bug.** `formatDuration` never emitted an hour component, so
   anything past the hour wrapped into the minute field. `BrowseTabs` formats a
   whole album's total with it: a 74-minute album read `74:00`, a 1:02:33
   podcast episode read `62:33`. The rule already existed correctly in Rust as
   `reprise_core::format::format_duration`. The Kotlin copy stays deliberately —
-  an FFI hop per row per frame would cost more than the duplication — but
-  `DurationFormatTest` now pins it to the exact cases `format.rs` asserts.
+  an FFI hop per row per frame would cost more than the duplication — and a
+  parity gate now holds the two to the same cases.
 - **A second, quieter bug in the same function.** It formatted through the
   default locale. Measured: under `ar-EG-u-nu-arab` the old body rendered
   `3:01` as `٣:٠١` while the desktop showed ASCII for the same track.
@@ -128,6 +139,9 @@ because each needs a decision about where the shared thing lives:
 2. **`is_absent_player` in `reprise-cli` and `reprise-mcp`.** Neither may
    depend on `reprise-platform-linux`, where the server holds the truth, which
    is why it was copied. Needs a neutral home.
+   The pattern to copy for case 1 is now in the tree:
+   `scripts/check-duration-format-parity.sh` holds two hand-written copies of
+   one rule together by comparing what each side asserts, without an FFI hop.
 3. **`BUS_NAME`/`OBJECT_PATH` in four files.** Fails loudly rather than
    silently, so last.
 
