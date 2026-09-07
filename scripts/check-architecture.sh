@@ -252,7 +252,7 @@ echo "== Engine HTTP boundaries =="
 #
 # This is not theoretical: the count went from 13 to 16 in two commits when the
 # lyrics path grew its own lrclib and netease agents, and nothing said a word.
-http_boundary_budget=16
+http_boundary_budget=12
 http_boundaries=$(rg --count-matches 'ureq::Agent::config_builder' \
   crates/reprise-core/src --glob '*.rs' 2>/dev/null \
   | awk -F: '{ total += $2 } END { print total + 0 }')

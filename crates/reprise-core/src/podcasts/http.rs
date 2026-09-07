@@ -7,7 +7,7 @@
 use std::path::Path;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -17,6 +17,8 @@ use super::download_state::DownloadProgress;
 use super::PodcastError;
 use crate::http_body::{self, BoundedReadError};
 use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
+pub(crate) use crate::sources_http::user_agent;
+use crate::sources_http::{build_agent, lock_unpoisoned};
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
@@ -24,13 +26,6 @@ const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 const FIXTURE_DIR_ENV: &str = "REPRISE_PODCASTS_FIXTURE_DIR";
 
 static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
-
-#[cfg(test)]
-thread_local! {
-    static TEST_FIXTURE_DIR: std::cell::RefCell<Option<PathBuf>> = const {
-        std::cell::RefCell::new(None)
-    };
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Response {
@@ -57,15 +52,6 @@ impl FixtureRoute {
             Self::Download(url) => format!("download-{}", fixture_component(url)),
         }
     }
-}
-
-#[must_use]
-pub fn user_agent() -> String {
-    format!(
-        "Reprise/{} ( {} )",
-        env!("CARGO_PKG_VERSION"),
-        crate::musicbrainz::CONTACT_URL
-    )
 }
 
 pub fn get_feed(url: &str) -> Result<Response, PodcastError> {
@@ -96,12 +82,7 @@ fn get_with_budget(
         return fixture_get(url, etag, last_modified, &directory, max_bytes);
     }
 
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(SOURCE_REQUEST_TIMEOUT))
-        .user_agent(user_agent())
-        .http_status_as_error(false)
-        .build()
-        .new_agent();
+    let agent = build_agent(SOURCE_REQUEST_TIMEOUT);
     let mut request = agent.get(url);
     if let Some(value) = etag {
         request = request.header("If-None-Match", value);
@@ -141,12 +122,7 @@ pub fn download_with_progress(
     if let Some(directory) = fixture_directory() {
         return fixture_download(url, destination, &directory, on_progress);
     }
-    let response = ureq::Agent::config_builder()
-        .timeout_global(Some(DOWNLOAD_TIMEOUT))
-        .user_agent(user_agent())
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
+    let response = build_agent(DOWNLOAD_TIMEOUT)
         .get(url)
         .call()
         .map_err(classify_transport)?;
@@ -241,25 +217,20 @@ fn download_status_error(status: u16, retry_after: Option<&str>) -> Option<Podca
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
+/// Resolves a scoped podcast fixture directory before the environment fallback.
+/// The fallback keeps feature-enabled fixture consumers independent of tests.
 fn fixture_directory() -> Option<PathBuf> {
-    #[cfg(test)]
-    if let Some(directory) = TEST_FIXTURE_DIR.with(|slot| slot.borrow().clone()) {
-        return Some(directory);
-    }
-    std::env::var(FIXTURE_DIR_ENV).ok().map(PathBuf::from)
+    crate::sources_http::fixture_directory(FIXTURE_DIR_ENV)
 }
 
 #[cfg(test)]
+/// Installs a podcast fixture directory without any source-specific reset work.
+/// The shared scope restores a nested fixture directory even if the operation
+/// unwinds.
 pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> T) -> T {
-    struct Reset(Option<PathBuf>);
-    impl Drop for Reset {
-        fn drop(&mut self) {
-            TEST_FIXTURE_DIR.with(|slot| *slot.borrow_mut() = self.0.take());
-        }
-    }
-    let previous = TEST_FIXTURE_DIR.with(|slot| slot.borrow_mut().replace(directory.to_path_buf()));
-    let _reset = Reset(previous);
-    operation()
+    fn reset_source_state() {}
+
+    crate::sources_http::with_fixture_dir(directory, reset_source_state, operation)
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -352,12 +323,6 @@ fn respect_rate_limit() {
         std::thread::sleep(delay);
     }
     *previous = Some(Instant::now());
-}
-
-fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
