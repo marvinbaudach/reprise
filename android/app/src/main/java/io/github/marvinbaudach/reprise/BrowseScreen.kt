@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +43,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.marvinbaudach.reprise.settings.SettingsNavigation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -149,7 +154,16 @@ internal fun BrowseScreen(
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
     val trackArtwork = LocalTrackArtwork.current
-    val libraryQueryScope = rememberCoroutineScope()
+    val compositionScope = rememberCoroutineScope()
+    val libraryQueryScope = remember(state) {
+        CoroutineScope(
+            compositionScope.coroutineContext +
+                SupervisorJob(compositionScope.coroutineContext[Job]),
+        )
+    }
+    DisposableEffect(libraryQueryScope) {
+        onDispose { libraryQueryScope.cancel() }
+    }
     val readJobs = remember(state) { BrowseReadJobs() }
     val selectedTab = surfaceState.selectedTab
     val searchVisible = surfaceState.searchVisible
@@ -197,7 +211,7 @@ internal fun BrowseScreen(
     // that gap. It is deliberately not Compose state — writing it must not
     // recompose anything, or it would make the sentinel disappear again and
     // cancel the read it is meant to protect.
-    val loadsInFlight = remember { mutableSetOf<String>() }
+    val loadsInFlight = remember(state) { mutableSetOf<String>() }
     val nowPlayingExpanded = surfaceState.nowPlayingExpanded
     val settingsVisible = surfaceState.settingsVisible
     var settingsState by remember { mutableStateOf<PlaybackSettingsUiState?>(null) }
