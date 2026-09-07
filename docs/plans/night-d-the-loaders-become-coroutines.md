@@ -2,7 +2,7 @@
 slug: night-d-the-loaders-become-coroutines
 worktree: /home/marvin/Projects/reprise/.worktrees/night-d-loaders-coroutines
 branch: refactor/the-loaders-become-coroutines
-phase: refactored
+phase: shipped
 created: 2026-09-07
 base: origin/dev
 owns: android/app/src/main/java/io/github/marvinbaudach/reprise/{TrackAnalysisLoader,TrackCover,LibraryWrites,TrackLoader,ArtistPortraitPrefetch}.kt
