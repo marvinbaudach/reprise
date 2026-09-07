@@ -145,6 +145,21 @@ class MainActivityMusicPathsTest {
         assertEquals(Lifecycle.State.RESUMED, compose.activityRule.scenario.state)
         compose.onNodeWithContentDescription("Back to artists").assertDoesNotExist()
         compose.onAllNodesWithText("Artist 1")[0].assertIsDisplayed()
+
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("First Album").fetchSemanticsNodes().isNotEmpty()
+        }
+        application.blockFirstAlbumOpen()
+        compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.firstAlbumOpenHasStarted() }
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+        application.releaseFirstAlbumOpen()
+        compose.waitUntil(timeoutMillis = 5_000) { application.firstAlbumOpenHasFinished() }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+        compose.onAllNodesWithText("Artist 1")[0].assertIsDisplayed()
     }
 
     private fun openDeepAlbum() {

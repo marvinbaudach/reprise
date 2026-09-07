@@ -22,6 +22,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -159,7 +160,25 @@ class MainActivityConfigurationTest {
     @Test
     fun playArtistUsesTheRetainedLibraryOnTheFakeSurfacePath() {
         compose.onNodeWithText("Artists").performClick()
+        application.blockArtistOneOpen()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasStarted() }
+        compose.onNodeWithText("Artist 2").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play Artist 2")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        application.releaseArtistOneOpen()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasFinished() }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Play Artist 2").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play Artist 1")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithContentDescription("Play Artist 1").performClick()
         compose.waitForIdle()
@@ -514,6 +533,14 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     private var broadArtistSearchGate: CompletableDeferred<Unit>? = null
     private var broadArtistSearchFinished: CountDownLatch? = null
     private val broadArtistSearchCalls = AtomicInteger()
+    private var artistOneOpenStarted: CountDownLatch? = null
+    private var artistOneOpenGate: CompletableDeferred<Unit>? = null
+    private var artistOneOpenFinished: CountDownLatch? = null
+    private val artistOneOpenCalls = AtomicInteger()
+    private var firstAlbumOpenStarted: CountDownLatch? = null
+    private var firstAlbumOpenGate: CompletableDeferred<Unit>? = null
+    private var firstAlbumOpenFinished: CountDownLatch? = null
+    private val firstAlbumOpenCalls = AtomicInteger()
     val trackRatings = mutableMapOf<Long, Int>()
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
@@ -713,6 +740,36 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     fun broadArtistSearchHasFinished(): Boolean =
         checkNotNull(broadArtistSearchFinished).count == 0L
 
+    fun blockArtistOneOpen() {
+        artistOneOpenCalls.set(0)
+        artistOneOpenStarted = CountDownLatch(1)
+        artistOneOpenGate = CompletableDeferred()
+        artistOneOpenFinished = CountDownLatch(1)
+    }
+
+    fun artistOneOpenHasStarted(): Boolean = checkNotNull(artistOneOpenStarted).count == 0L
+
+    fun releaseArtistOneOpen() {
+        checkNotNull(artistOneOpenGate).complete(Unit)
+    }
+
+    fun artistOneOpenHasFinished(): Boolean = checkNotNull(artistOneOpenFinished).count == 0L
+
+    fun blockFirstAlbumOpen() {
+        firstAlbumOpenCalls.set(0)
+        firstAlbumOpenStarted = CountDownLatch(1)
+        firstAlbumOpenGate = CompletableDeferred()
+        firstAlbumOpenFinished = CountDownLatch(1)
+    }
+
+    fun firstAlbumOpenHasStarted(): Boolean = checkNotNull(firstAlbumOpenStarted).count == 0L
+
+    fun releaseFirstAlbumOpen() {
+        checkNotNull(firstAlbumOpenGate).complete(Unit)
+    }
+
+    fun firstAlbumOpenHasFinished(): Boolean = checkNotNull(firstAlbumOpenFinished).count == 0L
+
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
             titles = tracks.window(firstLibraryWindow()),
@@ -763,9 +820,21 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 artists.filter { artist -> artist.name.contains(query, ignoreCase = true) }
                     .window(range)
             },
-            openAlbum = { album -> AlbumTrackList(album, tracksFor(album).window(firstLibraryWindow())) },
+            openAlbum = { album ->
+                if (album.title == "First Album" && firstAlbumOpenCalls.getAndIncrement() == 0) {
+                    firstAlbumOpenStarted?.countDown()
+                    withContext(NonCancellable) { firstAlbumOpenGate?.await() }
+                    firstAlbumOpenFinished?.countDown()
+                }
+                AlbumTrackList(album, tracksFor(album).window(firstLibraryWindow()))
+            },
             listAlbumTracks = { album, range -> tracksFor(album).window(range) },
             openArtist = { artist ->
+                if (artist.name == "Artist 1" && artistOneOpenCalls.getAndIncrement() == 0) {
+                    artistOneOpenStarted?.countDown()
+                    withContext(NonCancellable) { artistOneOpenGate?.await() }
+                    artistOneOpenFinished?.countDown()
+                }
                 ArtistTrackList(
                     artist = artist,
                     albums = artistAlbums.window(firstLibraryWindow()),

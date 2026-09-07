@@ -77,6 +77,8 @@ private data class LoadedTab(
 
 private class BrowseReadJobs {
     var latestSearch = 0L
+    var latestAlbumOpen = 0L
+    var latestArtistOpen = 0L
 }
 
 internal enum class BrowseTab(val label: String, val symbol: String) {
@@ -213,6 +215,8 @@ internal fun BrowseScreen(
 
     fun selectDestination(tab: BrowseTab) {
         if (tab != selectedTab) {
+            readJobs.latestAlbumOpen++
+            readJobs.latestArtistOpen++
             selectedAlbum = null
             selectedArtist = null
         }
@@ -275,14 +279,28 @@ internal fun BrowseScreen(
     }
 
     fun openAlbumDetail(album: LibraryAlbum) {
+        val request = ++readJobs.latestAlbumOpen
+        val parentArtist = selectedArtist?.artist
         libraryQueryScope.launch {
             runCatching { openAlbum(album) }
                 .onSuccess { detail ->
+                    if (
+                        request != readJobs.latestAlbumOpen ||
+                        selectedArtist?.artist != parentArtist
+                    ) return@onSuccess
                     selectedAlbum = detail
                     albumRequestedOffset = null
                     browseError = null
                 }
-                .onFailure { error -> browseError = error.browseDetail("open the album") }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    if (
+                        request == readJobs.latestAlbumOpen &&
+                        selectedArtist?.artist == parentArtist
+                    ) {
+                        browseError = error.browseDetail("open the album")
+                    }
+                }
         }
     }
 
@@ -301,6 +319,8 @@ internal fun BrowseScreen(
         // lands on whatever is still open there. An empty query is exempt; that
         // is the field being closed again, not a question being asked.
         if (text.isNotBlank()) {
+            readJobs.latestAlbumOpen++
+            readJobs.latestArtistOpen++
             selectedAlbum = null
             selectedArtist = null
         }
@@ -552,8 +572,15 @@ internal fun BrowseScreen(
             (selectedAlbum != null || selectedArtist != null),
     ) {
         when {
-            selectedAlbum != null -> selectedAlbum = null
-            selectedArtist != null -> selectedArtist = null
+            selectedAlbum != null -> {
+                readJobs.latestAlbumOpen++
+                selectedAlbum = null
+            }
+            selectedArtist != null -> {
+                readJobs.latestAlbumOpen++
+                readJobs.latestArtistOpen++
+                selectedArtist = null
+            }
         }
     }
 
@@ -727,9 +754,14 @@ internal fun BrowseScreen(
                                     selectedAlbum = selectedAlbum,
                                     playback = playback,
                                     openArtist = { artist ->
+                                        val request = ++readJobs.latestArtistOpen
                                         libraryQueryScope.launch {
                                             runCatching { openArtist(artist) }
                                                 .onSuccess { detail ->
+                                                    if (
+                                                        request != readJobs.latestArtistOpen ||
+                                                        surfaceState.selectedTab != BrowseTab.ARTISTS
+                                                    ) return@onSuccess
                                                     selectedArtist = detail
                                                     artistRequestedOffset = null
                                                     artistAlbumsRequestedOffset = null
@@ -741,16 +773,27 @@ internal fun BrowseScreen(
                                                     }
                                                 }
                                                 .onFailure { error ->
-                                                    browseError = error.browseDetail("open the artist")
+                                                    if (error is CancellationException) throw error
+                                                    if (
+                                                        request == readJobs.latestArtistOpen &&
+                                                        surfaceState.selectedTab == BrowseTab.ARTISTS
+                                                    ) {
+                                                        browseError = error.browseDetail("open the artist")
+                                                    }
                                                 }
                                         }
                                     },
                                     openAlbum = ::openAlbumDetail,
                                     closeArtist = {
+                                        readJobs.latestAlbumOpen++
+                                        readJobs.latestArtistOpen++
                                         selectedAlbum = null
                                         selectedArtist = null
                                     },
-                                    closeAlbum = { selectedAlbum = null },
+                                    closeAlbum = {
+                                        readJobs.latestAlbumOpen++
+                                        selectedAlbum = null
+                                    },
                                     play = { index ->
                                         selectedArtist?.let {
                                             play(PlaybackSelection(it.untaggedTracks.rows, index))
