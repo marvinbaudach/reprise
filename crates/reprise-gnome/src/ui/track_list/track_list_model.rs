@@ -44,7 +44,7 @@ use reprise_core::queries::{self, BrowseFilter, QueueItemMetadata};
 use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
-use super::track_list_model_change::ModelChange;
+use super::track_list_model_change::{ModelChange, ModelChangeKind};
 use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
@@ -510,6 +510,7 @@ impl TrackListModel {
                     && change.position.saturating_add(change.added) <= new_total
             })
             .unwrap_or(ModelChange {
+                kind: ModelChangeKind::Span,
                 position: 0,
                 removed: old_total,
                 added: new_total,

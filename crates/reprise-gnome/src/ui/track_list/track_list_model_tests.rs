@@ -118,6 +118,7 @@ fn tag_save_query_swap_emits_only_the_requested_changed_range() {
         &[],
         false,
         super::super::track_list_model_change::ModelChange {
+            kind: super::super::track_list_model_change::ModelChangeKind::Span,
             position: 1,
             removed: 2,
             added: 2,
@@ -159,6 +160,7 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
         &[],
         false,
         super::super::track_list_model_change::ModelChange {
+            kind: super::super::track_list_model_change::ModelChangeKind::Span,
             position: 1,
             removed: 2,
             added: 2,
@@ -178,6 +180,7 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
 #[test]
 fn partial_deletion_resections_the_surviving_whole_model_section() {
     let change = super::super::track_list_model_change::ModelChange {
+        kind: super::super::track_list_model_change::ModelChangeKind::Span,
         position: 10,
         removed: 2,
         added: 0,

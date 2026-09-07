@@ -125,6 +125,7 @@ mod tests {
             tag_save_model_change(&before, &after, &[2, 3], 9),
             Some(
                 crate::ui::track_list::track_list_model_change::ModelChange {
+                    kind: crate::ui::track_list::track_list_model_change::ModelChangeKind::Span,
                     position: 1,
                     removed: 2,
                     added: 2,

@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-use super::super::track_list_model_change::ModelChange;
+use super::super::track_list_model_change::{ModelChange, ModelChangeKind};
 use super::super::TrackList;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
@@ -83,6 +83,7 @@ fn narrowed_removal_then_marker_reapply_keeps_surviving_cell_text() {
         &[],
         false,
         ModelChange {
+            kind: ModelChangeKind::Span,
             position: 0,
             removed: 1,
             added: 0,
