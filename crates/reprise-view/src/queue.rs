@@ -232,10 +232,11 @@ impl QueueViewModel {
         self.items_window(0, self.total_len(), tail)
     }
 
-    /// Exact O(1) model delta for the two normal forward-playback shapes:
-    /// consuming the first materialized Play Next row, or advancing through
-    /// an unchanged virtual context. The tail's frozen sequence/start
-    /// identity is the proof for the virtual case.
+    /// Exact model delta for three queue shapes: consuming the first
+    /// materialized Play Next row, advancing through an unchanged virtual
+    /// context, or applying a tail-change hint whose base is the old context.
+    /// The tail's frozen sequence/start identity is the proof for both virtual
+    /// cases.
     pub fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
         let material_removed = old.items.len().checked_sub(self.items.len())?;
         let context_unchanged = match (&old.context, &self.context) {
@@ -254,23 +255,49 @@ impl QueueViewModel {
         if material_removed != 0 {
             return None;
         }
-        let old_identity = old.context.as_ref()?.identity?;
-        let new_identity = self.context.as_ref()?.identity?;
-        if old_identity.sequence != new_identity.sequence || new_identity.start < old_identity.start
-        {
+        if let (Some(old_context), Some(new_context)) = (&old.context, &self.context) {
+            if let (Some(old_identity), Some(new_identity)) =
+                (old_context.identity, new_context.identity)
+            {
+                if old_identity.sequence == new_identity.sequence
+                    && new_identity.start >= old_identity.start
+                {
+                    let removed = new_identity.start - old_identity.start;
+                    if old_context.count == new_context.count.saturating_add(removed) {
+                        if removed == 0 {
+                            return Some((0, 0, 0));
+                        }
+                        return Some((
+                            u32::try_from(self.items.len()).unwrap_or(u32::MAX),
+                            u32::try_from(removed).unwrap_or(u32::MAX),
+                            0,
+                        ));
+                    }
+                }
+            }
+        }
+
+        let old_context = old.context.as_ref()?;
+        let new_context = self.context.as_ref()?;
+        let hint = new_context.change_from_previous?;
+        let hint_base = VirtualContextIdentity {
+            sequence: hint.base,
+            start: hint.base_start,
+        };
+        if old.items != self.items || old_context.identity != Some(hint_base) {
             return None;
         }
-        let removed = new_identity.start - old_identity.start;
-        if old.context.as_ref()?.count != self.context.as_ref()?.count.saturating_add(removed) {
+        let expected_count = old_context
+            .count
+            .checked_sub(hint.removed)?
+            .checked_add(hint.added)?;
+        if expected_count != new_context.count {
             return None;
-        }
-        if removed == 0 {
-            return Some((0, 0, 0));
         }
         Some((
-            u32::try_from(self.items.len()).unwrap_or(u32::MAX),
-            u32::try_from(removed).unwrap_or(u32::MAX),
-            0,
+            u32::try_from(self.items.len().saturating_add(hint.position)).unwrap_or(u32::MAX),
+            u32::try_from(hint.removed).unwrap_or(u32::MAX),
+            u32::try_from(hint.added).unwrap_or(u32::MAX),
         ))
     }
 }
@@ -477,6 +504,87 @@ mod tests {
 
     fn all_items(model: &QueueViewModel, context: &[i64]) -> Vec<QueueItem> {
         model.all_items(&SliceContextWindow(context))
+    }
+
+    fn hinted_model(
+        items: &[QueueItem],
+        count: usize,
+        sequence: (u64, u64),
+        start: usize,
+        change: Option<TailChange>,
+    ) -> QueueViewModel {
+        compose_virtual(
+            None,
+            items,
+            Some(VirtualContext::identified_with_change(
+                count, sequence, start, change,
+            )),
+            Some("Music"),
+            "Music",
+        )
+    }
+
+    fn tail_change(position: usize, removed: usize, added: usize) -> TailChange {
+        TailChange {
+            base: (7, 1),
+            base_start: 4,
+            position,
+            removed,
+            added,
+        }
+    }
+
+    #[test]
+    fn contiguous_tail_removal_uses_the_attached_change() {
+        let items = tracks(&[90]);
+        let old = hinted_model(&items, 5, (7, 1), 4, None);
+        let new = hinted_model(&items, 3, (7, 2), 4, Some(tail_change(1, 2, 0)));
+
+        assert_eq!(new.leading_removal_change_from(&old), Some((2, 2, 0)));
+    }
+
+    #[test]
+    fn scattered_tail_removal_uses_its_covering_span() {
+        let items = tracks(&[90]);
+        let old = hinted_model(&items, 5, (7, 1), 4, None);
+        let new = hinted_model(&items, 3, (7, 2), 4, Some(tail_change(1, 3, 1)));
+
+        assert_eq!(new.leading_removal_change_from(&old), Some((2, 3, 1)));
+    }
+
+    #[test]
+    fn head_tail_removal_uses_the_attached_change() {
+        let items = tracks(&[90]);
+        let old = hinted_model(&items, 3, (7, 1), 4, None);
+        let new = hinted_model(&items, 2, (7, 2), 4, Some(tail_change(0, 1, 0)));
+
+        assert_eq!(new.leading_removal_change_from(&old), Some((1, 1, 0)));
+    }
+
+    #[test]
+    fn tail_change_rejects_a_base_identity_mismatch() {
+        let items = tracks(&[90]);
+        let old = hinted_model(&items, 5, (8, 1), 4, None);
+        let new = hinted_model(&items, 3, (7, 2), 4, Some(tail_change(1, 2, 0)));
+
+        assert_eq!(new.leading_removal_change_from(&old), None);
+    }
+
+    #[test]
+    fn tail_change_rejects_a_changed_materialized_prefix() {
+        let old = hinted_model(&tracks(&[90]), 5, (7, 1), 4, None);
+        let new = hinted_model(&tracks(&[91]), 3, (7, 2), 4, Some(tail_change(1, 2, 0)));
+
+        assert_eq!(new.leading_removal_change_from(&old), None);
+    }
+
+    #[test]
+    fn tail_change_rejects_an_inconsistent_count() {
+        let items = tracks(&[90]);
+        let old = hinted_model(&items, 5, (7, 1), 4, None);
+        let new = hinted_model(&items, 4, (7, 2), 4, Some(tail_change(1, 2, 0)));
+
+        assert_eq!(new.leading_removal_change_from(&old), None);
     }
 
     #[test]
