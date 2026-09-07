@@ -8,7 +8,7 @@ pub(super) fn queue_snapshot_change(
     old: &super::queue_sections::QueueViewModel,
     new: &super::queue_sections::QueueViewModel,
 ) -> (u32, u32, u32) {
-    new.leading_removal_change_from(old).unwrap_or((
+    new.change_from(old).unwrap_or((
         0,
         u32::try_from(old.total_len()).unwrap_or(u32::MAX),
         u32::try_from(new.total_len()).unwrap_or(u32::MAX),

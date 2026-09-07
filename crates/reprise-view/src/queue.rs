@@ -237,7 +237,7 @@ impl QueueViewModel {
     /// context, or applying a tail-change hint whose base is the old context.
     /// The tail's frozen sequence/start identity is the proof for both virtual
     /// cases.
-    pub fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
+    pub fn change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
         let material_removed = old.items.len().checked_sub(self.items.len())?;
         let context_unchanged = match (&old.context, &self.context) {
             (None, None) => true,
@@ -309,7 +309,7 @@ impl QueueViewModel {
 ///
 /// **A surface should call [`compose_virtual`] instead.** This entry point
 /// builds an *unidentified* [`VirtualContext`], so
-/// [`QueueViewModel::leading_removal_change_from`] cannot recognise a shifted
+/// [`QueueViewModel::change_from`] cannot recognise a shifted
 /// context and falls back to a full replacement rather than the O(1) diff.
 /// It exists because it is the shape the tests want, and it is `pub` rather
 /// than `#[cfg(test)]` only because a library's test-gated items are invisible
@@ -540,7 +540,7 @@ mod tests {
         let old = hinted_model(&items, 5, (7, 1), 4, None);
         let new = hinted_model(&items, 3, (7, 2), 4, Some(tail_change(1, 2, 0)));
 
-        assert_eq!(new.leading_removal_change_from(&old), Some((2, 2, 0)));
+        assert_eq!(new.change_from(&old), Some((2, 2, 0)));
     }
 
     #[test]
@@ -549,7 +549,7 @@ mod tests {
         let old = hinted_model(&items, 5, (7, 1), 4, None);
         let new = hinted_model(&items, 3, (7, 2), 4, Some(tail_change(1, 3, 1)));
 
-        assert_eq!(new.leading_removal_change_from(&old), Some((2, 3, 1)));
+        assert_eq!(new.change_from(&old), Some((2, 3, 1)));
     }
 
     #[test]
@@ -558,7 +558,7 @@ mod tests {
         let old = hinted_model(&items, 3, (7, 1), 4, None);
         let new = hinted_model(&items, 2, (7, 2), 4, Some(tail_change(0, 1, 0)));
 
-        assert_eq!(new.leading_removal_change_from(&old), Some((1, 1, 0)));
+        assert_eq!(new.change_from(&old), Some((1, 1, 0)));
     }
 
     #[test]
@@ -567,7 +567,7 @@ mod tests {
         let old = hinted_model(&items, 5, (8, 1), 4, None);
         let new = hinted_model(&items, 3, (7, 2), 4, Some(tail_change(1, 2, 0)));
 
-        assert_eq!(new.leading_removal_change_from(&old), None);
+        assert_eq!(new.change_from(&old), None);
     }
 
     #[test]
@@ -575,7 +575,7 @@ mod tests {
         let old = hinted_model(&tracks(&[90]), 5, (7, 1), 4, None);
         let new = hinted_model(&tracks(&[91]), 3, (7, 2), 4, Some(tail_change(1, 2, 0)));
 
-        assert_eq!(new.leading_removal_change_from(&old), None);
+        assert_eq!(new.change_from(&old), None);
     }
 
     #[test]
@@ -584,7 +584,7 @@ mod tests {
         let old = hinted_model(&items, 5, (7, 1), 4, None);
         let new = hinted_model(&items, 4, (7, 2), 4, Some(tail_change(1, 2, 0)));
 
-        assert_eq!(new.leading_removal_change_from(&old), None);
+        assert_eq!(new.change_from(&old), None);
     }
 
     #[test]
