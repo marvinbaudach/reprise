@@ -15,11 +15,11 @@ impl ArtistPortraitProgressListener for CapturingProgress {
 }
 
 const TINY_IMAGE: &[u8] = &[
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
-    0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5,
-    0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64,
-    0xf8, 0x0f, 0x00, 0x01, 0x05, 0x01, 0x01, 0x27, 0x18, 0xe3, 0x66, 0x00, 0x00, 0x00, 0x00,
-    0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c,
+    0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0xf8, 0x0f, 0x00,
+    0x01, 0x05, 0x01, 0x01, 0x27, 0x18, 0xe3, 0x66, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+    0xae, 0x42, 0x60, 0x82,
 ];
 
 fn store_portrait_fixture_in(dir: &Path, name: &str) -> PathBuf {
@@ -198,8 +198,8 @@ fn portrait_cache_io_is_debug_and_does_not_log_the_artist_name() {
     std::fs::write(cache.join("reprise"), b"not a directory").unwrap();
     let logs = CapturedLogs::default();
 
-    let portrait = logs
-        .capture(|| library.artist_portrait_cached(artist, crate::AndroidArtworkSize::List));
+    let portrait =
+        logs.capture(|| library.artist_portrait_cached(artist, crate::AndroidArtworkSize::List));
 
     assert_eq!(portrait, None);
     let logged = logs.joined();
@@ -256,8 +256,9 @@ fn portrait_fetch_failures_do_not_log_artist_names() {
     let fetch_logs = CapturedLogs::default();
 
     assert!(matches!(
-        fetch_logs.capture(|| fetch_library
-            .artist_portrait_fetch(fetch_artist, crate::AndroidArtworkSize::List)),
+        fetch_logs
+            .capture(|| fetch_library
+                .artist_portrait_fetch(fetch_artist, crate::AndroidArtworkSize::List)),
         Ok(None),
     ));
     let fetch_logged = fetch_logs.joined();
@@ -355,9 +356,8 @@ fn the_query_lock_is_free_while_a_portrait_is_being_fetched() {
 
     std::thread::scope(|scope| {
         let fetching = Arc::clone(&library);
-        let fetch = scope.spawn(move || {
-            fetching.artist_portrait_fetch("Band", crate::AndroidArtworkSize::List)
-        });
+        let fetch = scope
+            .spawn(move || fetching.artist_portrait_fetch("Band", crate::AndroidArtworkSize::List));
         started_rx
             .recv_timeout(std::time::Duration::from_secs(2))
             .unwrap();
@@ -476,8 +476,7 @@ fn backfill_receives_transport_errors_without_counting_or_marking_them() {
 
     library.start_artist_portrait_backfill(Box::new(CapturingProgress(Arc::clone(&updates))));
     for _ in 0..2_000 {
-        if library.artist_portrait_backfill_progress().state
-            == ArtistPortraitProgressState::Paused
+        if library.artist_portrait_backfill_progress().state == ArtistPortraitProgressState::Paused
         {
             break;
         }
@@ -544,12 +543,8 @@ fn revoking_artwork_consent_stops_the_worker_before_the_next_artist() {
 
     {
         let writer = library.writer().unwrap();
-        reprise_core::modules::set_enabled(
-            &writer,
-            &reprise_core::modules::ARTWORK_MODULE,
-            false,
-        )
-        .unwrap();
+        reprise_core::modules::set_enabled(&writer, &reprise_core::modules::ARTWORK_MODULE, false)
+            .unwrap();
     }
     let (release_lock, release_wake) = &*release;
     *release_lock.lock().unwrap() = true;
