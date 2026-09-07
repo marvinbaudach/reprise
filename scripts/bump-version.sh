@@ -278,8 +278,8 @@ case "$mode" in
           bump_android=1
           ;;
         crates/reprise-gnome/*|crates/reprise-platform-linux/*|\
-        crates/reprise-runtime/*|crates/reprise-runtime-client/*|\
         crates/reprise-runtime-protocol/*|crates/reprise-stems/*|\
+        crates/reprise-cli/*|\
         build-aux/*|data/*|flatpak/*|packaging/*|po/*|meson.build)
           bump_desktop=1
           ;;
