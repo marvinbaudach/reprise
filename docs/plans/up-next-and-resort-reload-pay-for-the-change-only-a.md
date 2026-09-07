@@ -122,6 +122,11 @@ of the section whose length changed. A safe post-merge narrowing requires
 `set_queue_snapshot` to pass the section start containing `position`; that
 follow-up belongs to the other strand's `track_list_model.rs`.
 
+`player_controller.rs` also loses three blank lines. `check-release.sh` caps
+Rust sources at 799 lines and the file sits at 799 on `dev`; the A1 field and
+its initialisation cost two, so the whitespace goes to keep the gate green. No
+other line in the file changes.
+
 ## Verification (scope per mother §2)
 
 `cargo fmt`; `cargo clippy --all-targets --workspace -- -D warnings`;
