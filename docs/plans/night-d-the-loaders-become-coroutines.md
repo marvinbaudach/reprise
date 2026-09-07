@@ -157,3 +157,18 @@ change to the injection and the direct test dispatcher only.
 `ActivityPlaybackControls.kt` remains deliberately deferred because converting
 it would require edits outside this package's ownership. The final Android gate
 reported 98 suites and 601 tests, with 0 failures, 0 errors, and 0 skips.
+
+A follow-up review accepted four findings. `LibraryWrites` once again leaves a
+timed-out or interrupted answered lane draining so its late report cannot be
+stranded, and computed write outcomes are handed to the main-thread reporter
+even if teardown cancels the scope. Its pending-answer accounting now returns
+to zero exactly once on normal delivery, rejection, cancellation, and failed
+handoff paths. The two timeout tests were restored to their base behavior and
+the rejection test again distinguishes the immediate-cancel branch from the
+drain branch through a zero-length dispatcher/scope drain bound.
+
+Started analysis imports, bar reads, and spectrogram reads now always post their
+completion after the blocking FFI call returns; existing tests cover all three
+paths under cancellation without increasing the suite count. Artwork list and
+full-size lanes now log the established "the library is closing" diagnostic
+when `loadVisual` or `prefetch` is called after shutdown.
