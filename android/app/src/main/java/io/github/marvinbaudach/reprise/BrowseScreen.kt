@@ -75,6 +75,10 @@ private data class LoadedTab(
     val artists: LibraryWindow<LibraryArtist>? = null,
 )
 
+private class BrowseReadJobs {
+    var latestSearch = 0L
+}
+
 internal enum class BrowseTab(val label: String, val symbol: String) {
     TITLES("Titles", "library_music"),
     ARTISTS("Artists", "artist"),
@@ -138,6 +142,7 @@ internal fun BrowseScreen(
     val playbackControls = LocalPlaybackControls.current
     val trackArtwork = LocalTrackArtwork.current
     val libraryQueryScope = rememberCoroutineScope()
+    val readJobs = remember(state) { BrowseReadJobs() }
     val selectedTab = surfaceState.selectedTab
     val searchVisible = surfaceState.searchVisible
     val searchText = surfaceState.searchText
@@ -287,7 +292,7 @@ internal fun BrowseScreen(
         searchArtists(text, request)
     }
 
-    suspend fun search(text: String) {
+    suspend fun search(text: String, request: Long) {
         // A refinement is a question about a list, so it has to be answered on
         // the list. An open artist page — or the album page nested inside it —
         // would otherwise stay up and answer with that artist's *albums* where
@@ -306,33 +311,49 @@ internal fun BrowseScreen(
         // — windows that claim to be loaded already.
         loadedTabs = emptySet()
         surfaceState.updateSearch(text)
-        runCatching {
+        val result = runCatching {
             when (selectedTab) {
-                BrowseTab.TITLES -> searchTitles(text, firstLibraryWindow()).also { window ->
-                    visibleTitles = window
-                    titlesRequestedOffset = null
-                }
-                BrowseTab.ARTISTS -> {
-                    visibleArtists = artistsFor(text, firstLibraryWindow())
-                    artistsRequestedOffset = null
-                }
+                BrowseTab.TITLES -> LoadedTab(
+                    titles = searchTitles(text, firstLibraryWindow()),
+                )
+                BrowseTab.ARTISTS -> LoadedTab(
+                    artists = artistsFor(text, firstLibraryWindow()),
+                )
                 // The queue is an order, not a view of the library, so there is
                 // nothing here for a filter to narrow. Selecting it closes the
                 // field — see MobileSurfaceViewModel.selectTab.
-                BrowseTab.QUEUE -> Unit
+                BrowseTab.QUEUE -> LoadedTab()
             }
-        }.onSuccess {
+        }
+        if (request != readJobs.latestSearch || text != surfaceState.searchText) return
+        result.onSuccess { loaded ->
+            loaded.titles?.let {
+                visibleTitles = it
+                titlesRequestedOffset = null
+            }
+            loaded.artists?.let {
+                visibleArtists = it
+                artistsRequestedOffset = null
+            }
             loadedTabs = setOf(selectedTab)
             browseError = null
         }
-            .onFailure { error -> browseError = error.browseDetail("search") }
+            .onFailure { error ->
+                if (error is CancellationException) throw error
+                browseError = error.browseDetail("search")
+            }
+    }
+
+    fun requestSearch(text: String) {
+        val request = ++readJobs.latestSearch
+        libraryQueryScope.launch { search(text, request) }
     }
 
     fun toggleSearch() {
         if (searchVisible) {
             surfaceState.closeSearch()
             if (searchText.isNotEmpty()) {
-                libraryQueryScope.launch { search("") }
+                requestSearch("")
             }
         } else {
             surfaceState.openSearch()
@@ -363,7 +384,7 @@ internal fun BrowseScreen(
     // again rather than replayed from rows that no longer describe it.
     LaunchedEffect(state) {
         if (searchText.isNotEmpty() && restored == null) {
-            search(searchText)
+            requestSearch(surfaceState.searchText)
         }
     }
 
@@ -393,6 +414,7 @@ internal fun BrowseScreen(
     LaunchedEffect(pendingTab, selectedTab, state, searchText, visibleLoadRetryRevision) {
         if (pendingTab == null) return@LaunchedEffect
         val visible = pendingTab == selectedTab
+        val query = searchText
         if (!visible) {
             // A prefetch exists to be invisible, so it waits for a moment when
             // nothing is on the line: not the opening frames, where it would
@@ -401,17 +423,19 @@ internal fun BrowseScreen(
             delay(NEIGHBOUR_PREFETCH_IDLE_MS)
             snapshotFlow { pagerState.isScrollInProgress }.first { !it }
         }
-        runCatching {
+        val result = runCatching {
             // The rows come off a blocking JNI + SQLite call through the query
             // seam; only this handover to Compose belongs on the main thread.
             when (pendingTab) {
-                BrowseTab.TITLES -> LoadedTab(titles = searchTitles(searchText, firstLibraryWindow()))
+                BrowseTab.TITLES -> LoadedTab(titles = searchTitles(query, firstLibraryWindow()))
                 BrowseTab.ARTISTS -> LoadedTab(
-                    artists = artistsFor(searchText, firstLibraryWindow()),
+                    artists = artistsFor(query, firstLibraryWindow()),
                 )
                 BrowseTab.QUEUE -> LoadedTab()
             }
-        }.onSuccess { loaded ->
+        }
+        if (query != surfaceState.searchText) return@LaunchedEffect
+        result.onSuccess { loaded ->
             loaded.titles?.let { visibleTitles = it }
             loaded.artists?.let { visibleArtists = it }
             loadedTabs = loadedTabs + pendingTab
@@ -637,7 +661,7 @@ internal fun BrowseScreen(
                         LibrarySearchField(
                             tab = selectedTab,
                             searchText = searchText,
-                            search = { text -> libraryQueryScope.launch { search(text) } },
+                            search = ::requestSearch,
                             close = ::toggleSearch,
                         )
                     }

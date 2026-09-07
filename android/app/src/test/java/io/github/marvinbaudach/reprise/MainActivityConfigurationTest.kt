@@ -31,10 +31,14 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -112,12 +116,28 @@ class MainActivityConfigurationTest {
     fun artistSearchFiltersArtistsAndClosingItRestoresTheArtistCatalog() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-summary-search").performClick()
-        compose.onNodeWithText("Search artists").performTextInput("Artist 45")
+        application.blockBroadArtistSearch()
+        compose.onNodeWithText("Search artists").performTextInput("Artist")
+        compose.waitUntil(timeoutMillis = 5_000) { application.broadArtistSearchHasStarted() }
+        compose.onNodeWithText("Search artists").performTextReplacement("Artist 45")
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodes(
+                hasText("Artist 45") and hasText("45 tracks", substring = true),
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        application.releaseBroadArtistSearch()
+        compose.waitUntil(timeoutMillis = 5_000) { application.broadArtistSearchHasFinished() }
         compose.waitForIdle()
 
         compose.onNode(
             hasText("Artist 45") and hasText("45 tracks", substring = true),
         ).assertIsDisplayed()
+        assertTrue(
+            runCatching {
+                compose.onNodeWithTag("library-artists-list")
+                    .performScrollToNode(hasText("Artist 2"))
+            }.isFailure,
+        )
         compose.onNodeWithText("Artist 2").assertDoesNotExist()
 
         // The open field owns the way out: clear the query, then close it. The
@@ -490,6 +510,10 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     val onlineSourcesWrites = Collections.synchronizedList(mutableListOf<Boolean>())
     private var onlineSourcesWriteStarted: CountDownLatch? = null
     private var onlineSourcesWriteGate: CountDownLatch? = null
+    private var broadArtistSearchStarted: CountDownLatch? = null
+    private var broadArtistSearchGate: CompletableDeferred<Unit>? = null
+    private var broadArtistSearchFinished: CountDownLatch? = null
+    private val broadArtistSearchCalls = AtomicInteger()
     val trackRatings = mutableMapOf<Long, Int>()
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
@@ -672,6 +696,23 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
         onlineSourcesWriteStarted = null
     }
 
+    fun blockBroadArtistSearch() {
+        broadArtistSearchCalls.set(0)
+        broadArtistSearchStarted = CountDownLatch(1)
+        broadArtistSearchGate = CompletableDeferred()
+        broadArtistSearchFinished = CountDownLatch(1)
+    }
+
+    fun broadArtistSearchHasStarted(): Boolean =
+        checkNotNull(broadArtistSearchStarted).count == 0L
+
+    fun releaseBroadArtistSearch() {
+        checkNotNull(broadArtistSearchGate).complete(Unit)
+    }
+
+    fun broadArtistSearchHasFinished(): Boolean =
+        checkNotNull(broadArtistSearchFinished).count == 0L
+
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
             titles = tracks.window(firstLibraryWindow()),
@@ -714,6 +755,11 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 artists.window(range)
             },
             searchArtists = { query, range ->
+                if (query == "Artist" && broadArtistSearchCalls.getAndIncrement() == 0) {
+                    broadArtistSearchStarted?.countDown()
+                    withContext(NonCancellable) { broadArtistSearchGate?.await() }
+                    broadArtistSearchFinished?.countDown()
+                }
                 artists.filter { artist -> artist.name.contains(query, ignoreCase = true) }
                     .window(range)
             },
