@@ -8,8 +8,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -144,8 +147,8 @@ class TrackArtworkTest {
      */
     @Test
     fun nowPlayingArtworkUsesItsOwnLaneInsteadOfWaitingBehindListWork() {
-        val listWorker = Executors.newSingleThreadExecutor()
-        val fullSizeWorker = Executors.newSingleThreadExecutor()
+        val listWorker = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val fullSizeWorker = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
         val listStarted = CountDownLatch(1)
         val releaseList = CountDownLatch(1)
         val fullSizeAnswered = CountDownLatch(1)
@@ -158,8 +161,8 @@ class TrackArtworkTest {
                 null
             },
             decode = { _ -> null },
-            worker = listWorker,
-            fullSizeWorker = fullSizeWorker,
+            dispatcher = listWorker,
+            fullSizeDispatcher = fullSizeWorker,
             onMainThread = { work -> work() },
         )
         val listGate = ArtworkRequestGate()
@@ -181,6 +184,8 @@ class TrackArtworkTest {
         } finally {
             releaseList.countDown()
             artwork.shutdown()
+            listWorker.close()
+            fullSizeWorker.close()
         }
     }
 
@@ -196,20 +201,30 @@ class TrackArtworkTest {
      */
     @Test
     fun shutdownStopsTheFullSizeLaneAndNotOnlyTheListLane() {
-        val listWorker = Executors.newSingleThreadExecutor()
-        val fullSizeWorker = Executors.newSingleThreadExecutor()
+        val listWorker = QueuedDispatcher()
+        val fullSizeWorker = QueuedDispatcher()
+        val reads = AtomicInteger()
         val artwork = TrackArtwork(
-            resolve = { _, _ -> null },
+            resolve = { _, _ -> reads.incrementAndGet(); null },
             decode = { _ -> null },
-            worker = listWorker,
-            fullSizeWorker = fullSizeWorker,
+            dispatcher = listWorker,
+            fullSizeDispatcher = fullSizeWorker,
             onMainThread = { work -> work() },
         )
+        val listGate = ArtworkRequestGate()
+        val listRequest = listGate.begin("content://tracks/list", AndroidArtworkSize.LIST)
+        val fullSizeGate = ArtworkRequestGate()
+        val fullSizeRequest =
+            fullSizeGate.begin("content://tracks/now-playing", AndroidArtworkSize.NOW_PLAYING)
+
+        artwork.load(listRequest, listGate) {}
+        artwork.load(fullSizeRequest, fullSizeGate) {}
 
         artwork.shutdown()
+        listWorker.runAll()
+        fullSizeWorker.runAll()
 
-        assertThrows(RejectedExecutionException::class.java) { listWorker.execute {} }
-        assertThrows(RejectedExecutionException::class.java) { fullSizeWorker.execute {} }
+        assertEquals(0, reads.get())
     }
 
     /**
@@ -229,7 +244,7 @@ class TrackArtworkTest {
             Thread(runnable, "artwork-under-test").apply {
                 setUncaughtExceptionHandler { _, error -> escaped.put(error) }
             }
-        }
+        }.asCoroutineDispatcher()
         val answered = CountDownLatch(1)
         var delivered: ImageBitmap? = null
         val artwork = TrackArtwork(
@@ -239,7 +254,7 @@ class TrackArtworkTest {
                 Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
             },
             cache = ArtworkCache(),
-            worker = worker,
+            dispatcher = worker,
             onMainThread = { work -> work() },
         )
         val gate = ArtworkRequestGate()
@@ -260,6 +275,7 @@ class TrackArtworkTest {
             assertNotNull("a refused cover read must fall back without an empty frame", delivered)
         } finally {
             artwork.shutdown()
+            worker.close()
         }
     }
 
@@ -287,5 +303,17 @@ class TrackArtworkTest {
             "expected the call counter's refusal, got: ${refused.message}",
             refused.message.orEmpty().contains(DESTROYED),
         )
+    }
+}
+
+private class QueuedDispatcher : CoroutineDispatcher() {
+    private val work = ArrayDeque<Runnable>()
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        work.addLast(block)
+    }
+
+    fun runAll() {
+        while (work.isNotEmpty()) work.removeFirst().run()
     }
 }
