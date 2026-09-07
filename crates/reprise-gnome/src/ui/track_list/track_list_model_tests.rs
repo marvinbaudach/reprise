@@ -131,6 +131,84 @@ fn tag_save_query_swap_emits_only_the_requested_changed_range() {
     assert_eq!(*changes.borrow(), vec![(1, 2, 2)]);
 }
 
+fn list_track_ids(model: &TrackListModel) -> Vec<i64> {
+    (0..model.n_items())
+        .map(|position| {
+            let object = model
+                .item(position)
+                .expect("the projected row must exist")
+                .downcast::<glib::BoxedAnyObject>()
+                .expect("track-list rows use BoxedAnyObject");
+            let item = object.borrow::<QueueItemMetadata>();
+            match &*item {
+                QueueItemMetadata::Track(track) => track.id,
+                QueueItemMetadata::Episode(_) => panic!("query reload must contain tracks"),
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn tag_save_block_move_emits_remove_then_insert_over_a_consistent_model() {
+    let model = seeded_model(&[("Alpha", "A"), ("Bravo", "B"), ("Charlie", "C")]);
+    model.set_query(&ViewSource::Library, "artist", "asc", "", &[]);
+    let conn = model.imp().conn.borrow().clone().unwrap();
+    crate::test_db::connection(&conn)
+        .execute("UPDATE tracks SET artist='0' WHERE id=3", [])
+        .unwrap();
+    let trail = super::super::diagnostic_trail::handle();
+    let trail_start = trail.snapshot().len();
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let intermediate_ids = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_signal = changes.clone();
+    let intermediate_for_signal = intermediate_ids.clone();
+    model.connect_items_changed(move |model, position, removed, added| {
+        changes_for_signal
+            .borrow_mut()
+            .push((position, removed, added));
+        if changes_for_signal.borrow().len() == 1 {
+            *intermediate_for_signal.borrow_mut() = list_track_ids(model);
+        }
+    });
+
+    model.set_query_browsed_ai_changed(
+        &ViewSource::Library,
+        "artist",
+        "asc",
+        "",
+        &BrowseFilter::default(),
+        &[],
+        false,
+        super::super::track_list_model_change::ModelChange {
+            kind: super::super::track_list_model_change::ModelChangeKind::BlockMove {
+                from: 2,
+                to: 0,
+                len: 1,
+            },
+            position: 0,
+            removed: 3,
+            added: 3,
+            before_total: 3,
+            after_total: 3,
+            generation: model.generation(),
+        },
+    );
+
+    assert_eq!(*changes.borrow(), vec![(2, 1, 0), (0, 0, 1)]);
+    assert_eq!(*intermediate_ids.borrow(), vec![1, 2]);
+    assert_eq!(list_track_ids(&model), vec![3, 1, 2]);
+    assert_eq!(model.imp().state.borrow().pending_insert, None);
+    let item_events = trail
+        .snapshot()
+        .into_iter()
+        .skip(trail_start)
+        .filter(|event| event.contains(" ItemsChanged "))
+        .collect::<Vec<_>>();
+    assert_eq!(item_events.len(), 2);
+    assert!(item_events[0].ends_with("position=2 removed=1 added=0"));
+    assert!(item_events[1].ends_with("position=0 removed=0 added=1"));
+}
+
 /// The narrowed range is computed synchronously and applied a main-loop turn
 /// later. If anything refilled the model in between, the range describes rows
 /// that are no longer there — with an unchanged row count it would otherwise
