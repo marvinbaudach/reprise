@@ -16,8 +16,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -119,7 +117,6 @@ internal class TrackAnalysisLoader(
             } catch (error: Throwable) {
                 Log.w(TAG, "Could not import analysis for track $trackId", error)
             }
-            currentCoroutineContext().ensureActive()
             onMainThread {
                 invalidate(trackId)
                 revision += 1L
@@ -161,7 +158,6 @@ internal class TrackAnalysisLoader(
                 Log.w(TAG, "Could not load analysis for track $trackId", error)
                 null
             }
-            currentCoroutineContext().ensureActive()
             onMainThread { finishBarLoad(key, bars, cache = true) }
         }
         if (!submitted) {
@@ -200,7 +196,6 @@ internal class TrackAnalysisLoader(
                 Log.w(TAG, "Could not load spectrogram for track $trackId", error)
                 null
             }
-            currentCoroutineContext().ensureActive()
             onMainThread { finishSpectrogramLoad(trackId, frames, cache = true) }
         }
         if (!submitted) {

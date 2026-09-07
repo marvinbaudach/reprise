@@ -3,22 +3,19 @@ package io.github.marvinbaudach.reprise
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.CoroutineContext
-import kotlinx.coroutines.CoroutineDispatcher
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
-private object DirectTrackAnalysisDispatcher : CoroutineDispatcher() {
-    override fun dispatch(context: CoroutineContext, block: Runnable) = block.run()
-}
-
 class TrackAnalysisLoaderTest {
     @Test
     fun finishedBarsAreWarmAcrossRecompositionWithoutAnotherRead() {
         val mainHops = ArrayDeque<() -> Unit>()
+        val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
         val answerQueued = CountDownLatch(1)
         var reads = 0
         val expected = listOf(SpectralBar(false, 0.75f, 0.1, 0.2, 0.3))
@@ -26,22 +23,24 @@ class TrackAnalysisLoaderTest {
             importAnalysis = {},
             readBars = { _, _ ->
                 reads += 1
+                readStarted.countDown()
+                releaseRead.await()
                 expected
             },
             onMainThread = { work ->
                 mainHops.add(work)
                 answerQueued.countDown()
             },
-            dispatcher = DirectTrackAnalysisDispatcher,
         )
 
         loader.loadBars(41, 64) {}
+        assertTrue("the bar read never started", readStarted.await(2, TimeUnit.SECONDS))
+        cancelDrainWhileWorkIsStarted(loader, releaseRead)
         assertTrue("the bar answer was never queued", answerQueued.await(2, TimeUnit.SECONDS))
         while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
 
         var delivered: List<SpectralBar>? = null
         loader.loadBars(41, 64) { delivered = it }
-        loader.shutdownForTest()
 
         assertEquals(expected, delivered)
         assertTrue(loader.warmth(41).bars)
@@ -52,6 +51,8 @@ class TrackAnalysisLoaderTest {
     fun aPrefetchedSpectrogramIsWarmAcrossRecompositionWithoutAnotherRead() {
         val mainHops = ArrayDeque<() -> Unit>()
         val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val answerQueued = CountDownLatch(1)
         var reads = 0
         val expected = AndroidTrackSpectrogram(2u, 10u, byteArrayOf(1, 2))
         val loader = TrackAnalysisLoader(
@@ -60,14 +61,19 @@ class TrackAnalysisLoaderTest {
             readSpectrogram = {
                 reads += 1
                 readStarted.countDown()
+                releaseRead.await()
                 expected
             },
-            onMainThread = mainHops::add,
+            onMainThread = { work ->
+                mainHops.add(work)
+                answerQueued.countDown()
+            },
         )
 
         loader.prefetch(listOf(41))
         assertTrue("the prefetch never reached FFI", readStarted.await(2, TimeUnit.SECONDS))
-        loader.shutdownForTest()
+        cancelDrainWhileWorkIsStarted(loader, releaseRead)
+        assertTrue("the spectrogram answer was never queued", answerQueued.await(2, TimeUnit.SECONDS))
         while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
 
         var delivered = false
@@ -82,10 +88,15 @@ class TrackAnalysisLoaderTest {
     fun preparingAPrefetchedTrackKeepsItsPositiveCacheHitSynchronous() {
         val mainHops = ArrayDeque<() -> Unit>()
         val answersQueued = CountDownLatch(2)
+        val importStarted = CountDownLatch(1)
+        val releaseImport = CountDownLatch(1)
         var reads = 0
         val expected = AndroidTrackSpectrogram(2u, 10u, byteArrayOf(1, 2))
         val loader = TrackAnalysisLoader(
-            importAnalysis = {},
+            importAnalysis = {
+                importStarted.countDown()
+                releaseImport.await()
+            },
             readBars = { _, _ -> null },
             readSpectrogram = {
                 reads += 1
@@ -101,6 +112,8 @@ class TrackAnalysisLoaderTest {
             loader.retain(setOf(41))
             loader.prefetch(listOf(41))
             loader.prepare(41)
+            assertTrue("the import never started", importStarted.await(2, TimeUnit.SECONDS))
+            cancelDrainWhileWorkIsStarted(loader, releaseImport)
             assertTrue(
                 "the prefetch and import answers never queued",
                 answersQueued.await(2, TimeUnit.SECONDS),
@@ -112,8 +125,8 @@ class TrackAnalysisLoaderTest {
 
             assertTrue(deliveredSynchronously)
             assertEquals(1, reads)
+            assertEquals(1L, loader.revision)
         } finally {
-            loader.shutdownForTest()
             while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
         }
     }
@@ -241,4 +254,37 @@ class TrackAnalysisLoaderTest {
         while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
         assertEquals(expected, delivered)
     }
+}
+
+private fun cancelDrainWhileWorkIsStarted(
+    loader: TrackAnalysisLoader,
+    releaseWork: CountDownLatch,
+) {
+    val shutdownResult = AtomicReference<Boolean>()
+    val shutdownReturned = CountDownLatch(1)
+    val shutdownThread = Thread {
+        shutdownResult.set(loader.shutdown())
+        shutdownReturned.countDown()
+    }.also(Thread::start)
+    try {
+        assertTrue("shutdown never entered its drain", shutdownThread.awaitWaiting())
+
+        shutdownThread.interrupt()
+
+        assertTrue("interrupted shutdown did not return", shutdownReturned.await(2, TimeUnit.SECONDS))
+        assertFalse(shutdownResult.get())
+    } finally {
+        releaseWork.countDown()
+    }
+}
+
+private fun Thread.awaitWaiting(): Boolean {
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+    while (state != Thread.State.WAITING &&
+        state != Thread.State.TIMED_WAITING &&
+        System.nanoTime() < deadline
+    ) {
+        Thread.yield()
+    }
+    return state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING
 }
