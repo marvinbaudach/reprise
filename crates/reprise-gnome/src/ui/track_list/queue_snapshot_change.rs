@@ -38,8 +38,10 @@ pub(super) fn queue_snapshot_emissions(
     let (position, removed, added) = change;
     let items = (removed != 0 || added != 0).then_some(change);
     let covers_every_row = items.is_some() && position == 0 && added >= new_total;
-    let sections =
-        (sections_changed && !covers_every_row && new_total > 0).then_some((0, new_total));
+    let sections = (sections_changed && !covers_every_row && new_total > 0).then(|| match items {
+        Some((position, _, _)) => (position, new_total.saturating_sub(position)),
+        None => (0, new_total),
+    });
     (items, sections)
 }
 

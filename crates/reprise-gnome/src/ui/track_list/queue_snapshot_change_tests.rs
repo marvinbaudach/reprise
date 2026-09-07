@@ -11,6 +11,22 @@ fn leading_removal_with_shifted_sections_also_emits_sections_changed() {
 }
 
 #[test]
+fn removal_at_a_section_start_resections_from_there() {
+    assert_eq!(
+        super::queue_snapshot_emissions((3, 2, 0), true, 7),
+        (Some((3, 2, 0)), Some((3, 4)))
+    );
+}
+
+#[test]
+fn removal_in_the_last_section_resections_its_tail_only() {
+    assert_eq!(
+        super::queue_snapshot_emissions((8, 1, 0), true, 10),
+        (Some((8, 1, 0)), Some((8, 2)))
+    );
+}
+
+#[test]
 fn queue_snapshot_emissions_skips_redundant_and_illegal_signals() {
     // A full-range items-changed re-matches every header by itself.
     assert_eq!(
