@@ -18,11 +18,10 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use crate::dto::{PlaybackStateDto, QueueParams, QueueStateDto, SetPlaybackParams};
 
-/// The app's MPRIS well-known name (mirrors `reprise-platform-linux`'s server).
-pub(crate) const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
-/// The standard MPRIS object path and player interface.
-pub(crate) const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
-const PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2.Player";
+pub(crate) use reprise_runtime_protocol::mpris::{
+    is_absent_player, BUS_NAME, OBJECT_PATH,
+};
+use reprise_runtime_protocol::mpris::PLAYER_INTERFACE;
 /// The Reprise-specific interface carrying `PlayTrackIds`.
 const REPRISE_INTERFACE: &str = "org.reprise.Player1";
 
@@ -171,16 +170,6 @@ impl PlaybackSetting {
             Self::Repeat(value) => format!("Playback repeat set to {}", repeat_from_mpris(value)),
         }
     }
-}
-
-/// D-Bus error names that mean no MPRIS player is registered under our name —
-/// i.e. the Reprise app is not running. Anything else is a genuine fault.
-/// Mirrors `reprise-cli`'s `commands::playback::is_absent_player` exactly.
-fn is_absent_player(error_name: &str) -> bool {
-    matches!(
-        error_name,
-        "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner"
-    )
 }
 
 /// Opens the session bus and a proxy to the app on the given interface. A

@@ -25,10 +25,15 @@ path = "src/main.rs"
 #   * `mpris` — the `playback` transport subcommands, a thin MPRIS client that
 #     talks to the running app over the session bus via `zbus` DIRECTLY (the
 #     grilled gate exception — still no `reprise-platform-linux` dependency).
-#     Linux/D-Bus by nature.
+#     Linux/D-Bus by nature. It also pulls `reprise-runtime-protocol`, which is
+#     where the MPRIS bus name, object path and absent-player rule live: those
+#     are contract, and a client must not depend on the *server* crate merely
+#     to learn an address — on Linux that would drag GStreamer in. The same
+#     shape `reprise-mcp` already uses, and still invisible to the default
+#     build the architecture gate probes.
 default = []
 worker = ["dep:reprise-stems", "reprise-stems/ort", "dep:signal-hook"]
-mpris = ["dep:zbus"]
+mpris = ["dep:zbus", "dep:reprise-runtime-protocol"]
 
 [dependencies]
 # Default build stays core-only plus the CLI's own presentation deps (clap +
@@ -56,6 +61,9 @@ signal-hook = { version = "0.4", optional = true }
 # reprise-platform-linux; this is a standalone session-bus client. Matches the
 # workspace zbus major used by reprise-platform-linux's MPRIS server.
 zbus = { version = "5", optional = true }
+# The MPRIS address and the absent-player rule, shared with the server and
+# with `reprise-mcp` so the three cannot drift apart. No toolkit, no bus.
+reprise-runtime-protocol = { path = "../reprise-runtime-protocol", optional = true }
 
 [dev-dependencies]
 # Integration tests run the built binary via CARGO_BIN_EXE and arrange/inspect

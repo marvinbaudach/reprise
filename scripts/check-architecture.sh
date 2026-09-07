@@ -432,6 +432,7 @@ scripts/check-input-parity.sh
 scripts/check-listen-report-parity.sh
 scripts/check-android-theme.sh
 scripts/check-duration-format-parity.sh
+scripts/check-shared-literals.sh
 
 git diff --check
 

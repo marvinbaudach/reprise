@@ -11,11 +11,9 @@ use serde_json::json;
 
 use crate::error::CliError;
 
-/// The app's MPRIS well-known name (mirrors `reprise-platform-linux`'s server).
-const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
-/// The standard MPRIS object path and player interface.
-const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
-const PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2.Player";
+use reprise_runtime_protocol::mpris::{
+    is_absent_player, BUS_NAME, OBJECT_PATH, PLAYER_INTERFACE,
+};
 
 /// A transport action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,15 +35,6 @@ impl Action {
             Self::Status => None,
         }
     }
-}
-
-/// D-Bus error names that mean no MPRIS player is registered under our name —
-/// i.e. the Reprise app is not running. Anything else is a genuine fault.
-fn is_absent_player(error_name: &str) -> bool {
-    matches!(
-        error_name,
-        "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner"
-    )
 }
 
 /// The clear, actionable message shown when no player is present.

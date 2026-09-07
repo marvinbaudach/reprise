@@ -124,11 +124,12 @@ use reprise_core::media_integration::{
     SharedAgentQueueState, SharedMprisState,
 };
 
-/// Well-known bus name this app claims — must match the MPRIS spec's
-/// `org.mpris.MediaPlayer2.<name>` convention (GNOME Shell and friends
-/// discover media players by enumerating names under this prefix).
-pub const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
-const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
+/// Well-known bus name this app claims. Defined once in
+/// `reprise_runtime_protocol::mpris` so the CLI and MCP clients can learn the
+/// address without depending on this crate, and re-exported here because this
+/// is the server that claims it.
+pub use reprise_runtime_protocol::mpris::BUS_NAME;
+use reprise_runtime_protocol::mpris::OBJECT_PATH;
 const IDENTITY: &str = "Reprise";
 
 /// Interface name literals duplicated as both the `#[interface(name = ..)]`
