@@ -2,6 +2,8 @@ package io.github.marvinbaudach.reprise
 
 import android.os.Looper
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -35,21 +37,52 @@ class LibraryReadsOffMainThreadTest {
     }
 
     @Test
-    fun searchingTitlesReadsTheLibraryOffTheMainThread() {
+    fun libraryReadsRunOffTheMainThread() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistListThread.get() != null }
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("First Album").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.albumOpenThread.get() != null }
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.onNodeWithText("Titles").performClick()
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search titles").performTextInput("rotation")
-        compose.waitUntil { application.searchThread.get() != null }
+        compose.waitUntil(timeoutMillis = 5_000) { application.searchThread.get() != null }
 
-        assertNotSame(Looper.getMainLooper().thread, application.searchThread.get())
+        val mainThread = Looper.getMainLooper().thread
+        assertNotSame(mainThread, application.artistListThread.get())
+        assertNotSame(mainThread, application.albumOpenThread.get())
+        assertNotSame(mainThread, application.searchThread.get())
     }
 }
 
 internal class LibraryReadsOffMainThreadApplication : ConfigurationTestApplication() {
     val searchThread = AtomicReference<Thread>()
+    val artistListThread = AtomicReference<Thread>()
+    val albumOpenThread = AtomicReference<Thread>()
 
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val dependencies = super.mainActivitySurface()
         return dependencies.copy(
+            listArtists = { range ->
+                artistListThread.set(Thread.currentThread())
+                dependencies.listArtists(range)
+            },
+            openAlbum = { album ->
+                albumOpenThread.set(Thread.currentThread())
+                dependencies.openAlbum(album)
+            },
             searchTitles = { query, range ->
                 if (query.isNotEmpty()) searchThread.set(Thread.currentThread())
                 dependencies.searchTitles(query, range)
