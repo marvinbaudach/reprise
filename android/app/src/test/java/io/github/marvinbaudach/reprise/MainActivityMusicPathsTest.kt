@@ -4,6 +4,7 @@ import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -119,6 +120,9 @@ class MainActivityMusicPathsTest {
         compose.onNodeWithContentDescription("Back to artists").performClick()
 
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.waitForIdle()
         compose.activityRule.scenario.recreate()
         shadowOf(Looper.getMainLooper()).idle()
@@ -138,7 +142,13 @@ class MainActivityMusicPathsTest {
     private fun openDeepAlbum() {
         compose.onNodeWithText("Artists").performClick()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Deep Album").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Deep Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play Deep Album").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     private fun assertAbove(upperText: String, lowerText: String) {

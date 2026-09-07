@@ -84,7 +84,7 @@ class MainActivityConfigurationTest {
     fun tabSearchAndListAnchorSurviveTheActivityRecreationPath() {
         assertEquals(1, shadowOf(application).boundServiceConnections.size)
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(12)
+        scrollLibraryListTo("library-artists-list", 12)
         compose.waitForIdle()
 
         val beforeTurn = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
@@ -150,9 +150,9 @@ class MainActivityConfigurationTest {
         compose.onNodeWithTag("library-summary-search").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist")
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(211)
+        scrollLibraryListTo("library-artists-list", 211)
         compose.onNodeWithText("Artist 212").assertIsDisplayed()
 
         recreateAt("w916dp-h412dp-land")
@@ -177,9 +177,9 @@ class MainActivityConfigurationTest {
         compose.onNodeWithText("Artists").performClick()
         // The continuation sentinel sits after the last loaded row; reaching it
         // is what asks the library for the next window.
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
 
@@ -204,9 +204,9 @@ class MainActivityConfigurationTest {
     @Test
     fun aCatalogThatChangedUnderTheScreenReopensAtTheTopAndNotMidWindow() {
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
 
@@ -226,9 +226,9 @@ class MainActivityConfigurationTest {
     fun anOpenAlbumAndTheDepthPagedIntoItBothSurviveTheTurn() {
         openDeepAlbum()
         compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-album-tracks-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-album-tracks-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
 
@@ -247,9 +247,9 @@ class MainActivityConfigurationTest {
         recreateAt("w412dp-h916dp-port")
 
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
 
@@ -268,13 +268,13 @@ class MainActivityConfigurationTest {
         ).assertIsDisplayed()
 
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.onNodeWithText("Artist 211").performClick()
         compose.onNodeWithText(DEEP_ALBUM).performClick()
         compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-album-tracks-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-album-tracks-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
 
@@ -414,11 +414,28 @@ class MainActivityConfigurationTest {
         compose.waitForIdle()
     }
 
+    /**
+     * Scrolls to [index], retrying until the row exists. A library window now grows
+     * through an off-main-thread read, so the row an index names can arrive a moment
+     * after the scroll that asked for it.
+     */
+    private fun scrollLibraryListTo(tag: String, index: Int) {
+        compose.waitUntil(timeoutMillis = 5_000) {
+            runCatching { compose.onNodeWithTag(tag).performScrollToIndex(index) }.isSuccess
+        }
+    }
+
     private fun openDeepAlbum() {
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(0)
+        scrollLibraryListTo("library-artists-list", 0)
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(DEEP_ALBUM).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText(DEEP_ALBUM).performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("library-album-tracks-list").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.progress(): Float =
