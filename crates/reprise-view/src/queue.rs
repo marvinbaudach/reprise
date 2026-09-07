@@ -79,6 +79,23 @@ pub struct QueueViewModel {
 pub struct VirtualContext {
     count: usize,
     identity: Option<VirtualContextIdentity>,
+    change_from_previous: Option<TailChange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LastTail {
+    pub sequence: (u64, u64),
+    pub start: usize,
+    pub ids: Vec<i64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TailChange {
+    pub base: (u64, u64),
+    pub base_start: usize,
+    pub position: usize,
+    pub removed: usize,
+    pub added: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +109,7 @@ impl VirtualContext {
         Self {
             count,
             identity: None,
+            change_from_previous: None,
         }
     }
 
@@ -99,6 +117,20 @@ impl VirtualContext {
         Self {
             count,
             identity: Some(VirtualContextIdentity { sequence, start }),
+            change_from_previous: None,
+        }
+    }
+
+    pub fn identified_with_change(
+        count: usize,
+        sequence: (u64, u64),
+        start: usize,
+        change_from_previous: Option<TailChange>,
+    ) -> Self {
+        Self {
+            count,
+            identity: Some(VirtualContextIdentity { sequence, start }),
+            change_from_previous,
         }
     }
 }
