@@ -2,7 +2,7 @@
 slug: night-d-the-loaders-become-coroutines
 worktree: /home/marvin/Projects/reprise/.worktrees/night-d-loaders-coroutines
 branch: refactor/the-loaders-become-coroutines
-phase: planned
+phase: blocked
 created: 2026-09-07
 base: origin/dev
 owns: android/app/src/main/java/io/github/marvinbaudach/reprise/{TrackAnalysisLoader,TrackCover,LibraryWrites,TrackLoader,ArtistPortraitPrefetch}.kt
@@ -143,3 +143,12 @@ Squash-merge into `dev`. The title is taken verbatim; write prose. Something
 like *"The library loaders share one cancellation model"*. Name the deferred
 `ActivityPlaybackControls.kt` in the body so the next person knows it was a
 choice, not an oversight.
+
+## Findings
+
+Four of the five owned production files were converted. `TrackCover.kt` was
+left wholly unchanged because `ArtistPortraitLiveRefreshTest.kt` injects its
+`worker` constructor parameter, and that test is outside this package's owned
+file list. Renaming the seam to `dispatcher` therefore cannot keep the existing
+suite compiling without either editing a forbidden file or retaining the old
+executor seam. The conversion was reverted before any TrackCover commit.
