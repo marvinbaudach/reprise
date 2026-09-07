@@ -299,7 +299,7 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     let view_ids = shared.current_view_ids();
     let browse = browsable_snapshot(shared, &view_ids);
     let view_len = view_ids.len();
-    let snapshot_len = browse.as_ref().map_or(0, |snapshot| snapshot.ids().len());
+    let snapshot_len = browse.as_ref().map_or(0, |snapshot| snapshot.tracks.len());
     tracing::info!(view_len, snapshot_len, "tag editor view snapshot");
     let reload_view_ids = reload_view_ids_at_open(&view_ids, browse.as_ref());
     let opened_reload = OpenedReloadState::at_open(capture_reload_anchor(shared), reload_view_ids);
