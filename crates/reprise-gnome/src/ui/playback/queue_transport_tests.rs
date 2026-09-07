@@ -103,10 +103,7 @@ fn queue_change_log_carries_phase_timings() {
     let method = implementation
         .split("pub(in crate::ui) fn notify_queue_changed")
         .nth(1)
-        .expect("notify_queue_changed implementation")
-        .split("pub(in crate::ui) fn start_current_item")
-        .next()
-        .expect("notify_queue_changed body");
+        .expect("notify_queue_changed implementation");
     let event = method
         .split("tracing::info!(")
         .nth(1)
