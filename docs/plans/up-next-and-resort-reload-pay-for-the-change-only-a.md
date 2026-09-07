@@ -2,7 +2,7 @@
 slug: up-next-and-resort-reload-pay-for-the-change-only-a
 worktree: /home/marvin/Projects/reprise-up-next-and-resort-reload-pay-for-the-change-only-a
 branch: feature/up-next-and-resort-reload-pay-for-the-change-only-a
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-07
 ---
