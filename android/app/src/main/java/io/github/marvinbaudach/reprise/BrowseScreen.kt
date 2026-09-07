@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -41,12 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.marvinbaudach.reprise.settings.SettingsNavigation
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 /**
  * One answered request for the playing track's row, carrying the id it was
@@ -101,21 +101,24 @@ internal fun BrowseScreen(
     surfaceState: MobileSurfaceViewModel = viewModel(),
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
-    searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
-    searchArtists: (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist> =
+    searchTitles: suspend (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    listArtists: suspend (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
+    searchArtists: suspend (String, LibraryWindowRange) -> LibraryWindow<LibraryArtist> =
         { _, range -> listArtists(range) },
-    openAlbum: (LibraryAlbum) -> AlbumTrackList,
-    listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    openArtist: (LibraryArtist) -> ArtistTrackList = { artist ->
+    openAlbum: suspend (LibraryAlbum) -> AlbumTrackList,
+    listAlbumTracks:
+        suspend (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    openArtist: suspend (LibraryArtist) -> ArtistTrackList = { artist ->
         ArtistTrackList(artist = artist)
     },
-    listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+    listArtistTracks:
+        suspend (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { _, _ -> LibraryWindow.empty() },
-    listArtistAlbums: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryAlbum> =
+    listArtistAlbums:
+        suspend (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryAlbum> =
         { _, _ -> LibraryWindow.empty() },
     listArtistUntaggedTracks:
-        (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+        suspend (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
         { _, _ -> LibraryWindow.empty() },
     loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
@@ -134,6 +137,7 @@ internal fun BrowseScreen(
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
     val trackArtwork = LocalTrackArtwork.current
+    val libraryQueryScope = rememberCoroutineScope()
     val selectedTab = surfaceState.selectedTab
     val searchVisible = surfaceState.searchVisible
     val searchText = surfaceState.searchText
@@ -170,6 +174,16 @@ internal fun BrowseScreen(
     var artistAlbumsRequestedOffset by remember(state, selectedArtist?.artist) {
         mutableStateOf<Long?>(null)
     }
+    // Writing `xRequestedOffset` had to move inside `onSuccess` so the
+    // sentinel that drives pagination keeps rendering while a read is in
+    // flight (see `loadMore*` below), but that leaves the window between
+    // "request accepted" and "offset advanced" unguarded: the sentinel can
+    // scroll out of view and back in, relaunching its effect with the same
+    // key and firing a second read for the same window. This set closes
+    // that gap. It is deliberately not Compose state — writing it must not
+    // recompose anything, or it would make the sentinel disappear again and
+    // cancel the read it is meant to protect.
+    val loadsInFlight = remember { mutableSetOf<String>() }
     val nowPlayingExpanded = surfaceState.nowPlayingExpanded
     val settingsVisible = surfaceState.settingsVisible
     var settingsState by remember { mutableStateOf<PlaybackSettingsUiState?>(null) }
@@ -256,22 +270,24 @@ internal fun BrowseScreen(
     }
 
     fun openAlbumDetail(album: LibraryAlbum) {
-        runCatching { openAlbum(album) }
-            .onSuccess { detail ->
-                selectedAlbum = detail
-                albumRequestedOffset = null
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("open the album") }
+        libraryQueryScope.launch {
+            runCatching { openAlbum(album) }
+                .onSuccess { detail ->
+                    selectedAlbum = detail
+                    albumRequestedOffset = null
+                    browseError = null
+                }
+                .onFailure { error -> browseError = error.browseDetail("open the album") }
+        }
     }
 
-    fun artistsFor(text: String, request: LibraryWindowRange) = if (text.isBlank()) {
+    suspend fun artistsFor(text: String, request: LibraryWindowRange) = if (text.isBlank()) {
         listArtists(request)
     } else {
         searchArtists(text, request)
     }
 
-    fun search(text: String) {
+    suspend fun search(text: String) {
         // A refinement is a question about a list, so it has to be answered on
         // the list. An open artist page — or the album page nested inside it —
         // would otherwise stay up and answer with that artist's *albums* where
@@ -315,7 +331,9 @@ internal fun BrowseScreen(
     fun toggleSearch() {
         if (searchVisible) {
             surfaceState.closeSearch()
-            if (searchText.isNotEmpty()) search("")
+            if (searchText.isNotEmpty()) {
+                libraryQueryScope.launch { search("") }
+            }
         } else {
             surfaceState.openSearch()
         }
@@ -384,16 +402,14 @@ internal fun BrowseScreen(
             snapshotFlow { pagerState.isScrollInProgress }.first { !it }
         }
         runCatching {
-            // The rows come off a blocking JNI + SQLite call; only the handover
-            // to Compose belongs on the main thread.
-            withContext(Dispatchers.IO) {
-                when (pendingTab) {
-                    BrowseTab.TITLES -> LoadedTab(titles = searchTitles(searchText, firstLibraryWindow()))
-                    BrowseTab.ARTISTS -> LoadedTab(
-                        artists = artistsFor(searchText, firstLibraryWindow()),
-                    )
-                    BrowseTab.QUEUE -> LoadedTab()
-                }
+            // The rows come off a blocking JNI + SQLite call through the query
+            // seam; only this handover to Compose belongs on the main thread.
+            when (pendingTab) {
+                BrowseTab.TITLES -> LoadedTab(titles = searchTitles(searchText, firstLibraryWindow()))
+                BrowseTab.ARTISTS -> LoadedTab(
+                    artists = artistsFor(searchText, firstLibraryWindow()),
+                )
+                BrowseTab.QUEUE -> LoadedTab()
             }
         }.onSuccess { loaded ->
             loaded.titles?.let { visibleTitles = it }
@@ -409,64 +425,102 @@ internal fun BrowseScreen(
         }
     }
 
-    fun loadMoreTitles(request: LibraryWindowRange) {
+    // Runs `body` for `key` unless a read for that same key is already in
+    // flight, and always clears the key afterwards — including when `body`
+    // is cancelled, which is exactly why this is try/finally rather than a
+    // clear-on-success inside `onSuccess`.
+    suspend fun guardedAgainstDuplicateLoad(key: String, body: suspend () -> Unit) {
+        if (!loadsInFlight.add(key)) return
+        try {
+            body()
+        } finally {
+            loadsInFlight.remove(key)
+        }
+    }
+
+    suspend fun loadMoreTitles(request: LibraryWindowRange) {
         if (visibleTitles.nextRequest(titlesRequestedOffset) != request) return
-        titlesRequestedOffset = request.offset
-        runCatching { searchTitles(searchText, request) }
-            .onSuccess { continuation ->
-                visibleTitles = visibleTitles.append(continuation)
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("load more titles") }
+        guardedAgainstDuplicateLoad("titles:${request.offset}") {
+            runCatching { searchTitles(searchText, request) }
+                .onSuccess { continuation ->
+                    titlesRequestedOffset = request.offset
+                    visibleTitles = visibleTitles.append(continuation)
+                    browseError = null
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    browseError = error.browseDetail("load more titles")
+                }
+        }
     }
 
-    fun loadMoreArtists(request: LibraryWindowRange) {
+    suspend fun loadMoreArtists(request: LibraryWindowRange) {
         if (visibleArtists.nextRequest(artistsRequestedOffset) != request) return
-        artistsRequestedOffset = request.offset
-        runCatching { artistsFor(searchText, request) }
-            .onSuccess { continuation ->
-                visibleArtists = visibleArtists.append(continuation)
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("load more artists") }
+        guardedAgainstDuplicateLoad("artists:${request.offset}") {
+            runCatching { artistsFor(searchText, request) }
+                .onSuccess { continuation ->
+                    artistsRequestedOffset = request.offset
+                    visibleArtists = visibleArtists.append(continuation)
+                    browseError = null
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    browseError = error.browseDetail("load more artists")
+                }
+        }
     }
 
-    fun loadMoreAlbumTracks(request: LibraryWindowRange) {
+    suspend fun loadMoreAlbumTracks(request: LibraryWindowRange) {
         val detail = selectedAlbum ?: return
         if (detail.tracks.nextRequest(albumRequestedOffset) != request) return
-        albumRequestedOffset = request.offset
-        runCatching { listAlbumTracks(detail.album, request) }
-            .onSuccess { continuation ->
-                selectedAlbum = detail.copy(tracks = detail.tracks.append(continuation))
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("load more album tracks") }
+        guardedAgainstDuplicateLoad("album-tracks:${request.offset}") {
+            runCatching { listAlbumTracks(detail.album, request) }
+                .onSuccess { continuation ->
+                    albumRequestedOffset = request.offset
+                    selectedAlbum = detail.copy(tracks = detail.tracks.append(continuation))
+                    browseError = null
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    browseError = error.browseDetail("load more album tracks")
+                }
+        }
     }
 
-    fun loadMoreArtistTracks(request: LibraryWindowRange) {
+    suspend fun loadMoreArtistTracks(request: LibraryWindowRange) {
         val detail = selectedArtist ?: return
         if (detail.untaggedTracks.nextRequest(artistRequestedOffset) != request) return
-        artistRequestedOffset = request.offset
-        runCatching { listArtistUntaggedTracks(detail.artist, request) }
-            .onSuccess { continuation ->
-                selectedArtist = detail.copy(
-                    untaggedTracks = detail.untaggedTracks.append(continuation),
-                )
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("load more other titles") }
+        guardedAgainstDuplicateLoad("artist-tracks:${request.offset}") {
+            runCatching { listArtistUntaggedTracks(detail.artist, request) }
+                .onSuccess { continuation ->
+                    artistRequestedOffset = request.offset
+                    selectedArtist = detail.copy(
+                        untaggedTracks = detail.untaggedTracks.append(continuation),
+                    )
+                    browseError = null
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    browseError = error.browseDetail("load more other titles")
+                }
+        }
     }
 
-    fun loadMoreArtistAlbums(request: LibraryWindowRange) {
+    suspend fun loadMoreArtistAlbums(request: LibraryWindowRange) {
         val detail = selectedArtist ?: return
         if (detail.albums.nextRequest(artistAlbumsRequestedOffset) != request) return
-        artistAlbumsRequestedOffset = request.offset
-        runCatching { listArtistAlbums(detail.artist, request) }
-            .onSuccess { continuation ->
-                selectedArtist = detail.copy(albums = detail.albums.append(continuation))
-                browseError = null
-            }
-            .onFailure { error -> browseError = error.browseDetail("load more artist albums") }
+        guardedAgainstDuplicateLoad("artist-albums:${request.offset}") {
+            runCatching { listArtistAlbums(detail.artist, request) }
+                .onSuccess { continuation ->
+                    artistAlbumsRequestedOffset = request.offset
+                    selectedArtist = detail.copy(albums = detail.albums.append(continuation))
+                    browseError = null
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    browseError = error.browseDetail("load more artist albums")
+                }
+        }
     }
 
     BackHandler(
@@ -583,7 +637,7 @@ internal fun BrowseScreen(
                         LibrarySearchField(
                             tab = selectedTab,
                             searchText = searchText,
-                            search = ::search,
+                            search = { text -> libraryQueryScope.launch { search(text) } },
                             close = ::toggleSearch,
                         )
                     }
@@ -649,21 +703,23 @@ internal fun BrowseScreen(
                                     selectedAlbum = selectedAlbum,
                                     playback = playback,
                                     openArtist = { artist ->
-                                        runCatching { openArtist(artist) }
-                                            .onSuccess { detail ->
-                                                selectedArtist = detail
-                                                artistRequestedOffset = null
-                                                artistAlbumsRequestedOffset = null
-                                                browseError = null
-                                                surfaceState.closeSearch()
-                                                if (searchText.isNotEmpty()) {
-                                                    surfaceState.updateSearch("")
-                                                    loadedTabs = emptySet()
+                                        libraryQueryScope.launch {
+                                            runCatching { openArtist(artist) }
+                                                .onSuccess { detail ->
+                                                    selectedArtist = detail
+                                                    artistRequestedOffset = null
+                                                    artistAlbumsRequestedOffset = null
+                                                    browseError = null
+                                                    surfaceState.closeSearch()
+                                                    if (searchText.isNotEmpty()) {
+                                                        surfaceState.updateSearch("")
+                                                        loadedTabs = emptySet()
+                                                    }
                                                 }
-                                            }
-                                            .onFailure { error ->
-                                                browseError = error.browseDetail("open the artist")
-                                            }
+                                                .onFailure { error ->
+                                                    browseError = error.browseDetail("open the artist")
+                                                }
+                                        }
                                     },
                                     openAlbum = ::openAlbumDetail,
                                     closeArtist = {
