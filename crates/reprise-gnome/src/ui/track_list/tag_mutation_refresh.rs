@@ -60,11 +60,16 @@ pub(in crate::ui) struct ReloadMetrics {
 
 pub(in crate::ui) type ReloadReceipt = Rc<Cell<Option<ReloadMetrics>>>;
 
+/// Schedules on the thread-default context so tests can pump a private context instead of the
+/// global context shared by every test thread. On the GTK main thread, this falls back to the
+/// global default context.
 fn schedule_measured_reload(action: impl FnOnce() -> ReloadEmit + 'static) -> ReloadReceipt {
     let scheduled = Instant::now();
     let receipt = Rc::new(Cell::new(None));
     let receipt_for_idle = receipt.clone();
-    gtk4::glib::idle_add_local_once(move || {
+    let ctx =
+        gtk4::glib::MainContext::thread_default().unwrap_or_else(gtk4::glib::MainContext::default);
+    ctx.spawn_local_with_priority(gtk4::glib::Priority::DEFAULT_IDLE, async move {
         let fired = Instant::now();
         let emit = action();
         receipt_for_idle.set(Some(ReloadMetrics {
@@ -275,43 +280,32 @@ mod marker_display_tests;
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
-    use std::thread;
-    use std::time::Duration;
 
     use super::*;
 
     #[test]
     fn deferred_reload_reports_wait_work_and_emit_shape() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        let ctx = gtk4::glib::MainContext::default();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        // The mutex does not cover sibling tests that pump the default context
-        // without locking, so own the context before attaching the local idle.
-        let _owner = loop {
-            match ctx.acquire() {
-                Ok(owner) => break owner,
-                Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
-                Err(_) => {
-                    panic!("default main context owned by another test thread for 5 s")
-                }
-            }
-        };
-        let ran = Rc::new(Cell::new(false));
-        let ran_in_idle = ran.clone();
-        let receipt = schedule_measured_reload(move || {
-            ran_in_idle.set(true);
-            ReloadEmit::Span
-        });
+        let ctx = gtk4::glib::MainContext::new();
+        ctx.with_thread_default(|| {
+            let _owner = ctx.acquire().expect("private context is free");
+            let ran = Rc::new(Cell::new(false));
+            let ran_in_idle = ran.clone();
+            let receipt = schedule_measured_reload(move || {
+                ran_in_idle.set(true);
+                ReloadEmit::Span
+            });
 
-        assert!(receipt.get().is_none());
-        while ctx.iteration(false) {}
+            assert!(receipt.get().is_none());
+            while ctx.iteration(false) {}
 
-        let metrics = receipt
-            .get()
-            .expect("the idle must publish its measurements");
-        assert!(ran.get());
-        assert_eq!(metrics.emit, ReloadEmit::Span);
-        assert!(metrics.idle_wait_ms < 10_000);
-        assert!(metrics.reload_work_ms < 10_000);
+            let metrics = receipt
+                .get()
+                .expect("the idle must publish its measurements");
+            assert!(ran.get());
+            assert_eq!(metrics.emit, ReloadEmit::Span);
+            assert!(metrics.idle_wait_ms < 10_000);
+            assert!(metrics.reload_work_ms < 10_000);
+        })
+        .expect("thread default pushed");
     }
 }
