@@ -1,14 +1,28 @@
-//! Task 1.5's vanish-mark phase: the candidate query, the root-guard
-//! evidence check, and the mark loop `scan_folder_inner` folds in after its
-//! walk. Split into its own file purely to keep `scanner.rs` itself under
-//! the project's 800-line rule — `scanner.rs` declares this via `#[path =
-//! "scanner_vanish.rs"] mod vanish;`, so this is still the crate-private
-//! `crate::library::scanner::vanish` module, not a rewrite of the logic. See
-//! `scan_folder_inner`'s doc comment in `scanner.rs` for the full fold and
+//! Reconcile: what the scan says about the files it did **not** find.
+//!
+//! The walk in `scanner.rs` produces evidence — which paths it delivered,
+//! which directories it listed without error, which ones it could not read.
+//! This module turns that evidence into verdicts about rows the catalog still
+//! believes are present: which of them are provably gone (`mark_vanished_with`),
+//! which were misclassified and can be corrected (`reclassify_missing_with`),
+//! and whether the root itself is trustworthy enough for any of it
+//! (`guard_evidence_under_root`, `any_candidate_confirms_root_with`).
+//!
+//! The seam is deliberate: the walk knows what it saw, and this module is the
+//! only place allowed to conclude something about what it did not. See
+//! `scan_folder_inner`'s doc comment in `scanner.rs` for the fold and
 //! root-guard rationale these functions implement.
 
-use super::*;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+use super::{now_unix, ScanError};
 use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
+use crate::models::MissingReason;
+use crate::queries::PRESENT;
+
+#[cfg(test)]
+use super::{scan_folder_with_source, ScanOutcome};
 
 const MAX_ANCESTOR_CLIMB: usize = 64;
 

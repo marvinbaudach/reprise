@@ -11,8 +11,6 @@ use super::source::{
 };
 use super::{exclusions, import_errors};
 use crate::models::ImportErrorKind;
-use crate::models::MissingReason;
-use crate::queries::PRESENT;
 
 use entry::EntryOutcome;
 
@@ -247,6 +245,217 @@ fn record_walk_error(
     Ok(EntryOutcome::WalkError)
 }
 
+/// Root-Guard case (a): a root the source cannot see is not evidence about any
+/// file beneath it, so the scan reports back without a walk and without
+/// touching the database at all. `None` means the walk may proceed.
+fn guard_root_before_walk(source: &dyn LibrarySource, root: &Path) -> Option<ScanOutcome> {
+    // No absoluteness assertion here any more. It used to live at this line and
+    // it was the wrong layer: nothing the scanner does needs an absolute root —
+    // it hands the root to the source and reads back what the source says. The
+    // requirement belongs to `UnixLibrarySource`'s ancestor walk, and it now
+    // sits there, next to the guarantee it protects.
+    //
+    // This is not a formality. A SAF root is a content URI, and
+    // `Path::is_absolute` is false for one (it has no leading `/`), so this
+    // assertion fired on the first scan a real Android source ever attempted.
+    if source.probe(root, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
+        // Root-Guard case (a): no walk, no database write at all — see
+        // `scan_folder_inner`'s `## Root guard` doc section.
+        tracing::warn!(
+            root = %root.display(),
+            "scan: root does not exist; reporting RootUnavailable without touching the database"
+        );
+        return Some(ScanOutcome::RootUnavailable {
+            root: root.to_path_buf(),
+        });
+    }
+    None
+}
+
+fn handle_walk_item(
+    item: LibraryWalkItem,
+    root: &Path,
+    state: &mut WalkState,
+    mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
+    scan: &mut entry::EntryScan<'_, '_, '_>,
+    progress: &mut Option<scan_progress::ScanProgressReporter<'_>>,
+) -> Result<(), ScanError> {
+    let entry = match item {
+        LibraryWalkItem::Error(error) => {
+            let outcome =
+                record_walk_error(scan.source, scan.tx, &mut state.trace.failed, root, &error)?;
+            state.record(&outcome);
+            return Ok(());
+        }
+        LibraryWalkItem::Entry(entry) => entry,
+    };
+    mobile_sync.observe(scan.source, root, &entry);
+    let LibraryEntry {
+        path,
+        is_file,
+        metadata,
+    } = entry;
+    state.trace.observed_paths.insert(path.clone());
+    if !is_file {
+        state.trace.dirs.insert(path);
+        state.record(&EntryOutcome::Directory);
+        return Ok(());
+    }
+    let outcome = entry::scan_entry(scan, &path, metadata)?;
+    if outcome.examined_audio_file() {
+        if let Some(progress) = progress {
+            progress.advance(&path);
+        }
+    }
+    state.record(&outcome);
+    Ok(())
+}
+
+fn walk_root<'source>(
+    source: &'source dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    state: &mut WalkState,
+    mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
+    mount_cache: &mut mount::MountPointCache<'source>,
+    progress: &mut Option<scan_progress::ScanProgressReporter<'_>>,
+) -> Result<(), ScanError> {
+    let mut scan = entry::EntryScan {
+        source,
+        tx,
+        mount_cache,
+    };
+    let mut walk_failure = None;
+    source::walk_with(
+        source,
+        root,
+        LibraryWalkOrder::Native,
+        |item| match handle_walk_item(item, root, state, mobile_sync, &mut scan, progress) {
+            Ok(()) => LibraryWalkControl::Continue,
+            Err(error) => {
+                walk_failure = Some(error);
+                LibraryWalkControl::Stop
+            }
+        },
+    );
+    if let Some(error) = walk_failure {
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// The metadata a mobile sync left beside the audio, applied inside the walk's
+/// own transaction so the sidecars and the rows they describe commit together.
+fn apply_mobile_sync(
+    mobile_sync: &mobile_sync::MobileSyncDiscovery,
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    report: &mut ScanReport,
+) -> Result<(), ScanError> {
+    report.updated = report
+        .updated
+        .saturating_add(mobile_sync.apply_metadata(source, tx)?);
+    mobile_sync.register_analysis_sidecars(tx)?;
+    mobile_sync.register_device_paths(tx)?;
+    Ok(())
+}
+
+/// What the reconcile phase is allowed to reason about: the rows the catalog
+/// still calls present under `root`, what the walk proved about the tree, and —
+/// only when the walk found no audio file at all — the wider evidence the root
+/// guard needs.
+struct VanishEvidence {
+    candidates: Vec<(i64, String, Option<i64>)>,
+    evidence: Option<vanish::WalkEvidence>,
+    guard_evidence: Option<Vec<(i64, String, Option<i64>)>>,
+}
+
+fn gather_vanish_evidence(
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    trace: WalkTrace,
+) -> Result<VanishEvidence, ScanError> {
+    let WalkTrace {
+        audio_files_seen,
+        observed_paths,
+        dirs,
+        failed,
+    } = trace;
+    // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
+    // outcome. The guard's own evidence, `guard_evidence` (the wider
+    // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
+    // root`'s doc comment for why it must NOT be `candidates`), is only
+    // queried when the walk found nothing, the same short-circuit
+    // `root_unavailable` used before this was split into two lists — so a
+    // scan that actually found audio files never pays for the extra query.
+    let candidates = vanish::present_candidates_under_root(tx, root)?;
+    // A walk that saw no audio file at all is exactly the situation Android
+    // cannot distinguish from lost storage. An empty walk is a question, not
+    // proof: layer 3 stays silent and only a real source `Absent` still marks.
+    let evidence = vanish::evidence_after_walk(audio_files_seen, observed_paths, &dirs, &failed);
+    let guard_evidence = if audio_files_seen == 0 {
+        Some(vanish::guard_evidence_under_root(tx, root)?)
+    } else {
+        None
+    };
+    Ok(VanishEvidence {
+        candidates,
+        evidence,
+        guard_evidence,
+    })
+}
+
+/// Root-Guard case (b) or the mark phase: decides whether this scan may say
+/// anything about the files it did not see, and returns the outcome the
+/// transaction will commit.
+fn decide_outcome(
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    evidence: VanishEvidence,
+    report: ScanReport,
+) -> Result<ScanOutcome, ScanError> {
+    let mut report = report;
+    let root_unavailable = evidence.guard_evidence.as_ref().is_some_and(|guard| {
+        !guard.is_empty() && !vanish::any_candidate_confirms_root_with(source, guard, root)
+    });
+    if root_unavailable {
+        // Root-Guard case (b): see `scan_folder_inner`'s `## Root guard` doc
+        // section. The upserts the walk itself produced (normally none,
+        // since `audio_files_seen == 0`, but a traversal error is still
+        // possible) still commit below — only the mark phase is skipped.
+        tracing::warn!(
+            root = %root.display(),
+            candidate_count = evidence.guard_evidence.map_or(0, |e| e.len()),
+            "scan: walk found no audio files and no known track under root confirms the \
+             root's current device; reporting RootUnavailable instead of marking tracks missing"
+        );
+        return Ok(ScanOutcome::RootUnavailable {
+            root: root.to_path_buf(),
+        });
+    }
+    let reclassified =
+        vanish::reclassify_missing_with(source, tx, root, evidence.evidence.as_ref(), now_unix())?;
+    report.vanished = vanish::mark_vanished_with(
+        source,
+        tx,
+        root,
+        evidence.candidates,
+        evidence.evidence.as_ref(),
+    )?;
+    // T0.3: one collective change-log row per scan that actually touched
+    // the catalog (never per track, never for a no-op reconcile), inside
+    // the same transaction as the walk so the event and the rows it
+    // announces commit together. Foreign scanners (`reprise-cli scan`)
+    // wake the running app through this; the app's own scans carry its
+    // writer token and are filtered out by its own consumer.
+    if scan_touched_library(&report) || reclassified > 0 {
+        crate::events::record(tx, "library", "", "scan")?;
+        crate::library::startup_tasks::advance_library_signature_in(tx)?;
+    }
+    Ok(ScanOutcome::Completed(report))
+}
+
 /// Walks `root`, upserting every audio file found, then — in the SAME
 /// transaction — reconciles whatever the walk did NOT find: rows the DB
 /// still believes are present under `root` whose file has actually vanished.
@@ -349,27 +558,9 @@ fn scan_folder_inner(
     root: &Path,
     mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
 ) -> Result<ScanOutcome, ScanError> {
-    // No absoluteness assertion here any more. It used to live at this line and
-    // it was the wrong layer: nothing the scanner does needs an absolute root —
-    // it hands the root to the source and reads back what the source says. The
-    // requirement belongs to `UnixLibrarySource`'s ancestor walk, and it now
-    // sits there, next to the guarantee it protects.
-    //
-    // This is not a formality. A SAF root is a content URI, and
-    // `Path::is_absolute` is false for one (it has no leading `/`), so this
-    // assertion fired on the first scan a real Android source ever attempted.
-    if source.probe(root, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
-        // Root-Guard case (a): no walk, no database write at all — see this
-        // function's `## Root guard` doc section.
-        tracing::warn!(
-            root = %root.display(),
-            "scan: root does not exist; reporting RootUnavailable without touching the database"
-        );
-        return Ok(ScanOutcome::RootUnavailable {
-            root: root.to_path_buf(),
-        });
+    if let Some(outcome) = guard_root_before_walk(source, root) {
+        return Ok(outcome);
     }
-
     let mut mobile_sync = mobile_sync::MobileSyncDiscovery::default();
     let mut mount_cache = mount::MountPointCache::new(source);
     let tx = conn.unchecked_transaction()?;
@@ -382,125 +573,18 @@ fn scan_folder_inner(
             failed: HashSet::new(),
         },
     };
-    let mut scan = entry::EntryScan {
+    walk_root(
         source,
-        tx: &tx,
-        mount_cache: &mut mount_cache,
-    };
-    let mut walk_failure = None;
-    source::walk_with(source, root, LibraryWalkOrder::Native, |item| {
-        let result = (|| -> Result<(), ScanError> {
-            let entry = match item {
-                LibraryWalkItem::Error(error) => {
-                    let outcome =
-                        record_walk_error(source, &tx, &mut state.trace.failed, root, &error)?;
-                    state.record(&outcome);
-                    return Ok(());
-                }
-                LibraryWalkItem::Entry(entry) => entry,
-            };
-            mobile_sync.observe(source, root, &entry);
-            let LibraryEntry {
-                path,
-                is_file,
-                metadata,
-            } = entry;
-            state.trace.observed_paths.insert(path.clone());
-            if !is_file {
-                state.trace.dirs.insert(path);
-                state.record(&EntryOutcome::Directory);
-                return Ok(());
-            }
-            let outcome = entry::scan_entry(&mut scan, &path, metadata)?;
-            if outcome.examined_audio_file() {
-                if let Some(progress) = &mut progress {
-                    progress.advance(&path);
-                }
-            }
-            state.record(&outcome);
-            Ok(())
-        })();
-        match result {
-            Ok(()) => LibraryWalkControl::Continue,
-            Err(error) => {
-                walk_failure = Some(error);
-                LibraryWalkControl::Stop
-            }
-        }
-    });
-    if let Some(error) = walk_failure {
-        return Err(error);
-    }
-
-    let WalkState {
-        mut report,
-        trace:
-            WalkTrace {
-                audio_files_seen,
-                observed_paths,
-                dirs,
-                failed,
-            },
-    } = state;
-
-    report.updated = report
-        .updated
-        .saturating_add(mobile_sync.apply_metadata(source, &tx)?);
-    mobile_sync.register_analysis_sidecars(&tx)?;
-    mobile_sync.register_device_paths(&tx)?;
-
-    // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
-    // outcome. The guard's own evidence, `guard_evidence` (the wider
-    // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
-    // root`'s doc comment for why it must NOT be `candidates`), is only
-    // queried when the walk found nothing, the same short-circuit
-    // `root_unavailable` used before this was split into two lists — so a
-    // scan that actually found audio files never pays for the extra query.
-    let candidates = vanish::present_candidates_under_root(&tx, root)?;
-    // A walk that saw no audio file at all is exactly the situation Android
-    // cannot distinguish from lost storage. An empty walk is a question, not
-    // proof: layer 3 stays silent and only a real source `Absent` still marks.
-    let evidence = vanish::evidence_after_walk(audio_files_seen, observed_paths, &dirs, &failed);
-    let guard_evidence = if audio_files_seen == 0 {
-        Some(vanish::guard_evidence_under_root(&tx, root)?)
-    } else {
-        None
-    };
-    let root_unavailable = guard_evidence.as_ref().is_some_and(|evidence| {
-        !evidence.is_empty() && !vanish::any_candidate_confirms_root_with(source, evidence, root)
-    });
-
-    let outcome = if root_unavailable {
-        // Root-Guard case (b): see this function's `## Root guard` doc
-        // section. The upserts the walk itself produced (normally none,
-        // since `audio_files_seen == 0`, but a traversal error is still
-        // possible) still commit below — only the mark phase is skipped.
-        tracing::warn!(
-            root = %root.display(),
-            candidate_count = guard_evidence.map_or(0, |e| e.len()),
-            "scan: walk found no audio files and no known track under root confirms the \
-             root's current device; reporting RootUnavailable instead of marking tracks missing"
-        );
-        ScanOutcome::RootUnavailable {
-            root: root.to_path_buf(),
-        }
-    } else {
-        let reclassified =
-            vanish::reclassify_missing_with(source, &tx, root, evidence.as_ref(), now_unix())?;
-        report.vanished =
-            vanish::mark_vanished_with(source, &tx, root, candidates, evidence.as_ref())?;
-        // T0.3: one collective change-log row per scan that actually touched
-        // the catalog (never per track, never for a no-op reconcile), inside
-        // the same transaction as the walk so the event and the rows it
-        // announces commit together. Foreign scanners (`reprise-cli scan`)
-        // wake the running app through this; the app's own scans carry its
-        // writer token and are filtered out by its own consumer.
-        if scan_touched_library(&report) || reclassified > 0 {
-            crate::events::record(&tx, "library", "", "scan")?;
-            crate::library::startup_tasks::advance_library_signature_in(&tx)?;
-        }
-        ScanOutcome::Completed(report)
-    };
+        &tx,
+        root,
+        &mut state,
+        &mut mobile_sync,
+        &mut mount_cache,
+        &mut progress,
+    )?;
+    apply_mobile_sync(&mobile_sync, source, &tx, &mut state.report)?;
+    let evidence = gather_vanish_evidence(&tx, root, state.trace)?;
+    let outcome = decide_outcome(source, &tx, root, evidence, state.report)?;
     tx.commit()?;
     Ok(outcome)
 }
@@ -520,12 +604,8 @@ fn scan_touched_library(report: &ScanReport) -> bool {
         > 0
 }
 
-// Task 1.5: the vanish-mark phase `scan_folder_inner` folds in above lives in
-// its own file purely to keep this one under the project's 800-line rule —
-// see `scanner_vanish.rs`'s own module doc comment. Not `#[cfg(test)]`: this
-// is production code, always compiled.
-// Scan progress counting/reporting lives in its own file for the same
-// 800-line reason — see `scanner_progress.rs`'s own module doc comment.
+// Scan progress counting/reporting owns the counting and delivery contract;
+// see `scanner_progress.rs`'s own module doc comment.
 #[path = "scanner_progress.rs"]
 mod scan_progress;
 
@@ -535,6 +615,9 @@ mod entry;
 #[path = "scanner_mobile_sync.rs"]
 mod mobile_sync;
 
+// Reconcile owns every conclusion about catalog rows the walk did not find;
+// see `scanner_vanish.rs`'s own module doc comment. Not `#[cfg(test)]`: this
+// is production code, always compiled.
 #[path = "scanner_vanish.rs"]
 mod vanish;
 
