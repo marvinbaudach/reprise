@@ -2,7 +2,7 @@
 slug: up-next-and-resort-reload-pay-for-the-change-only-b
 worktree: /home/marvin/Projects/reprise-up-next-and-resort-reload-pay-for-the-change-only-b
 branch: feature/up-next-and-resort-reload-pay-for-the-change-only-b
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-07
 ---
@@ -161,10 +161,36 @@ strand run.
 
 ## §M — measurements (written by the session)
 
-_(filled in after the code phase: worktree release binary, runs B1–B3 of the
-harness, G-B1/G-B2 against F4–F6 and C1–C3, `emit`, `reload_work_ms`,
-`idle_wait_ms`, `apply_ms` per tag gesture.)_
+Release binary of this worktree at `57da9ab6e4` (after check + refactor),
+harness `~/.local/share/reprise-measure-20260906`, runs SB1–SB3, machine
+quiet. Control = C1–C3, fix reference = F9–F11 (the `*_ms` split fields did
+not exist before this strand, so the fix column shows `reload_ms` only).
+
+| gesture | metric | control | fix ref (F9–F11) | this strand (SB1–SB3) | gate |
+|---|---|---|---|---|---|
+| G4 tag-edit 8 genre | `emit` | – | – | metadata | – |
+| G4 | `reload_work_ms` | – | – | **3 (2–5)** | G-B2 < 10 ✓ |
+| G4 | `idle_wait_ms` | – | – | 185 (6–256) | (dialog close animation, not gated) |
+| G4 | `reload_ms` | – | 169–201 | 189 (9–262) | – |
+| G5 tag-edit 8 artist (sort field) | `emit` | – | – | move | G-B1 one block move ✓ |
+| G5 | `reload_work_ms` | – | – | **32 (31–32)** | G-B1 < 80 ✓ |
+| G5 | `query_ms` / `restore_ms` | – | 75–86 / 54–67 | 9 (9–9) / 22 (21–23) | – |
+| G5 | `idle_wait_ms` | – | – | 183 (175–184) | – |
+| G5 | `reload_ms` | – | 319–355 | 215 (208–218) | – |
+
+Visual gate: `runs/SB1/9-after-G5.png` shows the eight edited rows
+(`Zz Measured Artist`) selected and inside the viewport after the resort.
+The remaining G5 time is `idle_wait_ms` (the wait behind the dialog close
+animation) and the viewport jump in `restore_ms`, both outside this strand
+(mother §6).
 
 ## Report
 
-_(Codex's summary from `.pipeline-codex.md`, condensed by the session.)_
+Codex, five commits + two refactor commits, `cargo clippy -D warnings`
+clean, `track_list_model` 34 passed, `track_list_model_change` 8,
+`tag_save_refresh` 6, twelve isolated display tests (five B3 tag-save tests,
+six `ui::delete_tracks::*`, `tag_1_restoring_dialog_focus_after_a_save_keeps_the_viewport`)
+passed. Review: 3 findings, 2 survived — the completion line reported
+`emit="metadata" reload_work_ms=0` for saves that ran no deferred reload
+(fields now omitted in that case, tested), and no emission-level test for a
+downward block move (added, mutation-checked against `>=`→`>`).
