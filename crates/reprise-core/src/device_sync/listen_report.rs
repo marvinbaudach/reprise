@@ -17,6 +17,7 @@ const ACKNOWLEDGEMENT_MAGIC: &[u8; 8] = b"RPT-ACKN";
 const MAX_PREALLOCATED_ENTRIES: usize = 4_096;
 
 pub const FORMAT_VERSION: u16 = 1;
+// Enforced across Rust and Kotlin by scripts/check-listen-report-parity.sh.
 pub const REPORT_FILE_NAME: &str = "reprise-listens-back.rpl";
 pub const ACKNOWLEDGEMENT_FILE_NAME: &str = "reprise-listens-back-ack.rpl";
 

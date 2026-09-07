@@ -95,6 +95,7 @@ require_pattern 'workflow_run_blocks' scripts/check-shell.sh
 require_executable scripts/check-frontend-thinness.sh
 require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh
+require_executable scripts/check-listen-report-parity.sh
 require_executable scripts/check-motion-tokens.sh
 require_executable scripts/check-android-theme.sh
 require_executable scripts/check-merge-readiness.sh
@@ -224,6 +225,7 @@ require_pattern 'frontend workers must open ready-to-use databases through the c
 require_pattern 'must use the shared one-shot task helper' scripts/check-architecture.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-architecture.sh
 require_pattern 'check-input-parity.sh' scripts/check-architecture.sh
+require_pattern 'check-listen-report-parity.sh' scripts/check-architecture.sh
 require_pattern 'check-android-theme.sh' scripts/check-architecture.sh
 require_pattern 'check-merge-readiness.sh' .githooks/pre-push
 require_pattern 'core.hooksPath .githooks' scripts/install-git-hooks.sh
