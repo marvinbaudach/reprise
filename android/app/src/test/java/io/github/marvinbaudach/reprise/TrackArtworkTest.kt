@@ -2,12 +2,14 @@ package io.github.marvinbaudach.reprise
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
@@ -24,6 +26,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.NoHandle
@@ -220,11 +223,25 @@ class TrackArtworkTest {
         artwork.load(listRequest, listGate) {}
         artwork.load(fullSizeRequest, fullSizeGate) {}
 
+        ShadowLog.clear()
         artwork.shutdown()
+        artwork.loadVisual(listRequest, listGate) {}
+        artwork.prefetch(fullSizeRequest)
         listWorker.runAll()
         fullSizeWorker.runAll()
 
         assertEquals(0, reads.get())
+        val refusals = ShadowLog.getLogsForTag("RepriseArtwork")
+        assertEquals(2, refusals.size)
+        assertTrue(refusals.all { item -> item.type == Log.DEBUG })
+        assertEquals(
+            setOf(
+                "Not loading artwork for content://tracks/list: the library is closing",
+                "Not prefetching artwork for content://tracks/now-playing: the library is closing",
+            ),
+            refusals.map { item -> item.msg }.toSet(),
+        )
+        assertTrue(refusals.all { item -> item.throwable is RejectedExecutionException })
     }
 
     /**

@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import java.util.concurrent.RejectedExecutionException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
@@ -32,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
@@ -96,6 +98,11 @@ internal class TrackArtwork(
             AndroidArtworkSize.LIST -> scope
             AndroidArtworkSize.ARTIST_DETAIL -> fullSizeScope
         }
+        if (!lane.isActive) {
+            val rejected = RejectedExecutionException("artwork loader is shut down")
+            Log.d(TAG, "Not loading artwork for ${request.trackUri}: the library is closing", rejected)
+            return
+        }
         lane.launch {
             if (!gate.accepts(request)) {
                 return@launch
@@ -143,6 +150,11 @@ internal class TrackArtwork(
             AndroidArtworkSize.NOW_PLAYING -> fullSizeScope
             AndroidArtworkSize.LIST -> scope
             AndroidArtworkSize.ARTIST_DETAIL -> fullSizeScope
+        }
+        if (!lane.isActive) {
+            val rejected = RejectedExecutionException("artwork loader is shut down")
+            Log.d(TAG, "Not prefetching artwork for ${request.trackUri}: the library is closing", rejected)
+            return
         }
         lane.launch {
             val visual = try {
