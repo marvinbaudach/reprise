@@ -10,9 +10,12 @@
 //! `gstreamer` oder `zbus` hineinlinken. `scripts/check-architecture.sh`
 //! erzwingt das mechanisch.
 //!
-//! Die Crate ist beim Anlegen leer. `docs/superpowers/specs/
-//! 2026-08-01-multi-surface-frontends-design.md` §4 (P1a) beschreibt, was
-//! zuerst hier einzieht.
+//! Die Crate ist nicht mehr leer: Spaltenmodell, Queue-Komposition,
+//! Browse-Zustand, Playlists, Lyrics, Suchchips und die spektrale Färbung
+//! wohnen bereits hier. Was hier fehlt, steht meist noch in
+//! `crates/reprise-gnome/src/ui` und ist damit für Android unerreichbar —
+//! toolkitfreie Präsentationslogik gehört hierher, bevor ein zweites Frontend
+//! sie von Hand nachbaut.
 
 pub mod analysis_progress;
 pub mod browse;

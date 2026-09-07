@@ -9,7 +9,7 @@ crate carries the same terms and no component can drift.
 | Engine (portable, GUI-free) | `crates/reprise-core`, `crates/reprise-platform-linux` | **GPL-3.0-or-later** |
 | Headless surfaces & stem backend | `crates/reprise-cli`, `crates/reprise-mcp`, `crates/reprise-stems` | **GPL-3.0-or-later** |
 | Native Linux app (GTK4/libadwaita) | `crates/reprise-gnome` | **GPL-3.0-or-later** |
-| Runtime, view and FFI crates | `crates/reprise-runtime*`, `crates/reprise-view`, `crates/reprise-android-ffi` | **GPL-3.0-or-later** |
+| Protocol, view and FFI crates | `crates/reprise-runtime-protocol`, `crates/reprise-view`, `crates/reprise-android-ffi` | **GPL-3.0-or-later** |
 
 ## Why copyleft everywhere
 The reference client and everything it stands on stay free: nobody can ship a closed-source

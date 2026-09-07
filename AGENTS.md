@@ -14,17 +14,17 @@ successor. **Nine-crate** Cargo workspace:
   `playback`/`media_integration`). **Dependency-pure:** it must never depend
   on gtk4/libadwaita/gstreamer/zbus. Enforced — see Gates.
 - `crates/reprise-platform-linux` — Linux platform backends: GStreamer playback (`player`),
-  MPRIS/D-Bus media integration (`mpris`), MTP device sync, Trash, and the D-Bus host for
-  the runtime service.
+  MPRIS/D-Bus media integration (`mpris`), MTP device sync, Trash, and the render-data
+  backend that produces the `.reprise-analysis` sidecars.
 - `crates/reprise-gnome` — the GTK4/libadwaita frontend. Binary name stays `reprise`.
-- `crates/reprise-runtime` — the toolkit-neutral single-owner runtime for playback, queue,
-  jobs and device runs. **Built and tested, but no shipped surface uses it yet** — see
-  `docs/plans/architecture-consolidation.md` §2.2. Whether it is cut over to or shelved is
-  still open; `docs/plans/consolidation-plan.md` task 0.10 is where that decision gets
-  written down.
-- `crates/reprise-runtime-protocol` — the versioned command/snapshot contract between the
-  runtime and its clients.
-- `crates/reprise-runtime-client` — the client every surface would use to reach the runtime.
+- `crates/reprise-view` — the toolkit-free presentation layer: view models, formatting,
+  filtering and sorting, column and queue composition, spectral colouring. It depends only
+  on `reprise-core` and must never link gtk4/libadwaita/glib/gstreamer/zbus. Logic that both
+  the GTK frontend and Android need belongs here, so it exists exactly once.
+- `crates/reprise-android-ffi` — the UniFFI surface the Android app binds to. Meant to stay a
+  thin adapter over `reprise-core`; it may depend only on `reprise-core` and `reprise-view`.
+- `crates/reprise-runtime-protocol` — the versioned command/snapshot contract, kept as the
+  shared DTO vocabulary for the direct-path D-Bus interfaces and for `reprise-mcp`.
 - `crates/reprise-cli` — headless CLI over core facades; `mpris` and `worker` are the two
   sanctioned feature-gated exceptions to its core-only dependency rule.
 - `crates/reprise-mcp` — local stdio MCP server exposing read-only library resources and
@@ -32,7 +32,11 @@ successor. **Nine-crate** Cargo workspace:
 - `crates/reprise-stems` — the removable ML stem-separation backend behind the experimental
   instrumental jobs.
 
-`scripts/check-architecture.sh` enforces the dependency direction between all nine.
+`scripts/check-architecture.sh` enforces the dependency direction, but not for all nine. It
+names seven — `reprise-core`, `reprise-view`, `reprise-android-ffi`, `reprise-cli`,
+`reprise-mcp`, `reprise-stems` and `reprise-gnome`. `reprise-platform-linux` and
+`reprise-runtime-protocol` do not appear in the script at all, so they are covered only
+incidentally, as entries in other crates' dependency trees.
 
 ## Where we are RIGHT NOW
 
@@ -200,7 +204,9 @@ feature work. Landed since: the tag editor with multi-select batch edit, the bro
 editable column layout, first-run and session restore, album covers and the cover pipeline,
 podcasts, YouTube, radio, concerts, new releases, device sync, library doctor, my stats,
 lyrics, the visualizer, the experimental stem separation, the CLI and MCP surfaces, and the
-headless runtime (built, not yet wired — see the crate list above).
+Android app on the shared core. The headless runtime was built, never wired to a shipped
+surface, and shelved — `docs/adr/003-runtime-ownership.md` records the decision and the
+deletion of `reprise-runtime` and `reprise-runtime-client`.
 
 **Where the project stands now:** a project-wide review and its execution plan live in
 `docs/plans/architecture-consolidation.md` (findings) and `docs/plans/consolidation-plan.md`
