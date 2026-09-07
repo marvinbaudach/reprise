@@ -7,8 +7,72 @@ use reprise_core::library::tag_edit::TrackWrite;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
+use crate::ui::track_list::tag_mutation_refresh::ReloadMetrics;
 use crate::ui::track_list::track_list_model_change::{changed_range, ModelChange, ModelChangeKind};
 use crate::ui::track_list::Shared;
+
+#[derive(Clone, Copy)]
+pub(super) struct BatchCompletion {
+    pub(super) write_ms: u128,
+    pub(super) tracks: usize,
+    pub(super) reload_ms: u128,
+    pub(super) reload_metrics: Option<ReloadMetrics>,
+    pub(super) delta: bool,
+    pub(super) updated: usize,
+    pub(super) failed: usize,
+    pub(super) has_pre_save_view: bool,
+    pub(super) before_len: usize,
+    pub(super) after_len: usize,
+    pub(super) first_mismatch: i64,
+}
+
+pub(super) fn log_batch_completed(completion: &BatchCompletion) {
+    let BatchCompletion {
+        write_ms,
+        tracks,
+        reload_ms,
+        reload_metrics,
+        delta,
+        updated,
+        failed,
+        has_pre_save_view,
+        before_len,
+        after_len,
+        first_mismatch,
+    } = *completion;
+    if let Some(metrics) = reload_metrics {
+        tracing::info!(
+            write_ms,
+            tracks,
+            reload_ms,
+            idle_wait_ms = metrics.idle_wait_ms,
+            reload_work_ms = metrics.reload_work_ms,
+            emit = metrics.emit.as_str(),
+            delta,
+            updated,
+            failed,
+            has_pre_save_view,
+            before_len,
+            after_len,
+            first_mismatch,
+            "tag-edit batch completed"
+        );
+    } else {
+        tracing::info!(
+            write_ms,
+            tracks,
+            reload_ms,
+            delta,
+            updated,
+            failed,
+            has_pre_save_view,
+            before_len,
+            after_len,
+            first_mismatch,
+            "tag-edit batch completed"
+        );
+    }
+}
 
 pub(super) fn after_deferred_reload(action: impl FnOnce() + 'static) {
     gtk4::glib::idle_add_local_once(action);

@@ -1,5 +1,94 @@
 use super::*;
 use crate::ui::track_list::reload_restore;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+struct CapturedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
+    type Writer = CapturedLogWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        CapturedLogWriter(Arc::clone(&self.0))
+    }
+}
+
+impl Write for CapturedLogWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_info(operation: impl FnOnce()) -> String {
+    let captured = CapturedLogs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(captured.clone())
+        .finish();
+    tracing::subscriber::with_default(subscriber, operation);
+    let bytes = captured.0.lock().unwrap().clone();
+    String::from_utf8(bytes).unwrap()
+}
+
+#[test]
+fn completion_log_distinguishes_no_reload_from_a_deferred_reload() {
+    let no_reload = capture_info(|| {
+        tag_save_refresh::log_batch_completed(&tag_save_refresh::BatchCompletion {
+            write_ms: 0,
+            tracks: 1,
+            reload_ms: 0,
+            reload_metrics: None,
+            delta: false,
+            updated: 1,
+            failed: 0,
+            has_pre_save_view: false,
+            before_len: 0,
+            after_len: 0,
+            first_mismatch: -1,
+        });
+    });
+    assert!(
+        no_reload.contains("tag-edit batch completed"),
+        "{no_reload}"
+    );
+    assert!(!no_reload.contains("idle_wait_ms="), "{no_reload}");
+    assert!(!no_reload.contains("reload_work_ms="), "{no_reload}");
+    assert!(!no_reload.contains("emit="), "{no_reload}");
+
+    let deferred = capture_info(|| {
+        tag_save_refresh::log_batch_completed(&tag_save_refresh::BatchCompletion {
+            write_ms: 0,
+            tracks: 1,
+            reload_ms: 0,
+            reload_metrics: Some(crate::ui::track_list::tag_mutation_refresh::ReloadMetrics {
+                idle_wait_ms: 2,
+                reload_work_ms: 3,
+                emit: crate::ui::track_list::tag_mutation_refresh::ReloadEmit::Move,
+            }),
+            delta: true,
+            updated: 1,
+            failed: 0,
+            has_pre_save_view: true,
+            before_len: 8,
+            after_len: 8,
+            first_mismatch: 0,
+        });
+    });
+    assert!(deferred.contains("idle_wait_ms=2"), "{deferred}");
+    assert!(deferred.contains("reload_work_ms=3"), "{deferred}");
+    assert!(deferred.contains("emit=\"move\""), "{deferred}");
+}
 
 #[test]
 fn healed_import_hint_refreshes_in_place_without_a_success_toast() {

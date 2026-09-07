@@ -47,7 +47,6 @@ use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
     refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_save_change,
-    ReloadEmit, ReloadMetrics,
 };
 use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
@@ -628,20 +627,11 @@ fn finish_apply(
         }
     }
     let log_completed = move || {
-        let metrics = reload_receipt
-            .and_then(|receipt| receipt.get())
-            .unwrap_or(ReloadMetrics {
-                idle_wait_ms: 0,
-                reload_work_ms: 0,
-                emit: ReloadEmit::Metadata,
-            });
-        tracing::info!(
+        tag_save_refresh::log_batch_completed(&tag_save_refresh::BatchCompletion {
             write_ms,
             tracks,
-            reload_ms = reload_started.elapsed().as_millis(),
-            idle_wait_ms = metrics.idle_wait_ms,
-            reload_work_ms = metrics.reload_work_ms,
-            emit = metrics.emit.as_str(),
+            reload_ms: reload_started.elapsed().as_millis(),
+            reload_metrics: reload_receipt.and_then(|receipt| receipt.get()),
             delta,
             updated,
             failed,
@@ -649,8 +639,7 @@ fn finish_apply(
             before_len,
             after_len,
             first_mismatch,
-            "tag-edit batch completed"
-        );
+        });
     };
     if reload_deferred {
         tag_save_refresh::after_deferred_reload(log_completed);
