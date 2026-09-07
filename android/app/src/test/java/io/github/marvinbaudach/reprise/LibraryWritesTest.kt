@@ -7,6 +7,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -145,14 +146,22 @@ class LibraryWritesTest {
     fun aFailingWriteIsReportedAndTheLaneKeepsRunning() {
         val refusal = IllegalStateException("database refused the write")
         val answers = LinkedBlockingQueue<Result<Int>>()
-        val writes = LibraryWrites(onMainThread = { work -> work() })
+        val writes = LibraryWrites(
+            onMainThread = { work -> work() },
+            drainTimeoutMs = 0,
+        )
 
         try {
+            writes.submitAnswered<Int>(
+                work = { throw CancellationException("write cancelled itself") },
+                report = { throw AssertionError("cancelled work must not report") },
+            )
             writes.submitAnswered(work = { throw refusal }, report = answers::put)
             writes.submitAnswered(work = { 2 }, report = answers::put)
 
             assertSame(refusal, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.exceptionOrNull())
             assertEquals(2, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.getOrThrow())
+            assertTrue("every completed task must restore the immediate shutdown path", writes.shutdown())
         } finally {
             writes.shutdown()
         }

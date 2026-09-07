@@ -67,31 +67,56 @@ internal class LibraryWrites(
     /** The control moves when this answers — exactly once, on the main thread. */
     fun <T> submitAnswered(work: () -> T, report: (Result<T>) -> Unit) {
         answeredPending.incrementAndGet()
+        val pendingReturned = AtomicBoolean(false)
+        fun returnPending() {
+            if (pendingReturned.compareAndSet(false, true)) {
+                answeredPending.decrementAndGet()
+            }
+        }
         if (!accepting.get() || !scope.isActive) {
-            reject { rejected ->
-                try {
-                    report(Result.failure(rejected))
-                } finally {
-                    answeredPending.decrementAndGet()
+            try {
+                reject { rejected ->
+                    try {
+                        report(Result.failure(rejected))
+                    } finally {
+                        returnPending()
+                    }
                 }
+            } catch (failure: Throwable) {
+                returnPending()
+                throw failure
             }
             return
         }
-        scope.launch {
-            val outcome = try {
-                Result.success(work())
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Throwable) {
-                Result.failure(failure)
-            }
-            onMainThread {
+        val deliveryHandedOff = AtomicBoolean(false)
+        val launched = try {
+            scope.launch {
                 try {
-                    report(outcome)
+                    val outcome = try {
+                        Result.success(work())
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Throwable) {
+                        Result.failure(failure)
+                    }
+                    onMainThread {
+                        try {
+                            report(outcome)
+                        } finally {
+                            returnPending()
+                        }
+                    }
+                    deliveryHandedOff.set(true)
                 } finally {
-                    answeredPending.decrementAndGet()
+                    if (!deliveryHandedOff.get()) returnPending()
                 }
             }
+        } catch (failure: Throwable) {
+            returnPending()
+            throw failure
+        }
+        launched.invokeOnCompletion {
+            if (!deliveryHandedOff.get()) returnPending()
         }
     }
 
