@@ -2,7 +2,7 @@
 slug: night-c-the-source-clients-share-their-boundary
 worktree: /home/marvin/Projects/reprise/.worktrees/night-c-sources-http
 branch: refactor/the-source-clients-share-their-boundary
-phase: refactored
+phase: shipped
 created: 2026-09-07
 base: origin/dev
 owns: crates/reprise-core/src/{podcasts/http.rs,radio/http.rs,concerts/http.rs,sources_http.rs,lib.rs}
