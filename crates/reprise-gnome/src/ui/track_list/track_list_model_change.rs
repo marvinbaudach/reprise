@@ -8,6 +8,11 @@ pub(in crate::ui) enum ModelChangeKind {
     BlockMove { from: u32, to: u32, len: u32 },
 }
 
+/// A generation-bound description of one query replacement.
+///
+/// `position`/`removed`/`added` always describe the single covering span used
+/// by the existing bounds and section guards. `kind` decides whether GTK sees
+/// that span once or the narrower remove/insert pair for a block move.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::ui) struct ModelChange {
     pub(in crate::ui) kind: ModelChangeKind,

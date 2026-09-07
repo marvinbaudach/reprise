@@ -44,6 +44,7 @@ use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::browse_filter_count;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
 use crate::ui::track_list::diagnostic_trail::{self, ReloadStep};
+use crate::ui::track_list::reload_anchor_scroll::RestoreSplit;
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
@@ -79,31 +80,7 @@ fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
 const TOP_RESTORE_MAX_ATTEMPTS: u8 = 2;
 const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
-#[derive(Clone, Copy)]
-pub(in crate::ui) enum ReloadViewport {
-    PreserveAnchor,
-    /// A sort-field tag save follows the edited row even if playback left a
-    /// deliberate centred destination in this browser place.
-    PostSaveSortAnchor,
-    CenterAnchor,
-    CenterPlayingTrack,
-    CenterPlayingElsePreSearch,
-    /// SEARCH-9: a new result set is read from its top.
-    Top,
-    /// SEARCH-9: an emptied query returns to `Shared::pre_search.anchor`.
-    RestorePreSearch,
-}
-
-pub(in crate::ui) fn viewport_after_clearing(
-    had_query: bool,
-    started_in_search: bool,
-) -> ReloadViewport {
-    match (had_query, started_in_search) {
-        (true, true) => ReloadViewport::CenterPlayingElsePreSearch,
-        (true, false) => ReloadViewport::RestorePreSearch,
-        (false, _) => ReloadViewport::CenterPlayingTrack,
-    }
-}
+pub(in crate::ui) use super::reload_anchor_scroll::{viewport_after_clearing, ReloadViewport};
 
 fn filter_change_viewport(
     previous: &str,
@@ -342,26 +319,6 @@ fn restore_reload_anchor(
         &current_ids,
         hold,
     );
-}
-
-#[derive(Default)]
-struct RestoreSplit {
-    ids_ms: u128,
-    select_ms: u128,
-    apply_started: Option<Instant>,
-}
-
-impl Drop for RestoreSplit {
-    fn drop(&mut self) {
-        tracing::info!(
-            ids_ms = self.ids_ms,
-            select_ms = self.select_ms,
-            apply_ms = self
-                .apply_started
-                .map_or(0, |started| started.elapsed().as_millis()),
-            "restore split"
-        );
-    }
 }
 
 /// SEARCH-9: puts the viewport at the top of a freshly filtered list, and keeps

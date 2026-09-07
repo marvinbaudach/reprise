@@ -415,6 +415,10 @@ impl TrackListModel {
         )
     }
 
+    /// Replaces the query state with either one covering-span invalidation or
+    /// a block move. A valid move exposes a shorter intermediate model only
+    /// during its removal signal; all guards and the generation advance occur
+    /// once before either shape emits.
     #[allow(clippy::too_many_arguments)]
     fn set_query_browsed_ai_inner(
         &self,

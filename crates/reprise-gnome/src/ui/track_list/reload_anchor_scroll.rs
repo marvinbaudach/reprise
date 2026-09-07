@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gtk4::glib::prelude::ObjectExt;
 use gtk4::prelude::{AdjustmentExt, ScrollableExt, WidgetExtManual};
@@ -14,6 +14,52 @@ use crate::ui::list_geometry::{ListGeometry, RowHeight};
 use crate::ui::list_geometry_layout::{ListLayout, CONTENT_HEIGHT_EPSILON};
 
 const SCROLL_TO_ADOPTION_WINDOW: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Copy)]
+pub(in crate::ui) enum ReloadViewport {
+    PreserveAnchor,
+    /// A sort-field tag save follows the edited row even if playback left a
+    /// deliberate centred destination in this browser place.
+    PostSaveSortAnchor,
+    CenterAnchor,
+    CenterPlayingTrack,
+    CenterPlayingElsePreSearch,
+    /// SEARCH-9: a new result set is read from its top.
+    Top,
+    /// SEARCH-9: an emptied query returns to `Shared::pre_search.anchor`.
+    RestorePreSearch,
+}
+
+pub(in crate::ui) fn viewport_after_clearing(
+    had_query: bool,
+    started_in_search: bool,
+) -> ReloadViewport {
+    match (had_query, started_in_search) {
+        (true, true) => ReloadViewport::CenterPlayingElsePreSearch,
+        (true, false) => ReloadViewport::RestorePreSearch,
+        (false, _) => ReloadViewport::CenterPlayingTrack,
+    }
+}
+
+#[derive(Default)]
+pub(super) struct RestoreSplit {
+    pub(super) ids_ms: u128,
+    pub(super) select_ms: u128,
+    pub(super) apply_started: Option<Instant>,
+}
+
+impl Drop for RestoreSplit {
+    fn drop(&mut self) {
+        tracing::info!(
+            ids_ms = self.ids_ms,
+            select_ms = self.select_ms,
+            apply_ms = self
+                .apply_started
+                .map_or(0, |started| started.elapsed().as_millis()),
+            "restore split"
+        );
+    }
+}
 
 #[derive(Clone, Copy)]
 enum RestorePath {
