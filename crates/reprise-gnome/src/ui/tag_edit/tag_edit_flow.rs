@@ -47,6 +47,7 @@ use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
     refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_view_ids,
+    ReloadEmit, ReloadMetrics,
 };
 use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
@@ -539,6 +540,7 @@ fn finish_apply(
 ) {
     let reload_started = std::time::Instant::now();
     let mut reload_deferred = false;
+    let mut reload_receipt = None;
     let mut delta = false;
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
@@ -598,31 +600,31 @@ fn finish_apply(
                 )
                 .is_some();
                 if delta {
-                    refresh_after_tag_mutation_with_view_ids(
+                    reload_receipt = Some(refresh_after_tag_mutation_with_view_ids(
                         shared,
                         &tag_changed_ids,
                         &tag_changed_paths,
                         save_anchor,
                         &live_reload.view_ids,
                         after_ids,
-                    );
+                    ));
                 } else {
-                    refresh_after_tag_mutation_with_save_anchor(
+                    reload_receipt = Some(refresh_after_tag_mutation_with_save_anchor(
                         shared,
                         &tag_changed_ids,
                         &tag_changed_paths,
                         save_anchor,
                         post_save_sort_anchor,
-                    );
+                    ));
                 }
             } else {
-                refresh_after_tag_mutation_with_save_anchor(
+                reload_receipt = Some(refresh_after_tag_mutation_with_save_anchor(
                     shared,
                     &tag_changed_ids,
                     &tag_changed_paths,
                     save_anchor,
                     post_save_sort_anchor,
-                );
+                ));
             }
         } else {
             let source = shared.source.borrow().clone();
@@ -637,10 +639,20 @@ fn finish_apply(
         }
     }
     let log_completed = move || {
+        let metrics = reload_receipt
+            .and_then(|receipt| receipt.get())
+            .unwrap_or(ReloadMetrics {
+                idle_wait_ms: 0,
+                reload_work_ms: 0,
+                emit: ReloadEmit::Metadata,
+            });
         tracing::info!(
             write_ms,
             tracks,
             reload_ms = reload_started.elapsed().as_millis(),
+            idle_wait_ms = metrics.idle_wait_ms,
+            reload_work_ms = metrics.reload_work_ms,
+            emit = metrics.emit.as_str(),
             delta,
             updated,
             failed,

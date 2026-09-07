@@ -33,6 +33,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use crate::ui::playback::queue_transport::QueueContextWindow;
 
@@ -237,6 +238,7 @@ fn restore_reload_anchor(
     hold: Option<&AdjustmentHold>,
     resolved_ids: Option<Vec<i64>>,
 ) {
+    let mut split = RestoreSplit::default();
     // SEARCH-9: a new result set is read from its top. Doing this before the
     // early return below is what makes the typed-search path cheap — it needs
     // no id list at all, so the sorted full-table query disappears whenever
@@ -263,8 +265,19 @@ fn restore_reload_anchor(
         }
         return;
     }
-    let current_ids = resolved_ids.unwrap_or_else(|| shared.current_view_ids());
+    let current_ids = match resolved_ids {
+        Some(ids) => ids,
+        None => {
+            let started = Instant::now();
+            let ids = shared.current_view_ids();
+            split.ids_ms = started.elapsed().as_millis();
+            ids
+        }
+    };
+    let select_started = Instant::now();
     select_captured_ids(shared, captured, &current_ids);
+    split.select_ms = select_started.elapsed().as_millis();
+    split.apply_started = Some(Instant::now());
 
     if matches!(viewport, ReloadViewport::CenterAnchor) {
         super::reload_anchor_scroll::schedule_centered(
@@ -329,6 +342,26 @@ fn restore_reload_anchor(
         &current_ids,
         hold,
     );
+}
+
+#[derive(Default)]
+struct RestoreSplit {
+    ids_ms: u128,
+    select_ms: u128,
+    apply_started: Option<Instant>,
+}
+
+impl Drop for RestoreSplit {
+    fn drop(&mut self) {
+        tracing::info!(
+            ids_ms = self.ids_ms,
+            select_ms = self.select_ms,
+            apply_ms = self
+                .apply_started
+                .map_or(0, |started| started.elapsed().as_millis()),
+            "restore split"
+        );
+    }
 }
 
 /// SEARCH-9: puts the viewport at the top of a freshly filtered list, and keeps
@@ -557,8 +590,18 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     // writes the meaningful destination.
     .filter(|adjustment| adjustment.value() > 0.0)
     .map(|adjustment| AdjustmentHold::new(&adjustment));
+    let had_ids = current_ids.is_some();
+    let query_started = Instant::now();
     run_query(shared, model_change);
+    let query_ms = query_started.elapsed().as_millis();
+    let restore_started = Instant::now();
     restore_reload_anchor(shared, captured, viewport, hold.as_ref(), current_ids);
+    tracing::info!(
+        query_ms,
+        restore_ms = restore_started.elapsed().as_millis(),
+        had_ids,
+        "reload split"
+    );
     if let Some(hold) = hold {
         hold.release_after(SCROLL_ADJUSTMENT_HOLD);
     }
