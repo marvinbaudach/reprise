@@ -48,6 +48,9 @@ class MainActivityMusicPathsTest {
     @Test
     fun artistTileOpensItsAlbumsAndNestedAlbumSurvivesRecreate() {
         compose.onNodeWithText("Artists").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onAllNodesWithText("Artist 1")[0].performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithContentDescription("Back to artists")
@@ -59,6 +62,10 @@ class MainActivityMusicPathsTest {
         compose.onNodeWithText("Artist 1 • First Album").assertDoesNotExist()
         compose.onNodeWithText("Someone Else · Album").assertDoesNotExist()
         compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
 
@@ -164,6 +171,9 @@ class MainActivityMusicPathsTest {
 
     private fun openDeepAlbum() {
         compose.onNodeWithText("Artists").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onAllNodesWithText("Artist 1")[0].performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithText("Deep Album").fetchSemanticsNodes().isNotEmpty()
