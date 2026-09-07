@@ -46,7 +46,7 @@ use crate::ui::tag_edit::tag_write_admission;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
-    refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_view_ids,
+    refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_save_change,
     ReloadEmit, ReloadMetrics,
 };
 use crate::ui::track_list::track_list_activation::current_queue_ids;
@@ -520,15 +520,6 @@ pub(in crate::ui) fn spawn_save(
     });
 }
 
-fn first_view_mismatch(before: &[i64], after: &[i64]) -> i64 {
-    before
-        .iter()
-        .zip(after)
-        .position(|(before_id, after_id)| before_id != after_id)
-        .or_else(|| (before.len() != after.len()).then(|| before.len().min(after.len())))
-        .map_or(-1, |index| i64::try_from(index).unwrap_or(i64::MAX))
-}
-
 fn finish_apply(
     shared: &Rc<Shared>,
     writes: &[TrackWrite],
@@ -556,7 +547,7 @@ fn finish_apply(
         .as_ref()
         .zip(after_ids.as_ref())
         .map_or(-1, |(state, after)| {
-            first_view_mismatch(&state.view_ids, after)
+            tag_save_refresh::first_view_mismatch(&state.view_ids, after)
         });
     if updated > 0 {
         let tag_changed_paths: Vec<PathBuf> = writes
@@ -589,24 +580,22 @@ fn finish_apply(
             if has_pre_save_view {
                 let after_ids = after_ids.expect("pre-save view has a matching current view");
                 let generation = shared.model.generation();
-                // This records that a delta was requested. The deferred
-                // refresh still revalidates the query and model generation
-                // and may conservatively fall back to a full reload.
-                delta = tag_save_refresh::tag_save_model_change(
+                let model_change = tag_save_refresh::tag_save_model_change(
                     &live_reload.view_ids,
                     &after_ids,
                     &tag_changed_ids,
                     generation,
-                )
-                .is_some();
-                if delta {
-                    reload_receipt = Some(refresh_after_tag_mutation_with_view_ids(
+                );
+                delta = model_change.is_some();
+                if let Some(model_change) = model_change {
+                    reload_receipt = Some(refresh_after_tag_mutation_with_save_change(
                         shared,
                         &tag_changed_ids,
                         &tag_changed_paths,
                         save_anchor,
                         &live_reload.view_ids,
                         after_ids,
+                        model_change,
                     ));
                 } else {
                     reload_receipt = Some(refresh_after_tag_mutation_with_save_anchor(

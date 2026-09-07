@@ -7,7 +7,7 @@ use reprise_core::library::tag_edit::TrackWrite;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-use crate::ui::track_list::track_list_model_change::{changed_range, ModelChange};
+use crate::ui::track_list::track_list_model_change::{changed_range, ModelChange, ModelChangeKind};
 use crate::ui::track_list::Shared;
 
 pub(super) fn after_deferred_reload(action: impl FnOnce() + 'static) {
@@ -20,16 +20,23 @@ pub(super) enum TagSaveRefresh {
     Reload,
 }
 
-pub(super) fn tag_save_model_change(
+pub(in crate::ui) fn tag_save_model_change(
     before: &[i64],
     after: &[i64],
     written: &[i64],
     generation: u64,
 ) -> Option<ModelChange> {
-    if before != after {
-        return None;
-    }
-    changed_range(before, after, written, generation)
+    let change = changed_range(before, after, written, generation)?;
+    (before == after || matches!(change.kind, ModelChangeKind::BlockMove { .. })).then_some(change)
+}
+
+pub(super) fn first_view_mismatch(before: &[i64], after: &[i64]) -> i64 {
+    before
+        .iter()
+        .zip(after)
+        .position(|(before_id, after_id)| before_id != after_id)
+        .or_else(|| (before.len() != after.len()).then(|| before.len().min(after.len())))
+        .map_or(-1, |index| i64::try_from(index).unwrap_or(i64::MAX))
 }
 
 pub(super) fn tag_changed_ids(writes: &[TrackWrite], updated_ids: &[i64]) -> Vec<i64> {
@@ -138,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn tag_save_that_changes_the_sort_field_falls_back_to_a_full_reload() {
+    fn tag_save_that_moves_one_contiguous_block_requests_the_move() {
         let db = seeded_five_tracks();
         let conn = crate::test_db::connection(&db);
         let before = artist_sorted_ids(&db);
@@ -146,7 +153,33 @@ mod tests {
             .unwrap();
         let after = artist_sorted_ids(&db);
 
-        assert_eq!(tag_save_model_change(&before, &after, &[2], 9), None);
+        assert_eq!(
+            tag_save_model_change(&before, &after, &[2], 9),
+            Some(
+                crate::ui::track_list::track_list_model_change::ModelChange {
+                    kind:
+                        crate::ui::track_list::track_list_model_change::ModelChangeKind::BlockMove {
+                            from: 1,
+                            to: 4,
+                            len: 1,
+                        },
+                    position: 1,
+                    removed: 4,
+                    added: 4,
+                    before_total: 5,
+                    after_total: 5,
+                    generation: 9,
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn tag_save_with_a_scattered_reorder_still_requests_a_full_reload() {
+        assert_eq!(
+            tag_save_model_change(&[1, 2, 3, 4], &[2, 1, 4, 3], &[1, 3], 9),
+            None
+        );
     }
 
     fn rating_write(id: i64, rating: i32) -> TrackWrite {

@@ -30,9 +30,18 @@ fn smoke_tag_edit_mode_parses_open_count_and_preserves_title_save() {
 
 #[test]
 fn tag_edit_view_diagnostics_report_the_first_difference() {
-    assert_eq!(first_view_mismatch(&[11, 13, 17], &[11, 19, 17]), 1);
-    assert_eq!(first_view_mismatch(&[11, 13], &[11, 13, 17]), 2);
-    assert_eq!(first_view_mismatch(&[11, 13], &[11, 13]), -1);
+    assert_eq!(
+        tag_save_refresh::first_view_mismatch(&[11, 13, 17], &[11, 19, 17]),
+        1
+    );
+    assert_eq!(
+        tag_save_refresh::first_view_mismatch(&[11, 13], &[11, 13, 17]),
+        2
+    );
+    assert_eq!(
+        tag_save_refresh::first_view_mismatch(&[11, 13], &[11, 13]),
+        -1
+    );
 }
 
 #[test]

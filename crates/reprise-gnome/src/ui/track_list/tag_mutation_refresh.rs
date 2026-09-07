@@ -9,7 +9,7 @@ use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 use super::reload_restore::ReloadAnchor;
-use super::track_list_model_change::{changed_range, ModelChange};
+use super::track_list_model_change::{changed_range, ModelChange, ModelChangeKind};
 use super::track_list_reload::{
     capture_reload_anchor, reload_with_anchor_and_viewport, ReloadViewport,
 };
@@ -36,6 +36,7 @@ struct ReloadChange {
 pub(in crate::ui) enum ReloadEmit {
     Metadata,
     Span,
+    Move,
     Full,
 }
 
@@ -44,6 +45,7 @@ impl ReloadEmit {
         match self {
             Self::Metadata => "metadata",
             Self::Span => "span",
+            Self::Move => "move",
             Self::Full => "full",
         }
     }
@@ -137,21 +139,63 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_view_ids(
 ) -> ReloadReceipt {
     let generation = shared.model.generation();
     let metadata_only = before_ids == after_ids;
-    let reload_change =
-        changed_range(before_ids, &after_ids, ids, generation).map(|model| ReloadChange {
-            model,
-            current_ids: after_ids,
-            query: reload_query_key(shared),
-            metadata_only,
-        });
-    refresh_with_reload_change(
+    let reload_change = changed_range(before_ids, &after_ids, ids, generation);
+    refresh_after_tag_mutation_with_model_change(
         shared,
         ids,
         paths,
         anchor,
         ReloadViewport::PreserveAnchor,
         reload_change,
+        after_ids,
+        metadata_only,
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::ui) fn refresh_after_tag_mutation_with_model_change(
+    shared: &Rc<Shared>,
+    ids: &[i64],
+    paths: &[PathBuf],
+    anchor: ReloadAnchor,
+    viewport: ReloadViewport,
+    model_change: Option<ModelChange>,
+    current_ids: Vec<i64>,
+    metadata_only: bool,
+) -> ReloadReceipt {
+    let reload_change = model_change.map(|model| ReloadChange {
+        model,
+        current_ids,
+        query: reload_query_key(shared),
+        metadata_only,
+    });
+    refresh_with_reload_change(shared, ids, paths, anchor, viewport, reload_change)
+}
+
+pub(in crate::ui) fn refresh_after_tag_mutation_with_save_change(
+    shared: &Rc<Shared>,
+    ids: &[i64],
+    paths: &[PathBuf],
+    anchor: ReloadAnchor,
+    before_ids: &[i64],
+    after_ids: Vec<i64>,
+    model_change: ModelChange,
+) -> ReloadReceipt {
+    match model_change.kind {
+        ModelChangeKind::BlockMove { .. } => refresh_after_tag_mutation_with_model_change(
+            shared,
+            ids,
+            paths,
+            anchor,
+            ReloadViewport::PostSaveSortAnchor,
+            Some(model_change),
+            after_ids,
+            false,
+        ),
+        ModelChangeKind::Span => refresh_after_tag_mutation_with_view_ids(
+            shared, ids, paths, anchor, before_ids, after_ids,
+        ),
+    }
 }
 
 fn refresh_with_reload_change(
@@ -191,6 +235,10 @@ fn refresh_with_reload_change(
                 ReloadEmit::Metadata
             }
             Some(change) if change.query == reload_query_key(&shared) => {
+                let emit = match change.model.kind {
+                    ModelChangeKind::Span => ReloadEmit::Span,
+                    ModelChangeKind::BlockMove { .. } => ReloadEmit::Move,
+                };
                 reload_with_anchor_and_viewport(
                     &shared,
                     &anchor,
@@ -198,7 +246,7 @@ fn refresh_with_reload_change(
                     Some(change.model),
                     Some(change.current_ids),
                 );
-                ReloadEmit::Span
+                emit
             }
             None | Some(_) => {
                 reload_with_anchor_and_viewport(&shared, &anchor, viewport, None, None);
@@ -213,6 +261,9 @@ fn refresh_with_reload_change(
     receipt
 }
 
+#[cfg(test)]
+#[path = "tag_mutation_refresh_block_move_display_tests.rs"]
+mod block_move_display_tests;
 #[cfg(test)]
 #[path = "tag_mutation_refresh_display_tests.rs"]
 mod display_tests;
