@@ -275,12 +275,27 @@ mod marker_display_tests;
 mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
+    use std::thread;
+    use std::time::Duration;
 
     use super::*;
 
     #[test]
     fn deferred_reload_reports_wait_work_and_emit_shape() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
+        let ctx = gtk4::glib::MainContext::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        // The mutex does not cover sibling tests that pump the default context
+        // without locking, so own the context before attaching the local idle.
+        let _owner = loop {
+            match ctx.acquire() {
+                Ok(owner) => break owner,
+                Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+                Err(_) => {
+                    panic!("default main context owned by another test thread for 5 s")
+                }
+            }
+        };
         let ran = Rc::new(Cell::new(false));
         let ran_in_idle = ran.clone();
         let receipt = schedule_measured_reload(move || {
@@ -289,7 +304,7 @@ mod tests {
         });
 
         assert!(receipt.get().is_none());
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        while ctx.iteration(false) {}
 
         let metrics = receipt
             .get()
