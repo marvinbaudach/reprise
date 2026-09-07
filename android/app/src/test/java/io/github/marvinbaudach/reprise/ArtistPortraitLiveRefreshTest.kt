@@ -8,9 +8,9 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToIndex
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
-import java.util.concurrent.AbstractExecutorService
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -41,7 +41,7 @@ class ArtistPortraitLiveRefreshTest {
             decode = { path -> if (path == "portrait") portrait else null },
             fallback = { _, _, _ -> fallback },
             cache = ArtworkCache(listArtworkCapacity = 64),
-            worker = DirectExecutorService(),
+            dispatcher = DirectDispatcher,
             onMainThread = { work -> work() },
         )
         val surfaceState = MobileSurfaceViewModel()
@@ -138,26 +138,6 @@ class ArtistPortraitLiveRefreshTest {
     )
 }
 
-private class DirectExecutorService : AbstractExecutorService() {
-    private var stopped = false
-
-    override fun execute(command: Runnable) {
-        check(!stopped)
-        command.run()
-    }
-
-    override fun shutdown() {
-        stopped = true
-    }
-
-    override fun shutdownNow(): List<Runnable> {
-        stopped = true
-        return emptyList()
-    }
-
-    override fun isShutdown(): Boolean = stopped
-
-    override fun isTerminated(): Boolean = stopped
-
-    override fun awaitTermination(timeout: Long, unit: TimeUnit): Boolean = stopped
+private object DirectDispatcher : CoroutineDispatcher() {
+    override fun dispatch(context: CoroutineContext, block: Runnable) = block.run()
 }
