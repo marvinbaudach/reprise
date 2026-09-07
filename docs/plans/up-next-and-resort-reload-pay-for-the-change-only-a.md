@@ -114,6 +114,14 @@ In `queue_snapshot_change.rs` tests: a `QueueViewModel` pair built with A2's
 hint yields `(prefix + p, n, 0)` from `queue_snapshot_change`; the same pair
 without the hint yields the full range. This is G-A2's unit-test gate.
 
+## Deviations
+
+A3 was reverted to the full `(0, new_total)` sections range. The emitter
+cannot see section starts, and an A2 tail hint may begin after the header row
+of the section whose length changed. A safe post-merge narrowing requires
+`set_queue_snapshot` to pass the section start containing `position`; that
+follow-up belongs to the other strand's `track_list_model.rs`.
+
 ## Verification (scope per mother §2)
 
 `cargo fmt`; `cargo clippy --all-targets --workspace -- -D warnings`;

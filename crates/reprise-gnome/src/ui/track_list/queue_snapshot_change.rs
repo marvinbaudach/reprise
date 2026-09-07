@@ -29,7 +29,11 @@ pub(super) type QueueSnapshotSignals = (Option<(u32, u32, u32)>, Option<(u32, u3
 /// shifts their bounds by the delta — the Play Next header is dropped and
 /// its rows end up titled "Now Playing" (reproduced live by
 /// `examples/queue_section_shift_repro.rs`). A full-range `items-changed`
-/// already re-matches every header, so it needs no second signal.
+/// already re-matches every header, so it needs no second signal. A narrow
+/// items change still needs the full sections range: this emitter cannot see
+/// where the section containing `position` starts, and a hinted change can
+/// begin after that section's header row. Narrowing safely requires the call
+/// site to supply that section start.
 pub(super) fn queue_snapshot_emissions(
     change: (u32, u32, u32),
     sections_changed: bool,
@@ -38,10 +42,8 @@ pub(super) fn queue_snapshot_emissions(
     let (position, removed, added) = change;
     let items = (removed != 0 || added != 0).then_some(change);
     let covers_every_row = items.is_some() && position == 0 && added >= new_total;
-    let sections = (sections_changed && !covers_every_row && new_total > 0).then(|| match items {
-        Some((position, _, _)) => (position, new_total.saturating_sub(position)),
-        None => (0, new_total),
-    });
+    let sections =
+        (sections_changed && !covers_every_row && new_total > 0).then_some((0, new_total));
     (items, sections)
 }
 
