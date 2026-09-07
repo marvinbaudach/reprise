@@ -229,5 +229,5 @@ mod tests {
         assert!(refreshes.sidebar);
     }
 
-    // #366's runtime ordering is covered by deleting-and-tag-saving-stop-paying-on-the-main-thread; no lexical wiring test remains.
+    // #366's lexical test was retired without replacement because it no longer models the confirmed-delete path; see deleting-and-tag-saving-stop-paying-on-the-main-thread.
 }
