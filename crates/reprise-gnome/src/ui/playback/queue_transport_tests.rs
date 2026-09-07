@@ -58,7 +58,7 @@ fn browse_11_trashing_loaded_track_requests_immediate_queue_advance() {
 }
 
 #[test]
-fn purge_of_the_prefed_next_track_clears_set_next_synchronously() {
+fn clear_removed_prefed_next_clears_the_backend_synchronously() {
     let prefed_next = Cell::new(Some(20));
     let cleared = Cell::new(false);
 
@@ -75,6 +75,26 @@ fn purge_of_the_prefed_next_track_clears_set_next_synchronously() {
         "set_next(None) must run before purge returns"
     );
     assert_eq!(prefed_next.get(), None);
+}
+
+#[test]
+fn purge_queue_ids_clears_a_removed_prefed_next_before_other_work() {
+    let implementation = include_str!("queue_transport.rs");
+    let method = implementation
+        .split("pub(in crate::ui) fn purge_queue_ids")
+        .nth(1)
+        .expect("purge_queue_ids implementation");
+    let clear_prefed = method
+        .find("self.clear_prefed_next_if_removed(ids);")
+        .expect("purge must clear a removed pre-fed next item");
+    let read_playing = method
+        .find("let playing =")
+        .expect("purge must read the playing track");
+
+    assert!(
+        clear_prefed < read_playing,
+        "the pre-fed next item must be cleared before other purge work"
+    );
 }
 
 #[test]
