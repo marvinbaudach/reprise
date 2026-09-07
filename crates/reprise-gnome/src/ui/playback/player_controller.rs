@@ -252,6 +252,7 @@ pub struct PlayerController {
     /// Cached library availability used to keep idle Play reachable without
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
+    pub(super) last_composed_tail: RefCell<Option<reprise_view::queue::LastTail>>,
     /// START-4 one-shot for an item already selected and centered by startup
     /// routing, including a startup greeting. Greeting Play never consults
     /// this flag: it reaches `play_track_id` as `PlaybackStarted`, whose
@@ -387,7 +388,6 @@ pub struct PlayerController {
     /// the upgrade ever fails.
     pub(in crate::ui) application: glib::WeakRef<gio::Application>,
 }
-
 /// See `PlayerController::now_playing`'s doc comment. Fields are `pub(in crate::ui)`
 /// (like `now_playing` itself) so `mpris_mirror.rs`'s `update_mpris_mirror`
 /// can read them to build `mpris::MprisState`'s `Metadata` fields.
@@ -409,7 +409,6 @@ pub(in crate::ui) struct NowPlaying {
     /// this player-owned snapshot to load the same cover as the transport bar.
     pub(in crate::ui) path: String,
 }
-
 impl PlayerController {
     /// Builds the controller and the event bridge around injected platform
     /// backends assembled by the window composition root.
@@ -442,7 +441,6 @@ impl PlayerController {
                 reprise_core::library::settings::get_crossfade_seconds(conn_ref),
             );
         }
-
         // Media integration is always on. Its platform handles are assembled
         // by the window composition root and remain failure-tolerant.
         let mpris_state = handles.shared_state;
@@ -470,6 +468,7 @@ impl PlayerController {
             scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
             library_has_tracks: Cell::new(library_has_tracks),
+            last_composed_tail: RefCell::new(None),
             restored_placement_intact: Cell::new(false),
             pending_start_mark: Cell::new(None),
             up_next: RefCell::new(UpNextQueue::default()),
