@@ -216,7 +216,24 @@ class MainActivityConfigurationTest {
     @Test
     fun rowsPagedInPastTheFirstWindowSurviveTheTurnAndSoDoesThePlace() {
         assertEquals(1, shadowOf(application).boundServiceConnections.size)
+        application.blockFailingTitleContinuation()
+        scrollLibraryListTo("library-titles-list", 200)
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.failingTitleContinuationHasStarted()
+        }
         compose.onNodeWithText("Artists").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("200 of 450 artists loaded")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        application.releaseFailingTitleContinuation()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.failingTitleContinuationHasFinished()
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Could not load more titles:", substring = true)
+            .assertDoesNotExist()
+
         // The continuation sentinel sits after the last loaded row; reaching it
         // is what asks the library for the next window.
         scrollLibraryListTo("library-artists-list", 200)
@@ -541,6 +558,10 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     private var firstAlbumOpenGate: CompletableDeferred<Unit>? = null
     private var firstAlbumOpenFinished: CountDownLatch? = null
     private val firstAlbumOpenCalls = AtomicInteger()
+    private var failingTitleContinuationStarted: CountDownLatch? = null
+    private var failingTitleContinuationGate: CompletableDeferred<Unit>? = null
+    private var failingTitleContinuationFinished: CountDownLatch? = null
+    private val failingTitleContinuationCalls = AtomicInteger()
     val trackRatings = mutableMapOf<Long, Int>()
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
@@ -770,6 +791,23 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
 
     fun firstAlbumOpenHasFinished(): Boolean = checkNotNull(firstAlbumOpenFinished).count == 0L
 
+    fun blockFailingTitleContinuation() {
+        failingTitleContinuationCalls.set(0)
+        failingTitleContinuationStarted = CountDownLatch(1)
+        failingTitleContinuationGate = CompletableDeferred()
+        failingTitleContinuationFinished = CountDownLatch(1)
+    }
+
+    fun failingTitleContinuationHasStarted(): Boolean =
+        checkNotNull(failingTitleContinuationStarted).count == 0L
+
+    fun releaseFailingTitleContinuation() {
+        checkNotNull(failingTitleContinuationGate).complete(Unit)
+    }
+
+    fun failingTitleContinuationHasFinished(): Boolean =
+        checkNotNull(failingTitleContinuationFinished).count == 0L
+
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
             titles = tracks.window(firstLibraryWindow()),
@@ -799,6 +837,16 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
             chooseFolder = { _, _ -> },
             rescan = {},
             searchTitles = { query, range ->
+                if (
+                    range.offset > 0 &&
+                    failingTitleContinuationStarted != null &&
+                    failingTitleContinuationCalls.getAndIncrement() == 0
+                ) {
+                    failingTitleContinuationStarted?.countDown()
+                    withContext(NonCancellable) { failingTitleContinuationGate?.await() }
+                    failingTitleContinuationFinished?.countDown()
+                    error("title continuation unavailable")
+                }
                 tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
                     .window(range)
             },

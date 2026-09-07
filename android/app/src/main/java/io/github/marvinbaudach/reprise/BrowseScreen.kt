@@ -81,6 +81,12 @@ private class BrowseReadJobs {
     var latestArtistOpen = 0L
 }
 
+private sealed interface BrowseErrorOrigin {
+    data class Tab(val tab: BrowseTab) : BrowseErrorOrigin
+    data class Artist(val artist: LibraryArtist?) : BrowseErrorOrigin
+    data class Album(val album: LibraryAlbum) : BrowseErrorOrigin
+}
+
 internal enum class BrowseTab(val label: String, val symbol: String) {
     TITLES("Titles", "library_music"),
     ARTISTS("Artists", "artist"),
@@ -169,6 +175,7 @@ internal fun BrowseScreen(
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
     var browseError by remember(state) { mutableStateOf(state.message) }
+    var browseErrorOrigin by remember(state) { mutableStateOf<BrowseErrorOrigin?>(null) }
     var visibleLoadRetryRevision by remember(state, searchText, selectedTab) {
         mutableIntStateOf(0)
     }
@@ -275,7 +282,39 @@ internal fun BrowseScreen(
 
     fun play(selection: PlaybackSelection) {
         browseError = null
-        playTracks(selection) { message -> browseError = message }
+        browseErrorOrigin = null
+        playTracks(selection) { message ->
+            browseError = message
+            browseErrorOrigin = null
+        }
+    }
+
+    fun tabSurfaceIsCurrent(tab: BrowseTab): Boolean =
+        surfaceState.selectedTab == tab && selectedAlbum == null && selectedArtist == null
+
+    fun artistSurfaceIsCurrent(artist: LibraryArtist?): Boolean =
+        surfaceState.selectedTab == BrowseTab.ARTISTS &&
+            selectedArtist?.artist == artist && selectedAlbum == null
+
+    fun albumSurfaceIsCurrent(album: LibraryAlbum): Boolean =
+        surfaceState.selectedTab == BrowseTab.ARTISTS && selectedAlbum?.album == album
+
+    fun errorOriginIsCurrent(origin: BrowseErrorOrigin): Boolean = when (origin) {
+        is BrowseErrorOrigin.Tab -> tabSurfaceIsCurrent(origin.tab)
+        is BrowseErrorOrigin.Artist -> artistSurfaceIsCurrent(origin.artist)
+        is BrowseErrorOrigin.Album -> albumSurfaceIsCurrent(origin.album)
+    }
+
+    fun setBrowseError(message: String, origin: BrowseErrorOrigin) {
+        browseError = message
+        browseErrorOrigin = origin
+    }
+
+    fun clearBrowseError(origin: BrowseErrorOrigin) {
+        if (browseErrorOrigin == null || browseErrorOrigin == origin) {
+            browseError = null
+            browseErrorOrigin = null
+        }
     }
 
     fun openAlbumDetail(album: LibraryAlbum) {
@@ -286,19 +325,22 @@ internal fun BrowseScreen(
                 .onSuccess { detail ->
                     if (
                         request != readJobs.latestAlbumOpen ||
-                        selectedArtist?.artist != parentArtist
+                        !artistSurfaceIsCurrent(parentArtist)
                     ) return@onSuccess
                     selectedAlbum = detail
                     albumRequestedOffset = null
-                    browseError = null
+                    clearBrowseError(BrowseErrorOrigin.Artist(parentArtist))
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
                     if (
                         request == readJobs.latestAlbumOpen &&
-                        selectedArtist?.artist == parentArtist
+                        artistSurfaceIsCurrent(parentArtist)
                     ) {
-                        browseError = error.browseDetail("open the album")
+                        setBrowseError(
+                            error.browseDetail("open the album"),
+                            BrowseErrorOrigin.Artist(parentArtist),
+                        )
                     }
                 }
         }
@@ -311,6 +353,7 @@ internal fun BrowseScreen(
     }
 
     suspend fun search(text: String, request: Long) {
+        val tab = selectedTab
         // A refinement is a question about a list, so it has to be answered on
         // the list. An open artist page — or the album page nested inside it —
         // would otherwise stay up and answer with that artist's *albums* where
@@ -332,7 +375,7 @@ internal fun BrowseScreen(
         loadedTabs = emptySet()
         surfaceState.updateSearch(text)
         val result = runCatching {
-            when (selectedTab) {
+            when (tab) {
                 BrowseTab.TITLES -> LoadedTab(
                     titles = searchTitles(text, firstLibraryWindow()),
                 )
@@ -345,7 +388,11 @@ internal fun BrowseScreen(
                 BrowseTab.QUEUE -> LoadedTab()
             }
         }
-        if (request != readJobs.latestSearch || text != surfaceState.searchText) return
+        if (
+            request != readJobs.latestSearch ||
+            text != surfaceState.searchText ||
+            !tabSurfaceIsCurrent(tab)
+        ) return
         result.onSuccess { loaded ->
             loaded.titles?.let {
                 visibleTitles = it
@@ -355,8 +402,8 @@ internal fun BrowseScreen(
                 visibleArtists = it
                 artistsRequestedOffset = null
             }
-            loadedTabs = setOf(selectedTab)
-            browseError = null
+            loadedTabs = setOf(tab)
+            clearBrowseError(BrowseErrorOrigin.Tab(tab))
         }
             .onFailure { error ->
                 if (error is CancellationException) throw error
@@ -459,13 +506,18 @@ internal fun BrowseScreen(
             loaded.titles?.let { visibleTitles = it }
             loaded.artists?.let { visibleArtists = it }
             loadedTabs = loadedTabs + pendingTab
-            if (visible) browseError = null
+            if (tabSurfaceIsCurrent(pendingTab)) {
+                clearBrowseError(BrowseErrorOrigin.Tab(pendingTab))
+            }
         }.onFailure { error ->
             if (error is CancellationException) throw error
             if (visible) {
-                browseError = error.browseDetail("load ${pendingTab.label.lowercase()}")
-                if (visibleLoadRetryRevision == 0) visibleLoadRetryRevision = 1
+                setBrowseError(
+                    error.browseDetail("load ${pendingTab.label.lowercase()}"),
+                    BrowseErrorOrigin.Tab(pendingTab),
+                )
             }
+            if (visible && visibleLoadRetryRevision == 0) visibleLoadRetryRevision = 1
         }
     }
 
@@ -489,11 +541,18 @@ internal fun BrowseScreen(
                 .onSuccess { continuation ->
                     titlesRequestedOffset = request.offset
                     visibleTitles = visibleTitles.append(continuation)
-                    browseError = null
+                    if (tabSurfaceIsCurrent(BrowseTab.TITLES)) {
+                        clearBrowseError(BrowseErrorOrigin.Tab(BrowseTab.TITLES))
+                    }
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
-                    browseError = error.browseDetail("load more titles")
+                    if (tabSurfaceIsCurrent(BrowseTab.TITLES)) {
+                        setBrowseError(
+                            error.browseDetail("load more titles"),
+                            BrowseErrorOrigin.Tab(BrowseTab.TITLES),
+                        )
+                    }
                 }
         }
     }
@@ -505,11 +564,18 @@ internal fun BrowseScreen(
                 .onSuccess { continuation ->
                     artistsRequestedOffset = request.offset
                     visibleArtists = visibleArtists.append(continuation)
-                    browseError = null
+                    if (tabSurfaceIsCurrent(BrowseTab.ARTISTS)) {
+                        clearBrowseError(BrowseErrorOrigin.Tab(BrowseTab.ARTISTS))
+                    }
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
-                    browseError = error.browseDetail("load more artists")
+                    if (tabSurfaceIsCurrent(BrowseTab.ARTISTS)) {
+                        setBrowseError(
+                            error.browseDetail("load more artists"),
+                            BrowseErrorOrigin.Tab(BrowseTab.ARTISTS),
+                        )
+                    }
                 }
         }
     }
@@ -522,11 +588,18 @@ internal fun BrowseScreen(
                 .onSuccess { continuation ->
                     albumRequestedOffset = request.offset
                     selectedAlbum = detail.copy(tracks = detail.tracks.append(continuation))
-                    browseError = null
+                    if (albumSurfaceIsCurrent(detail.album)) {
+                        clearBrowseError(BrowseErrorOrigin.Album(detail.album))
+                    }
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
-                    browseError = error.browseDetail("load more album tracks")
+                    if (albumSurfaceIsCurrent(detail.album)) {
+                        setBrowseError(
+                            error.browseDetail("load more album tracks"),
+                            BrowseErrorOrigin.Album(detail.album),
+                        )
+                    }
                 }
         }
     }
@@ -541,11 +614,18 @@ internal fun BrowseScreen(
                     selectedArtist = detail.copy(
                         untaggedTracks = detail.untaggedTracks.append(continuation),
                     )
-                    browseError = null
+                    if (artistSurfaceIsCurrent(detail.artist)) {
+                        clearBrowseError(BrowseErrorOrigin.Artist(detail.artist))
+                    }
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
-                    browseError = error.browseDetail("load more other titles")
+                    if (artistSurfaceIsCurrent(detail.artist)) {
+                        setBrowseError(
+                            error.browseDetail("load more other titles"),
+                            BrowseErrorOrigin.Artist(detail.artist),
+                        )
+                    }
                 }
         }
     }
@@ -558,11 +638,18 @@ internal fun BrowseScreen(
                 .onSuccess { continuation ->
                     artistAlbumsRequestedOffset = request.offset
                     selectedArtist = detail.copy(albums = detail.albums.append(continuation))
-                    browseError = null
+                    if (artistSurfaceIsCurrent(detail.artist)) {
+                        clearBrowseError(BrowseErrorOrigin.Artist(detail.artist))
+                    }
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
-                    browseError = error.browseDetail("load more artist albums")
+                    if (artistSurfaceIsCurrent(detail.artist)) {
+                        setBrowseError(
+                            error.browseDetail("load more artist albums"),
+                            BrowseErrorOrigin.Artist(detail.artist),
+                        )
+                    }
                 }
         }
     }
@@ -701,7 +788,11 @@ internal fun BrowseScreen(
                         openSettings = ::openSettings,
                     )
                     // Re-readable state, not timed acknowledgements; see TransientMessage.
-                    browseError?.let { BrowseErrorLine(it) }
+                    browseError
+                        ?.takeIf {
+                            browseErrorOrigin?.let(::errorOriginIsCurrent) != false
+                        }
+                        ?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
                     if (
                         !surfaceState.dockMode &&
@@ -760,12 +851,14 @@ internal fun BrowseScreen(
                                                 .onSuccess { detail ->
                                                     if (
                                                         request != readJobs.latestArtistOpen ||
-                                                        surfaceState.selectedTab != BrowseTab.ARTISTS
+                                                        !tabSurfaceIsCurrent(BrowseTab.ARTISTS)
                                                     ) return@onSuccess
                                                     selectedArtist = detail
                                                     artistRequestedOffset = null
                                                     artistAlbumsRequestedOffset = null
-                                                    browseError = null
+                                                    clearBrowseError(
+                                                        BrowseErrorOrigin.Tab(BrowseTab.ARTISTS),
+                                                    )
                                                     surfaceState.closeSearch()
                                                     if (searchText.isNotEmpty()) {
                                                         surfaceState.updateSearch("")
@@ -776,9 +869,12 @@ internal fun BrowseScreen(
                                                     if (error is CancellationException) throw error
                                                     if (
                                                         request == readJobs.latestArtistOpen &&
-                                                        surfaceState.selectedTab == BrowseTab.ARTISTS
+                                                        tabSurfaceIsCurrent(BrowseTab.ARTISTS)
                                                     ) {
-                                                        browseError = error.browseDetail("open the artist")
+                                                        setBrowseError(
+                                                            error.browseDetail("open the artist"),
+                                                            BrowseErrorOrigin.Tab(BrowseTab.ARTISTS),
+                                                        )
                                                     }
                                                 }
                                         }
