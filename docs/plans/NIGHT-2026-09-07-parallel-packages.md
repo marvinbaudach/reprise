@@ -24,6 +24,25 @@ names. Never share a worktree between two packages, and never share
 `CARGO_TARGET_DIR` — Cargo takes an exclusive lock and two agents would
 serialise behind it, turning a parallel night into a sequential one.
 
+**Every agent takes its own wake lock for the length of its run**, or the
+machine suspends underneath an unattended package:
+
+```
+wake-lock acquire night-<letter> "package <letter>, overnight"
+…work…
+wake-lock release night-<letter>
+```
+
+One lock per package, named after the package, released by the package that took
+it. A closed terminal must not be able to end them, so do not rely on the
+Ghostty lock. Never touch the GNOME sleep settings directly — a global value
+that every session restores on exit means the last one to finish strips the
+protection from everyone still running.
+
+**No package may touch the phone.** Nothing tonight needs it, and the device
+lock is a lease held across a whole measurement, not a per-command slot. An
+agent that thinks it needs `adb` has misread its package.
+
 ## The packages
 
 | # | Package | Owns | Language | Size |
