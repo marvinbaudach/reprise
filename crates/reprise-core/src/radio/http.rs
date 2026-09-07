@@ -2,7 +2,7 @@
 
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -11,6 +11,9 @@ use url::Url;
 use super::{RadioError, RadioFailureDetail};
 use crate::http_body::{self, BoundedReadError};
 use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
+#[cfg(test)]
+use crate::sources_http::user_agent;
+use crate::sources_http::{build_agent, lock_unpoisoned};
 
 pub const HTTP_TIMEOUT: Duration = SOURCE_REQUEST_TIMEOUT;
 pub const CLICK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -19,22 +22,6 @@ const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 const FIXTURE_DIR_ENV: &str = "REPRISE_RADIO_FIXTURE_DIR";
 
 static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
-
-#[cfg(test)]
-thread_local! {
-    static TEST_FIXTURE_DIR: std::cell::RefCell<Option<PathBuf>> = const {
-        std::cell::RefCell::new(None)
-    };
-}
-
-#[must_use]
-pub fn user_agent() -> String {
-    format!(
-        "Reprise/{} ( {} )",
-        env!("CARGO_PKG_VERSION"),
-        crate::musicbrainz::CONTACT_URL
-    )
-}
 
 pub fn get(url: &str) -> Result<String, RadioError> {
     get_with_timeout(url, HTTP_TIMEOUT)
@@ -46,12 +33,7 @@ pub fn get_with_timeout(url: &str, timeout: Duration) -> Result<String, RadioErr
         return fixture_get(url, &directory);
     }
     wait_for_request_slot();
-    let response = ureq::Agent::config_builder()
-        .timeout_global(Some(timeout))
-        .user_agent(user_agent())
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
+    let response = build_agent(timeout)
         .get(url)
         .call()
         .map_err(classify_transport)?;
@@ -72,12 +54,7 @@ pub fn icy_headers(url: &str) -> Result<Vec<(String, String)>, RadioError> {
         return fixture_icy_headers(url, &directory);
     }
     wait_for_request_slot();
-    let response = ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(user_agent())
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
+    let response = build_agent(HTTP_TIMEOUT)
         .get(url)
         .header("Icy-MetaData", "1")
         .call()
@@ -116,27 +93,28 @@ fn source_status_error(status: u16, retry_after: Option<&str>) -> Option<RadioEr
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
+/// Resolves a scoped radio fixture directory before the environment fallback.
+/// The fallback keeps feature-enabled fixture consumers independent of tests.
 fn fixture_directory() -> Option<PathBuf> {
-    #[cfg(test)]
-    if let Some(directory) = TEST_FIXTURE_DIR.with(|slot| slot.borrow().clone()) {
-        return Some(directory);
-    }
-    std::env::var(FIXTURE_DIR_ENV).ok().map(PathBuf::from)
+    crate::sources_http::fixture_directory(FIXTURE_DIR_ENV)
 }
 
 #[cfg(test)]
+/// Installs a radio fixture directory and invalidates cached server discovery.
+/// The shared scope restores a nested fixture directory even if the operation
+/// unwinds.
 pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> T) -> T {
-    struct Reset(Option<PathBuf>);
-    impl Drop for Reset {
-        fn drop(&mut self) {
-            TEST_FIXTURE_DIR.with(|slot| *slot.borrow_mut() = self.0.take());
-            super::servers::reset_cache_for_tests();
-        }
+    fn reset_source_state() {
+        // The shared scope calls this before installation and after restoration.
+        super::servers::reset_cache_for_tests();
     }
-    super::servers::reset_cache_for_tests();
-    let previous = TEST_FIXTURE_DIR.with(|slot| slot.borrow_mut().replace(directory.to_path_buf()));
-    let _reset = Reset(previous);
-    operation()
+
+    crate::sources_http::with_fixture_dir(
+        FIXTURE_DIR_ENV,
+        directory,
+        reset_source_state,
+        operation,
+    )
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -266,12 +244,6 @@ fn map_body_error(error: BoundedReadError) -> RadioError {
         BoundedReadError::Read => "response could not be decoded".into(),
         BoundedReadError::TooLarge => "response exceeded the size limit".into(),
     })
-}
-
-fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
