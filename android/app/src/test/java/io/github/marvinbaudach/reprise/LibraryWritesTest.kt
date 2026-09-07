@@ -11,7 +11,6 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -188,8 +187,11 @@ class LibraryWritesTest {
     }
 
     @Test(timeout = 10_000)
-    fun rejectedAnswerReturnsPendingToZeroBeforeAnotherShutdown() {
-        val writes = LibraryWrites(onMainThread = { work -> work() })
+    fun rejectedAnswerReturnsPendingToZeroBeforeShutdown() {
+        val writes = LibraryWrites(
+            onMainThread = { work -> work() },
+            drainTimeoutMs = 0,
+        )
         assertTrue(writes.shutdown())
         var reported: Result<Unit>? = null
 
@@ -256,7 +258,7 @@ class LibraryWritesTest {
     }
 
     @Test(timeout = 10_000)
-    fun shutdownTimeoutCancelsQueuedAnsweredWork() {
+    fun shutdownTimeoutKeepsQueuedAnsweredWorkForALateReport() {
         val slowStarted = CountDownLatch(1)
         val releaseSlowWrite = CountDownLatch(1)
         val answers = LinkedBlockingQueue<Result<Int>>()
@@ -277,14 +279,12 @@ class LibraryWritesTest {
         assertFalse("the blocked lane must exhaust the drain bound", writes.shutdown())
         releaseSlowWrite.countDown()
 
-        assertNull(
-            "cancelled queued work must not report",
-            answers.poll(300, TimeUnit.MILLISECONDS),
-        )
+        assertEquals(830, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.getOrThrow())
+        assertTrue("the late report must still be exactly once", answers.isEmpty())
     }
 
     @Test(timeout = 10_000)
-    fun interruptedDrainReturnsFalseAndCancelsQueuedAnsweredWork() {
+    fun interruptedDrainReturnsFalseAndKeepsQueuedAnsweredWorkForALateReport() {
         val slowStarted = CountDownLatch(1)
         val releaseSlowWrite = CountDownLatch(1)
         val answers = LinkedBlockingQueue<Result<Int>>()
@@ -315,10 +315,8 @@ class LibraryWritesTest {
         assertFalse(shutdownResult.get())
         assertTrue(interruptPreserved.get())
         releaseSlowWrite.countDown()
-        assertNull(
-            "cancelled queued work must not report",
-            answers.poll(300, TimeUnit.MILLISECONDS),
-        )
+        assertEquals(830, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.getOrThrow())
+        assertTrue("the late report must still be exactly once", answers.isEmpty())
         dispatcher.close()
     }
 

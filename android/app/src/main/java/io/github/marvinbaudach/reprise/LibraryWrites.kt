@@ -31,7 +31,7 @@ private const val DRAIN_TIMEOUT_MS = 2_000L
  *
  * Teardown waits for at most [DRAIN_TIMEOUT_MS] only while answered work is
  * pending, because a control is still waiting for the database to agree. The
- * lane is cancelled after that bound so teardown itself stays bounded.
+ * stopped lane keeps draining after that bound so it cannot strand an answer.
  * With only unanswered persistence queued, teardown drops it immediately
  * instead of making every rotation wait behind a running scan. If answered
  * work is in the same FIFO, earlier unanswered work is drained with it.
@@ -59,7 +59,6 @@ internal class LibraryWrites(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                currentCoroutineContext().ensureActive()
                 onMainThread { onFailure(failure) }
             }
         }
@@ -84,10 +83,8 @@ internal class LibraryWrites(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                currentCoroutineContext().ensureActive()
                 Result.failure(failure)
             }
-            currentCoroutineContext().ensureActive()
             onMainThread {
                 try {
                     report(outcome)
@@ -101,14 +98,18 @@ internal class LibraryWrites(
     /**
      * Stops new writes before the caller closes the shared library handle.
      *
-     * The caller waits briefly for answered work, then cancels the stopped lane
-     * if the bound expires.
+     * The caller waits briefly for answered work, then leaves the stopped lane
+     * to finish it so a queued callback is not stranded after teardown.
      * Unanswered-only work is cancelled at once: losing one stored preference
      * is safer than blocking the main thread behind a folder scan.
      *
-     * Cancelling cannot interrupt a write parked in JNI, but it discards the
-     * queued tail and prevents a completed in-flight call from delivering into
-     * an activity that has already been destroyed.
+     * The timeout path deliberately does not cancel the scope, and doing so
+     * would not shorten teardown anyway: the drain only runs out because a
+     * write is parked in the library writer inside a JNI call, which coroutine
+     * cancellation cannot unblock. All cancellation would bound is the queued
+     * tail — short setter writes that finish in milliseconds once the scan
+     * releases the writer — while dropping a queued answered task and
+     * stranding its report.
      */
     fun shutdown(): Boolean {
         accepting.set(false)
@@ -129,7 +130,6 @@ internal class LibraryWrites(
             Thread.currentThread().interrupt()
             false
         }
-        if (!drained) scope.cancel()
         return drained
     }
 
