@@ -230,7 +230,12 @@ fn fixture_directory() -> Option<PathBuf> {
 pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> T) -> T {
     fn reset_source_state() {}
 
-    crate::sources_http::with_fixture_dir(directory, reset_source_state, operation)
+    crate::sources_http::with_fixture_dir(
+        FIXTURE_DIR_ENV,
+        directory,
+        reset_source_state,
+        operation,
+    )
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
