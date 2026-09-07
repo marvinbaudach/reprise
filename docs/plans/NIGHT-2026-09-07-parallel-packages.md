@@ -12,6 +12,12 @@ same time without fighting over files.
 
 ## How to start them
 
+Copy-pasteable kickoff prompts, one per session, are in
+`NIGHT-2026-09-07-start-prompts.md`. Each is self-contained and grants the
+autonomy the packages assume — a session that starts without that grant will
+stop and ask, because the standing house rule reserves `/code` and `/ship`
+for the owner.
+
 One agent per package, each in its own worktree off `origin/dev`:
 
 ```
