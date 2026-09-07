@@ -26,10 +26,6 @@ pub struct SyncDelta {
 }
 
 impl SyncDelta {
-    pub fn add_transfer_bytes(&mut self, bytes: u64) {
-        self.bytes = self.bytes.saturating_add(bytes);
-        self.est_secs = estimated_seconds(self.bytes);
-    }
 }
 
 pub fn compute_delta(

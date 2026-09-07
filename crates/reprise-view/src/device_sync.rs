@@ -65,8 +65,6 @@ const UNAVAILABLE_WARNING: (&str, &str) = plural(
     "{count} tracks will be skipped because they are unavailable and not already on the device.",
 );
 const UNSAFE_WARNING: &str = N_!("An unsafe managed path will be left untouched.");
-const CANCEL: &str = N_!("_Cancel");
-const SYNC_NOW: &str = N_!("_Sync now");
 const CHECKING_TITLE: &str = N_!("Checking device…");
 const CHECKING_SUBTITLE: &str = N_!("Reading storage and preparing the mirror plan");
 const FINISHING_TITLE: &str = N_!("Finishing synchronization…");
@@ -78,13 +76,6 @@ const WRITING_ANALYSIS_TITLE: &str = N_!("Writing analysis · {done} of {total}"
 const WRITING_LYRICS_TITLE: &str = N_!("Writing lyrics · {done} of {total}");
 const WRITING_PLAYLISTS_TITLE: &str = N_!("Writing playlists · {done} of {total}");
 const WRITING_TRACK_METADATA_TITLE: &str = N_!("Writing track metadata · {done} of {total}");
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PageActionCopy {
-    pub label: &'static str,
-    pub sensitive: bool,
-    pub destructive: bool,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VerifiedSyncTime {
@@ -290,22 +281,6 @@ pub fn warning_summary(warnings: &[SyncPageWarning]) -> Vec<Message> {
         summary.push(message(UNSAFE_WARNING));
     }
     summary
-}
-
-pub fn action_copy(controls: SyncPageControls) -> PageActionCopy {
-    if controls.can_cancel {
-        PageActionCopy {
-            label: CANCEL,
-            sensitive: true,
-            destructive: true,
-        }
-    } else {
-        PageActionCopy {
-            label: SYNC_NOW,
-            sensitive: controls.can_start,
-            destructive: false,
-        }
-    }
 }
 
 pub fn eject_sensitive(

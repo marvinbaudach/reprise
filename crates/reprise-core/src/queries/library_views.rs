@@ -430,26 +430,6 @@ pub(super) fn query_album_track_count(
     conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
 }
 
-pub fn query_album_track_ids(
-    db: &Db,
-    album: &str,
-    album_artist: &str,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    let conn = db.conn();
-    query_album_track_ids_browsed(
-        conn,
-        album,
-        album_artist,
-        sort_field,
-        sort_dir,
-        filter,
-        &BrowseFilter::default(),
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn query_album_track_ids_browsed(
     conn: &Connection,

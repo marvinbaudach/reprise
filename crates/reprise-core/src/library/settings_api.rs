@@ -15,7 +15,7 @@ use super::{
     set_bool_in, set_browse_visible_in, set_color_scheme_in, set_compact_always_on_top_in,
     set_compact_layout_in, set_crossfade_seconds_in, set_equalizer_bands_in,
     set_equalizer_curve_in, set_equalizer_enabled_in, set_gapless_enabled_in,
-    set_info_panel_visible_in, set_last_scan_relinked_in, set_last_viewed_import_errors_in,
+    set_info_panel_visible_in, set_last_viewed_import_errors_in,
     set_last_viewed_missing_in, set_library_root_in, set_missing_auto_clean_in,
     set_new_releases_fetch_completed_in, set_new_releases_last_completed_at_in,
     set_onboarding_completed_in, set_online_discovery_banner_completed_in,
@@ -59,11 +59,6 @@ pub fn set_library_root(db: &Db, root: &str) -> Result<(), rusqlite::Error> {
 pub fn get_last_scan_relinked(db: &Db) -> Result<Option<u32>, rusqlite::Error> {
     let conn = db.conn();
     get_last_scan_relinked_in(conn)
-}
-
-pub fn set_last_scan_relinked(db: &Db, count: u32) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
-    set_last_scan_relinked_in(conn, count)
 }
 
 pub fn get_onboarding_completed(db: &Db) -> Result<bool, rusqlite::Error> {

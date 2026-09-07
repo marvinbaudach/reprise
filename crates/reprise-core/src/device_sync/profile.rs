@@ -108,13 +108,6 @@ impl TransferProfile {
         }
     }
 
-    pub fn output_fingerprint(self, track: &SyncTrack) -> &'static str {
-        match self.action_for(track) {
-            TransferAction::CopyOriginal => "copy-original-v1",
-            TransferAction::TranscodeOpus160 => Self::Opus160.fingerprint(),
-            TransferAction::TranscodeMp3(quality) => quality.fingerprint(),
-        }
-    }
 }
 
 fn estimated_transcode_bytes(track: &SyncTrack, bitrate_kbps: u32) -> u64 {

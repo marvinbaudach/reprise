@@ -46,7 +46,14 @@ shared_view=crates/reprise-view/src
 # The queue projection's tail diff (#853) — LastTail, TailChange, the hinted
 # shape in change_from and the identity it is trusted against — 54 production
 # lines.
-view_floor=2191
+# A dead-code sweep then removed 37 lines that no frontend could reach:
+# oklch_light with its two chroma bounds (oklch_clamp is the one in use), and
+# action_copy with the PageActionCopy it alone built, plus the two mnemonics
+# only it read — the device-sync page calls projection::eject_sensitive
+# instead. This lowers the floor for the same reason the preparation-progress
+# API did: presentation code with no consumer left is not shared logic, and a
+# floor held up by dead lines measures nothing.
+view_floor=2154
 
 echo "== Frontend thinness =="
 
@@ -232,7 +239,6 @@ echo "== Dead-code allowlist =="
 # misses the wide one is worse than no gate: it reads as coverage.
 allowlist=$(cat <<'ALLOWLIST'
 crates/reprise-cli/tests/common/mod.rs:1
-crates/reprise-core/src/library/playlists.rs:5
 crates/reprise-gnome/examples/row_loss_dump_repro.rs:2
 crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:1
 crates/reprise-gnome/src/ui/browse/filter_bar.rs:1

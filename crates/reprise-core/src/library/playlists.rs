@@ -115,7 +115,6 @@ fn create_playlist_row(conn: &Connection, name: &str) -> Result<i64, rusqlite::E
 /// stale or absent id can never fabricate a phantom "rename" change (the
 /// event-without-change bug class); this lets a caller drop any pre-check
 /// TOCTOU workaround and simply branch on the returned count.
-#[allow(dead_code)]
 fn rename_in(conn: &Connection, id: i64, name: &str) -> Result<usize, rusqlite::Error> {
     crate::events::in_txn(conn, |conn| {
         let changed = conn.execute(
@@ -200,7 +199,6 @@ fn track_ids_in(conn: &Connection, playlist_id: i64) -> Result<Vec<i64>, rusqlit
 /// Appends tracks to a playlist at the end (appends to the highest position).
 /// Positions are contiguous. Duplicates allowed (Rhythmbox behavior).
 /// All inserts happen in one transaction.
-#[allow(dead_code)]
 fn add_tracks_in(
     conn: &Connection,
     playlist_id: i64,
@@ -348,7 +346,6 @@ fn playlist_role_in(conn: &Connection, id: i64) -> Result<Option<String>, rusqli
 /// Removes tracks at the specified positions and renumbers the remaining
 /// tracks to keep positions contiguous (0..n-1). Multiple removes happen in
 /// one transaction.
-#[allow(dead_code)]
 fn remove_positions_in(
     conn: &Connection,
     playlist_id: i64,
@@ -438,7 +435,6 @@ pub fn escape_like(s: &str) -> String {
 /// Moves a track from one position to another, renumbering all affected
 /// positions to stay contiguous (0..n-1). If `from` or `to` are out of range,
 /// logs a warning and returns Ok (no-op). One transaction.
-#[allow(dead_code)]
 fn move_position_in(
     conn: &Connection,
     playlist_id: i64,
@@ -638,7 +634,6 @@ pub fn smart_rules_to_sql(
 }
 
 /// Converts a serde_json Value to a rusqlite Value.
-#[allow(dead_code)]
 fn json_value_to_sql(v: &serde_json::Value) -> rusqlite::types::Value {
     match v {
         serde_json::Value::Null => rusqlite::types::Value::Null,

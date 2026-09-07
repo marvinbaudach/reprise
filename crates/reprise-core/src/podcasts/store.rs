@@ -372,11 +372,6 @@ pub(crate) fn update_fetch_success_in(
     Ok(())
 }
 
-pub fn update_fetch_not_modified(db: &Db, id: i64, now: i64) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
-    update_fetch_not_modified_in(conn, id, now)
-}
-
 pub(crate) fn update_fetch_not_modified_in(
     conn: &Connection,
     id: i64,
@@ -389,11 +384,6 @@ pub(crate) fn update_fetch_not_modified_in(
         params![id, now],
     )?;
     Ok(())
-}
-
-pub fn update_fetch_failed(db: &Db, id: i64, now: i64) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
-    update_fetch_failed_in(conn, id, now)
 }
 
 pub(crate) fn update_fetch_failed_in(

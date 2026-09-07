@@ -57,15 +57,3 @@ pub fn clear(db: &Db) -> Result<usize, rusqlite::Error> {
     let conn = db.conn();
     conn.execute("DELETE FROM library_exclusions", [])
 }
-
-pub fn clear_paths(db: &Db, paths: &[&Path]) -> Result<usize, rusqlite::Error> {
-    let conn = db.conn();
-    let mut cleared = 0;
-    for path in paths {
-        cleared += conn.execute(
-            "DELETE FROM library_exclusions WHERE path=?1",
-            [path.to_string_lossy()],
-        )?;
-    }
-    Ok(cleared)
-}
