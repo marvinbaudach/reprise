@@ -64,6 +64,7 @@ pub(crate) mod track_list_menu_smoke;
 pub(in crate::ui) mod track_list_missing;
 pub(crate) mod track_list_model;
 pub(in crate::ui) mod track_list_model_change;
+mod track_list_model_move;
 pub(in crate::ui) mod track_list_queue_menu;
 pub(in crate::ui) mod track_list_reload;
 pub(in crate::ui) mod track_list_rescan;

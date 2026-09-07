@@ -44,7 +44,7 @@ use reprise_core::queries::{self, BrowseFilter, QueueItemMetadata};
 use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
-use super::track_list_model_change::ModelChange;
+use super::track_list_model_change::{ModelChange, ModelChangeKind};
 use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
@@ -61,7 +61,7 @@ const _: () = assert!(WINDOW_SIZE as i64 <= reprise_core::queries::MAX_WINDOW_LI
 /// user's visible scroll neighborhood without unbounded growth.
 const MAX_CACHED_WINDOWS: usize = 8;
 
-mod imp {
+pub(super) mod imp {
     use super::*;
     use gio::subclass::prelude::*;
 
@@ -87,6 +87,10 @@ mod imp {
         /// beside the GTK list model, never inside the view model itself.
         pub(super) context_window: Option<Rc<dyn super::super::queue_sections::ContextWindow>>,
         pub cache: BTreeMap<u32, Vec<QueueItemMetadata>>,
+        /// The final query state is already installed during a block move.
+        /// Between its removal and insertion signals this overlay hides the
+        /// destination run and maps intermediate positions around it.
+        pub pending_insert: Option<(u32, u32)>,
         /// QUE-1 section ranges (half-open, model coordinates) for the
         /// Queue source; empty = the whole model is one section. Set via
         /// `TrackListModel::set_sections` BEFORE the query swap whose
@@ -173,11 +177,23 @@ mod imp {
         }
 
         fn n_items(&self) -> u32 {
-            self.state.borrow().total
+            let state = self.state.borrow();
+            state.pending_insert.map_or(state.total, |(_, len)| {
+                super::super::track_list_model_move::intermediate_n_items(state.total, len)
+            })
         }
 
         fn item(&self, position: u32) -> Option<glib::Object> {
             diagnostic_trail::measure_item_call(|| {
+                let position = self
+                    .state
+                    .borrow()
+                    .pending_insert
+                    .map_or(position, |(to, len)| {
+                        super::super::track_list_model_move::intermediate_position(
+                            position, to, len,
+                        )
+                    });
                 self.obj()
                     .queue_item_at(position)
                     .map(|item| glib::BoxedAnyObject::new(item).upcast())
@@ -399,6 +415,10 @@ impl TrackListModel {
         )
     }
 
+    /// Replaces the query state with either one covering-span invalidation or
+    /// a block move. A valid move exposes a shorter intermediate model only
+    /// during its removal signal; all guards and the generation advance occur
+    /// once before either shape emits.
     #[allow(clippy::too_many_arguments)]
     fn set_query_browsed_ai_inner(
         &self,
@@ -510,6 +530,7 @@ impl TrackListModel {
                     && change.position.saturating_add(change.added) <= new_total
             })
             .unwrap_or(ModelChange {
+                kind: ModelChangeKind::Span,
                 position: 0,
                 removed: old_total,
                 added: new_total,
@@ -519,12 +540,19 @@ impl TrackListModel {
             });
         self.imp().generation.set(generation.wrapping_add(1));
         let signal_started = diagnostic_trail::start_reload_step();
-        super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
-            position: change.position,
-            removed: change.removed,
-            added: change.added,
-        });
-        self.items_changed(change.position, change.removed, change.added);
+        match change.kind {
+            ModelChangeKind::Span => {
+                super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
+                    position: change.position,
+                    removed: change.removed,
+                    added: change.added,
+                });
+                self.items_changed(change.position, change.removed, change.added);
+            }
+            ModelChangeKind::BlockMove { from, to, len } => {
+                self.emit_block_move(from, to, len, new_total);
+            }
+        }
         #[cfg(not(test))]
         if let Some((position, n_items)) = query_section_change(change) {
             use gtk4::prelude::SectionModelExt;

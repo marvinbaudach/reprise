@@ -33,6 +33,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use crate::ui::playback::queue_transport::QueueContextWindow;
 
@@ -43,6 +44,7 @@ use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::browse_filter_count;
 use crate::ui::list_geometry::{ListGeometry, RowHeight};
 use crate::ui::track_list::diagnostic_trail::{self, ReloadStep};
+use crate::ui::track_list::reload_anchor_scroll::RestoreSplit;
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
     apply_empty_state, empty_state_for_availability,
@@ -78,31 +80,7 @@ fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
 const TOP_RESTORE_MAX_ATTEMPTS: u8 = 2;
 const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
-#[derive(Clone, Copy)]
-pub(in crate::ui) enum ReloadViewport {
-    PreserveAnchor,
-    /// A sort-field tag save follows the edited row even if playback left a
-    /// deliberate centred destination in this browser place.
-    PostSaveSortAnchor,
-    CenterAnchor,
-    CenterPlayingTrack,
-    CenterPlayingElsePreSearch,
-    /// SEARCH-9: a new result set is read from its top.
-    Top,
-    /// SEARCH-9: an emptied query returns to `Shared::pre_search.anchor`.
-    RestorePreSearch,
-}
-
-pub(in crate::ui) fn viewport_after_clearing(
-    had_query: bool,
-    started_in_search: bool,
-) -> ReloadViewport {
-    match (had_query, started_in_search) {
-        (true, true) => ReloadViewport::CenterPlayingElsePreSearch,
-        (true, false) => ReloadViewport::RestorePreSearch,
-        (false, _) => ReloadViewport::CenterPlayingTrack,
-    }
-}
+pub(in crate::ui) use super::reload_anchor_scroll::{viewport_after_clearing, ReloadViewport};
 
 fn filter_change_viewport(
     previous: &str,
@@ -237,6 +215,7 @@ fn restore_reload_anchor(
     hold: Option<&AdjustmentHold>,
     resolved_ids: Option<Vec<i64>>,
 ) {
+    let mut split = RestoreSplit::default();
     // SEARCH-9: a new result set is read from its top. Doing this before the
     // early return below is what makes the typed-search path cheap — it needs
     // no id list at all, so the sorted full-table query disappears whenever
@@ -263,8 +242,19 @@ fn restore_reload_anchor(
         }
         return;
     }
-    let current_ids = resolved_ids.unwrap_or_else(|| shared.current_view_ids());
+    let current_ids = match resolved_ids {
+        Some(ids) => ids,
+        None => {
+            let started = Instant::now();
+            let ids = shared.current_view_ids();
+            split.ids_ms = started.elapsed().as_millis();
+            ids
+        }
+    };
+    let select_started = Instant::now();
     select_captured_ids(shared, captured, &current_ids);
+    split.select_ms = select_started.elapsed().as_millis();
+    split.apply_started = Some(Instant::now());
 
     if matches!(viewport, ReloadViewport::CenterAnchor) {
         super::reload_anchor_scroll::schedule_centered(
@@ -557,8 +547,18 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     // writes the meaningful destination.
     .filter(|adjustment| adjustment.value() > 0.0)
     .map(|adjustment| AdjustmentHold::new(&adjustment));
+    let had_ids = current_ids.is_some();
+    let query_started = Instant::now();
     run_query(shared, model_change);
+    let query_ms = query_started.elapsed().as_millis();
+    let restore_started = Instant::now();
     restore_reload_anchor(shared, captured, viewport, hold.as_ref(), current_ids);
+    tracing::info!(
+        query_ms,
+        restore_ms = restore_started.elapsed().as_millis(),
+        had_ids,
+        "reload split"
+    );
     if let Some(hold) = hold {
         hold.release_after(SCROLL_ADJUSTMENT_HOLD);
     }
