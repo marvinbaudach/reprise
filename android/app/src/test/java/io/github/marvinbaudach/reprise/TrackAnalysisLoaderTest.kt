@@ -3,11 +3,17 @@ package io.github.marvinbaudach.reprise
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
+
+private object DirectTrackAnalysisDispatcher : CoroutineDispatcher() {
+    override fun dispatch(context: CoroutineContext, block: Runnable) = block.run()
+}
 
 class TrackAnalysisLoaderTest {
     @Test
@@ -26,6 +32,7 @@ class TrackAnalysisLoaderTest {
                 mainHops.add(work)
                 answerQueued.countDown()
             },
+            dispatcher = DirectTrackAnalysisDispatcher,
         )
 
         loader.loadBars(41, 64) {}
