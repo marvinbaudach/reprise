@@ -2,7 +2,7 @@
 slug: night-d-the-loaders-become-coroutines
 worktree: /home/marvin/Projects/reprise/.worktrees/night-d-loaders-coroutines
 branch: refactor/the-loaders-become-coroutines
-phase: blocked
+phase: coded
 created: 2026-09-07
 base: origin/dev
 owns: android/app/src/main/java/io/github/marvinbaudach/reprise/{TrackAnalysisLoader,TrackCover,LibraryWrites,TrackLoader,ArtistPortraitPrefetch}.kt
@@ -146,9 +146,14 @@ choice, not an oversight.
 
 ## Findings
 
-Four of the five owned production files were converted. `TrackCover.kt` was
-left wholly unchanged because `ArtistPortraitLiveRefreshTest.kt` injects its
-`worker` constructor parameter, and that test is outside this package's owned
-file list. Renaming the seam to `dispatcher` therefore cannot keep the existing
-suite compiling without either editing a forbidden file or retaining the old
-executor seam. The conversion was reverted before any TrackCover commit.
+All five owned production files were converted from hand-built executors to
+coroutine-backed serial lanes. Ownership was extended by
+`ArtistPortraitLiveRefreshTest.kt` after checking that no sibling package owns
+it. That ownership check was necessary because the test injects
+`TrackArtwork`'s renamed constructor seam, while another package may edit a
+separate region of the same file tonight; the conversion therefore kept its
+change to the injection and the direct test dispatcher only.
+
+`ActivityPlaybackControls.kt` remains deliberately deferred because converting
+it would require edits outside this package's ownership. The final Android gate
+reported 98 suites and 601 tests, with 0 failures, 0 errors, and 0 skips.
