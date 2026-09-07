@@ -49,6 +49,10 @@ class MainActivityMusicPathsTest {
     fun artistTileOpensItsAlbumsAndNestedAlbumSurvivesRecreate() {
         compose.onNodeWithText("Artists").performClick()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
         assertAbove("First Album", "Second Album")
@@ -81,6 +85,10 @@ class MainActivityMusicPathsTest {
 
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play First Album")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Play First Album").performClick()
 
         assertEquals("Artist One · First Album", application.currentQueue.first().title)

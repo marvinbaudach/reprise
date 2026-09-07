@@ -124,7 +124,10 @@ class MainActivityConfigurationTest {
         // summary row's magnifier is gone for as long as the field is up.
         compose.onNodeWithTag("library-summary-search").assertDoesNotExist()
         compose.onNodeWithContentDescription("Clear search").performClick()
-        compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("200 of 450 artists loaded")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Close search").performClick()
         compose.waitForIdle()
 
@@ -270,8 +273,14 @@ class MainActivityConfigurationTest {
         compose.onNodeWithText("Artists").performClick()
         scrollLibraryListTo("library-artists-list", 210)
         compose.onNodeWithText("Artist 211").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(DEEP_ALBUM).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText(DEEP_ALBUM).performClick()
-        compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("library-album-tracks-list")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         scrollLibraryListTo("library-album-tracks-list", 200)
         compose.waitForIdle()
         scrollLibraryListTo("library-album-tracks-list", 210)
