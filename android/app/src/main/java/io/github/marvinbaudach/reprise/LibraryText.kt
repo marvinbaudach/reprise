@@ -29,9 +29,13 @@ internal fun LibraryArtist.details(): String = "$albumCount albums • $trackCou
  * This is the Kotlin half of a rule that also exists in Rust as
  * `reprise_core::format::format_duration`. The two must agree: the same track
  * shows its length on the desktop and on the phone, and an album total or a
- * podcast episode routinely passes the hour mark. `DurationFormatTest` pins
- * this side against the very cases `crates/reprise-core/src/format.rs` asserts,
- * so a change to one contract fails the other side's test.
+ * podcast episode routinely passes the hour mark.
+ *
+ * What holds them together is `scripts/check-duration-format-parity.sh`, run
+ * from the architecture gate. It reads the assertions out of both
+ * `crates/reprise-core/src/format.rs` and `DurationFormatTest` and fails if a
+ * case the Rust side pins is missing or different here. Adding a case in Rust
+ * without adding it here is a red gate, not a silent divergence.
  *
  * `Locale.ROOT` is deliberate: the Rust side emits ASCII digits, and a
  * locale-dependent `%d` would render them differently on the phone than on the

@@ -14,8 +14,10 @@ successor. **Nine-crate** Cargo workspace:
   `playback`/`media_integration`). **Dependency-pure:** it must never depend
   on gtk4/libadwaita/gstreamer/zbus. Enforced — see Gates.
 - `crates/reprise-platform-linux` — Linux platform backends: GStreamer playback (`player`),
-  MPRIS/D-Bus media integration (`mpris`), MTP device sync, Trash, and the render-data
-  backend that produces the `.reprise-analysis` sidecars.
+  MPRIS/D-Bus media integration (`mpris`), MTP device sync, Trash, and the GStreamer
+  render-data backend that extracts waveform peaks and spectrograms. It only produces that
+  analysis; `reprise-core`'s device sync is what encodes it into the `.reprise-analysis`
+  sidecars that travel with a mirror.
 - `crates/reprise-gnome` — the GTK4/libadwaita frontend. Binary name stays `reprise`.
 - `crates/reprise-view` — the toolkit-free presentation layer: view models, formatting,
   filtering and sorting, column and queue composition, spectral colouring. It depends only

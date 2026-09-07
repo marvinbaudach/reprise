@@ -25,9 +25,6 @@ pub struct SyncDelta {
     pub est_secs: u32,
 }
 
-impl SyncDelta {
-}
-
 pub fn compute_delta(
     selected: &[SyncCandidate],
     files: &[DeviceFileRecord],

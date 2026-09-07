@@ -176,7 +176,7 @@ impl PlaybackSetting {
 /// D-Bus error names that mean no MPRIS player is registered under our name —
 /// i.e. the Reprise app is not running. Anything else is a genuine fault.
 /// Mirrors `reprise-cli`'s `commands::playback::is_absent_player` exactly.
-pub(crate) fn is_absent_player(error_name: &str) -> bool {
+fn is_absent_player(error_name: &str) -> bool {
     matches!(
         error_name,
         "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner"

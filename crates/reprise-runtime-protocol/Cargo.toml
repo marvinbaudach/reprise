@@ -5,7 +5,7 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Versioned command and snapshot contract between the Reprise runtime and its clients"
+description = "Versioned command and snapshot contract for the Reprise D-Bus interfaces and the MCP surface"
 
 [lints]
 workspace = true

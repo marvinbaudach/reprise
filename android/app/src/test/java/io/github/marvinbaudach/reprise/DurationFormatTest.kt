@@ -11,9 +11,14 @@ import org.junit.Test
  * The rule "a duration reads `m:ss`, or `h:mm:ss` past the hour" is written out
  * twice — once in Kotlin, once in `crates/reprise-core/src/format.rs` — because
  * formatting a list row through the FFI would cost a JNI crossing per row per
- * frame. Two copies need a mechanism rather than a comment, so the cases below
- * are exactly the ones `format.rs` asserts. Change the rule on one side and the
- * other side's test fails.
+ * frame.
+ *
+ * Two copies need a mechanism rather than a comment. The mechanism is
+ * `scripts/check-duration-format-parity.sh`: it extracts the asserted
+ * input/output pairs from both files and fails the architecture gate when a
+ * case Rust pins is absent or different here. The first block below is
+ * therefore not decoration — it is the set that script compares against. The
+ * later blocks are extra coverage, which the script permits.
  *
  * The hour cases are not academic: `BrowseTabs` formats a whole album's total
  * duration with this function, and podcast episodes routinely run past an hour.
