@@ -2,7 +2,7 @@
 slug: up-next-and-resort-reload-pay-for-the-change-only-a
 worktree: /home/marvin/Projects/reprise-up-next-and-resort-reload-pay-for-the-change-only-a
 branch: feature/up-next-and-resort-reload-pay-for-the-change-only-a
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-07
 ---
@@ -141,10 +141,38 @@ strand run.
 
 ## §M — measurements (written by the session)
 
-_(filled in after the code phase: worktree release binary, runs A1–A3 of the
-harness, G-A1 against F4–F6 and C1–C3, the `queue tail change` triples per
-gesture.)_
+Release binary of this worktree at `59ffbde758` (after check + refactor),
+harness `~/.local/share/reprise-measure-20260906`, runs SA1–SA3, machine
+quiet (no parallel build). Control = C1–C3 (dev before the previous plan),
+fix reference = F9–F11 (dev after the previous plan, before this strand).
+
+| gesture | metric | control | fix ref (F9–F11) | this strand (SA1–SA3) | gate |
+|---|---|---|---|---|---|
+| G1 delete non-loaded | `now_playing_deferred_ms` | – | 44 (39–48) | **3 (2–3)** | G-A1 < 10 ✓ |
+| G2 delete loaded | `now_playing_deferred_ms` | – | 46 (45–47) | **4 (4–4)** | (not gated) |
+| G3 delete 13 incl. loaded | `now_playing_deferred_ms` | – | 42 (41–43) | **25 (23–32)** | (not gated) |
+| G1 | purge→completed ms | 55 (51–60) | 22 (20–23) | 22 (22–24) | < 30 ✓ |
+| G2 | purge→completed ms | 79 (70–123) | 22 (12–24) | 20 (13–28) | < 30 ✓ |
+| G3 | purge→completed ms | 181 (178–181) | 19 (18–19) | 19 (18–19) | < 30 ✓ |
+| G3 | `mutated_ms` / `advance_ms` | – | 0 / 0 | 0 / 0 | < 10 / < 20 ✓ |
+
+`queue tail change` triples (identical in all three runs): G1 `(55, 1, 0)`,
+G2 `(665, 1, 0)`, G3 `(82, 1783, 1770)` with `tail_len` 1913 — prefix 82,
+suffix 61. The 13 rows G3 deletes are neighbours in the Artist-sorted list
+but scattered through the queue's play order, so the covering span runs from
+the first to the last removed row; that is the extent G-A2 allows, and the
+remaining 25 ms is the cost of re-matching that span. A3's narrowing of
+`sections-changed` was reverted during the refactor (see Deviations); the
+numbers above are with the full sections range.
 
 ## Report
 
-_(Codex's summary from `.pipeline-codex.md`, condensed by the session.)_
+Codex, four commits + two refactor commits, `cargo clippy -D warnings`
+clean, `cargo test -p reprise-view` 123 passed, `cargo test -p reprise-gnome
+queue_` 95 passed, six `ui::delete_tracks::` display tests and
+`nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one`
+passed in isolation. Review (rust-reviewer + plan conformance, refuting
+skeptics): 3 findings, 2 survived — the A3 narrowing skipped the Up Next
+header for hinted changes with `position > 0` (reverted, regression test
+added), and the `player_controller.rs` whitespace (kept, see Deviations —
+the file sits at the 799-line cap).
