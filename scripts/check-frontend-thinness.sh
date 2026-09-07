@@ -43,7 +43,10 @@ shared_view=crates/reprise-view/src
 # unit fields it needs — done, total and the running unit's bytes replacing the
 # run-wide byte pair, plus the units and estimated remaining time the agent
 # surface reads: nine production lines.
-view_floor=2137
+# The queue projection's tail diff (#853) — LastTail, TailChange, the hinted
+# shape in change_from and the identity it is trusted against — 54 production
+# lines.
+view_floor=2191
 
 echo "== Frontend thinness =="
 
