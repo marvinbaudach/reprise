@@ -136,7 +136,7 @@ pub(in crate::ui::style) fn max_contrast_monochrome(background: [u8; 3]) -> [u8;
 /// endpoint that never satisfies the predicate would return a failing color
 /// while looking successful — the one outcome a contrast guarantee must not
 /// produce.
-pub(in crate::ui::style) fn ensure_contrast_by_lightness(
+pub(in crate::ui) fn ensure_contrast_by_lightness(
     color: [u8; 3],
     background: [u8; 3],
     lighten: bool,

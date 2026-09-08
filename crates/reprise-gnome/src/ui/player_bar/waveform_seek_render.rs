@@ -41,7 +41,14 @@ pub(super) fn draw(
     let bar_head_x = (state.fraction * w).clamp(0.0, w);
     let playhead_x = bar_head_x.clamp(1.5, (w - 1.5).max(1.5));
     let cache_live = waveform_surface::cache_is_live(state)
-        && waveform_surface::ensure_cache(state, width, height, area.scale_factor(), widget_colour);
+        && waveform_surface::ensure_cache(
+            state,
+            width,
+            height,
+            area.scale_factor(),
+            widget_colour,
+            appearance,
+        );
     if cache_live {
         waveform_surface::draw_cached_bars(cr, state, w, h, bar_head_x, (r, g, b), appearance);
     } else if state.crossfade_progress < 1.0 && !state.previous_bars.is_empty() {
@@ -283,7 +290,12 @@ fn draw_bars(
             .map(|value| spectral_colour(f64::from(*value)));
         let (r, g, b) = spectral.map_or(accent, |colour| {
             let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
-            scale_chroma(colour.0, colour.1, colour.2, chroma_factor)
+            style.appearance.adjust_spectral(scale_chroma(
+                colour.0,
+                colour.1,
+                colour.2,
+                chroma_factor,
+            ))
         });
         if is_ghost {
             cr.set_source_rgba(

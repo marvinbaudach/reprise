@@ -4,8 +4,10 @@
 //! roles and replaces the fallback renderer's white coming bars with the
 //! current appearance foreground.
 
-use crate::ui::style::color_math::parse_hex_rgb;
+use crate::ui::style::color_math::{ensure_contrast_by_lightness, parse_hex_rgb};
 use crate::ui::style::theme::Theme;
+
+const SPECTRAL_MINIMUM_CONTRAST: f64 = 3.0;
 
 /// Dark coming-side alpha. Measured so deep bass remains visible without
 /// erasing the played/unplayed boundary.
@@ -37,6 +39,7 @@ pub(super) struct WaveformAppearance {
     pub(super) ghost_alpha: f64,
     pub(super) playhead_alpha: f64,
     pub(super) fallback_unplayed: (f64, f64, f64),
+    spectral_background: Option<[u8; 3]>,
 }
 
 impl WaveformAppearance {
@@ -55,6 +58,7 @@ impl WaveformAppearance {
                 ghost_alpha: GHOST_ALPHA,
                 playhead_alpha: PLAYHEAD_ALPHA,
                 fallback_unplayed: (1.0, 1.0, 1.0),
+                spectral_background: None,
             }
         } else {
             Self {
@@ -65,8 +69,32 @@ impl WaveformAppearance {
                 ghost_alpha: LIGHT_GHOST_ALPHA,
                 playhead_alpha: LIGHT_PLAYHEAD_ALPHA,
                 fallback_unplayed: rgb_fraction(theme.light_palette().fg),
+                spectral_background: parse_hex_rgb(theme.light_palette().view_bg),
             }
         }
+    }
+
+    /// Keeps spectral hue and chroma while lowering only OKLab lightness until
+    /// the bar clears graphical contrast on the light view. Dark returns the
+    /// input tuple byte-for-byte.
+    pub(super) fn adjust_spectral(self, colour: (f64, f64, f64)) -> (f64, f64, f64) {
+        let Some(background) = self.spectral_background else {
+            return colour;
+        };
+        let channel = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let original = [channel(colour.0), channel(colour.1), channel(colour.2)];
+        let adjusted =
+            ensure_contrast_by_lightness(original, background, false, SPECTRAL_MINIMUM_CONTRAST)
+                .unwrap_or(original);
+        (
+            f64::from(adjusted[0]) / 255.0,
+            f64::from(adjusted[1]) / 255.0,
+            f64::from(adjusted[2]) / 255.0,
+        )
+    }
+
+    pub(super) fn spectral_cache_key(self) -> Option<[u8; 3]> {
+        self.spectral_background
     }
 }
 

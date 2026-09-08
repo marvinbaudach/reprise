@@ -8,6 +8,41 @@
 use super::super::*;
 use super::{accent_rgb, composited_luminance, dark_waveform_appearance};
 
+#[test]
+fn light_spectral_colours_clear_graphical_contrast_against_the_view() {
+    use crate::ui::style::color_math::{contrast_ratio, parse_hex_rgb};
+
+    for theme in crate::ui::style::theme::Theme::all() {
+        let background =
+            parse_hex_rgb(theme.light_palette().view_bg).expect("view colour is valid");
+        let appearance = WaveformAppearance::for_appearance(false, theme);
+        for chroma_factor in [1.0, 0.725, 0.45] {
+            for step in 0..=100 {
+                let position = f64::from(step) / 100.0;
+                let spectral = spectral_colour(position);
+                let spectral = crate::ui::style::color_math::scale_chroma(
+                    spectral.0,
+                    spectral.1,
+                    spectral.2,
+                    chroma_factor,
+                );
+                let spectral = appearance.adjust_spectral(spectral);
+                let rgb = [
+                    (spectral.0 * 255.0).round() as u8,
+                    (spectral.1 * 255.0).round() as u8,
+                    (spectral.2 * 255.0).round() as u8,
+                ];
+                let ratio = contrast_ratio(rgb, background);
+                assert!(
+                    ratio >= 3.0,
+                    "{theme:?}: light spectral colour at {position:.2} and chroma \
+                     {chroma_factor:.3} reaches only {ratio:.2}:1"
+                );
+            }
+        }
+    }
+}
+
 /// A curve that alternates every point — the beat-to-beat swing that made
 /// neighbouring bars land a third of the axis apart.
 fn jittering_curve(len: usize) -> Vec<u8> {

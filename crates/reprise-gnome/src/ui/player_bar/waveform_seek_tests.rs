@@ -80,6 +80,10 @@ fn dark_waveform_appearance_keeps_every_original_alpha() {
     assert_eq!(appearance.section_mark_alpha, 0.30);
     assert_eq!(appearance.ghost_alpha, 0.40);
     assert_eq!(appearance.playhead_alpha, 0.70);
+    assert_eq!(
+        appearance.adjust_spectral((0.82, 0.67, 0.91)),
+        (0.82, 0.67, 0.91)
+    );
 }
 
 #[test]

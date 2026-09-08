@@ -10,6 +10,7 @@ pub(super) struct SurfaceKey {
     bar_count: usize,
     colour: [u64; 3],
     desaturation: u64,
+    spectral_background: Option<[u8; 3]>,
     /// The colouring the cached bars were painted in. Without it, switching
     /// colouring keeps every other dimension identical and the stale surface
     /// stays on screen.
@@ -25,6 +26,7 @@ impl SurfaceKey {
         colour: (f64, f64, f64),
         desaturation: f64,
         colouring: SeekColouring,
+        appearance: WaveformAppearance,
     ) -> Self {
         Self {
             width,
@@ -33,6 +35,7 @@ impl SurfaceKey {
             bar_count,
             colour: [colour.0.to_bits(), colour.1.to_bits(), colour.2.to_bits()],
             desaturation: desaturation.to_bits(),
+            spectral_background: appearance.spectral_cache_key(),
             colouring,
         }
     }
@@ -78,6 +81,7 @@ pub(super) fn ensure_cache(
     height: i32,
     scale_factor: i32,
     widget_colour: (f64, f64, f64),
+    appearance: WaveformAppearance,
 ) -> bool {
     let key = SurfaceKey::new(
         width,
@@ -87,6 +91,7 @@ pub(super) fn ensure_cache(
         widget_colour,
         state.desaturation_progress,
         state.colouring,
+        appearance,
     );
     if state.surface_key == Some(key)
         && state.mask_surface.is_some()
@@ -95,8 +100,14 @@ pub(super) fn ensure_cache(
         return true;
     }
 
-    let Some((mask, colour)) = build_surfaces(state, width, height, scale_factor, widget_colour)
-    else {
+    let Some((mask, colour)) = build_surfaces(
+        state,
+        width,
+        height,
+        scale_factor,
+        widget_colour,
+        appearance,
+    ) else {
         invalidate(state);
         return false;
     };
@@ -112,6 +123,7 @@ fn build_surfaces(
     height: i32,
     scale_factor: i32,
     widget_colour: (f64, f64, f64),
+    appearance: WaveformAppearance,
 ) -> Option<(ImageSurface, ImageSurface)> {
     let scale_factor = scale_factor.max(1);
     let pixel_width = width.checked_mul(scale_factor)?;
@@ -159,12 +171,12 @@ fn build_surfaces(
 
         let spectral = state.shaped_centroid.get(index).map_or(accent, |value| {
             let value = spectral_colour(f64::from(*value));
-            scale_chroma(
+            appearance.adjust_spectral(scale_chroma(
                 value.0,
                 value.1,
                 value.2,
                 1.0 - 0.55 * state.desaturation_progress,
-            )
+            ))
         });
         colour_cr.set_source_rgba(spectral.0, spectral.1, spectral.2, 1.0);
         rounded_bar(&colour_cr, x, y, bar_width, bar_height, bar_radius);
@@ -300,6 +312,8 @@ mod tests {
         colour: (f64, f64, f64),
         desaturation: f64,
     ) -> SurfaceKey {
+        let appearance =
+            WaveformAppearance::for_appearance(true, crate::ui::style::theme::Theme::DEFAULT);
         SurfaceKey::new(
             width,
             height,
@@ -308,6 +322,7 @@ mod tests {
             colour,
             desaturation,
             SeekColouring::DEFAULT,
+            appearance,
         )
     }
 
@@ -337,8 +352,31 @@ mod tests {
         assert_ne!(base, key(400, 28, 1, 80, OPAQUE, 1.0), "desaturation");
         assert_ne!(
             base,
-            SurfaceKey::new(400, 28, 1, 80, OPAQUE, 0.0, SeekColouring::Solid),
+            SurfaceKey::new(
+                400,
+                28,
+                1,
+                80,
+                OPAQUE,
+                0.0,
+                SeekColouring::Solid,
+                WaveformAppearance::for_appearance(true, crate::ui::style::theme::Theme::DEFAULT,),
+            ),
             "colouring"
+        );
+        assert_ne!(
+            base,
+            SurfaceKey::new(
+                400,
+                28,
+                1,
+                80,
+                OPAQUE,
+                0.0,
+                SeekColouring::DEFAULT,
+                WaveformAppearance::for_appearance(false, crate::ui::style::theme::Theme::DEFAULT,),
+            ),
+            "appearance"
         );
     }
 
