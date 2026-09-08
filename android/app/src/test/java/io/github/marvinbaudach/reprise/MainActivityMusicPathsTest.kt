@@ -4,6 +4,7 @@ import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -47,13 +48,24 @@ class MainActivityMusicPathsTest {
     @Test
     fun artistTileOpensItsAlbumsAndNestedAlbumSurvivesRecreate() {
         compose.onNodeWithText("Artists").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
         assertAbove("First Album", "Second Album")
         compose.onNodeWithText("Artist 1 • First Album").assertDoesNotExist()
         compose.onNodeWithText("Someone Else · Album").assertDoesNotExist()
         compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
 
@@ -80,6 +92,10 @@ class MainActivityMusicPathsTest {
 
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play First Album")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Play First Album").performClick()
 
         assertEquals("Artist One · First Album", application.currentQueue.first().title)
@@ -119,6 +135,9 @@ class MainActivityMusicPathsTest {
         compose.onNodeWithContentDescription("Back to artists").performClick()
 
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.waitForIdle()
         compose.activityRule.scenario.recreate()
         shadowOf(Looper.getMainLooper()).idle()
@@ -133,12 +152,36 @@ class MainActivityMusicPathsTest {
         assertEquals(Lifecycle.State.RESUMED, compose.activityRule.scenario.state)
         compose.onNodeWithContentDescription("Back to artists").assertDoesNotExist()
         compose.onAllNodesWithText("Artist 1")[0].assertIsDisplayed()
+
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("First Album").fetchSemanticsNodes().isNotEmpty()
+        }
+        application.blockFirstAlbumOpen()
+        compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.firstAlbumOpenHasStarted() }
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+        application.releaseFirstAlbumOpen()
+        compose.waitUntil(timeoutMillis = 5_000) { application.firstAlbumOpenHasFinished() }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+        compose.onAllNodesWithText("Artist 1")[0].assertIsDisplayed()
     }
 
     private fun openDeepAlbum() {
         compose.onNodeWithText("Artists").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 1").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Deep Album").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Deep Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play Deep Album").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     private fun assertAbove(upperText: String, lowerText: String) {

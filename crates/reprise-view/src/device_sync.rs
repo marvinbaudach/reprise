@@ -75,6 +75,7 @@ const REMOVING_TITLE: &str = N_!("Removing · {done} of {total}");
 const CONVERTING_TITLE: &str = N_!("Converting · {done} of {total}");
 const COPYING_TITLE: &str = N_!("Copying · {done} of {total}");
 const WRITING_ANALYSIS_TITLE: &str = N_!("Writing analysis · {done} of {total}");
+const WRITING_LYRICS_TITLE: &str = N_!("Writing lyrics · {done} of {total}");
 const WRITING_PLAYLISTS_TITLE: &str = N_!("Writing playlists · {done} of {total}");
 const WRITING_TRACK_METADATA_TITLE: &str = N_!("Writing track metadata · {done} of {total}");
 
@@ -362,6 +363,7 @@ pub fn transfer_progress_copy(
                 SyncStep::Transcoding => CONVERTING_TITLE,
                 SyncStep::Copying => COPYING_TITLE,
                 SyncStep::WritingAnalysis => WRITING_ANALYSIS_TITLE,
+                SyncStep::WritingLyrics => WRITING_LYRICS_TITLE,
                 SyncStep::WritingPlaylists => WRITING_PLAYLISTS_TITLE,
                 SyncStep::WritingTrackMetadata => WRITING_TRACK_METADATA_TITLE,
             };
@@ -375,9 +377,7 @@ pub fn transfer_progress_copy(
             } else {
                 0.0
             };
-            let speed = if matches!(step, SyncStep::Copying | SyncStep::WritingAnalysis)
-                && bytes_per_second > 0
-            {
+            let speed = if step.reports_transfer_rate() && bytes_per_second > 0 {
                 ProgressSpeed::BytesPerSecond(bytes_per_second)
             } else {
                 ProgressSpeed::Unavailable

@@ -89,6 +89,7 @@ fn stopped_restored_track_marks_the_clicked_waveform_position_until_play() {
             [],
         )
         .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
     controller.restore_session_queue(
         QueueSnapshot {
             position: Some(0),
@@ -117,6 +118,46 @@ fn stopped_restored_track_marks_the_clicked_waveform_position_until_play() {
     assert_eq!(
         calls.played_paths.borrow().as_slice(),
         ["/music/restored.flac"]
+    );
+    assert_eq!(calls.sought_positions.borrow().as_slice(), [30_000]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stopped_greeting_scrub_applies_to_the_greeting_when_play_starts() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls.clone(), test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/restored.flac', 'Restored', 'Artist', 120000, 0);
+             INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (9, '/music/greeting.flac', 'Greeting', 'Artist', 120000, 0);",
+        )
+        .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![9, 7]));
+    controller.restore_session_queue(
+        QueueSnapshot {
+            position: Some(0),
+            ids: vec![7],
+            order: vec![0],
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+
+    controller.seek_or_start(30_000);
+    controller.toggle_pause();
+
+    assert_eq!(
+        calls.played_paths.borrow().as_slice(),
+        ["/music/greeting.flac"]
     );
     assert_eq!(calls.sought_positions.borrow().as_slice(), [30_000]);
 }
@@ -208,6 +249,7 @@ fn repeat_one_restart_does_not_apply_a_stopped_track_mark() {
             [],
         )
         .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
     controller.restore_session_queue(
         QueueSnapshot {
             position: Some(0),
@@ -304,6 +346,81 @@ fn restored_episode_marks_the_clicked_position_until_play() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn restoring_an_episode_discards_an_armed_random_greeting() {
+    use reprise_core::library::session::{SessionEpisode, SessionEpisodeOrigin};
+    use reprise_core::podcasts::feed::ParsedEpisode;
+    use reprise_core::podcasts::store::{self, NewSubscription};
+    use reprise_core::podcasts::PodcastKind;
+
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let calls = Rc::new(PlaybackCalls::default());
+    let controller = controller(calls, test_root.path());
+    crate::test_db::connection(&controller.conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (9, '/music/greeting.flac', 'Greeting', 'Artist', 120000, 0)",
+            [],
+        )
+        .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![9]));
+    controller.restore_session_queue(
+        QueueSnapshot {
+            position: None,
+            ids: Vec::new(),
+            order: Vec::new(),
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+    assert_eq!(controller.pending_random_start_track_id(), Some(9));
+
+    let subscription_id = store::add_or_restore(
+        &controller.conn,
+        &NewSubscription {
+            kind: PodcastKind::Rss,
+            feed_url: "https://podcast.test/feed.xml".into(),
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let episode_id = store::upsert_episode(
+        &controller.conn,
+        subscription_id,
+        &ParsedEpisode {
+            guid: "episode-greeting".into(),
+            title: "Restored episode".into(),
+            image_url: None,
+            audio_url: "https://podcast.test/episode.mp3".into(),
+            page_url: None,
+            published_at: Some(1),
+            duration_secs: Some(3_600),
+        },
+        1,
+    )
+    .unwrap()
+    .unwrap()
+    .episode_id;
+
+    assert!(controller.restore_session_episode(Some(&SessionEpisode {
+        episode_id,
+        origin: SessionEpisodeOrigin::Direct,
+        neighbour_episode_ids: vec![episode_id],
+    })));
+
+    assert_eq!(controller.pending_random_start_track_id(), None);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn stopped_restored_track_retries_the_clicked_position_once_after_preroll() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
@@ -318,6 +435,7 @@ fn stopped_restored_track_retries_the_clicked_position_once_after_preroll() {
             [],
         )
         .unwrap();
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
     controller.restore_session_queue(
         QueueSnapshot {
             position: Some(0),

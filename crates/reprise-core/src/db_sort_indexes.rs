@@ -135,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_chain_upgrades_v80_through_sync_log_and_sort_index_to_v82() {
+    fn migration_chain_upgrades_v80_through_sync_log_and_sort_index_to_v83() {
         let conn = open_without_sort_index_at(80);
         replace_sync_events_with_v80_schema(&conn);
 
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            82
+            83
         );
         assert_eq!(
             conn.query_row("SELECT kind FROM sync_events", [], |row| {
@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_chain_upgrades_v81_with_only_the_sort_index_step() {
+    fn migration_chain_upgrades_v81_through_the_sort_index_to_v83() {
         let conn = open_without_sort_index_at(81);
 
         crate::db::migrate_connection(&conn).unwrap();
@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            82
+            83
         );
         assert!(conn
             .query_row(

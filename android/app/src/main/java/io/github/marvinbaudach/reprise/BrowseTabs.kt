@@ -56,7 +56,7 @@ internal fun TitlesTab(
     playback: LibraryPlayback,
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
-    loadMore: (LibraryWindowRange) -> Unit,
+    loadMore: suspend (LibraryWindowRange) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (tracks.rows.isEmpty()) {
@@ -131,7 +131,7 @@ internal fun AlbumDetailPage(
     closeAlbum: () -> Unit,
     play: (Int) -> Unit,
     albumRequestedOffset: Long?,
-    loadMoreAlbumTracks: (LibraryWindowRange) -> Unit,
+    loadMoreAlbumTracks: suspend (LibraryWindowRange) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -165,6 +165,7 @@ internal fun AlbumDetailPage(
                 lastRequestedOffset = albumRequestedOffset,
                 play = play,
                 loadMore = loadMoreAlbumTracks,
+                owner = selectedAlbum.album.identity(),
             )
         }
     }
@@ -189,10 +190,10 @@ internal fun ArtistsTab(
     artistRequestedOffset: Long?,
     artistAlbumsRequestedOffset: Long? = null,
     albumRequestedOffset: Long? = null,
-    loadMoreArtists: (LibraryWindowRange) -> Unit,
-    loadMoreArtistTracks: (LibraryWindowRange) -> Unit,
-    loadMoreArtistAlbums: (LibraryWindowRange) -> Unit = {},
-    loadMoreAlbumTracks: (LibraryWindowRange) -> Unit = {},
+    loadMoreArtists: suspend (LibraryWindowRange) -> Unit,
+    loadMoreArtistTracks: suspend (LibraryWindowRange) -> Unit,
+    loadMoreArtistAlbums: suspend (LibraryWindowRange) -> Unit = {},
+    loadMoreAlbumTracks: suspend (LibraryWindowRange) -> Unit = {},
 ) {
     if (selectedAlbum != null) {
         AlbumDetailPage(
@@ -302,10 +303,11 @@ private fun ArtistDetailSections(
     tracksRequestedOffset: Long?,
     openAlbum: (LibraryAlbum) -> Unit,
     play: (Int) -> Unit,
-    loadMoreAlbums: (LibraryWindowRange) -> Unit,
-    loadMoreTracks: (LibraryWindowRange) -> Unit,
+    loadMoreAlbums: suspend (LibraryWindowRange) -> Unit,
+    loadMoreTracks: suspend (LibraryWindowRange) -> Unit,
 ) {
     val key = LibraryListKey.ARTIST_ALBUMS
+    val owner = artist.name
     val head = rememberArtistArtworkVisual(
         name = artist.name,
         representativeUri = artist.representativeUri,
@@ -318,9 +320,9 @@ private fun ArtistDetailSections(
     val itemCount = albumItemCount + trackContent.size +
         (if (albumContinuation == null) 0 else 1) +
         (if (untaggedTracks.rows.isEmpty()) 0 else 1) + 1
-    val anchor = surfaceState.scrollPosition(key).within(itemCount)
+    val anchor = surfaceState.scrollPosition(key, owner).within(itemCount)
     val listState = rememberLibraryListState(anchor)
-    ObserveLibraryListAnchor(key, listState, surfaceState)
+    ObserveLibraryListAnchor(key, listState, surfaceState, owner)
     val metrics = libraryFrameMetrics(surfaceLayout)
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val portraitCenterFraction = if (maxHeight.value > 0f) {
@@ -344,7 +346,7 @@ private fun ArtistDetailSections(
                 item(key = "artist-albums-heading") { SectionHeading("Albums") }
                 items(
                     albums.rows,
-                    key = { album -> "artist-album-${album.artist}\u0000${album.title}" },
+                    key = { album -> "artist-album-${album.identity()}" },
                 ) { album -> AlbumRow(album, openAlbum) }
                 albumContinuation?.let { request ->
                     item(key = "artist-albums-load-${request.offset}") {
@@ -410,7 +412,7 @@ private fun AlbumRows(
     albums: LibraryWindow<LibraryAlbum>,
     requestedOffset: Long?,
     openAlbum: (LibraryAlbum) -> Unit,
-    loadMore: (LibraryWindowRange) -> Unit,
+    loadMore: suspend (LibraryWindowRange) -> Unit,
     key: LibraryListKey,
 ) {
     val anchor = surfaceState.scrollPosition(key).within(albums.itemCount(requestedOffset))
@@ -491,7 +493,7 @@ private fun ArtistRows(
     artists: LibraryWindow<LibraryArtist>,
     requestedOffset: Long?,
     openArtist: (LibraryArtist) -> Unit,
-    loadMore: (LibraryWindowRange) -> Unit,
+    loadMore: suspend (LibraryWindowRange) -> Unit,
 ) {
     val key = LibraryListKey.ARTISTS
     val anchor = surfaceState.scrollPosition(key).within(artists.itemCount(requestedOffset))
@@ -554,7 +556,7 @@ private fun ArtistRow(artist: LibraryArtist, openArtist: (LibraryArtist) -> Unit
 private fun <T> LazyListScope.windowContinuation(
     window: LibraryWindow<T>,
     lastRequestedOffset: Long?,
-    loadMore: (LibraryWindowRange) -> Unit,
+    loadMore: suspend (LibraryWindowRange) -> Unit,
 ) {
     val request = window.nextRequest(lastRequestedOffset) ?: return
     item(key = "load-window-${request.offset}") {

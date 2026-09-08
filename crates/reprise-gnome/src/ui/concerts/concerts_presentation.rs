@@ -7,6 +7,8 @@ use reprise_view::columns::{ColumnKey, ConcertColumn};
 use std::cmp::Ordering;
 
 use crate::ui::strings;
+pub(super) use crate::ui::table_columns::sort::SortDirection;
+use crate::ui::table_columns::sort::{self, SortKey, SortSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ConcertSortKey {
@@ -29,12 +31,6 @@ pub(super) fn sort_key_for_id(id: Option<&str>) -> Option<ConcertSortKey> {
         Some(id) if id == ConcertColumn::Source.as_str() => Some(ConcertSortKey::Source),
         _ => None,
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SortDirection {
-    Ascending,
-    Descending,
 }
 
 pub(in crate::ui) fn format_event_date(date_key: &str, _today: NaiveDate) -> String {
@@ -67,24 +63,44 @@ pub(super) fn row_distance(location: Option<(f64, f64)>, event: &ConcertRow) -> 
 }
 
 pub(super) fn sort_rows(rows: &mut [ConcertRow], key: ConcertSortKey, direction: SortDirection) {
-    rows.sort_by(|left, right| match key {
-        ConcertSortKey::Date => compare_optional(
-            NaiveDate::parse_from_str(&left.date_key, "%Y-%m-%d").ok(),
-            NaiveDate::parse_from_str(&right.date_key, "%Y-%m-%d").ok(),
-            direction,
-        ),
-        ConcertSortKey::Distance => {
-            compare_optional(left.distance_km, right.distance_km, direction)
+    sort::sort_rows(rows, &SortSpec::new(key, direction));
+}
+
+impl SortKey<ConcertRow> for ConcertSortKey {
+    fn cmp(&self, left: &ConcertRow, right: &ConcertRow) -> Ordering {
+        self.compare(left, right, SortDirection::Ascending)
+    }
+
+    fn cmp_descending(&self, left: &ConcertRow, right: &ConcertRow) -> Ordering {
+        self.compare(left, right, SortDirection::Descending)
+    }
+}
+
+impl ConcertSortKey {
+    fn compare(self, left: &ConcertRow, right: &ConcertRow, direction: SortDirection) -> Ordering {
+        match self {
+            ConcertSortKey::Date => sort::compare_optional(
+                NaiveDate::parse_from_str(&left.date_key, "%Y-%m-%d").ok(),
+                NaiveDate::parse_from_str(&right.date_key, "%Y-%m-%d").ok(),
+                direction,
+            ),
+            ConcertSortKey::Distance => {
+                sort::compare_optional(left.distance_km, right.distance_km, direction)
+            }
+            ConcertSortKey::Artist => {
+                sort::compare_text(&left.artist_name, &right.artist_name, direction)
+                    .then_with(|| date_tiebreak(left, right))
+            }
+            ConcertSortKey::City => sort::compare_text(&left.city, &right.city, direction)
+                .then_with(|| date_tiebreak(left, right)),
+            ConcertSortKey::Venue => sort::compare_text(&left.venue, &right.venue, direction)
+                .then_with(|| date_tiebreak(left, right)),
+            ConcertSortKey::Source => {
+                sort::compare_text(source_name(left), source_name(right), direction)
+                    .then_with(|| date_tiebreak(left, right))
+            }
         }
-        ConcertSortKey::Artist => compare_text(&left.artist_name, &right.artist_name, direction)
-            .then_with(|| date_tiebreak(left, right)),
-        ConcertSortKey::City => compare_text(&left.city, &right.city, direction)
-            .then_with(|| date_tiebreak(left, right)),
-        ConcertSortKey::Venue => compare_text(&left.venue, &right.venue, direction)
-            .then_with(|| date_tiebreak(left, right)),
-        ConcertSortKey::Source => compare_text(source_name(left), source_name(right), direction)
-            .then_with(|| date_tiebreak(left, right)),
-    });
+    }
 }
 
 pub(super) fn source_name(row: &ConcertRow) -> &str {
@@ -94,60 +110,21 @@ pub(super) fn source_name(row: &ConcertRow) -> &str {
         .unwrap_or(row.provider.as_str())
 }
 
-/// Empty and whitespace-only values are missing.
+#[cfg(test)]
 fn present(value: &str) -> Option<&str> {
     let trimmed = value.trim();
     (!trimmed.is_empty()).then_some(trimmed)
 }
 
-fn compare_text(left: &str, right: &str, direction: SortDirection) -> Ordering {
-    match (present(left), present(right)) {
-        (Some(left), Some(right)) => {
-            let ordering = left
-                .to_lowercase()
-                .cmp(&right.to_lowercase())
-                .then_with(|| left.cmp(right));
-            match direction {
-                SortDirection::Ascending => ordering,
-                SortDirection::Descending => ordering.reverse(),
-            }
-        }
-        // Missing values stay last independently of direction, matching
-        // `compare_optional` for dates and distances.
-        (Some(_), None) => Ordering::Less,
-        (None, Some(_)) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
-    }
-}
-
-/// Immer aufsteigend, unabhängig von `direction`: der Entscheider stellt
-/// Stabilität her, er drückt keine Ordnung aus. Würde er mitdrehen, sprängen
-/// gleichnamige Zeilen beim Richtungswechsel doppelt.
+/// Always ascending, independently of `direction`: the tiebreaker provides
+/// stability rather than expressing the selected order. Reversing it would
+/// make equal-name rows jump twice when the direction changes.
 fn date_tiebreak(left: &ConcertRow, right: &ConcertRow) -> Ordering {
-    compare_optional(
+    sort::compare_optional(
         NaiveDate::parse_from_str(&left.date_key, "%Y-%m-%d").ok(),
         NaiveDate::parse_from_str(&right.date_key, "%Y-%m-%d").ok(),
         SortDirection::Ascending,
     )
-}
-
-fn compare_optional<T: PartialOrd>(
-    left: Option<T>,
-    right: Option<T>,
-    direction: SortDirection,
-) -> Ordering {
-    match (left, right) {
-        (Some(left), Some(right)) => {
-            let ordering = left.partial_cmp(&right).unwrap_or(Ordering::Equal);
-            match direction {
-                SortDirection::Ascending => ordering,
-                SortDirection::Descending => ordering.reverse(),
-            }
-        }
-        (Some(_), None) => Ordering::Less,
-        (None, Some(_)) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
-    }
 }
 
 pub(super) fn count_line(shown: usize, total: usize) -> String {

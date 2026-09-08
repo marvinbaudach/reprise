@@ -5,10 +5,11 @@ emit_routes() {
     local android=false
     local gnome=false
     local core=false
+    local display=false
     local path
 
     if (( $# == 0 )); then
-        printf 'android=true\ngnome=false\ncore=true\n'
+        printf 'android=true\ngnome=false\ncore=true\ndisplay=true\n'
         return
     fi
 
@@ -47,7 +48,12 @@ emit_routes() {
         esac
     done
 
-    printf 'android=%s\ngnome=%s\ncore=%s\n' "$android" "$gnome" "$core"
+    if [[ $gnome == true || $core == true ]]; then
+        display=true
+    fi
+
+    printf 'android=%s\ngnome=%s\ncore=%s\ndisplay=%s\n' \
+        "$android" "$gnome" "$core" "$display"
 }
 
 case "${1:-}" in
@@ -65,7 +71,7 @@ case "${1:-}" in
         base_sha=$4
         head_sha=$5
         if [[ $event == schedule || $event == push && $ref == refs/heads/main ]]; then
-            printf 'android=true\ngnome=true\ncore=true\n'
+            printf 'android=true\ngnome=true\ncore=true\ndisplay=true\n'
             exit 0
         fi
         if [[ $event == workflow_dispatch || -z $base_sha || $base_sha =~ ^0+$ ]] || \

@@ -86,7 +86,7 @@ pub(in crate::ui) fn install(
         })
     };
     install_refresh_callbacks(
-        |refresh| player.add_on_queue_changed(move || refresh()),
+        |refresh| player.add_on_queue_changed_deferred(move || refresh()),
         |refresh| player.add_on_external_changed(move |_| refresh()),
         refresh.clone() as RefreshCallback,
     );

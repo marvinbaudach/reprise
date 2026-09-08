@@ -4,6 +4,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
+use reprise_core::db::Db;
 use reprise_core::media_integration::MediaIntegrationHandles;
 use reprise_core::playback::{PlaybackBackend, PlayerEvent};
 use reprise_core::waveform::RenderDataBackend;
@@ -35,6 +36,7 @@ impl VisibleView {
 }
 
 pub(in crate::ui) type ViewRefillIds = Rc<dyn Fn() -> VisibleView>;
+pub(in crate::ui) type RandomStartChooser = dyn FnMut(&Db) -> Result<Vec<i64>, rusqlite::Error>;
 
 /// Whether presenting a track should start the playback pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

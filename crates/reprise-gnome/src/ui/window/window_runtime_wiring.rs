@@ -5,17 +5,13 @@
 //! every participant exists.
 
 use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
 
-use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::browser::BrowserPlace;
 use reprise_core::db::Db;
 use reprise_core::library::session::SessionState;
 use reprise_core::library::watcher::WatcherHandle;
-use reprise_core::view_source::ViewSource;
 
 use super::cover_download_batch::CoverDownloadBatch;
 use super::first_run::FirstRunDecision;
@@ -29,15 +25,55 @@ use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
+use super::{
+    library_shell, podcast_refresh_scheduler, section_search as section_search_ui,
+    section_search_wiring, spectrogram_backend, table_columns, window_navigation, window_smoke,
+};
+use crate::ui::{
+    compact_mode_controls, compact_mode_suggestion, first_run, help,
+    library_doctor as library_doctor_ui, lyrics_smoke, mounts, playlist_io, primary_menu,
+    scan_flow, scan_worker, session_restore as session_restore_ui, shortcuts,
+    spectrogram_batch_progress, startup_quiet, startup_report, view_session as view_session_ui,
+};
 
 #[path = "window_artwork_permission_wiring.rs"]
 mod artwork_permission_wiring;
+#[path = "wiring/clear_all.rs"]
+mod clear_all;
+#[path = "wiring/close.rs"]
+mod close;
+#[path = "wiring/compact_mode.rs"]
+mod compact_mode;
+#[path = "wiring/deep_link.rs"]
+mod deep_link;
 #[path = "window_deferred_source_wiring.rs"]
 mod deferred_source_wiring;
+#[path = "wiring/deferred_sources.rs"]
+mod deferred_sources;
 #[path = "window_external_changes_wiring.rs"]
 pub(in crate::ui) mod external_changes_wiring;
+#[path = "wiring/library_doctor.rs"]
+mod library_doctor;
+#[path = "wiring/listeners.rs"]
+mod listeners;
+#[path = "wiring/menu.rs"]
+mod menu;
+#[path = "wiring/nav_back.rs"]
+mod nav_back;
+#[path = "wiring/playing_source.rs"]
+mod playing_source;
 #[path = "window_playing_source_wiring.rs"]
 mod playing_source_wiring;
+#[path = "wiring/section_search.rs"]
+mod section_search;
+#[path = "wiring/session_restore.rs"]
+mod session_restore;
+#[path = "wiring/view_session.rs"]
+mod view_session;
+#[path = "wiring/mod.rs"]
+mod wiring;
+
+use wiring::WiringScratch;
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct RuntimeWiring<'a> {
@@ -92,704 +128,21 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
 }
 
 pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
-    let RuntimeWiring {
-        app,
-        window,
-        conn,
-        db_path,
-        header,
-        search_entry,
-        search,
-        search_toggle,
-        sidebar_toggle,
-        sidebar_page,
-        split_view,
-        track_list,
-        sidebar,
-        player,
-        stats_view,
-        concerts_view,
-        releases_view,
-        podcasts_view,
-        youtube_view,
-        radio_view,
-        podcasts_runtime,
-        device_sync,
-        content_stack,
-        library_doctor_navigation,
-        doctor_chrome,
-        window_title,
-        scan_controls,
-        toast_overlay,
-        watcher_state,
-        library_player_bar,
-        info_panel,
-        session_state,
-        geometry_guard,
-        scan_button,
-        minimal_view,
-        preferences,
-        cover_batch,
-        lyrics_batch,
-        first_run_decision,
-        nav_history,
-        content_nav,
-        active_content_focus,
-        metadata_navigator,
-    } = args;
+    let scratch = WiringScratch::new(&args);
 
-    deferred_source_wiring::install(
-        preferences,
-        cover_batch,
-        toast_overlay,
-        stats_view,
-        concerts_view,
-        releases_view,
-        podcasts_view,
-        youtube_view,
-        radio_view,
-    );
-
-    let refresh_doctor_views = {
-        let stats = stats_view.clone();
-        let conn = conn.clone();
-        Rc::new(move || {
-            stats.if_materialized(|view| view.refresh(&conn));
-        }) as Rc<dyn Fn()>
-    };
-    let library_doctor = super::library_doctor::LibraryDoctorLauncher::new(
-        super::library_doctor::LibraryDoctorContext {
-            conn,
-            db_path,
-            content_navigation: content_nav,
-            content_stack,
-            doctor_navigation: library_doctor_navigation,
-            doctor_chrome,
-            window,
-            track_list,
-            scan_controls,
-            fingerprint: Arc::new(reprise_platform_linux::fingerprint::GstreamerFingerprintBackend),
-            sidebar,
-            toast_overlay,
-            refresh_views: refresh_doctor_views,
-        },
-    );
-    super::startup_report::mark("LibraryDoctorLauncher::new");
-    library_doctor.observe_tag_writes_from(track_list);
-    {
-        let library_doctor = Rc::downgrade(&library_doctor);
-        stats_view.on_materialized(move |stats| {
-            stats.set_on_unify_spellings(move |ids| {
-                if let Some(library_doctor) = library_doctor.upgrade() {
-                    library_doctor.open_for_selection(ids);
-                }
-            });
-        });
-    }
-
-    let active_content_focus = active_content_focus.clone();
-
-    let minimal_toggle = minimal_view.clone();
-    let compact_preferences = preferences.clone();
-    super::compact_mode_controls::install(
-        window,
-        minimal_view,
-        player.as_ref().map(|player| &player.compact_player),
-        conn,
-        Rc::new(move || compact_preferences.present()),
-    );
-    super::startup_report::mark("compact_mode_controls::install");
-    super::compact_mode_suggestion::install(window, toast_overlay, minimal_view, player.is_some());
-
-    let menu_preferences = preferences.clone();
-    let findings_library_doctor = library_doctor.clone();
-    let menu_library_doctor = library_doctor.clone();
-    let stop_player = player.as_ref().map(|player| {
-        let player = Rc::downgrade(player);
-        Rc::new(move || {
-            if let Some(player) = player.upgrade() {
-                player.reset_to_stopped();
-            }
-        }) as Rc<dyn Fn()>
-    });
-    // Built here rather than in `window.rs` for the same reason the fingerprint
-    // backend above is: this is where the window layer may name a platform
-    // concrete, and the composition root is held below 600 lines.
-    let spectrogram_batch = super::spectrogram_backend::build(conn.clone(), db_path.to_path_buf());
-    super::startup_report::mark("spectrogram_backend::build");
-    let active_table = super::table_columns::active_table(
-        window,
-        content_stack,
-        content_nav,
-        track_list,
-        concerts_view,
-        releases_view,
-        radio_view,
-    );
-    super::primary_menu::install(
-        header,
-        window,
-        &active_table,
-        super::primary_menu::Callbacks {
-            on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
-            on_library_doctor: Rc::new(move || menu_library_doctor.open()),
-            on_library_doctor_findings: Rc::new(move || findings_library_doctor.open_findings()),
-            on_import_playlist: {
-                let sidebar = sidebar.clone();
-                Rc::new(move || sidebar.activate_import_playlist())
-            },
-            on_stop_playback: stop_player,
-            on_preferences: Rc::new(move || menu_preferences.present()),
-            on_about: {
-                let window = window.clone();
-                let conn = conn.clone();
-                let db_path = db_path.to_path_buf();
-                Rc::new(move || crate::ui::about::present(&window, &conn, &db_path))
-            },
-        },
-    );
-    super::startup_report::mark("primary_menu::install");
-    app.set_accels_for_action("win.open-primary-menu", &["F10"]);
-    super::spectrogram_batch_progress::install(scan_controls, &spectrogram_batch);
-    {
-        // The menu action used to own the batch for the window lifetime.
-        // Completion now owns it instead, so the idle start and later scans
-        // still reach the same resumable batch after that action is gone.
-        let batch = spectrogram_batch.clone();
-        scan_controls.add_on_complete(move || batch.start());
-    }
-    // The colour of the seek bar arrives the way its shape already does: by
-    // itself. The run is resumable, so a library that is already analyzed ends
-    // it immediately and shows nothing; the scan card cancels a visible run.
-    // This automatic start shares the one post-frame quiet gate. A completed
-    // user-requested scan still starts immediately through the callback above.
-    {
-        let batch = spectrogram_batch.clone();
-        super::startup_quiet::run_after_quiet(move || batch.start());
-    }
-
-    playing_source_wiring::install(
-        app,
-        window,
-        player.as_ref(),
-        info_panel,
-        metadata_navigator,
-        podcasts_view,
-        youtube_view,
-        radio_view,
-    );
-    super::startup_report::mark("playing_source_wiring::install");
-
-    if player.is_some() {
-        // NAV-2 Back: pop the most recent place and route there without
-        // re-recording (begin/end_back around the synchronous re-route).
-        let back_action = gtk4::gio::SimpleAction::new("nav-back", None);
-        {
-            let nav_history = nav_history.clone();
-            let sidebar = sidebar.clone();
-            let track_list = track_list.clone();
-            let content_nav = content_nav.clone();
-            let content_stack = content_stack.clone();
-            let window_title = window_title.clone();
-            let active_content_focus = active_content_focus.clone();
-            back_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_back_from(track_list.browser_place()) else {
-                    tracing::debug!("nav back: history is empty");
-                    return;
-                };
-                nav_history.begin_back();
-                crate::ui::sidebar_session::sync_current_source(
-                    &sidebar.shared,
-                    &track_list.current_source(),
-                );
-                nav_history.record_route(&place);
-                super::library_shell::route_to_place(
-                    &place,
-                    &sidebar,
-                    &track_list,
-                    super::library_shell::ContentPages::new(&content_nav, &content_stack),
-                    &window_title,
-                    &active_content_focus,
-                    "nav back",
-                );
-                nav_history.end_back();
-            });
-        }
-        window.add_action(&back_action);
-        app.set_accels_for_action("win.nav-back", &["<Alt>Left"]);
-
-        // NAV-2 Forward: the browser counterpart — returns to the place the
-        // last Back left, until a new navigation invalidates it.
-        let forward_action = gtk4::gio::SimpleAction::new("nav-forward", None);
-        {
-            let nav_history = nav_history.clone();
-            let sidebar = sidebar.clone();
-            let track_list = track_list.clone();
-            let content_nav = content_nav.clone();
-            let content_stack = content_stack.clone();
-            let window_title = window_title.clone();
-            let active_content_focus = active_content_focus.clone();
-            forward_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_forward_from(track_list.browser_place()) else {
-                    tracing::debug!("nav forward: nothing ahead");
-                    return;
-                };
-                nav_history.begin_back();
-                crate::ui::sidebar_session::sync_current_source(
-                    &sidebar.shared,
-                    &track_list.current_source(),
-                );
-                nav_history.record_route(&place);
-                super::library_shell::route_to_place(
-                    &place,
-                    &sidebar,
-                    &track_list,
-                    super::library_shell::ContentPages::new(&content_nav, &content_stack),
-                    &window_title,
-                    &active_content_focus,
-                    "nav forward",
-                );
-                nav_history.end_back();
-            });
-        }
-        window.add_action(&forward_action);
-        app.set_accels_for_action("win.nav-forward", &["<Alt>Right"]);
-
-        // Browser-style mouse navigation buttons: 8 (back) / 9 (forward)
-        // fire the same actions as Alt+Left / Alt+Right. One gesture
-        // listening to all buttons, claiming ONLY 8/9 so every other button
-        // passes through untouched; capture phase on the toplevel so it
-        // works over every view.
-        // input-parity: ACC-8 keyboard=alt-left-right
-        let mouse_nav = gtk4::GestureClick::builder()
-            .button(0)
-            .propagation_phase(gtk4::PropagationPhase::Capture)
-            .build();
-        {
-            let window = window.downgrade();
-            mouse_nav.connect_pressed(move |gesture, _n, _x, _y| {
-                let action = match gesture.current_button() {
-                    8 => "nav-back",
-                    9 => "nav-forward",
-                    _ => return,
-                };
-                gesture.set_state(gtk4::EventSequenceState::Claimed);
-                if let Some(window) = window.upgrade() {
-                    gtk4::gio::prelude::ActionGroupExt::activate_action(&window, action, None);
-                }
-            });
-        }
-        window.add_controller(mouse_nav);
-
-        // Dev/verification hook (permanent, like `REPRISE_SMOKE_ACTIVATE`):
-        // `REPRISE_SMOKE_JUMP=1` fires the NAV-9b jump action ~2s after
-        // startup (past the other smoke hooks' idle work) and the NAV-2
-        // back action ~2s later — the exact same `gio` actions Ctrl+L and
-        // Alt+Left run. Headless E2E asserts the resulting routing +
-        // selection log lines.
-        if std::env::var("REPRISE_SMOKE_JUMP").is_ok() {
-            // Mirrors the acceptance repro: open Queue through the sidebar,
-            // then jump, then back — each step two seconds apart, past
-            // startup idle work.
-            let sidebar_for_smoke = sidebar.clone();
-            gtk4::glib::timeout_add_seconds_local_once(2, move || {
-                tracing::info!("smoke: selecting queue via sidebar");
-                sidebar_for_smoke.refresh_and_select(ViewSource::Queue, "smoke jump precondition");
-            });
-            let window_for_jump = window.clone();
-            gtk4::glib::timeout_add_seconds_local_once(4, move || {
-                tracing::info!("smoke: firing jump-to-now-playing");
-                gtk4::gio::prelude::ActionGroupExt::activate_action(
-                    &window_for_jump,
-                    "jump-to-now-playing",
-                    None,
-                );
-            });
-            let window_for_back = window.clone();
-            gtk4::glib::timeout_add_seconds_local_once(6, move || {
-                tracing::info!("smoke: firing nav-back");
-                gtk4::gio::prelude::ActionGroupExt::activate_action(
-                    &window_for_back,
-                    "nav-back",
-                    None,
-                );
-            });
-        }
-    }
-    super::startup_report::mark("navigation actions");
-
-    // SEARCH-8a: one transient query for the active view. Built before the
-    // routing below so the first route already lands in the right scope.
-    let section_search =
-        super::section_search::SectionSearch::new(search_entry, search, search_toggle);
-    super::section_search_wiring::install(
-        &section_search,
-        &super::section_search_wiring::SectionSearchViews {
-            track_list,
-            podcasts_view,
-            youtube_view,
-            radio_view,
-            releases_view,
-            concerts_view,
-            library_doctor: &library_doctor,
-        },
-    );
-
-    let clear_all = gtk4::gio::SimpleAction::new("clear-all-filters", None);
-    {
-        let section_search = section_search.clone();
-        clear_all.connect_activate(move |_, _| {
-            // FIL-2a: the current view only — its query and its facets.
-            section_search.clear_all();
-        });
-    }
-    window.add_action(&clear_all);
-    {
-        let section_search = section_search.clone();
-        track_list.set_on_search_cleared(move || {
-            section_search.clear_active_query();
-        });
-    }
-    {
-        let window = window.clone();
-        track_list.set_on_clear_all(move || {
-            gtk4::prelude::ActionGroupExt::activate_action(&window, "clear-all-filters", None);
-        });
-    }
-    {
-        let navigator = metadata_navigator.clone();
-        track_list.set_on_scope_cleared(move || {
-            navigator.leave_scope();
-        });
-    }
-
-    {
-        let lyrics_batch = lyrics_batch.clone();
-        let cover_batch = cover_batch.clone();
-        let previous_session = session_state.clone();
-        let current_library_root = reprise_core::library::settings::get_library_root(conn)
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "could not read library root for lyrics due-check");
-                None
-            });
-        super::startup_quiet::run_after_quiet(move || {
-            lyrics_batch.start_after_cover(
-                &cover_batch,
-                &previous_session,
-                current_library_root.as_deref(),
-            );
-        });
-    }
-    app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
-    app.set_accels_for_action("win.preferences", &["<Control>comma"]);
-    app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
-    app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
-
-    super::window_navigation::wire_sidebar_toggle(sidebar_toggle, split_view, sidebar_page, conn);
-    let show_content_if_collapsed =
-        super::window_navigation::show_content_callback(split_view, content_nav);
-    super::library_shell::wire_source_routing(
-        sidebar,
-        nav_history,
-        track_list,
-        stats_view,
-        concerts_view,
-        releases_view,
-        podcasts_view,
-        youtube_view,
-        radio_view,
-        conn,
-        content_nav,
-        content_stack,
-        window_title,
-        show_content_if_collapsed,
-        &active_content_focus,
-        &section_search,
-    );
-    {
-        let track_list = track_list.clone();
-        section_search.observe(content_stack, window_title, move || {
-            track_list.current_source()
-        });
-    }
-    section_search.observe_doctor_review(library_doctor_navigation);
-    podcasts_view.on_materialized({
-        let conn = conn.clone();
-        let db_path = db_path.to_path_buf();
-        let podcasts_runtime = podcasts_runtime.clone();
-        move |podcasts_view| {
-            super::podcast_refresh_scheduler::arm(
-                &conn,
-                &db_path,
-                &podcasts_runtime,
-                podcasts_view,
-            );
-        }
-    });
-
-    let track_list_weak = Rc::downgrade(track_list);
-    sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {
-        Some(track_list) => track_list.reload(),
-        None => tracing::warn!("track list reload skipped: track list is gone"),
-    });
-    let sidebar_weak = Rc::downgrade(sidebar);
-    track_list.set_on_sidebar_playlist_drop(move |playlist_id, playlist_name, ids| {
-        match sidebar_weak.upgrade() {
-            Some(sidebar) => sidebar.handle_playlist_drop(playlist_id, playlist_name, ids),
-            None => {
-                tracing::warn!("sidebar is gone; cannot dispatch simulated playlist drop");
-                false
-            }
-        }
-    });
-    let sidebar_weak = Rc::downgrade(sidebar);
-    track_list.set_on_sidebar_queue_drop(move |ids| match sidebar_weak.upgrade() {
-        Some(sidebar) => sidebar.handle_queue_drop(ids),
-        None => {
-            tracing::warn!("sidebar is gone; cannot dispatch simulated queue drop");
-            false
-        }
-    });
-
-    let search_restore_guard = super::view_session::new_search_restore_guard();
-    {
-        // SEARCH-8a: the track list answers to the header entry only while a
-        // track section is the visible one. A query typed in Podcasts must
-        // not silently re-filter Music behind the user's back.
-        let section_search = section_search.clone();
-        super::view_session::wire_search(
-            search_entry,
-            track_list.clone(),
-            search_restore_guard.clone(),
-            Rc::new(move || {
-                section_search.is_active(reprise_view::search_scope::SearchScope::Tracks)
-                    || section_search.is_active(reprise_view::search_scope::SearchScope::Missing)
-            }),
-        );
-    }
-    super::view_session::arm_smoke(
-        search_entry,
-        track_list,
-        sidebar,
-        window_title,
-        &search_restore_guard,
-    );
-    let focus_active_content: Rc<dyn Fn() -> bool> = {
-        let active_content_focus = active_content_focus.clone();
-        Rc::new(move || active_content_focus.focus())
-    };
-    super::shortcuts::wire(
-        app,
-        window,
-        search,
-        super::shortcuts::ShortcutHooks::for_section_search(
-            focus_active_content,
-            section_search.clone(),
-        ),
-        player.clone(),
-    );
-
-    super::scan_flow::wire_scan_button(
-        scan_controls,
-        window,
-        toast_overlay,
-        db_path.to_path_buf(),
-        track_list.clone(),
-        sidebar.clone(),
-        watcher_state.clone(),
-    );
-    super::scan_flow::arm_smoke_rescan(
-        scan_controls,
-        toast_overlay,
-        db_path.to_path_buf(),
-        track_list.clone(),
-        sidebar.clone(),
-        watcher_state.clone(),
-    );
-    start_persisted_watcher(
-        conn,
-        db_path,
-        session_state,
-        scan_controls,
-        track_list,
-        sidebar,
-        watcher_state,
-    );
-    super::startup_report::mark("start_persisted_watcher");
-    external_changes_wiring::start_external_changes_refresh(
-        db_path,
-        track_list,
-        sidebar,
-        device_sync,
-    );
-    super::startup_report::mark("start_external_changes_refresh");
-    wire_queue_episode_marker(track_list, player.as_ref());
-    super::mounts::install(&super::mounts::MountWiring {
-        conn,
-        db_path,
-        controls: scan_controls,
-        toast_overlay,
-        track_list,
-        sidebar,
-        watcher_state,
-    });
-    super::startup_report::mark("mounts::install");
-
-    super::playlist_io::wire_import_action(window, toast_overlay, conn.clone(), sidebar);
-    super::startup_report::mark("playlist_io::wire_import_action");
-    super::playlist_io::arm_smoke_m3u(conn.clone(), toast_overlay, sidebar.clone());
-    super::window_smoke::arm_bar_position(conn, library_player_bar);
-    super::lyrics_smoke::arm(player.as_ref(), info_panel, conn);
-
-    super::session_restore::restore_runtime(player.as_ref(), session_state);
-    super::startup_report::mark("session_restore::restore_runtime");
-    // START-3: restore the last visible place, but not the Back/Forward stack.
-    // The Music root remains a separate remembered place so an absolute
-    // sidebar click still restores its own refinements.
-    let startup_place = super::session_restore::startup_place(session_state);
-    let library_root = session_state
-        .library_root
-        .clone()
-        .unwrap_or_else(|| BrowserPlace::from(ViewSource::Library));
-    nav_history.restore(startup_place.clone(), library_root);
-    nav_history.begin_back();
-    super::library_shell::route_to_place(
-        &crate::ui::nav_history::NavPlace::browser(startup_place.clone()),
-        sidebar,
-        track_list,
-        super::library_shell::ContentPages::new(content_nav, content_stack),
-        window_title,
-        &active_content_focus,
-        "session restore",
-    );
-    super::startup_report::mark("route_to_place");
-    nav_history.end_back();
-    track_list.finish_startup_load(&startup_place);
-    // START-3: the routing above owns the model; this owns the viewport.
-    // Order matters — the view must exist before its rows can be centered.
-    track_list.center_loaded_track();
-    super::startup_report::mark("center_loaded_track");
-    super::session_restore::wire_close(
-        window,
-        conn,
-        track_list,
-        player.as_ref(),
-        session_state,
-        geometry_guard,
-        nav_history,
-    );
-    super::session_restore::arm_seed_close(window);
-    let present_rhythmbox_import = {
-        let preferences = Rc::downgrade(preferences);
-        Rc::new(move || {
-            if let Some(preferences) = preferences.upgrade() {
-                preferences.present_rhythmbox_import_dialog();
-            }
-        }) as Rc<dyn Fn()>
-    };
-    let start_scan_of = {
-        let db_path = db_path.to_path_buf();
-        let scan_controls = scan_controls.clone();
-        let toast_overlay = toast_overlay.clone();
-        let track_list = track_list.clone();
-        let sidebar = sidebar.clone();
-        let watcher_state = watcher_state.clone();
-        Rc::new(move |folder| {
-            super::scan_worker::spawn_scan(
-                folder,
-                db_path.clone(),
-                scan_controls.clone(),
-                toast_overlay.clone(),
-                track_list.clone(),
-                sidebar.clone(),
-                watcher_state.clone(),
-            );
-        }) as Rc<dyn Fn(PathBuf)>
-    };
-    super::first_run::run(
-        window,
-        scan_button,
-        scan_controls,
-        conn,
-        first_run_decision,
-        &start_scan_of,
-        &present_rhythmbox_import,
-    );
-    super::startup_report::mark("first_run::run");
-    // `RAD-5`: "Near you" without a stored location hands off to the
-    // location setting in Preferences, the same deep-link shape
-    // `present_rhythmbox_import` above already uses.
-    let deep_link_preferences = Rc::downgrade(preferences);
-    radio_view.on_materialized(move |radio| {
-        radio.set_on_location_settings(move || {
-            if let Some(preferences) = deep_link_preferences.upgrade() {
-                preferences.present_location_settings();
-            }
-        });
-    });
-    active_content_focus.focus_later_if_unset(window);
-    minimal_view.apply_initial();
-    super::startup_report::mark("minimal_view::apply_initial");
-    super::window_smoke::arm_quit(window);
-    super::startup_quiet::arm(window);
-}
-
-fn start_persisted_watcher(
-    conn: &Rc<Db>,
-    db_path: &Path,
-    previous_session: &SessionState,
-    scan_controls: &ScanControls,
-    track_list: &Rc<TrackList>,
-    sidebar: &Rc<Sidebar>,
-    watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
-) {
-    let root = {
-        let conn = &conn;
-        reprise_core::library::settings::get_library_root(conn)
-    };
-    match root {
-        Ok(Some(root)) => {
-            let start = if reprise_core::library::startup_tasks::should_run_time_window(
-                reprise_core::library::startup_tasks::TimeWindowTask::LibraryScan,
-                previous_session,
-                &root,
-            ) {
-                super::scan_flow::start_or_restart_watcher
-            } else {
-                super::scan_flow::start_or_restart_live_watcher
-            };
-            start(
-                watcher_state,
-                &PathBuf::from(root),
-                db_path.to_path_buf(),
-                scan_controls.clone(),
-                Rc::downgrade(track_list),
-                Rc::downgrade(sidebar),
-            );
-        }
-        Ok(None) => tracing::debug!("no persisted library root; watcher not started at startup"),
-        Err(error) => tracing::error!(%error, "failed to read persisted library root at startup"),
-    }
-}
-
-/// Keeps the Queue surfaces' now-playing marker in step with a queued episode.
-///
-/// The track-side marker is driven by `playing_track_id`, written when a track
-/// starts. An episode never goes through that path — it plays through the
-/// external-media controller — so without this the app can be playing a queued
-/// episode while every queue surface shows nothing as playing. The Podcasts and
-/// YouTube views already subscribe to the same signal for their own marker;
-/// this adds the queue's.
-fn wire_queue_episode_marker(track_list: &Rc<TrackList>, player: Option<&Rc<PlayerController>>) {
-    let Some(player) = player else {
-        return;
-    };
-    let track_list = Rc::downgrade(track_list);
-    player.add_on_external_changed(move |snapshot| {
-        let Some(track_list) = track_list.upgrade() else {
-            return;
-        };
-        let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
-        track_list.set_playing_episode(episode_mark);
-    });
+    // This order is load-bearing: listeners precede session restore, and close
+    // wiring follows view-session wiring.
+    deferred_sources::wire_deferred_sources(&args);
+    library_doctor::wire_library_doctor(&args, &scratch);
+    compact_mode::wire_compact_mode(&args);
+    menu::wire_menu(&args, &scratch);
+    playing_source::wire_playing_source(&args);
+    nav_back::wire_nav_back(&args, &scratch);
+    section_search::wire_section_search(&args, &scratch);
+    clear_all::wire_clear_all(&args, &scratch);
+    listeners::wire_listeners(&args);
+    view_session::wire_view_session(&args, &scratch);
+    close::wire_close(&args);
+    session_restore::wire_session_restore(&args, &scratch);
+    deep_link::wire_deep_link(&args, &scratch);
 }

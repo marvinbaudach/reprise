@@ -1,5 +1,7 @@
 //! Tests for queue_transport.rs (extracted to keep the source under the 800-line gate).
 
+use std::cell::Cell;
+
 use super::*;
 
 /// Context queue seeded with `ids`, currently playing the one at
@@ -56,6 +58,69 @@ fn browse_11_trashing_loaded_track_requests_immediate_queue_advance() {
 }
 
 #[test]
+fn clear_removed_prefed_next_clears_the_backend_synchronously() {
+    let prefed_next = Cell::new(Some(20));
+    let cleared = Cell::new(false);
+
+    assert!(
+        crate::ui::playback::queue_change_dispatch::clear_removed_prefed_next(
+            &prefed_next,
+            &[20, 30],
+            || cleared.set(true),
+        )
+    );
+
+    assert!(
+        cleared.get(),
+        "set_next(None) must run before purge returns"
+    );
+    assert_eq!(prefed_next.get(), None);
+}
+
+#[test]
+fn purge_queue_ids_clears_a_removed_prefed_next_before_other_work() {
+    let implementation = include_str!("queue_transport.rs");
+    let method = implementation
+        .split("pub(in crate::ui) fn purge_queue_ids")
+        .nth(1)
+        .expect("purge_queue_ids implementation");
+    let clear_prefed = method
+        .find("self.clear_prefed_next_if_removed(ids);")
+        .expect("purge must clear a removed pre-fed next item");
+    let read_playing = method
+        .find("let playing =")
+        .expect("purge must read the playing track");
+
+    assert!(
+        clear_prefed < read_playing,
+        "the pre-fed next item must be cleared before other purge work"
+    );
+}
+
+#[test]
+fn queue_change_log_carries_phase_timings() {
+    let implementation = include_str!("queue_change_dispatch.rs");
+    let method = implementation
+        .split("pub(in crate::ui) fn notify_queue_changed")
+        .nth(1)
+        .expect("notify_queue_changed implementation");
+    let event = method
+        .split("tracing::info!(")
+        .nth(1)
+        .expect("up next changed event")
+        .split(");")
+        .next()
+        .expect("up next changed fields");
+
+    assert!(event.contains("mirror_ms"));
+    assert!(event.contains("listeners_ms"));
+    assert!(event.contains("synchronous_listeners_ms"));
+    assert!(event.contains("now_playing_enqueue_ms"));
+    assert!(event.contains("feed_ms"));
+    assert!(event.contains("\"up next changed\""));
+}
+
+#[test]
 fn queue_purge_without_a_loaded_deleted_track_is_immediate() {
     let plan = queue_purge_plan(&[20, 30], Some(10));
 
@@ -80,12 +145,12 @@ fn stopped_toggle_starts_current_queue_track_without_autoplay() {
     );
 }
 
-// START-3: a normal start already selected and centered the loaded track, so
+// START-4: a normal start already selected and centered the loaded track, so
 // the Play that starts it must not scroll the list a second time. Only that
 // first Play is exempt — once anything has been presented, the flag is gone
 // and NAV-10b's explicit-transport reveal applies again.
 #[test]
-fn start_3_first_play_after_a_restart_does_not_reveal_the_loaded_track_again() {
+fn start_4_first_play_after_a_restart_does_not_reveal_the_loaded_track_again() {
     let restored = Some(reprise_core::up_next::QueueItem::Track(42));
 
     assert_eq!(

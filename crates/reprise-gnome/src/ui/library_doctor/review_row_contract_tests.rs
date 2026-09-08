@@ -310,9 +310,10 @@ fn doc_9b_a_stale_row_names_its_reason_where_the_click_happens() {
 
     assert!(widgets.source.text().contains("Stale"));
     assert_eq!(
-        widgets.root.tooltip_text().as_deref(),
+        crate::ui::lazy_tooltip::text_of(&widgets.root).as_deref(),
         Some("This file changed after the scan — scan again to include this fix.")
     );
+    assert!(widgets.root.has_tooltip());
     assert!(!widgets.selected.is_sensitive());
     assert!(stale
         .accessible_description()
@@ -325,7 +326,8 @@ fn doc_9b_a_stale_row_names_its_reason_where_the_click_happens() {
     );
 
     assert!(!widgets.source.text().contains("Stale"));
-    assert_eq!(widgets.root.tooltip_text(), None);
+    assert_eq!(crate::ui::lazy_tooltip::text_of(&widgets.root), None);
+    assert!(!widgets.root.has_tooltip());
 }
 
 #[test]

@@ -38,13 +38,15 @@ use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
-use crate::ui::tag_edit::tag_reload_anchor::{post_save_reload_anchor, OpenedReloadState};
+use crate::ui::tag_edit::tag_reload_anchor::{
+    post_save_reload_anchor, save_patches_sort_key, OpenedReloadState,
+};
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
 use crate::ui::tag_edit::tag_write_admission;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
-    refresh_after_tag_mutation_with_anchor, refresh_after_tag_mutation_with_view_ids,
+    refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_save_change,
 };
 use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
@@ -226,8 +228,7 @@ pub(in crate::ui) fn begin_for_ids(shared: &Rc<Shared>, ids: &[i64]) {
 /// track actually present in it); `None` here already covers the cheap
 /// "nothing to browse" case (0 or 1 visible tracks) without paying for the
 /// tag-data query at all.
-fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot> {
-    let ids = shared.current_view_ids();
+fn browsable_snapshot(shared: &Rc<Shared>, ids: &[i64]) -> Option<tag_editor::BrowseSnapshot> {
     if ids.len() <= 1 {
         return None;
     }
@@ -275,7 +276,7 @@ fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot>
     };
     let mut tracks = Vec::with_capacity(ids.len());
     let mut bitrates = Vec::with_capacity(ids.len());
-    for id in &ids {
+    for id in ids {
         if let Some(track) = by_id.get(id) {
             let (session_track, bitrate) = session_track_from_model(track);
             tracks.push(session_track);
@@ -295,37 +296,47 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     };
     let conn = shared.conn.clone();
     let shared_for_saved = shared.clone();
-    let browse = browsable_snapshot(shared);
-    let opened_reload = OpenedReloadState {
-        anchor: capture_reload_anchor(shared),
-        view_ids: browse
-            .as_ref()
-            .map(tag_editor::BrowseSnapshot::ids)
-            .unwrap_or_default(),
-    };
+    let view_ids = shared.current_view_ids();
+    let browse = browsable_snapshot(shared, &view_ids);
+    let view_len = view_ids.len();
+    let snapshot_len = browse.as_ref().map_or(0, |snapshot| snapshot.tracks.len());
+    tracing::info!(view_len, snapshot_len, "tag editor view snapshot");
+    let reload_view_ids = reload_view_ids_at_open(&view_ids, browse.as_ref());
+    let opened_reload = OpenedReloadState::at_open(capture_reload_anchor(shared), reload_view_ids);
     let on_write_started = shared
         .on_tag_write_started
         .borrow()
         .clone()
         .unwrap_or_else(|| Rc::new(|| {}));
-    tag_editor::present(
+    let _ = tag_editor::present(
         &window,
         &conn,
         tracks,
         bitrates,
         browse,
-        on_write_started,
-        move |writes, report| {
-            finish_apply(
-                &shared_for_saved,
-                &writes,
-                &report,
-                ApplyOrigin::TrackList,
-                Some(opened_reload.clone()),
-            );
+        &shared.cover_loader,
+        tag_editor::PresentCallbacks {
+            on_write_started,
+            on_saved: move |writes: Vec<TrackWrite>, report, write_ms, tracks| {
+                finish_apply(
+                    &shared_for_saved,
+                    &writes,
+                    &report,
+                    ApplyOrigin::TrackList,
+                    Some(opened_reload.clone()),
+                    write_ms,
+                    tracks,
+                );
+            },
         },
     );
-    tracing::debug!("tag editor presented");
+}
+
+fn reload_view_ids_at_open(
+    current_view_ids: &[i64],
+    _browse: Option<&tag_editor::BrowseSnapshot>,
+) -> Vec<i64> {
+    current_view_ids.to_vec()
 }
 
 /// G1-adjacent (import-hint fix): a single-track open by path, used by the
@@ -357,21 +368,26 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         .borrow()
         .clone()
         .unwrap_or_else(|| Rc::new(|| {}));
-    tag_editor::present(
+    let _ = tag_editor::present(
         &window,
         &conn,
         vec![session_track],
         &[seed.bitrate_kbps],
         None,
-        on_write_started,
-        move |writes, report| {
-            finish_apply(
-                &shared_for_saved,
-                &writes,
-                &report,
-                ApplyOrigin::ImportHint,
-                None,
-            );
+        &shared.cover_loader,
+        tag_editor::PresentCallbacks {
+            on_write_started,
+            on_saved: move |writes: Vec<TrackWrite>, report, write_ms, tracks| {
+                finish_apply(
+                    &shared_for_saved,
+                    &writes,
+                    &report,
+                    ApplyOrigin::ImportHint,
+                    None,
+                    write_ms,
+                    tracks,
+                );
+            },
         },
     );
 }
@@ -401,8 +417,9 @@ pub(in crate::ui) fn spawn_save(
     widgets: SaveProgressWidgets,
     writes: Vec<TrackWrite>,
     on_write_started: &Rc<dyn Fn()>,
-    on_finished: impl Fn(Vec<TrackWrite>, TagBatchReport) + 'static,
+    on_finished: impl Fn(Vec<TrackWrite>, TagBatchReport, u128, usize) + 'static,
 ) {
+    let write_started = std::time::Instant::now();
     let SaveProgressWidgets {
         dialog,
         save_button,
@@ -478,8 +495,9 @@ pub(in crate::ui) fn spawn_save(
     glib::spawn_future_local(async move {
         match result_rx.recv().await {
             Ok(Ok(report)) => {
+                let write_ms = write_started.elapsed().as_millis();
                 dialog.close();
-                on_finished(writes_for_result, report);
+                on_finished(writes_for_result, report, write_ms, total);
             }
             Ok(Err(error)) => {
                 tracing::error!(%error, "tag-edit save worker could not open the database");
@@ -507,66 +525,94 @@ fn finish_apply(
     report: &TagBatchReport,
     origin: ApplyOrigin,
     opened_reload: Option<OpenedReloadState>,
+    write_ms: u128,
+    tracks: usize,
 ) {
+    let reload_started = std::time::Instant::now();
+    let mut reload_deferred = false;
+    let mut reload_receipt = None;
+    let mut delta = false;
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
+    let has_pre_save_view = opened_reload
+        .as_ref()
+        .is_some_and(|state| !state.view_ids.is_empty());
+    let before_len = opened_reload
+        .as_ref()
+        .map_or(0, |state| state.view_ids.len());
+    let after_ids = has_pre_save_view.then(|| shared.current_view_ids());
+    let after_len = after_ids.as_ref().map_or(0, Vec::len);
+    let first_mismatch = opened_reload
+        .as_ref()
+        .zip(after_ids.as_ref())
+        .map_or(-1, |(state, after)| {
+            tag_save_refresh::first_view_mismatch(&state.view_ids, after)
+        });
     if updated > 0 {
         let tag_changed_paths: Vec<PathBuf> = writes
             .iter()
             .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
             .map(|write| write.path.clone())
             .collect();
-        let has_pre_save_view = opened_reload
-            .as_ref()
-            .is_some_and(|state| !state.view_ids.is_empty());
         let live_reload = opened_reload.unwrap_or_else(|| OpenedReloadState {
             anchor: capture_reload_anchor(shared),
             view_ids: shared.current_view_ids(),
         });
         let sort_field = shared.sort.borrow().field.clone();
+        let post_save_sort_anchor = save_patches_sort_key(&report.updated_ids, writes, &sort_field);
         let layout = crate::ui::track_list::track_list_geometry::layout(
             shared,
             live_reload.anchor.row_height,
             live_reload.view_ids.len(),
         );
-        let save_anchor = if let Some(layout) = layout.as_ref() {
-            post_save_reload_anchor(
-                live_reload.anchor,
-                &report.updated_ids,
-                writes,
-                &sort_field,
-                &live_reload.view_ids,
-                layout,
-            )
-        } else {
-            let mut anchor = live_reload.anchor;
-            anchor.selected_ids = report.updated_ids.clone();
-            anchor
-        };
+        let save_anchor = post_save_reload_anchor(
+            live_reload.anchor,
+            &report.updated_ids,
+            writes,
+            &sort_field,
+            &live_reload.view_ids,
+            layout.as_ref(),
+        );
         if !tag_changed_paths.is_empty() {
-            let tag_changed_ids: Vec<i64> = writes
-                .iter()
-                .filter(|write| {
-                    !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id)
-                })
-                .map(|write| write.id)
-                .collect();
+            reload_deferred = true;
+            let tag_changed_ids = tag_save_refresh::tag_changed_ids(writes, &report.updated_ids);
             if has_pre_save_view {
-                refresh_after_tag_mutation_with_view_ids(
-                    shared,
-                    &tag_changed_ids,
-                    &tag_changed_paths,
-                    save_anchor,
+                let after_ids = after_ids.expect("pre-save view has a matching current view");
+                let generation = shared.model.generation();
+                let model_change = tag_save_refresh::tag_save_model_change(
                     &live_reload.view_ids,
-                    shared.current_view_ids(),
+                    &after_ids,
+                    &tag_changed_ids,
+                    generation,
                 );
+                delta = model_change.is_some();
+                if let Some(model_change) = model_change {
+                    reload_receipt = Some(refresh_after_tag_mutation_with_save_change(
+                        shared,
+                        &tag_changed_ids,
+                        &tag_changed_paths,
+                        save_anchor,
+                        &live_reload.view_ids,
+                        after_ids,
+                        model_change,
+                    ));
+                } else {
+                    reload_receipt = Some(refresh_after_tag_mutation_with_save_anchor(
+                        shared,
+                        &tag_changed_ids,
+                        &tag_changed_paths,
+                        save_anchor,
+                        post_save_sort_anchor,
+                    ));
+                }
             } else {
-                refresh_after_tag_mutation_with_anchor(
+                reload_receipt = Some(refresh_after_tag_mutation_with_save_anchor(
                     shared,
                     &tag_changed_ids,
                     &tag_changed_paths,
                     save_anchor,
-                );
+                    post_save_sort_anchor,
+                ));
             }
         } else {
             let source = shared.source.borrow().clone();
@@ -580,7 +626,26 @@ fn finish_apply(
             }
         }
     }
-    tracing::info!(updated, failed, "tag-edit batch completed");
+    let log_completed = move || {
+        tag_save_refresh::log_batch_completed(&tag_save_refresh::BatchCompletion {
+            write_ms,
+            tracks,
+            reload_ms: reload_started.elapsed().as_millis(),
+            reload_metrics: reload_receipt.and_then(|receipt| receipt.get()),
+            delta,
+            updated,
+            failed,
+            has_pre_save_view,
+            before_len,
+            after_len,
+            first_mismatch,
+        });
+    };
+    if reload_deferred {
+        tag_save_refresh::after_deferred_reload(log_completed);
+    } else {
+        log_completed();
+    }
 
     if report.failures.is_empty() {
         // ImportHint (the "Open in Tag Editor" fix for an import HINT row)
@@ -686,6 +751,7 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
             anchor: capture_reload_anchor(&shared),
             view_ids: shared.current_view_ids(),
         };
+        let write_started = std::time::Instant::now();
         let report = tag_write_admission::acquire(&db_path).and_then(|lock_attempt| {
             reprise_core::db::Db::open_migrated(Some(&db_path))
                 .map_err(|error| tag_write_admission::TagWriteAdmissionFailure {
@@ -696,6 +762,8 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
                     apply_track_writes(&worker_conn, &writes, lock_attempt, &mut |_, _| {})
                 })
         });
+        let write_ms = write_started.elapsed().as_millis();
+        let tracks = writes.len();
         match report {
             Ok(report) => {
                 finish_apply(
@@ -704,6 +772,8 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
                     &report,
                     ApplyOrigin::TrackList,
                     Some(opened_reload),
+                    write_ms,
+                    tracks,
                 );
             }
             Err(failure) => {
@@ -714,86 +784,5 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
 }
 
 #[cfg(test)]
-mod task_5_6_tests {
-    use super::*;
-
-    #[test]
-    fn healed_import_hint_refreshes_in_place_without_a_success_toast() {
-        assert_eq!(completion_toast(ApplyOrigin::ImportHint, 1, 0), None);
-        assert_eq!(
-            completion_toast(ApplyOrigin::TrackList, 1, 0).as_deref(),
-            Some("Updated 1 track")
-        );
-        assert_eq!(
-            completion_toast(ApplyOrigin::ImportHint, 0, 1).as_deref(),
-            Some("Updated 0 tracks; 1 failed")
-        );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ui::track_list::reload_restore;
-
-    #[test]
-    fn smoke_tag_edit_mode_parses_open_count_and_preserves_title_save() {
-        assert_eq!(
-            parse_smoke_tag_edit_mode("open:2"),
-            Some(SmokeTagEditMode::Open(2))
-        );
-        assert_eq!(parse_smoke_tag_edit_mode("open:0"), None);
-        assert_eq!(parse_smoke_tag_edit_mode("open:many"), None);
-        assert_eq!(
-            parse_smoke_tag_edit_mode("title:Acceptance title"),
-            Some(SmokeTagEditMode::SaveTitle("Acceptance title".into()))
-        );
-    }
-
-    /// TAG-1 (G2): `select_written_tracks` composes entirely from
-    /// `reload_restore::positions_for_ids` (already `#[test]`-covered at
-    /// Task A's pure-logic level) plus real `gtk4::MultiSelection` widget
-    /// calls this crate's headless suite cannot construct outside the
-    /// display-test harness (`scripts/check-display-tests.sh`) — see this
-    /// package's report for why a full `Shared` fixture wasn't built for
-    /// this wave. This test instead pins the exact mapping the post-save
-    /// selection depends on: written ids win, an unrelated failed id never
-    /// widens the selection, and an id no longer in the (possibly
-    /// concurrently changed) current view drops out silently rather than
-    /// erroring — the same "no side effect from a vanished id" rule a plain
-    /// `reload()` already applies.
-    #[test]
-    fn tag_1_selection_after_save_is_written_tracks() {
-        let updated_ids = vec![7_i64, 9_i64];
-        let current_view = vec![11_i64, 7_i64, 9_i64];
-        let positions = reload_restore::positions_for_ids(&updated_ids, &current_view);
-        assert_eq!(
-            positions,
-            vec![1, 2],
-            "selection follows the written ids, not the unrelated failed track at position 0"
-        );
-
-        let narrowed_view = vec![9_i64];
-        assert_eq!(
-            reload_restore::positions_for_ids(&updated_ids, &narrowed_view),
-            vec![0],
-            "a written id no longer in the current view drops out silently"
-        );
-    }
-
-    #[test]
-    fn tag_1_query_reload_keeps_the_scroll_anchor_from_editor_open() {
-        let opened = reload_restore::capture(vec![61], Some((61, 7.5)));
-        let layout = crate::ui::list_geometry_layout::ListLayout::rows_only(
-            crate::ui::list_geometry::RowHeight::new(20.0).unwrap(),
-        );
-        let restored = post_save_reload_anchor(opened, &[61], &[], "artist", &[61], &layout);
-
-        assert_eq!(restored.selected_ids, vec![61]);
-        assert_eq!(
-            restored.anchor,
-            Some((61, 7.5)),
-            "the async save must reuse the viewport captured before the dialog opened"
-        );
-    }
-}
+#[path = "tag_edit_flow_tests.rs"]
+mod tests;

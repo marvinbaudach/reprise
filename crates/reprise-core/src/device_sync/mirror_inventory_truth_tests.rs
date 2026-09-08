@@ -49,6 +49,8 @@ fn inventoried_input(managed_files_scanned: bool) -> MirrorInput {
         }],
         playlist_inventory: Vec::new(),
         managed_files: Vec::new(),
+        partial_paths: Vec::new(),
+        lyrics_files: Vec::new(),
         managed_files_scanned,
         desktop_analyses: Vec::new(),
     }

@@ -5,10 +5,47 @@ import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SceneDriverTest {
+    @Test
+    fun a_freshly_attached_sink_gets_no_bands_for_a_track_with_no_stored_spectrogram() {
+        // Regression: on the tick right after an engine swap (frameSinkNeedsSnapshot), the driver
+        // used to hand out an empty FloatArray for a track with no stored spectrogram at all. The
+        // sink's ingestBands treats any call — even with zero bands — as a real frame, which drew a
+        // flat/silent scene instead of leaving the caller's cover up. This tick must report nothing.
+        val frames = SpectrogramFrames(24, 20, ByteArray(0))
+        val state = SceneState(frames)
+        var onFrameCalls = 0
+        var receivedBands: FloatArray? = FloatArray(1)
+        val sink = object : SceneFrameSink {
+            override fun onFrame(bands: FloatArray?) {
+                onFrameCalls += 1
+                receivedBands = bands
+            }
+        }
+        val driver = SceneDriver(
+            frames = frames,
+            state = state,
+            clock = FakeSceneClock(),
+            positionSource = FakeScenePositionSource(
+                ScenePositionSample(positionMs = 0, observedAtNanos = 0, playing = true),
+            ),
+            frameSink = sink,
+            framesAllowed = { true },
+        )
+
+        driver.tick()
+
+        assertEquals(1, onFrameCalls)
+        assertNull(
+            "a track with no stored spectrogram must not hand out an empty snapshot",
+            receivedBands,
+        )
+    }
+
     @Test
     fun shimmer_clock_turns_without_analysis_and_keeps_only_the_current_minute() {
         val fixture = driverFixture(

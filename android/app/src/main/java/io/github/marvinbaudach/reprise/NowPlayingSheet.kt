@@ -342,6 +342,22 @@ internal fun NowPlayingSheet(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
+                playback.faultNotice?.let { message ->
+                    Text(
+                        text = message.text,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .background(
+                                AmbientTrueBlack.copy(alpha = 0.72f),
+                                RoundedCornerShape(18.dp),
+                            )
+                            .padding(horizontal = 18.dp, vertical = 10.dp)
+                            .testTag("playback-fault-notice"),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
     }
@@ -443,6 +459,15 @@ private fun WideShortNowPlayingContent(
             playback.error?.let { message ->
                 Text(
                     text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            playback.faultNotice?.let { message ->
+                Text(
+                    text = message.text,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,

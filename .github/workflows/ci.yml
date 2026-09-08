@@ -26,6 +26,7 @@ jobs:
       android: ${{ steps.routes.outputs.android }}
       gnome: ${{ steps.routes.outputs.gnome }}
       core: ${{ steps.routes.outputs.core }}
+      display: ${{ steps.routes.outputs.display }}
       suite_skip: ${{ steps.routes.outputs.suite_skip }}
     steps:
       - name: Check out the tested revision
@@ -53,7 +54,7 @@ jobs:
           )
           echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
           if [[ $suite_skip == true ]]; then
-            printf 'android=false\ngnome=false\ncore=false\n' >> "$GITHUB_OUTPUT"
+            printf 'android=false\ngnome=false\ncore=false\ndisplay=false\n' >> "$GITHUB_OUTPUT"
           else
             .github/scripts/ci-paths.sh --diff \
               "$EVENT_NAME" "$REF_NAME" "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
@@ -126,7 +127,7 @@ jobs:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: always
       # Android runs no GTK display tests; keep the project-wide fallback
-      # explicit while the two display-running jobs override it below.
+      # explicit while the display-tests matrix job overrides it below.
       DISPLAY_TEST_JOBS: 1
     steps:
       - name: Check out the tested revision
@@ -139,6 +140,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          cache: gradle
 
       - name: Cache Cargo downloads
         uses: actions/cache@v6
@@ -179,7 +181,6 @@ jobs:
       GDK_BACKEND: x11
       WAYLAND_DISPLAY: ""
       REPRISE_AUDIO_SINK: fakesink
-      DISPLAY_TEST_JOBS: 4
     steps:
       - name: Install system dependencies
         run: >-
@@ -225,7 +226,6 @@ jobs:
       GDK_BACKEND: x11
       WAYLAND_DISPLAY: ""
       REPRISE_AUDIO_SINK: fakesink
-      DISPLAY_TEST_JOBS: 4
     steps:
       - name: Install system dependencies
         run: >-
@@ -254,6 +254,49 @@ jobs:
         with:
           version: "0.12.3"
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run the complete workspace gate
+        run: scripts/ci-quality.sh
+
+  display-tests:
+    name: Display tests ${{ matrix.shard }}/${{ strategy.job-total }}
+    needs: changes
+    if: >-
+      needs.changes.outputs.suite_skip != 'true' &&
+      needs.changes.outputs.display == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: archlinux:latest
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
+      GDK_BACKEND: x11
+      WAYLAND_DISPLAY: ""
+      REPRISE_AUDIO_SINK: fakesink
+      DISPLAY_TEST_JOBS: 4
+    steps:
+      - name: Install system dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed
+          base-devel cargo-audit dbus gettext git gstreamer gst-plugins-base
+          gst-plugins-good gtk4 jq libadwaita libsecret mesa
+          meson openssh pkgconf
+          ripgrep shellcheck rust sqlite xdotool xorg-server-xvfb xorg-xauth
+
+      - name: Check out the tested revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Cache Cargo downloads
         uses: actions/cache@v6
         with:
@@ -264,12 +307,47 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-
 
-      - name: Run the complete workspace gate
-        run: scripts/ci-quality.sh
+      - name: Verify display-test shard partition
+        if: matrix.shard == 1
+        env:
+          DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}
+        run: |
+          listing_root=$(mktemp -d)
+          trap 'rm -rf "$listing_root"' EXIT
+          scripts/check-display-tests.sh --list > "$listing_root/unsharded"
+          shard_total=0
+          : > "$listing_root/union"
+          for ((shard = 1; shard <= DISPLAY_SHARD_COUNT; shard++)); do
+            scripts/check-display-tests.sh --shard "$shard/$DISPLAY_SHARD_COUNT" --list > "$listing_root/shard-$shard"
+            shard_count=$(wc -l < "$listing_root/shard-$shard")
+            shard_total=$((shard_total + shard_count))
+            cat "$listing_root/shard-$shard" >> "$listing_root/union"
+          done
+          unsharded_count=$(wc -l < "$listing_root/unsharded")
+          (( shard_total == unsharded_count )) || {
+            echo "Display shard counts sum to $shard_total; expected $unsharded_count" >&2
+            exit 1
+          }
+          sort "$listing_root/union" > "$listing_root/sorted-union"
+          duplicate_tests=$(uniq -d "$listing_root/sorted-union")
+          [[ -z $duplicate_tests ]] || {
+            printf 'Display shards contain duplicate tests:\n%s\n' "$duplicate_tests" >&2
+            exit 1
+          }
+          cmp --silent "$listing_root/unsharded" "$listing_root/sorted-union" || {
+            echo "Sorted display-shard union differs from the unsharded listing" >&2
+            exit 1
+          }
+
+      - name: Run display-test shard
+        env:
+          DISPLAY_SHARD: ${{ matrix.shard }}
+          DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}
+        run: scripts/check-display-tests.sh --shard "$DISPLAY_SHARD/$DISPLAY_SHARD_COUNT"
 
   quality:
     name: Quality gate
-    needs: [changes, base-contracts, android-unit-suite, gnome-suite, core-suite]
+    needs: [changes, base-contracts, android-unit-suite, gnome-suite, core-suite, display-tests]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -287,6 +365,8 @@ jobs:
           GNOME_RESULT: ${{ needs['gnome-suite'].result }}
           CORE_ROUTE: ${{ needs.changes.outputs.core }}
           CORE_RESULT: ${{ needs['core-suite'].result }}
+          DISPLAY_ROUTE: ${{ needs.changes.outputs.display }}
+          DISPLAY_RESULT: ${{ needs['display-tests'].result }}
         run: >-
           .github/scripts/require-ci-results.sh
           "$CHANGES_RESULT" "$BASE_RESULT"
@@ -294,3 +374,4 @@ jobs:
           "$ANDROID_ROUTE" "$ANDROID_RESULT"
           "$GNOME_ROUTE" "$GNOME_RESULT"
           "$CORE_ROUTE" "$CORE_RESULT"
+          "$DISPLAY_ROUTE" "$DISPLAY_RESULT"

@@ -52,6 +52,8 @@ test('the built page ships the ladder, not one file per picture', async () => {
   }
   assert.ok(srcset.includes('2400w'));
   assert.match(html, /sizes="\(max-width: 900px\) 90vw, 43vw"/);
-  // Lazy tiles carry it too, not just the eager hero.
-  assert.match(html, /gnome-listening-stats-1200\.webp 1200w/);
+  // The mosaic used to carry the lazy half of the ladder; the film replaced it,
+  // so the built page is the hero pair and nothing below it. The ladders on disk
+  // are still asserted above — the pictures stayed, only the section left.
+  assert.doesNotMatch(html, /gnome-listening-stats-1200\.webp 1200w/);
 });

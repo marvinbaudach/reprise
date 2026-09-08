@@ -576,7 +576,7 @@ fn ledger_records_failed_outcome_for_a_failed_artist_search() {
 }
 
 #[test]
-fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
+fn ledger_records_failed_fetch_and_retries_at_the_next_check() {
     let conn = migrated_conn();
     conn.conn()
         .execute(
@@ -626,20 +626,20 @@ fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
     let second = refresh_with(
         &conn,
         date(),
-        2_000, // well inside FETCH_TTL_SECONDS: no separate failure backoff exists
+        2_000,
         FetchScope::TopArtists,
         false,
         &mut fetch,
     )
     .unwrap();
     assert_eq!(
-        second.failed, 0,
-        "a permanently-failing artist must count as fresh inside the TTL window"
+        second.failed, 1,
+        "a failed artist must be due again at the next check"
     );
     assert_eq!(
         calls.get(),
-        after_first,
-        "no further requests may be issued for it within the TTL window"
+        after_first + 1,
+        "the next check must retry the failed artist"
     );
 }
 

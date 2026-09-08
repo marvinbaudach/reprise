@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
 TRACK=${1:?usage: score.sh TRACK [VIDEO] [OUT]}
-VIDEO=${2:-$HOME/Videos/reprise-showreel/reprise-showreel-31s.mp4}
+VIDEO=${2:-$HOME/Videos/reprise-showreel/reprise-showreel-58s.mp4}
 OUT=${3:-${VIDEO%.mp4}-scored.mp4}
 WORK=${SCRATCH:-/tmp}/score-$(basename "${TRACK%.*}")
 mkdir -p "$WORK"

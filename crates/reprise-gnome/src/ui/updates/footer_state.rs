@@ -9,11 +9,17 @@ pub(super) struct ActiveFeed {
     pub loaded_this_visit: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct FeedProgress {
+    pub news: (usize, usize),
+    pub concerts: (usize, usize),
+}
+
 pub(super) fn aggregate(
     news: ActiveFeed,
     concerts: ActiveFeed,
     network_enabled: bool,
-    fetching: bool,
+    fetching: Option<FeedProgress>,
     failed: bool,
     no_credentials: bool,
 ) -> FeedFooterState {
@@ -23,10 +29,10 @@ pub(super) fn aggregate(
         FeedFooterState::NetworkOff
     } else if no_credentials && !news.active {
         FeedFooterState::NoCredentials
-    } else if fetching {
+    } else if let Some(progress) = fetching {
         FeedFooterState::Fetching {
-            checked: 0,
-            total: 0,
+            checked: progress.news.0 + progress.concerts.0,
+            total: progress.news.1 + progress.concerts.1,
         }
     } else {
         let latest = oldest_active_feed_timestamp(

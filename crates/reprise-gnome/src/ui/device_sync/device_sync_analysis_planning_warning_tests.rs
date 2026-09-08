@@ -43,7 +43,11 @@ fn missing_analysis_warns_with_the_track_id_during_planning() {
             select_road_playlist(&conn, &[1]);
             let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
             let _runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-            settle().await;
+            settle_until("analysis warning for track 1", || {
+                let log = captured.0.lock().unwrap();
+                String::from_utf8_lossy(&log).contains("analysis sidecar data is unavailable")
+            })
+            .await;
         });
     });
 

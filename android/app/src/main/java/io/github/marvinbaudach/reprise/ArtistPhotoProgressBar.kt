@@ -58,6 +58,8 @@ internal data class ArtistPhotoProgress(
 )
 
 private const val SUCCESS_DISMISS_DELAY_MS = 4_000L
+/** A run that ended with misses keeps the count on screen longer, then leaves too. */
+private const val FAILURE_DISMISS_DELAY_MS = 10_000L
 private const val VISIBILITY_ANIMATION_MS = 200
 internal const val ARTIST_PHOTO_MUTED_ALPHA = 0.753f
 
@@ -68,8 +70,10 @@ internal fun ArtistPhotoProgressBar(
     inSettings: Boolean = false,
 ) {
     LaunchedEffect(progress?.runId, progress?.phase, progress?.failed) {
-        if (progress?.phase == ArtistPhotoProgressPhase.COMPLETE && progress.failed == 0L) {
-            delay(SUCCESS_DISMISS_DELAY_MS)
+        if (progress?.phase == ArtistPhotoProgressPhase.COMPLETE) {
+            delay(
+                if (progress.failed == 0L) SUCCESS_DISMISS_DELAY_MS else FAILURE_DISMISS_DELAY_MS,
+            )
             dismiss()
         }
     }

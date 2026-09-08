@@ -1,6 +1,9 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.compose.runtime.Immutable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
@@ -16,6 +19,7 @@ internal data class PlaybackUiState(
     val shuffled: Boolean = false,
     val repeat: AndroidRepeatMode = AndroidRepeatMode.OFF,
     val error: String? = null,
+    val faultNotice: TransientMessage? = null,
     val sleepTimer: SleepTimerUiState = SleepTimerUiState(),
 )
 
@@ -26,6 +30,7 @@ internal data class LibraryPlayback(
     val currentTrackUri: String? = null,
     val state: AndroidPlaybackState = AndroidPlaybackState.STOPPED,
     val error: String? = null,
+    val faultNotice: TransientMessage? = null,
 )
 
 internal fun PlaybackUiState.libraryPlayback() = LibraryPlayback(
@@ -34,7 +39,65 @@ internal fun PlaybackUiState.libraryPlayback() = LibraryPlayback(
     currentTrackUri = currentTrackUri,
     state = state,
     error = error,
+    faultNotice = faultNotice,
 )
+
+internal data class PlaybackFaultNoticeUpdate(
+    val observedCount: ULong,
+    val message: TransientMessage?,
+)
+
+internal fun updatePlaybackFaultNotice(
+    previousCount: ULong?,
+    currentCount: ULong,
+    text: String?,
+    previousMessage: TransientMessage?,
+): PlaybackFaultNoticeUpdate {
+    if (previousCount == null) {
+        return PlaybackFaultNoticeUpdate(currentCount, null)
+    }
+    if (currentCount <= previousCount) {
+        return PlaybackFaultNoticeUpdate(
+            observedCount = currentCount,
+            message = previousMessage.takeIf { text != null },
+        )
+    }
+    return PlaybackFaultNoticeUpdate(
+        observedCount = currentCount,
+        message = text?.let { TransientMessage(it).after(previousMessage) },
+    )
+}
+
+internal class PlaybackFaultNoticeObserver(
+    private val scope: CoroutineScope,
+    private val currentState: () -> PlaybackUiState,
+    private val publish: (PlaybackUiState) -> Unit,
+) {
+    private var observedCount: ULong? = null
+
+    fun accept(snapshot: AndroidPlaybackSnapshot) {
+        val previous = currentState()
+        val update = updatePlaybackFaultNotice(
+            previousCount = observedCount,
+            currentCount = snapshot.faultNoticeCount,
+            text = snapshot.faultNotice,
+            previousMessage = previous.faultNotice,
+        )
+        observedCount = update.observedCount
+        publish(
+            snapshot.toUiState().copy(
+                faultNotice = update.message,
+                sleepTimer = previous.sleepTimer,
+            ),
+        )
+        val raised = update.message.takeIf { it != previous.faultNotice } ?: return
+        scope.launch {
+            delay(TRANSIENT_MESSAGE_MS)
+            val current = currentState()
+            if (current.faultNotice == raised) publish(current.copy(faultNotice = null))
+        }
+    }
+}
 
 internal val PlaybackUiState.isPlaying: Boolean
     get() = state == AndroidPlaybackState.PLAYING

@@ -21,13 +21,17 @@ pub struct TrashReport {
     pub failures: Vec<TrashFailure>,
 }
 
-pub fn trash_tracks_with<F>(db: &Db, tracks: &[(i64, PathBuf)], trash_action: F) -> TrashReport
-where
-    F: Fn(&Path) -> Result<(), String>,
-{
+/// Requests that still match a library row, and the ones that already do not.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct TrashPlan {
+    pub validated: Vec<(i64, PathBuf)>,
+    pub failures: Vec<TrashFailure>,
+}
+
+/// De-duplicates ids and refuses paths that no longer match the library row.
+pub fn plan_trash(db: &Db, tracks: &[(i64, PathBuf)]) -> TrashPlan {
     let conn = db.conn();
-    let mut report = TrashReport::default();
-    let mut trashed = Vec::new();
+    let mut plan = TrashPlan::default();
     let mut seen = HashSet::new();
 
     for (id, path) in tracks {
@@ -40,45 +44,53 @@ where
             })
             .optional();
         match registered {
-            Ok(Some(registered)) if registered == path.to_string_lossy() => {}
+            Ok(Some(registered)) if registered == path.to_string_lossy() => {
+                plan.validated.push((*id, path.clone()));
+            }
             Ok(_) => {
-                report.failures.push(TrashFailure {
+                plan.failures.push(TrashFailure {
                     id: *id,
                     path: path.clone(),
                     error: "track path changed before trash; refusing stale request".into(),
                 });
-                continue;
             }
             Err(error) => {
-                report.failures.push(TrashFailure {
+                plan.failures.push(TrashFailure {
                     id: *id,
                     path: path.clone(),
                     error: format!("could not validate track path before trash: {error}"),
                 });
-                continue;
             }
-        }
-
-        match trash_action(path) {
-            Ok(()) => trashed.push((*id, path.clone())),
-            Err(error) => report.failures.push(TrashFailure {
-                id: *id,
-                path: path.clone(),
-                error,
-            }),
         }
     }
 
+    plan
+}
+
+/// Removes rows for files the caller actually moved to trash.
+///
+/// The caller must put only files confirmed as moved to trash in `trashed`.
+/// `failures` is preserved in order, and cleanup failures discovered here are
+/// appended after it in the returned report.
+pub fn commit_trash(
+    db: &Db,
+    trashed: &[(i64, PathBuf)],
+    failures: Vec<TrashFailure>,
+) -> TrashReport {
+    let mut report = TrashReport {
+        removed_ids: Vec::new(),
+        failures,
+    };
     if trashed.is_empty() {
         return report;
     }
-    match crate::queries::remove_tracks_matching_paths_remembering_releases(db, &trashed) {
+    match crate::queries::remove_tracks_matching_paths_remembering_releases(db, trashed) {
         Ok(removed) => {
             for (id, path) in trashed {
-                if !removed.contains(&id) {
+                if !removed.contains(id) {
                     report.failures.push(TrashFailure {
-                        id,
-                        path,
+                        id: *id,
+                        path: path.clone(),
                         error: "file was trashed but its database row was not removed".into(),
                     });
                 }
@@ -88,8 +100,8 @@ where
         Err(error) => {
             for (id, path) in trashed {
                 report.failures.push(TrashFailure {
-                    id,
-                    path,
+                    id: *id,
+                    path: path.clone(),
                     error: format!("file was trashed but database cleanup failed: {error}"),
                 });
             }
@@ -98,8 +110,28 @@ where
     report
 }
 
+pub fn trash_tracks_with<F>(db: &Db, tracks: &[(i64, PathBuf)], trash_action: F) -> TrashReport
+where
+    F: Fn(&Path) -> Result<(), String>,
+{
+    let plan = plan_trash(db, tracks);
+    let mut trashed = Vec::new();
+    let mut failures = plan.failures;
+
+    for (id, path) in plan.validated {
+        match trash_action(&path) {
+            Ok(()) => trashed.push((id, path)),
+            Err(error) => failures.push(TrashFailure { id, path, error }),
+        }
+    }
+
+    commit_trash(db, &trashed, failures)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
 
     fn seeded_conn(paths: &[&std::path::Path]) -> Db {
@@ -165,6 +197,32 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(rows, vec![(2, 0)]);
+    }
+
+    #[test]
+    fn trash_tracks_with_calls_the_action_once_per_validated_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.flac");
+        let second = dir.path().join("second.flac");
+        let third = dir.path().join("third.flac");
+        let conn = seeded_conn(&[&first, &second, &third]);
+        let calls = Cell::new(0);
+        let tracks = vec![
+            (1, first.clone()),
+            (1, first),
+            (2, second),
+            (3, dir.path().join("stale-third.flac")),
+        ];
+
+        let report = trash_tracks_with(&conn, &tracks, |_| {
+            calls.set(calls.get() + 1);
+            Ok(())
+        });
+
+        assert_eq!(calls.get(), 2);
+        assert_eq!(report.removed_ids, vec![1, 2]);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].id, 3);
     }
 
     #[test]

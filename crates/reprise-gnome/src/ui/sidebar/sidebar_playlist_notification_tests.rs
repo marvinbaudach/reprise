@@ -46,6 +46,7 @@ impl DeviceBackend for ConnectedDeviceBackend {
                     ..Default::default()
                 },
                 managed_files: Vec::new(),
+                ..DeviceStorageInspection::default()
             })
         })
     }

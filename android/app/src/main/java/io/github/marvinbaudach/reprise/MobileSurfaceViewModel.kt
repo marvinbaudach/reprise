@@ -39,6 +39,19 @@ internal enum class LibraryListKey {
 }
 
 /**
+ * What a saved scroll anchor is keyed on.
+ *
+ * [LibraryListKey] alone names a *kind* of list, not one — every album opens
+ * the same [LibraryListKey.ALBUM_TRACKS] list, and every artist page the same
+ * [LibraryListKey.ARTIST_ALBUMS] one. [owner] narrows that to the one album or
+ * artist the anchor actually belongs to, so leaving album A at row 30 and
+ * opening album B does not hand B row 30 back. It stays empty for the lists
+ * that only ever have one instance (titles, artists, the queue), which keeps
+ * their anchors behaving exactly as before.
+ */
+internal data class LibraryListIdentity(val list: LibraryListKey, val owner: String = "")
+
+/**
  * The catalog windows a screen has actually paged in.
  *
  * These are here for the same reason the anchor is: the anchor is an *index*,
@@ -142,7 +155,7 @@ internal class MobileSurfaceViewModel : ViewModel() {
         }
 
     private val confirmedRatings = mutableStateMapOf<Long, Int>()
-    private val scrollPositions = mutableMapOf<LibraryListKey, LibraryScrollPosition>()
+    private val scrollPositions = mutableMapOf<LibraryListIdentity, LibraryScrollPosition>()
     private var loadedWindows: LoadedLibraryWindows? = null
     private var loadedShape: LibraryCatalogShape? = null
     private var scrubTrackId: Long? = null
@@ -237,6 +250,10 @@ internal class MobileSurfaceViewModel : ViewModel() {
     }
 
     fun openSearch() {
+        // The queue is the one tab a filter never reaches (see selectTab
+        // above), so opening the field here would collect text that then
+        // silently seeds whichever tab the listener swipes to next.
+        if (selectedTab == BrowseTab.QUEUE) return
         searchVisible = true
     }
 
@@ -361,11 +378,11 @@ internal class MobileSurfaceViewModel : ViewModel() {
         confirmedRatings[trackId] = if (favourite) 5 else 0
     }
 
-    fun scrollPosition(list: LibraryListKey): LibraryScrollPosition =
-        scrollPositions[list] ?: LibraryScrollPosition()
+    fun scrollPosition(list: LibraryListKey, owner: String = ""): LibraryScrollPosition =
+        scrollPositions[LibraryListIdentity(list, owner)] ?: LibraryScrollPosition()
 
-    fun updateScroll(list: LibraryListKey, position: LibraryScrollPosition) {
-        scrollPositions[list] = position
+    fun updateScroll(list: LibraryListKey, position: LibraryScrollPosition, owner: String = "") {
+        scrollPositions[LibraryListIdentity(list, owner)] = position
     }
 
     /** Paged-in windows while both their catalog and refinement still match. */

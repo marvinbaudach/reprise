@@ -2,6 +2,19 @@ use reprise_core::radio::StationRow;
 use std::cmp::Ordering;
 
 use crate::ui::strings;
+use crate::ui::table_columns::sort::{self, SortDirection, SortKey, SortSpec};
+
+#[derive(Clone, Copy)]
+enum RadioSortKey {
+    Name,
+}
+
+impl SortKey<StationRow> for RadioSortKey {
+    fn cmp(&self, left: &StationRow, right: &StationRow) -> Ordering {
+        sort::compare_text(&left.name, &right.name, SortDirection::Ascending)
+            .then_with(|| left.id.cmp(&right.id))
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct RadioLiveState {
@@ -46,14 +59,10 @@ pub(super) fn row_is_accented(station_id: i64, live: &RadioLiveState) -> bool {
 }
 
 pub(super) fn sort_rows(rows: &mut [StationRow]) {
-    rows.sort_by(|left, right| {
-        let names = left.name.to_lowercase().cmp(&right.name.to_lowercase());
-        if names == Ordering::Equal {
-            left.id.cmp(&right.id)
-        } else {
-            names
-        }
-    });
+    sort::sort_rows(
+        rows,
+        &SortSpec::new(RadioSortKey::Name, SortDirection::Ascending),
+    );
 }
 
 fn unknown() -> String {

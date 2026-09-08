@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 
-pub(crate) const FETCH_TTL_SECONDS: i64 = 24 * 60 * 60;
-const REFRESH_JITTER_MAX_SECONDS: i64 = 2 * 60 * 60;
+pub(crate) const FETCH_TTL_SECONDS: i64 = 60 * 60;
+const REFRESH_JITTER_MAX_SECONDS: i64 = 10 * 60;
 
 #[must_use]
 pub fn artist_due(last_attempt_at: Option<i64>, now: i64, force: bool) -> bool {

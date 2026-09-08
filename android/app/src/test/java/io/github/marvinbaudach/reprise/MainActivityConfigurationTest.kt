@@ -22,6 +22,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -31,10 +32,14 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -84,7 +89,7 @@ class MainActivityConfigurationTest {
     fun tabSearchAndListAnchorSurviveTheActivityRecreationPath() {
         assertEquals(1, shadowOf(application).boundServiceConnections.size)
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(12)
+        scrollLibraryListTo("library-artists-list", 12)
         compose.waitForIdle()
 
         val beforeTurn = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
@@ -112,19 +117,38 @@ class MainActivityConfigurationTest {
     fun artistSearchFiltersArtistsAndClosingItRestoresTheArtistCatalog() {
         compose.onNodeWithText("Artists").performClick()
         compose.onNodeWithTag("library-summary-search").performClick()
-        compose.onNodeWithText("Search artists").performTextInput("Artist 45")
+        application.blockBroadArtistSearch()
+        compose.onNodeWithText("Search artists").performTextInput("Artist")
+        compose.waitUntil(timeoutMillis = 5_000) { application.broadArtistSearchHasStarted() }
+        compose.onNodeWithText("Search artists").performTextReplacement("Artist 45")
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodes(
+                hasText("Artist 45") and hasText("45 tracks", substring = true),
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        application.releaseBroadArtistSearch()
+        compose.waitUntil(timeoutMillis = 5_000) { application.broadArtistSearchHasFinished() }
         compose.waitForIdle()
 
         compose.onNode(
             hasText("Artist 45") and hasText("45 tracks", substring = true),
         ).assertIsDisplayed()
+        assertTrue(
+            runCatching {
+                compose.onNodeWithTag("library-artists-list")
+                    .performScrollToNode(hasText("Artist 2"))
+            }.isFailure,
+        )
         compose.onNodeWithText("Artist 2").assertDoesNotExist()
 
         // The open field owns the way out: clear the query, then close it. The
         // summary row's magnifier is gone for as long as the field is up.
         compose.onNodeWithTag("library-summary-search").assertDoesNotExist()
         compose.onNodeWithContentDescription("Clear search").performClick()
-        compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("200 of 450 artists loaded")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Close search").performClick()
         compose.waitForIdle()
 
@@ -136,7 +160,25 @@ class MainActivityConfigurationTest {
     @Test
     fun playArtistUsesTheRetainedLibraryOnTheFakeSurfacePath() {
         compose.onNodeWithText("Artists").performClick()
+        application.blockArtistOneOpen()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasStarted() }
+        compose.onNodeWithText("Artist 2").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play Artist 2")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        application.releaseArtistOneOpen()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasFinished() }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Play Artist 2").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Play Artist 1")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithContentDescription("Play Artist 1").performClick()
         compose.waitForIdle()
@@ -150,9 +192,9 @@ class MainActivityConfigurationTest {
         compose.onNodeWithTag("library-summary-search").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist")
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(211)
+        scrollLibraryListTo("library-artists-list", 211)
         compose.onNodeWithText("Artist 212").assertIsDisplayed()
 
         recreateAt("w916dp-h412dp-land")
@@ -174,12 +216,29 @@ class MainActivityConfigurationTest {
     @Test
     fun rowsPagedInPastTheFirstWindowSurviveTheTurnAndSoDoesThePlace() {
         assertEquals(1, shadowOf(application).boundServiceConnections.size)
+        application.blockFailingTitleContinuation()
+        scrollLibraryListTo("library-titles-list", 200)
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.failingTitleContinuationHasStarted()
+        }
         compose.onNodeWithText("Artists").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("200 of 450 artists loaded")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        application.releaseFailingTitleContinuation()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            application.failingTitleContinuationHasFinished()
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Could not load more titles:", substring = true)
+            .assertDoesNotExist()
+
         // The continuation sentinel sits after the last loaded row; reaching it
         // is what asks the library for the next window.
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
 
@@ -204,9 +263,9 @@ class MainActivityConfigurationTest {
     @Test
     fun aCatalogThatChangedUnderTheScreenReopensAtTheTopAndNotMidWindow() {
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
 
@@ -226,9 +285,9 @@ class MainActivityConfigurationTest {
     fun anOpenAlbumAndTheDepthPagedIntoItBothSurviveTheTurn() {
         openDeepAlbum()
         compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-album-tracks-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-album-tracks-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
 
@@ -247,9 +306,9 @@ class MainActivityConfigurationTest {
         recreateAt("w412dp-h916dp-port")
 
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        scrollLibraryListTo("library-artists-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Artist 211").assertIsDisplayed()
 
@@ -268,13 +327,19 @@ class MainActivityConfigurationTest {
         ).assertIsDisplayed()
 
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-artists-list", 210)
         compose.onNodeWithText("Artist 211").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(DEEP_ALBUM).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText(DEEP_ALBUM).performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("library-album-tracks-list")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        scrollLibraryListTo("library-album-tracks-list", 200)
         compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
-        compose.waitForIdle()
-        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(210)
+        scrollLibraryListTo("library-album-tracks-list", 210)
         compose.waitForIdle()
         compose.onNodeWithText("Album Song 211").assertIsDisplayed()
 
@@ -414,11 +479,28 @@ class MainActivityConfigurationTest {
         compose.waitForIdle()
     }
 
+    /**
+     * Scrolls to [index], retrying until the row exists. A library window now grows
+     * through an off-main-thread read, so the row an index names can arrive a moment
+     * after the scroll that asked for it.
+     */
+    private fun scrollLibraryListTo(tag: String, index: Int) {
+        compose.waitUntil(timeoutMillis = 5_000) {
+            runCatching { compose.onNodeWithTag(tag).performScrollToIndex(index) }.isSuccess
+        }
+    }
+
     private fun openDeepAlbum() {
         compose.onNodeWithText("Artists").performClick()
-        compose.onNodeWithTag("library-artists-list").performScrollToIndex(0)
+        scrollLibraryListTo("library-artists-list", 0)
         compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(DEEP_ALBUM).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText(DEEP_ALBUM).performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("library-album-tracks-list").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.progress(): Float =
@@ -464,6 +546,22 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     val onlineSourcesWrites = Collections.synchronizedList(mutableListOf<Boolean>())
     private var onlineSourcesWriteStarted: CountDownLatch? = null
     private var onlineSourcesWriteGate: CountDownLatch? = null
+    private var broadArtistSearchStarted: CountDownLatch? = null
+    private var broadArtistSearchGate: CompletableDeferred<Unit>? = null
+    private var broadArtistSearchFinished: CountDownLatch? = null
+    private val broadArtistSearchCalls = AtomicInteger()
+    private var artistOneOpenStarted: CountDownLatch? = null
+    private var artistOneOpenGate: CompletableDeferred<Unit>? = null
+    private var artistOneOpenFinished: CountDownLatch? = null
+    private val artistOneOpenCalls = AtomicInteger()
+    private var firstAlbumOpenStarted: CountDownLatch? = null
+    private var firstAlbumOpenGate: CompletableDeferred<Unit>? = null
+    private var firstAlbumOpenFinished: CountDownLatch? = null
+    private val firstAlbumOpenCalls = AtomicInteger()
+    private var failingTitleContinuationStarted: CountDownLatch? = null
+    private var failingTitleContinuationGate: CompletableDeferred<Unit>? = null
+    private var failingTitleContinuationFinished: CountDownLatch? = null
+    private val failingTitleContinuationCalls = AtomicInteger()
     val trackRatings = mutableMapOf<Long, Int>()
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
@@ -646,6 +744,70 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
         onlineSourcesWriteStarted = null
     }
 
+    fun blockBroadArtistSearch() {
+        broadArtistSearchCalls.set(0)
+        broadArtistSearchStarted = CountDownLatch(1)
+        broadArtistSearchGate = CompletableDeferred()
+        broadArtistSearchFinished = CountDownLatch(1)
+    }
+
+    fun broadArtistSearchHasStarted(): Boolean =
+        checkNotNull(broadArtistSearchStarted).count == 0L
+
+    fun releaseBroadArtistSearch() {
+        checkNotNull(broadArtistSearchGate).complete(Unit)
+    }
+
+    fun broadArtistSearchHasFinished(): Boolean =
+        checkNotNull(broadArtistSearchFinished).count == 0L
+
+    fun blockArtistOneOpen() {
+        artistOneOpenCalls.set(0)
+        artistOneOpenStarted = CountDownLatch(1)
+        artistOneOpenGate = CompletableDeferred()
+        artistOneOpenFinished = CountDownLatch(1)
+    }
+
+    fun artistOneOpenHasStarted(): Boolean = checkNotNull(artistOneOpenStarted).count == 0L
+
+    fun releaseArtistOneOpen() {
+        checkNotNull(artistOneOpenGate).complete(Unit)
+    }
+
+    fun artistOneOpenHasFinished(): Boolean = checkNotNull(artistOneOpenFinished).count == 0L
+
+    fun blockFirstAlbumOpen() {
+        firstAlbumOpenCalls.set(0)
+        firstAlbumOpenStarted = CountDownLatch(1)
+        firstAlbumOpenGate = CompletableDeferred()
+        firstAlbumOpenFinished = CountDownLatch(1)
+    }
+
+    fun firstAlbumOpenHasStarted(): Boolean = checkNotNull(firstAlbumOpenStarted).count == 0L
+
+    fun releaseFirstAlbumOpen() {
+        checkNotNull(firstAlbumOpenGate).complete(Unit)
+    }
+
+    fun firstAlbumOpenHasFinished(): Boolean = checkNotNull(firstAlbumOpenFinished).count == 0L
+
+    fun blockFailingTitleContinuation() {
+        failingTitleContinuationCalls.set(0)
+        failingTitleContinuationStarted = CountDownLatch(1)
+        failingTitleContinuationGate = CompletableDeferred()
+        failingTitleContinuationFinished = CountDownLatch(1)
+    }
+
+    fun failingTitleContinuationHasStarted(): Boolean =
+        checkNotNull(failingTitleContinuationStarted).count == 0L
+
+    fun releaseFailingTitleContinuation() {
+        checkNotNull(failingTitleContinuationGate).complete(Unit)
+    }
+
+    fun failingTitleContinuationHasFinished(): Boolean =
+        checkNotNull(failingTitleContinuationFinished).count == 0L
+
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
             titles = tracks.window(firstLibraryWindow()),
@@ -675,6 +837,16 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
             chooseFolder = { _, _ -> },
             rescan = {},
             searchTitles = { query, range ->
+                if (
+                    range.offset > 0 &&
+                    failingTitleContinuationStarted != null &&
+                    failingTitleContinuationCalls.getAndIncrement() == 0
+                ) {
+                    failingTitleContinuationStarted?.countDown()
+                    withContext(NonCancellable) { failingTitleContinuationGate?.await() }
+                    failingTitleContinuationFinished?.countDown()
+                    error("title continuation unavailable")
+                }
                 tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
                     .window(range)
             },
@@ -688,12 +860,29 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 artists.window(range)
             },
             searchArtists = { query, range ->
+                if (query == "Artist" && broadArtistSearchCalls.getAndIncrement() == 0) {
+                    broadArtistSearchStarted?.countDown()
+                    withContext(NonCancellable) { broadArtistSearchGate?.await() }
+                    broadArtistSearchFinished?.countDown()
+                }
                 artists.filter { artist -> artist.name.contains(query, ignoreCase = true) }
                     .window(range)
             },
-            openAlbum = { album -> AlbumTrackList(album, tracksFor(album).window(firstLibraryWindow())) },
+            openAlbum = { album ->
+                if (album.title == "First Album" && firstAlbumOpenCalls.getAndIncrement() == 0) {
+                    firstAlbumOpenStarted?.countDown()
+                    withContext(NonCancellable) { firstAlbumOpenGate?.await() }
+                    firstAlbumOpenFinished?.countDown()
+                }
+                AlbumTrackList(album, tracksFor(album).window(firstLibraryWindow()))
+            },
             listAlbumTracks = { album, range -> tracksFor(album).window(range) },
             openArtist = { artist ->
+                if (artist.name == "Artist 1" && artistOneOpenCalls.getAndIncrement() == 0) {
+                    artistOneOpenStarted?.countDown()
+                    withContext(NonCancellable) { artistOneOpenGate?.await() }
+                    artistOneOpenFinished?.countDown()
+                }
                 ArtistTrackList(
                     artist = artist,
                     albums = artistAlbums.window(firstLibraryWindow()),

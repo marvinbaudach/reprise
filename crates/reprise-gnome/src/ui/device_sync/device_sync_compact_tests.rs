@@ -34,6 +34,7 @@ impl DeviceBackend for FailingCopyBackend {
                     ..Default::default()
                 },
                 managed_files: Vec::new(),
+                ..DeviceStorageInspection::default()
             })
         })
     }
@@ -56,7 +57,9 @@ impl DeviceBackend for FailingCopyBackend {
             if should_fail {
                 Err("injected copy failure".into())
             } else {
-                Ok(CopyOutcome::Copied)
+                Ok(CopyOutcome::Copied {
+                    relative_path: relative_target,
+                })
             }
         })
     }

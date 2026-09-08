@@ -11,6 +11,36 @@ use reprise_view::search_scope;
 
 use crate::ui::enumerated::enumerated;
 use crate::ui::strings;
+use crate::ui::table_columns::sort::{self, SortDirection, SortKey, SortSpec};
+
+#[derive(Clone, Copy)]
+enum PodcastSortKey {
+    Published,
+}
+
+impl SortKey<EpisodeRow> for PodcastSortKey {
+    fn cmp(&self, left: &EpisodeRow, right: &EpisodeRow) -> Ordering {
+        match (left.published_at, right.published_at) {
+            (Some(left_date), Some(right_date)) => left_date
+                .cmp(&right_date)
+                .then_with(|| left.id.cmp(&right.id)),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => left.first_seen_at.cmp(&right.first_seen_at),
+        }
+    }
+
+    fn cmp_descending(&self, left: &EpisodeRow, right: &EpisodeRow) -> Ordering {
+        match (left.published_at, right.published_at) {
+            (Some(left_date), Some(right_date)) => right_date
+                .cmp(&left_date)
+                .then_with(|| right.id.cmp(&left.id)),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => right.first_seen_at.cmp(&left.first_seen_at),
+        }
+    }
+}
 
 /// The filter the podcast view applies: the three facets the core persists,
 /// plus the section's transient search query.
@@ -468,15 +498,9 @@ pub(super) fn auto_expand_for_query(query: &str) -> bool {
 }
 
 pub(super) fn sort_newest_first(rows: &mut [EpisodeRow]) {
-    rows.sort_by(
-        |left, right| match (left.published_at, right.published_at) {
-            (Some(left_date), Some(right_date)) => right_date
-                .cmp(&left_date)
-                .then_with(|| right.id.cmp(&left.id)),
-            (Some(_), None) => Ordering::Less,
-            (None, Some(_)) => Ordering::Greater,
-            (None, None) => right.first_seen_at.cmp(&left.first_seen_at),
-        },
+    sort::sort_rows(
+        rows,
+        &SortSpec::new(PodcastSortKey::Published, SortDirection::Descending),
     );
 }
 

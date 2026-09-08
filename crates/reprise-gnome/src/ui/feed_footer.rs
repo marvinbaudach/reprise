@@ -1,8 +1,13 @@
 //! Shared live-state footer for network-backed feeds.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use chrono::{DateTime, Datelike, Local, Timelike};
+use gtk4::glib;
 use gtk4::prelude::*;
 
+use crate::ui::scan::scan_progress::{PulseGeneration, PULSE_INTERVAL};
 use crate::ui::strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +140,10 @@ pub(in crate::ui) struct FeedFooter {
     label: gtk4::Label,
     reload: gtk4::Button,
     progress: gtk4::ProgressBar,
+    pulse_generation: PulseGeneration,
+    last_progress: Rc<Cell<Option<FeedFooterProgress>>>,
+    #[cfg(test)]
+    pulse_ticks: Rc<Cell<u32>>,
 }
 
 impl FeedFooter {
@@ -180,6 +189,10 @@ impl FeedFooter {
             label,
             reload,
             progress,
+            pulse_generation: PulseGeneration::default(),
+            last_progress: Rc::new(Cell::new(None)),
+            #[cfg(test)]
+            pulse_ticks: Rc::new(Cell::new(0)),
         }
     }
 
@@ -214,6 +227,11 @@ impl FeedFooter {
         self.progress.is_visible()
     }
 
+    #[cfg(test)]
+    fn pulse_tick_count(&self) -> u32 {
+        self.pulse_ticks.get()
+    }
+
     fn apply_presentation(&self, value: &FeedFooterPresentation) {
         self.root.set_visible(value.visible);
         self.label.set_label(&value.text);
@@ -225,11 +243,56 @@ impl FeedFooter {
         self.progress.set_visible(value.progress.is_some());
         match value.progress {
             Some(FeedFooterProgress::Fraction(fraction)) => {
+                self.cancel_pulsing();
                 self.progress.set_fraction(fraction);
             }
-            Some(FeedFooterProgress::Indeterminate) => self.progress.pulse(),
-            None => {}
+            Some(FeedFooterProgress::Indeterminate) => self.start_pulsing(),
+            None => self.cancel_pulsing(),
         }
+    }
+
+    fn start_pulsing(&self) {
+        if self.last_progress.get() == Some(FeedFooterProgress::Indeterminate) {
+            return;
+        }
+        let generation = self.pulse_generation.start();
+        self.progress.set_fraction(0.0);
+        #[cfg(test)]
+        self.pulse_ticks.set(0);
+        if !crate::ui::motion::animations_enabled() {
+            return;
+        }
+        self.progress.pulse();
+
+        let progress = self.progress.downgrade();
+        let pulse_generation = self.pulse_generation.clone();
+        let last_progress = self.last_progress.clone();
+        #[cfg(test)]
+        let pulse_ticks = self.pulse_ticks.clone();
+        glib::timeout_add_local(PULSE_INTERVAL, move || {
+            if !pulse_generation.is_current(generation) {
+                return glib::ControlFlow::Break;
+            }
+            let Some(progress) = progress.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if !crate::ui::motion::animations_enabled() {
+                progress.set_fraction(0.0);
+                last_progress.set(None);
+                return glib::ControlFlow::Break;
+            }
+            #[cfg(test)]
+            pulse_ticks.set(pulse_ticks.get().wrapping_add(1));
+            progress.pulse();
+            glib::ControlFlow::Continue
+        });
+        self.last_progress
+            .set(Some(FeedFooterProgress::Indeterminate));
+    }
+
+    fn cancel_pulsing(&self) {
+        self.pulse_generation.cancel();
+        self.last_progress.set(None);
     }
 }
 
@@ -325,5 +388,111 @@ mod tests {
 
         assert_eq!(footer.dot.width(), 6);
         assert_eq!(footer.dot.height(), 6);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn conc_15_an_indeterminate_footer_keeps_pulsing_until_the_state_changes() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let animations_were_enabled = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(true);
+        let footer = FeedFooter::new();
+        let window = gtk4::Window::builder().child(footer.widget()).build();
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        let first_ticks = wait_for_pulse_ticks(&footer, 2);
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        assert_eq!(
+            footer.pulse_tick_count(),
+            first_ticks,
+            "rerendering the same indeterminate state must not restart the pulse"
+        );
+        wait_for_pulse_ticks(&footer, first_ticks + 1);
+
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 1,
+                total: 2,
+            },
+            now(),
+        ));
+        let stopped_ticks = footer.pulse_tick_count();
+        assert_pulse_ticks_stay(&footer, stopped_ticks);
+
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        footer.apply_presentation(&presentation(FeedFooterState::NeverFetched, now()));
+        let stopped_ticks = footer.pulse_tick_count();
+        assert_pulse_ticks_stay(&footer, stopped_ticks);
+
+        settings.set_gtk_enable_animations(false);
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        assert_pulse_ticks_stay(&footer, 0);
+        settings.set_gtk_enable_animations(true);
+        footer.apply_presentation(&presentation(
+            FeedFooterState::Fetching {
+                checked: 0,
+                total: 0,
+            },
+            now(),
+        ));
+        wait_for_pulse_ticks(&footer, 2);
+        settings.set_gtk_enable_animations(animations_were_enabled);
+    }
+
+    fn wait_for_pulse_ticks(footer: &FeedFooter, expected: u32) -> u32 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        loop {
+            while glib::MainContext::default().iteration(false) {}
+            let current = footer.pulse_tick_count();
+            if current >= expected {
+                return current;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pulse tick count never reached {expected}; it stayed at {current}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    fn assert_pulse_ticks_stay(footer: &FeedFooter, expected: u32) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+        while std::time::Instant::now() < deadline {
+            while glib::MainContext::default().iteration(false) {}
+            assert_eq!(
+                footer.pulse_tick_count(),
+                expected,
+                "a footer without an active pulse timer must stop counting pulse ticks"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }

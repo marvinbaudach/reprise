@@ -7,6 +7,44 @@ use crate::ui::playback::preview::PlaybackMode;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContext};
 use reprise_core::up_next::QueueItem;
+use reprise_view::queue::{LastTail, TailChange};
+
+fn tail_change(old: &LastTail, new: &LastTail) -> Option<TailChange> {
+    let prefix = old
+        .ids
+        .iter()
+        .zip(&new.ids)
+        .take_while(|(old, new)| old == new)
+        .count();
+    let suffix = old.ids[prefix..]
+        .iter()
+        .rev()
+        .zip(new.ids[prefix..].iter().rev())
+        .take_while(|(old, new)| old == new)
+        .count();
+    let removed = old.ids.len() - prefix - suffix;
+    let added = new.ids.len() - prefix - suffix;
+    (removed != 0 || added != 0).then_some(TailChange {
+        base: old.sequence,
+        base_start: old.start,
+        position: prefix,
+        removed,
+        added,
+    })
+}
+
+fn tail_context(old: Option<&LastTail>, new: &LastTail) -> Option<VirtualContext> {
+    let change = old.and_then(|old| tail_change(old, new));
+    if new.ids.is_empty() && change.is_none() {
+        return None;
+    }
+    Some(VirtualContext::identified_with_change(
+        new.ids.len(),
+        new.sequence,
+        new.start,
+        change,
+    ))
+}
 
 pub(super) fn compose_queue_view_model(
     mode: PlaybackMode,
@@ -92,24 +130,41 @@ impl PlayerController {
             .current()
             .filter(|id| Some(*id) != deferred);
         let play_next = self.up_next.borrow().ids().to_vec();
-        let (context_count, context_sequence, context_start) = {
+        let tail = {
             let queue = self.queue.borrow();
-            (
-                queue.remaining_len(),
-                queue.sequence_identity(),
-                queue
+            let count = queue.remaining_len();
+            LastTail {
+                sequence: queue.sequence_identity(),
+                start: queue
                     .current_order_position()
                     .map_or(0, |position| position + 1),
-            )
+                ids: queue.remaining_window(0, count),
+            }
         };
         let origin_label = self
             .play_origin
             .borrow()
             .as_ref()
             .map(|origin| origin.label.clone());
-        let context = (context_count > 0)
-            .then(|| VirtualContext::identified(context_count, context_sequence, context_start));
-        compose_queue_view_model(
+        let previous_tail = self.last_composed_tail.borrow().clone();
+        let change = previous_tail
+            .as_ref()
+            .and_then(|previous| tail_change(previous, &tail));
+        let projects_music_context =
+            matches!(mode, PlaybackMode::Queue | PlaybackMode::QueuedEpisode);
+        let context = projects_music_context
+            .then(|| tail_context(previous_tail.as_ref(), &tail))
+            .flatten();
+        if let Some(change) = change.filter(|_| projects_music_context) {
+            tracing::info!(
+                position = change.position,
+                removed = change.removed,
+                added = change.added,
+                tail_len = tail.ids.len(),
+                "queue tail change"
+            );
+        }
+        let model = compose_queue_view_model(
             mode,
             queue_current,
             current_up_next,
@@ -117,7 +172,9 @@ impl PlayerController {
             context,
             origin_label.as_deref(),
             &self.external.borrow(),
-        )
+        );
+        self.last_composed_tail.replace(Some(tail));
+        model
     }
 }
 
@@ -176,6 +233,91 @@ mod tests {
 
     fn music_context_items() -> Vec<QueueItem> {
         vec![QueueItem::Track(2), QueueItem::Track(3)]
+    }
+
+    fn tail(sequence: (u64, u64), start: usize, ids: &[i64]) -> LastTail {
+        LastTail {
+            sequence,
+            start,
+            ids: ids.to_vec(),
+        }
+    }
+
+    #[test]
+    fn queue_tail_change_covers_a_middle_removal() {
+        let old = tail((4, 1), 8, &[10, 11, 12, 13]);
+        let new = tail((4, 2), 8, &[10, 13]);
+
+        assert_eq!(
+            tail_context(Some(&old), &new),
+            Some(VirtualContext::identified_with_change(
+                2,
+                (4, 2),
+                8,
+                Some(TailChange {
+                    base: (4, 1),
+                    base_start: 8,
+                    position: 1,
+                    removed: 2,
+                    added: 0,
+                })
+            ))
+        );
+    }
+
+    #[test]
+    fn queue_tail_change_covers_two_separated_removals() {
+        let old = tail((4, 1), 8, &[10, 11, 12, 13, 14]);
+        let new = tail((4, 2), 8, &[10, 12, 14]);
+
+        assert_eq!(
+            tail_change(&old, &new),
+            Some(TailChange {
+                base: (4, 1),
+                base_start: 8,
+                position: 1,
+                removed: 3,
+                added: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn queue_tail_change_recognises_removing_the_current_track() {
+        let old = tail((4, 1), 8, &[10, 11, 12]);
+        let new = tail((4, 2), 8, &[11, 12]);
+
+        assert_eq!(
+            tail_change(&old, &new),
+            Some(TailChange {
+                base: (4, 1),
+                base_start: 8,
+                position: 0,
+                removed: 1,
+                added: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn first_queue_tail_projection_has_no_change_hint() {
+        let new = tail((4, 1), 8, &[10, 11]);
+
+        assert_eq!(
+            tail_context(None, &new),
+            Some(VirtualContext::identified(2, (4, 1), 8))
+        );
+    }
+
+    #[test]
+    fn unchanged_queue_tail_projection_has_no_change_hint() {
+        let old = tail((4, 1), 8, &[10, 11]);
+        let new = old.clone();
+
+        assert_eq!(
+            tail_context(Some(&old), &new),
+            Some(VirtualContext::identified(2, (4, 1), 8))
+        );
     }
 
     #[test]

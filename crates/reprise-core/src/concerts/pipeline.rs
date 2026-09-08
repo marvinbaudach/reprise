@@ -309,25 +309,35 @@ fn resolve_provider<'a>(
         name: &candidate.name,
         mbid: candidate.mbid.as_deref(),
     };
+    let mut first_error = None;
     for kind in [ProviderKind::Bandsintown, ProviderKind::Ticketmaster] {
         let Some(provider) = provider_for(providers, kind) else {
             continue;
         };
-        match retry_provider_call(cancelled, || provider.resolve(&artist))? {
-            Resolution::Resolved {
+        match retry_provider_call(cancelled, || provider.resolve(&artist)) {
+            Ok(Resolution::Resolved {
                 provider_id,
                 mbid_verified,
-            } => {
+            }) => {
                 return Ok(ResolvedProvider::Found(
                     provider,
                     provider_id,
                     mbid_verified,
                 ))
             }
-            Resolution::Unmatched => {}
+            Ok(Resolution::Unmatched) => {}
+            Err(AttemptFailure::Failed(error)) => {
+                first_error.get_or_insert(error);
+            }
+            Err(error @ (AttemptFailure::QuietPeriod(_) | AttemptFailure::Cancelled)) => {
+                return Err(error)
+            }
         }
     }
-    Ok(ResolvedProvider::Unmatched)
+    match first_error {
+        Some(error) => Err(AttemptFailure::Failed(error)),
+        None => Ok(ResolvedProvider::Unmatched),
+    }
 }
 
 fn cached_provider<'a>(
@@ -562,3 +572,7 @@ pub(crate) fn delete_past_events(
 #[cfg(test)]
 #[path = "pipeline_reconcile_tests.rs"]
 mod reconcile_tests;
+
+#[cfg(test)]
+#[path = "provider_fallback_tests.rs"]
+mod provider_fallback_tests;

@@ -146,6 +146,7 @@ pub enum AgentDeviceSyncPhase {
     Transcoding,
     Copying,
     WritingAnalysis,
+    WritingLyrics,
     WritingPlaylists,
     WritingTrackMetadata,
     Finishing,

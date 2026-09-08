@@ -20,45 +20,8 @@ fn section_for_answers_ranges_and_full_model_fallback() {
     // No sections declared: the whole model stays one section.
     assert_eq!(super::imp::section_for(&[], 42, 7), (0, 42));
 }
-/// The advance shape from the live bug: one leading row removed, every
-/// section boundary behind it shifted. `items-changed` covers no surviving
-/// row, so GTK would keep its stale header tiles — the swap MUST also emit
-/// `sections-changed` over the whole model.
-#[test]
-fn leading_removal_with_shifted_sections_also_emits_sections_changed() {
-    assert_eq!(
-        super::queue_snapshot_emissions((0, 1, 0), true, 5),
-        (Some((0, 1, 0)), Some((0, 5)))
-    );
-}
-
-#[test]
-fn queue_snapshot_emissions_skips_redundant_and_illegal_signals() {
-    // A full-range items-changed re-matches every header by itself.
-    assert_eq!(
-        super::queue_snapshot_emissions((0, 6, 5), true, 5),
-        (Some((0, 6, 5)), None)
-    );
-    // Unchanged section ranges (plain context advance): items-changed only.
-    assert_eq!(
-        super::queue_snapshot_emissions((3, 1, 0), false, 5),
-        (Some((3, 1, 0)), None)
-    );
-    // Sections moved without any row delta: sections-changed alone, no
-    // fake full replace that would rebuild every row widget.
-    assert_eq!(
-        super::queue_snapshot_emissions((0, 0, 0), true, 5),
-        (None, Some((0, 5)))
-    );
-    // Emptied queue: `gtk_section_model_sections_changed` requires
-    // `n_items > 0`, so nothing may be emitted for a zero-row model.
-    assert_eq!(
-        super::queue_snapshot_emissions((0, 4, 0), true, 0),
-        (Some((0, 4, 0)), None)
-    );
-}
-
 use super::*;
+use std::cell::Cell;
 
 fn track_items(ids: &[i64]) -> Vec<reprise_core::up_next::QueueItem> {
     ids.iter()
@@ -156,6 +119,7 @@ fn tag_save_query_swap_emits_only_the_requested_changed_range() {
         &[],
         false,
         super::super::track_list_model_change::ModelChange {
+            kind: super::super::track_list_model_change::ModelChangeKind::Span,
             position: 1,
             removed: 2,
             added: 2,
@@ -166,6 +130,151 @@ fn tag_save_query_swap_emits_only_the_requested_changed_range() {
     );
 
     assert_eq!(*changes.borrow(), vec![(1, 2, 2)]);
+}
+
+fn list_track_ids(model: &TrackListModel) -> Vec<i64> {
+    (0..model.n_items())
+        .map(|position| {
+            let object = model
+                .item(position)
+                .expect("the projected row must exist")
+                .downcast::<glib::BoxedAnyObject>()
+                .expect("track-list rows use BoxedAnyObject");
+            let item = object.borrow::<QueueItemMetadata>();
+            match &*item {
+                QueueItemMetadata::Track(track) => track.id,
+                QueueItemMetadata::Episode(_) => panic!("query reload must contain tracks"),
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn tag_save_block_move_emits_remove_then_insert_over_a_consistent_model() {
+    let model = seeded_model(&[("Alpha", "A"), ("Bravo", "B"), ("Charlie", "C")]);
+    model.set_query(&ViewSource::Library, "artist", "asc", "", &[]);
+    let conn = model.imp().conn.borrow().clone().unwrap();
+    crate::test_db::connection(&conn)
+        .execute("UPDATE tracks SET artist='0' WHERE id=3", [])
+        .unwrap();
+    let trail = super::super::diagnostic_trail::handle();
+    let trail_start = trail.snapshot().len();
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let intermediate_ids = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_signal = changes.clone();
+    let intermediate_for_signal = intermediate_ids.clone();
+    model.connect_items_changed(move |model, position, removed, added| {
+        changes_for_signal
+            .borrow_mut()
+            .push((position, removed, added));
+        if changes_for_signal.borrow().len() == 1 {
+            *intermediate_for_signal.borrow_mut() = list_track_ids(model);
+        }
+    });
+
+    model.set_query_browsed_ai_changed(
+        &ViewSource::Library,
+        "artist",
+        "asc",
+        "",
+        &BrowseFilter::default(),
+        &[],
+        false,
+        super::super::track_list_model_change::ModelChange {
+            kind: super::super::track_list_model_change::ModelChangeKind::BlockMove {
+                from: 2,
+                to: 0,
+                len: 1,
+            },
+            position: 0,
+            removed: 3,
+            added: 3,
+            before_total: 3,
+            after_total: 3,
+            generation: model.generation(),
+        },
+    );
+
+    assert_eq!(*changes.borrow(), vec![(2, 1, 0), (0, 0, 1)]);
+    assert_eq!(*intermediate_ids.borrow(), vec![1, 2]);
+    assert_eq!(list_track_ids(&model), vec![3, 1, 2]);
+    assert_eq!(model.imp().state.borrow().pending_insert, None);
+    let item_events = trail
+        .snapshot()
+        .into_iter()
+        .skip(trail_start)
+        .filter(|event| event.contains(" ItemsChanged "))
+        .collect::<Vec<_>>();
+    assert_eq!(item_events.len(), 2);
+    assert!(item_events[0].ends_with("position=2 removed=1 added=0"));
+    assert!(item_events[1].ends_with("position=0 removed=0 added=1"));
+}
+
+#[test]
+fn downward_tag_save_block_move_keeps_the_intermediate_model_consistent() {
+    let model = seeded_model(&[
+        ("One", "A"),
+        ("Two", "B"),
+        ("Three", "C"),
+        ("Four", "D"),
+        ("Five", "E"),
+        ("Six", "F"),
+        ("Seven", "G"),
+        ("Eight", "H"),
+    ]);
+    model.set_query(&ViewSource::Library, "artist", "asc", "", &[]);
+    let conn = model.imp().conn.borrow().clone().unwrap();
+    let fixture_conn = crate::test_db::connection(&conn);
+    fixture_conn
+        .execute("UPDATE tracks SET artist='F1' WHERE id=2", [])
+        .unwrap();
+    fixture_conn
+        .execute("UPDATE tracks SET artist='F2' WHERE id=3", [])
+        .unwrap();
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let intermediate_n_items = Rc::new(Cell::new(None));
+    let intermediate_ids = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_signal = changes.clone();
+    let n_items_for_signal = intermediate_n_items.clone();
+    let intermediate_for_signal = intermediate_ids.clone();
+    model.connect_items_changed(move |model, position, removed, added| {
+        changes_for_signal
+            .borrow_mut()
+            .push((position, removed, added));
+        if changes_for_signal.borrow().len() == 1 {
+            n_items_for_signal.set(Some(model.n_items()));
+            *intermediate_for_signal.borrow_mut() = list_track_ids(model);
+        }
+    });
+
+    model.set_query_browsed_ai_changed(
+        &ViewSource::Library,
+        "artist",
+        "asc",
+        "",
+        &BrowseFilter::default(),
+        &[],
+        false,
+        super::super::track_list_model_change::ModelChange {
+            kind: super::super::track_list_model_change::ModelChangeKind::BlockMove {
+                from: 1,
+                to: 4,
+                len: 2,
+            },
+            position: 1,
+            removed: 6,
+            added: 6,
+            before_total: 8,
+            after_total: 8,
+            generation: model.generation(),
+        },
+    );
+
+    assert_eq!(*changes.borrow(), vec![(1, 2, 0), (4, 0, 2)]);
+    assert_eq!(intermediate_n_items.get(), Some(6));
+    assert_eq!(*intermediate_ids.borrow(), vec![1, 4, 5, 6, 7, 8]);
+    assert_eq!(list_track_ids(&model), vec![1, 4, 5, 6, 2, 3, 7, 8]);
+    assert_eq!(model.imp().state.borrow().pending_insert, None);
 }
 
 /// The narrowed range is computed synchronously and applied a main-loop turn
@@ -197,6 +306,7 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
         &[],
         false,
         super::super::track_list_model_change::ModelChange {
+            kind: super::super::track_list_model_change::ModelChangeKind::Span,
             position: 1,
             removed: 2,
             added: 2,
@@ -216,6 +326,7 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
 #[test]
 fn partial_deletion_resections_the_surviving_whole_model_section() {
     let change = super::super::track_list_model_change::ModelChange {
+        kind: super::super::track_list_model_change::ModelChangeKind::Span,
         position: 10,
         removed: 2,
         added: 0,

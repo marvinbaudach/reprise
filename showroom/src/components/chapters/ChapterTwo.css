@@ -58,7 +58,10 @@
   display: grid;
   /* Below roughly 640px the two panels stack. They keep the same 3× scale when
      they do: a comparison drawn at two scales is not a comparison. */
-  grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
+  /* `min(17.5rem, 100%)` and not the bare 17.5rem: auto-fit honours the track
+     minimum even when the container is narrower, so below 300px the panel was
+     drawn 20px wider than the page. */
+  grid-template-columns: repeat(auto-fit, minmax(min(17.5rem, 100%), 1fr));
   gap: var(--gap-line);
 }
 

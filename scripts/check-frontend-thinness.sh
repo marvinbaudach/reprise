@@ -43,7 +43,10 @@ shared_view=crates/reprise-view/src
 # unit fields it needs — done, total and the running unit's bytes replacing the
 # run-wide byte pair, plus the units and estimated remaining time the agent
 # surface reads: nine production lines.
-view_floor=2137
+# The queue projection's tail diff (#853) — LastTail, TailChange, the hinted
+# shape in change_from and the identity it is trusted against — 54 production
+# lines.
+view_floor=2191
 
 echo "== Frontend thinness =="
 
@@ -56,7 +59,7 @@ echo "== Frontend thinness =="
 # containing `Connection`; direct access to the owned connection is a
 # separate zero-tolerance ban below.
 declare -A budget=(
-  [rusqlite]=113
+  [rusqlite]=115
   [filesystem]=13
   [threads]=15
   [workers]=7
@@ -142,6 +145,30 @@ check_budget threads 'thread::spawn|thread::Builder'
 check_ban gstreamer 'gstreamer|\bgst::|use gst\b'
 check_ban zbus 'zbus'
 
+echo "== Shared filter grammar =="
+
+check_single_filter_definition() {
+  local name=$1 matches actual
+  matches=$(frontend_code | rg "const ${name}\\b" || true)
+  actual=$(wc -l <<<"$matches")
+  if [[ -z $matches ]]; then
+    actual=0
+  fi
+  if (( actual != 1 )); then
+    echo "frontend thinness: $name must have exactly one definition, found $actual" >&2
+    if [[ -n $matches ]]; then
+      echo "$matches" >&2
+    fi
+    failed=1
+  else
+    echo "  $name: one definition"
+  fi
+}
+
+check_single_filter_definition FILTER_BAR_MIN_HEIGHT
+check_single_filter_definition FACET_PAGE
+check_single_filter_definition VALUE_PAGE
+
 # Business workers are counted as whole files rather than call sites: the
 # unit that has to move into the core is the worker, not the line.
 worker_files=$(find "$frontend" -name '*worker*.rs' -not -name '*_tests.rs' | wc -l)
@@ -208,8 +235,8 @@ crates/reprise-cli/tests/common/mod.rs:1
 crates/reprise-core/src/library/playlists.rs:5
 crates/reprise-gnome/examples/row_loss_dump_repro.rs:2
 crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:1
+crates/reprise-gnome/src/ui/browse/filter_bar.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_columns.rs:1
-crates/reprise-gnome/src/ui/concerts/concerts_filter_bar.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_model.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_presentation.rs:1
 crates/reprise-gnome/src/ui/concerts/concerts_view.rs:1
@@ -218,7 +245,6 @@ crates/reprise-gnome/src/ui/motion.rs:4
 crates/reprise-gnome/src/ui/playback/external_media.rs:1
 crates/reprise-gnome/src/ui/playback/external_media_state.rs:1
 crates/reprise-gnome/src/ui/playback/preview.rs:1
-crates/reprise-gnome/src/ui/playback/session_player.rs:2
 crates/reprise-gnome/src/ui/player_bar/player_bar_layout.rs:2
 crates/reprise-gnome/src/ui/player_bar/waveform_seek.rs:2
 crates/reprise-gnome/src/ui/player_bar/waveform_seek_state.rs:1

@@ -774,7 +774,7 @@ fn src_13_reveal_is_driven_by_the_episode_identity_not_the_snapshot() {
 }
 
 #[test]
-fn start_3_restored_episode_uses_the_selection_reveal_path() {
+fn start_4_restored_episode_uses_the_selection_reveal_path() {
     let marker = include_str!("podcasts_view_marker.rs");
     let wiring = include_str!("../window/source_views.rs");
 

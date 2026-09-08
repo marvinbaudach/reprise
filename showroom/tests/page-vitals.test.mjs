@@ -64,9 +64,12 @@ test('the two pictures above the fold are painted, not faded in', async () => {
     assert.match(image, /fetchPriority="high"/);
   }
 
-  // Everything below it still waits its turn.
-  const mosaic = html.slice(html.indexOf('data-layout="design-mosaic"'));
-  assert.match(mosaic, /loading="lazy"/);
-  assert.doesNotMatch(mosaic, /fetchPriority="high"/);
-  assert.doesNotMatch(mosaic, /data-loading="false"/);
+  // Below the fold there is the film, and it waits its turn the same way the
+  // mosaic it replaced did: nothing is fetched and nothing plays until the
+  // reader asks for it.
+  const film = html.slice(html.indexOf('data-showcase="showreel-film"'));
+  assert.match(film, /preload="none"/);
+  assert.doesNotMatch(film, /autoplay/i);
+  assert.doesNotMatch(film, /fetchPriority="high"/);
+  assert.doesNotMatch(film, /data-loading="false"/);
 });

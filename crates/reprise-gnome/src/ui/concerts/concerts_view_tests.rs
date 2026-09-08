@@ -652,12 +652,20 @@ fn conc_4c_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
     )
     .unwrap();
     runtime.notify_settings_changed();
+    // Clearing the Ticketmaster key now leaves no provider at all: #818 dropped
+    // the bundled Bandsintown app id, so nothing stands in for it. The subject
+    // of this test is that a settings change is re-evaluated and refreshes the
+    // dependents — the refresh count below — not which of the two credential-less
+    // states the view lands in.
     assert_eq!(
         view.shared.empty_state.get(),
-        ConcertsEmptyState::NeverFetched
+        ConcertsEmptyState::NoCredentials
     );
-    assert_eq!(view.shared.footer.text(), "Not loaded yet");
-    assert!(view.shared.footer.reload_is_visible());
+    assert_eq!(
+        view.shared.footer.text(),
+        "Concerts needs provider credentials"
+    );
+    assert!(!view.shared.footer.reload_is_visible());
     assert_eq!(refreshes.get(), 2);
 }
 

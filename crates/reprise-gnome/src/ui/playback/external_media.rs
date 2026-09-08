@@ -220,6 +220,7 @@ impl PlayerController {
     }
 
     fn prepare_external_playback(&self, item: Option<QueueItem>) -> Option<i64> {
+        *self.pending_random_start.borrow_mut() = None;
         let start_position_ms = self.take_pending_start_mark(item);
         self.clear_pending_local_seek();
         self.persist_external_position();

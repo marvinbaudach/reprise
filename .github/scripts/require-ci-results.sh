@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (( $# != 9 )); then
-    echo "usage: $0 CHANGES_RESULT BASE_RESULT SUITE_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT" >&2
+if (( $# != 11 )); then
+    echo "usage: $0 CHANGES_RESULT BASE_RESULT SUITE_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT DISPLAY_ROUTE DISPLAY_RESULT" >&2
     exit 64
 fi
 
@@ -15,6 +15,8 @@ gnome_route=$6
 gnome_result=$7
 core_route=$8
 core_result=$9
+display_route=${10}
+display_result=${11}
 
 [[ $changes_result == success ]] || {
     echo "changed-path routing did not succeed: $changes_result" >&2
@@ -26,13 +28,13 @@ case "$suite_skip" in
             echo "suite reuse requested but base contracts were $base_result" >&2
             exit 1
         }
-        for route in "$android_route" "$gnome_route" "$core_route"; do
+        for route in "$android_route" "$gnome_route" "$core_route" "$display_route"; do
             [[ $route == false ]] || {
                 echo "suite reuse requested but a route was still selected: $route" >&2
                 exit 1
             }
         done
-        for result in "$android_result" "$gnome_result" "$core_result"; do
+        for result in "$android_result" "$gnome_result" "$core_result" "$display_result"; do
             [[ $result == skipped ]] || {
                 echo "suite reuse requested but a routed suite was $result" >&2
                 exit 1
@@ -80,4 +82,5 @@ require_route_result() {
 require_route_result Android "$android_route" "$android_result"
 require_route_result GNOME "$gnome_route" "$gnome_result"
 require_route_result Core "$core_route" "$core_result"
+require_route_result Display "$display_route" "$display_result"
 echo "Every selected CI gate succeeded"

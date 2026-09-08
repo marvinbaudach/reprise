@@ -237,7 +237,7 @@ mod que_10_tests {
         )
         .upcoming();
 
-        assert_eq!(new.leading_removal_change_from(&old), Some((1, 1, 0)));
+        assert_eq!(new.change_from(&old), Some((1, 1, 0)));
     }
 }
 

@@ -477,7 +477,7 @@ fn search_16_clearing_after_a_play_reaches_the_track_in_one_step() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn start_3_centering_the_loaded_track_reaches_it_in_one_step() {
+fn start_4_centering_the_loaded_track_reaches_it_in_one_step() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
@@ -515,7 +515,7 @@ fn start_3_centering_the_loaded_track_reaches_it_in_one_step() {
         adjustment.upper() > adjustment.page_size()
     });
 
-    // START-3's own order: the session marks the loaded track, then
+    // START-4's own order: the session marks the loaded startup item, then
     // `center_loaded_track` places the viewport on it.
     let position = 140_u32;
     let track_id = track_list.shared.model.track_at(position).unwrap().id;

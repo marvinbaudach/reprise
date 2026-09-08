@@ -135,8 +135,45 @@ pub fn discard(path: &Path) {
     let _ = std::fs::remove_file(path);
 }
 
-/// Removes only staged files owned by this process.
+/// Counts the sync runs in flight anywhere in this process.
+static ACTIVE_RUNS: AtomicU64 = AtomicU64::new(0);
+
+/// Marks one sync run as in flight for as long as it is held.
+///
+/// `cleanup_process_files` sweeps by process, but a process can hold more than
+/// one runtime — the GNOME test binary drives several at once, and they share
+/// both the process id and the device id that make up a staged name. Counting
+/// the runs keeps the sweep's reach and the "nothing is running" question on
+/// the same scope. Without it a finishing run deletes the file a concurrent
+/// one is still copying, and that run fails with a missing staged path.
+pub struct ActiveRun(());
+
+impl ActiveRun {
+    #[must_use = "the guard must outlive every staged-file copy in the sync run"]
+    pub fn begin() -> Self {
+        ACTIVE_RUNS.fetch_add(1, Ordering::SeqCst);
+        Self(())
+    }
+}
+
+impl Drop for ActiveRun {
+    fn drop(&mut self) {
+        ACTIVE_RUNS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Removes staged files owned by this process, once no run still needs them.
+///
+/// Every staged file is discarded by the run that made it; this sweep only
+/// collects what an interrupted run left behind, so it is always safe to skip.
+/// The active-run count is checked again immediately before every removal and
+/// the sweep stops as soon as it observes a sibling. A lock-free guard can
+/// still begin between that final check and `remove_file`; shipped callers are
+/// serialized on the GLib main-loop thread, so they cannot enter that window.
 pub fn cleanup_process_files() {
+    if ACTIVE_RUNS.load(Ordering::SeqCst) > 0 {
+        return;
+    }
     let directory = staging_dir();
     let prefix = format!("reprise-sync-{}-", std::process::id());
     let Ok(entries) = std::fs::read_dir(directory) else {
@@ -149,6 +186,9 @@ pub fn cleanup_process_files() {
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.starts_with(&prefix));
         if owned && path.is_file() {
+            if ACTIVE_RUNS.load(Ordering::SeqCst) > 0 {
+                return;
+            }
             let _ = std::fs::remove_file(path);
         }
     }

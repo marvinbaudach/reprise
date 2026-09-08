@@ -52,6 +52,10 @@ pub struct AndroidPlaybackSnapshot {
     pub shuffled: bool,
     pub repeat: AndroidRepeatMode,
     pub error: Option<String>,
+    #[uniffi(default = None)]
+    pub fault_notice: Option<String>,
+    #[uniffi(default = 0)]
+    pub fault_notice_count: u64,
 }
 
 #[uniffi::export(callback_interface)]
@@ -96,6 +100,8 @@ impl SessionState {
                 shuffled: false,
                 repeat: AndroidRepeatMode::Off,
                 error: None,
+                fault_notice: None,
+                fault_notice_count: 0,
             },
             stream: StreamGeneration::INITIAL,
             current_loaded: false,
@@ -135,6 +141,8 @@ impl SessionState {
                 shuffled: restored.queue.is_shuffled(),
                 repeat,
                 error: None,
+                fault_notice: None,
+                fault_notice_count: 0,
             },
             queue: restored.queue,
             history: history::HistoryState::default(),
@@ -205,6 +213,7 @@ impl SessionState {
         self.consecutive_faults = 0;
         self.fault_skip_limit = None;
         self.snapshot.error = None;
+        self.snapshot.fault_notice = None;
     }
 
     fn stop(&mut self) {
@@ -290,12 +299,15 @@ fn index_tracks(track_ids: &[i64]) -> HashMap<i64, usize> {
 ///
 /// `state` and `database` are never held at the same time. Every caller takes
 /// one inside a block that ends before the other is taken — `enqueue_tracks`
-/// and `trash_tracks` read the database, drop it, then edit the state, while
-/// `upcoming_tracks` has to read the state first to know *which* ids to ask the
-/// database about, and takes the state again afterwards to prune what the
-/// database no longer knows. That is a different order, but not a lock-order
-/// inversion: an inversion needs one thread holding A while waiting for B, and
-/// no path here holds either guard across the other's acquisition.
+/// reads the database, drops it, then edits the state. `trash_tracks` takes the
+/// database to plan, releases it for the trash callbacks, takes it again to
+/// commit, edits the state after dropping that guard, and lets `persist_queue`
+/// take the database a third time after the state guard drops. `upcoming_tracks`
+/// has to read the state first to know *which* ids to ask the database about,
+/// and takes the state again afterwards to prune what the database no longer
+/// knows. That is a different order, but not a lock-order inversion: an
+/// inversion needs one thread holding A while waiting for B, and no path here
+/// holds either guard across the other's acquisition.
 ///
 /// The rule this file keeps is therefore "one guard at a time", not "always
 /// this order" — the latter cannot be honoured by a query whose parameters come
@@ -450,11 +462,11 @@ impl AndroidPlaybackSession {
             ),
         });
         let weak = Arc::downgrade(&inner);
-        let backend = AndroidPlaybackBackend::new(
+        let backend = AndroidPlaybackBackend::new_with_faults(
             port,
-            Box::new(move |event| {
+            Box::new(move |event, missing| {
                 if let Some(inner) = weak.upgrade() {
-                    inner.handle_event(event);
+                    inner.handle_event(event, missing);
                 }
             }),
         )
