@@ -1,11 +1,13 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -78,6 +80,32 @@ class BrowseDetailLoadingTest {
         compose.onNodeWithText("Loading…").assertDoesNotExist()
         compose.onNodeWithText("Artist 2").assertIsDisplayed()
         compose.onNodeWithText("Albums").assertDoesNotExist()
+    }
+
+    @Test
+    fun aPendingArtistOpenDoesNotDiscardTheSearchResultThatWasAlreadyRequested() {
+        compose.onNodeWithText("Artists").performClick()
+        application.blockArtist45SearchAndCatchUp()
+        application.blockArtistOneOpen()
+
+        compose.onNodeWithContentDescription("Search library").performClick()
+        compose.onNodeWithText("Search artists").performTextInput("Artist 45")
+        compose.waitUntil(timeoutMillis = 5_000) { application.artist45SearchHasStarted() }
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasStarted() }
+
+        application.releaseArtist45Search()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artist45SearchHasFinished() }
+        compose.onNodeWithContentDescription("Back to artists").performClick()
+        compose.waitForIdle()
+
+        compose.onNode(
+            hasText("Artist 45") and hasText("45 tracks", substring = true),
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Artist 2").assertDoesNotExist()
+
+        application.releaseArtist45SearchCatchUp()
+        application.releaseArtistOneOpen()
     }
 
     private fun openArtistOne() {
