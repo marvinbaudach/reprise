@@ -5,7 +5,7 @@ use crate::device_dto::{
     DeviceSyncParams, DeviceSyncPlaylistDto, DeviceSyncProgressDto, DeviceSyncSourceParam,
     DeviceSyncStateDto, DeviceSyncStorageCompositionDto, DeviceSyncStorageDto, DeviceSyncTargetDto,
 };
-use crate::playback::{map_zbus_error, PlaybackError, BUS_NAME, OBJECT_PATH};
+use crate::playback::{map_zbus_error, PlaybackError};
 
 const DEVICE_SYNC_INTERFACE: &str = "org.reprise.DeviceSync1";
 
@@ -13,6 +13,7 @@ use reprise_runtime_protocol::device_sync::{
     DeviceChangeCounts, DeviceSnapshot, DeviceSourceSelection, DeviceSourceSnapshot,
     DeviceStorageComposition, DeviceStorageSnapshot, DeviceTargetSnapshot,
 };
+use reprise_runtime_protocol::mpris::{BUS_NAME, OBJECT_PATH};
 use reprise_runtime_protocol::{ProtocolVersion, PROTOCOL_VERSION};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
