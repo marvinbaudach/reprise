@@ -149,6 +149,7 @@ static ACTIVE_RUNS: AtomicU64 = AtomicU64::new(0);
 pub struct ActiveRun(());
 
 impl ActiveRun {
+    #[must_use = "the guard must outlive every staged-file copy in the sync run"]
     pub fn begin() -> Self {
         ACTIVE_RUNS.fetch_add(1, Ordering::SeqCst);
         Self(())
@@ -164,8 +165,11 @@ impl Drop for ActiveRun {
 /// Removes staged files owned by this process, once no run still needs them.
 ///
 /// Every staged file is discarded by the run that made it; this sweep only
-/// collects what an interrupted run left behind. It is therefore always safe
-/// to skip, and never safe to run while a sibling is mid-copy.
+/// collects what an interrupted run left behind, so it is always safe to skip.
+/// The active-run count is checked again immediately before every removal and
+/// the sweep stops as soon as it observes a sibling. A lock-free guard can
+/// still begin between that final check and `remove_file`; shipped callers are
+/// serialized on the GLib main-loop thread, so they cannot enter that window.
 pub fn cleanup_process_files() {
     if ACTIVE_RUNS.load(Ordering::SeqCst) > 0 {
         return;
@@ -182,6 +186,9 @@ pub fn cleanup_process_files() {
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.starts_with(&prefix));
         if owned && path.is_file() {
+            if ACTIVE_RUNS.load(Ordering::SeqCst) > 0 {
+                return;
+            }
             let _ = std::fs::remove_file(path);
         }
     }
