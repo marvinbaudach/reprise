@@ -24,11 +24,21 @@ The most valuable finding of this survey is a **negative** one, in §4.
 
 ## 1. Landed in this pass
 
-Branch `chore/cleanup-2026-09-07`, seven commits. Verified with `cargo clippy
---workspace --all-targets -- -D warnings` clean, 2,946 Rust tests, the full
-Android gate (99 suites, 605 tests), plus `check-architecture.sh`,
-`check-frontend-thinness.sh`, `check-shell.sh` and `check-project-quality.sh`
-— all green.
+Branch `chore/cleanup-2026-09-07`, opened as PR #890 on 2026-09-08.
+
+The verification recorded here originally covered the first seven commits:
+`cargo clippy --workspace --all-targets -- -D warnings` clean, 2,946 Rust
+tests, the full Android gate (99 suites, 605 tests), plus
+`check-architecture.sh`, `check-frontend-thinness.sh`, `check-shell.sh` and
+`check-project-quality.sh` — all green. Seven further commits landed on the
+branch afterwards, including the MPRIS consolidation, and were not covered by
+that run.
+
+The evidence of record for the whole branch is therefore the later one: a full
+`check-merge-readiness.sh` against `origin/dev`, run 2026-09-08 in this
+branch's own worktree with nothing skipped, plus three fresh reviews of the
+complete diff (Rust, the two new gate scripts, Kotlin). PR #890 carries what
+they found. Do not read the seven-commit list above as covering this branch.
 
 Three reviewers went over the diff afterwards and found four things, all now
 fixed. The one that mattered: the first version of the duration fix carried a
@@ -126,8 +136,18 @@ There is a working reference implementation to copy in the same file.
 ## 4. Decisions still written twice — and the one that fails silently
 
 The recorded lesson is that a comment asking two places to stay in sync is a
-plea, not a mechanism. Three instances remain, deliberately not fixed here
-because each needs a decision about where the shared thing lives:
+plea, not a mechanism.
+
+**All three instances below are now closed.** The list is kept because the
+reasoning is still worth reading, but do not take it as open work — that
+misreading already happened once. Case 1 was fixed on `dev` by PR #873, which
+added `scripts/check-listen-report-parity.sh`. Cases 2 and 3 were fixed later
+on this very branch, in the commit that gave the MPRIS contract its own module
+in `reprise-runtime-protocol`; that module is the neutral home case 2 was
+waiting for, and both the CLI and the MCP server now import from it behind
+their existing `mpris` feature.
+
+What the three needed at the time each was written:
 
 1. **Listen-report filenames, Rust to Kotlin.**
    `device_sync/listen_report.rs` and `ListenReportWriter.kt` each spell
