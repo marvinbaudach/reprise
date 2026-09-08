@@ -102,19 +102,41 @@ def value(expr: str) -> int:
     return product
 
 
-rust = dict()
-for ms, expected in re.findall(
-    r"assert_eq!\(\s*format_duration\(([^)]*)\)\s*,\s*\"([^\"]*)\"\s*\)",
-    code_of(rust_path),
-):
-    rust[value(ms)] = expected
+def value_at(expr: str, path: str, source: str, offset: int) -> int:
+    """Evaluate one assertion argument or report its actionable source location."""
+    try:
+        return value(expr)
+    except ValueError:
+        line = source.count("\n", 0, offset) + 1
+        print(
+            "duration-format parity: an assertion uses a computed millisecond value",
+            file=sys.stderr,
+        )
+        print(f"  {path}:{line}: cannot evaluate `{expr.strip()}`", file=sys.stderr)
+        print(
+            "  write the argument as an integer literal or a product of integer literals",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
 
-kotlin = dict()
-for expected, ms in re.findall(
-    r"assertEquals\(\s*\"([^\"]*)\"\s*,\s*formatDuration\(([^)]*)\)\s*\)",
-    code_of(kotlin_path),
+
+rust_source = code_of(rust_path)
+rust = dict()
+for match in re.finditer(
+    r"assert_eq!\(\s*format_duration\(([^)]*)\)\s*,\s*\"([^\"]*)\"\s*\)",
+    rust_source,
 ):
-    kotlin[value(ms)] = expected
+    ms, expected = match.groups()
+    rust[value_at(ms, rust_path, rust_source, match.start(1))] = expected
+
+kotlin_source = code_of(kotlin_path)
+kotlin = dict()
+for match in re.finditer(
+    r"assertEquals\(\s*\"([^\"]*)\"\s*,\s*formatDuration\(([^)]*)\)\s*\)",
+    kotlin_source,
+):
+    expected, ms = match.groups()
+    kotlin[value_at(ms, kotlin_path, kotlin_source, match.start(2))] = expected
 
 if not rust:
     print("duration-format parity: no assertions found in the Rust tests", file=sys.stderr)
