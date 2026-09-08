@@ -26,28 +26,14 @@ use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest
 
 use crate::ui::device_sync::device_sync_runtime::*;
 
+#[path = "device_sync_fake_backend_gates_tests.rs"]
+mod gates;
+use gates::*;
+
 pub(super) type TestFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
 type DeviceSubscriber = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
 type DeleteObserver = Rc<dyn Fn(&str)>;
 type TranscodeObserver = Rc<dyn Fn(&std::path::Path)>;
-
-#[derive(Clone)]
-struct CopyGate {
-    started: async_channel::Sender<String>,
-    releases: HashMap<String, async_channel::Receiver<()>>,
-}
-
-#[derive(Clone)]
-struct PlaylistGate {
-    started: async_channel::Sender<()>,
-    release: async_channel::Receiver<()>,
-}
-
-#[derive(Clone)]
-struct InspectionGate {
-    started: async_channel::Sender<()>,
-    release: async_channel::Receiver<()>,
-}
 
 #[derive(Default)]
 pub(super) struct FakeState {
@@ -81,6 +67,9 @@ pub(super) struct FakeState {
     pub(super) managed_root_enumerations: Cell<u32>,
     pub(super) last_inspected_target: RefCell<Option<SyncTarget>>,
     pub(super) managed_files: RefCell<Vec<ManagedDeviceFile>>,
+    pub(super) probe_result: RefCell<Option<Result<Vec<ManagedDeviceFile>, String>>>,
+    pub(super) probe_calls: Cell<usize>,
+    managed_target_exists: Cell<bool>,
     /// Test-only platform outcomes for requested paths whose directory spelling
     /// is adopted by the device backend.
     copy_path_overrides: RefCell<HashMap<String, String>>,
@@ -133,6 +122,7 @@ impl FakeBackend {
         state.devices.replace(devices);
         state.available_bytes.set(Some(1_000_000));
         state.total_bytes.set(Some(2_000_000));
+        state.managed_target_exists.set(true);
         Self { state, delay_ms }
     }
 
@@ -236,6 +226,10 @@ impl FakeBackend {
         for subscriber in subscribers {
             subscriber(devices.to_owned());
         }
+    }
+
+    pub(super) fn set_managed_target_exists(&self, exists: bool) {
+        self.state.managed_target_exists.set(exists);
     }
 
     pub(super) fn gate_copies(
@@ -386,6 +380,35 @@ impl DeviceBackend for FakeBackend {
                 None => Ok(report),
             }
         })
+    }
+
+    fn probe_managed_files(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+        relative_paths: Vec<String>,
+    ) -> TestFuture<Vec<ManagedDeviceFile>> {
+        self.state
+            .probe_calls
+            .set(self.state.probe_calls.get().saturating_add(1));
+        let result = self.state.probe_result.borrow().clone();
+        Box::pin(async move {
+            let mut files = result.unwrap_or_else(|| Ok(Vec::new()))?;
+            files
+                .retain(|file| file.size_bytes > 0 && relative_paths.contains(&file.relative_path));
+            Ok(files)
+        })
+    }
+
+    fn managed_target_exists(
+        &self,
+        _root_uri: String,
+        _target_path: String,
+        _storage_id: Option<StorageId>,
+    ) -> TestFuture<bool> {
+        let exists = self.state.managed_target_exists.get();
+        Box::pin(async move { Ok(exists) })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -774,14 +797,3 @@ impl DeviceBackend for FakeBackend {
 mod lyrics_gate_tests;
 #[path = "device_sync_transcode_prefetch_tests.rs"]
 mod transcode_prefetch_tests;
-
-pub(super) fn descriptor(id: &str, reconnectable: bool) -> DeviceDescriptor {
-    DeviceDescriptor {
-        id: id.into(),
-        persistent_id: reconnectable.then(|| id.to_string()),
-        name: format!("Phone {id}"),
-        root_uri: format!("mtp://{id}"),
-        icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
-        reconnectable,
-    }
-}

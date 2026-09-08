@@ -535,6 +535,45 @@ fn an_entry_written_before_the_unknown_state_is_not_believed() {
 }
 
 #[test]
+fn resolution_format_three_reopens_downloads_settled_by_format_two() {
+    let dir = tempfile::tempdir().unwrap();
+    let album = format!("Format Three {}", fastrand::u64(..));
+    let track = tagged_track_with_cover(dir.path(), "v2.flac", &album, solid_png([3, 6, 9]));
+    let index = resolution_index_path(&track, ThumbnailSize::List);
+    let format_two_stamp = format!(
+        "2:{}:{}:{}:{}",
+        mtime_nanos(&track),
+        std::fs::metadata(&track).unwrap().len(),
+        mtime_nanos(dir.path()),
+        mtime_nanos(&crate::cover_download::publish_marker())
+    );
+    write_resolution_body(
+        &index,
+        &format_two_stamp,
+        &format!("{RESOLUTION_UNKNOWN}\n{DOWNLOAD_EXHAUSTED}"),
+    );
+
+    assert!(
+        !download_marked_unavailable(&track, ThumbnailSize::List),
+        "format-two settlement predates cross-album collision detection"
+    );
+
+    std::fs::remove_file(index).ok();
+}
+
+#[test]
+fn musicbrainz_release_query_escapes_lucene_special_characters() {
+    assert_eq!(
+        crate::cover_download::escape_lucene(r#"A+ -!():^[x]{y}~*?"quote\slash"#),
+        r#"A\+ \-\!\(\)\:\^\[x\]\{y\}\~\*\?\"quote\\slash"#
+    );
+    assert_eq!(
+        crate::cover_download::musicbrainz_search_url("A+B", r#"Best? "Hits""#),
+        "https://musicbrainz.org/ws/2/release?query=artist%3A%22A%5C%2BB%22%20AND%20release%3A%22Best%5C%3F%20%5C%22Hits%5C%22%22&fmt=json&limit=5"
+    );
+}
+
+#[test]
 fn a_sidecar_cover_appearing_undoes_a_remembered_absence() {
     // "No cover" is remembered too, so a coverless track costs three stats
     // instead of a tag read. It must not survive a cover showing up.

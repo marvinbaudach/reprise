@@ -207,6 +207,11 @@ where
                 let mbid = match resolve_artist_mbid(conn, &candidate, hooks.fetch, &mut report)? {
                     MbidResolution::Found(mbid) => mbid,
                     MbidResolution::Failed(error) => {
+                        tracing::warn!(
+                            artist = %candidate.name,
+                            %error,
+                            "New Releases: artist check failed"
+                        );
                         record_failure(&mut report, error);
                         crate::artist_news_ledger::record_attempt(
                             conn,
@@ -235,6 +240,11 @@ where
                 let discography = match fetch_release_discography(&mbid, today, hooks.fetch) {
                     Ok(discography) => discography,
                     Err(error) => {
+                        tracing::warn!(
+                            artist = %candidate.name,
+                            %error,
+                            "New Releases: artist check failed"
+                        );
                         record_failure(&mut report, error);
                         crate::artist_news_ledger::record_attempt(
                             conn,
@@ -287,13 +297,39 @@ where
             .map_err(database_error)?;
         transaction.commit().map_err(database_error)
     })();
-    refresh_result?;
-    reconciliation_result?;
-    crate::artist_news_history::enforce_retention(db, now).map_err(database_error)?;
-    if report.failures.is_empty() {
-        crate::library::settings::set_new_releases_last_completed_at(db, (hooks.completion_time)())
-            .map_err(database_error)?;
+    let finish_result = refresh_result
+        .and(reconciliation_result)
+        .and_then(|()| {
+            crate::artist_news_history::enforce_retention(db, now).map_err(database_error)
+        })
+        .and_then(|()| {
+            if report.failures.is_empty() || report.artists_fetched > 0 {
+                crate::library::settings::set_new_releases_last_completed_at(
+                    db,
+                    (hooks.completion_time)(),
+                )
+                .map_err(database_error)?;
+            }
+            Ok(())
+        });
+    if let Err(error) = finish_result {
+        tracing::warn!(
+            queued = report.artists_queued,
+            fetched = report.artists_fetched,
+            unmatched = report.unmatched,
+            failed = report.failed,
+            %error,
+            "New Releases: check aborted"
+        );
+        return Err(error);
     }
+    tracing::info!(
+        queued = report.artists_queued,
+        fetched = report.artists_fetched,
+        unmatched = report.unmatched,
+        failed = report.failed,
+        "New Releases: check finished"
+    );
     Ok(report)
 }
 
@@ -461,16 +497,23 @@ fn persist_artist_match(
     Ok(())
 }
 
-/// Freshness is judged by the last *attempt* recorded in the ledger, not by
-/// the newest release we happened to store. An artist with nothing to report
-/// stores no release — judging by releases meant re-fetching them forever.
+/// Freshness is judged by the last successful or unmatched attempt recorded
+/// in the ledger, not by the newest release we happened to store. An artist
+/// with nothing to report stores no release, while a failed artist must be due
+/// again at the next check.
 fn artist_cache_is_fresh(
     conn: &Connection,
     artist_key: &str,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
-    let last_attempt = crate::artist_news_ledger::last_attempt_at(conn, artist_key)?;
-    Ok(last_attempt.is_some_and(|attempt| now.saturating_sub(attempt).max(0) <= FETCH_TTL_SECONDS))
+    let last_attempt = crate::artist_news_ledger::last_attempt(conn, artist_key)?;
+    Ok(last_attempt.is_some_and(|attempt| {
+        matches!(
+            attempt.outcome,
+            crate::artist_news_ledger::FetchOutcome::Ok
+                | crate::artist_news_ledger::FetchOutcome::Unmatched
+        ) && now.saturating_sub(attempt.at).max(0) <= FETCH_TTL_SECONDS
+    }))
 }
 
 fn sync_releases(

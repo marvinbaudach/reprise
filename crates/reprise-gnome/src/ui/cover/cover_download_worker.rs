@@ -20,10 +20,12 @@ pub(in crate::ui) enum DownloadOutcome {
     TransientFailure,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum CoverStatus {
     Covered,
-    NeedsSharedCover,
+    NeedsSharedCover {
+        also: Option<(String, String, Option<String>)>,
+    },
 }
 
 pub struct DownloadRequest {
@@ -91,12 +93,14 @@ pub(in crate::ui) fn spawn(
             let db = open_library(database_path.as_deref());
             let mut attempted = HashMap::new();
             let mut observed_embedded = HashMap::new();
+            let mut observed_fingerprints = HashMap::new();
             while let Ok(request) = receiver.recv_blocking() {
                 let result = result_for_path(
                     Path::new(&request.track_path),
                     request.skip_if_covered,
                     &mut attempted,
                     &mut observed_embedded,
+                    &mut observed_fingerprints,
                     db.as_ref(),
                 );
                 let _ = request.response.try_send(result);
@@ -127,29 +131,53 @@ fn result_for_path(
     skip_if_covered: bool,
     attempted: &mut HashMap<String, CoverFetchOutcome>,
     observed_embedded: &mut HashMap<String, u64>,
+    observed_fingerprints: &mut HashMap<u64, (String, String, String, Option<String>)>,
     db: Option<&Db>,
 ) -> DownloadOutcome {
     let tag = read_cover_tag(track_path);
+    let mut also = None;
     if skip_if_covered {
         if let Some(source) = resolve_source(track_path) {
-            if cover_status(&tag, &source, observed_embedded) == CoverStatus::Covered {
-                return DownloadOutcome::AlreadyCovered;
+            match cover_status(&tag, &source, observed_embedded, observed_fingerprints) {
+                CoverStatus::Covered => return DownloadOutcome::AlreadyCovered,
+                CoverStatus::NeedsSharedCover { also: remembered } => also = remembered,
             }
         }
     }
-    match result_for_tag(tag, attempted, db) {
+    let also = also.map(|(album_artist, album, release_mbid)| CoverTag {
+        picture: None,
+        album_artist: Some(album_artist),
+        album: Some(album),
+        release_mbid,
+    });
+    let result = fetch_collision_pair(tag, also, &mut |tag| result_for_tag(tag, attempted, db));
+    match result {
         CoverFetchOutcome::Downloaded(path) => DownloadOutcome::Downloaded(path),
         CoverFetchOutcome::NotFound => DownloadOutcome::Unavailable,
         CoverFetchOutcome::TransientFailure => DownloadOutcome::TransientFailure,
     }
 }
 
+fn fetch_collision_pair(
+    primary: CoverTag,
+    also: Option<CoverTag>,
+    fetch: &mut impl FnMut(CoverTag) -> CoverFetchOutcome,
+) -> CoverFetchOutcome {
+    if let Some(mirror) = also {
+        if fetch(mirror) == CoverFetchOutcome::TransientFailure {
+            return CoverFetchOutcome::TransientFailure;
+        }
+    }
+    fetch(primary)
+}
+
 fn cover_status(
     tag: &CoverTag,
-    source: &CoverSource,
+    _source: &CoverSource,
     observed_embedded: &mut HashMap<String, u64>,
+    observed_fingerprints: &mut HashMap<u64, (String, String, String, Option<String>)>,
 ) -> CoverStatus {
-    let CoverSource::Embedded(bytes) = source else {
+    let Some(bytes) = tag.picture.as_deref() else {
         return CoverStatus::Covered;
     };
     let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref())
@@ -162,15 +190,36 @@ fn cover_status(
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut hasher);
     let fingerprint = hasher.finish();
-    match observed_embedded.entry(album_key(album_artist, album)) {
+    let key = album_key(album_artist, album);
+    let album_conflicts = match observed_embedded.entry(key.clone()) {
         std::collections::hash_map::Entry::Vacant(entry) => {
             entry.insert(fingerprint);
-            CoverStatus::Covered
+            false
         }
-        std::collections::hash_map::Entry::Occupied(entry) if *entry.get() == fingerprint => {
-            CoverStatus::Covered
+        std::collections::hash_map::Entry::Occupied(entry) if *entry.get() == fingerprint => false,
+        std::collections::hash_map::Entry::Occupied(_) => true,
+    };
+    let also = match observed_fingerprints.entry(fingerprint) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert((
+                key.clone(),
+                album_artist.to_owned(),
+                album.to_owned(),
+                tag.release_mbid.clone(),
+            ));
+            None
         }
-        std::collections::hash_map::Entry::Occupied(_) => CoverStatus::NeedsSharedCover,
+        std::collections::hash_map::Entry::Occupied(entry) if entry.get().0 == key => None,
+        std::collections::hash_map::Entry::Occupied(entry) => Some((
+            entry.get().1.clone(),
+            entry.get().2.clone(),
+            entry.get().3.clone(),
+        )),
+    };
+    if also.is_some() || album_conflicts {
+        CoverStatus::NeedsSharedCover { also }
+    } else {
+        CoverStatus::Covered
     }
 }
 
@@ -204,7 +253,9 @@ fn result_for_tag(
         tag.release_mbid.as_deref(),
         &album_dirs,
     );
-    attempted.insert(key, result.clone());
+    if result != CoverFetchOutcome::TransientFailure {
+        attempted.insert(key, result.clone());
+    }
     result
 }
 
@@ -222,8 +273,8 @@ mod tests {
     use reprise_core::cover_download::{album_key, CoverFetchOutcome};
 
     use super::{
-        cover_status, open_library, result_for_path, result_for_tag, setup, CoverDownloadRuntime,
-        CoverStatus, DownloadOutcome, DownloadRequest,
+        cover_status, fetch_collision_pair, open_library, result_for_path, result_for_tag, setup,
+        CoverDownloadRuntime, CoverStatus, DownloadOutcome, DownloadRequest,
     };
 
     #[test]
@@ -315,9 +366,17 @@ mod tests {
         .unwrap();
         let mut attempted = HashMap::new();
         let mut observed = HashMap::new();
+        let mut observed_fingerprints = HashMap::new();
 
         assert_eq!(
-            result_for_path(&track, true, &mut attempted, &mut observed, None),
+            result_for_path(
+                &track,
+                true,
+                &mut attempted,
+                &mut observed,
+                &mut observed_fingerprints,
+                None,
+            ),
             DownloadOutcome::AlreadyCovered
         );
         assert!(attempted.is_empty());
@@ -327,12 +386,14 @@ mod tests {
     fn batch_request_reports_unavailable_for_missing_tags() {
         let mut attempted = HashMap::new();
         let mut observed = HashMap::new();
+        let mut observed_fingerprints = HashMap::new();
         assert_eq!(
             result_for_path(
                 std::path::Path::new("/does/not/exist.mp3"),
                 true,
                 &mut attempted,
                 &mut observed,
+                &mut observed_fingerprints,
                 None
             ),
             DownloadOutcome::Unavailable
@@ -371,6 +432,7 @@ mod tests {
     #[test]
     fn browse_10_same_album_with_different_embedded_art_requires_a_shared_cover() {
         let mut observed = HashMap::new();
+        let mut observed_fingerprints = HashMap::new();
         let first_tag = CoverTag {
             picture: Some(vec![1, 2, 3]),
             album_artist: Some("Consistency Artist".into()),
@@ -394,7 +456,8 @@ mod tests {
             cover_status(
                 &first_tag,
                 &CoverSource::Embedded(vec![1, 2, 3]),
-                &mut observed
+                &mut observed,
+                &mut observed_fingerprints,
             ),
             CoverStatus::Covered
         );
@@ -402,7 +465,8 @@ mod tests {
             cover_status(
                 &matching_tag,
                 &CoverSource::Embedded(vec![1, 2, 3]),
-                &mut observed
+                &mut observed,
+                &mut observed_fingerprints,
             ),
             CoverStatus::Covered
         );
@@ -410,9 +474,190 @@ mod tests {
             cover_status(
                 &second_tag,
                 &CoverSource::Embedded(vec![4, 5, 6]),
-                &mut observed
+                &mut observed,
+                &mut observed_fingerprints,
             ),
-            CoverStatus::NeedsSharedCover
+            CoverStatus::NeedsSharedCover { also: None }
         );
+    }
+
+    #[test]
+    fn browse_10_same_embedded_art_across_album_keys_requires_both_shared_covers() {
+        let mut observed_by_album = HashMap::new();
+        let mut observed_by_fingerprint = HashMap::new();
+        let first_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("First Artist".into()),
+            album: Some("First Album".into()),
+            release_mbid: Some("first-release-mbid".into()),
+        };
+        let second_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("Second Artist".into()),
+            album: Some("Second Album".into()),
+            release_mbid: None,
+        };
+
+        assert_eq!(
+            cover_status(
+                &first_tag,
+                &CoverSource::Embedded(vec![1, 2, 3]),
+                &mut observed_by_album,
+                &mut observed_by_fingerprint,
+            ),
+            CoverStatus::Covered
+        );
+        assert_eq!(
+            cover_status(
+                &second_tag,
+                &CoverSource::Embedded(vec![1, 2, 3]),
+                &mut observed_by_album,
+                &mut observed_by_fingerprint,
+            ),
+            CoverStatus::NeedsSharedCover {
+                also: Some((
+                    "First Artist".into(),
+                    "First Album".into(),
+                    Some("first-release-mbid".into()),
+                )),
+            }
+        );
+    }
+
+    #[test]
+    fn downloaded_cover_keeps_embedded_art_in_cross_album_collision_detection() {
+        let mut observed_by_album = HashMap::new();
+        let mut observed_by_fingerprint = HashMap::new();
+        let covered_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("Covered Artist".into()),
+            album: Some("Covered Album".into()),
+            release_mbid: Some("covered-release-mbid".into()),
+        };
+        let colliding_tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("Retry Artist".into()),
+            album: Some("Retry Album".into()),
+            release_mbid: None,
+        };
+
+        assert_eq!(
+            cover_status(
+                &covered_tag,
+                &CoverSource::FolderImage(PathBuf::from("/cache/covered.jpg")),
+                &mut observed_by_album,
+                &mut observed_by_fingerprint,
+            ),
+            CoverStatus::Covered
+        );
+        assert_eq!(
+            cover_status(
+                &colliding_tag,
+                &CoverSource::Embedded(vec![1, 2, 3]),
+                &mut observed_by_album,
+                &mut observed_by_fingerprint,
+            ),
+            CoverStatus::NeedsSharedCover {
+                also: Some((
+                    "Covered Artist".into(),
+                    "Covered Album".into(),
+                    Some("covered-release-mbid".into()),
+                )),
+            }
+        );
+    }
+
+    #[test]
+    fn a_transient_mirror_failure_defers_the_primary_collision_fetch() {
+        let primary = CoverTag {
+            album_artist: Some("Primary Artist".into()),
+            album: Some("Primary Album".into()),
+            ..CoverTag::default()
+        };
+        let mirror = CoverTag {
+            album_artist: Some("Mirror Artist".into()),
+            album: Some("Mirror Album".into()),
+            ..CoverTag::default()
+        };
+        let mut fetched_albums = Vec::new();
+
+        let result = fetch_collision_pair(primary, Some(mirror), &mut |tag| {
+            fetched_albums.push(tag.album.unwrap());
+            CoverFetchOutcome::TransientFailure
+        });
+
+        assert_eq!(result, CoverFetchOutcome::TransientFailure);
+        assert_eq!(fetched_albums, ["Mirror Album"]);
+    }
+
+    #[test]
+    fn a_definitive_mirror_result_is_followed_by_the_primary_collision_fetch() {
+        let primary = CoverTag {
+            album: Some("Primary Album".into()),
+            ..CoverTag::default()
+        };
+        let mirror = CoverTag {
+            album: Some("Mirror Album".into()),
+            ..CoverTag::default()
+        };
+        let mut fetched_albums = Vec::new();
+
+        let result = fetch_collision_pair(primary, Some(mirror), &mut |tag| {
+            let album = tag.album.unwrap();
+            fetched_albums.push(album.clone());
+            if album == "Mirror Album" {
+                CoverFetchOutcome::NotFound
+            } else {
+                CoverFetchOutcome::Downloaded(PathBuf::from("/cache/primary.jpg"))
+            }
+        });
+
+        assert_eq!(
+            result,
+            CoverFetchOutcome::Downloaded(PathBuf::from("/cache/primary.jpg"))
+        );
+        assert_eq!(fetched_albums, ["Mirror Album", "Primary Album"]);
+    }
+
+    #[test]
+    fn browse_10_same_embedded_art_within_one_album_stays_covered() {
+        let mut observed_by_album = HashMap::new();
+        let mut observed_by_fingerprint = HashMap::new();
+        let tag = CoverTag {
+            picture: Some(vec![1, 2, 3]),
+            album_artist: Some("One Artist".into()),
+            album: Some("One Album".into()),
+            release_mbid: None,
+        };
+
+        for _ in 0..2 {
+            assert_eq!(
+                cover_status(
+                    &tag,
+                    &CoverSource::Embedded(vec![1, 2, 3]),
+                    &mut observed_by_album,
+                    &mut observed_by_fingerprint,
+                ),
+                CoverStatus::Covered
+            );
+        }
+    }
+
+    #[test]
+    fn browse_10_embedded_art_without_album_identity_stays_covered() {
+        let mut observed_by_album = HashMap::new();
+        let mut observed_by_fingerprint = HashMap::new();
+
+        assert_eq!(
+            cover_status(
+                &CoverTag::default(),
+                &CoverSource::Embedded(vec![1, 2, 3]),
+                &mut observed_by_album,
+                &mut observed_by_fingerprint,
+            ),
+            CoverStatus::Covered
+        );
+        assert!(observed_by_album.is_empty());
+        assert!(observed_by_fingerprint.is_empty());
     }
 }

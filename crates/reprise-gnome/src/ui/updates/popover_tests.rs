@@ -6,6 +6,7 @@
 // against any implementation at all, and one for "shown" can never pass. Only
 // `state.button` (parentless here) and `state.badge` (below the button) may be
 // read either way. STYLE-1's rule applies: prove the result, not the property.
+use super::popover_fetch::{FetchPlan, FetchTrigger};
 use super::*;
 use reprise_core::db::Db;
 
@@ -33,6 +34,26 @@ fn opening_the_popover_never_requests_navigation() {
 
     assert_eq!(effect.seen_ids, ["one", "two"]);
     assert!(!effect.navigates);
+}
+
+#[test]
+fn nr_41_a_background_check_never_forces_and_the_reload_does() {
+    assert_eq!(
+        FetchPlan::for_trigger(FetchTrigger::Background),
+        FetchPlan {
+            include_concerts: false,
+            force: false,
+        },
+        "a background check must neither include Concerts nor force New Releases"
+    );
+    assert_eq!(
+        FetchPlan::for_trigger(FetchTrigger::Manual),
+        FetchPlan {
+            include_concerts: true,
+            force: true,
+        },
+        "the footer reload must force both feeds"
+    );
 }
 
 #[test]
@@ -252,15 +273,65 @@ fn nr_37_the_popover_footer_reports_the_older_of_both_feeds() {
     };
 
     assert_eq!(
-        aggregate_footer_state(news, concerts, true, false, false, false),
+        aggregate_footer_state(news, concerts, true, None, false, false),
         crate::ui::feed_footer::FeedFooterState::Cached { at: 100 }
     );
     assert_eq!(
-        aggregate_footer_state(news, concerts, true, true, false, false),
+        aggregate_footer_state(
+            news,
+            concerts,
+            true,
+            Some(FeedProgress::default()),
+            false,
+            false
+        ),
         crate::ui::feed_footer::FeedFooterState::Fetching {
             checked: 0,
             total: 0
         }
+    );
+}
+
+#[test]
+fn nr_37_the_popover_footer_shows_determinate_progress_from_both_feeds() {
+    let active = ActiveFeed {
+        active: true,
+        latest: None,
+        loaded_this_visit: false,
+    };
+
+    assert_eq!(
+        aggregate_footer_state(
+            active,
+            active,
+            true,
+            Some(FeedProgress {
+                news: (12, 50),
+                concerts: (3, 20),
+            }),
+            false,
+            false,
+        ),
+        crate::ui::feed_footer::FeedFooterState::Fetching {
+            checked: 15,
+            total: 70,
+        },
+        "the Updates footer must sum New Releases and Concerts progress"
+    );
+    assert_eq!(
+        aggregate_footer_state(
+            active,
+            active,
+            true,
+            Some(FeedProgress::default()),
+            false,
+            false,
+        ),
+        crate::ui::feed_footer::FeedFooterState::Fetching {
+            checked: 0,
+            total: 0,
+        },
+        "the footer must stay indeterminate until the first progress event"
     );
 }
 

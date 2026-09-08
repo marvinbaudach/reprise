@@ -4,13 +4,14 @@ use std::borrow::Cow;
 
 use chrono::NaiveDate;
 use reprise_core::artist_news::{
-    self, release_status, ReleaseSortDirection, ReleaseSortKey, ReleaseStatus,
+    release_status, ReleaseSortDirection, ReleaseSortKey, ReleaseStatus,
 };
 use reprise_core::artist_news_history::HistoryEntry;
 use reprise_core::format::DatePattern;
 use reprise_view::columns::{ColumnKey, ReleaseColumn};
 
 use crate::ui::strings;
+use crate::ui::table_columns::sort::{self, SortDirection, SortKey, SortSpec};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ReleasesRowAction {
@@ -29,17 +30,99 @@ pub(super) fn sort_key_for_id(id: Option<&str>) -> Option<ReleaseSortKey> {
 }
 
 pub(super) fn sort_rows_for_key(
-    rows: Vec<HistoryEntry>,
+    mut rows: Vec<HistoryEntry>,
     key: ReleaseSortKey,
     direction: ReleaseSortDirection,
     type_label: impl Fn(&str) -> String,
 ) -> Vec<HistoryEntry> {
-    if key == ReleaseSortKey::Type {
-        return artist_news::sort_release_rows_by_display_text(rows, direction, |entry| {
-            type_label(&entry.release_type)
-        });
+    let direction = match direction {
+        ReleaseSortDirection::Ascending => SortDirection::Ascending,
+        ReleaseSortDirection::Descending => SortDirection::Descending,
+    };
+    sort::sort_rows(
+        &mut rows,
+        &SortSpec::new(ReleaseRowSortKey { key, type_label }, direction),
+    );
+    rows
+}
+
+struct ReleaseRowSortKey<F> {
+    key: ReleaseSortKey,
+    type_label: F,
+}
+
+impl<F: Fn(&str) -> String> SortKey<HistoryEntry> for ReleaseRowSortKey<F> {
+    fn cmp(&self, left: &HistoryEntry, right: &HistoryEntry) -> std::cmp::Ordering {
+        self.compare(left, right, SortDirection::Ascending)
     }
-    artist_news::sort_release_rows(rows, key, direction)
+
+    fn cmp_descending(&self, left: &HistoryEntry, right: &HistoryEntry) -> std::cmp::Ordering {
+        self.compare(left, right, SortDirection::Descending)
+    }
+}
+
+impl<F: Fn(&str) -> String> ReleaseRowSortKey<F> {
+    fn compare(
+        &self,
+        left: &HistoryEntry,
+        right: &HistoryEntry,
+        direction: SortDirection,
+    ) -> std::cmp::Ordering {
+        match self.key {
+            ReleaseSortKey::Date => compare_release_dates(left, right, direction).then_with(|| {
+                sort::compare_text(&left.title, &right.title, SortDirection::Ascending)
+            }),
+            ReleaseSortKey::Title => {
+                compare_release_text(left, right, &left.title, &right.title, direction)
+            }
+            ReleaseSortKey::Artist => compare_release_text(
+                left,
+                right,
+                &left.artist_name,
+                &right.artist_name,
+                direction,
+            ),
+            ReleaseSortKey::Type => compare_release_text(
+                left,
+                right,
+                &(self.type_label)(&left.release_type),
+                &(self.type_label)(&right.release_type),
+                direction,
+            ),
+        }
+    }
+}
+
+fn compare_release_text(
+    left: &HistoryEntry,
+    right: &HistoryEntry,
+    left_value: &str,
+    right_value: &str,
+    direction: SortDirection,
+) -> std::cmp::Ordering {
+    sort::compare_text(left_value, right_value, direction)
+        .then_with(|| compare_release_dates(left, right, SortDirection::Descending))
+}
+
+fn compare_release_dates(
+    left: &HistoryEntry,
+    right: &HistoryEntry,
+    direction: SortDirection,
+) -> std::cmp::Ordering {
+    sort::compare_optional(
+        parse_partial_date(&left.first_release_date),
+        parse_partial_date(&right.first_release_date),
+        direction,
+    )
+}
+
+fn parse_partial_date(value: &str) -> Option<NaiveDate> {
+    match value.len() {
+        10 => NaiveDate::parse_from_str(value, "%Y-%m-%d").ok(),
+        7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
+        4 => NaiveDate::parse_from_str(&format!("{value}-01-01"), "%Y-%m-%d").ok(),
+        _ => None,
+    }
 }
 
 /// Renders a MusicBrainz date string at whatever precision it carries, in the

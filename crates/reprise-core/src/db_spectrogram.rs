@@ -1,5 +1,7 @@
 //! Persistence for source-bound spectrogram rendering data.
 
+use std::collections::HashSet;
+
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::{Db, DbError};
@@ -144,6 +146,26 @@ pub fn get_track_spectrogram(db: &Db, track_id: i64) -> Result<Option<TrackSpect
             })
         })
         .transpose()
+}
+
+/// Returns the tracks whose complete, currently source-valid rendering data
+/// can be encoded as an analysis sidecar without loading either blob.
+pub fn complete_render_data_track_ids(db: &Db) -> Result<HashSet<i64>, DbError> {
+    let mut statement = db.conn().prepare(
+        "SELECT t.id \
+         FROM tracks t \
+         JOIN track_spectrograms s ON s.track_id = t.id \
+           AND s.format_version = ?1 \
+           AND s.source_mtime = t.file_mtime \
+           AND s.source_size = t.file_size \
+           AND s.source_device IS t.device \
+           AND s.source_inode IS t.inode \
+         WHERE t.waveform_peaks IS NOT NULL",
+    )?;
+    let track_ids = statement
+        .query_map([SPECTROGRAM_FORMAT_VERSION], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(track_ids)
 }
 
 /// Rendering data lifted out before a rewrite that changes a file's metadata

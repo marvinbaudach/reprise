@@ -7,6 +7,12 @@ use crate::ui::list_geometry::RowHeight;
 
 const DESTINATION_EPSILON: f64 = 0.5;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum RestoreIntent {
+    PreserveViewport,
+    PostSaveSortAnchor,
+}
+
 pub(super) fn deliberate_destination_outranks(
     shared: &Shared,
     adjustment: &gtk4::Adjustment,
@@ -14,6 +20,27 @@ pub(super) fn deliberate_destination_outranks(
     writer: &str,
     rejected: f64,
 ) -> bool {
+    deliberate_destination_outranks_with_intent(
+        shared,
+        adjustment,
+        row_height,
+        writer,
+        rejected,
+        RestoreIntent::PreserveViewport,
+    )
+}
+
+pub(super) fn deliberate_destination_outranks_with_intent(
+    shared: &Shared,
+    adjustment: &gtk4::Adjustment,
+    row_height: RowHeight,
+    writer: &str,
+    rejected: f64,
+    intent: RestoreIntent,
+) -> bool {
+    if matches!(intent, RestoreIntent::PostSaveSortAnchor) {
+        return false;
+    }
     let Some(destination) = shared.scroll_glide.deliberate_destination() else {
         return false;
     };

@@ -22,8 +22,19 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private const val TAG = "RepriseArtwork"
@@ -43,12 +54,18 @@ internal class TrackArtwork(
     private val decode: (String) -> android.graphics.Bitmap? = BitmapFactory::decodeFile,
     private val fallback: (String, String, Int) -> android.graphics.Bitmap = ::fallbackCoverBitmap,
     private val cache: ArtworkCache = SharedArtworkCache,
-    private val worker: ExecutorService = singleArtworkThread("reprise-artwork-list"),
-    private val fullSizeWorker: ExecutorService = singleArtworkThread("reprise-artwork-full"),
+    private val dispatcher: CoroutineDispatcher = artworkListLane(),
+    private val fullSizeDispatcher: CoroutineDispatcher = artworkFullSizeLane(),
     private val onMainThread: (() -> Unit) -> Unit = { work ->
         Handler(Looper.getMainLooper()).post(work)
     },
 ) {
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(job + dispatcher + CoroutineName("reprise-artwork-list"))
+    private val fullSizeJob = SupervisorJob()
+    private val fullSizeScope =
+        CoroutineScope(fullSizeJob + fullSizeDispatcher + CoroutineName("reprise-artwork-full"))
+
     var artistPortraitRevision by mutableStateOf(0L)
         private set
 
@@ -77,33 +94,46 @@ internal class TrackArtwork(
             }
         }
         val lane = when (request.size) {
-            AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
-            AndroidArtworkSize.LIST -> worker
-            AndroidArtworkSize.ARTIST_DETAIL -> fullSizeWorker
+            AndroidArtworkSize.NOW_PLAYING -> fullSizeScope
+            AndroidArtworkSize.LIST -> scope
+            AndroidArtworkSize.ARTIST_DETAIL -> fullSizeScope
         }
-        lane.execute {
+        if (!lane.isActive) {
+            val rejected = RejectedExecutionException("artwork loader is shut down")
+            Log.d(TAG, "Not loading artwork for ${request.trackUri}: the library is closing", rejected)
+            return
+        }
+        lane.launch {
             if (!gate.accepts(request)) {
-                return@execute
+                return@launch
             }
             // Catching here is load-bearing rather than tidy: Android ends the
             // process for an exception that escapes *any* thread, and one of the
             // failures this catches is teardown itself — a read that reaches the
             // library handle after `MainActivity.onDestroy` closed it is refused
             // with `IllegalStateException`. See [shutdown].
-            val visual = runCatching { resolveVisual(request) }.getOrElse { error ->
+            val visual = try {
+                resolveVisual(request)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
                 Log.w(TAG, "Could not read artwork for ${request.trackUri}", error)
-                runCatching { generatedVisual(request, resolved = false) }
-                    .onFailure { fallbackError ->
-                        Log.w(
-                            TAG,
-                            "Could not generate artwork for ${request.trackUri}",
-                            fallbackError,
-                        )
-                    }
-                    .getOrNull()
+                try {
+                    generatedVisual(request, resolved = false)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (fallbackError: Throwable) {
+                    Log.w(
+                        TAG,
+                        "Could not generate artwork for ${request.trackUri}",
+                        fallbackError,
+                    )
+                    null
+                }
             }
+            currentCoroutineContext().ensureActive()
             if (!gate.accepts(request)) {
-                return@execute
+                return@launch
             }
             onMainThread {
                 if (gate.accepts(request)) {
@@ -117,24 +147,37 @@ internal class TrackArtwork(
     fun prefetch(request: ArtworkRequest) {
         if (cache.artwork(request) != null) return
         val lane = when (request.size) {
-            AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
-            AndroidArtworkSize.LIST -> worker
-            AndroidArtworkSize.ARTIST_DETAIL -> fullSizeWorker
+            AndroidArtworkSize.NOW_PLAYING -> fullSizeScope
+            AndroidArtworkSize.LIST -> scope
+            AndroidArtworkSize.ARTIST_DETAIL -> fullSizeScope
         }
-        lane.execute {
-            val visual = runCatching { resolveVisual(request) }.getOrElse { error ->
+        if (!lane.isActive) {
+            val rejected = RejectedExecutionException("artwork loader is shut down")
+            Log.d(TAG, "Not prefetching artwork for ${request.trackUri}: the library is closing", rejected)
+            return
+        }
+        lane.launch {
+            val visual = try {
+                resolveVisual(request)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
                 Log.w(TAG, "Could not prefetch artwork for ${request.trackUri}", error)
-                runCatching { generatedVisual(request, resolved = false) }
-                    .onFailure { fallbackError ->
-                        Log.w(
-                            TAG,
-                            "Could not generate prefetched artwork for ${request.trackUri}",
-                            fallbackError,
-                        )
-                    }
-                    .getOrNull()
+                try {
+                    generatedVisual(request, resolved = false)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (fallbackError: Throwable) {
+                    Log.w(
+                        TAG,
+                        "Could not generate prefetched artwork for ${request.trackUri}",
+                        fallbackError,
+                    )
+                    null
+                }
             }
-                ?: return@execute
+                ?: return@launch
+            currentCoroutineContext().ensureActive()
             if (cache.fog(visual.image) == null) {
                 val fog = prepareCoverFogBitmap(
                     visual.image.asAndroidBitmap(),
@@ -215,10 +258,9 @@ internal class TrackArtwork(
      * to report exactly once; a cover is a read, and an abandoned read is
      * indistinguishable from a row that scrolled away.
      *
-     * `shutdownNow` is that discard and nothing more — it is not what makes the
-     * close below it safe. Interrupting a thread that sits inside a native call
-     * only raises a flag the call never reads, so it stops nothing already
-     * running, here or anywhere.
+     * Cancelling both scopes is that discard and nothing more — it is not what
+     * makes the close below it safe. Cancellation cannot stop a native call
+     * already in progress, here or anywhere.
      *
      * What makes it safe is `MusicLibrary` itself. The generated bindings count
      * a handle's in-flight calls and free the Rust object only when the last one
@@ -229,8 +271,8 @@ internal class TrackArtwork(
      * of a generated file that a UniFFI upgrade rewrites.
      */
     fun shutdown() {
-        worker.shutdownNow()
-        fullSizeWorker.shutdownNow()
+        scope.cancel()
+        fullSizeScope.cancel()
     }
 }
 
@@ -313,8 +355,11 @@ internal fun ArtworkCover(
     )
 }
 
-private fun singleArtworkThread(name: String): ExecutorService =
-    Executors.newSingleThreadExecutor { runnable -> Thread(runnable, name) }
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun artworkListLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun artworkFullSizeLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
 
 private fun ArtworkRequest.refreshesArtistPortrait(): Boolean =
     kind == ArtworkKind.ARTIST && allowFetch

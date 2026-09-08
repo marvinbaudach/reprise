@@ -183,18 +183,16 @@ use super::player_callbacks::{
     OnBassChanged, OnNowPlayingPanelStateChanged, OnNowPlayingPanelTrackChanged,
     OnSongVisualSpectrumChanged,
 };
-use reprise_core::queries;
-use reprise_core::queue::Queue;
-use reprise_core::up_next::{QueueItem, UpNextQueue};
-use reprise_core::waveform::RenderDataBackend;
-
 pub(in crate::ui) use super::player_controller_types::{
     PlayerControllerBackends, StartPlayback, VisibleView,
 };
 use super::player_controller_types::{RandomStartChooser, ViewRefillIds};
-
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
+use reprise_core::queries;
+use reprise_core::queue::Queue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
+use reprise_core::waveform::RenderDataBackend;
 
 // `PlayerController::volume`'s initial value is the core media-integration
 // `DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
@@ -254,6 +252,7 @@ pub struct PlayerController {
     /// Cached library availability used to keep idle Play reachable without
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
+    pub(super) last_composed_tail: RefCell<Option<reprise_view::queue::LastTail>>,
     /// START-4 one-shot for an item already selected and centered by startup
     /// routing, including a startup greeting. Greeting Play never consults
     /// this flag: it reaches `play_track_id` as `PlaybackStarted`, whose
@@ -265,6 +264,7 @@ pub struct PlayerController {
     pub(in crate::ui) pending_start_mark: Cell<Option<(QueueItem, i64)>>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<QueueItem>>,
+    pub(in crate::ui) prefed_next_track: Cell<Option<i64>>,
     /// PLAY-14 runtime playback history and navigation one-shot flag.
     pub(in crate::ui) history: RefCell<super::playback_history_transport::HistoryState>,
     /// Catalog id removed while its player-owned snapshot remains loaded.
@@ -292,7 +292,7 @@ pub struct PlayerController {
     pub(in crate::ui) listen_event_recorded: RefCell<Option<Rc<dyn Fn()>>>,
     /// Queue-change fan-out for the sidebar/Queue view and the Now Playing
     /// panel. Callbacks are cloned out before invocation for reentrancy.
-    pub(in crate::ui) queue_changed: RefCell<Vec<Rc<dyn Fn()>>>,
+    pub(super) queue_changed: RefCell<Vec<super::instrumentation::QueueListener>>,
     /// Loaded-track fan-out for every surface that carries the shared
     /// playback marker — the track table and the My Stats songs card. A list,
     /// not a slot: NAV-10b wants *every* visible instance marked, so a second
@@ -388,7 +388,6 @@ pub struct PlayerController {
     /// the upgrade ever fails.
     pub(in crate::ui) application: glib::WeakRef<gio::Application>,
 }
-
 /// See `PlayerController::now_playing`'s doc comment. Fields are `pub(in crate::ui)`
 /// (like `now_playing` itself) so `mpris_mirror.rs`'s `update_mpris_mirror`
 /// can read them to build `mpris::MprisState`'s `Metadata` fields.
@@ -410,7 +409,6 @@ pub(in crate::ui) struct NowPlaying {
     /// this player-owned snapshot to load the same cover as the transport bar.
     pub(in crate::ui) path: String,
 }
-
 impl PlayerController {
     /// Builds the controller and the event bridge around injected platform
     /// backends assembled by the window composition root.
@@ -443,7 +441,6 @@ impl PlayerController {
                 reprise_core::library::settings::get_crossfade_seconds(conn_ref),
             );
         }
-
         // Media integration is always on. Its platform handles are assembled
         // by the window composition root and remain failure-tolerant.
         let mpris_state = handles.shared_state;
@@ -471,10 +468,12 @@ impl PlayerController {
             scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
             library_has_tracks: Cell::new(library_has_tracks),
+            last_composed_tail: RefCell::new(None),
             restored_placement_intact: Cell::new(false),
             pending_start_mark: Cell::new(None),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
+            prefed_next_track: Cell::new(None),
             history: RefCell::default(),
             deferred_queue_purge_id: Cell::new(None),
             play_origin: RefCell::new(None),
@@ -626,6 +625,8 @@ impl PlayerController {
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
+        let presentation_started = std::time::Instant::now();
+        let mut queue_notify_ms = 0;
         *self.pending_random_start.borrow_mut() = None;
         let start_position_ms = self.take_pending_start_mark(Some(QueueItem::Track(id)));
         self.clear_pending_local_seek();
@@ -636,12 +637,10 @@ impl PlayerController {
         // Whatever the start placed, this presentation supersedes it: from
         // here on the ordinary NAV-10b reveal policy applies again (START-4).
         self.restored_placement_intact.set(false);
-
         let summary = {
             let conn = &self.conn;
             queries::query_track_summary(conn, id)
         };
-
         match summary {
             Ok(Some(summary)) => {
                 // Read out before `now_playing` is overwritten below — the
@@ -650,7 +649,6 @@ impl PlayerController {
                 // same id (see the module's `## Track-change notification`
                 // doc section).
                 let previous_id = self.now_playing.borrow().as_ref().map(|np| np.id);
-
                 if let Some(deleted) = self
                     .deferred_queue_purge_id
                     .get()
@@ -662,7 +660,9 @@ impl PlayerController {
                         self.current_up_next.set(None);
                     }
                     if context_changed {
-                        self.notify_queue_changed();
+                        let ((), elapsed_ms) =
+                            super::instrumentation::timed(|| self.notify_queue_changed());
+                        queue_notify_ms += elapsed_ms;
                     }
                 }
 
@@ -700,12 +700,15 @@ impl PlayerController {
                         &summary.path,
                     );
                 }
-                let lyrics_result = match start {
-                    StartPlayback::Yes => start_track_for_lyrics(self.player.as_ref(), &summary),
-                    // Gapless: the pipeline is already playing this track, so
-                    // don't restart it — just build the lyrics key.
-                    StartPlayback::No => Ok(lyrics_query_for(&summary)),
-                };
+                let (lyrics_result, player_load_ms) =
+                    super::instrumentation::timed(|| match start {
+                        StartPlayback::Yes => {
+                            start_track_for_lyrics(self.player.as_ref(), &summary)
+                        }
+                        // Gapless: the pipeline is already playing this track, so
+                        // don't restart it — just build the lyrics key.
+                        StartPlayback::No => Ok(lyrics_query_for(&summary)),
+                    });
                 match lyrics_result {
                     Ok(lyrics_query) => {
                         self.sync_lyrics_track(Some(lyrics_query));
@@ -714,12 +717,6 @@ impl PlayerController {
                             self.current_up_next.get() == Some(QueueItem::Track(id)),
                         );
                         self.update_mpris_position(0);
-                        tracing::info!(
-                            track_id = id,
-                            gapless = matches!(start, StartPlayback::No),
-                            from_up_next = self.current_up_next.get() == Some(QueueItem::Track(id)),
-                            "playback started"
-                        );
                         self.begin_scrobble(reprise_core::scrobbling::TrackMetadata {
                             artist_name: summary.artist.clone(),
                             track_name: summary.title.clone(),
@@ -727,12 +724,16 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(id, None, change);
+                        let ((), current_track_ms) = super::instrumentation::timed(|| {
+                            self.notify_current_track_changed(id, None, change);
+                        });
                         // The composite Queue view keys its Now Playing row
                         // and Up Next tail off the playhead — every track
                         // change re-partitions it (QUE-1) and shrinks the
                         // QUE-5 counter.
-                        self.notify_queue_changed();
+                        let ((), elapsed_ms) =
+                            super::instrumentation::timed(|| self.notify_queue_changed());
+                        queue_notify_ms += elapsed_ms;
                         self.consecutive_skips.set(0);
                         self.failure_skip_limit.set(0);
                         self.flush_episode_skip_toast();
@@ -760,6 +761,20 @@ impl PlayerController {
                         // off to it gaplessly when this one is about to finish.
                         self.feed_next();
                         self.apply_local_start_mark(QueueItem::Track(id), start_position_ms);
+                        let other_ms = super::instrumentation::remaining_ms(
+                            presentation_started,
+                            &[player_load_ms, current_track_ms, queue_notify_ms],
+                        );
+                        tracing::info!(
+                            track_id = id,
+                            gapless = matches!(start, StartPlayback::No),
+                            from_up_next = self.current_up_next.get() == Some(QueueItem::Track(id)),
+                            player_load_ms,
+                            current_track_ms,
+                            queue_notify_ms,
+                            other_ms,
+                            "playback started"
+                        );
                     }
                     Err(error) => {
                         tracing::error!(%error, path = %summary.path, track_id = id, "failed to start playback");

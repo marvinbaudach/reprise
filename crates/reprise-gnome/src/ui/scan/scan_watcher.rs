@@ -229,23 +229,5 @@ mod tests {
         assert!(refreshes.sidebar);
     }
 
-    #[test]
-    fn catalog_deletion_has_its_own_sidebar_refresh_before_queue_purge() {
-        let wiring = include_str!("../window/window_action_wiring.rs");
-        let callback = wiring
-            .split_once("track_list.set_on_library_mutated")
-            .expect("library mutation callback must remain wired")
-            .1;
-        let refresh = callback
-            .find("sidebar.refresh(\"track removed from library\")")
-            .expect("catalog deletion must refresh sidebar counters immediately");
-        let purge = callback
-            .find("player.purge_queue_ids(removed_ids)")
-            .expect("catalog deletion must still purge deleted queue ids");
-
-        assert!(
-            refresh < purge,
-            "counter refresh must precede queue callbacks"
-        );
-    }
+    // #366's lexical test was retired without replacement because it no longer models the confirmed-delete path; see deleting-and-tag-saving-stop-paying-on-the-main-thread.
 }

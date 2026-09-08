@@ -105,6 +105,14 @@ fn play_pending_at(
     Some(selected)
 }
 
+fn clear_episode_prefeed(
+    prefed_next_track: &std::cell::Cell<Option<i64>>,
+    clear_backend: impl FnOnce(),
+) {
+    prefed_next_track.set(None);
+    clear_backend();
+}
+
 impl PlayerController {
     pub(in crate::ui) fn present_queue_item(
         self: &std::rc::Rc<Self>,
@@ -116,7 +124,7 @@ impl PlayerController {
             QueueItem::Track(id) => self.present_track(id, start, change),
             QueueItem::Episode(id) => {
                 debug_assert_eq!(start, StartPlayback::Yes);
-                self.player.set_next(None);
+                clear_episode_prefeed(&self.prefed_next_track, || self.player.set_next(None));
                 self.play_queued_episode(id);
             }
         }
@@ -142,26 +150,29 @@ impl PlayerController {
     /// track, then either start it (`StartPlayback::Yes`) or just reflect it
     /// (`No`, audio already rolling gaplessly).
     fn advance_common(self: &std::rc::Rc<Self>, reason: AdvanceReason, start: StartPlayback) {
-        let live_ids = {
-            let conn = &self.conn;
-            match queries::query_live_track_ids(conn) {
+        let ((live_ids, live_episode_ids), live_ids_ms) = super::instrumentation::timed(|| {
+            let live_ids = {
+                let conn = &self.conn;
+                match queries::query_live_track_ids(conn) {
+                    Ok(ids) => Some(ids),
+                    Err(error) => {
+                        tracing::error!(%error, "failed to resolve playable queue ids; advancing without filtering");
+                        None
+                    }
+                }
+            };
+            let live_episode_ids = match queries::query_available_episode_ids(&self.conn) {
                 Ok(ids) => Some(ids),
                 Err(error) => {
-                    tracing::error!(%error, "failed to resolve playable queue ids; advancing without filtering");
+                    tracing::error!(%error, "failed to resolve available queued episodes; advancing without filtering them");
                     None
                 }
-            }
-        };
-        let live_episode_ids = match queries::query_available_episode_ids(&self.conn) {
-            Ok(ids) => Some(ids),
-            Err(error) => {
-                tracing::error!(%error, "failed to resolve available queued episodes; advancing without filtering them");
-                None
-            }
-        };
+            };
+            (live_ids, live_episode_ids)
+        });
         let before = self.up_next.borrow().len();
         let mut current_pending = self.current_up_next.get();
-        let next = {
+        let (next, target_ms) = super::instrumentation::timed(|| {
             let mut context = self.queue.borrow_mut();
             let mut pending = self.up_next.borrow_mut();
             if let Some(available) = live_episode_ids.as_ref() {
@@ -179,24 +190,26 @@ impl PlayerController {
                         .is_none_or(|ids| ids.contains(&id)),
                 },
             )
-        };
+        });
         self.current_up_next.set(current_pending);
         if self.up_next.borrow().len() != before {
             self.notify_queue_changed();
         }
-        match next {
-            Some(item) => self.present_queue_item(
-                item,
-                start,
-                match reason {
+        let present_ms = match next {
+            Some(item) => {
+                let change = match reason {
                     AdvanceReason::Automatic => {
                         crate::ui::current_track_selection::CurrentTrackChange::AutomaticAdvance
                     }
                     AdvanceReason::Manual => {
                         crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport
                     }
-                },
-            ),
+                };
+                let ((), present_ms) = super::instrumentation::timed(|| {
+                    self.present_queue_item(item, start, change);
+                });
+                present_ms
+            }
             None => {
                 // PLAY-11: the filtered snapshot remains immutable while it
                 // plays. Once it is exhausted, however, an already-cleared
@@ -221,8 +234,16 @@ impl PlayerController {
                 self.consecutive_skips.set(0);
                 self.failure_skip_limit.set(0);
                 self.reset_to_stopped();
+                0
             }
-        }
+        };
+        tracing::info!(
+            ?reason,
+            live_ids_ms,
+            target_ms,
+            present_ms,
+            "playback advanced"
+        );
     }
 
     /// Rebuilds the exhausted playback context from the visible view's ids
@@ -295,6 +316,7 @@ impl PlayerController {
     pub(in crate::ui) fn feed_next(&self) {
         let transition = settings::get_track_transition(&self.conn);
         if transition == TrackTransition::Off {
+            self.prefed_next_track.set(None);
             self.player.set_next(None);
             return;
         }
@@ -319,13 +341,15 @@ impl PlayerController {
                     .is_none_or(|ids| ids.contains(&id)),
             })
         };
-        let path = next_item.and_then(prefeed_track_id).and_then(|id| {
+        let prefed_track = next_item.and_then(prefeed_track_id);
+        let path = prefed_track.and_then(|id| {
             let conn = &self.conn;
             queries::query_track_summary(conn, id)
                 .ok()
                 .flatten()
                 .map(|summary| summary.path)
         });
+        self.prefed_next_track.set(path.as_ref().and(prefed_track));
         self.player.set_next(path.as_deref());
     }
 
@@ -359,12 +383,73 @@ fn prefeed_track_id(item: QueueItem) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use reprise_core::queue::{Queue, Repeat};
     use reprise_core::up_next::UpNextQueue;
 
     use super::{
-        next_matching_target, next_target, peek_auto_target, play_pending_at, AdvanceReason,
+        clear_episode_prefeed, next_matching_target, next_target, peek_auto_target,
+        play_pending_at, AdvanceReason,
     };
+
+    #[test]
+    fn episode_presentation_clears_the_model_and_backend_prefeed() {
+        let prefed_next_track = Cell::new(Some(17));
+        let backend_cleared = Cell::new(false);
+
+        clear_episode_prefeed(&prefed_next_track, || backend_cleared.set(true));
+
+        assert_eq!(prefed_next_track.get(), None);
+        assert!(backend_cleared.get());
+    }
+
+    #[test]
+    fn queue_advance_log_carries_phase_timings_and_reason() {
+        let implementation = include_str!("up_next_transport.rs");
+        let method = implementation
+            .split("fn advance_common")
+            .nth(1)
+            .expect("advance_common implementation")
+            .split("fn refill_queue_from_view")
+            .next()
+            .expect("advance_common body");
+        let event = method
+            .split("tracing::info!(")
+            .nth(1)
+            .expect("playback advanced event")
+            .split(");")
+            .next()
+            .expect("playback advanced fields");
+
+        assert!(event.contains("live_ids_ms"));
+        assert!(event.contains("target_ms"));
+        assert!(event.contains("present_ms"));
+        assert!(event.contains("reason"));
+        assert!(event.contains("\"playback advanced\""));
+    }
+
+    #[test]
+    fn queue_track_presentation_log_carries_distinguishable_phase_timings() {
+        let implementation = include_str!("player_controller.rs");
+        let method = implementation
+            .split("pub(in crate::ui) fn present_track")
+            .nth(1)
+            .expect("present_track implementation");
+        let event = method
+            .split("tracing::info!(")
+            .nth(1)
+            .expect("playback started event")
+            .split(");")
+            .next()
+            .expect("playback started fields");
+
+        assert!(event.contains("player_load_ms"));
+        assert!(event.contains("current_track_ms"));
+        assert!(event.contains("queue_notify_ms"));
+        assert!(event.contains("other_ms"));
+        assert!(event.contains("\"playback started\""));
+    }
 
     fn context(ids: &[i64]) -> Queue {
         let mut queue = Queue::new();

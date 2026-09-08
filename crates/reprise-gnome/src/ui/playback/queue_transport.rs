@@ -66,11 +66,9 @@ fn queue_purge_plan(ids: &[i64], loaded: Option<i64>) -> QueuePurgePlan {
         after_loaded_track,
     }
 }
-
 fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
     loaded.is_some_and(|id| ids.contains(&id))
 }
-
 fn remove_direct_episode_now_playing(
     direct_episode: bool,
     rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
@@ -109,7 +107,6 @@ fn toggle_action(
         }
     }
 }
-
 pub(super) fn restored_start_change(restored_placement_intact: bool) -> CurrentTrackChange {
     if restored_placement_intact {
         CurrentTrackChange::PlaybackStarted
@@ -117,7 +114,6 @@ pub(super) fn restored_start_change(restored_placement_intact: bool) -> CurrentT
         CurrentTrackChange::ExplicitTransport
     }
 }
-
 pub(super) fn initial_library_availability(db: &Db) -> bool {
     reprise_core::queries::query_has_live_tracks(db)
         .inspect_err(
@@ -125,7 +121,6 @@ pub(super) fn initial_library_availability(db: &Db) -> bool {
         )
         .unwrap_or(false)
 }
-
 fn move_rows_to_front(
     context: &mut Queue,
     pending: &mut UpNextQueue,
@@ -163,7 +158,6 @@ fn move_rows_to_front(
     pending.prepend(&ids);
     ids.len()
 }
-
 fn apply_queue_reorder(
     context: &mut Queue,
     manual: &mut UpNextQueue,
@@ -190,12 +184,7 @@ fn apply_queue_reorder(
         }
     }
 }
-
 impl PlayerController {
-    pub(in crate::ui) fn add_on_queue_changed(&self, callback: impl Fn() + 'static) {
-        self.queue_changed.borrow_mut().push(Rc::new(callback));
-    }
-
     /// Returns every live playback-model id rejected by the core retention
     /// predicate after a scan. The caller feeds these ids into the same
     /// purge path as hard deletes and auto-clean.
@@ -253,21 +242,6 @@ impl PlayerController {
             self.notify_queue_changed();
         }
         changed
-    }
-
-    pub(in crate::ui) fn notify_queue_changed(&self) {
-        tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
-        self.update_agent_queue_mirror();
-        let callbacks = self.queue_changed.borrow().clone();
-        for callback in callbacks {
-            callback();
-        }
-        // The up-next front / queue order may have changed, so the upcoming
-        // track changed: re-feed the gapless next. All up-next edits funnel
-        // through here. `feed_next` only takes short, sequential borrows, and
-        // every caller of `notify_queue_changed` holds no live borrow across
-        // it (see `## Queue borrow discipline`).
-        self.feed_next();
     }
 
     pub(in crate::ui) fn start_current_item(
@@ -728,6 +702,7 @@ impl PlayerController {
         if ids.is_empty() {
             return;
         }
+        self.clear_prefed_next_if_removed(ids);
         let playing = self.now_playing.borrow().as_ref().map(|track| track.id);
         let plan = queue_purge_plan(ids, playing);
         let playing_from_up_next = plan.after_loaded_track.is_some()

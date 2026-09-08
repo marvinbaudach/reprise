@@ -3,6 +3,8 @@ package io.github.marvinbaudach.reprise
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,6 +12,10 @@ import org.junit.Test
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private const val PREFETCH_WAIT_SECONDS = 2L
+
+private object DirectPortraitPrefetchDispatcher : CoroutineDispatcher() {
+    override fun dispatch(context: CoroutineContext, block: Runnable) = block.run()
+}
 
 class ArtistPortraitPrefetchTest {
     @Test
@@ -28,7 +34,7 @@ class ArtistPortraitPrefetchTest {
                 null
             },
         )
-        val prefetch = ArtistPortraitPrefetch(port)
+        val prefetch = ArtistPortraitPrefetch(port, dispatcher = DirectPortraitPrefetchDispatcher)
 
         try {
             prefetch.start()

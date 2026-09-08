@@ -28,6 +28,17 @@ const SETTLE_UNTIL_TIMEOUT: Duration = Duration::from_secs(5);
 mod fake_backend;
 use fake_backend::*;
 
+fn descriptor(id: &str, reconnectable: bool) -> DeviceDescriptor {
+    DeviceDescriptor {
+        id: id.into(),
+        persistent_id: reconnectable.then(|| id.to_string()),
+        name: format!("Phone {id}"),
+        root_uri: format!("mtp://{id}"),
+        icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
+        reconnectable,
+    }
+}
+
 #[path = "device_sync_agent_log_tests.rs"]
 mod agent_log_tests;
 #[path = "device_sync_memory_tests.rs"]
@@ -328,6 +339,8 @@ mod picker_tests;
 mod planned_tests;
 #[path = "device_sync_readback_tests.rs"]
 mod readback_tests;
+#[path = "device_sync_residency_repair_tests.rs"]
+mod residency_repair_tests;
 #[path = "device_sync_run_log_tests.rs"]
 mod run_log_tests;
 #[path = "device_sync_safety_tests.rs"]

@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -43,6 +44,9 @@ class ArtistSearchActivityTest {
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 45").fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithText("Albums").assertDoesNotExist()
         compose.onNodeWithText("Full Album 45").assertDoesNotExist()
@@ -67,6 +71,9 @@ class ArtistSearchActivityTest {
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 45").fetchSemanticsNodes().isNotEmpty()
+        }
 
         val attemptsBeforeFailure = application.artistListAttempts.get()
         application.artistListFailuresRemaining = 1
@@ -90,12 +97,19 @@ class ArtistSearchActivityTest {
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 45").fetchSemanticsNodes().isNotEmpty()
+        }
 
         val attemptsBeforeFailure = application.artistListAttempts.get()
         application.artistListFailuresRemaining = Int.MAX_VALUE
         compose.onNode(
             hasText("Artist 45") and hasText("45 tracks", substring = true),
         ).performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.waitUntil {
             application.artistListAttempts.get() >= attemptsBeforeFailure + 2

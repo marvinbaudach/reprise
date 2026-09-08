@@ -1,10 +1,20 @@
 package io.github.marvinbaudach.reprise
 
 import android.util.Log
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 private const val TAG = "RepriseTrack"
 
@@ -62,10 +72,12 @@ private const val FIRST_RETRY_MS = 50L
 internal class TrackLoader(
     private val read: (Long) -> LibraryTrack?,
     private val onMainThread: (() -> Unit) -> Unit,
-    private val worker: ExecutorService = singleTrackThread(),
-    private val pauseBeforeRetry: (Long) -> Unit = { millis -> Thread.sleep(millis) },
+    private val dispatcher: CoroutineDispatcher = trackLane(),
+    private val pauseBeforeRetry: suspend (Long) -> Unit = { millis -> delay(millis) },
 ) {
     private val askedFor = AtomicLong(NOTHING_ASKED_FOR)
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(job + dispatcher + CoroutineName("reprise-track"))
 
     /**
      * Asks for one track off the main thread and delivers it on the main
@@ -77,15 +89,17 @@ internal class TrackLoader(
      */
     fun load(trackId: Long, deliver: (LibraryTrack?) -> Unit) {
         askedFor.set(trackId)
-        try {
-            worker.execute { readAndDeliver(trackId, deliver) }
-        } catch (rejected: RejectedExecutionException) {
+        if (!scope.isActive) {
+            val rejected = RejectedExecutionException("track loader is shut down")
             Log.d(TAG, "Not loading track $trackId: the library is closing", rejected)
+            return
         }
+        scope.launch { readAndDeliver(trackId, deliver) }
     }
 
-    private fun readAndDeliver(trackId: Long, deliver: (LibraryTrack?) -> Unit) {
+    private suspend fun readAndDeliver(trackId: Long, deliver: (LibraryTrack?) -> Unit) {
         repeat(ATTEMPTS) { attempt ->
+            scope.ensureActive()
             if (!stillWanted(trackId)) return
             // Catching is load-bearing rather than tidy: Android ends the
             // process for an exception that escapes any thread, and one of the
@@ -93,7 +107,11 @@ internal class TrackLoader(
             // library handle after `MainActivity.onDestroy` closed it is
             // refused with `IllegalStateException`.
             val remaining = ATTEMPTS - attempt - 1
-            val answered = runCatching { read(trackId) }.fold(
+            val result = runCatching { read(trackId) }
+            scope.ensureActive()
+            val cancellation = result.exceptionOrNull() as? CancellationException
+            if (cancellation != null) throw cancellation
+            val answered = result.fold(
                 onSuccess = { track ->
                     // The row the database returned, including "there is no
                     // such row": both are answers, and neither is retried.
@@ -118,12 +136,7 @@ internal class TrackLoader(
                 answer(trackId, null, deliver)
                 return
             }
-            try {
-                pauseBeforeRetry(FIRST_RETRY_MS shl attempt)
-            } catch (interrupted: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return
-            }
+            pauseBeforeRetry(FIRST_RETRY_MS shl attempt)
         }
     }
 
@@ -145,9 +158,9 @@ internal class TrackLoader(
      * the library handle closes underneath it.
      */
     fun shutdown() {
-        worker.shutdownNow()
+        scope.cancel()
     }
 }
 
-private fun singleTrackThread(): ExecutorService =
-    Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "reprise-track") }
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun trackLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
