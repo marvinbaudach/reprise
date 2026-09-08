@@ -163,6 +163,7 @@ class MainActivityConfigurationTest {
         application.blockArtistOneOpen()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
         compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasStarted() }
+        compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.onNodeWithText("Artist 2").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithContentDescription("Play Artist 2")
