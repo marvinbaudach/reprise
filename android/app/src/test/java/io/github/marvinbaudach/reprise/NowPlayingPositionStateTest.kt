@@ -93,4 +93,44 @@ class NowPlayingPositionStateTest {
             ),
         )
     }
+
+    @Test
+    fun a_settle_survives_the_index_arriving_before_the_track_id() {
+        val reconciler = NowPlayingPositionReconciler()
+        reconciler.update(trackId = 396, index = 0, dragging = false, animationsEnabled = true)
+
+        // Measured on the device: the transport publishes the new index a frame
+        // before the new track id. Reading this as "same track, new index" made
+        // the reconciler SNAP, and that snap cancelled the running settle.
+        assertEquals(
+            NowPlayingPositionAction.CONTINUE_SETTLE,
+            reconciler.update(
+                trackId = 396,
+                index = 1,
+                dragging = false,
+                animationsEnabled = true,
+                settlingTargetIndex = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun a_settle_survives_the_track_id_arriving_before_the_index() {
+        val reconciler = NowPlayingPositionReconciler()
+        reconciler.update(trackId = 396, index = 0, dragging = false, animationsEnabled = true)
+
+        // The mirrored window: a new track id while the index still reads the
+        // one the swipe left. Animating to that anchor is the card jumping back
+        // to the centre in the middle of its own exit.
+        assertEquals(
+            NowPlayingPositionAction.CONTINUE_SETTLE,
+            reconciler.update(
+                trackId = 767,
+                index = 0,
+                dragging = false,
+                animationsEnabled = true,
+                settlingTargetIndex = 1,
+            ),
+        )
+    }
 }
