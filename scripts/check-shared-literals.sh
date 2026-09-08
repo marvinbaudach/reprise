@@ -36,68 +36,10 @@ python3 - "$contracts" <<'PY'
 import pathlib
 import sys
 
+from scripts.lib.source_code import code_of
+
 RUST_KOTLIN = {".rs", ".kt"}
 ROOTS = ("crates", "android")
-
-def code_of(path: pathlib.Path) -> str:
-    """The file with comments removed while preserving quoted string contents."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return ""
-
-    code = []
-    index = 0
-    block_depth = 0
-    in_string = False
-    escaped = False
-    while index < len(text):
-        current = text[index]
-        following = text[index + 1] if index + 1 < len(text) else ""
-
-        if block_depth:
-            if current == "/" and following == "*":
-                block_depth += 1
-                index += 2
-            elif current == "*" and following == "/":
-                block_depth -= 1
-                index += 2
-            else:
-                if current == "\n":
-                    code.append(current)
-                index += 1
-            continue
-
-        if in_string:
-            code.append(current)
-            if escaped:
-                escaped = False
-            elif current == "\\":
-                escaped = True
-            elif current == '"':
-                in_string = False
-            index += 1
-            continue
-
-        if current == '"':
-            in_string = True
-            code.append(current)
-            index += 1
-        elif current == "/" and following == "/":
-            newline = text.find("\n", index + 2)
-            if newline == -1:
-                break
-            code.append("\n")
-            index = newline + 1
-        elif current == "/" and following == "*":
-            block_depth = 1
-            index += 2
-        else:
-            code.append(current)
-            index += 1
-
-    return "".join(code)
-
 
 sources = [
     p

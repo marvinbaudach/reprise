@@ -118,6 +118,7 @@ require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
 require_executable scripts/tests/android-theme.sh
+require_executable scripts/tests/shared-literal-comment-stripping.sh
 require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
 require_executable .github/tests/flatpak-cargo-sources.sh
@@ -267,6 +268,7 @@ scripts/tests/readme-showcase.sh
 scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
 scripts/tests/android-theme.sh
+scripts/tests/shared-literal-comment-stripping.sh
 scripts/tests/github-flow.sh
 .github/tests/flatpak-cargo-sources.sh
 scripts/tests/project-quality.sh

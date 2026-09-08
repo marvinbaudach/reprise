@@ -32,63 +32,9 @@ python3 - "$rust_file" "$kotlin_file" <<'PY'
 import re
 import sys
 
+from scripts.lib.source_code import code_of
+
 rust_path, kotlin_path = sys.argv[1], sys.argv[2]
-
-
-def code_of(path: str) -> str:
-    """Read source without comments while preserving quoted string contents."""
-    text = open(path, encoding="utf-8").read()
-    code = []
-    index = 0
-    block_depth = 0
-    in_string = False
-    escaped = False
-    while index < len(text):
-        current = text[index]
-        following = text[index + 1] if index + 1 < len(text) else ""
-
-        if block_depth:
-            if current == "/" and following == "*":
-                block_depth += 1
-                index += 2
-            elif current == "*" and following == "/":
-                block_depth -= 1
-                index += 2
-            else:
-                if current == "\n":
-                    code.append(current)
-                index += 1
-            continue
-
-        if in_string:
-            code.append(current)
-            if escaped:
-                escaped = False
-            elif current == "\\":
-                escaped = True
-            elif current == '"':
-                in_string = False
-            index += 1
-            continue
-
-        if current == '"':
-            in_string = True
-            code.append(current)
-            index += 1
-        elif current == "/" and following == "/":
-            newline = text.find("\n", index + 2)
-            if newline == -1:
-                break
-            code.append("\n")
-            index = newline + 1
-        elif current == "/" and following == "*":
-            block_depth = 1
-            index += 2
-        else:
-            code.append(current)
-            index += 1
-
-    return "".join(code)
 
 
 def value(expr: str) -> int:
