@@ -66,14 +66,30 @@ def value_at(expr: str, path: str, source: str, offset: int) -> int:
         raise SystemExit(1) from None
 
 
+def add_case(cases, conflicts, path, source, match, value_group, expected):
+    """Record a case without allowing a conflicting duplicate to replace it."""
+    offset = match.start(value_group)
+    ms = value_at(match.group(value_group), path, source, offset)
+    line = source.count("\n", 0, offset) + 1
+    previous = cases.get(ms)
+    if previous is None:
+        cases[ms] = (expected, line)
+    elif previous[0] != expected:
+        conflicts.append(
+            f'  {ms} ms is asserted as "{previous[0]}" at {path}:{previous[1]} '
+            f'and as "{expected}" at {path}:{line}'
+        )
+
+
 rust_source = code_of(rust_path)
 rust = dict()
+conflicts = []
 for match in re.finditer(
     r"assert_eq!\(\s*format_duration\(([^)]*)\)\s*,\s*\"([^\"]*)\"\s*\)",
     rust_source,
 ):
-    ms, expected = match.groups()
-    rust[value_at(ms, rust_path, rust_source, match.start(1))] = expected
+    expected = match.group(2)
+    add_case(rust, conflicts, rust_path, rust_source, match, 1, expected)
 
 kotlin_source = code_of(kotlin_path)
 kotlin = dict()
@@ -81,8 +97,14 @@ for match in re.finditer(
     r"assertEquals\(\s*\"([^\"]*)\"\s*,\s*formatDuration\(([^)]*)\)\s*\)",
     kotlin_source,
 ):
-    expected, ms = match.groups()
-    kotlin[value_at(ms, kotlin_path, kotlin_source, match.start(2))] = expected
+    expected = match.group(1)
+    add_case(kotlin, conflicts, kotlin_path, kotlin_source, match, 2, expected)
+
+if conflicts:
+    print("duration-format parity: duplicate assertions disagree", file=sys.stderr)
+    print("\n".join(conflicts), file=sys.stderr)
+    print("  make every assertion for the same millisecond value agree", file=sys.stderr)
+    raise SystemExit(1)
 
 if not rust:
     print("duration-format parity: no assertions found in the Rust tests", file=sys.stderr)
@@ -91,11 +113,12 @@ if not rust:
 
 problems = []
 for ms, expected in sorted(rust.items()):
+    expected = expected[0]
     if ms not in kotlin:
         problems.append(f"  {ms} ms → \"{expected}\" is asserted in Rust but nowhere on the Kotlin side")
-    elif kotlin[ms] != expected:
+    elif kotlin[ms][0] != expected:
         problems.append(
-            f"  {ms} ms → Rust says \"{expected}\", Kotlin says \"{kotlin[ms]}\""
+            f"  {ms} ms → Rust says \"{expected}\", Kotlin says \"{kotlin[ms][0]}\""
         )
 
 if problems:
