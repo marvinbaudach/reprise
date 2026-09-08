@@ -43,6 +43,9 @@ class ArtistSearchActivityTest {
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 45").fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithText("Albums").assertDoesNotExist()
         compose.onNodeWithText("Full Album 45").assertDoesNotExist()
@@ -67,6 +70,9 @@ class ArtistSearchActivityTest {
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 45").fetchSemanticsNodes().isNotEmpty()
+        }
 
         val attemptsBeforeFailure = application.artistListAttempts.get()
         application.artistListFailuresRemaining = 1
@@ -90,6 +96,9 @@ class ArtistSearchActivityTest {
         compose.onNodeWithContentDescription("Search library").performClick()
         compose.onNodeWithText("Search artists").performTextInput("Artist 45")
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Artist 45").fetchSemanticsNodes().isNotEmpty()
+        }
 
         val attemptsBeforeFailure = application.artistListAttempts.get()
         application.artistListFailuresRemaining = Int.MAX_VALUE

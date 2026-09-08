@@ -369,11 +369,13 @@ fn mtime_nanos(path: &Path) -> u128 {
 /// Bumped whenever an index entry's meaning changes, so entries written by an
 /// older format fall out as a stamp mismatch instead of being misread.
 ///
-/// Version 2 introduced [`RESOLUTION_UNKNOWN`]. Before it, an entry the batch
+/// Version 3 invalidates download settlement recorded before cross-album
+/// embedded-art collisions were detected. Version 2 introduced
+/// [`RESOLUTION_UNKNOWN`]. Before it, an entry the batch
 /// had settled without a resolution behind it was indistinguishable from "this
 /// track has no cover" — both are an empty answer line — so those entries have
 /// to be discarded rather than believed.
-const RESOLUTION_FORMAT: u32 = 2;
+const RESOLUTION_FORMAT: u32 = 3;
 
 /// What has to stay the same for a remembered resolution to still be true.
 ///

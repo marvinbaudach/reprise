@@ -5,6 +5,122 @@ use chrono::NaiveDate;
 use crate::artist_news::{refresh_with_progress_at, FetchScope, RefreshHooks, RefreshProgress};
 
 #[test]
+fn nr_41_a_failed_artist_is_due_again_at_the_next_check() {
+    fn seeded_db(outcome: crate::artist_news_ledger::FetchOutcome) -> crate::db::Db {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+                 VALUES ('/music/artist.flac', 'Track', 'Due Artist', \
+                 '11111111-1111-1111-1111-111111111111', 20, 0)",
+                [],
+            )
+            .unwrap();
+        crate::artist_news_ledger::record_attempt(
+            db.conn(),
+            "due artist",
+            Some("11111111-1111-1111-1111-111111111111"),
+            996_400,
+            outcome,
+            0,
+        )
+        .unwrap();
+        db
+    }
+
+    fn fetch_calls(db: &crate::db::Db) -> usize {
+        let mut calls = 0;
+        let mut fetch = |_url: &str| {
+            calls += 1;
+            Ok(r#"{"release-groups":[]}"#.to_string())
+        };
+        let mut on_progress = |_| {};
+        let mut completion_time = || 1_000_001;
+        refresh_with_progress_at(
+            db,
+            NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
+            1_000_000,
+            FetchScope::TopArtists,
+            false,
+            &mut RefreshHooks {
+                fetch: &mut fetch,
+                on_progress: &mut on_progress,
+                completion_time: &mut completion_time,
+            },
+        )
+        .unwrap();
+        calls
+    }
+
+    assert!(
+        fetch_calls(&seeded_db(crate::artist_news_ledger::FetchOutcome::Failed)) >= 1,
+        "a failed artist must be fetched again at the next check"
+    );
+    assert_eq!(
+        fetch_calls(&seeded_db(crate::artist_news_ledger::FetchOutcome::Ok)),
+        0,
+        "a successful artist inside the cache window must stay fresh"
+    );
+}
+
+#[test]
+fn nr_41_a_partially_failed_check_still_advances_the_checked_timestamp() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    for (path, artist, mbid, plays) in [
+        (
+            "/music/failure.flac",
+            "Failure Artist",
+            "11111111-1111-1111-1111-111111111111",
+            20,
+        ),
+        (
+            "/music/success.flac",
+            "Success Artist",
+            "22222222-2222-2222-2222-222222222222",
+            10,
+        ),
+    ] {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+                 VALUES (?1, 'Track', ?2, ?3, ?4, 0)",
+                rusqlite::params![path, artist, mbid, plays],
+            )
+            .unwrap();
+    }
+    let mut fetch = |url: &str| {
+        if url.contains("11111111-1111-1111-1111-111111111111") {
+            Err(crate::musicbrainz::FetchError::HttpStatus(503))
+        } else {
+            Ok(r#"{"release-groups":[]}"#.to_string())
+        }
+    };
+    let mut on_progress = |_| {};
+    let mut completion_time = || 1_000_360;
+
+    let report = refresh_with_progress_at(
+        &db,
+        NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
+        1_000_000,
+        FetchScope::TopArtists,
+        true,
+        &mut RefreshHooks {
+            fetch: &mut fetch,
+            on_progress: &mut on_progress,
+            completion_time: &mut completion_time,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(report.failed, 1);
+    assert_eq!(
+        crate::artist_news::latest_fetched_at(&db).unwrap(),
+        Some(1_000_360),
+        "a finished check with at least one success must advance the checked timestamp"
+    );
+}
+
+#[test]
 fn nr_37_refresh_reports_determinate_progress_for_every_queued_artist() {
     let db = crate::db::Db::open_in_memory().unwrap();
     for (path, artist, mbid, plays) in [

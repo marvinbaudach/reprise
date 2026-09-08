@@ -5,11 +5,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidTrackRenderBar
 import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
@@ -78,8 +88,11 @@ internal class TrackAnalysisLoader(
     private val readBars: (Long, Int) -> List<SpectralBar>?,
     private val readSpectrogram: (Long) -> AndroidTrackSpectrogram? = { null },
     private val onMainThread: (() -> Unit) -> Unit,
-    private val worker: ExecutorService = singleAnalysisThread(),
+    private val dispatcher: CoroutineDispatcher = analysisLane(),
 ) : TrackAnalysisPort {
+    private val accepting = AtomicBoolean(true)
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(job + dispatcher + CoroutineName("reprise-analysis"))
     private val cacheLock = Any()
     private val barCache = mutableMapOf<BarCacheKey, List<SpectralBar>?>()
     private val barWaiters = mutableMapOf<BarCacheKey, MutableList<(List<SpectralBar>?) -> Unit>>()
@@ -97,8 +110,13 @@ internal class TrackAnalysisLoader(
 
     override fun prepare(trackId: Long) {
         submit("import analysis for track $trackId") {
-            runCatching { importAnalysis(trackId) }
-                .onFailure { error -> Log.w(TAG, "Could not import analysis for track $trackId", error) }
+            try {
+                importAnalysis(trackId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                Log.w(TAG, "Could not import analysis for track $trackId", error)
+            }
             onMainThread {
                 invalidate(trackId)
                 revision += 1L
@@ -132,9 +150,14 @@ internal class TrackAnalysisLoader(
             return
         }
         val submitted = submit("load analysis for track $trackId") {
-            val bars = runCatching { readBars(trackId, count) }
-                .onFailure { error -> Log.w(TAG, "Could not load analysis for track $trackId", error) }
-                .getOrNull()
+            val bars = try {
+                readBars(trackId, count)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                Log.w(TAG, "Could not load analysis for track $trackId", error)
+                null
+            }
             onMainThread { finishBarLoad(key, bars, cache = true) }
         }
         if (!submitted) {
@@ -165,11 +188,14 @@ internal class TrackAnalysisLoader(
             return
         }
         val submitted = submit("load spectrogram for track $trackId") {
-            val frames = runCatching { readSpectrogram(trackId)?.toSpectrogramFrames() }
-                .onFailure { error ->
-                    Log.w(TAG, "Could not load spectrogram for track $trackId", error)
-                }
-                .getOrNull()
+            val frames = try {
+                readSpectrogram(trackId)?.toSpectrogramFrames()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                Log.w(TAG, "Could not load spectrogram for track $trackId", error)
+                null
+            }
             onMainThread { finishSpectrogramLoad(trackId, frames, cache = true) }
         }
         if (!submitted) {
@@ -244,24 +270,32 @@ internal class TrackAnalysisLoader(
         trackIds.forEach { trackId -> loadBars(trackId, count) {} }
     }
 
-    private fun submit(description: String, work: () -> Unit): Boolean = try {
-        worker.execute(work)
-        true
-    } catch (rejected: RejectedExecutionException) {
-        Log.d(TAG, "Not attempting to $description: the library is closing", rejected)
-        false
+    private fun submit(description: String, work: suspend () -> Unit): Boolean {
+        if (!accepting.get() || !scope.isActive) {
+            val rejected = RejectedExecutionException("analysis loader is shut down")
+            Log.d(TAG, "Not attempting to $description: the library is closing", rejected)
+            return false
+        }
+        scope.launch { work() }
+        return true
     }
 
     /** Stops accepting work and lets the already ordered import/read pair finish. */
     fun shutdown(): Boolean {
-        worker.shutdown()
+        accepting.set(false)
+        job.complete()
         val drained = try {
-            worker.awaitTermination(SHUTDOWN_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            runBlocking {
+                withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) {
+                    job.join()
+                    true
+                } != null
+            }
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
             false
         }
-        if (!drained) worker.shutdownNow()
+        if (!drained) scope.cancel()
         unregisterActive(this)
         return drained
     }
@@ -288,8 +322,8 @@ internal class TrackAnalysisLoader(
     }
 }
 
-private fun singleAnalysisThread(): ExecutorService =
-    Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "reprise-analysis") }
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun analysisLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
 
 internal val LocalTrackAnalysis = staticCompositionLocalOf<TrackAnalysisPort> {
     object : TrackAnalysisPort {

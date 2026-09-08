@@ -1764,6 +1764,10 @@ result.
   remains a neutral dim caption and "Clear all" is absent. Music retains
   FIL-1c's place semantics and existing preference-driven idle visibility;
   every counting base remains the current place, never the whole library.
+  Named exception: Releases treats its five-year Album-and-EP startup scope
+  as the neutral default, so it keeps the count dim and offers no "Clear all"
+  until the reader changes that scope; choosing the widest scope is itself a
+  clearable change, and the dedicated "Show widest" recovery still reaches it.
 - **FIL-3** [replaced by FIL-3a] [gtk] — End-of-results row: below the last
   row of a restricted track list (≥ 1 hit) sits the hidden-track count and a
   Show all pill.
@@ -2817,6 +2821,24 @@ the panel).
   route.
   Test: `nr_40_release_menu_has_one_primary_action_and_single_row_navigation`
   (`ui/releases/releases_menu.rs`).
+- **NR-41** [active] [core] [gtk] — A background New Releases check
+  (popover show, hourly tick, app start, or enabling the module in Preferences)
+  spends requests only on artists whose last successful or unmatched check is
+  older than the seven-day cache window; a failed artist is due again at the
+  next check. Enabling the module is a background trigger but bypasses the due
+  gate and starts a check directly. Within the Updates popover, only the
+  footer's reload button forces every queued artist. A finished check counts
+  as the most recent check even when some artists failed — its timestamp
+  advances and the next background check waits the regular interval — while
+  a check in which no artist succeeded, or that aborted, keeps the previous
+  age (NET-3). The next
+  background check is always measured from the last check's start, whatever
+  its outcome; any New Releases check, from whichever surface, supplies that
+  start. NR-41 does not restate or modify NR-37's footer-progress rule.
+  Tests: `nr_41_a_failed_artist_is_due_again_at_the_next_check`,
+  `nr_41_a_partially_failed_check_still_advances_the_checked_timestamp`
+  (`reprise-core`), `nr_41_a_background_check_never_forces_and_the_reload_does`
+  (`ui/updates/popover_tests.rs`).
 
 ## S. Surfaces & Geometry
 

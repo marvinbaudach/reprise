@@ -189,6 +189,12 @@ fn start_worker(
     mode: DeleteMode,
     reload_state: CatalogDeleteReloadState,
 ) {
+    let worker_started = std::time::Instant::now();
+    tracing::info!(
+        tracks = tracks.len(),
+        mode = ?mode,
+        "delete confirmed"
+    );
     let db_path = shared.conn.path();
     let Some(db_path) = db_path else {
         show_toast(shared, &strings::text(strings::DELETE_DATABASE_UNAVAILABLE));
@@ -215,7 +221,13 @@ fn start_worker(
             return;
         };
         match result {
-            Ok(report) => finish(&shared, &report, mode, reload_state),
+            Ok(report) => finish(
+                &shared,
+                &report,
+                mode,
+                reload_state,
+                worker_started.elapsed().as_millis(),
+            ),
             Err(error) => {
                 tracing::warn!(%error, "removal worker could not open database");
                 show_toast(
@@ -252,11 +264,18 @@ fn run_delete(
             }
         }
         DeleteMode::Trash => {
-            let report = reprise_core::library::trash_tracks::trash_tracks_with(
-                db,
-                tracks,
-                reprise_platform_linux::trash::delete,
-            );
+            let report = match reprise_platform_linux::trash::Session::open() {
+                Ok(session) => {
+                    reprise_core::library::trash_tracks::trash_tracks_with(db, tracks, |path| {
+                        session.delete(path)
+                    })
+                }
+                Err(error) => {
+                    reprise_core::library::trash_tracks::trash_tracks_with(db, tracks, |_| {
+                        Err(error.clone())
+                    })
+                }
+            };
             for failure in &report.failures {
                 tracing::warn!(id = failure.id, path = %failure.path.display(), error = %failure.error, "move-to-trash failed");
             }
@@ -380,28 +399,97 @@ fn finish(
     report: &DeleteReport,
     mode: DeleteMode,
     reload_state: CatalogDeleteReloadState,
+    worker_ms: u128,
 ) {
     let removed = report.removed_ids.len();
     let callback = shared.on_library_mutated.borrow().clone();
-    if let Some(callback) = callback {
-        callback(&report.removed_ids);
-    }
     let player = shared.player.borrow().upgrade();
-    if let Some(player) = player {
-        player.advance_after_user_catalog_delete(&report.removed_ids);
-    }
-    shared.browse_bar.refresh();
-    reload_after_catalog_delete(shared, &report.removed_ids, reload_state);
+    let advance_player = player.clone();
+    let browse_bar = shared.browse_bar.clone();
+    let timings = finish_steps(
+        || {
+            if let Some(player) = player {
+                player.purge_queue_ids(&report.removed_ids);
+            }
+        },
+        || {
+            if let Some(player) = advance_player {
+                player.advance_after_user_catalog_delete(&report.removed_ids);
+            }
+        },
+        || reload_after_catalog_delete(shared, &report.removed_ids, reload_state),
+        || {
+            show_toast(
+                shared,
+                &strings::delete_result_toast(removed, report.failures, mode == DeleteMode::Trash),
+            );
+        },
+        move || {
+            if let Some(callback) = callback {
+                callback(&[]);
+            }
+            let browse_bar_started = std::time::Instant::now();
+            browse_bar.refresh();
+            browse_bar_started.elapsed().as_millis()
+        },
+    );
     tracing::info!(
+        worker_ms,
+        mutated_ms = timings.mutated_ms,
+        advance_ms = timings.advance_ms,
+        reload_ms = timings.reload_ms,
+        main_thread_ms = timings.mutated_ms + timings.advance_ms + timings.reload_ms,
         removed,
         failed = report.failures,
         trashed = mode == DeleteMode::Trash,
         "delete batch completed"
     );
-    show_toast(
-        shared,
-        &strings::delete_result_toast(removed, report.failures, mode == DeleteMode::Trash),
-    );
+}
+
+fn defer_secondary_refresh(refresh: impl FnOnce() -> u128 + 'static) {
+    glib::idle_add_local_once(move || {
+        let browse_bar_ms = refresh();
+        tracing::info!(
+            stage = "secondary_surfaces",
+            browse_bar_ms,
+            "delete batch completed"
+        );
+    });
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct FinishTimings {
+    mutated_ms: u128,
+    advance_ms: u128,
+    reload_ms: u128,
+}
+
+fn finish_steps(
+    purge: impl FnOnce(),
+    advance: impl FnOnce(),
+    reload: impl FnOnce(),
+    toast: impl FnOnce(),
+    secondary_refresh: impl FnOnce() -> u128 + 'static,
+) -> FinishTimings {
+    let mutated_started = std::time::Instant::now();
+    purge();
+    let mutated_ms = mutated_started.elapsed().as_millis();
+
+    let advance_started = std::time::Instant::now();
+    advance();
+    let advance_ms = advance_started.elapsed().as_millis();
+
+    let reload_started = std::time::Instant::now();
+    reload();
+    let reload_ms = reload_started.elapsed().as_millis();
+
+    toast();
+    defer_secondary_refresh(secondary_refresh);
+    FinishTimings {
+        mutated_ms,
+        advance_ms,
+        reload_ms,
+    }
 }
 
 pub(super) fn arm_smoke(shared: &Rc<Shared>) {
@@ -454,6 +542,46 @@ fn safe_scratch_tracks(tracks: &[(i64, PathBuf)]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+    struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
+        type Writer = LogWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            LogWriter(Arc::clone(&self.0))
+        }
+    }
+
+    impl Write for LogWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture_info(operation: impl FnOnce()) -> String {
+        let output = CapturedLogs::default();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(output.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, operation);
+        let bytes = output.0.lock().unwrap().clone();
+        String::from_utf8(bytes).unwrap()
+    }
 
     fn insert_track(db: &reprise_core::db::Db, id: i64, path: &Path, title: &str) {
         crate::test_db::connection(db)
@@ -584,6 +712,64 @@ mod tests {
         let restored = surviving_delete_anchor(anchor, &[1, 2, 3, 4, 5], &[1, 2, 4, 5]);
 
         assert_eq!(restored.anchor, Some((4, 7.5)));
+    }
+
+    #[test]
+    #[ignore = "uses the global GLib main context; run alone"]
+    fn finish_orders_reload_before_the_deferred_refreshes() {
+        use std::cell::RefCell;
+
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let record = |name| {
+            let calls = calls.clone();
+            move || calls.borrow_mut().push(name)
+        };
+
+        finish_steps(
+            record("purge"),
+            record("advance"),
+            record("reload"),
+            record("toast"),
+            {
+                let sidebar = record("sidebar_refresh");
+                let browse_bar = record("browse_bar_refresh");
+                move || {
+                    sidebar();
+                    browse_bar();
+                    0
+                }
+            },
+        );
+
+        assert_eq!(&*calls.borrow(), &["purge", "advance", "reload", "toast"]);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(
+            &*calls.borrow(),
+            &[
+                "purge",
+                "advance",
+                "reload",
+                "toast",
+                "sidebar_refresh",
+                "browse_bar_refresh",
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "uses the global GLib main context; run alone"]
+    fn deferred_secondary_refresh_logs_measured_browse_bar_field_for_batch_event() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+
+        let logs = capture_info(|| {
+            defer_secondary_refresh(|| 17_u128);
+            while gtk4::glib::MainContext::default().iteration(false) {}
+        });
+
+        assert!(logs.contains("delete batch completed"), "{logs}");
+        assert!(logs.contains("stage=\"secondary_surfaces\""), "{logs}");
+        assert!(logs.contains("browse_bar_ms=17"), "{logs}");
     }
 }
 

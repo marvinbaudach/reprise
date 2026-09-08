@@ -26,9 +26,7 @@
 //! lowest-indexed cached window — not true LRU, just a simple, deterministic
 //! rule that suits the model's largely monotonic scroll access pattern.
 //!
-//! Every fallible path (count query, window query) logs via `tracing::error!`
-//! and returns `None`/`0` rather than panicking — a broken DB connection must
-//! never crash the UI thread.
+//! Fallible queries log and degrade to `None`/`0`; they never crash the UI.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -46,7 +44,7 @@ use reprise_core::queries::{self, BrowseFilter, QueueItemMetadata};
 use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
-use super::track_list_model_change::ModelChange;
+use super::track_list_model_change::{ModelChange, ModelChangeKind};
 use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
@@ -63,7 +61,7 @@ const _: () = assert!(WINDOW_SIZE as i64 <= reprise_core::queries::MAX_WINDOW_LI
 /// user's visible scroll neighborhood without unbounded growth.
 const MAX_CACHED_WINDOWS: usize = 8;
 
-mod imp {
+pub(super) mod imp {
     use super::*;
     use gio::subclass::prelude::*;
 
@@ -89,6 +87,10 @@ mod imp {
         /// beside the GTK list model, never inside the view model itself.
         pub(super) context_window: Option<Rc<dyn super::super::queue_sections::ContextWindow>>,
         pub cache: BTreeMap<u32, Vec<QueueItemMetadata>>,
+        /// The final query state is already installed during a block move.
+        /// Between its removal and insertion signals this overlay hides the
+        /// destination run and maps intermediate positions around it.
+        pub pending_insert: Option<(u32, u32)>,
         /// QUE-1 section ranges (half-open, model coordinates) for the
         /// Queue source; empty = the whole model is one section. Set via
         /// `TrackListModel::set_sections` BEFORE the query swap whose
@@ -115,6 +117,8 @@ mod imp {
         /// lists themselves would cost the sorted full-table query this whole
         /// change exists to avoid.
         pub generation: std::cell::Cell<u64>,
+        /// Bumped when cached row metadata is invalidated without reshaping.
+        pub metadata_generation: std::cell::Cell<u64>,
     }
 
     #[glib::object_subclass]
@@ -173,11 +177,23 @@ mod imp {
         }
 
         fn n_items(&self) -> u32 {
-            self.state.borrow().total
+            let state = self.state.borrow();
+            state.pending_insert.map_or(state.total, |(_, len)| {
+                super::super::track_list_model_move::intermediate_n_items(state.total, len)
+            })
         }
 
         fn item(&self, position: u32) -> Option<glib::Object> {
             diagnostic_trail::measure_item_call(|| {
+                let position = self
+                    .state
+                    .borrow()
+                    .pending_insert
+                    .map_or(position, |(to, len)| {
+                        super::super::track_list_model_move::intermediate_position(
+                            position, to, len,
+                        )
+                    });
                 self.obj()
                     .queue_item_at(position)
                     .map(|item| glib::BoxedAnyObject::new(item).upcast())
@@ -195,49 +211,6 @@ glib::wrapper! {
 glib::wrapper! {
     pub struct TrackListModel(ObjectSubclass<imp::TrackListModel>)
         @implements gio::ListModel;
-}
-
-/// Returns the one contiguous `items_changed` span between two queue
-/// snapshots. Preserving the common prefix and suffix lets GTK keep their
-/// existing row widgets; the frequent automatic-advance shape
-/// `[current-next, ...] -> [...]` becomes one leading removal.
-fn queue_snapshot_change(
-    old: &super::queue_sections::QueueViewModel,
-    new: &super::queue_sections::QueueViewModel,
-) -> (u32, u32, u32) {
-    new.leading_removal_change_from(old).unwrap_or((
-        0,
-        u32::try_from(old.total_len()).unwrap_or(u32::MAX),
-        u32::try_from(new.total_len()).unwrap_or(u32::MAX),
-    ))
-}
-
-/// An `items-changed` span `(position, removed, added)` paired with a
-/// `sections-changed` range `(position, n_items)`; either is `None` when
-/// that signal must not be emitted.
-type QueueSnapshotSignals = (Option<(u32, u32, u32)>, Option<(u32, u32)>);
-
-/// The signals a queue snapshot swap has to emit.
-///
-/// GTK's contract (`gtk_section_model_sections_changed`): `items-changed`
-/// implies re-sectioning ONLY for the items it covers. The O(1) advance
-/// shape `items_changed(0, 1, 0)` covers no surviving row, so without an
-/// explicit `sections-changed` GTK keeps its cached header tiles and merely
-/// shifts their bounds by the delta — the Play Next header is dropped and
-/// its rows end up titled "Now Playing" (reproduced live by
-/// `examples/queue_section_shift_repro.rs`). A full-range `items-changed`
-/// already re-matches every header, so it needs no second signal.
-fn queue_snapshot_emissions(
-    change: (u32, u32, u32),
-    sections_changed: bool,
-    new_total: u32,
-) -> QueueSnapshotSignals {
-    let (position, removed, added) = change;
-    let items = (removed != 0 || added != 0).then_some(change);
-    let covers_every_row = items.is_some() && position == 0 && added >= new_total;
-    let sections =
-        (sections_changed && !covers_every_row && new_total > 0).then_some((0, new_total));
-    (items, sections)
 }
 
 /// A narrowed query delta only makes GTK reconsider sections intersecting its
@@ -295,7 +268,7 @@ impl TrackListModel {
                 .virtual_queue
                 .as_ref()
                 .map_or((0, state.total, new_total), |old_queue| {
-                    queue_snapshot_change(old_queue, queue)
+                    super::queue_snapshot_change::queue_snapshot_change(old_queue, queue)
                 });
             let sections_changed = state.sections != sections;
             state.source = ViewSource::Queue;
@@ -321,7 +294,11 @@ impl TrackListModel {
         self.imp()
             .generation
             .set(self.imp().generation.get().wrapping_add(1));
-        let (items, sections) = queue_snapshot_emissions(change, sections_changed, new_total);
+        let (items, sections) = super::queue_snapshot_change::queue_snapshot_emissions(
+            change,
+            sections_changed,
+            new_total,
+        );
         if let Some((position, removed, added)) = items {
             super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
                 position,
@@ -438,6 +415,10 @@ impl TrackListModel {
         )
     }
 
+    /// Replaces the query state with either one covering-span invalidation or
+    /// a block move. A valid move exposes a shorter intermediate model only
+    /// during its removal signal; all guards and the generation advance occur
+    /// once before either shape emits.
     #[allow(clippy::too_many_arguments)]
     fn set_query_browsed_ai_inner(
         &self,
@@ -549,6 +530,7 @@ impl TrackListModel {
                     && change.position.saturating_add(change.added) <= new_total
             })
             .unwrap_or(ModelChange {
+                kind: ModelChangeKind::Span,
                 position: 0,
                 removed: old_total,
                 added: new_total,
@@ -558,12 +540,19 @@ impl TrackListModel {
             });
         self.imp().generation.set(generation.wrapping_add(1));
         let signal_started = diagnostic_trail::start_reload_step();
-        super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
-            position: change.position,
-            removed: change.removed,
-            added: change.added,
-        });
-        self.items_changed(change.position, change.removed, change.added);
+        match change.kind {
+            ModelChangeKind::Span => {
+                super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
+                    position: change.position,
+                    removed: change.removed,
+                    added: change.added,
+                });
+                self.items_changed(change.position, change.removed, change.added);
+            }
+            ModelChangeKind::BlockMove { from, to, len } => {
+                self.emit_block_move(from, to, len, new_total);
+            }
+        }
         #[cfg(not(test))]
         if let Some((position, n_items)) = query_section_change(change) {
             use gtk4::prelude::SectionModelExt;
@@ -737,14 +726,8 @@ impl TrackListModel {
         }
     }
 
-    /// Patches the cached `Track`'s rating at `position` IN PLACE, emitting no
-    /// model signal. A star-rating click updates the visible widget first, so
-    /// only the model's cached clone is stale. Emitting a fake one-row
-    /// remove+insert would make GtkColumnView replace the row widget under the
-    /// pointer and snap the viewport back to the top. Patching the cached value
-    /// directly keeps a later scroll-away/back correct without any signal. If
-    /// the covering window is not cached there is nothing to patch: the next
-    /// `track_at` re-reads the already-updated row from SQL.
+    /// Patches a cached rating without the fake remove+insert that would
+    /// replace the visible row and move the viewport.
     pub fn set_cached_rating(&self, position: u32, rating: i32) {
         let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
         let offset_in_window = (position - window_start) as usize;
@@ -783,6 +766,9 @@ impl TrackListModel {
         )
     }
 }
+
+#[path = "tag_mutation_refresh_metadata.rs"]
+mod metadata_refresh;
 
 #[cfg(test)]
 #[path = "track_list_model_tests.rs"]

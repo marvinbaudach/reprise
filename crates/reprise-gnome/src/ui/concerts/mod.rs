@@ -12,6 +12,7 @@ mod concerts_empty_state;
 mod concerts_end_of_results;
 mod concerts_failure_ui;
 mod concerts_filter_bar;
+mod concerts_filter_model;
 mod concerts_location_banner;
 mod concerts_location_columns;
 mod concerts_model;
@@ -27,7 +28,7 @@ mod concerts_worker;
 pub(super) mod css;
 
 pub(in crate::ui) use concerts_view::ConcertsView;
-pub(in crate::ui) use concerts_worker::{ConcertsRequest, ConcertsRuntime};
+pub(in crate::ui) use concerts_worker::{ConcertsProgress, ConcertsRequest, ConcertsRuntime};
 
 pub(in crate::ui) fn install(
     conn: Rc<Db>,
