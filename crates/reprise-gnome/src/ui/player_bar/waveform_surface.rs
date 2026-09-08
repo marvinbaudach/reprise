@@ -17,6 +17,23 @@ pub(super) struct SurfaceKey {
     colouring: SeekColouring,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SurfacePaintKey {
+    desaturation: u64,
+    spectral_background: Option<[u8; 3]>,
+    colouring: SeekColouring,
+}
+
+impl SurfacePaintKey {
+    fn new(desaturation: f64, colouring: SeekColouring, appearance: WaveformAppearance) -> Self {
+        Self {
+            desaturation: desaturation.to_bits(),
+            spectral_background: appearance.spectral_cache_key(),
+            colouring,
+        }
+    }
+}
+
 impl SurfaceKey {
     fn new(
         width: i32,
@@ -24,9 +41,7 @@ impl SurfaceKey {
         scale_factor: i32,
         bar_count: usize,
         colour: (f64, f64, f64),
-        desaturation: f64,
-        colouring: SeekColouring,
-        appearance: WaveformAppearance,
+        paint: SurfacePaintKey,
     ) -> Self {
         Self {
             width,
@@ -34,9 +49,9 @@ impl SurfaceKey {
             scale_factor,
             bar_count,
             colour: [colour.0.to_bits(), colour.1.to_bits(), colour.2.to_bits()],
-            desaturation: desaturation.to_bits(),
-            spectral_background: appearance.spectral_cache_key(),
-            colouring,
+            desaturation: paint.desaturation,
+            spectral_background: paint.spectral_background,
+            colouring: paint.colouring,
         }
     }
 }
@@ -89,9 +104,7 @@ pub(super) fn ensure_cache(
         scale_factor,
         state.display_peaks.len(),
         widget_colour,
-        state.desaturation_progress,
-        state.colouring,
-        appearance,
+        SurfacePaintKey::new(state.desaturation_progress, state.colouring, appearance),
     );
     if state.surface_key == Some(key)
         && state.mask_surface.is_some()
@@ -320,9 +333,7 @@ mod tests {
             scale_factor,
             bar_count,
             colour,
-            desaturation,
-            SeekColouring::DEFAULT,
-            appearance,
+            SurfacePaintKey::new(desaturation, SeekColouring::DEFAULT, appearance),
         )
     }
 
@@ -358,9 +369,14 @@ mod tests {
                 1,
                 80,
                 OPAQUE,
-                0.0,
-                SeekColouring::Solid,
-                WaveformAppearance::for_appearance(true, crate::ui::style::theme::Theme::DEFAULT,),
+                SurfacePaintKey::new(
+                    0.0,
+                    SeekColouring::Solid,
+                    WaveformAppearance::for_appearance(
+                        true,
+                        crate::ui::style::theme::Theme::DEFAULT,
+                    ),
+                ),
             ),
             "colouring"
         );
@@ -372,9 +388,14 @@ mod tests {
                 1,
                 80,
                 OPAQUE,
-                0.0,
-                SeekColouring::DEFAULT,
-                WaveformAppearance::for_appearance(false, crate::ui::style::theme::Theme::DEFAULT,),
+                SurfacePaintKey::new(
+                    0.0,
+                    SeekColouring::DEFAULT,
+                    WaveformAppearance::for_appearance(
+                        false,
+                        crate::ui::style::theme::Theme::DEFAULT,
+                    ),
+                ),
             ),
             "appearance"
         );
