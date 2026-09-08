@@ -46,6 +46,9 @@ pub(super) struct DeviceState {
     /// The run that currently owns this device, if any. Identity of this
     /// handle is what tells a superseded run to stop writing here.
     machine: Option<Rc<RefCell<reprise_core::device_sync::DeviceSyncMachine>>>,
+    /// Held for exactly as long as `machine`, so the staging sweep can see
+    /// that this run is still in flight even from another runtime.
+    staging_run: Option<reprise_core::device_sync::staging::ActiveRun>,
     cancellable: Option<gio::Cancellable>,
     storage: DeviceStorageSnapshot,
     managed_files: Vec<ManagedDeviceFile>,
@@ -97,6 +100,7 @@ impl DeviceState {
             connected: true,
             session_state,
             machine: None,
+            staging_run: None,
             cancellable: None,
             storage: DeviceStorageSnapshot::default(),
             managed_files: Vec::new(),
