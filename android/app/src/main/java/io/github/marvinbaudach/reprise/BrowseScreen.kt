@@ -311,6 +311,9 @@ internal fun BrowseScreen(
         surfaceState.selectedTab == tab && pendingAlbum == null && pendingArtist == null &&
             selectedAlbum == null && selectedArtist == null
 
+    fun tabQueryResultIsCurrent(tab: BrowseTab): Boolean =
+        surfaceState.selectedTab == tab && selectedAlbum == null && selectedArtist == null
+
     fun artistSurfaceIsCurrent(artist: LibraryArtist?): Boolean =
         surfaceState.selectedTab == BrowseTab.ARTISTS &&
             pendingAlbum == null && pendingArtist == null &&
@@ -424,7 +427,7 @@ internal fun BrowseScreen(
         if (
             request != readJobs.latestSearch ||
             text != surfaceState.searchText ||
-            !tabSurfaceIsCurrent(tab)
+            !tabQueryResultIsCurrent(tab)
         ) return
         result.onSuccess { loaded ->
             loaded.titles?.let {

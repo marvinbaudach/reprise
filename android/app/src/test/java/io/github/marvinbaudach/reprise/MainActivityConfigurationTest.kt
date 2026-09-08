@@ -553,6 +553,11 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     private var broadArtistSearchGate: CompletableDeferred<Unit>? = null
     private var broadArtistSearchFinished: CountDownLatch? = null
     private val broadArtistSearchCalls = AtomicInteger()
+    private var artist45SearchStarted: CountDownLatch? = null
+    private var artist45SearchGate: CompletableDeferred<Unit>? = null
+    private var artist45SearchFinished: CountDownLatch? = null
+    private var artist45SearchCatchUpGate: CompletableDeferred<Unit>? = null
+    private val artist45SearchCalls = AtomicInteger()
     private var artistOneOpenStarted: CountDownLatch? = null
     private var artistOneOpenGate: CompletableDeferred<Unit>? = null
     private var artistOneOpenFinished: CountDownLatch? = null
@@ -765,6 +770,26 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     fun broadArtistSearchHasFinished(): Boolean =
         checkNotNull(broadArtistSearchFinished).count == 0L
 
+    fun blockArtist45SearchAndCatchUp() {
+        artist45SearchCalls.set(0)
+        artist45SearchStarted = CountDownLatch(1)
+        artist45SearchGate = CompletableDeferred()
+        artist45SearchFinished = CountDownLatch(1)
+        artist45SearchCatchUpGate = CompletableDeferred()
+    }
+
+    fun artist45SearchHasStarted(): Boolean = checkNotNull(artist45SearchStarted).count == 0L
+
+    fun releaseArtist45Search() {
+        checkNotNull(artist45SearchGate).complete(Unit)
+    }
+
+    fun artist45SearchHasFinished(): Boolean = checkNotNull(artist45SearchFinished).count == 0L
+
+    fun releaseArtist45SearchCatchUp() {
+        checkNotNull(artist45SearchCatchUpGate).complete(Unit)
+    }
+
     fun blockArtistOneOpen() {
         artistOneOpenCalls.set(0)
         artistOneOpenStarted = CountDownLatch(1)
@@ -864,6 +889,16 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 artists.window(range)
             },
             searchArtists = { query, range ->
+                if (query == "Artist 45") {
+                    when (artist45SearchCalls.getAndIncrement()) {
+                        0 -> {
+                            artist45SearchStarted?.countDown()
+                            withContext(NonCancellable) { artist45SearchGate?.await() }
+                            artist45SearchFinished?.countDown()
+                        }
+                        1 -> withContext(NonCancellable) { artist45SearchCatchUpGate?.await() }
+                    }
+                }
                 if (query == "Artist" && broadArtistSearchCalls.getAndIncrement() == 0) {
                     broadArtistSearchStarted?.countDown()
                     withContext(NonCancellable) { broadArtistSearchGate?.await() }
