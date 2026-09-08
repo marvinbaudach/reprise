@@ -83,6 +83,50 @@ class BrowseDetailLoadingTest {
     }
 
     @Test
+    fun systemBackFromAPendingArtistKeepsItsLateResultFromReopeningTheDetail() {
+        compose.onNodeWithText("Artists").performClick()
+        application.blockArtistOneOpen()
+
+        compose.onAllNodesWithText("Artist 1")[0].performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasStarted() }
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Artist 2").assertIsDisplayed()
+        application.releaseArtistOneOpen()
+        compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasFinished() }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Back to artists").assertDoesNotExist()
+        compose.onNodeWithText("Loading…").assertDoesNotExist()
+        compose.onNodeWithText("Artist 2").assertIsDisplayed()
+        compose.onNodeWithText("Albums").assertDoesNotExist()
+    }
+
+    @Test
+    fun systemBackFromAPendingAlbumKeepsItsLateResultFromReopeningTheDetail() {
+        openArtistOne()
+        application.blockFirstAlbumOpen()
+
+        compose.onNodeWithText("First Album").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) { application.firstAlbumOpenHasStarted() }
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
+        compose.onNodeWithText("First Album").assertIsDisplayed()
+        application.releaseFirstAlbumOpen()
+        compose.waitUntil(timeoutMillis = 5_000) { application.firstAlbumOpenHasFinished() }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+        compose.onNodeWithText("Loading…").assertDoesNotExist()
+        compose.onNodeWithText("Artist One · First Album").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
+        compose.onNodeWithText("First Album").assertIsDisplayed()
+    }
+
+    @Test
     fun aPendingArtistOpenDoesNotDiscardTheSearchResultThatWasAlreadyRequested() {
         compose.onNodeWithText("Artists").performClick()
         application.blockArtist45SearchAndCatchUp()
