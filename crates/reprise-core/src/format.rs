@@ -438,6 +438,11 @@ mod tests {
     }
 
     #[test]
+    fn truncates_subsecond_input() {
+        assert_eq!(format_duration(999), "0:00");
+    }
+
+    #[test]
     fn total_duration_formats_days_hours_and_minutes() {
         let ms = ((4 * 24 + 6) * 60 + 28) * 60 * 1000;
         assert_eq!(format_total_duration(ms), "4 days, 6 hours and 28 minutes");

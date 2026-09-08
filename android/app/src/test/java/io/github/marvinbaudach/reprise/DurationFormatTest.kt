@@ -41,6 +41,7 @@ class DurationFormatTest {
         assertEquals("1:02:33", formatDuration(3_753_000))
         assertEquals("0:00", formatDuration(-5))
         assertEquals("0:00", formatDuration(0))
+        assertEquals("0:00", formatDuration(999))
     }
 
     @Test
