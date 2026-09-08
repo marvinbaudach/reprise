@@ -489,7 +489,10 @@ pub(in crate::ui) fn css() -> String {
                        0 0 34px 8px @reprise_play_glow_far_hover; }}\n\
          /* BTN-3: the main action may answer a press more loudly than its \
             neighbours — a ring pulse in the playback accent on top of the \
-            shared press sink from `style::buttons`. */\n\
+            shared press sink from `style::buttons`. The press ring is \
+            momentary, and in light `@reprise_player_accent` already resolves \
+            to the darkened accent, so it reads as a dark ring rather than the \
+            glare the near/far glow tokens were zeroed to avoid. */\n\
          .{PLAY_CSS_CLASS}:active {{ \
            box-shadow: inset 0 4px 6px alpha(#000000, 0.44), \
                        inset 0 -1px 0 alpha(#ffffff, 0.12), \

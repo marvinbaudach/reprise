@@ -370,7 +370,7 @@ fn btn_3_play_button_has_sculpted_depth_and_a_distinct_pressed_well() {
 
 #[test]
 fn play_button_shadow_states_keep_six_interpolatable_layers() {
-    fn shadow_layer_count(css: &str, selector: &str) -> usize {
+    fn shadow_layers<'a>(css: &'a str, selector: &str) -> Vec<&'a str> {
         let body = css
             .split(selector)
             .nth(1)
@@ -382,25 +382,48 @@ fn play_button_shadow_states_keep_six_interpolatable_layers() {
             .and_then(|rest| rest.split(';').next())
             .expect("play-button state has a box-shadow");
         let mut depth = 0;
-        let separators = shadow.chars().filter(|character| {
+        let mut start = 0;
+        let mut layers = Vec::new();
+        for (index, character) in shadow.char_indices() {
             match character {
                 '(' => depth += 1,
                 ')' => depth -= 1,
                 _ => {}
             }
-            *character == ',' && depth == 0
-        });
-        separators.count() + 1
+            if character == ',' && depth == 0 {
+                layers.push(shadow[start..index].trim());
+                start = index + 1;
+            }
+        }
+        layers.push(shadow[start..].trim());
+        layers
     }
 
     let css = super::css();
+    let mut inset_patterns = Vec::new();
     for selector in [
         ".player-bar-play {",
         ".player-bar-play:hover",
         ".player-bar-play:active",
     ] {
-        assert_eq!(shadow_layer_count(&css, selector), 6, "{selector}");
+        let layers = shadow_layers(&css, selector);
+        assert_eq!(layers.len(), 6, "{selector}");
+        inset_patterns.push(
+            layers
+                .iter()
+                .map(|layer| layer.starts_with("inset "))
+                .collect::<Vec<_>>(),
+        );
     }
+    assert_eq!(
+        inset_patterns,
+        [
+            vec![true, true, true, false, false, false],
+            vec![true, true, true, false, false, false],
+            vec![true, true, true, false, false, false],
+        ],
+        "base, hover, and active shadows must keep inset/drop layers positionally aligned"
+    );
     assert!(css.contains("0 7px 14px @reprise_play_drop_hover"));
     assert!(css.contains("0 0 16px @reprise_play_glow_near_hover"));
     assert!(css.contains("0 0 34px 8px @reprise_play_glow_far_hover"));

@@ -142,7 +142,7 @@ pub(in crate::ui) fn css() -> String {
         ADD_ACTION_FILL_ALPHA, ADD_ACTION_FILL_HOVER_ALPHA, ADD_ACTION_FILL_PRESS_ALPHA,
         BTN_CHECKED_FILL_HOVER_ALPHA, BTN_CHECKED_FILL_PRESS_ALPHA, BTN_DOT_SIZE,
         BTN_DOT_VERTICAL_POSITION, BTN_HOVER_ALPHA, BTN_PRESS_ALPHA, BTN_PRESS_SCALE,
-        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH,
+        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH, HOVER_BG_ALPHA,
         PRIMARY_DISABLED_FILL_ALPHA, TRANSITION,
     };
 
@@ -216,12 +216,12 @@ pub(in crate::ui) fn css() -> String {
            background-color: alpha(@accent_bg_color, {BTN_CHECKED_FILL_HOVER_ALPHA}); }}\n\
          .{TOGGLE_CLASS}:checked:active {{ \
            background-color: alpha(@accent_bg_color, {BTN_CHECKED_FILL_PRESS_ALPHA}); }}\n\
-         .{sidebar_toggle}:checked {{ \
+         .reprise-panel-toggle.{sidebar_toggle}:checked {{ \
            background-color: transparent; background-image: none; color: inherit; }}\n\
-         .{sidebar_toggle}:checked:hover {{ \
+         .reprise-panel-toggle.{sidebar_toggle}:checked:hover {{ \
            background-color: alpha(currentColor, {BTN_HOVER_ALPHA}); }}\n\
-         .{sidebar_toggle}:checked:active {{ \
-           background-color: alpha(currentColor, {BTN_PRESS_ALPHA}); }}\n\
+         .reprise-panel-toggle.{sidebar_toggle}:checked:active {{ \
+           background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
          /* BTN-3: primary tier — Adwaita already paints the accent surface, so \
             only the extra press sink and the hover glow are added here. */\n\
          .{PRIMARY_CLASS}, button.suggested-action {{ \
@@ -384,7 +384,7 @@ mod tests {
     fn sidebar_toggle_checked_state_keeps_no_mode_slab() {
         let css = super::css();
         let selector = format!(
-            ".{}:checked",
+            ".reprise-panel-toggle.{}:checked",
             crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS
         );
         let rule = css
@@ -396,6 +396,60 @@ mod tests {
         assert!(rule.contains("background-color: transparent"));
         assert!(rule.contains("background-image: none"));
         assert!(rule.contains("color: inherit"));
+    }
+
+    #[test]
+    fn sidebar_toggle_checked_active_keeps_the_original_panel_fill() {
+        let css = super::css();
+        let selector = format!(
+            ".reprise-panel-toggle.{}:checked:active",
+            crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS
+        );
+        let rule = css
+            .split(&selector)
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("sidebar toggle checked-active rule");
+
+        assert!(rule.contains(&format!(
+            "alpha(@accent_bg_color, {})",
+            tokens::HOVER_BG_ALPHA
+        )));
+        assert!(!rule.contains(&format!("alpha(currentColor, {})", tokens::BTN_PRESS_ALPHA)));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sidebar_toggle_checked_state_renders_no_mode_slab() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        use gtk4::prelude::*;
+
+        gtk4::init().unwrap();
+        crate::ui::style::install();
+
+        let button = gtk4::ToggleButton::builder()
+            .css_classes([
+                "flat",
+                "reprise-panel-toggle",
+                crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS,
+            ])
+            .width_request(48)
+            .height_request(48)
+            .build();
+        let window = gtk4::Window::builder().child(&button).build();
+        window.present();
+        pump();
+
+        let unchecked_background = rendered_center_pixel(&window, &button);
+        button.set_active(true);
+        pump();
+        let checked_background = rendered_center_pixel(&window, &button);
+        window.close();
+
+        assert_eq!(
+            checked_background, unchecked_background,
+            "the production sidebar toggle classes must render no checked-mode slab"
+        );
     }
 
     #[test]
@@ -608,6 +662,35 @@ mod tests {
             .render_texture(&node, None)
             .save_to_png_bytes()
             .to_vec()
+    }
+
+    fn rendered_center_pixel(window: &gtk4::Window, button: &gtk4::ToggleButton) -> [u8; 4] {
+        use gtk4::prelude::*;
+
+        let paintable = gtk4::WidgetPaintable::new(Some(button));
+        let snapshot = gtk4::Snapshot::new();
+        paintable.snapshot(
+            &snapshot,
+            f64::from(button.width()),
+            f64::from(button.height()),
+        );
+        let node = snapshot
+            .to_node()
+            .expect("the sidebar toggle paints a node");
+        let renderer = window
+            .native()
+            .and_then(|native| native.renderer())
+            .expect("the presented window has a renderer");
+        let texture = renderer.render_texture(&node, None);
+        let stride = texture.width() as usize * 4;
+        let mut pixels = vec![0; stride * texture.height() as usize];
+        texture.download(&mut pixels, stride);
+        let x = texture.width() as usize / 2;
+        let y = texture.height() as usize / 2;
+        let offset = y * stride + x * 4;
+        pixels[offset..offset + 4]
+            .try_into()
+            .expect("one rendered RGBA pixel")
     }
 
     fn with_state(

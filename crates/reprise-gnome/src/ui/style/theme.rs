@@ -254,6 +254,11 @@ pub(in crate::ui) fn theme_css(
         p.critical_accent_surface(is_dark, accent),
         is_dark,
     );
+    // The app accent source currently emits the same derived value for
+    // `accent_color` and `reprise_accent_text_color` in light only. That is a
+    // consequence of this derivation, not a guarantee: new CSS must choose
+    // `accent_color` for libadwaita accent semantics and
+    // `reprise_accent_text_color` for app-authored text and glyphs.
     let accent_color = if is_dark {
         super::accent::APP_ACCENT
     } else {
@@ -429,22 +434,25 @@ mod tests {
         for theme in Theme::all() {
             let palette = theme.light_palette();
             let view = parse_hex_rgb(palette.view_bg).expect("view_bg is valid hex");
-            for source in [AccentSource::App, AccentSource::System] {
-                let accent = crate::ui::style::accent::effective_accent_rgb(source);
-                let accent_text = crate::ui::style::accent::accent_text_color(
-                    accent,
-                    palette.critical_accent_surface(false, accent),
-                    false,
-                );
-                let accent_text =
-                    parse_hex_rgb(&accent_text).expect("accent text is emitted as hex");
-                let running_row = composite(accent, view, 0.12);
-                let ratio = contrast_ratio(accent_text, running_row);
-                assert!(
-                    ratio >= 4.5,
-                    "{theme:?} {source:?}: accent text reaches only {ratio:.2}:1 on the running row"
-                );
-            }
+            // The system accent is only readable after GTK has initialized on
+            // its main thread; headless unit tests otherwise receive APP_ACCENT
+            // and would merely repeat this arm under a misleading name.
+            let accent = crate::ui::style::accent::effective_accent_rgb(AccentSource::App);
+            let accent_text = crate::ui::style::accent::accent_text_color(
+                accent,
+                palette.critical_accent_surface(false, accent),
+                false,
+            );
+            let accent_text = parse_hex_rgb(&accent_text).expect("accent text is emitted as hex");
+            let tint_alpha = super::super::tokens::NOW_PLAYING_TINT_LIGHT_ALPHA
+                .parse::<f64>()
+                .expect("the running-row tint alpha is numeric");
+            let running_row = composite(accent, view, tint_alpha);
+            let ratio = contrast_ratio(accent_text, running_row);
+            assert!(
+                ratio >= 4.5,
+                "{theme:?}: app accent text reaches only {ratio:.2}:1 on the running row"
+            );
         }
     }
 
