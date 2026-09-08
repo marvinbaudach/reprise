@@ -485,8 +485,10 @@ class MainActivityConfigurationTest {
      * after the scroll that asked for it.
      */
     private fun scrollLibraryListTo(tag: String, index: Int) {
+        val node = compose.onNodeWithTag(tag)
+        node.assertExists()
         compose.waitUntil(timeoutMillis = 5_000) {
-            runCatching { compose.onNodeWithTag(tag).performScrollToIndex(index) }.isSuccess
+            runCatching { node.performScrollToIndex(index) }.isSuccess
         }
     }
 
@@ -562,7 +564,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     private var failingTitleContinuationGate: CompletableDeferred<Unit>? = null
     private var failingTitleContinuationFinished: CountDownLatch? = null
     private val failingTitleContinuationCalls = AtomicInteger()
-    val trackRatings = mutableMapOf<Long, Int>()
+    val trackRatings = Collections.synchronizedMap(mutableMapOf<Long, Int>())
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
         private set
@@ -571,6 +573,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     // device did: it makes the second window — the part `onCreate` never
     // reloads — unreachable, and every test written on it green by omission.
     /** What a scan would change: the test moves it to act as one. */
+    @Volatile
     var catalogSize = CATALOG_SIZE
     private val tracks: List<LibraryTrack>
         get() = (1..catalogSize).map { index ->
@@ -661,7 +664,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
         }
     var rememberedDestination = BrowseTab.TITLES
     val rememberedDestinationWrites = mutableListOf<BrowseTab>()
-    val artistWindowRequests = mutableListOf<LibraryWindowRange>()
+    val artistWindowRequests = Collections.synchronizedList(mutableListOf<LibraryWindowRange>())
     var currentQueue: List<LibraryTrack> = emptyList()
         private set
     var currentQueueIndex: Int? = null
