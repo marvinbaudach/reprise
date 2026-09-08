@@ -112,6 +112,7 @@ gate "Architecture" -- scripts/check-architecture.sh
 gate "Device-sync GStreamer" -- scripts/check-device-sync-gstreamer.sh
 gate "Accessibility semantics" -- scripts/check-accessibility-semantics.sh
 gate "Input parity" -- scripts/check-input-parity.sh
+gate "Listen report parity" -- scripts/check-listen-report-parity.sh
 gate "Frontend thinness" -- scripts/check-frontend-thinness.sh
 gate "UX traceability" -- scripts/check-ux-traceability.sh
 gate "AppStream" -- scripts/check-appstream.sh

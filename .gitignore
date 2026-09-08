@@ -34,6 +34,14 @@ doc/
 # It was ignored while it collected generated status dumps — keep those out
 # (session scratch belongs in .superpowers/) and docs/ stays worth reading.
 
+# Handovers are the exception: a HANDOVER-*.md is one session's note to the
+# next, written against a worktree that stops existing once the branch lands.
+# Plans stay tracked — land.sh resolves a branch through them — but a handover
+# has no such role, ages out within days, and only two of them ever reached
+# dev, both by accident. Keep writing them in docs/plans; they just do not
+# belong in the history.
+docs/plans/HANDOVER-*.md
+
 # Pipeline scratch files, written per run by the pipeline skill's runner: the
 # prompt it is handed, and the summary it writes back. A glob rather than a
 # list — the refactor phase adds .pipeline-refactor.md, and a name that escapes

@@ -122,6 +122,8 @@ mod table_columns;
 mod table_selection;
 mod tag_edit;
 #[cfg(test)]
+pub(crate) mod test_log_capture;
+#[cfg(test)]
 pub(crate) mod test_main_context;
 #[cfg(test)]
 pub(crate) mod test_settle;

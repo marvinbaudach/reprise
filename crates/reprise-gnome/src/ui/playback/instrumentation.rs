@@ -98,33 +98,9 @@ pub(super) fn remaining_ms(started: std::time::Instant, measured: &[u128]) -> u1
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
-    use std::io;
     use std::rc::Rc;
-    use std::sync::{Arc, Mutex};
 
-    #[derive(Clone, Default)]
-    struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
-
-    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
-        type Writer = CapturedLogWriter;
-
-        fn make_writer(&'a self) -> Self::Writer {
-            CapturedLogWriter(self.0.clone())
-        }
-    }
-
-    struct CapturedLogWriter(Arc<Mutex<Vec<u8>>>);
-
-    impl io::Write for CapturedLogWriter {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
+    use crate::ui::test_log_capture::CapturedLogs;
 
     #[test]
     fn several_queue_notifications_coalesce_one_deferred_now_playing_refresh() {
@@ -156,13 +132,12 @@ mod tests {
 
     #[test]
     fn deferred_now_playing_refresh_reports_the_callback_cost_from_inside_the_idle() {
+        // The capture goes through the crate-wide helper rather than a
+        // subscriber of its own: a thread-local subscriber leaves `tracing`
+        // free to resolve this module's callsite against a thread that has
+        // none — the sibling test above reaches the very same callsite — and
+        // the buffer then stays empty for the rest of the process.
         let logs = CapturedLogs::default();
-        let subscriber = tracing_subscriber::fmt()
-            .without_time()
-            .with_ansi(false)
-            .with_target(true)
-            .with_writer(logs.clone())
-            .finish();
         let tasks = Rc::new(RefCell::new(Vec::<super::DeferredTask>::new()));
         let schedule = {
             let tasks = tasks.clone();
@@ -174,10 +149,13 @@ mod tests {
         );
 
         deferred();
-        tracing::subscriber::with_default(subscriber, || tasks.borrow_mut().remove(0)());
+        logs.capture(|| tasks.borrow_mut().remove(0)());
 
-        let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
-        assert!(output.contains("reprise::ui::playback"));
+        let output = logs.text();
+        assert!(
+            output.contains("reprise::ui::playback"),
+            "captured: {output:?}"
+        );
         assert!(output.contains("queue listeners deferred"));
         let elapsed = output
             .split("now_playing_deferred_ms=")
