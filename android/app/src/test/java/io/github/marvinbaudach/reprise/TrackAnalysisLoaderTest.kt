@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -225,17 +226,26 @@ class TrackAnalysisLoaderTest {
         val workerThreads = mutableListOf<Thread>()
         val mainHops = ArrayDeque<() -> Unit>()
         val imported = CountDownLatch(1)
+        val inLane = AtomicInteger()
+        val peakInLane = AtomicInteger()
         var delivered: List<SpectralBar>? = null
         val expected = listOf(SpectralBar(false, 0.75f, 0.1, 0.2, 0.3))
+        fun enterLane() {
+            peakInLane.accumulateAndGet(inLane.incrementAndGet()) { seen, now -> maxOf(seen, now) }
+        }
         val loader = TrackAnalysisLoader(
             importAnalysis = { trackId ->
+                enterLane()
                 operations += "import:$trackId"
                 workerThreads += Thread.currentThread()
                 imported.countDown()
+                inLane.decrementAndGet()
             },
             readBars = { trackId, count ->
+                enterLane()
                 operations += "read:$trackId:$count"
                 workerThreads += Thread.currentThread()
+                inLane.decrementAndGet()
                 expected
             },
             onMainThread = mainHops::add,
@@ -248,7 +258,7 @@ class TrackAnalysisLoaderTest {
         loader.shutdownForTest()
         assertEquals(listOf("import:41", "read:41:64"), operations)
         assertTrue(workerThreads.all { it !== caller })
-        assertEquals(workerThreads.first(), workerThreads.last())
+        assertEquals("the lane ran two operations at once", 1, peakInLane.get())
         assertFalse("a worker callback changed UI state directly", delivered === expected)
 
         while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
