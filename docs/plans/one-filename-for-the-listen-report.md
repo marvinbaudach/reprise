@@ -188,3 +188,18 @@ the cheapest useful strand.
 The one external dependency is sequencing, not parallelism: package C owns
 `scripts/check-architecture.sh` tonight, so this branch is written now and landed
 after C.
+
+## Known limits
+
+For each exact constant name, the gate compares a loose declaration count with
+the strict extractor count. This catches a production declaration that changes
+to an unrecognised shape, such as `pub(crate) const`, while a stale declaration
+of the same name still satisfies the strict extractor; the differing counts
+hard-fail before the stale value can make the parity check green.
+
+The gate deliberately does not fuzzy-match renamed identifiers. If the real
+Rust constant is renamed while a stale declaration keeps the old exact name,
+both counts remain one. Rust call sites such as `mirror.rs` already make a real
+rename fail at compile time, and defeating that signal would require adding a
+compiling decoy deliberately; guessing at near-name identifiers would make this
+precise gate a heuristic instead.

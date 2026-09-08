@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Rust Core and Android independently own their storage boundary, so the filenames are
-# duplicated; this parity gate is the mechanism that keeps the protocol names aligned.
+# Rust Core and Android independently own this storage boundary. For each exact constant
+# name, loose declaration counting catches an unrecognised production shape beside a stale
+# strict match, and the value check then keeps the recognised declarations aligned.
+#
+# Deliberately, this does not guess at renamed identifiers: call sites make a real Rust
+# rename fail compilation, while fuzzy near-name matching would turn a precise gate into a
+# heuristic.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -29,12 +34,14 @@ roles = {
             rust_file,
             "REPORT_FILE_NAME",
             r'^\s*pub\s+const\s+REPORT_FILE_NAME\s*:\s*&str\s*=\s*"([^"]+)"\s*;',
+            r'^\s*(?:pub(?:\s*\([^\r\n)]*\))?\s+)?(?:const|static(?:\s+mut)?)\s+REPORT_FILE_NAME(?![A-Za-z0-9_])',
             'pub const REPORT_FILE_NAME: &str = "...";',
         ),
         (
             kotlin_file,
             "LISTEN_REPORT_FILE_NAME",
             r'^\s*internal\s+const\s+val\s+LISTEN_REPORT_FILE_NAME\s*=\s*"([^"]+)"',
+            r'^\s*(?:(?:internal|private|public|protected)\s+)?const\s+val\s+LISTEN_REPORT_FILE_NAME(?![A-Za-z0-9_])',
             'internal const val LISTEN_REPORT_FILE_NAME = "..."',
         ),
     ),
@@ -43,21 +50,33 @@ roles = {
             rust_file,
             "ACKNOWLEDGEMENT_FILE_NAME",
             r'^\s*pub\s+const\s+ACKNOWLEDGEMENT_FILE_NAME\s*:\s*&str\s*=\s*"([^"]+)"\s*;',
+            r'^\s*(?:pub(?:\s*\([^\r\n)]*\))?\s+)?(?:const|static(?:\s+mut)?)\s+ACKNOWLEDGEMENT_FILE_NAME(?![A-Za-z0-9_])',
             'pub const ACKNOWLEDGEMENT_FILE_NAME: &str = "...";',
         ),
         (
             kotlin_file,
             "LISTEN_REPORT_ACKNOWLEDGEMENT_FILE_NAME",
             r'^\s*internal\s+const\s+val\s+LISTEN_REPORT_ACKNOWLEDGEMENT_FILE_NAME\s*=\s*"([^"]+)"',
+            r'^\s*(?:(?:internal|private|public|protected)\s+)?const\s+val\s+LISTEN_REPORT_ACKNOWLEDGEMENT_FILE_NAME(?![A-Za-z0-9_])',
             'internal const val LISTEN_REPORT_ACKNOWLEDGEMENT_FILE_NAME = "..."',
         ),
     ),
 }
 
 
-def extract(path, constant, pattern, expected):
-    matches = re.findall(pattern, Path(path).read_text(encoding="utf-8"), re.MULTILINE)
-    if not matches:
+def extract(path, constant, strict_pattern, loose_pattern, expected):
+    source = Path(path).read_text(encoding="utf-8")
+    strict_matches = re.findall(strict_pattern, source, re.MULTILINE)
+    loose_count = len(re.findall(loose_pattern, source, re.MULTILINE))
+    strict_count = len(strict_matches)
+    if loose_count != strict_count:
+        print(
+            f"listen-report parity: {path}: {constant} declaration count mismatch: "
+            f"loose {loose_count}, strict {strict_count}; change both sides together",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if not strict_matches:
         print(
             f"listen-report parity: {path}: missing constant {constant} "
             f"(expected {expected}); "
@@ -65,14 +84,14 @@ def extract(path, constant, pattern, expected):
             file=sys.stderr,
         )
         raise SystemExit(1)
-    if len(matches) != 1:
+    if strict_count != 1:
         print(
             f"listen-report parity: {path}: expected exactly one {constant}, "
-            f"found {len(matches)}; change both sides together",
+            f"found {strict_count}; change both sides together",
             file=sys.stderr,
         )
         raise SystemExit(1)
-    return matches[0]
+    return strict_matches[0]
 
 
 agreed = {}

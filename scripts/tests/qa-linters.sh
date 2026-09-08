@@ -166,6 +166,7 @@ require_pattern 'shellcheck' .github/workflows/ci.yml
 require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-merge-readiness.sh
 require_pattern 'check-input-parity.sh' scripts/check-merge-readiness.sh
+require_pattern 'check-listen-report-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern '^scripts/check-flatpak-cargo-sources\.sh$' scripts/check-release.sh
 require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
