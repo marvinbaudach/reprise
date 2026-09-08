@@ -2,7 +2,7 @@
 slug: night-b-the-scanner-stops-being-one-function
 worktree: .worktrees/night-b-scanner
 branch: refactor/the-scanner-stops-being-one-function
-phase: refactored
+phase: shipped
 created: 2026-09-07
 base: origin/dev
 owns: crates/reprise-core/src/library/{scanner.rs,scanner_vanish.rs}
