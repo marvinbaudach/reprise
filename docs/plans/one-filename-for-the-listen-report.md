@@ -2,7 +2,7 @@
 slug: one-filename-for-the-listen-report
 worktree: /home/marvin/Projects/reprise-one-filename-for-the-listen-report
 branch: feature/one-filename-for-the-listen-report
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-09-07
 ---
