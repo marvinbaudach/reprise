@@ -187,7 +187,7 @@ impl WalkState {
     fn record(&mut self, outcome: &EntryOutcome) {
         // Root-Guard input: "did the walk find any audio file at all under
         // `root`?" — counted regardless of whether this particular file
-        // goes on to be added/updated/skipped/errored below. See this
+        // goes on to be added/updated/skipped/errored below. See
         // `scan_folder_inner`'s `## Root guard` doc section.
         if outcome.examined_audio_file() {
             self.trace.audio_files_seen += 1;

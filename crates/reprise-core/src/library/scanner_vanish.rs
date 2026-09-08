@@ -1,6 +1,12 @@
-//! Reconcile responsibility: what the scan says about files it did **not** find.
-//! It collects walk evidence inside the walk (`poison_walk_failure`, `evidence_after_walk`).
-//! Afterwards it concludes missing rows (`mark_vanished_with`, `reclassify_missing_with`) and root trust (`guard_evidence_under_root`, `any_candidate_confirms_root_with`).
+//! Reconcile: what the scan says about the files it did **not** find.
+//!
+//! During the walk it only collects evidence — which directories listed
+//! cleanly, which could not be read (`poison_walk_failure`,
+//! `evidence_after_walk`). Afterwards it concludes: which rows the catalog
+//! still believes present are provably gone (`mark_vanished_with`), which
+//! were misclassified (`reclassify_missing_with`), and whether the root is
+//! trustworthy enough for any of it (`guard_evidence_under_root`,
+//! `any_candidate_confirms_root_with`).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

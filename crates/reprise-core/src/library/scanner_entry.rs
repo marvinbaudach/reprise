@@ -1,8 +1,9 @@
 //! What the scan decides about **one** entry the walk delivered: classify the
 //! file, write the catalog row it earns, and report back what happened as a
 //! value. The counting lives with the walk in `scanner.rs`; nothing here
-//! touches a counter, so all ten outcomes are visible in one enum, preserving
-//! the arithmetic formerly scattered across the pre-split body's seven early returns.
+//! touches a counter, so all ten ways an entry can end are visible in one
+//! enum instead of scattered through the pre-split body's seven early
+//! returns.
 
 use std::path::Path;
 
