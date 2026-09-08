@@ -1,13 +1,19 @@
 # Reprise
 
-Reprise is a native GNOME music player for people who keep their own music
-files. It brings a fast sortable library, playlists, queue management, lyrics,
-artwork, listening history, podcasts, radio, and device synchronization into a
-GTK4/libadwaita app while keeping the library local.
+Build a music player people enjoy using — without treating their library as a
+cloud account. Reprise is a native GNOME player written in Rust, with a shared
+engine that also powers an Android client. It is a welcoming place to work on
+real desktop, mobile, audio, and library-management problems.
 
-> **Status:** active alpha. Reprise is not a public release yet.
+<p align="center">
+  <img src="showroom/public/media/showroom/gnome-library.webp" width="760" alt="Reprise on GNOME with a sortable music library, queue, playback bar, and connected-device sync status." />
+  <img src="showroom/public/media/showroom/android-visualizer.webp" width="190" alt="Reprise on Android showing the audio-reactive Now Playing scene." />
+</p>
 
-![Reprise Now Playing view with album art, playback controls, queue, and a live audio visualizer.](data/screenshots/now-playing.png)
+Reprise keeps scanning, metadata, search, playlists, listening history,
+podcasts, radio, and device sync local. GTK4/libadwaita gives the desktop client
+its GNOME feel; the portable Rust core keeps the product rules shared rather
+than duplicated across platforms.
 
 ## Downloads
 
@@ -27,84 +33,40 @@ release page.
 
 ## Why Reprise
 
-- **Everything works locally.** Scanning large libraries, metadata, search,
-  playlists, listening history, Android sync, and file safety all work without
-  turning your library into a cloud account.
-- **Native, not a web view.** GTK4/libadwaita shapes the GNOME experience;
-  GStreamer, MPRIS, MTP, keyring, and Trash integration live in a separate
-  Linux layer.
-- **Checked, not promised.** Architecture, UX, accessibility, performance, and
-  delivery rules are enforced by scripts and tests, not just described in the
-  README.
+- **Local first:** library data and playback stay on the device.
+- **Native clients:** GTK4/libadwaita on GNOME; a shared Rust engine on Android.
+- **Evidence-led:** architecture, UX, accessibility, and performance have gates.
 
 ## Architecture
 
 ![Reprise architecture: a portable Rust core, a Linux platform adapter, and a native GTK4/libadwaita frontend with enforced dependency direction.](docs/assets/reprise-architecture.svg)
 
-| Crate | Owns | Must not own |
-|---|---|---|
-| `reprise-core` | Library, SQLite queries, queue semantics, scanning, playlists, settings, and platform contracts | GTK, libadwaita, GStreamer, zbus, or GLib dependencies |
-| `reprise-platform-linux` | GStreamer playback and analysis, MPRIS/D-Bus, MTP, Trash, and other Linux adapters | Product UI or duplicated domain rules |
-| `reprise-gnome` | GTK4/libadwaita presentation, interaction state, accessibility, and desktop composition | Productive SQL, blocking HTTP, or direct GStreamer orchestration |
-| `reprise-runtime-protocol` | Versioned command and snapshot data shared by direct-path D-Bus and MCP surfaces | Runtime ownership or toolkit code |
-| `reprise-cli` | Headless CLI over core facades: playlists, search, library summary, scan, and instrumental jobs | Any workspace crate beyond reprise-core (bar the feature-gated mpris/worker exceptions) or productive SQL |
-| `reprise-mcp` | Local stdio MCP server exposing read-only library resources and capability-gated create tools to agents | Any workspace crate beyond reprise-core, productive SQL, or playback/queue/tag/delete tools |
-| `reprise-stems` | Portable stem-separation backend (ML inference) for the experimental instrumental jobs | Any workspace crate beyond reprise-core, or GUI/engine coupling |
-| `reprise-view` | Toolkit-neutral presentation state shared by native frontends | GTK, Compose, platform services, or productive SQL |
-| `reprise-android-ffi` | The narrow UniFFI boundary used by the Android frontend | Android UI or duplicated domain rules |
+- `reprise-core` owns library rules, queries, scanning, playlists, settings, and
+  platform contracts — never GTK, GStreamer, or D-Bus.
+- `reprise-platform-linux` implements GStreamer, MPRIS, MTP, and Trash.
+- `reprise-gnome` owns native GTK4/libadwaita presentation and interaction.
 
-All application logic and data live in the shared engine; the platform crates
-only implement the narrow contracts the core defines, and each frontend stays
-native. The `reprise-cli` and `reprise-mcp` frontends run as separate processes
-on the same database, and a change-log notifier shows their edits live in a
-running GTK app, without a restart. `scripts/check-architecture.sh` enforces
-the dependency direction, core purity, source-size limits, and known
-presentation-layer coupling traps.
+The CLI, MCP server, runtime, view model, and Android FFI stay behind those
+boundaries. `scripts/check-architecture.sh` enforces them.
 
 ## Engineering contracts
 
-- **Every UX rule has a test.** The binding [UX rulebook](docs/ux-rules.md)
-  maps each active rule to a test named after it, in Rust or CUA — covering
-  keyboard, focus, accessibility, feedback, and reduced motion.
-- **Large libraries stay fast and light.** The track model combines GTK widget
-  virtualization with lazily loaded 200-row SQLite windows and a fixed cache
-  budget. Accepted comparisons use generated 10,000- and 100,000-track
-  profiles.
-- **Stale async results never hit the wrong row.** Recycled rows and
-  long-running workers carry generation tokens, so late covers, metadata,
-  lyrics, or progress updates cannot repaint a different visible item.
-- **Anything risky is opt-in.** Network modules are off by default,
-  credentials go into the system keyring, files only change after a user
-  action, and automated checks run on isolated profiles instead of a real
-  music library.
-
-Benchmark methods, their limits, and the accepted results are documented in
-[TESTING.md](TESTING.md) and the [engineering showcase](docs/showcase.md) —
-this README deliberately avoids numbers that would go stale.
+Every active [UX rule](docs/ux-rules.md) has a rule-named test. Async rows use
+generation tokens; network features are opt-in; checks use isolated profiles.
+Methods and evidence live in [TESTING.md](TESTING.md) and the
+[engineering showcase](docs/showcase.md).
 
 ## Contributing
 
-**Pick your entry point:** pure library, scanner, queue, or playlist logic in
-`reprise-core`; native interaction and accessibility in `reprise-gnome`; or
-audio, desktop, and device adapters in `reprise-platform-linux`.
-
-Start with the [contributor guide](CONTRIBUTING.md). Coding agents pick up from
-the [AGENTS.md](AGENTS.md) runbook for the automation and safety boundaries. The
-[UX rulebook](docs/ux-rules.md) is the interaction contract.
-Every change starts with a failing test, respects the core boundary, and lands
-through a squashed pull request into `dev`, from where `main` is
-fast-forwarded. The goal is not more code —
-it is a better music player, with evidence that each change is correct.
+**Pick your entry point:** domain work in `reprise-core`; GTK interaction in
+`reprise-gnome`; desktop and device adapters in `reprise-platform-linux`.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), then follow [AGENTS.md](AGENTS.md).
+Changes start with a failing test and land through a squashed PR into `dev`.
 
 ## Build and run
 
-Requirements: Rust 1.92+, Meson 1.3+, Ninja, GTK 4.22+, libadwaita 1.9+,
-SQLite, gettext, GStreamer 1.x with the Good Plug-ins, and GVfs with its MTP
-volume monitor. Android synchronization specifically requires `lamemp3enc`
-and `id3v2mux`; `scripts/check-device-sync-gstreamer.sh` verifies the complete
-runtime factory set.
-
-Install the GStreamer codec plugins needed by the files you want to play.
+Requires Rust 1.92+, Meson, Ninja, GTK 4.22+, libadwaita 1.9+, SQLite, gettext,
+GStreamer Good Plug-ins, and GVfs MTP support.
 
 ```sh
 cargo build --locked --workspace
@@ -112,37 +74,15 @@ cargo run --locked -p reprise-gnome
 cargo test --locked --workspace
 ```
 
-Install through Meson:
-
 ```sh
 meson setup _build --prefix="$HOME/.local" -Dprofile=release
 meson compile -C _build
 meson install -C _build
 ```
 
-Meson builds compile the experimental stem-separation backend by default
-(`-Dstem_backend=true`); pass `-Dstem_backend=false` for a core-only binary,
-while the plain `cargo build` above always stays core-only.
-
-`reprise-mcp` (the agent-facing MCP server) is not part of the Meson desktop
-build above; build it directly with Cargo when you need it. Its
-playback-control tools (`music_playback_control`, `music_play`) sit behind the
-opt-in `mpris` feature, the same pattern as the CLI's `mpris`/`worker`
-exceptions:
-
-```sh
-cargo build --locked -p reprise-mcp --release --features mpris
-```
-
-The default `cargo build -p reprise-mcp` (no extra features) needs no D-Bus
-and simply leaves the playback tools out.
-
-The Flatpak manifest targets GNOME 50 and resolves Cargo dependencies from
-pinned checksums. See [flatpak/README.md](flatpak/README.md).
+See [flatpak/README.md](flatpak/README.md) for Flatpak and `reprise-mcp` builds.
 
 ## Verification
-
-The quick local check is:
 
 ```sh
 cargo fmt --check
@@ -152,51 +92,27 @@ scripts/check-architecture.sh
 scripts/check-ux-traceability.sh
 ```
 
-Before a merge, a candidate runs the complete pull-request gate — warning-free
-Rustdoc, a dependency audit, isolated GTK display suites, and the
-accessibility and input contracts:
-
 ```sh
 MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh --no-fetch
 ```
 
-Release candidates additionally validate desktop metadata, Flatpak sources,
-translations, and an optimized Meson install through `scripts/check-release.sh`.
-
-Display tests simply fail when their private D-Bus/Xvfb/AT-SPI services are
-missing — they never fall back to the live desktop or your user profile.
+The merge gate also covers Rustdoc, audit, isolated GTK display, accessibility,
+and input checks. Release candidates run `scripts/check-release.sh`.
 
 ## Documentation
 
-| Document | Purpose |
-|---|---|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Human onboarding, build setup, and pull-request entry point |
-| [AGENTS.md](AGENTS.md) | Repository workflow, safety boundaries, and required gates |
-| [TESTING.md](TESTING.md) | Test layers, benchmark method, and evidence limits |
-| [docs/ux-rules.md](docs/ux-rules.md) | Binding interaction and accessibility contracts |
-| [docs/agents/branching.md](docs/agents/branching.md) | Squashed pull requests into `dev`, fast-forward promotion to `main` |
-| [docs/showcase.md](docs/showcase.md) | Portfolio positioning and deeper engineering evidence |
-| [RELEASING.md](RELEASING.md) | Packaging and release checklist |
+- [CONTRIBUTING.md](CONTRIBUTING.md) — onboarding and pull requests
+- [AGENTS.md](AGENTS.md) — workflow and safety boundaries
+- [TESTING.md](TESTING.md) — test layers and evidence limits
+- [docs/ux-rules.md](docs/ux-rules.md) — interaction contract
+- [docs/showcase.md](docs/showcase.md) — deeper engineering evidence
+- [RELEASING.md](RELEASING.md) — release checklist
 
 ## License
 
-Reprise is **GPL-3.0-or-later** — every crate, from the portable engine to the
-native GTK4 frontend. See [LICENSE](LICENSE) for the full text and
-[LICENSING.md](LICENSING.md) for the rationale and the third-party notices.
+Reprise is **GPL-3.0-or-later**. See [LICENSE](LICENSE) and [LICENSING.md](LICENSING.md).
 
 ## How this project is built
 
-Reprise is built with AI assistance under a human-owned architecture and review
-process. Models work from grilled plans; the maintainer decides the product,
-reviews the changes, and remains responsible for explaining and maintaining
-the result. The commit history preserves named co-authorship where applicable.
-
-The engineering discipline is machine-checked. Formatting, Clippy with
-warnings denied, the workspace tests, dependency auditing, architecture and
-frontend boundaries, accessibility, input parity, and UX-rule traceability all
-gate changes. The [UX rulebook](docs/ux-rules.md) only marks a rule active when
-a rule-named test enforces it, and [TESTING.md](TESTING.md) records what the
-automated evidence does and does not prove.
-
-If you find something in here that does not hold up, open an issue. That is
-worth more to me than the benefit of the doubt.
+Reprise uses AI assistance under human-owned architecture and review. The
+maintainer owns product decisions and the commit history preserves co-authorship.

@@ -29,9 +29,16 @@ reject_fixed() {
 
 [[ -f $english ]] || fail "$english must exist"
 [[ ! -e README.de.md ]] || fail "README.de.md must stay removed; the developer README is English only"
-(( $(wc -l < "$english") <= 215 )) || fail "$english must remain a concise developer entry point"
+(( $(wc -l < "$english") <= 140 )) || fail "$english must remain a concise developer entry point"
 [[ $(rg -c 'docs/assets/reprise-architecture\.svg' "$english") -eq 1 ]] ||
   fail "$english must contain exactly one architecture visual"
+[[ $(rg -c 'showroom/public/media/showroom/gnome-library\.webp' "$english") -eq 1 ]] ||
+  fail "$english must contain exactly one GNOME Showcase capture"
+[[ $(rg -c 'showroom/public/media/showroom/android-visualizer\.webp' "$english") -eq 1 ]] ||
+  fail "$english must contain exactly one Android Showcase capture"
+reject_fixed 'data/screenshots/now-playing.png' "$english"
+reject_fixed 'active-alpha' "$english"
+reject_fixed 'not a public release' "$english"
 reject_fixed '```mermaid' "$english"
 reject_fixed 'docs/assets/reprise-performance.svg' "$english"
 reject_fixed 'Rust code lines' "$english"
