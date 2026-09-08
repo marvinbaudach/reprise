@@ -7,6 +7,7 @@ import android.provider.DocumentsContract
 import java.io.FileNotFoundException
 import java.io.IOException
 
+// Enforced across Rust and Kotlin by scripts/check-listen-report-parity.sh.
 internal const val LISTEN_REPORT_FILE_NAME = "reprise-listens-back.rpl"
 internal const val LISTEN_REPORT_ACKNOWLEDGEMENT_FILE_NAME = "reprise-listens-back-ack.rpl"
 

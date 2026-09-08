@@ -107,15 +107,48 @@ fn hit(body: LyricsBody, source: LyricsSource) -> LyricsHit {
     LyricsHit { body, source }
 }
 
+/// The lookup runs on a background thread. The polls below used to allow
+/// `20 x 5 ms`, a budget nobody chose deliberately and one a loaded machine
+/// misses. This bound is generous on purpose: a healthy run never spends it,
+/// only a genuinely stuck lookup does.
+const LOOKUP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The window in which a gated lookup would have to fire for the gate to be
+/// broken. A negative check, so a short wait can only ever pass too easily --
+/// never fail a healthy run.
+const GATE_SETTLE: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// Waits until `observed` has seen at least `expected` lookups, then returns
+/// what it saw. Poll one piece of state only: a counter that is bumped beside
+/// the recorded options can reach `expected` while the options are still
+/// unwritten, and the assertion then reads a half-finished call.
+fn wait_for_lookups(observed: impl Fn() -> usize, expected: usize) -> usize {
+    let deadline = std::time::Instant::now() + LOOKUP_DEADLINE;
+    loop {
+        let seen = observed();
+        if seen >= expected {
+            return seen;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the background lookup must record {expected} call(s) within \
+             {LOOKUP_DEADLINE:?}, saw {seen}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn lyr_2_interactive_online_lookup_respects_tab_and_module_gates() {
-    let calls = Arc::new(AtomicUsize::new(0));
+    // Both bodies spawn on the global main context; per `test_main_context`
+    // every such test takes the guard as its first statement.
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    // The recorded options are the only record of a lookup, so the wait and
+    // the assertion read the same state and cannot disagree.
     let options = Arc::new(std::sync::Mutex::new(Vec::new()));
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
-        let calls = calls.clone();
         let options = options.clone();
         move |_, _, lookup_options| {
-            calls.fetch_add(1, Ordering::SeqCst);
             options.lock().unwrap().push(lookup_options);
             Ok(hit(
                 LyricsBody::Plain("synthetic lyrics".into()),
@@ -127,17 +160,15 @@ fn lyr_2_interactive_online_lookup_respects_tab_and_module_gates() {
             ))
         }
     }));
+    let recorded = {
+        let options = options.clone();
+        move || options.lock().unwrap().len()
+    };
     let lyrics = PlayerLyrics::setup_with_runtime(runtime, false);
     lyrics.set_tab_open(true);
 
     lyrics.set_track(Some(lyrics_track("Disabled")));
-    for _ in 0..20 {
-        if calls.load(Ordering::SeqCst) == 1 {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(wait_for_lookups(&recorded, 1), 1);
     assert_eq!(
         options.lock().unwrap().as_slice(),
         &[LookupOptions {
@@ -147,28 +178,16 @@ fn lyr_2_interactive_online_lookup_respects_tab_and_module_gates() {
     );
 
     lyrics.set_enabled(true);
-    for _ in 0..20 {
-        if calls.load(Ordering::SeqCst) == 2 {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(wait_for_lookups(&recorded, 2), 2);
     assert!(options.lock().unwrap()[1].allow_network);
 
     lyrics.set_tab_open(false);
     lyrics.set_track(Some(lyrics_track("Closed")));
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    std::thread::sleep(GATE_SETTLE);
+    assert_eq!(recorded(), 2, "a closed tab must not look anything up");
 
     lyrics.set_tab_open(true);
-    for _ in 0..20 {
-        if calls.load(Ordering::SeqCst) >= 3 {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(wait_for_lookups(&recorded, 3), 3);
 }
 
 /// A restored session shows title and artist in the bar without playing
@@ -176,6 +195,9 @@ fn lyr_2_interactive_online_lookup_respects_tab_and_module_gates() {
 /// wait for playback (the tab still gates the fetch, per LYR-2).
 #[test]
 fn a_loaded_track_fetches_lyrics_before_playback_starts() {
+    // Both bodies spawn on the global main context; per `test_main_context`
+    // every such test takes the guard as its first statement.
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     let calls = Arc::new(AtomicUsize::new(0));
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
         let calls = calls.clone();
@@ -193,13 +215,11 @@ fn a_loaded_track_fetches_lyrics_before_playback_starts() {
 
     lyrics.set_track(Some(lyrics_track("Restored")));
 
-    for _ in 0..20 {
-        if calls.load(Ordering::SeqCst) == 1 {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        wait_for_lookups(|| calls.load(Ordering::SeqCst), 1),
+        1,
+        "a restored track fetches exactly once"
+    );
 }
 
 #[test]

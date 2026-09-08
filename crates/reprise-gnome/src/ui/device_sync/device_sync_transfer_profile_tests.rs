@@ -135,10 +135,13 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_opus_160() {
         let output = device_root
             .path()
             .join("Music/Reprise/Artist/Album/01 Encoded.opus");
-        assert!(std::fs::read(output).unwrap().starts_with(b"OggS"));
+        let encoded = std::fs::read(&output).unwrap_or_else(|error| {
+            panic!("{}: {error}: device state: {device:?}", output.display())
+        });
+        assert!(encoded.starts_with(b"OggS"));
         assert!(device.last_sync.is_some(), "device state: {device:?}");
         assert_eq!(device.verified_managed_track_count, Some(1));
-        assert!(device.sync_error.is_none());
+        assert!(device.sync_error.is_none(), "device state: {device:?}");
         assert_eq!(device.page.changes.additions, 0);
         assert_eq!(device.page.changes.replacements, 0);
         assert!(observed.borrow().iter().any(|phase| matches!(

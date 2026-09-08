@@ -180,7 +180,9 @@ internal fun DrawScope.drawVisualizerScene(
     if (buffer.isEmpty() || bounds.isEmpty || opacity <= 0f) return
     val cursor = FlatSceneCursor(buffer)
     val polylinePath = Path()
-    val radialGlowPainter = RADIAL_GLOW_PAINTER.get()
+    // withInitial installs a painter on the first touch of each thread, so the
+    // nullable return type of ThreadLocal.get() cannot be observed here.
+    val radialGlowPainter = RADIAL_GLOW_PAINTER.get()!!
     clipRect(bounds.left, bounds.top, bounds.right, bounds.bottom) {
         while (cursor.hasRecord) {
             val header = cursor.header(opacity) ?: return@clipRect
