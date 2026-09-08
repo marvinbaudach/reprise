@@ -107,7 +107,6 @@ impl TransferProfile {
             }
         }
     }
-
 }
 
 fn estimated_transcode_bytes(track: &SyncTrack, bitrate_kbps: u32) -> u64 {

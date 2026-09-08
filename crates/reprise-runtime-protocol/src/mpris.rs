@@ -50,8 +50,12 @@ mod tests {
 
     #[test]
     fn absent_player_names_are_the_two_unowned_name_errors() {
-        assert!(is_absent_player("org.freedesktop.DBus.Error.ServiceUnknown"));
-        assert!(is_absent_player("org.freedesktop.DBus.Error.NameHasNoOwner"));
+        assert!(is_absent_player(
+            "org.freedesktop.DBus.Error.ServiceUnknown"
+        ));
+        assert!(is_absent_player(
+            "org.freedesktop.DBus.Error.NameHasNoOwner"
+        ));
     }
 
     #[test]

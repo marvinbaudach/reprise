@@ -11,9 +11,7 @@ use serde_json::json;
 
 use crate::error::CliError;
 
-use reprise_runtime_protocol::mpris::{
-    is_absent_player, BUS_NAME, OBJECT_PATH, PLAYER_INTERFACE,
-};
+use reprise_runtime_protocol::mpris::{is_absent_player, BUS_NAME, OBJECT_PATH, PLAYER_INTERFACE};
 
 /// A transport action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -18,10 +18,8 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use crate::dto::{PlaybackStateDto, QueueParams, QueueStateDto, SetPlaybackParams};
 
-pub(crate) use reprise_runtime_protocol::mpris::{
-    is_absent_player, BUS_NAME, OBJECT_PATH,
-};
 use reprise_runtime_protocol::mpris::PLAYER_INTERFACE;
+pub(crate) use reprise_runtime_protocol::mpris::{is_absent_player, BUS_NAME, OBJECT_PATH};
 /// The Reprise-specific interface carrying `PlayTrackIds`.
 const REPRISE_INTERFACE: &str = "org.reprise.Player1";
 

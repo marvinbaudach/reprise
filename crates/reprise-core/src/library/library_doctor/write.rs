@@ -752,5 +752,4 @@ impl LibraryDoctor<'_> {
     ) -> Result<DoctorWriteReport, DoctorError> {
         self.apply_review_plan_with_lock(plan, TagWriteLockAttempt::Unenforceable, progress)
     }
-
 }
