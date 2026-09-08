@@ -78,11 +78,43 @@ pub(in crate::ui) const HAIRLINE_DARK: &str = "rgba(255, 255, 255, 0.06)";
 /// a translucent white edge disappears against the near-white palettes.
 pub(in crate::ui) const HAIRLINE_LIGHT: &str = "rgba(0, 0, 6, 0.09)";
 
+/// Strong hairline colour on dark surfaces, preserved from the existing table header.
+pub(in crate::ui) const HAIRLINE_STRONG_DARK: &str = "rgba(255, 255, 255, 0.07)";
+
+/// Strong hairline colour on light surfaces. Its white dark twin would vanish
+/// against the light table background.
+pub(in crate::ui) const HAIRLINE_STRONG_LIGHT: &str = "rgba(0, 0, 6, 0.11)";
+
+/// Subtle row rule on dark surfaces, preserved from the existing track table.
+pub(in crate::ui) const RULE_DARK: &str = "rgba(255, 255, 255, 0.045)";
+
+/// Subtle row rule on light surfaces. Its white dark twin has no visible edge
+/// against the near-white table.
+pub(in crate::ui) const RULE_LIGHT: &str = "rgba(0, 0, 6, 0.055)";
+
+/// Floating-pill border on dark surfaces, preserved from the library summary.
+pub(in crate::ui) const PILL_BORDER_DARK: &str = "rgba(255, 255, 255, 0.10)";
+
+/// Floating-pill border on light surfaces. Its white dark twin disappears on
+/// the lifted white pill surface.
+pub(in crate::ui) const PILL_BORDER_LIGHT: &str = "rgba(0, 0, 6, 0.14)";
+
+/// Floating-pill surface on dark palettes, preserved from the existing sidebar fill.
+pub(in crate::ui) const PILL_BG_DARK: &str = "@sidebar_bg_color";
+
+/// Floating-pill surface on light palettes. The dark twin is too close to the
+/// light table beneath the overlay, so the card surface supplies elevation.
+pub(in crate::ui) const PILL_BG_LIGHT: &str = "@card_bg_color";
+
 /// Corner radius for layered redesign surfaces (cards, panels).
 pub(in crate::ui) const RADIUS_SURFACE: &str = "12px";
 
 /// Hover background alpha for flat interactive elements (over `@accent_bg_color`).
 pub(in crate::ui) const HOVER_BG_ALPHA: &str = "0.10";
+
+/// Foreground-tint alpha for flat hover feedback in the light appearance. The
+/// dark accent twin would brighten light rows instead of darkening them.
+pub(in crate::ui) const HOVER_BG_LIGHT_ALPHA: &str = "0.045";
 
 /// Stronger background alpha for active+hover panel toggle buttons.
 pub(in crate::ui) const HOVER_BG_ALPHA_STRONG: &str = "0.18";
@@ -134,6 +166,10 @@ pub(in crate::ui) const BTN_PRESS_SCALE: &str = "0.94";
 /// `alpha(currentColor, `[`BTN_HOVER_ALPHA`]`)`, a foreground wash in a
 /// different hue rather than a quieter accent fill.
 pub(in crate::ui) const BTN_CHECKED_FILL_ALPHA: &str = "0.18";
+
+/// Resting checked-toggle alpha in the light appearance. The dark twin is too
+/// loud beside the brand accent on near-white surfaces.
+pub(in crate::ui) const BTN_CHECKED_FILL_LIGHT_ALPHA: &str = "0.14";
 
 /// Checked + hover: brighter fill, same state display.
 pub(in crate::ui) const BTN_CHECKED_FILL_HOVER_ALPHA: &str = "0.22";
@@ -244,14 +280,82 @@ pub(in crate::ui) const NOW_PLAYING_ARTWORK_BAND: i32 = 280;
 /// panel surface plus glow for both pure-white and pure-black accents, making
 /// the cap safe for any accent colour. The 0.17 boundary leaves no margin.
 pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.15";
+/// Peak glow alpha in the light appearance. The dark twin is too luminous on
+/// the near-white sidebar, so light uses only a restrained accent bloom.
+pub(in crate::ui) const NOW_PLAYING_GLOW_LIGHT_ALPHA: &str = "0.05";
 pub(in crate::ui) const NOW_PLAYING_PILL_RADIUS: &str = "99px";
 pub(in crate::ui) const NOW_PLAYING_PILL_BG_ALPHA: &str = "0.06";
 pub(in crate::ui) const NOW_PLAYING_PILL_ACTIVE_ALPHA: &str = "0.14";
+/// Active Now Playing tab surface in the light appearance. The translucent
+/// foreground dark twin reads as a tint rather than a lifted tab on light.
+pub(in crate::ui) const NOW_PLAYING_TAB_ACTIVE_BG_LIGHT: &str = "@view_bg_color";
 pub(in crate::ui) const NOW_PLAYING_TITLE_SIZE: &str = "15px";
 pub(in crate::ui) const NOW_PLAYING_SUBTITLE_SIZE: &str = "12px";
 pub(in crate::ui) const NOW_PLAYING_FOOTER_SIZE: &str = "10.5px";
 pub(in crate::ui) const NOW_PLAYING_QUEUE_COVER_SIZE: i32 = 32;
 pub(in crate::ui) const NOW_PLAYING_QUEUE_TITLE_SIZE: &str = "13.5px";
+
+// --- Appearance-specific edges and shadows ---
+
+/// Running-row tint alpha on dark surfaces, preserved from the existing rule.
+pub(in crate::ui) const NOW_PLAYING_TINT_DARK_ALPHA: &str = "0.09";
+/// Running-row tint alpha on light surfaces. The dark twin uses the derived
+/// text accent there, so light instead tints with the raw accent background.
+pub(in crate::ui) const NOW_PLAYING_TINT_LIGHT_ALPHA: &str = "0.12";
+
+/// Cover edge alpha on dark surfaces, preserved from the existing panel cover.
+pub(in crate::ui) const COVER_EDGE_DARK_ALPHA: &str = "0.12";
+/// Cover edge alpha on light surfaces. The sidebar-foreground dark twin is too
+/// strong on light, so the general foreground supplies a quieter edge.
+pub(in crate::ui) const COVER_EDGE_LIGHT_ALPHA: &str = "0.10";
+/// Cover shadow alpha in dark mode: zero preserves the shadow-free result.
+pub(in crate::ui) const COVER_SHADOW_DARK_ALPHA: &str = "0";
+/// Cover shadow alpha in light mode. The transparent dark twin cannot separate
+/// artwork or floating pills from pale surfaces.
+pub(in crate::ui) const COVER_SHADOW_LIGHT_ALPHA: &str = "0.16";
+
+/// Active-tab shadow alpha in dark mode: zero preserves the existing flat tab.
+pub(in crate::ui) const TAB_ACTIVE_SHADOW_DARK_ALPHA: &str = "0";
+/// Active-tab shadow alpha in light mode. The transparent dark twin cannot
+/// express the lifted active tab against the pale strip.
+pub(in crate::ui) const TAB_ACTIVE_SHADOW_LIGHT_ALPHA: &str = "0.14";
+
+/// Near play-button glow alpha in dark mode, preserved from the existing glow.
+pub(in crate::ui) const PLAY_GLOW_NEAR_DARK_ALPHA: &str = "0.60";
+/// Near play-button glow alpha in light mode. The dark twin becomes glare, so
+/// the colour is fully transparent while retaining the shadow layer.
+pub(in crate::ui) const PLAY_GLOW_NEAR_LIGHT_ALPHA: &str = "0";
+/// Far play-button glow alpha in dark mode, preserved from the existing glow.
+pub(in crate::ui) const PLAY_GLOW_FAR_DARK_ALPHA: &str = "0.35";
+/// Far play-button glow alpha in light mode. The dark twin becomes glare, so
+/// the colour is fully transparent while retaining the shadow layer.
+pub(in crate::ui) const PLAY_GLOW_FAR_LIGHT_ALPHA: &str = "0";
+/// Near hover-glow alpha in dark mode, preserved from the existing hover state.
+pub(in crate::ui) const PLAY_GLOW_NEAR_HOVER_DARK_ALPHA: &str = "0.75";
+/// Near hover-glow alpha in light mode. The dark twin becomes glare, so the
+/// colour is transparent while the transition keeps matched geometry.
+pub(in crate::ui) const PLAY_GLOW_NEAR_HOVER_LIGHT_ALPHA: &str = "0";
+/// Far hover-glow alpha in dark mode, preserved from the existing hover state.
+pub(in crate::ui) const PLAY_GLOW_FAR_HOVER_DARK_ALPHA: &str = "0.48";
+/// Far hover-glow alpha in light mode. The dark twin becomes glare, so the
+/// colour is transparent while the transition keeps matched geometry.
+pub(in crate::ui) const PLAY_GLOW_FAR_HOVER_LIGHT_ALPHA: &str = "0";
+
+/// Play-button ring alpha in dark mode: zero preserves the existing silhouette.
+pub(in crate::ui) const PLAY_RING_DARK_ALPHA: &str = "0";
+/// Play-button ring alpha in light mode. The transparent dark twin leaves no
+/// edge around the accent circle on a pale background.
+pub(in crate::ui) const PLAY_RING_LIGHT_ALPHA: &str = "0.12";
+/// Resting play-button drop alpha in dark mode, preserved from the existing shadow.
+pub(in crate::ui) const PLAY_DROP_DARK_ALPHA: &str = "0.36";
+/// Resting play-button drop alpha in light mode. The dark twin is too heavy on
+/// a light surface, so light keeps a quieter elevation shadow.
+pub(in crate::ui) const PLAY_DROP_LIGHT_ALPHA: &str = "0.18";
+/// Hovered play-button drop alpha in dark mode, preserved from the existing shadow.
+pub(in crate::ui) const PLAY_DROP_HOVER_DARK_ALPHA: &str = "0.34";
+/// Hovered play-button drop alpha in light mode. The dark twin is too heavy on
+/// a light surface, so light uses its own elevation step.
+pub(in crate::ui) const PLAY_DROP_HOVER_LIGHT_ALPHA: &str = "0.22";
 
 #[cfg(test)]
 mod tests {

@@ -23,6 +23,7 @@ mod panel_contrast;
 pub(super) mod reduced_motion;
 mod text_levels;
 pub(super) mod theme;
+mod theme_tokens;
 pub(super) mod tokens;
 
 use std::cell::{Cell, RefCell};
