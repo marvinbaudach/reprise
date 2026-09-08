@@ -171,7 +171,7 @@ rg --quiet 'version: "0\.12\.3"' "$workflow" || \
     fail "the base source-quality job must use the verified uv pin"
 android_workflow=$(sed -n '/^  android-unit-suite:/,/^  gnome-suite:/p' "$workflow")
 rg --multiline --quiet \
-    'uses: actions/setup-java@v5\n        with:\n          distribution: temurin\n          java-version: "21"\n          cache: gradle' \
+    'uses: actions/setup-java@v6\n        with:\n          distribution: temurin\n          java-version: "21"\n          cache: gradle' \
     <<<"$android_workflow" || fail "the Android JVM suite must use setup-java's Gradle cache"
 core_workflow=$(sed -n '/^  core-suite:/,/^  display-tests:/p' "$workflow")
 rg --quiet 'uses: actions/setup-node@v7' <<<"$core_workflow" || \
