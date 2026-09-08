@@ -142,7 +142,7 @@ pub(in crate::ui) fn css() -> String {
         ADD_ACTION_FILL_ALPHA, ADD_ACTION_FILL_HOVER_ALPHA, ADD_ACTION_FILL_PRESS_ALPHA,
         BTN_CHECKED_FILL_HOVER_ALPHA, BTN_CHECKED_FILL_PRESS_ALPHA, BTN_DOT_SIZE,
         BTN_DOT_VERTICAL_POSITION, BTN_HOVER_ALPHA, BTN_PRESS_ALPHA, BTN_PRESS_SCALE,
-        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH, HOVER_BG_ALPHA,
+        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH,
         PRIMARY_DISABLED_FILL_ALPHA, TRANSITION,
     };
 
@@ -221,7 +221,7 @@ pub(in crate::ui) fn css() -> String {
          .reprise-panel-toggle.{sidebar_toggle}:checked:hover {{ \
            background-color: alpha(currentColor, {BTN_HOVER_ALPHA}); }}\n\
          .reprise-panel-toggle.{sidebar_toggle}:checked:active {{ \
-           background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
+           background-color: alpha(currentColor, {BTN_PRESS_ALPHA}); }}\n\
          /* BTN-3: primary tier — Adwaita already paints the accent surface, so \
             only the extra press sink and the hover glow are added here. */\n\
          .{PRIMARY_CLASS}, button.suggested-action {{ \
@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_toggle_checked_active_keeps_the_original_panel_fill() {
+    fn sidebar_toggle_carries_no_accent_in_any_checked_state() {
         let css = super::css();
         let selector = format!(
             ".reprise-panel-toggle.{}:checked:active",
@@ -411,11 +411,8 @@ mod tests {
             .and_then(|rest| rest.split('}').next())
             .expect("sidebar toggle checked-active rule");
 
-        assert!(rule.contains(&format!(
-            "alpha(@accent_bg_color, {})",
-            tokens::HOVER_BG_ALPHA
-        )));
-        assert!(!rule.contains(&format!("alpha(currentColor, {})", tokens::BTN_PRESS_ALPHA)));
+        assert!(rule.contains(&format!("alpha(currentColor, {})", tokens::BTN_PRESS_ALPHA)));
+        assert!(!rule.contains("@accent_bg_color"));
     }
 
     #[test]
