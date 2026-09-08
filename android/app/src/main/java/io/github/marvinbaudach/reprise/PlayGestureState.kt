@@ -45,7 +45,26 @@ internal class NowPlayingPositionReconciler {
         this.index = index
         if (previousTrackId == null || !animationsEnabled) return NowPlayingPositionAction.SNAP
         if (dragging && previousIndex != index) return NowPlayingPositionAction.REANCHOR
-        if (previousTrackId != trackId && settlingTargetIndex == index) {
+        // While a settle is heading somewhere, nothing here may touch the
+        // position. The guard used to also require the track id to have changed
+        // in this very update, but the transport does not publish the index and
+        // the track in one step -- the index moves first and the track follows a
+        // frame later, or the other way round. In the first window the
+        // reconciler saw the same track at the settle's own target index, fell
+        // through to SNAP, and that snap cancelled the running settle through
+        // the Animatable's mutex: the 480 ms slide never rendered and the track
+        // simply cut. In the second window it saw a new track id at the index
+        // the swipe had just left and ANIMATEd back there, which is the card
+        // visibly returning to the centre before the cut.
+        //
+        // Both windows are recognised by the settle still being consistent with
+        // what the state says: either the index has arrived at the target, or it
+        // has not moved at all since the last update. A settle whose target the
+        // world has overtaken is deliberately not covered -- that one has to be
+        // handed over to the branches below.
+        val settleStillOwnsPosition = settlingTargetIndex != null &&
+            (settlingTargetIndex == index || previousIndex == index)
+        if (settleStillOwnsPosition) {
             return NowPlayingPositionAction.CONTINUE_SETTLE
         }
         return if (previousTrackId != trackId) {
