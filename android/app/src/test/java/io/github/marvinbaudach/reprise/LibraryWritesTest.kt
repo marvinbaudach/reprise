@@ -1,14 +1,14 @@
 package io.github.marvinbaudach.reprise
 
 import java.util.Collections
-import java.util.concurrent.AbstractExecutorService
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -146,14 +146,22 @@ class LibraryWritesTest {
     fun aFailingWriteIsReportedAndTheLaneKeepsRunning() {
         val refusal = IllegalStateException("database refused the write")
         val answers = LinkedBlockingQueue<Result<Int>>()
-        val writes = LibraryWrites(onMainThread = { work -> work() })
+        val writes = LibraryWrites(
+            onMainThread = { work -> work() },
+            drainTimeoutMs = 0,
+        )
 
         try {
+            writes.submitAnswered<Int>(
+                work = { throw CancellationException("write cancelled itself") },
+                report = { throw AssertionError("cancelled work must not report") },
+            )
             writes.submitAnswered(work = { throw refusal }, report = answers::put)
             writes.submitAnswered(work = { 2 }, report = answers::put)
 
             assertSame(refusal, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.exceptionOrNull())
             assertEquals(2, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.getOrThrow())
+            assertTrue("every completed task must restore the immediate shutdown path", writes.shutdown())
         } finally {
             writes.shutdown()
         }
@@ -189,16 +197,17 @@ class LibraryWritesTest {
 
     @Test(timeout = 10_000)
     fun rejectedAnswerReturnsPendingToZeroBeforeShutdown() {
-        val worker = RejectingExecutorService()
-        val writes = LibraryWrites(onMainThread = { work -> work() }, worker = worker)
+        val writes = LibraryWrites(
+            onMainThread = { work -> work() },
+            drainTimeoutMs = 0,
+        )
+        assertTrue(writes.shutdown())
         var reported: Result<Unit>? = null
 
         writes.submitAnswered(work = {}, report = { reported = it })
 
         assertTrue(reported?.exceptionOrNull() is IllegalStateException)
         assertTrue(writes.shutdown())
-        assertEquals(1, worker.immediateStops)
-        assertEquals(0, worker.drains)
     }
 
     @Test(timeout = 10_000)
@@ -206,8 +215,8 @@ class LibraryWritesTest {
         val slowStarted = CountDownLatch(1)
         val releaseSlowWrite = CountDownLatch(1)
         val answered = CountDownLatch(1)
-        val worker = Executors.newSingleThreadExecutor()
-        val writes = LibraryWrites(onMainThread = { work -> work() }, worker = worker)
+        val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val writes = LibraryWrites(onMainThread = { work -> work() }, dispatcher = dispatcher)
         writes.submitUnanswered(
             work = {
                 slowStarted.countDown()
@@ -218,12 +227,16 @@ class LibraryWritesTest {
         writes.submitAnswered(work = { 830 }, report = { answered.countDown() })
         assertTrue(slowStarted.await(WAIT_SECONDS, TimeUnit.SECONDS))
         val shutdownResult = LinkedBlockingQueue<Boolean>()
-        Thread { shutdownResult.put(writes.shutdown()) }.start()
-        assertTrue("shutdown must enter the answered drain branch", worker.awaitShutdown())
+        val shutdownThread = Thread { shutdownResult.put(writes.shutdown()) }.also(Thread::start)
+        assertTrue("shutdown must enter the answered drain branch", shutdownThread.awaitWaiting())
         releaseSlowWrite.countDown()
 
-        assertTrue("teardown must drain what was queued", shutdownResult.poll(WAIT_SECONDS, TimeUnit.SECONDS) == true)
+        assertTrue(
+            "teardown must drain what was queued",
+            shutdownResult.poll(WAIT_SECONDS, TimeUnit.SECONDS) == true,
+        )
         assertEquals(0L, answered.count)
+        dispatcher.close()
     }
 
     @Test(timeout = 10_000)
@@ -284,8 +297,8 @@ class LibraryWritesTest {
         val slowStarted = CountDownLatch(1)
         val releaseSlowWrite = CountDownLatch(1)
         val answers = LinkedBlockingQueue<Result<Int>>()
-        val worker = Executors.newSingleThreadExecutor()
-        val writes = LibraryWrites(onMainThread = { work -> work() }, worker = worker)
+        val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val writes = LibraryWrites(onMainThread = { work -> work() }, dispatcher = dispatcher)
         writes.submitUnanswered(
             work = {
                 slowStarted.countDown()
@@ -303,7 +316,7 @@ class LibraryWritesTest {
             interruptPreserved.set(Thread.currentThread().isInterrupted)
             shutdownReturned.countDown()
         }.also(Thread::start)
-        assertTrue("shutdown must be awaiting the answered drain", worker.awaitShutdown())
+        assertTrue("shutdown must be awaiting the answered drain", shutdownThread.awaitWaiting())
 
         shutdownThread.interrupt()
 
@@ -312,6 +325,8 @@ class LibraryWritesTest {
         assertTrue(interruptPreserved.get())
         releaseSlowWrite.countDown()
         assertEquals(830, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.getOrThrow())
+        assertTrue("the late report must still be exactly once", answers.isEmpty())
+        dispatcher.close()
     }
 
     @Test(timeout = 10_000)
@@ -342,34 +357,13 @@ class LibraryWritesTest {
     }
 }
 
-private fun ExecutorService.awaitShutdown(): Boolean {
+private fun Thread.awaitWaiting(): Boolean {
     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS)
-    while (!isShutdown && System.nanoTime() < deadline) {
-        Thread.sleep(1)
+    while (state != Thread.State.WAITING &&
+        state != Thread.State.TIMED_WAITING &&
+        System.nanoTime() < deadline
+    ) {
+        Thread.yield()
     }
-    return isShutdown
-}
-
-private class RejectingExecutorService : AbstractExecutorService() {
-    var drains = 0
-    var immediateStops = 0
-
-    override fun execute(command: Runnable) {
-        throw RejectedExecutionException("test rejection")
-    }
-
-    override fun shutdown() {
-        drains += 1
-    }
-
-    override fun shutdownNow(): MutableList<Runnable> {
-        immediateStops += 1
-        return mutableListOf()
-    }
-
-    override fun isShutdown(): Boolean = false
-
-    override fun isTerminated(): Boolean = false
-
-    override fun awaitTermination(timeout: Long, unit: TimeUnit): Boolean = false
+    return state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING
 }

@@ -1,50 +1,65 @@
 package io.github.marvinbaudach.reprise
 
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.RejectedExecutionException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private const val PORTRAIT_PREFETCH_BATCH_SIZE = 32u
 
 internal class ArtistPortraitPrefetch(
     private val port: LibrarySessionPort,
-    private val worker: ExecutorService = singlePortraitPrefetchThread(),
+    private val dispatcher: CoroutineDispatcher = portraitPrefetchLane(),
 ) {
-    @Volatile
-    private var stopped = false
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(job + dispatcher + CoroutineName("reprise-artist-portraits"))
 
     fun start() {
-        if (stopped) return
-        try {
-            worker.execute(::fetchMissingPortraits)
-        } catch (_: RejectedExecutionException) {
-            // Shutdown won the race with this start request.
-        }
+        if (!scope.isActive) return
+        scope.launch { fetchMissingPortraits() }
     }
 
     fun shutdown() {
-        stopped = true
-        worker.shutdownNow()
+        scope.cancel()
     }
 
-    private fun fetchMissingPortraits() {
+    private suspend fun fetchMissingPortraits() {
         val attempted = mutableSetOf<String>()
         var requestLimit = PORTRAIT_PREFETCH_BATCH_SIZE
-        while (!stopped) {
-            val names = runCatching {
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val names = try {
                 port.artistsMissingPortraits(requestLimit)
-            }.getOrElse { return }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return
+            }
+            currentCoroutineContext().ensureActive()
             if (names.isEmpty()) return
 
             var foundNewName = false
             for (name in names) {
                 if (!attempted.add(name)) continue
                 foundNewName = true
-                if (stopped) return
-                runCatching {
+                currentCoroutineContext().ensureActive()
+                try {
                     port.artistPortraitFetched(name, AndroidArtworkSize.LIST)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    // A failed portrait does not stop the rest of the batch.
                 }
+                currentCoroutineContext().ensureActive()
             }
             if (!foundNewName) {
                 if (names.size < requestLimit.toInt()) return
@@ -59,7 +74,5 @@ internal class ArtistPortraitPrefetch(
     }
 }
 
-private fun singlePortraitPrefetchThread(): ExecutorService =
-    Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "reprise-artist-portraits")
-    }
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun portraitPrefetchLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)

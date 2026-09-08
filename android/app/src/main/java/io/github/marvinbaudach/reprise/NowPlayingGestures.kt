@@ -120,6 +120,21 @@ internal fun Modifier.nowPlayingGestures(
     val latestFirstIndex by rememberUpdatedState(firstIndex)
     val latestLastIndex by rememberUpdatedState(lastIndex)
     val latestPositionPx by rememberUpdatedState(positionPx)
+    // The callbacks age with the pointerInput block, which is only rebuilt when
+    // its key changes -- and its key is `animationsEnabled` alone. Captured
+    // directly, `onSettle` therefore kept the `currentIndex` of the very first
+    // composition, so every settle after the first track change aimed at a panel
+    // the queue had long left. Measured on the device: a gesture that anchored
+    // correctly at 2160 px asked to settle at 1080 px, the reconciler saw a
+    // settle heading somewhere the world had left and cut it off. The values
+    // above are already read through `rememberUpdatedState`; the callbacks have
+    // to be, for exactly the same reason.
+    val latestOnHorizontalPosition by rememberUpdatedState(onHorizontalPosition)
+    val latestOnVerticalOffset by rememberUpdatedState(onVerticalOffset)
+    val latestOnDragStateChanged by rememberUpdatedState(onDragStateChanged)
+    val latestOnSettle by rememberUpdatedState(onSettle)
+    val latestOnDoubleTap by rememberUpdatedState(onDoubleTap)
+    val latestOnTap by rememberUpdatedState(onTap)
     pointerInput(animationsEnabled) {
     val transportHeight = TRANSPORT_EXCLUSION_DP.dp.toPx()
     val doubleTapDistance = DOUBLE_TAP_DISTANCE_DP.dp.toPx()
@@ -149,11 +164,11 @@ internal fun Modifier.nowPlayingGestures(
             var childConsumed = down.isConsumed
             var upTime = down.uptimeMillis
             var upPosition = down.position
-            onDragStateChanged(true)
+            latestOnDragStateChanged(true)
             // A new pointer stream owns the one position immediately. This also
             // seats a no-op transport commit if it interrupted the prior settle.
             if (latestPositionPx.isFinite() && latestPositionPx != state.positionPx) {
-                onHorizontalPosition(state.positionPx)
+                latestOnHorizontalPosition(state.positionPx)
             }
 
             try {
@@ -164,7 +179,7 @@ internal fun Modifier.nowPlayingGestures(
                     if (stateIndex != latestCurrentIndex) {
                         stateIndex = latestCurrentIndex
                         state.reanchor(stateIndex, latestFirstIndex, latestLastIndex)
-                        onHorizontalPosition(state.positionPx)
+                        latestOnHorizontalPosition(state.positionPx)
                         velocityOriginTime = change.uptimeMillis
                         velocityOriginPosition = change.position
                     }
@@ -173,8 +188,8 @@ internal fun Modifier.nowPlayingGestures(
                         state.dragBy(delta.x, delta.y)
                         if (state.axis != PlayGestureAxis.NONE) {
                             dragged = true
-                            onHorizontalPosition(state.positionPx)
-                            onVerticalOffset(state.verticalOffset)
+                            latestOnHorizontalPosition(state.positionPx)
+                            latestOnVerticalOffset(state.verticalOffset)
                         }
                     }
                     upTime = change.uptimeMillis
@@ -192,7 +207,7 @@ internal fun Modifier.nowPlayingGestures(
                         displacement = upPosition - velocityOriginPosition,
                         elapsedMs = upTime - velocityOriginTime,
                     )
-                    onSettle(state.settle(measured.x, measured.y))
+                    latestOnSettle(state.settle(measured.x, measured.y))
                     lastTapTime = Long.MIN_VALUE
                     lastTapPosition = Offset.Unspecified
                 } else {
@@ -204,7 +219,7 @@ internal fun Modifier.nowPlayingGestures(
                     if (isDoubleTap) {
                         pendingTap?.cancel()
                         pendingTap = null
-                        onDoubleTap(upPosition.x < size.width / 2f)
+                        latestOnDoubleTap(upPosition.x < size.width / 2f)
                         lastTapTime = Long.MIN_VALUE
                         lastTapPosition = Offset.Unspecified
                     } else if (horizontalAllowed && !childConsumed) {
@@ -214,7 +229,7 @@ internal fun Modifier.nowPlayingGestures(
                         val tapPosition = upPosition
                         pendingTap = launch {
                             delay(DOUBLE_TAP_TIMEOUT_MS)
-                            onTap(tapPosition)
+                            latestOnTap(tapPosition)
                             if (lastTapTime == tapTime) {
                                 lastTapTime = Long.MIN_VALUE
                                 lastTapPosition = Offset.Unspecified
@@ -224,7 +239,7 @@ internal fun Modifier.nowPlayingGestures(
                     }
                 }
             } finally {
-                onDragStateChanged(false)
+                latestOnDragStateChanged(false)
             }
         }
     }

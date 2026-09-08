@@ -283,6 +283,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
             device.cancellable = None;
             device.planned_cancel = None;
             device.machine = None;
+            device.staging_run = None;
             device.active_initiator = None;
             if successful {
                 device.resume_initiator = None;
@@ -293,7 +294,10 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
     if successful {
         runtime.notify();
         runtime.refresh_contents_after_sync(&work.device_id, verified_sources.unwrap_or_default());
-        cleanup_staging_if_idle(runtime);
+        // The sweep asks for itself whether any run in this process is still
+        // in flight; a second, per-runtime guard here is what let a sibling
+        // runtime's staged file be swept mid-copy.
+        reprise_core::device_sync::staging::cleanup_process_files();
         return;
     }
 
@@ -334,7 +338,7 @@ fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, outcome: Syn
     } else {
         runtime.refresh_contents(&work.device_id);
     }
-    cleanup_staging_if_idle(runtime);
+    reprise_core::device_sync::staging::cleanup_process_files();
 }
 
 /// Verification owns the playlist timestamp, but a successful inspection must
@@ -380,17 +384,6 @@ fn restore_failed_sync_error_after_refresh(
             }
         }
     });
-}
-
-fn cleanup_staging_if_idle(runtime: &DeviceSyncRuntime) {
-    let another_run_is_active = runtime
-        .device_states
-        .borrow()
-        .iter()
-        .any(|device| device.machine.is_some());
-    if !another_run_is_active {
-        reprise_core::device_sync::staging::cleanup_process_files();
-    }
 }
 
 impl DeviceSyncRuntime {
@@ -569,6 +562,7 @@ impl DeviceSyncRuntime {
                 let cancellable = gio::Cancellable::new();
                 device.sync_phase = machine.borrow().phase().clone();
                 device.machine = Some(machine.clone());
+                device.staging_run = Some(reprise_core::device_sync::staging::ActiveRun::begin());
                 device.planned_cancel = Some(cancelled.clone());
                 device.cancellable = Some(cancellable.clone());
                 device.active_initiator = Some(initiator);
@@ -649,6 +643,7 @@ impl DeviceSyncRuntime {
             .find(|device| device.descriptor.id == device_id)
         {
             device.machine = None;
+            device.staging_run = None;
         }
     }
 }

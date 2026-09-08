@@ -1,7 +1,17 @@
 use super::*;
+use std::sync::{Mutex, MutexGuard};
+
+static STAGING_TESTS: Mutex<()> = Mutex::new(());
+
+fn lock_staging_tests() -> MutexGuard<'static, ()> {
+    STAGING_TESTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[test]
 fn staged_bytes_land_at_a_path_that_reads_back_exactly() {
+    let _test_guard = lock_staging_tests();
     let path = stage_bytes("device-7", 42, "analysis", b"encoded-sidecar").unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), b"encoded-sidecar");
     discard(&path);
@@ -9,6 +19,7 @@ fn staged_bytes_land_at_a_path_that_reads_back_exactly() {
 
 #[test]
 fn two_stages_of_the_same_track_never_share_a_path() {
+    let _test_guard = lock_staging_tests();
     let first = stage_bytes("device-7", 42, "analysis", b"first").unwrap();
     let second = stage_bytes("device-7", 42, "analysis", b"second").unwrap();
     assert_ne!(first, second);
@@ -20,6 +31,7 @@ fn two_stages_of_the_same_track_never_share_a_path() {
 
 #[test]
 fn a_temporary_name_sanitizes_the_device_and_names_this_process() {
+    let _test_guard = lock_staging_tests();
     let path = temporary_path("Pixel/7 ../Pro", 9, "opus");
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
     assert_eq!(path.parent(), Some(staging_dir().as_path()));
@@ -36,6 +48,7 @@ fn a_temporary_name_sanitizes_the_device_and_names_this_process() {
 
 #[test]
 fn discarding_removes_the_file_and_forgives_one_that_is_already_gone() {
+    let _test_guard = lock_staging_tests();
     let path = stage_bytes("device-7", 1, "track-metadata", b"list").unwrap();
     discard(&path);
     assert!(!path.exists());
@@ -43,7 +56,38 @@ fn discarding_removes_the_file_and_forgives_one_that_is_already_gone() {
 }
 
 #[test]
+fn cleanup_waits_for_the_active_run_before_sweeping_its_staged_file() {
+    let _test_guard = lock_staging_tests();
+    let path = stage_bytes("cleanup-active-run", 1, "analysis", b"staged").unwrap();
+    let active_run = ActiveRun::begin();
+
+    cleanup_process_files();
+    assert!(path.exists());
+
+    drop(active_run);
+    cleanup_process_files();
+    assert!(!path.exists());
+}
+
+#[test]
+fn cleanup_waits_for_every_overlapping_active_run() {
+    let _test_guard = lock_staging_tests();
+    let path = stage_bytes("cleanup-overlapping-runs", 1, "analysis", b"staged").unwrap();
+    let first_run = ActiveRun::begin();
+    let second_run = ActiveRun::begin();
+
+    drop(first_run);
+    cleanup_process_files();
+    assert!(path.exists());
+
+    drop(second_run);
+    cleanup_process_files();
+    assert!(!path.exists());
+}
+
+#[test]
 fn a_write_that_cannot_land_answers_with_an_error_and_no_path() {
+    let _test_guard = lock_staging_tests();
     // The extension is the only part of a staged name a caller controls, so
     // it is also the only way a test can aim the write at a directory that
     // does not exist. What matters is the answer, not the odd input: an
@@ -54,6 +98,7 @@ fn a_write_that_cannot_land_answers_with_an_error_and_no_path() {
 
 #[test]
 fn storage_full_names_the_local_staging_directory_not_the_device() {
+    let _test_guard = lock_staging_tests();
     let directory = std::env::temp_dir().join("reprise-staging-full-test");
     let error = stage_bytes_with(
         &directory,

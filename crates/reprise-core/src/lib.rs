@@ -102,6 +102,7 @@ pub mod radio;
 pub mod remote_image;
 pub mod scrobbling;
 pub mod source_error;
+mod sources_http;
 pub mod spectrogram;
 pub mod spectrogram_backfill;
 pub mod stem_separation;

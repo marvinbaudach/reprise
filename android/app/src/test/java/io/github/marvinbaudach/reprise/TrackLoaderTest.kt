@@ -5,6 +5,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -19,6 +21,10 @@ private const val WAIT_SECONDS = 5L
 
 /** Short enough to stay a unit test, long enough to mean "and then nothing". */
 private const val SILENCE_MILLIS = 300L
+
+private object DirectTrackLoaderDispatcher : CoroutineDispatcher() {
+    override fun dispatch(context: CoroutineContext, block: Runnable) = block.run()
+}
 
 private fun trackWithId(trackId: Long) = LibraryTrack(
     id = trackId,
@@ -145,6 +151,7 @@ class TrackLoaderTest {
                 trackWithId(trackId)
             },
             onMainThread = { work -> work() },
+            dispatcher = DirectTrackLoaderDispatcher,
             pauseBeforeRetry = { millis -> waits.put(millis) },
         )
 
