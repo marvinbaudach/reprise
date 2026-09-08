@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -105,6 +106,10 @@ class ArtistSearchActivityTest {
         compose.onNode(
             hasText("Artist 45") and hasText("45 tracks", substring = true),
         ).performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.waitUntil {
             application.artistListAttempts.get() >= attemptsBeforeFailure + 2
