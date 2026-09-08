@@ -324,8 +324,10 @@ internal fun BrowseScreen(
             pendingArtist == null && selectedArtist?.artist == parentArtist
 
     fun artistOpenIsCurrent(artist: LibraryArtist): Boolean =
-        surfaceState.selectedTab == BrowseTab.ARTISTS && pendingArtist == artist &&
-            pendingAlbum == null && selectedAlbum == null
+        surfaceState.selectedTab == BrowseTab.ARTISTS && pendingAlbum == null &&
+            selectedAlbum == null &&
+            ((pendingArtist == artist && selectedArtist == null) ||
+                (pendingArtist == null && selectedArtist?.artist == artist))
 
     fun albumSurfaceIsCurrent(album: LibraryAlbum): Boolean =
         surfaceState.selectedTab == BrowseTab.ARTISTS && selectedAlbum?.album == album
@@ -642,10 +644,15 @@ internal fun BrowseScreen(
 
     suspend fun loadMoreArtistTracks(request: LibraryWindowRange) {
         val detail = selectedArtist ?: return
+        val artistOpenRequest = readJobs.latestArtistOpen
         if (detail.untaggedTracks.nextRequest(artistRequestedOffset) != request) return
         guardedAgainstDuplicateLoad("artist-tracks:${request.offset}") {
             runCatching { listArtistUntaggedTracks(detail.artist, request) }
                 .onSuccess { continuation ->
+                    if (
+                        artistOpenRequest != readJobs.latestArtistOpen ||
+                        !artistOpenIsCurrent(detail.artist)
+                    ) return@onSuccess
                     artistRequestedOffset = request.offset
                     selectedArtist = detail.copy(
                         untaggedTracks = detail.untaggedTracks.append(continuation),
@@ -668,10 +675,15 @@ internal fun BrowseScreen(
 
     suspend fun loadMoreArtistAlbums(request: LibraryWindowRange) {
         val detail = selectedArtist ?: return
+        val artistOpenRequest = readJobs.latestArtistOpen
         if (detail.albums.nextRequest(artistAlbumsRequestedOffset) != request) return
         guardedAgainstDuplicateLoad("artist-albums:${request.offset}") {
             runCatching { listArtistAlbums(detail.artist, request) }
                 .onSuccess { continuation ->
+                    if (
+                        artistOpenRequest != readJobs.latestArtistOpen ||
+                        !artistOpenIsCurrent(detail.artist)
+                    ) return@onSuccess
                     artistAlbumsRequestedOffset = request.offset
                     selectedArtist = detail.copy(albums = detail.albums.append(continuation))
                     if (artistSurfaceIsCurrent(detail.artist)) {
