@@ -22,7 +22,8 @@ import org.junit.Test
  *
  * The hour cases are not academic: `BrowseTabs` formats a whole album's total
  * duration with this function, and podcast episodes routinely run past an hour.
- * Before this test, both rendered a 62-minute value as "62:33".
+ * Before this test, Android's album-total and podcast-episode surfaces rendered
+ * a 62-minute value as "62:33".
  */
 class DurationFormatTest {
     private val originalLocale: Locale = Locale.getDefault()
