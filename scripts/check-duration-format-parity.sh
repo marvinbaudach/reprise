@@ -35,6 +35,62 @@ import sys
 rust_path, kotlin_path = sys.argv[1], sys.argv[2]
 
 
+def code_of(path: str) -> str:
+    """Read source without comments while preserving quoted string contents."""
+    text = open(path, encoding="utf-8").read()
+    code = []
+    index = 0
+    block_depth = 0
+    in_string = False
+    escaped = False
+    while index < len(text):
+        current = text[index]
+        following = text[index + 1] if index + 1 < len(text) else ""
+
+        if block_depth:
+            if current == "/" and following == "*":
+                block_depth += 1
+                index += 2
+            elif current == "*" and following == "/":
+                block_depth -= 1
+                index += 2
+            else:
+                if current == "\n":
+                    code.append(current)
+                index += 1
+            continue
+
+        if in_string:
+            code.append(current)
+            if escaped:
+                escaped = False
+            elif current == "\\":
+                escaped = True
+            elif current == '"':
+                in_string = False
+            index += 1
+            continue
+
+        if current == '"':
+            in_string = True
+            code.append(current)
+            index += 1
+        elif current == "/" and following == "/":
+            newline = text.find("\n", index + 2)
+            if newline == -1:
+                break
+            code.append("\n")
+            index = newline + 1
+        elif current == "/" and following == "*":
+            block_depth = 1
+            index += 2
+        else:
+            code.append(current)
+            index += 1
+
+    return "".join(code)
+
+
 def value(expr: str) -> int:
     """Evaluate an integer literal or a product of them: `74 * 60 * 1_000L`."""
     cleaned = expr.replace("_", "").replace("L", "").strip()
@@ -49,14 +105,14 @@ def value(expr: str) -> int:
 rust = dict()
 for ms, expected in re.findall(
     r"assert_eq!\(\s*format_duration\(([^)]*)\)\s*,\s*\"([^\"]*)\"\s*\)",
-    open(rust_path, encoding="utf-8").read(),
+    code_of(rust_path),
 ):
     rust[value(ms)] = expected
 
 kotlin = dict()
 for expected, ms in re.findall(
     r"assertEquals\(\s*\"([^\"]*)\"\s*,\s*formatDuration\(([^)]*)\)\s*\)",
-    open(kotlin_path, encoding="utf-8").read(),
+    code_of(kotlin_path),
 ):
     kotlin[value(ms)] = expected
 
