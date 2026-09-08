@@ -39,6 +39,9 @@ pub(super) const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 const REST_OPACITY: f64 = 0.06;
 const OPACITY_PER_PRESSURE: f64 = 0.15;
 const OPACITY_PER_SWELL: f64 = 0.16;
+const LIGHT_REST_OPACITY: f64 = 0.14;
+const LIGHT_OPACITY_PER_PRESSURE: f64 = 0.26;
+const LIGHT_OPACITY_PER_SWELL: f64 = 0.24;
 const REST_SCALE: f64 = 1.0;
 const SCALE_PER_SWELL: f64 = 0.025;
 
@@ -49,10 +52,34 @@ const LIGHT_EPSILON: f64 = 0.01;
 /// sixty frames a second; the slow envelope only needs this tick as a clock.
 const BREATH_FRAME_INTERVAL_US: i64 = 33_000;
 
-pub(super) fn bloom_opacity(pressure: f64, swell: f64) -> f64 {
-    REST_OPACITY
-        + OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
-        + OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BloomOpacityModel {
+    rest: f64,
+    per_pressure: f64,
+    per_swell: f64,
+}
+
+fn bloom_opacity_model(is_dark: bool) -> BloomOpacityModel {
+    if is_dark {
+        BloomOpacityModel {
+            rest: REST_OPACITY,
+            per_pressure: OPACITY_PER_PRESSURE,
+            per_swell: OPACITY_PER_SWELL,
+        }
+    } else {
+        BloomOpacityModel {
+            rest: LIGHT_REST_OPACITY,
+            per_pressure: LIGHT_OPACITY_PER_PRESSURE,
+            per_swell: LIGHT_OPACITY_PER_SWELL,
+        }
+    }
+}
+
+pub(super) fn bloom_opacity(pressure: f64, swell: f64, is_dark: bool) -> f64 {
+    let model = bloom_opacity_model(is_dark);
+    model.rest
+        + model.per_pressure * pressure.clamp(0.0, 1.0)
+        + model.per_swell * swell.clamp(0.0, 1.0)
 }
 
 /// Vertical alpha ramp of the bloom: 1.0 above `full`, 0.0 at `band`, linear
@@ -235,12 +262,13 @@ impl CoverBloom {
 
     /// Hands the current reading to the surface. The whole per-frame cost.
     fn apply_light(&self) {
+        let is_dark = libadwaita::StyleManager::default().is_dark();
         let (opacity, scale) = match self.inner.mode.get() {
             Mode::Live | Mode::Breathing => (
-                bloom_opacity(self.inner.pressure.get(), self.inner.swell.get()),
+                bloom_opacity(self.inner.pressure.get(), self.inner.swell.get(), is_dark),
                 bloom_scale(self.inner.swell.get()),
             ),
-            Mode::Pinned => (bloom_opacity(0.0, 0.0), bloom_scale(0.0)),
+            Mode::Pinned => (bloom_opacity(0.0, 0.0, is_dark), bloom_scale(0.0)),
         };
         self.area.set_light(opacity, scale);
     }
@@ -332,6 +360,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn light_bloom_is_stronger_while_dark_keeps_its_original_opacity_model() {
+        let dark = bloom_opacity_model(true);
+        let light = bloom_opacity_model(false);
+
+        assert_eq!(dark.rest, 0.06);
+        assert_eq!(dark.per_pressure, 0.15);
+        assert_eq!(dark.per_swell, 0.16);
+        assert_eq!(light.rest, 0.14);
+        assert_eq!(light.per_pressure, 0.26);
+        assert_eq!(light.per_swell, 0.24);
+        assert!(light.rest > dark.rest);
+    }
+
+    #[test]
     fn npp_18_bloom_falloff_is_full_then_monotonic_and_clamped_to_the_band() {
         let full = BLOOM_FULL_STRENGTH_Y;
         let band = BLOOM_HEIGHT;
@@ -389,22 +431,22 @@ mod tests {
     #[test]
     fn ac_24_bloom_adds_a_swell_on_top_of_a_pressure_bed() {
         // Silence: the rest value, and nothing else.
-        assert!((bloom_opacity(0.0, 0.0) - 0.06).abs() < 1e-9);
+        assert!((bloom_opacity(0.0, 0.0, true) - 0.06).abs() < 1e-9);
         // A held breakdown: no attack left, but the light stays up.
-        assert!((bloom_opacity(0.9, 0.0) - 0.195).abs() < 1e-9);
+        assert!((bloom_opacity(0.9, 0.0, true) - 0.195).abs() < 1e-9);
         // A broad swell on a lit bed.
-        assert!((bloom_opacity(0.85, 0.8) - 0.3155).abs() < 1e-9);
+        assert!((bloom_opacity(0.85, 0.8, true) - 0.3155).abs() < 1e-9);
         // Both at full: the ceiling.
-        assert!((bloom_opacity(1.0, 1.0) - 0.37).abs() < 1e-9);
+        assert!((bloom_opacity(1.0, 1.0, true) - 0.37).abs() < 1e-9);
         // The bed alone must never out-shine bed plus hit.
-        assert!(bloom_opacity(1.0, 0.0) < bloom_opacity(1.0, 1.0));
+        assert!(bloom_opacity(1.0, 0.0, true) < bloom_opacity(1.0, 1.0, true));
 
         assert!((bloom_scale(0.0) - 1.0).abs() < 1e-9);
         assert!((bloom_scale(1.0) - 1.025).abs() < 1e-9);
 
         // Out-of-range readings clamp, never extrapolate.
-        assert!((bloom_opacity(4.0, 4.0) - 0.37).abs() < 1e-9);
-        assert!((bloom_opacity(-1.0, -1.0) - 0.06).abs() < 1e-9);
+        assert!((bloom_opacity(4.0, 4.0, true) - 0.37).abs() < 1e-9);
+        assert!((bloom_opacity(-1.0, -1.0, true) - 0.06).abs() < 1e-9);
     }
 
     #[test]
