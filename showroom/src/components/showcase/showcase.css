@@ -16,9 +16,16 @@
   position: relative;
 }
 
+/*
+ * The phone leans past the frame's edge on purpose. It must not lean past the
+ * window's: --frame-pad is the room there actually is, and below roughly 800px
+ * it is smaller than 5% of the frame, so the tile was drawn 2-3px outside the
+ * viewport and clipped. `max` keeps the design wherever it fits and gives up
+ * exactly the overhang that would not.
+ */
 .hero-product__phone {
   position: absolute;
-  right: -5%;
+  right: max(-5%, calc(-1 * var(--frame-pad)));
   bottom: -6%;
   width: 24%;
 }

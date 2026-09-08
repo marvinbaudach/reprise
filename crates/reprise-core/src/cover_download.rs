@@ -116,11 +116,43 @@ pub fn negative_marker_path(key: &str) -> PathBuf {
 
 pub(crate) fn musicbrainz_search_url(album_artist: &str, album: &str) -> String {
     // MusicBrainz Lucene query; percent-encode the whole query value.
-    let query = format!("artist:\"{album_artist}\" AND release:\"{album}\"");
+    let query = format!(
+        "artist:\"{}\" AND release:\"{}\"",
+        escape_lucene(album_artist),
+        escape_lucene(album)
+    );
     format!(
         "https://musicbrainz.org/ws/2/release?query={}&fmt=json&limit=5",
         musicbrainz::urlencode(&query)
     )
+}
+
+pub(crate) fn escape_lucene(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        if matches!(
+            character,
+            '"' | '\\'
+                | '+'
+                | '-'
+                | '!'
+                | '('
+                | ')'
+                | ':'
+                | '^'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '~'
+                | '*'
+                | '?'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
 }
 
 pub(crate) fn caa_front_url(mbid: &str) -> String {
@@ -333,8 +365,9 @@ fn mb_get(url: &str) -> Option<String> {
     musicbrainz::get(url).ok()
 }
 
-/// A plain GET returning validated image bytes, a clean miss, or a retryable failure.
+/// A rate-limited GET returning validated image bytes, a clean miss, or a retryable failure.
 fn http_get_bytes(url: &str) -> CaaFetchResult {
+    let _ = musicbrainz::wait_for_request_slot(&mut || false);
     let user_agent = musicbrainz::user_agent();
     let response = match ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))

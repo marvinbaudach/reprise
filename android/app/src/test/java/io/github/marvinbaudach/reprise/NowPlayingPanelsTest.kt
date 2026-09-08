@@ -2,8 +2,10 @@ package io.github.marvinbaudach.reprise
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingPanelsTest {
@@ -127,6 +129,103 @@ class NowPlayingPanelsTest {
         assertEquals(1f, current.opacity, 0f)
         assertEquals(92f, next.translationX, 0f)
         assertEquals(0f, next.opacity, 0f)
+    }
+
+    @Test
+    fun a_panel_with_ready_data_shows_its_bars_no_matter_where_it_sits() {
+        // nowPlayingVisualBlend takes no position/near argument at all, so a neighbour sitting far
+        // from the pager's centre — the reported symptom — cannot collapse its bars by distance the
+        // way the old `near.pow(...)` formula did.
+        val blend = nowPlayingVisualBlend(visualizerOpacity = 1f, dataAvailability = 1f)
+
+        assertTrue("a panel with ready data must show its bars", blend.barsOpacity > 0f)
+        assertEquals(1f, blend.barsOpacity, 0f)
+        assertEquals(0f, blend.coverOpacity, 0f)
+    }
+
+    @Test
+    fun a_panel_without_ready_data_falls_back_to_its_cover() {
+        val blend = nowPlayingVisualBlend(visualizerOpacity = 1f, dataAvailability = 0f)
+
+        assertEquals(0f, blend.barsOpacity, 0f)
+        assertEquals(1f, blend.coverOpacity, 0f)
+    }
+
+    @Test
+    fun choosing_cover_mode_still_wins_even_with_data_ready() {
+        val blend = nowPlayingVisualBlend(visualizerOpacity = 0f, dataAvailability = 1f)
+
+        assertEquals(0f, blend.barsOpacity, 0f)
+        assertEquals(1f, blend.coverOpacity, 0f)
+    }
+
+    @Test
+    fun a_live_panel_with_no_stored_spectrogram_and_no_captured_scene_yet_has_no_visual_data() {
+        // Regression: this used to be `frames.frameCount > 0 || panel.index == currentIndex`, which
+        // opened the bars slot the instant a panel became live, whether or not its engine had
+        // anything to show yet. A track the desktop never analysed must keep its cover until its
+        // engine has actually captured a real frame.
+        assertFalse(
+            "a live panel must not claim visual data before its engine captured a real frame",
+            panelHasVisualData(storedFrameCount = 0, isLivePanel = true, hasCapturedLiveScene = false),
+        )
+    }
+
+    @Test
+    fun a_live_panel_opens_its_bars_once_its_engine_captured_a_real_frame() {
+        assertTrue(
+            panelHasVisualData(storedFrameCount = 0, isLivePanel = true, hasCapturedLiveScene = true),
+        )
+    }
+
+    @Test
+    fun a_stored_spectrogram_grants_visual_data_even_off_the_live_slot() {
+        assertTrue(
+            panelHasVisualData(storedFrameCount = 5, isLivePanel = false, hasCapturedLiveScene = false),
+        )
+    }
+
+    @Test
+    fun a_non_live_panel_never_has_visual_data_from_a_live_scene_alone() {
+        assertFalse(
+            panelHasVisualData(storedFrameCount = 0, isLivePanel = false, hasCapturedLiveScene = true),
+        )
+    }
+
+    @Test
+    fun the_live_panel_polls_for_its_first_scene_only_while_bars_were_asked_for() {
+        assertTrue(
+            "the live panel must keep polling until it has ever captured a scene",
+            panelAwaitsFirstLiveScene(
+                visualizerOpacity = 1f,
+                isLivePanel = true,
+                hasCapturedLiveScene = false,
+            ),
+        )
+        assertFalse(
+            "cover mode must never pay for a scene it will not draw",
+            panelAwaitsFirstLiveScene(
+                visualizerOpacity = 0f,
+                isLivePanel = true,
+                hasCapturedLiveScene = false,
+            ),
+        )
+        assertFalse(
+            "a non-live panel never polls for the live scene",
+            panelAwaitsFirstLiveScene(
+                visualizerOpacity = 1f,
+                isLivePanel = false,
+                hasCapturedLiveScene = false,
+            ),
+        )
+        assertFalse(
+            "once a real frame landed, the live panel stops polling",
+            panelAwaitsFirstLiveScene(
+                visualizerOpacity = 1f,
+                isLivePanel = true,
+                hasCapturedLiveScene = true,
+            ),
+        )
     }
 
     @Test

@@ -53,6 +53,19 @@ STATIONS = [
     ('stats', 'My Stats'),
     ('doctor', 'Library Doctor'),
 ]
+# The sidebar is not a constant. 'Library Doctor' is not in it on the
+# 2026-09-02 dev nightly, and a station the take cannot resolve aborts the run
+# — correctly, but that also makes it impossible to shoot the handover, which
+# only happens when no --limit is given. So the list is filterable by label:
+#
+#   SHOWREEL_STATIONS=library,podcasts   two stations, then the handover
+#   SHOWREEL_STATIONS=                   the handover alone
+#
+# Unset means all of them, which is what every earlier take did.
+_WANTED = os.environ.get('SHOWREEL_STATIONS')
+if _WANTED is not None:
+    _KEEP = [s for s in _WANTED.split(',') if s]
+    STATIONS = [row for row in STATIONS if row[0] in _KEEP]
 # The device is reached by a *button*, not a sidebar list item, and its
 # accessible name carries the verb: asking for a 'list item' named
 # 'Pixel 10 Pro XL' finds nothing, which is how the dry run caught this before
@@ -85,7 +98,7 @@ DWELL = 6.0        # a 4.8 s shot needs room on both sides of the change
 # The sync is the handover and the only shot whose subject is *time passing*.
 # It is filmed long and compressed in the cut, so the progress bar visibly
 # travels instead of creeping.
-SYNC_DWELL = 45.0
+SYNC_DWELL = float(os.environ.get('SHOWREEL_SYNC_DWELL', '45'))
 EASE = 1.1
 SETTLE = 0.5
 RESOLVE_SWEEPS = 4   # a blink in the sidebar must not cost a take

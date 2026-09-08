@@ -23,6 +23,7 @@ pub(crate) mod queue_row_mapping {
 #[cfg(test)]
 mod queue_section_header_display_tests;
 pub(crate) mod queue_sections;
+pub(in crate::ui) mod queue_snapshot_change;
 pub(crate) mod rating;
 pub(in crate::ui) mod rating_cell_refresh;
 mod rating_column;
@@ -63,6 +64,7 @@ pub(crate) mod track_list_menu_smoke;
 pub(in crate::ui) mod track_list_missing;
 pub(crate) mod track_list_model;
 pub(in crate::ui) mod track_list_model_change;
+mod track_list_model_move;
 pub(in crate::ui) mod track_list_queue_menu;
 pub(in crate::ui) mod track_list_reload;
 pub(in crate::ui) mod track_list_rescan;

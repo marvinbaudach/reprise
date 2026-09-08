@@ -139,8 +139,16 @@
 }
 
 /* Below the nav's own breakpoint the chapter list is the first thing to go: the
-   progress line and the top-of-page link still say where the reader is. */
-@media (max-width: 46rem) {
+   progress line and the top-of-page link still say where the reader is.
+   
+   70rem, not the 46rem this used to be. Measured in a headless Chromium with
+   both faces loaded: the full row — mark, wordmark, Alpha, five chapter links,
+   Source and the hire pill — needs about 1105px of client width, because
+   --frame-pad grows with the viewport and takes the rest. At 46rem the row was
+   simply drawn past the right edge from 737px upwards, and `overflow-x: clip`
+   on the page swallowed it: on a phone in landscape and on a 1024px tablet the
+   hire pill sat entirely outside the window with nothing to say so. */
+@media (max-width: 70rem) {
   .site-header__nav a[data-navlink] {
     display: none;
   }
@@ -158,5 +166,23 @@
 @media (max-width: 26.5rem) {
   .site-header__state {
     display: none;
+  }
+
+  /* At 280px the hire pill still ran 7px past the edge with everything else
+     already hidden. The gap is the only thing left to give. */
+  .site-header {
+    gap: 12px;
+  }
+}
+
+/* A backdrop blur behind a fixed header is a compositing pass on every scrolled
+   frame, and this one is lifted for the whole page below the hero — the same
+   trade the lightbox already makes at this width (lightbox.css). Drop the blur
+   on phones and close the ground instead, so the headlines underneath do not
+   read through the bar. */
+@media (max-width: 720px) {
+  .site-header[data-lifted="true"] {
+    background-color: oklch(11% 0.014 269 / 0.94);
+    backdrop-filter: none;
   }
 }

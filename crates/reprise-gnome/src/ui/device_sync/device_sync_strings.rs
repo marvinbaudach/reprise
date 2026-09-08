@@ -1,5 +1,7 @@
 //! Translatable copy and compact formatting for Android synchronization.
 
+use reprise_core::device_sync::SyncStep;
+
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -156,6 +158,18 @@ pub fn sync_activity(step: &str, current_track: &str) -> String {
         return step.to_string();
     }
     format!("{step} {current_track}")
+}
+
+pub(in crate::ui) fn step_glyph(step: &SyncStep) -> &'static str {
+    match step {
+        SyncStep::Transcoding => "⟳ transcoding ·",
+        SyncStep::Copying => "↑",
+        SyncStep::WritingAnalysis => "↑ analysis ·",
+        SyncStep::WritingLyrics => "↑ lyrics ·",
+        SyncStep::Removing => "− removing ·",
+        SyncStep::WritingPlaylists => "≡",
+        SyncStep::WritingTrackMetadata => "≡ metadata ·",
+    }
 }
 
 /// `28 of 82 · 340.0 MiB of 1.2 GiB · ~2 min left · Immortal`
@@ -409,6 +423,18 @@ const NEXT_CONNECTION_PREVIEW: &str =
     N_!("Next connection: {copies} · {replacements} · {playlists} · {size} to transfer");
 const OFFLINE_REMOVAL_NOTE: &str =
     N_!("Files to remove are settled when the device is next inspected.");
+
+pub fn short_scan(doubtful: usize, recovered: usize) -> String {
+    plural(
+        "Scan was incomplete — {doubtful} file re-checked; {recovered} recovered",
+        "Scan was incomplete — {doubtful} files re-checked; {recovered} recovered",
+        doubtful,
+        &[
+            ("doubtful", &doubtful.to_string()),
+            ("recovered", &recovered.to_string()),
+        ],
+    )
+}
 
 pub fn legacy_media_notice(path: &str) -> String {
     formatted(LEGACY_MEDIA_NOTICE, &[("path", path)])

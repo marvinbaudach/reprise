@@ -46,7 +46,7 @@ pub(super) fn apply_initial_geometry(window: &adw::ApplicationWindow, state: &Se
     }
 }
 
-/// The place a normal start routes to (START-3): the last valid browser place.
+/// The place a normal start routes to (START-4): the last valid browser place.
 /// Back/Forward stacks stay session-local, but the visible destination owns
 /// its complete refinements, anchor, and selection across a restart.
 pub(super) fn startup_place(state: &SessionState) -> reprise_core::browser::BrowserPlace {
@@ -82,8 +82,13 @@ pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &Ses
         let playback = player.map_or(MprisPlaybackStatus::Stopped, |player| {
             player.session_playback_status()
         });
+        let pending_random_start_track_id =
+            player.and_then(|player| player.pending_random_start_track_id());
+        let runtime_current_up_next = player.map(|player| player.session_up_next_snapshot().1);
         tracing::info!(
             ?state,
+            ?pending_random_start_track_id,
+            ?runtime_current_up_next,
             playback = playback.as_str(),
             "session restore report"
         );
@@ -99,7 +104,7 @@ fn arm_play(player: &Rc<PlayerController>) {
         let Some(player) = player.upgrade() else {
             return;
         };
-        tracing::info!("{PLAY_ENV}: activating restored play button");
+        tracing::info!("{PLAY_ENV}: activating startup play button");
         player.bar.smoke_activate_play_pause();
     });
 }
@@ -550,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn start_3_missing_browser_place_falls_back_to_the_library_root() {
+    fn start_4_missing_browser_place_falls_back_to_the_library_root() {
         let state = SessionState {
             browser_place: None,
             library_root: None,
@@ -564,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn start_3_startup_place_restores_the_last_browser_place() {
+    fn start_4_startup_place_restores_the_last_browser_place() {
         let mut remembered = reprise_core::browser::BrowserPlace::from(ViewSource::Playlist(7));
         let state = remembered
             .track_state_mut()

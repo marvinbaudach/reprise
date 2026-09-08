@@ -9,25 +9,25 @@ use reprise_core::library::scanner::ScanProgress;
 
 use super::strings;
 
-pub(super) const PULSE_INTERVAL: Duration = Duration::from_millis(100);
+pub(in crate::ui) const PULSE_INTERVAL: Duration = Duration::from_millis(100);
 pub(super) const PULSE_STEP: f64 = 0.08;
 pub(super) const MIN_VISIBLE_TIME: Duration = Duration::from_millis(700);
 
 #[derive(Clone, Default)]
-pub(super) struct PulseGeneration(Rc<Cell<u64>>);
+pub(in crate::ui) struct PulseGeneration(Rc<Cell<u64>>);
 
 impl PulseGeneration {
-    pub(super) fn start(&self) -> u64 {
+    pub(in crate::ui) fn start(&self) -> u64 {
         let generation = self.0.get().wrapping_add(1);
         self.0.set(generation);
         generation
     }
 
-    pub(super) fn cancel(&self) {
+    pub(in crate::ui) fn cancel(&self) {
         self.0.set(self.0.get().wrapping_add(1));
     }
 
-    pub(super) fn is_current(&self, generation: u64) -> bool {
+    pub(in crate::ui) fn is_current(&self, generation: u64) -> bool {
         self.0.get() == generation
     }
 }

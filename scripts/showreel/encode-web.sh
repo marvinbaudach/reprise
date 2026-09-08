@@ -10,11 +10,15 @@
 # the Safari versions that will not take VP9 in an MP4-less <video>.
 set -euo pipefail
 
-SRC=${1:-$HOME/Videos/reprise-showreel/reprise-showreel-32s-c.mp4}
-OUT=${2:-$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/showroom/media/showreel}
-# Shot 02, where the whole window is lit and the callout is legible. The hook
-# frame looked stronger in the cut and worse as a still: its scrim dims the UI.
-POSTER_AT=${POSTER_AT:-4.60}
+SRC=${1:-$HOME/Videos/reprise-showreel/reprise-showreel-58s-scored.mp4}
+# public/, not media/: Vite copies public/ into dist and pages.yml uploads dist,
+# so this directory is what decides whether the film is in the deploy at all.
+# The film was parked outside it while it was unfinished; it is on the page now.
+OUT=${2:-$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/showroom/public/media/showreel}
+# Shot 02 — Podcasts, at 7.5-12.0 s in the 58.2 s cut — where the whole window is
+# lit and the callout is legible. The hook frame looked stronger in the cut and
+# worse as a still: its scrim dims the UI.
+POSTER_AT=${POSTER_AT:-9.50}
 
 [[ -f $SRC ]] || { echo "no source: $SRC" >&2; exit 1; }
 mkdir -p "$OUT"

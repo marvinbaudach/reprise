@@ -11,6 +11,7 @@ mod external_media_position;
 mod external_media_session;
 mod external_media_state;
 mod external_media_toast;
+mod instrumentation;
 pub(in crate::ui) mod library_continuation;
 pub(crate) mod now_playing_wiring;
 pub(crate) mod play_origin;
@@ -24,12 +25,15 @@ mod player_controller_types;
 pub(crate) mod player_controller_wiring;
 pub(in crate::ui) mod player_event_handling;
 pub(in crate::ui) mod preview;
+mod queue_change_dispatch;
 mod queue_insertion;
 pub(crate) mod queue_transport;
 mod seek_start;
 #[cfg(test)]
 mod seek_start_tests;
 pub(crate) mod session_player;
+#[cfg(test)]
+mod session_player_tests;
 pub(in crate::ui) mod source_item_identity;
 #[cfg(test)]
 pub(in crate::ui) mod test_support;

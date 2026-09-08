@@ -17,22 +17,19 @@ const filmFiles = [
   'showreel-720.webm',
   'showreel-poster.jpg',
   'showreel-poster.webp',
-  'showreel.vtt',
 ];
 
-/** The cut, to the frame. Every caption cue has to land inside it. */
-const FILM_SECONDS = 60.0;
-
-test('CH.03 does not carry the film yet', async () => {
+test('CH.03 closes on the film, in place of the mosaic it replaced', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const chapter = html.match(/<section id="ch-03"[\s\S]+?<section id="ch-04"/)?.[0];
   assert.ok(chapter);
 
-  // The film is finished code but not finished work. Keep it off the public
-  // page until someone decides it is ready, without treating it as abandoned.
-  assert.doesNotMatch(chapter, /data-showcase="showreel-film"/);
-  assert.doesNotMatch(chapter, /<video/);
-  assert.match(chapter, /data-layout="design-mosaic"/);
+  // The film is the chapter's closing statement now. The screenshot mosaic it
+  // replaced must be gone from the page — leaving both would say the same thing
+  // twice, once in stills and once in motion.
+  assert.match(chapter, /data-showcase="showreel-film"/);
+  assert.match(chapter, /<video/);
+  assert.doesNotMatch(chapter, /data-layout="design-mosaic"/);
 });
 
 test('the film never starts itself', async () => {
@@ -45,6 +42,44 @@ test('the film never starts itself', async () => {
   // effects, so the built page cannot expose this regression.
   assert.doesNotMatch(source, /IntersectionObserver/);
   assert.doesNotMatch(source, /useEffect/);
+});
+
+test('the film runs once, with sound, and offers itself again', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'ShowreelFilm.tsx'),
+    'utf8',
+  );
+  // Up to the first <source>: the arrow functions in the handlers make a
+  // non-greedy match on `>` stop inside the open tag.
+  const element = source.match(/<video[\s\S]+?<source/)?.[0];
+  assert.ok(element);
+
+  // A reader who presses play asked for the film, sound included, and asked for
+  // it once — so neither attribute may come back onto the element.
+  assert.doesNotMatch(element, /^\s*muted$/m);
+  assert.doesNotMatch(element, /^\s*loop$/m);
+
+  // Running out is a state of its own: the last frame stays up, and the button
+  // has to offer the film again from the top.
+  assert.match(element, /onEnded=/);
+  assert.match(source, /currentTime = 0/);
+
+  // The cut fades its end card to black, so the true last frame is an empty
+  // rectangle. Coming to rest has to mean the card, not the black after it.
+  assert.match(source, /duration - END_CARD_HOLD_SECONDS/);
+});
+
+test('nothing is left of the caption track', async () => {
+  const source = await readFile(
+    join(showroomRoot, 'src', 'components', 'showcase', 'ShowreelFilm.tsx'),
+    'utf8',
+  );
+
+  // The CC toggle went unused, so the track went with it. A <track> that comes
+  // back without its `showreel.vtt` would be a 404 on every play.
+  assert.doesNotMatch(source, /<track/);
+  assert.doesNotMatch(source, /textTracks/);
+  assert.doesNotMatch(source, /\.vtt/);
 });
 
 test('the encodes are served exactly when the film is on the page', async () => {
@@ -67,32 +102,22 @@ test('every file the film section names is present in the repository', async () 
     'showreel-720.mp4',
     'showreel-1080.mp4',
     'showreel-poster.webp',
-    'showreel.vtt',
   ]) {
     const info = await stat(join(filmDir, name));
     assert.ok(info.size > 0, `${name} is empty`);
   }
 });
 
-test('the caption cues stay inside the cut and never run backwards', async () => {
-  const vtt = await readFile(join(filmDir, 'showreel.vtt'), 'utf8');
-  assert.match(vtt, /^WEBVTT/);
+test('the ladder stays a ladder, and no step of it runs away', async () => {
+  // Mounting the film puts these bytes into the deploy, and nothing in CI weighs
+  // them. A visitor downloads exactly one encode, so the cap is per file — but
+  // the smaller step has to stay the smaller step, or the ladder is decoration.
+  const weigh = async (name) => (await stat(join(filmDir, name))).size;
 
-  const seconds = (stamp) => {
-    const [h, m, s] = stamp.split(':');
-    return Number(h) * 3600 + Number(m) * 60 + Number(s);
-  };
-  const cues = [...vtt.matchAll(/^(\d\d:\d\d:\d\d\.\d\d\d) --> (\d\d:\d\d:\d\d\.\d\d\d)$/gm)].map(
-    ([, from, to]) => [seconds(from), seconds(to)],
-  );
-
-  assert.ok(cues.length >= 10, `expected the shot list, found ${cues.length} cues`);
-  let previousEnd = 0;
-  for (const [from, to] of cues) {
-    assert.ok(from < to, `a cue at ${from}s does not move forward`);
-    assert.ok(from >= previousEnd, `a cue at ${from}s starts before the one before it ended`);
-    assert.ok(to <= FILM_SECONDS, `a cue ends at ${to}s, past the ${FILM_SECONDS}s cut`);
-    previousEnd = to;
+  for (const name of ['showreel-1080.mp4', 'showreel-1080.webm']) {
+    assert.ok((await weigh(name)) < 8_000_000, `${name} exceeds eight megabytes`);
   }
-  assert.equal(previousEnd, FILM_SECONDS, 'the last cue has to reach the end of the cut');
+  assert.ok((await weigh('showreel-720.mp4')) < (await weigh('showreel-1080.mp4')));
+  assert.ok((await weigh('showreel-720.webm')) < (await weigh('showreel-1080.webm')));
+  assert.ok((await weigh('showreel-poster.webp')) < 200_000);
 });

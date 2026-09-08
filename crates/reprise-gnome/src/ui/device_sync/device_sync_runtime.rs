@@ -39,16 +39,21 @@ mod types;
 use rate::MtpRateMeter;
 pub use types::*;
 
-struct DeviceState {
+pub(super) struct DeviceState {
     descriptor: DeviceDescriptor,
     connected: bool,
     session_state: DeviceSessionState,
     /// The run that currently owns this device, if any. Identity of this
     /// handle is what tells a superseded run to stop writing here.
     machine: Option<Rc<RefCell<reprise_core::device_sync::DeviceSyncMachine>>>,
+    /// Held for exactly as long as `machine`, so the staging sweep can see
+    /// that this run is still in flight even from another runtime.
+    staging_run: Option<reprise_core::device_sync::staging::ActiveRun>,
     cancellable: Option<gio::Cancellable>,
     storage: DeviceStorageSnapshot,
     managed_files: Vec<ManagedDeviceFile>,
+    partial_paths: Vec<String>,
+    lyrics_files: Vec<ManagedDeviceFile>,
     managed_track_count: usize,
     scanning: bool,
     scan_generation: u64,
@@ -58,6 +63,8 @@ struct DeviceState {
     /// inventory itself is rebuilt live from MTP on every connect, so
     /// "verified" cannot outlive the connection it was verified on.
     ever_inspected: bool,
+    pub(super) residency_proven: bool,
+    short_scan: Option<(usize, usize)>,
     target: SyncTarget,
     settings: DeviceSettings,
     sync_phase: PlannedSyncPhase,
@@ -93,14 +100,19 @@ impl DeviceState {
             connected: true,
             session_state,
             machine: None,
+            staging_run: None,
             cancellable: None,
             storage: DeviceStorageSnapshot::default(),
             managed_files: Vec::new(),
+            partial_paths: Vec::new(),
+            lyrics_files: Vec::new(),
             managed_track_count: 0,
             scanning: false,
             scan_generation: 0,
             scan_error: None,
             ever_inspected: false,
+            residency_proven: false,
+            short_scan: None,
             target,
             settings,
             sync_phase,
@@ -192,8 +204,13 @@ impl DeviceState {
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
             rememberable: self.descriptor.persistent_id.is_some(),
-            memory_status: (self.connected && self.descriptor.persistent_id.is_none())
-                .then(device_sync_strings::unrememberable_device_status),
+            memory_status: if self.connected && self.descriptor.persistent_id.is_none() {
+                Some(device_sync_strings::unrememberable_device_status())
+            } else {
+                self.short_scan.map(|(doubtful, recovered)| {
+                    device_sync_strings::short_scan(doubtful, recovered)
+                })
+            },
             session_state: self.session_state.clone(),
             storage: self.storage.clone(),
             storage_measured: self.ever_inspected,
@@ -228,6 +245,10 @@ impl DeviceState {
         self.machine.is_some()
     }
 
+    pub(super) fn managed_files_scanned(&self) -> bool {
+        self.ever_inspected && self.scan_error.is_none() && self.residency_proven
+    }
+
     fn is_busy(&self) -> bool {
         self.is_active() || self.sync_phase == PlannedSyncPhase::Finishing
     }
@@ -240,7 +261,7 @@ impl DeviceState {
 pub struct DeviceSyncRuntime {
     conn: Rc<Db>,
     backend: Rc<dyn DeviceBackend>,
-    device_states: RefCell<Vec<DeviceState>>,
+    pub(super) device_states: RefCell<Vec<DeviceState>>,
     subscribers: RefCell<HashMap<u64, StateCallback>>,
     next_subscription_id: Cell<u64>,
     weak_self: RefCell<Weak<Self>>,
@@ -558,4 +579,7 @@ mod target_actions;
 
 pub(super) use picker::*;
 #[cfg(test)]
-pub(super) use planned::{record_rejected_start, RunLog, SyncInitiator, SyncStartError};
+pub(super) use planned::{
+    cancel_prefetch_for_test, record_rejected_start, transcode_without_prefetch_for_test, RunLog,
+    SyncInitiator, SyncStartError,
+};

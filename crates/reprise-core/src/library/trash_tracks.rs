@@ -130,6 +130,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
 
     fn seeded_conn(paths: &[&std::path::Path]) -> Db {
@@ -195,6 +197,32 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(rows, vec![(2, 0)]);
+    }
+
+    #[test]
+    fn trash_tracks_with_calls_the_action_once_per_validated_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.flac");
+        let second = dir.path().join("second.flac");
+        let third = dir.path().join("third.flac");
+        let conn = seeded_conn(&[&first, &second, &third]);
+        let calls = Cell::new(0);
+        let tracks = vec![
+            (1, first.clone()),
+            (1, first),
+            (2, second),
+            (3, dir.path().join("stale-third.flac")),
+        ];
+
+        let report = trash_tracks_with(&conn, &tracks, |_| {
+            calls.set(calls.get() + 1);
+            Ok(())
+        });
+
+        assert_eq!(calls.get(), 2);
+        assert_eq!(report.removed_ids, vec![1, 2]);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].id, 3);
     }
 
     #[test]

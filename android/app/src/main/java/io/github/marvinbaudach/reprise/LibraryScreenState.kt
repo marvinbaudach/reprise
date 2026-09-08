@@ -125,6 +125,13 @@ internal data class LibraryAlbum(
     val totalDurationMs: Long,
 )
 
+/**
+ * The combination the rest of the code already treats as an album's identity
+ * — see the `LazyColumn` item keys in BrowseTabs.kt. Reused as the scroll
+ * anchor's owner so two different albums never share one saved position.
+ */
+internal fun LibraryAlbum.identity(): String = "$artist\u0000$title"
+
 internal data class LibraryArtist(
     val name: String,
     val trackCount: Long,

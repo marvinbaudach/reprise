@@ -6,7 +6,15 @@ use reprise_core::device_sync::{DeviceStorageAccess, ManagedDeviceFile, SyncTarg
 use super::{
     is_audio_file, join_relative, safe_target_components, DeviceIoError, DeviceStorage,
     DeviceStorageInspection, DeviceStorageSnapshot, ENUMERATE_ATTRIBUTES, ENUMERATE_BATCH_SIZE,
+    PARTIAL_SUFFIX,
 };
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ManagedWalk {
+    pub managed_files: Vec<ManagedDeviceFile>,
+    pub partial_paths: Vec<String>,
+    pub lyrics_files: Vec<ManagedDeviceFile>,
+}
 
 impl DeviceStorage {
     /// Aggregates music usage and managed files on the storage volume that
@@ -36,6 +44,8 @@ impl DeviceStorage {
                 ..DeviceStorageSnapshot::default()
             },
             managed_files: Vec::new(),
+            partial_paths: Vec::new(),
+            lyrics_files: Vec::new(),
         };
 
         let playlists_components = safe_target_components(&target.path)?;
@@ -53,12 +63,15 @@ impl DeviceStorage {
         inspection.snapshot.other_music_bytes =
             other_music_bytes(&playlists_storage, &excluded_from_music).await?;
 
-        inspection.managed_files = inspect_target_folder(
+        let managed_walk = inspect_target_folder(
             &playlists_storage,
             &playlists_components,
             is_known_managed_item_file,
         )
         .await?;
+        inspection.managed_files = managed_walk.managed_files;
+        inspection.partial_paths = managed_walk.partial_paths;
+        inspection.lyrics_files = managed_walk.lyrics_files;
         inspection.snapshot.reprise_music_bytes = inspection
             .managed_files
             .iter()
@@ -97,12 +110,12 @@ async fn inspect_target_folder(
     storage: &gio::File,
     components: &[String],
     accept: impl Fn(&str) -> bool,
-) -> Result<Vec<ManagedDeviceFile>, DeviceIoError> {
+) -> Result<ManagedWalk, DeviceIoError> {
     let root = components
         .iter()
         .fold(storage.clone(), |parent, component| parent.child(component));
     let mut pending = VecDeque::from([(root, String::new())]);
-    let mut files = Vec::new();
+    let mut walk = ManagedWalk::default();
     while let Some((directory, prefix)) = pending.pop_front() {
         let enumerator = match directory
             .enumerate_children_future(
@@ -114,7 +127,7 @@ async fn inspect_target_folder(
         {
             Ok(enumerator) => enumerator,
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) && prefix.is_empty() => {
-                return Ok(files);
+                return Ok(walk);
             }
             Err(error) => return Err(error.into()),
         };
@@ -130,17 +143,30 @@ async fn inspect_target_folder(
                 let relative_path = join_relative(&prefix, &name);
                 if info.file_type() == gio::FileType::Directory {
                     pending.push_back((directory.child(&name), relative_path));
-                } else if info.file_type() == gio::FileType::Regular && accept(&name) {
-                    files.push(ManagedDeviceFile {
-                        relative_path,
+                } else if info.file_type() == gio::FileType::Regular {
+                    let file = ManagedDeviceFile {
+                        relative_path: relative_path.clone(),
                         size_bytes: info.size().max(0) as u64,
-                    });
+                    };
+                    if name.ends_with(PARTIAL_SUFFIX) {
+                        walk.partial_paths.push(relative_path);
+                    } else if reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(
+                        std::path::Path::new(&name),
+                    ) {
+                        walk.lyrics_files.push(file);
+                    } else if accept(&name) {
+                        walk.managed_files.push(file);
+                    }
                 }
             }
         }
     }
-    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
-    Ok(files)
+    walk.managed_files
+        .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    walk.partial_paths.sort();
+    walk.lyrics_files
+        .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    Ok(walk)
 }
 
 /// Sums every audio file under `Music/` on `storage` that does not fall

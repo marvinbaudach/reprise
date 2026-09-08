@@ -44,6 +44,7 @@ mod trash_boundary_tests;
 mod listen_export_playback_tests;
 
 type EventHandler = dyn Fn(StreamEvent) + Send + Sync + 'static;
+type FaultAwareEventHandler = dyn Fn(StreamEvent, Option<bool>) + Send + Sync + 'static;
 
 /// The playback states Media3 must report back to Core.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -130,6 +131,15 @@ impl AndroidPlaybackBackend {
         on_event: Box<EventHandler>,
     ) -> Result<Self, PlaybackError> {
         let bridge = PlaybackEventBridge::new(on_event);
+        port.set_event_bridge(bridge).map_err(PlaybackError::from)?;
+        Ok(Self { port })
+    }
+
+    pub(crate) fn new_with_faults(
+        port: Box<dyn AndroidPlaybackPort>,
+        on_event: Box<FaultAwareEventHandler>,
+    ) -> Result<Self, PlaybackError> {
+        let bridge = PlaybackEventBridge::new_with_faults(on_event);
         port.set_event_bridge(bridge).map_err(PlaybackError::from)?;
         Ok(Self { port })
     }
@@ -226,7 +236,7 @@ pub enum AndroidPlayerEvent {
     Position { position_ms: i64, duration_ms: i64 },
     TrackFinished,
     AdvancedToNext,
-    Error { message: String },
+    Error { message: String, missing: bool },
 }
 
 /// The named Kotlin-to-Rust event boundary.
@@ -237,12 +247,16 @@ pub enum AndroidPlayerEvent {
 /// preserves Core's stale-event protection across a stream switch.
 #[derive(uniffi::Object)]
 pub struct PlaybackEventBridge {
-    handler: Box<EventHandler>,
+    handler: Box<FaultAwareEventHandler>,
 }
 
 impl PlaybackEventBridge {
     /// Builds the Rust-owned bridge handed to the Kotlin playback service.
     pub fn new(handler: Box<EventHandler>) -> Arc<Self> {
+        Self::new_with_faults(Box::new(move |event, _missing| handler(event)))
+    }
+
+    fn new_with_faults(handler: Box<FaultAwareEventHandler>) -> Arc<Self> {
         Arc::new(Self { handler })
     }
 }
@@ -251,10 +265,17 @@ impl PlaybackEventBridge {
 impl PlaybackEventBridge {
     /// Delivers one event with its production-time stream generation.
     pub fn emit(&self, generation: u64, event: AndroidPlayerEvent) {
-        (self.handler)(StreamEvent {
-            generation: StreamGeneration::from(generation),
-            event: event.into(),
-        });
+        let missing = match &event {
+            AndroidPlayerEvent::Error { missing, .. } => Some(*missing),
+            _ => None,
+        };
+        (self.handler)(
+            StreamEvent {
+                generation: StreamGeneration::from(generation),
+                event: event.into(),
+            },
+            missing,
+        );
     }
 }
 
@@ -300,7 +321,7 @@ impl From<AndroidPlayerEvent> for PlayerEvent {
             },
             AndroidPlayerEvent::TrackFinished => Self::TrackFinished,
             AndroidPlayerEvent::AdvancedToNext => Self::AdvancedToNext,
-            AndroidPlayerEvent::Error { message } => Self::Error(message.into()),
+            AndroidPlayerEvent::Error { message, .. } => Self::Error(message.into()),
         }
     }
 }

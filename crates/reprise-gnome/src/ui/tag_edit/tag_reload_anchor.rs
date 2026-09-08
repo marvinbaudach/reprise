@@ -11,6 +11,21 @@ pub(super) struct OpenedReloadState {
     pub(super) view_ids: Vec<i64>,
 }
 
+impl OpenedReloadState {
+    pub(super) fn at_open(anchor: ReloadAnchor, view_ids: Vec<i64>) -> Self {
+        Self { anchor, view_ids }
+    }
+}
+
+#[cfg(test)]
+pub(in crate::ui) fn opened_reload_state_for_test(
+    anchor: ReloadAnchor,
+    view_ids: Vec<i64>,
+) -> (ReloadAnchor, Vec<i64>) {
+    let opened = OpenedReloadState::at_open(anchor, view_ids);
+    (opened.anchor, opened.view_ids)
+}
+
 fn write_patches_sort_key(write: &TrackWrite, sort_columns: &[&str]) -> bool {
     let tags = &write.patch.tags;
     (sort_columns.contains(&"title") && tags.title.is_some())
@@ -23,28 +38,56 @@ fn write_patches_sort_key(write: &TrackWrite, sort_columns: &[&str]) -> bool {
         || (sort_columns.contains(&"rating") && write.patch.rating.is_some())
 }
 
+pub(super) fn save_patches_sort_key(
+    updated_ids: &[i64],
+    writes: &[TrackWrite],
+    sort_field: &str,
+) -> bool {
+    first_sort_key_write(updated_ids, writes, sort_field).is_some()
+}
+
+fn first_sort_key_write(
+    updated_ids: &[i64],
+    writes: &[TrackWrite],
+    sort_field: &str,
+) -> Option<i64> {
+    let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
+    updated_ids.iter().copied().find(|updated_id| {
+        writes
+            .iter()
+            .any(|write| write.id == *updated_id && write_patches_sort_key(write, sort_columns))
+    })
+}
+
 pub(in crate::ui) fn post_save_reload_anchor(
     mut opened: ReloadAnchor,
     updated_ids: &[i64],
     writes: &[TrackWrite],
     sort_field: &str,
     old_view_ids: &[i64],
-    layout: &ListLayout,
+    layout: Option<&ListLayout>,
 ) -> ReloadAnchor {
     opened.selected_ids = updated_ids.to_vec();
-    let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
     // The track to anchor on is the first one that can actually move, not
     // merely the first one in the batch: a batch is heterogeneous (renumbering
     // track numbers patches a different field per track), so `updated_ids[0]`
     // may sit still while a later row is the one that jumps.
-    let Some(first_edited_id) = updated_ids.iter().copied().find(|updated_id| {
-        writes
-            .iter()
-            .any(|write| write.id == *updated_id && write_patches_sort_key(write, sort_columns))
-    }) else {
+    let Some(first_edited_id) = first_sort_key_write(updated_ids, writes, sort_field) else {
         return opened;
     };
-    reload_restore::reanchor_on_track(opened, first_edited_id, old_view_ids, layout)
+    match layout {
+        Some(layout) => {
+            reload_restore::reanchor_on_track(opened, first_edited_id, old_view_ids, layout)
+        }
+        None => {
+            // Dialog completion can run between allocations, when the live
+            // view cannot provide a layout. The edited identity is still the
+            // stable truth: put it at the viewport top instead of silently
+            // restoring the unrelated pre-save pixel region.
+            opened.anchor = Some((first_edited_id, 0.0));
+            opened
+        }
+    }
 }
 
 #[cfg(test)]
@@ -87,7 +130,7 @@ mod tests {
             &writes,
             "artist",
             &[10, 20, 30, 40],
-            &rows_only(),
+            Some(&rows_only()),
         );
 
         assert_eq!(restored.selected_ids, vec![40]);
@@ -111,7 +154,7 @@ mod tests {
             &writes,
             "artist",
             &[10, 20, 30, 40],
-            &rows_only(),
+            Some(&rows_only()),
         );
 
         assert_eq!(restored.anchor, Some((20, 4.0)));
@@ -146,7 +189,7 @@ mod tests {
             &writes,
             "artist",
             &[10, 20, 30, 40, 50],
-            &rows_only(),
+            Some(&rows_only()),
         );
 
         assert_eq!(

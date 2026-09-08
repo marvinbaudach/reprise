@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn start_3_session_restore_always_reveals() {
+    fn start_4_session_restore_always_reveals() {
         assert_eq!(
             reveal_policy(LoadedItemChange::SessionRestore, true),
             RevealPolicy::Reveal

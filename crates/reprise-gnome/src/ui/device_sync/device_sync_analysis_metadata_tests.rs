@@ -387,3 +387,33 @@ fn automatic_sync_writes_analysis_only_while_listener_sync_writes_analysis_and_r
         );
     });
 }
+
+#[test]
+fn track_metadata_list_uses_the_path_recorded_after_directory_adoption() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1, 2]);
+        let planned = "Artist/Unknown Album/00 Track 1.opus";
+        let adopted = "ARTIST/Unknown Album/00 Track 1.opus";
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        backend.return_copy_at(planned, adopted);
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let list = copied_track_metadata(&backend).expect("listener-started list");
+        let track = list
+            .entries
+            .iter()
+            .find(|entry| entry.device_path.ends_with("Track 1.opus"))
+            .expect("track one metadata");
+        assert_eq!(track.device_path, adopted);
+        assert_eq!(
+            list.entries.len(),
+            2,
+            "unrecorded entries must still fall back"
+        );
+    });
+}

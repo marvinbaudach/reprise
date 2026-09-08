@@ -32,7 +32,7 @@
 //! suppresses every mixed-value CSS/annotation side effect — see this
 //! module's tests and the G1 task report for the full reasoning).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -41,12 +41,14 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::cover::ThumbnailSize;
 use reprise_core::db::Db;
 use reprise_core::library::tag_edit::{TagBatchReport, TrackWrite};
 use reprise_core::library::tag_edit_session::{
     SessionMode, SessionTrack, TagEditSession, TagField,
 };
 
+use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 use crate::ui::tag_editor_dirty::parse_number_field;
 use crate::ui::tag_editor_dirty::ProgrammaticChanges;
@@ -56,6 +58,17 @@ use crate::ui::tag_editor_widgets::{format_track_subtitle, update_star_display};
 
 pub(in crate::ui) const STAR_FILLED: &str = "\u{2605}";
 pub(in crate::ui) const STAR_OUTLINE: &str = "\u{2606}";
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(in crate::ui) struct PresentedTagEditor {
+    pub(in crate::ui) dialog: adw::Dialog,
+    pub(in crate::ui) cover_picture: gtk4::Picture,
+}
+
+pub(in crate::ui) struct PresentCallbacks<F> {
+    pub(in crate::ui) on_write_started: Rc<dyn Fn()>,
+    pub(in crate::ui) on_saved: F,
+}
 
 /// G1 (TAG-4): the frozen browse snapshot captured by `tag_edit_flow.rs` from
 /// `Shared::current_view_ids()` when a single-track edit opens — the visible
@@ -82,12 +95,19 @@ pub(in crate::ui) fn present(
     tracks: Vec<SessionTrack>,
     bitrates: &[Option<u32>],
     browse: Option<BrowseSnapshot>,
-    on_write_started: Rc<dyn Fn()>,
-    on_saved: impl Fn(Vec<TrackWrite>, TagBatchReport) + Clone + 'static,
-) {
+    cover_loader: &Rc<CoverLoader>,
+    callbacks: PresentCallbacks<
+        impl Fn(Vec<TrackWrite>, TagBatchReport, u128, usize) + Clone + 'static,
+    >,
+) -> Option<PresentedTagEditor> {
+    let build_started = std::time::Instant::now();
+    let PresentCallbacks {
+        on_write_started,
+        on_saved,
+    } = callbacks;
     let Some(mode) = EditorMode::new(tracks.len()) else {
         tracing::warn!("tag editor called with empty track list");
-        return;
+        return None;
     };
     let track_count = mode.track_count();
     let track_paths: Vec<(i64, PathBuf)> = tracks
@@ -123,6 +143,9 @@ pub(in crate::ui) fn present(
     }
 
     let form = TagEditorForm::build(mode, conn, &track_paths, bitrates, &session);
+    let first_track_path = track_paths
+        .first()
+        .map(|(_, path)| path.to_string_lossy().into_owned());
     let crate::ui::tag_editor_dirty::DirtyState {
         update: update_save_state,
         programmatic_changes,
@@ -200,11 +223,35 @@ pub(in crate::ui) fn present(
     let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
     focus_guard.bind_dialog(&form.dialog, &form.title_row);
     form.dialog.present(Some(parent));
-    tracing::debug!(
-        track_count,
+    tracing::info!(
+        build_ms = build_started.elapsed().as_millis(),
+        tracks = track_count,
         is_multi = mode.is_multi(),
-        "redesigned tag editor presented"
+        "tag editor presented"
     );
+    if let Some(track_path) = first_track_path {
+        let loader = cover_loader.clone();
+        let picture = form.cover_picture.clone();
+        let current = Rc::new(Cell::new(1_u64));
+        let current_when_closed = current.clone();
+        form.dialog.connect_closed(move |_| {
+            current_when_closed.set(current_when_closed.get().wrapping_add(1));
+        });
+        glib::idle_add_local_once(move || {
+            loader.load_into_picture(
+                &picture,
+                &track_path,
+                ThumbnailSize::Grid,
+                1,
+                &current,
+                |_| {},
+            );
+        });
+    }
+    Some(PresentedTagEditor {
+        dialog: form.dialog,
+        cover_picture: form.cover_picture,
+    })
 }
 
 /// The format/bitrate tail ("FLAC · 987 kbit/s") for `track_id` within a

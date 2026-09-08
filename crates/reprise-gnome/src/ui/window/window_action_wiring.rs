@@ -324,7 +324,10 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                     tracing::warn!("sidebar is gone; skipping refresh after a library removal");
                 }
             }
-            if let Some(player) = &player {
+            if !removed_ids.is_empty() {
+                let Some(player) = &player else {
+                    return;
+                };
                 player.purge_queue_ids(removed_ids);
             }
         });

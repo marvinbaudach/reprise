@@ -125,7 +125,7 @@ fn lyr_7_removing_a_track_leaves_an_lrc_reprise_never_mirrored_alone() {
 }
 
 #[test]
-fn lyr_7_a_failed_lrc_copy_never_fails_the_track_transfer() {
+fn lyr_7_a_failed_lrc_copy_fails_the_run_without_failing_the_track_transfer() {
     run(async {
         let (temp, conn) = fixture();
         std::fs::write(temp.path().join("1.lrc"), b"[00:01.00]Lyrics\n").unwrap();
@@ -141,11 +141,27 @@ fn lyr_7_a_failed_lrc_copy_never_fails_the_track_transfer() {
         settle().await;
 
         let device = runtime.devices().remove(0);
-        assert!(device.last_sync.is_some());
+        let failure = device
+            .sync_error
+            .expect("the lyrics write failure must fail the run");
+        assert!(failure.message.contains("simulated sidecar refusal"));
+        assert!(failure.failed_tracks.is_empty());
         let recorded = reprise_core::device_sync::sync_log::recent_runs(&conn, 1)
             .unwrap()
             .remove(0);
         assert_eq!(recorded.copied, 1);
+        assert_eq!(recorded.failed, 1);
+        let deviations =
+            reprise_core::device_sync::sync_log::deviations(&conn, recorded.id).unwrap();
+        let failure = deviations
+            .iter()
+            .find(|deviation| {
+                deviation.kind == reprise_core::device_sync::sync_log::DeviationKind::Failed
+            })
+            .expect("the lyrics write failure must be recorded");
+        assert_eq!(failure.track_id, Some(1));
+        assert!(failure.device_path.ends_with("Track 1.lrc"));
+        assert!(failure.detail.contains("simulated sidecar refusal"));
         assert_eq!(
             reprise_core::device_sync::settings::load_device_files(&conn, "a")
                 .unwrap()

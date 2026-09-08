@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use reprise_core::device_sync::browser::StorageOption;
-use reprise_core::device_sync::{DeviceStorageInspection, StorageId, SyncTarget};
+use reprise_core::device_sync::{
+    DeviceStorageInspection, ManagedDeviceFile, StorageId, SyncTarget,
+};
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceDescriptor, DeviceMonitor, DeviceStorage,
 };
@@ -65,6 +67,35 @@ impl DeviceBackend for GioDeviceBackend {
         })
     }
 
+    fn probe_managed_files(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+        relative_paths: Vec<String>,
+    ) -> BackendFuture<Vec<ManagedDeviceFile>> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .probe_managed(storage_id, &target_path, &relative_paths)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn managed_target_exists(
+        &self,
+        root_uri: String,
+        target_path: String,
+        storage_id: Option<StorageId>,
+    ) -> BackendFuture<bool> {
+        Box::pin(async move {
+            DeviceStorage::from_uri(&root_uri)
+                .managed_target_exists(storage_id, &target_path)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
@@ -99,10 +130,11 @@ impl DeviceBackend for GioDeviceBackend {
         root_uri: String,
         target_path: String,
         storage_id: Option<StorageId>,
+        partial_paths: Vec<String>,
     ) -> BackendFuture<u32> {
         Box::pin(async move {
             DeviceStorage::from_uri(&root_uri)
-                .cleanup_partials_in(storage_id, &target_path)
+                .cleanup_partials_in(storage_id, &target_path, &partial_paths)
                 .await
                 .map_err(|error| error.to_string())
         })

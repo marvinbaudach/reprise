@@ -87,7 +87,13 @@ impl DeviceSyncRuntime {
                     .ok_or_else(|| {
                         format!("device '{device_name}' is absent, disconnected, or ambiguous")
                     })?;
-                self.sync_now(&device_id).map_err(|error| error.to_string())
+                match self.sync_now(&device_id) {
+                    Ok(()) => {
+                        tracing::info!(device_id, "device sync started from agent");
+                        Ok(())
+                    }
+                    Err(error) => Err(error.to_string()),
+                }
             }
             AgentDeviceSyncCommand::Cancel { device_name } => {
                 let device_id = self
@@ -97,6 +103,7 @@ impl DeviceSyncRuntime {
                         format!("device '{device_name}' is absent, disconnected, or ambiguous")
                     })?;
                 self.cancel_current(&device_id);
+                tracing::info!(device_id, "device sync cancelled from agent");
                 Ok(())
             }
             AgentDeviceSyncCommand::Eject { device_name } => {
@@ -290,6 +297,7 @@ fn agent_phase(phase: PlannedSyncPhase) -> (AgentDeviceSyncPhase, String) {
                 SyncStep::Transcoding => AgentDeviceSyncPhase::Transcoding,
                 SyncStep::Copying => AgentDeviceSyncPhase::Copying,
                 SyncStep::WritingAnalysis => AgentDeviceSyncPhase::WritingAnalysis,
+                SyncStep::WritingLyrics => AgentDeviceSyncPhase::WritingLyrics,
                 SyncStep::WritingPlaylists => AgentDeviceSyncPhase::WritingPlaylists,
                 SyncStep::WritingTrackMetadata => AgentDeviceSyncPhase::WritingTrackMetadata,
             },
@@ -315,6 +323,26 @@ mod tests {
                 AgentDeviceSyncWarning::UnavailableNotOnDevice,
                 AgentDeviceSyncWarning::UnsafeManagedItem,
             ]
+        );
+    }
+
+    #[test]
+    fn lyrics_writes_have_their_own_agent_phase() {
+        let phase = PlannedSyncPhase::Syncing {
+            step: SyncStep::WritingLyrics,
+            done: 0,
+            total: 1,
+            current_track: "Artist/Album/01 Song.lrc".into(),
+            unit_bytes_done: 0,
+            unit_bytes_total: 42,
+        };
+
+        assert_eq!(
+            agent_phase(phase),
+            (
+                AgentDeviceSyncPhase::WritingLyrics,
+                "Artist/Album/01 Song.lrc".into(),
+            )
         );
     }
 }

@@ -114,6 +114,15 @@ internal fun DockModeSurface(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                playback.faultNotice?.let { message ->
+                    Text(
+                        text = message.text,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 DockTransport(track, playback, surfaceState)
             }

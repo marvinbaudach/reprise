@@ -116,14 +116,15 @@ internal fun ObserveLibraryListAnchor(
     key: LibraryListKey,
     state: LazyListState,
     surfaceState: MobileSurfaceViewModel,
+    owner: String = "",
 ) {
-    LaunchedEffect(key, state, surfaceState) {
+    LaunchedEffect(key, owner, state, surfaceState) {
         snapshotFlow { state.anchor() }
             .distinctUntilChanged()
-            .collect { position -> surfaceState.updateScroll(key, position) }
+            .collect { position -> surfaceState.updateScroll(key, position, owner) }
     }
-    DisposableEffect(key, state, surfaceState) {
-        onDispose { surfaceState.updateScroll(key, state.anchor()) }
+    DisposableEffect(key, owner, state, surfaceState) {
+        onDispose { surfaceState.updateScroll(key, state.anchor(), owner) }
     }
 }
 
@@ -132,14 +133,15 @@ internal fun ObserveLibraryGridAnchor(
     key: LibraryListKey,
     state: LazyGridState,
     surfaceState: MobileSurfaceViewModel,
+    owner: String = "",
 ) {
-    LaunchedEffect(key, state, surfaceState) {
+    LaunchedEffect(key, owner, state, surfaceState) {
         snapshotFlow { state.anchor() }
             .distinctUntilChanged()
-            .collect { position -> surfaceState.updateScroll(key, position) }
+            .collect { position -> surfaceState.updateScroll(key, position, owner) }
     }
-    DisposableEffect(key, state, surfaceState) {
-        onDispose { surfaceState.updateScroll(key, state.anchor()) }
+    DisposableEffect(key, owner, state, surfaceState) {
+        onDispose { surfaceState.updateScroll(key, state.anchor(), owner) }
     }
 }
 

@@ -4,6 +4,138 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.157] - 2026-09-08
+
+### Library
+
+- Every album gets its own cover again. One embedded picture reused across many
+  album tags made a band's whole discography show the same artwork; Reprise now
+  notices a picture already seen under a different album and lets the automatic
+  download step in instead of trusting the wrong one.
+
+### Browsing
+
+- Releases, Radio, Podcasts and Concerts share one filter grammar. The same
+  chips, the same "+ Add filter" popover and the same sorting behave alike in
+  every source list, and "+ Add filter" turns insensitive once no facet is left
+  to add.
+
+### Editing and deleting
+
+- The window stays responsive while you edit or delete. The tag editor opens
+  before its cover art has arrived, a delete batch uses one trash session
+  instead of one connection per file, and the deleted rows leave the list before
+  the sidebar and browse bar catch up.
+- A tag save only touches what it changed. A metadata-only save re-renders the
+  edited cells instead of rebuilding the list, and a save that patches the sort
+  field moves the edited block and keeps it selected in the viewport instead of
+  reloading every row.
+- Up Next pays for the change only. Deleting a track updates the rows around it
+  rather than the whole queue projection.
+
+### Discovery
+
+- The Updates popover no longer stops updating for good. A failed artist fetch
+  is due again at the next check instead of counting as fresh, a check in which
+  at least one artist succeeded counts as completed, failures reach the log, and
+  the footer keeps pulsing while a check runs.
+
+### Android
+
+- Library reads leave the main thread, and the results keep up with you. The
+  newest search answer wins instead of being overwritten by a slower earlier
+  one, an artist you abandoned can no longer reopen itself over what you are
+  doing now, and an error stays with the surface that produced it.
+
+## [0.1.139] - 2026-09-04
+
+### Playback
+
+- Starting Reprise greets you with a random track from the library in the player
+  bar, stopped — instead of the position you left behind. Nothing autoplays, and
+  the restored queue stays exactly as it was until you press Play.
+
+### Discovery
+
+- Concerts refreshes again. A provider that fails no longer aborts the artists a
+  working provider could have resolved, and the list is checked hourly rather
+  than once a day.
+- Bandsintown now needs an app id of your own. The identifier the app used to
+  ship is rejected by the service, so an unconfigured Bandsintown is simply
+  absent instead of failing every request.
+
+### Device sync
+
+- The copy uses the folder the phone already has. A folder that differs only in
+  capitalisation is no longer created beside the resident one, the path the copy
+  actually used comes back from the device, and stale entries heal once the
+  phone has been scanned.
+- A short device walk is no longer read as proof that a file is gone, so tracks
+  already on the phone are not copied a second time.
+- Sync stops paying a fixed cost three to four times per file and drops a second
+  full walk of the device nobody needed.
+- A sync that removes files from the phone says so, instead of showing a bare
+  device path under a heading reading "Syncing".
+
+### Android
+
+- The Now Playing card keeps its own picture through a track change, instead of
+  briefly wearing its neighbour's.
+- A faulty track that is skipped says so on Android too — the notice used to be
+  wiped by the replacement track milliseconds later.
+- The artist-photo card leaves when photos are simply missing, instead of
+  standing at "64 / 66" for the rest of the session.
+- Every album and every artist page keeps its own scroll position. They used to
+  share one saved place per kind of list.
+- Searching the Artists tab answers with artists; an open album page no longer
+  answers in their place.
+- The queue keeps its filter to itself: search is no longer offered there.
+
+## [0.1.126] - 2026-09-02
+
+### Playback
+
+- A queued track whose file has gone missing is skipped instead of stopping the
+  queue, on every surface that plays.
+- Clicking the stopped waveform sets where the next playback starts.
+- The waveform keeps the frame it settles on after a seek, instead of briefly
+  falling back to the one before it.
+- Under Repeat One, restarting the same track begins at the beginning again
+  rather than re-applying the mark the previous pass left.
+
+### Library
+
+- The Doctor scans the whole library again, not a partial scope.
+- Moving tracks to the trash no longer holds the library's write lock while the
+  files move, so the rest of the library keeps working during a trash run.
+
+### Device sync
+
+- Sync no longer deletes a file on the phone that it is about to copy straight
+  back.
+- A track added to a sync playlist while the sync runs keeps the copy already on
+  the device.
+- Sync keeps the file name the phone already uses instead of renaming the track
+  on every run.
+- A cleanup pass that meets one unreadable file finishes its walk instead of
+  giving up on the rest.
+
+### Android
+
+- Now Playing's swipe carries the whole screen with it, and the play button and
+  the top edge answer the gesture while it happens.
+- Up Next reaches the tracks just before the current one, not only the ones
+  ahead of it.
+- A playback error names what actually failed instead of reporting a generic
+  fault.
+- The app asks before it fetches artist photos.
+- Play counts are retried when the library database is busy instead of being
+  dropped, and the library no longer blocks the first screen while it loads.
+
+### Language
+
+- Added a Spanish translation.
+
 ## [0.1.84] - 2026-08-27
 
 ### Android

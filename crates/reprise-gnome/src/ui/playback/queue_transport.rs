@@ -35,7 +35,7 @@ pub(in crate::ui) use queue_context_window::QueueContextWindow;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
     /// Carries the reveal the loaded track earns when it starts — the one
-    /// decision that separates a cold start from every later Play (START-3).
+    /// decision that separates a cold start from every later Play (START-4).
     StartCurrent(CurrentTrackChange),
     StartPending,
     StartRandom,
@@ -66,11 +66,9 @@ fn queue_purge_plan(ids: &[i64], loaded: Option<i64>) -> QueuePurgePlan {
         after_loaded_track,
     }
 }
-
 fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
     loaded.is_some_and(|id| ids.contains(&id))
 }
-
 fn remove_direct_episode_now_playing(
     direct_episode: bool,
     rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
@@ -86,12 +84,12 @@ fn remove_direct_episode_now_playing(
     }
 }
 
-/// `restored_placement_intact` says the loaded track is still exactly where a
-/// normal start put it: selected and centered, never played (START-3). Its
-/// first Play only starts the audio, because the viewport is already the one
-/// the reveal would scroll to — and a glide onto the value the list already
-/// holds is the second visible centering this bug report is about. Every other
-/// start from Stopped keeps NAV-10b's explicit-transport reveal.
+/// `restored_placement_intact` says the loaded track is still exactly where
+/// startup routing put it: selected and centered, never played (START-4).
+/// START-4 places a greeting the same way, but greeting Play bypasses this
+/// decision and reaches `play_track_id` as `PlaybackStarted`, whose NAV-10b
+/// reveal policy is already `MarkerOnly`. Other starts from Stopped without
+/// this one-shot keep NAV-10b's explicit-transport reveal.
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,
@@ -109,7 +107,6 @@ fn toggle_action(
         }
     }
 }
-
 pub(super) fn restored_start_change(restored_placement_intact: bool) -> CurrentTrackChange {
     if restored_placement_intact {
         CurrentTrackChange::PlaybackStarted
@@ -117,7 +114,6 @@ pub(super) fn restored_start_change(restored_placement_intact: bool) -> CurrentT
         CurrentTrackChange::ExplicitTransport
     }
 }
-
 pub(super) fn initial_library_availability(db: &Db) -> bool {
     reprise_core::queries::query_has_live_tracks(db)
         .inspect_err(
@@ -125,7 +121,6 @@ pub(super) fn initial_library_availability(db: &Db) -> bool {
         )
         .unwrap_or(false)
 }
-
 fn move_rows_to_front(
     context: &mut Queue,
     pending: &mut UpNextQueue,
@@ -163,7 +158,6 @@ fn move_rows_to_front(
     pending.prepend(&ids);
     ids.len()
 }
-
 fn apply_queue_reorder(
     context: &mut Queue,
     manual: &mut UpNextQueue,
@@ -190,12 +184,7 @@ fn apply_queue_reorder(
         }
     }
 }
-
 impl PlayerController {
-    pub(in crate::ui) fn add_on_queue_changed(&self, callback: impl Fn() + 'static) {
-        self.queue_changed.borrow_mut().push(Rc::new(callback));
-    }
-
     /// Returns every live playback-model id rejected by the core retention
     /// predicate after a scan. The caller feeds these ids into the same
     /// purge path as hard deletes and auto-clean.
@@ -255,21 +244,6 @@ impl PlayerController {
         changed
     }
 
-    pub(in crate::ui) fn notify_queue_changed(&self) {
-        tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
-        self.update_agent_queue_mirror();
-        let callbacks = self.queue_changed.borrow().clone();
-        for callback in callbacks {
-            callback();
-        }
-        // The up-next front / queue order may have changed, so the upcoming
-        // track changed: re-feed the gapless next. All up-next edits funnel
-        // through here. `feed_next` only takes short, sequential borrows, and
-        // every caller of `notify_queue_changed` holds no live borrow across
-        // it (see `## Queue borrow discipline`).
-        self.feed_next();
-    }
-
     pub(in crate::ui) fn start_current_item(
         self: &Rc<Self>,
         item: QueueItem,
@@ -317,10 +291,27 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status;
-        let current = self
-            .current_up_next
-            .get()
-            .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+        let stopped_target = (status == MprisPlaybackStatus::Stopped)
+            .then(|| self.stopped_play_target())
+            .flatten();
+        let stopped_target = match stopped_target {
+            Some(target @ super::session_player::StoppedPlayTarget::Greeting(_)) => {
+                self.start_stopped_play_target(
+                    target,
+                    crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                );
+                return;
+            }
+            other => other,
+        };
+        let current = stopped_target
+            .as_ref()
+            .and_then(super::session_player::StoppedPlayTarget::item)
+            .or_else(|| {
+                self.current_up_next
+                    .get()
+                    .or_else(|| self.queue.borrow().current().map(QueueItem::Track))
+            });
         let has_pending = !self.up_next.borrow().is_empty();
         match toggle_action(
             status,
@@ -329,7 +320,9 @@ impl PlayerController {
             self.restored_placement_intact.get(),
         ) {
             ToggleAction::StartCurrent(change) => {
-                if let Some(item) = current {
+                if let Some(target) = stopped_target {
+                    self.start_stopped_play_target(target, change);
+                } else if let Some(item) = current {
                     self.start_current_item(item, change);
                 }
             }
@@ -381,10 +374,7 @@ impl PlayerController {
             }
         };
         self.library_has_tracks.set(available);
-        let queue_has_tracks = self.current_up_next.get().is_some()
-            || !self.queue.borrow().is_empty()
-            || !self.up_next.borrow().is_empty();
-        self.sync_transport_enabled(queue_has_tracks);
+        self.sync_transport_enabled(self.has_playable_item());
     }
 
     /// PLAY-14 Previous follows playback history in every mode. Episode
@@ -398,6 +388,7 @@ impl PlayerController {
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(in crate::ui) fn next(self: &Rc<Self>) {
+        self.dismiss_random_start_greeting();
         if self.forward_from_history() {
             return;
         }
@@ -424,6 +415,7 @@ impl PlayerController {
         start_index: usize,
         origin: super::play_origin::PlayOrigin,
     ) {
+        *self.pending_random_start.borrow_mut() = None;
         self.queue.borrow_mut().set_tracks(ids, start_index);
         self.current_up_next.set(None);
         self.deferred_queue_purge_id.set(None);
@@ -710,6 +702,7 @@ impl PlayerController {
         if ids.is_empty() {
             return;
         }
+        self.clear_prefed_next_if_removed(ids);
         let playing = self.now_playing.borrow().as_ref().map(|track| track.id);
         let plan = queue_purge_plan(ids, playing);
         let playing_from_up_next = plan.after_loaded_track.is_some()
