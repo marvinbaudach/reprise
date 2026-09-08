@@ -72,7 +72,13 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
     name: 'Boundaries',
     short: 'Bounds',
     line: 'The core cannot grow a UI framework.',
-    checks: ['Architecture', 'Device-sync GStreamer', 'Frontend thinness', 'GNOME idioms'],
+    checks: [
+      'Architecture',
+      'Device-sync GStreamer',
+      'Listen report parity',
+      'Frontend thinness',
+      'GNOME idioms',
+    ],
   },
   {
     name: 'Distribution',
