@@ -1,17 +1,6 @@
-//! Reconcile: what the scan says about the files it did **not** find.
-//!
-//! The walk in `scanner.rs` produces evidence — which paths it delivered,
-//! which directories it listed without error, which ones it could not read.
-//! This module turns that evidence into verdicts about rows the catalog still
-//! believes are present: which of them are provably gone (`mark_vanished_with`),
-//! which were misclassified and can be corrected (`reclassify_missing_with`),
-//! and whether the root itself is trustworthy enough for any of it
-//! (`guard_evidence_under_root`, `any_candidate_confirms_root_with`).
-//!
-//! The seam is deliberate: the walk knows what it saw, and this module is the
-//! only place allowed to conclude something about what it did not. See
-//! `scan_folder_inner`'s doc comment in `scanner.rs` for the fold and
-//! root-guard rationale these functions implement.
+//! Reconcile responsibility: what the scan says about files it did **not** find.
+//! It collects walk evidence inside the walk (`poison_walk_failure`, `evidence_after_walk`).
+//! Afterwards it concludes missing rows (`mark_vanished_with`, `reclassify_missing_with`) and root trust (`guard_evidence_under_root`, `any_candidate_confirms_root_with`).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

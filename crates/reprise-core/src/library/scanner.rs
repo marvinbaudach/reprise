@@ -4,12 +4,12 @@ use crate::db::Db;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use super::import_errors;
 use super::source::{
     self, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
     LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder,
     UnixLibrarySource,
 };
-use super::{exclusions, import_errors};
 use crate::models::ImportErrorKind;
 
 use entry::EntryOutcome;
@@ -183,12 +183,12 @@ struct WalkState {
 
 impl WalkState {
     /// The single place a scan's counters move. Each variant's arithmetic is
-    /// the arithmetic the seven early returns used to do inline.
+    /// the arithmetic the pre-split body's seven early returns used to do inline.
     fn record(&mut self, outcome: &EntryOutcome) {
         // Root-Guard input: "did the walk find any audio file at all under
         // `root`?" — counted regardless of whether this particular file
         // goes on to be added/updated/skipped/errored below. See this
-        // function's `## Root guard` doc section.
+        // `scan_folder_inner`'s `## Root guard` doc section.
         if outcome.examined_audio_file() {
             self.trace.audio_files_seen += 1;
         }
@@ -413,9 +413,8 @@ fn decide_outcome(
     tx: &rusqlite::Transaction,
     root: &Path,
     evidence: VanishEvidence,
-    report: ScanReport,
+    mut report: ScanReport,
 ) -> Result<ScanOutcome, ScanError> {
-    let mut report = report;
     let root_unavailable = evidence.guard_evidence.as_ref().is_some_and(|guard| {
         !guard.is_empty() && !vanish::any_candidate_confirms_root_with(source, guard, root)
     });
@@ -485,8 +484,8 @@ fn decide_outcome(
 /// individual file under it — it only knows "my root is unreachable". Before
 /// the walk even starts, a failed source probe short-circuits straight to
 /// [`ScanOutcome::RootUnavailable`] with no walk and no database write at
-/// all (`import_errors` included) — see Root-Guard case (a) in this
-/// function's test suite.
+/// all (`import_errors` included) — see Root-Guard case (a) in the
+/// `vanished_tests` module.
 ///
 /// A subtler case remains even when `root` itself resolves to *some*
 /// directory: a removable/network mount that hasn't come up yet often still
@@ -545,13 +544,13 @@ fn decide_outcome(
 /// comment for the exact hint contract a later query layer/sidebar badge
 /// must use.
 ///
-/// Concretely, in the walk loop below: a pass-1 success still calls
-/// `import_errors::clear_error` (unchanged — the self-healing rule
-/// sharpens, it doesn't change, for that case); a pass-2 (untagged) success
-/// calls `import_errors::record_error` with pass 1's own `(kind, detail)`
-/// instead — refreshing the hint's `last_seen`/`seen_count` rather than
-/// deleting it. Only a later scan that achieves a real pass-1 success (the
-/// file got re-tagged) clears it.
+/// Concretely, `scanner_entry::record_hint_or_healing`, called while the walk
+/// processes an entry, still clears the error after a pass-1 success
+/// (unchanged — the self-healing rule sharpens, it doesn't change, for that
+/// case); after a pass-2 (untagged) success it records pass 1's own `(kind,
+/// detail)` instead — refreshing the hint's `last_seen`/`seen_count` rather
+/// than deleting it. Only a later scan that achieves a real pass-1 success
+/// (the file got re-tagged) clears it.
 fn scan_folder_inner(
     source: &dyn LibrarySource,
     conn: &Connection,

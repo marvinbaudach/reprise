@@ -1,15 +1,15 @@
 //! What the scan decides about **one** entry the walk delivered: classify the
 //! file, write the catalog row it earns, and report back what happened as a
 //! value. The counting lives with the walk in `scanner.rs`; nothing here
-//! touches a counter, so the seven ways an entry can end are visible in one
-//! enum instead of scattered across seven early returns.
+//! touches a counter, so all ten outcomes are visible in one enum, preserving
+//! the arithmetic formerly scattered across the pre-split body's seven early returns.
 
 use std::path::Path;
 
-use crate::library::import_errors;
 use crate::library::source::{
     LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
 };
+use crate::library::{exclusions, import_errors};
 
 use super::{move_detect, repair, track_meta, ScanError};
 
@@ -111,7 +111,10 @@ struct KnownRow {
     untagged: bool,
 }
 
-fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> Result<KnownRow, ScanError> {
+fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
+    // Query failure is deliberately indistinguishable from an absent row:
+    // both preserve the scanner's unknown-mtime retry behaviour through the
+    // default `KnownRow`. Do not replace this `.ok()` with error propagation.
     let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
         .query_row(
             "SELECT file_mtime, missing_since, removed_at, untagged FROM tracks WHERE path = ?1",
@@ -119,7 +122,7 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> Result<KnownRow, Sca
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .ok();
-    Ok(KnownRow {
+    KnownRow {
         mtime: known.map(|(file_mtime, ..)| file_mtime),
         missing: known.is_some_and(|(_, missing_since, ..)| missing_since.is_some()),
         // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
@@ -134,7 +137,7 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> Result<KnownRow, Sca
         // it here drops it through to re-read + `repair_damaged_tags`, so a
         // library imported before auto-repair existed stops staying untagged.
         untagged: known.is_some_and(|(_, _, _, untagged)| untagged != 0),
-    })
+    }
 }
 
 fn restore_present_row(
@@ -181,10 +184,10 @@ pub(super) fn scan_entry(
     }
     let path_str = path.to_string_lossy().to_string();
     let facts = file_facts(scan.source, path, metadata);
-    if super::exclusions::matches_file(scan.tx, path, facts.device, facts.inode)? {
+    if exclusions::matches_file(scan.tx, path, facts.device, facts.inode)? {
         return Ok(EntryOutcome::Excluded);
     }
-    let known = known_row(scan.tx, &path_str)?;
+    let known = known_row(scan.tx, &path_str);
     if known.mtime == Some(facts.mtime) && !known.untagged {
         if known.missing || known.removed {
             return restore_present_row(scan, path, &path_str, known);
@@ -218,8 +221,8 @@ fn read_import_meta(
     Option<(crate::models::ImportErrorKind, String)>,
 ) {
     // Task 1.8: `hint` is `Some((kind, detail))` only when pass 1
-    // failed but pass 2 rescued the container — see this
-    // function's `## Hint coexistence` doc section just below.
+    // failed but pass 2 rescued the container — see
+    // `scan_folder_inner`'s `## Hint coexistence` doc section.
     match outcome {
         track_meta::MetaOutcome::Tagged(meta) => (meta, None),
         // A file the strict reader couldn't parse is repaired in
@@ -244,8 +247,8 @@ fn record_hint_or_healing(
     // (a file that errored once and is now readable again must
     // not stay in the error log). A pass-2 (untagged) success
     // must NOT clear it — instead it refreshes the row with
-    // pass 1's diagnosis, keeping it alive as a HINT. See this
-    // function's `## Hint coexistence` doc section.
+    // pass 1's diagnosis, keeping it alive as a HINT. See
+    // `scan_folder_inner`'s `## Hint coexistence` doc section.
     if let Some((kind, detail)) = hint {
         import_errors::record_error(tx, path_str, kind, &detail, super::now_unix())?;
         Ok(0)
