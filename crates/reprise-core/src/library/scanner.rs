@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 
 use super::import_errors;
 use super::source::{
-    self, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
-    LibraryWalkControl, LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
+    self, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
+    LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder,
+    UnixLibrarySource,
 };
 use crate::models::ImportErrorKind;
-use crate::models::MissingReason;
-use crate::queries::PRESENT;
+
+use entry::EntryOutcome;
 
 #[path = "scanner_types.rs"]
 mod scanner_types;
@@ -167,6 +168,293 @@ fn scan_folder_with_progress_from(
     scan_folder_inner(source, conn, root, Some(reporter))
 }
 
+/// What the walk delivered, and what the report owes for it.
+struct WalkTrace {
+    audio_files_seen: u64,
+    observed_paths: HashSet<PathBuf>,
+    dirs: HashSet<PathBuf>,
+    failed: HashSet<PathBuf>,
+}
+
+struct WalkState {
+    report: ScanReport,
+    trace: WalkTrace,
+}
+
+impl WalkState {
+    /// The single place a scan's counters move. Each variant's arithmetic is
+    /// the arithmetic the pre-split body's seven early returns used to do inline.
+    fn record(&mut self, outcome: &EntryOutcome) {
+        // Root-Guard input: "did the walk find any audio file at all under
+        // `root`?" — counted regardless of whether this particular file
+        // goes on to be added/updated/skipped/errored below. See
+        // `scan_folder_inner`'s `## Root guard` doc section.
+        if outcome.examined_audio_file() {
+            self.trace.audio_files_seen += 1;
+        }
+        match *outcome {
+            EntryOutcome::WalkError => self.report.errors += 1,
+            EntryOutcome::Directory | EntryOutcome::NotAudio | EntryOutcome::Dismissed => {}
+            EntryOutcome::Excluded => self.report.excluded += 1,
+            EntryOutcome::Unchanged => self.report.skipped_unchanged += 1,
+            EntryOutcome::Restored { healed } => {
+                self.report.updated += 1;
+                self.report.healed += healed;
+            }
+            EntryOutcome::Moved { healed } => {
+                self.report.moved += 1;
+                self.report.healed += healed;
+            }
+            EntryOutcome::Imported { is_update, healed } => {
+                if is_update {
+                    self.report.updated += 1;
+                } else {
+                    self.report.added += 1;
+                }
+                self.report.healed += healed;
+            }
+            EntryOutcome::ImportFailed => self.report.errors += 1,
+        }
+    }
+}
+
+fn record_walk_error(
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    failed: &mut HashSet<PathBuf>,
+    root: &Path,
+    error: &LibraryWalkError,
+) -> Result<EntryOutcome, ScanError> {
+    // A walk error may name a directory or an unstatable child;
+    // poison both it and its parent before recording the error.
+    let failed_path = error.path.as_deref().unwrap_or(root);
+    vanish::poison_walk_failure(source, failed, failed_path);
+    let err_path = failed_path.to_string_lossy().to_string();
+    let kind = match error.kind {
+        LibraryWalkErrorKind::PermissionDenied => ImportErrorKind::PermissionDenied,
+        LibraryWalkErrorKind::Io => ImportErrorKind::Io,
+        LibraryWalkErrorKind::Unknown => ImportErrorKind::Unknown,
+    };
+    import_errors::record_error(
+        tx,
+        &err_path,
+        kind,
+        &format!("directory traversal error: {}", error.detail),
+        now_unix(),
+    )?;
+    Ok(EntryOutcome::WalkError)
+}
+
+/// Root-Guard case (a): a root the source cannot see is not evidence about any
+/// file beneath it, so the scan reports back without a walk and without
+/// touching the database at all. `None` means the walk may proceed.
+fn guard_root_before_walk(source: &dyn LibrarySource, root: &Path) -> Option<ScanOutcome> {
+    // No absoluteness assertion here any more. It used to live at this line and
+    // it was the wrong layer: nothing the scanner does needs an absolute root —
+    // it hands the root to the source and reads back what the source says. The
+    // requirement belongs to `UnixLibrarySource`'s ancestor walk, and it now
+    // sits there, next to the guarantee it protects.
+    //
+    // This is not a formality. A SAF root is a content URI, and
+    // `Path::is_absolute` is false for one (it has no leading `/`), so this
+    // assertion fired on the first scan a real Android source ever attempted.
+    if source.probe(root, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
+        // Root-Guard case (a): no walk, no database write at all — see
+        // `scan_folder_inner`'s `## Root guard` doc section.
+        tracing::warn!(
+            root = %root.display(),
+            "scan: root does not exist; reporting RootUnavailable without touching the database"
+        );
+        return Some(ScanOutcome::RootUnavailable {
+            root: root.to_path_buf(),
+        });
+    }
+    None
+}
+
+fn handle_walk_item(
+    item: LibraryWalkItem,
+    root: &Path,
+    state: &mut WalkState,
+    mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
+    scan: &mut entry::EntryScan<'_, '_, '_>,
+    progress: &mut Option<scan_progress::ScanProgressReporter<'_>>,
+) -> Result<(), ScanError> {
+    let entry = match item {
+        LibraryWalkItem::Error(error) => {
+            let outcome =
+                record_walk_error(scan.source, scan.tx, &mut state.trace.failed, root, &error)?;
+            state.record(&outcome);
+            return Ok(());
+        }
+        LibraryWalkItem::Entry(entry) => entry,
+    };
+    mobile_sync.observe(scan.source, root, &entry);
+    let LibraryEntry {
+        path,
+        is_file,
+        metadata,
+    } = entry;
+    state.trace.observed_paths.insert(path.clone());
+    if !is_file {
+        state.trace.dirs.insert(path);
+        state.record(&EntryOutcome::Directory);
+        return Ok(());
+    }
+    let outcome = entry::scan_entry(scan, &path, metadata)?;
+    if outcome.examined_audio_file() {
+        if let Some(progress) = progress {
+            progress.advance(&path);
+        }
+    }
+    state.record(&outcome);
+    Ok(())
+}
+
+fn walk_root<'source>(
+    source: &'source dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    state: &mut WalkState,
+    mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
+    mount_cache: &mut mount::MountPointCache<'source>,
+    progress: &mut Option<scan_progress::ScanProgressReporter<'_>>,
+) -> Result<(), ScanError> {
+    let mut scan = entry::EntryScan {
+        source,
+        tx,
+        mount_cache,
+    };
+    let mut walk_failure = None;
+    source::walk_with(
+        source,
+        root,
+        LibraryWalkOrder::Native,
+        |item| match handle_walk_item(item, root, state, mobile_sync, &mut scan, progress) {
+            Ok(()) => LibraryWalkControl::Continue,
+            Err(error) => {
+                walk_failure = Some(error);
+                LibraryWalkControl::Stop
+            }
+        },
+    );
+    if let Some(error) = walk_failure {
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// The metadata a mobile sync left beside the audio, applied inside the walk's
+/// own transaction so the sidecars and the rows they describe commit together.
+fn apply_mobile_sync(
+    mobile_sync: &mobile_sync::MobileSyncDiscovery,
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    report: &mut ScanReport,
+) -> Result<(), ScanError> {
+    report.updated = report
+        .updated
+        .saturating_add(mobile_sync.apply_metadata(source, tx)?);
+    mobile_sync.register_analysis_sidecars(tx)?;
+    mobile_sync.register_device_paths(tx)?;
+    Ok(())
+}
+
+/// What the reconcile phase is allowed to reason about: the rows the catalog
+/// still calls present under `root`, what the walk proved about the tree, and —
+/// only when the walk found no audio file at all — the wider evidence the root
+/// guard needs.
+struct VanishEvidence {
+    candidates: Vec<(i64, String, Option<i64>)>,
+    evidence: Option<vanish::WalkEvidence>,
+    guard_evidence: Option<Vec<(i64, String, Option<i64>)>>,
+}
+
+fn gather_vanish_evidence(
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    trace: WalkTrace,
+) -> Result<VanishEvidence, ScanError> {
+    let WalkTrace {
+        audio_files_seen,
+        observed_paths,
+        dirs,
+        failed,
+    } = trace;
+    // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
+    // outcome. The guard's own evidence, `guard_evidence` (the wider
+    // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
+    // root`'s doc comment for why it must NOT be `candidates`), is only
+    // queried when the walk found nothing, the same short-circuit
+    // `root_unavailable` used before this was split into two lists — so a
+    // scan that actually found audio files never pays for the extra query.
+    let candidates = vanish::present_candidates_under_root(tx, root)?;
+    // A walk that saw no audio file at all is exactly the situation Android
+    // cannot distinguish from lost storage. An empty walk is a question, not
+    // proof: layer 3 stays silent and only a real source `Absent` still marks.
+    let evidence = vanish::evidence_after_walk(audio_files_seen, observed_paths, &dirs, &failed);
+    let guard_evidence = if audio_files_seen == 0 {
+        Some(vanish::guard_evidence_under_root(tx, root)?)
+    } else {
+        None
+    };
+    Ok(VanishEvidence {
+        candidates,
+        evidence,
+        guard_evidence,
+    })
+}
+
+/// Root-Guard case (b) or the mark phase: decides whether this scan may say
+/// anything about the files it did not see, and returns the outcome the
+/// transaction will commit.
+fn decide_outcome(
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    root: &Path,
+    evidence: VanishEvidence,
+    mut report: ScanReport,
+) -> Result<ScanOutcome, ScanError> {
+    let root_unavailable = evidence.guard_evidence.as_ref().is_some_and(|guard| {
+        !guard.is_empty() && !vanish::any_candidate_confirms_root_with(source, guard, root)
+    });
+    if root_unavailable {
+        // Root-Guard case (b): see `scan_folder_inner`'s `## Root guard` doc
+        // section. The upserts the walk itself produced (normally none,
+        // since `audio_files_seen == 0`, but a traversal error is still
+        // possible) still commit below — only the mark phase is skipped.
+        tracing::warn!(
+            root = %root.display(),
+            candidate_count = evidence.guard_evidence.map_or(0, |e| e.len()),
+            "scan: walk found no audio files and no known track under root confirms the \
+             root's current device; reporting RootUnavailable instead of marking tracks missing"
+        );
+        return Ok(ScanOutcome::RootUnavailable {
+            root: root.to_path_buf(),
+        });
+    }
+    let reclassified =
+        vanish::reclassify_missing_with(source, tx, root, evidence.evidence.as_ref(), now_unix())?;
+    report.vanished = vanish::mark_vanished_with(
+        source,
+        tx,
+        root,
+        evidence.candidates,
+        evidence.evidence.as_ref(),
+    )?;
+    // T0.3: one collective change-log row per scan that actually touched
+    // the catalog (never per track, never for a no-op reconcile), inside
+    // the same transaction as the walk so the event and the rows it
+    // announces commit together. Foreign scanners (`reprise-cli scan`)
+    // wake the running app through this; the app's own scans carry its
+    // writer token and are filtered out by its own consumer.
+    if scan_touched_library(&report) || reclassified > 0 {
+        crate::events::record(tx, "library", "", "scan")?;
+        crate::library::startup_tasks::advance_library_signature_in(tx)?;
+    }
+    Ok(ScanOutcome::Completed(report))
+}
+
 /// Walks `root`, upserting every audio file found, then — in the SAME
 /// transaction — reconciles whatever the walk did NOT find: rows the DB
 /// still believes are present under `root` whose file has actually vanished.
@@ -196,8 +484,8 @@ fn scan_folder_with_progress_from(
 /// individual file under it — it only knows "my root is unreachable". Before
 /// the walk even starts, a failed source probe short-circuits straight to
 /// [`ScanOutcome::RootUnavailable`] with no walk and no database write at
-/// all (`import_errors` included) — see Root-Guard case (a) in this
-/// function's test suite.
+/// all (`import_errors` included) — see Root-Guard case (a) in the
+/// `vanished_tests` module.
 ///
 /// A subtler case remains even when `root` itself resolves to *some*
 /// directory: a removable/network mount that hasn't come up yet often still
@@ -256,443 +544,46 @@ fn scan_folder_with_progress_from(
 /// comment for the exact hint contract a later query layer/sidebar badge
 /// must use.
 ///
-/// Concretely, in the walk loop below: a pass-1 success still calls
-/// `import_errors::clear_error` (unchanged — the self-healing rule
-/// sharpens, it doesn't change, for that case); a pass-2 (untagged) success
-/// calls `import_errors::record_error` with pass 1's own `(kind, detail)`
-/// instead — refreshing the hint's `last_seen`/`seen_count` rather than
-/// deleting it. Only a later scan that achieves a real pass-1 success (the
-/// file got re-tagged) clears it.
+/// Concretely, `scanner_entry::record_hint_or_healing`, called while the walk
+/// processes an entry, still clears the error after a pass-1 success
+/// (unchanged — the self-healing rule sharpens, it doesn't change, for that
+/// case); after a pass-2 (untagged) success it records pass 1's own `(kind,
+/// detail)` instead — refreshing the hint's `last_seen`/`seen_count` rather
+/// than deleting it. Only a later scan that achieves a real pass-1 success
+/// (the file got re-tagged) clears it.
 fn scan_folder_inner(
     source: &dyn LibrarySource,
     conn: &Connection,
     root: &Path,
     mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
 ) -> Result<ScanOutcome, ScanError> {
-    // No absoluteness assertion here any more. It used to live at this line and
-    // it was the wrong layer: nothing the scanner does needs an absolute root —
-    // it hands the root to the source and reads back what the source says. The
-    // requirement belongs to `UnixLibrarySource`'s ancestor walk, and it now
-    // sits there, next to the guarantee it protects.
-    //
-    // This is not a formality. A SAF root is a content URI, and
-    // `Path::is_absolute` is false for one (it has no leading `/`), so this
-    // assertion fired on the first scan a real Android source ever attempted.
-    if source.probe(root, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
-        // Root-Guard case (a): no walk, no database write at all — see this
-        // function's `## Root guard` doc section.
-        tracing::warn!(
-            root = %root.display(),
-            "scan: root does not exist; reporting RootUnavailable without touching the database"
-        );
-        return Ok(ScanOutcome::RootUnavailable {
-            root: root.to_path_buf(),
-        });
+    if let Some(outcome) = guard_root_before_walk(source, root) {
+        return Ok(outcome);
     }
-
-    let mut report = ScanReport::default();
-    let mut audio_files_seen: u64 = 0;
-    let mut observed_paths = HashSet::<PathBuf>::new();
-    let mut dirs = HashSet::<PathBuf>::new();
-    let mut failed = HashSet::<PathBuf>::new();
     let mut mobile_sync = mobile_sync::MobileSyncDiscovery::default();
     let mut mount_cache = mount::MountPointCache::new(source);
     let tx = conn.unchecked_transaction()?;
-    let mut walk_failure = None;
-    source::walk_with(source, root, LibraryWalkOrder::Native, |item| {
-        let result = (|| -> Result<(), ScanError> {
-            let entry = match item {
-                LibraryWalkItem::Entry(entry) => entry,
-                LibraryWalkItem::Error(error) => {
-                    // A walk error may name a directory or an unstatable child;
-                    // poison both it and its parent before recording the error.
-                    let failed_path = error.path.as_deref().unwrap_or(root);
-                    vanish::poison_walk_failure(source, &mut failed, failed_path);
-                    let err_path = failed_path.to_string_lossy().to_string();
-                    let kind = match error.kind {
-                        LibraryWalkErrorKind::PermissionDenied => ImportErrorKind::PermissionDenied,
-                        LibraryWalkErrorKind::Io => ImportErrorKind::Io,
-                        LibraryWalkErrorKind::Unknown => ImportErrorKind::Unknown,
-                    };
-                    import_errors::record_error(
-                        &tx,
-                        &err_path,
-                        kind,
-                        &format!("directory traversal error: {}", error.detail),
-                        now_unix(),
-                    )?;
-                    report.errors += 1;
-                    return Ok(());
-                }
-            };
-            mobile_sync.observe(source, root, &entry);
-            let path = entry.path;
-            observed_paths.insert(path.clone());
-            if !entry.is_file {
-                dirs.insert(path);
-                return Ok(());
-            }
-            let path = path.as_path();
-            if !is_audio_file(path) {
-                return Ok(());
-            }
-            // Root-Guard input: "did the walk find any audio file at all under
-            // `root`?" — counted regardless of whether this particular file
-            // goes on to be added/updated/skipped/errored below. See this
-            // function's `## Root guard` doc section.
-            audio_files_seen += 1;
-            let path_str = path.to_string_lossy().to_string();
-            // Compute identity before touching tags. An exclusion follows the
-            // same file across a rename and must win over move detection.
-            let metadata =
-                entry
-                    .metadata
-                    .or_else(|| match source.probe(path, LibraryLinkMode::Follow) {
-                        LibraryPathPresence::Present(metadata) => Some(metadata),
-                        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
-                    });
-            let (mtime, stat) = scanner_file_metadata(metadata);
-            let has_file_stat = stat.is_some();
-            let (file_size, identity): (i64, Option<(i64, i64)>) = match stat {
-                Some((size, identity)) => (
-                    size as i64,
-                    identity.map(|(device, inode)| (device as i64, inode as i64)),
-                ),
-                None => (0, None),
-            };
-            let (device, inode) =
-                identity.map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
-            if super::exclusions::matches_file(&tx, path, device, inode)? {
-                report.excluded += 1;
-                if let Some(progress) = &mut progress {
-                    progress.advance(path);
-                }
-                return Ok(());
-            }
-            let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
-            .query_row(
-                "SELECT file_mtime, missing_since, removed_at, untagged FROM tracks WHERE path = ?1",
-                [&path_str],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .ok();
-            let known_mtime = known.map(|(file_mtime, ..)| file_mtime);
-            let known_missing = known.is_some_and(|(_, missing_since, ..)| missing_since.is_some());
-            // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
-            // "Remove from library") independently of ever having been marked
-            // missing — evidence that the file is still sitting at its exact
-            // recorded path outranks that removal (evidence rule, Beschluss
-            // 7/12), so this reappearance check must fire for a tombstoned row
-            // too, not only a missing one.
-            let known_removed = known.is_some_and(|(_, _, removed_at, _)| removed_at.is_some());
-            // A present row still flagged `untagged` (an earlier scan couldn't parse
-            // its container) must NOT take the unchanged-mtime fast path: excluding
-            // it here drops it through to re-read + `repair_damaged_tags`, so a
-            // library imported before auto-repair existed stops staying untagged.
-            let known_untagged = known.is_some_and(|(_, _, _, untagged)| untagged != 0);
-            if known_mtime == Some(mtime) && !known_untagged {
-                if known_missing || known_removed {
-                    // The file reappeared at its exact recorded path with an
-                    // unchanged mtime (NAS remount, restore-from-trash, or a
-                    // tombstoned row whose object turned out to still be
-                    // there): the ordinary incremental fast path would
-                    // otherwise skip it forever, silently ignoring `missing_
-                    // since`/`removed_at` — this is the one case the fast path
-                    // must NOT take, since the row still needs both cleared
-                    // even though nothing else changed. This is also the ONLY
-                    // chance a row whose `mount_point` is NULL (a pre-schema-v10
-                    // row, or any row that was never re-scanned since) has to
-                    // acquire one without its file actually changing — see
-                    // `scanner_mount.rs`'s module doc comment.
-                    let mount_point = mount_cache.resolve(path);
-                    tx.execute(
-                        "UPDATE tracks SET missing_since = NULL, missing_reason = NULL, \
-                     removed_at = NULL, mount_point = ?2 WHERE path = ?1",
-                        rusqlite::params![path_str, mount_point],
-                    )?;
-                    if import_errors::clear_error(&tx, &path_str)? {
-                        report.healed += 1;
-                    }
-                    report.updated += 1;
-                    tracing::info!(
-                        path = %path_str,
-                        was_missing = known_missing,
-                        was_removed = known_removed,
-                        "restored track from evidence (unchanged mtime)"
-                    );
-                } else {
-                    report.skipped_unchanged += 1;
-                }
-                if let Some(progress) = &mut progress {
-                    progress.advance(path);
-                }
-                return Ok(());
-            }
-            // Dismiss-skip fast path: a `stat`, not a tag parse. Must run BEFORE
-            // `read_meta` — see `check_dismissed`'s doc comment. An `untagged` row
-            // is exempt: a dismissal only silences the notification and predates
-            // auto-repair, so skipping here would strand a now-repairable file
-            // forever (its mtime never changes, so it is never re-read).
-            if !known_untagged
-                && import_errors::check_dismissed(&tx, &path_str, mtime, file_size, now_unix())?
-            {
-                if let Some(progress) = &mut progress {
-                    progress.advance(path);
-                }
-                return Ok(());
-            }
-            match track_meta::read_meta_with_fallback(source, path) {
-                Ok(outcome) => {
-                    // Task 1.8: `hint` is `Some((kind, detail))` only when pass 1
-                    // failed but pass 2 rescued the container — see this
-                    // function's `## Hint coexistence` doc section just below.
-                    let (meta, hint) = match outcome {
-                        track_meta::MetaOutcome::Tagged(meta) => (meta, None),
-                        // A file the strict reader couldn't parse is repaired in
-                        // place (damaged containers stripped, fresh ID3v2 written
-                        // from the file name / folder), then re-read as a normal
-                        // tagged import. On any repair failure it stays untagged.
-                        track_meta::MetaOutcome::Untagged { meta, kind, detail } => {
-                            match repair::repair_damaged_tags(path, &meta, kind) {
-                                Some(repaired) => (repaired, None),
-                                None => (meta, Some((kind, detail))),
-                            }
-                        }
-                    };
-                    let untagged = hint.is_some();
-                    let is_update = known_mtime.is_some();
-                    let title = if meta.title.is_empty() {
-                        source.display_name(path).unwrap_or_default()
-                    } else {
-                        meta.title.clone()
-                    };
-                    // Task 1.6: recorded now, while still reachable, and
-                    // memoized per parent dir — see `scanner_mount.rs`.
-                    let mount_point = mount_cache.resolve(path);
-                    // A pass-1 success clears any previous failure for this path
-                    // (a file that errored once and is now readable again must
-                    // not stay in the error log). A pass-2 (untagged) success
-                    // must NOT clear it — instead it refreshes the row with
-                    // pass 1's diagnosis, keeping it alive as a HINT. See this
-                    // function's `## Hint coexistence` doc section.
-                    if let Some((kind, detail)) = hint {
-                        import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
-                    } else if import_errors::clear_error(&tx, &path_str)? {
-                        // Task 1.9: a real pass-1 success (never the pass-2
-                        // hint-refresh branch above) that actually deleted a
-                        // prior error row — see `ScanReport::healed`'s doc
-                        // comment for why the hint case must never land here.
-                        report.healed += 1;
-                    }
-
-                    // Move detection (Stage 2 Task 8) only ever applies to a path
-                    // the DB has never seen before — a file whose path is already
-                    // known just falls through to the ordinary upsert below, even
-                    // if its content changed.
-                    // Skip move detection entirely when `stat` failed above,
-                    // because step 2 would compare against an unknown size.
-                    // Missing identity skips only step 1; the real size still
-                    // makes the fingerprint strategy safe.
-                    let move_candidate = if is_update || !has_file_stat {
-                        None
-                    } else {
-                        move_detect::find_move_candidate_with_source(
-                            source,
-                            &tx,
-                            &move_detect::MoveLookup {
-                                identity,
-                                title: &title,
-                                artist: &meta.artist,
-                                album: &meta.album,
-                                duration_ms: meta.duration_ms,
-                                file_size,
-                            },
-                        )?
-                    };
-
-                    if let Some(candidate) = move_candidate {
-                        // A move: refresh path/tags/filesystem-identity on the
-                        // existing row by id via the shared `apply_file_identity`
-                        // — see its own doc comment for exactly what it touches
-                        // (and, deliberately, doesn't).
-                        move_detect::apply_file_identity(
-                            &tx,
-                            candidate.id,
-                            path,
-                            &title,
-                            &meta,
-                            untagged,
-                            &move_detect::FileIdentity {
-                                file_mtime: mtime,
-                                file_size,
-                                device,
-                                inode,
-                                mount_point: mount_point.clone(),
-                            },
-                        )?;
-                        // Clear a stale import_errors row under the old path too
-                        // (e.g. the old location briefly failed to read before
-                        // being moved away) — the new path was already cleared
-                        // above. Unconditional even for an untagged import: this
-                        // is the OLD path's row, a different path string from
-                        // the hint (if any) recorded above for the CURRENT path.
-                        if import_errors::clear_error(&tx, &candidate.path)? {
-                            report.healed += 1;
-                        }
-                        report.moved += 1;
-                    } else {
-                        // `ON CONFLICT(path)` fires whenever this path already
-                        // has a row — including one still carrying `removed_at`
-                        // from a prior tombstone: the walk just proved the file
-                        // is there, so `removed_at=NULL` in the `DO UPDATE SET`
-                        // below resurrects it here too (evidence rule, Beschluss
-                        // 7/12), same as the fast-path-restore branch and
-                        // `apply_file_identity`'s move arm above.
-                        let (
-                            title_p,
-                            artist_p,
-                            album_p,
-                            album_artist_p,
-                            artist_mbid_p,
-                            year_p,
-                            track_no_p,
-                            disc_no_p,
-                            genre_p,
-                            duration_ms_p,
-                            bitrate_kbps_p,
-                            untagged_p,
-                        ) = tag_param_values(&title, &meta, untagged);
-                        tx.execute(
-                        "INSERT INTO tracks (path, title, artist, album, album_artist, artist_mbid,
-                           year, track_no, disc_no, genre, duration_ms, bitrate_kbps, added_at,
-                           file_mtime, file_size, device, inode, mount_point, untagged)
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
-                         ON CONFLICT(path) DO UPDATE SET
-                           title=?2, artist=?3, album=?4, album_artist=?5,
-                           artist_mbid=COALESCE(?6, artist_mbid),
-                           artist_mbid_negative=CASE WHEN ?6 IS NOT NULL THEN 0 ELSE artist_mbid_negative END,
-                           year=?7, track_no=?8, disc_no=?9, genre=?10,
-                           duration_ms=?11, bitrate_kbps=?12, file_mtime=?14,
-                           missing_since=NULL, missing_reason=NULL, removed_at=NULL,
-                           file_size=?15, device=?16, inode=?17, mount_point=?18,
-                           untagged=?19",
-                        rusqlite::params![
-                            path_str,
-                            title_p,
-                            artist_p,
-                            album_p,
-                            album_artist_p,
-                            artist_mbid_p,
-                            year_p,
-                            track_no_p,
-                            disc_no_p,
-                            genre_p,
-                            duration_ms_p,
-                            bitrate_kbps_p,
-                            now_unix(),
-                            mtime,
-                            file_size,
-                            device,
-                            inode,
-                            mount_point,
-                            untagged_p,
-                        ],
-                    )?;
-                        if is_update {
-                            report.updated += 1;
-                        } else {
-                            report.added += 1;
-                        }
-                    }
-                }
-                Err(ScanError::Import { kind, detail }) => {
-                    // Both passes failed: `kind`/`detail` are pass 2's
-                    // classification (see `read_meta_with_fallback`'s doc
-                    // comment). Episode upsert — see `record_error`'s doc
-                    // comment.
-                    import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
-                    report.errors += 1;
-                }
-                // `read_meta_with_fallback` only ever produces `Import`;
-                // propagating any other variant is safer than an
-                // `unreachable!()` panic if that changes.
-                Err(other) => return Err(other),
-            }
-            if let Some(progress) = &mut progress {
-                progress.advance(path);
-            }
-            Ok(())
-        })();
-        match result {
-            Ok(()) => LibraryWalkControl::Continue,
-            Err(error) => {
-                walk_failure = Some(error);
-                LibraryWalkControl::Stop
-            }
-        }
-    });
-    if let Some(error) = walk_failure {
-        return Err(error);
-    }
-
-    report.updated = report
-        .updated
-        .saturating_add(mobile_sync.apply_metadata(source, &tx)?);
-    mobile_sync.register_analysis_sidecars(&tx)?;
-    mobile_sync.register_device_paths(&tx)?;
-
-    // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
-    // outcome. The guard's own evidence, `guard_evidence` (the wider
-    // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
-    // root`'s doc comment for why it must NOT be `candidates`), is only
-    // queried when the walk found nothing, the same short-circuit
-    // `root_unavailable` used before this was split into two lists — so a
-    // scan that actually found audio files never pays for the extra query.
-    let candidates = vanish::present_candidates_under_root(&tx, root)?;
-    // A walk that saw no audio file at all is exactly the situation Android
-    // cannot distinguish from lost storage. An empty walk is a question, not
-    // proof: layer 3 stays silent and only a real source `Absent` still marks.
-    let evidence = vanish::evidence_after_walk(audio_files_seen, observed_paths, &dirs, &failed);
-    let guard_evidence = if audio_files_seen == 0 {
-        Some(vanish::guard_evidence_under_root(&tx, root)?)
-    } else {
-        None
+    let mut state = WalkState {
+        report: ScanReport::default(),
+        trace: WalkTrace {
+            audio_files_seen: 0,
+            observed_paths: HashSet::new(),
+            dirs: HashSet::new(),
+            failed: HashSet::new(),
+        },
     };
-    let root_unavailable = guard_evidence.as_ref().is_some_and(|evidence| {
-        !evidence.is_empty() && !vanish::any_candidate_confirms_root_with(source, evidence, root)
-    });
-
-    let outcome = if root_unavailable {
-        // Root-Guard case (b): see this function's `## Root guard` doc
-        // section. The upserts the walk itself produced (normally none,
-        // since `audio_files_seen == 0`, but a traversal error is still
-        // possible) still commit below — only the mark phase is skipped.
-        tracing::warn!(
-            root = %root.display(),
-            candidate_count = guard_evidence.map_or(0, |e| e.len()),
-            "scan: walk found no audio files and no known track under root confirms the \
-             root's current device; reporting RootUnavailable instead of marking tracks missing"
-        );
-        ScanOutcome::RootUnavailable {
-            root: root.to_path_buf(),
-        }
-    } else {
-        let reclassified =
-            vanish::reclassify_missing_with(source, &tx, root, evidence.as_ref(), now_unix())?;
-        report.vanished =
-            vanish::mark_vanished_with(source, &tx, root, candidates, evidence.as_ref())?;
-        // T0.3: one collective change-log row per scan that actually touched
-        // the catalog (never per track, never for a no-op reconcile), inside
-        // the same transaction as the walk so the event and the rows it
-        // announces commit together. Foreign scanners (`reprise-cli scan`)
-        // wake the running app through this; the app's own scans carry its
-        // writer token and are filtered out by its own consumer.
-        if scan_touched_library(&report) || reclassified > 0 {
-            crate::events::record(&tx, "library", "", "scan")?;
-            crate::library::startup_tasks::advance_library_signature_in(&tx)?;
-        }
-        ScanOutcome::Completed(report)
-    };
+    walk_root(
+        source,
+        &tx,
+        root,
+        &mut state,
+        &mut mobile_sync,
+        &mut mount_cache,
+        &mut progress,
+    )?;
+    apply_mobile_sync(&mobile_sync, source, &tx, &mut state.report)?;
+    let evidence = gather_vanish_evidence(&tx, root, state.trace)?;
+    let outcome = decide_outcome(source, &tx, root, evidence, state.report)?;
     tx.commit()?;
     Ok(outcome)
 }
@@ -712,18 +603,20 @@ fn scan_touched_library(report: &ScanReport) -> bool {
         > 0
 }
 
-// Task 1.5: the vanish-mark phase `scan_folder_inner` folds in above lives in
-// its own file purely to keep this one under the project's 800-line rule —
-// see `scanner_vanish.rs`'s own module doc comment. Not `#[cfg(test)]`: this
-// is production code, always compiled.
-// Scan progress counting/reporting lives in its own file for the same
-// 800-line reason — see `scanner_progress.rs`'s own module doc comment.
+// Scan progress counting/reporting owns the counting and delivery contract;
+// see `scanner_progress.rs`'s own module doc comment.
 #[path = "scanner_progress.rs"]
 mod scan_progress;
+
+#[path = "scanner_entry.rs"]
+mod entry;
 
 #[path = "scanner_mobile_sync.rs"]
 mod mobile_sync;
 
+// Reconcile owns every conclusion about catalog rows the walk did not find;
+// see `scanner_vanish.rs`'s own module doc comment. Not `#[cfg(test)]`: this
+// is production code, always compiled.
 #[path = "scanner_vanish.rs"]
 mod vanish;
 
