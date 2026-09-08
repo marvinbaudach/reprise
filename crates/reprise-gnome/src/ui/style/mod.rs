@@ -266,6 +266,10 @@ pub(in crate::ui) fn set_theme(theme: theme::Theme) {
     });
 }
 
+pub(in crate::ui) fn current_theme() -> theme::Theme {
+    CURRENT_THEME.with(Cell::get)
+}
+
 /// Switches between Reprise's brand accent and libadwaita's system accent,
 /// then reloads the palette provider so every named-color consumer updates.
 pub(in crate::ui) fn set_accent_source(source: accent::AccentSource) {

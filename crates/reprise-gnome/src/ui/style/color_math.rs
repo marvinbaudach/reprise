@@ -26,7 +26,7 @@ pub(in crate::ui::style) fn relative_luminance(color: [u8; 3]) -> f64 {
 }
 
 /// WCAG contrast ratio between two opaque sRGB colors.
-pub(in crate::ui::style) fn contrast_ratio(first: [u8; 3], second: [u8; 3]) -> f64 {
+pub(in crate::ui) fn contrast_ratio(first: [u8; 3], second: [u8; 3]) -> f64 {
     let first = relative_luminance(first);
     let second = relative_luminance(second);
     let (lighter, darker) = if first > second {
@@ -87,7 +87,7 @@ pub(in crate::ui::style) fn oklab_to_linear_rgb(
 
 /// Parses a `#RRGGBB` string. Palette and accent values are authored as hex,
 /// so every consumer of those needs this.
-pub(in crate::ui::style) fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
+pub(in crate::ui) fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
     let hex = hex.strip_prefix('#')?;
     if hex.len() != 6 {
         return None;

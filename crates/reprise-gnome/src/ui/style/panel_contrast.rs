@@ -6,6 +6,7 @@ const NORMAL_TEXT_MINIMUM_RATIO: f64 = 4.5;
 
 /// White-glyph contrast measured against the default Reprise brand accent.
 const DEFAULT_BRAND_ACCENT_GLYPH_RATIO: f64 = 1.69;
+const DEFAULT_LIGHT_ACCENT_GLYPH_RATIO: f64 = 6.02;
 
 /// Rounding tolerance for the recorded default-brand-accent measurement.
 const DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE: f64 = 0.01;
@@ -278,6 +279,27 @@ fn play_16_the_play_buttons_keep_the_playback_accent_and_white_glyph() {
             < DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE,
         "PLAY-16 records the default brand accent's measured 1.69:1 cost; a build with a \
          different REPRISE_APP_ACCENT will legitimately differ, measured {ratio:.2}:1"
+    );
+
+    let light_css = super::theme::theme_css(
+        super::theme::Theme::DEFAULT,
+        false,
+        super::accent::AccentSource::App,
+    );
+    let light_accent = light_css
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("@define-color accent_color ")
+                .and_then(|value| value.strip_suffix(';'))
+        })
+        .and_then(parse_hex_rgb)
+        .expect("light app accent is emitted as hex");
+    let light_ratio = contrast_ratio(white, light_accent);
+    assert!(
+        (light_ratio - DEFAULT_LIGHT_ACCENT_GLYPH_RATIO).abs()
+            < DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE,
+        "PLAY-16 records the default derived light accent's measured 6.02:1 pairing; measured \
+         {light_ratio:.2}:1"
     );
 }
 

@@ -468,7 +468,7 @@ pub(in crate::ui) fn css() -> String {
             a white glyph as its product identity. This measured 1.69:1 and does
             not meet the 3:1 a non-text control would otherwise owe. That is the
             dark measurement; in light, the playback accent follows the derived
-            accent colour and raises the ratio. */\n\
+            accent colour and raises the ratio to 6.02:1. */\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \

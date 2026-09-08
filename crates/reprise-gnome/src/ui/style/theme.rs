@@ -71,11 +71,7 @@ impl Palette {
     /// tint reproduced the same blind spot one rung up: the checked player-bar
     /// toggle fills brighter than a chip, and its label measured 2.97:1 in the
     /// dark palettes while this function reported the palette safe.
-    pub(in crate::ui::style) fn critical_accent_surface(
-        &self,
-        is_dark: bool,
-        accent: [u8; 3],
-    ) -> [u8; 3] {
+    pub(in crate::ui) fn critical_accent_surface(&self, is_dark: bool, accent: [u8; 3]) -> [u8; 3] {
         use super::color_math::{composite, parse_hex_rgb, relative_luminance};
 
         const WHITE: [u8; 3] = [255, 255, 255];
