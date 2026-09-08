@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import java.util.concurrent.Executors
+import kotlinx.coroutines.asCoroutineDispatcher
 import org.junit.Assert.assertSame
 import org.junit.Rule
 import org.junit.Test
@@ -79,7 +80,8 @@ class ArtworkCompositionTest {
             ambientColors = null,
         )
         cache.putArtwork(prefetched, warmed)
-        val fullSize = Executors.newSingleThreadExecutor()
+        val fullSizeWorker = Executors.newSingleThreadExecutor()
+        val fullSize = fullSizeWorker.asCoroutineDispatcher()
         // The list read succeeds and the full-size one does not: that asymmetry,
         // not a wholly unreadable track, is what puts a real cover on the shelf
         // and still sends the panel down the generated path.
@@ -89,7 +91,7 @@ class ArtworkCompositionTest {
             },
             decode = { Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888) },
             cache = cache,
-            fullSizeWorker = fullSize,
+            fullSizeDispatcher = fullSize,
         )
         var shown: ArtworkVisual? = null
 
@@ -107,12 +109,12 @@ class ArtworkCompositionTest {
             compose.waitForIdle()
             assertSame("the seed must cross sizes", warmed, shown)
 
-            fullSize.submit { }.get()
+            fullSizeWorker.submit { }.get()
             compose.waitForIdle()
             assertSame("the full-size read must not replace it", warmed, shown)
         } finally {
             artwork.shutdown()
-            fullSize.shutdownNow()
+            fullSize.close()
         }
     }
 }
