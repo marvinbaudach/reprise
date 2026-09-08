@@ -105,16 +105,9 @@ internal class ArtworkCache(
     @Synchronized
     fun seedArtwork(request: ArtworkRequest): ArtworkVisual? {
         artwork(request)?.let { return it }
-        val sourceKey = visualShelves.values
-            .asSequence()
-            .flatMap { visuals -> visuals.keys.asSequence() }
-            .filterIsInstance<TrackArtworkKey>()
-            .lastOrNull { key -> key.matchesIdentity(request) }
-        sourceKey?.let { key ->
-            visuals(key.size)[key]?.let { visual ->
-                artworkHits += 1
-                return visual
-            }
+        resolvedArtworkAcrossSizes(request)?.let { visual ->
+            artworkHits += 1
+            return visual
         }
         val fallbackKey = resolvedFallbackShelves.values
             .asSequence()
@@ -135,6 +128,30 @@ internal class ArtworkCache(
         return generatedKey?.let { key -> visuals(key.size)[key] }.also { visual ->
             if (visual != null) artworkHits += 1
         }
+    }
+
+    /**
+     * This track's real cover at whatever size some shelf already holds it.
+     *
+     * Two callers need the same answer for opposite reasons. [seedArtwork] uses
+     * it to put a cover on screen immediately while the exact size still
+     * resolves. The full-size read uses it to refuse a downgrade: a read that
+     * comes back empty must not hand a generated cover to a track whose real one
+     * is already in memory, because the viewer sees that as the cover appearing
+     * and then falling back to the note.
+     *
+     * It deliberately ignores generated entries. A generated cover is never a
+     * reason to keep another size's answer.
+     */
+    @Synchronized
+    fun resolvedArtworkAcrossSizes(request: ArtworkRequest): ArtworkVisual? {
+        val sourceKey = visualShelves.values
+            .asSequence()
+            .flatMap { visuals -> visuals.keys.asSequence() }
+            .filterIsInstance<TrackArtworkKey>()
+            .lastOrNull { key -> key.matchesIdentity(request) }
+            ?: return null
+        return visuals(sourceKey.size)[sourceKey]
     }
 
     @Synchronized

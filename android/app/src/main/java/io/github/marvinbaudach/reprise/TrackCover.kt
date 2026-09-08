@@ -219,7 +219,8 @@ internal class TrackArtwork(
             return generatedVisual(request, resolved = true)
         } else {
             resolve(request.trackUri, request.size)?.let(decode)
-                ?: return generatedVisual(request, resolved = true)
+                ?: return cache.resolvedArtworkAcrossSizes(request)
+                    ?: generatedVisual(request, resolved = true)
         }
         return ArtworkVisual(
             image = bitmap.asImageBitmap(),
