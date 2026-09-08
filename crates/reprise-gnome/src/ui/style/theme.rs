@@ -239,7 +239,9 @@ pub(in crate::ui) fn theme_css(
     is_dark: bool,
     source: super::accent::AccentSource,
 ) -> String {
-    use super::tokens::{HINT_TEXT_ALPHA, PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA};
+    use super::tokens::{
+        HAIRLINE_DARK, HAIRLINE_LIGHT, HINT_TEXT_ALPHA, PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA,
+    };
 
     let p = if is_dark {
         theme.palette()
@@ -256,6 +258,11 @@ pub(in crate::ui) fn theme_css(
         is_dark,
     );
     let category_css = super::category_colors::theme_definitions(is_dark);
+    let hairline = if is_dark {
+        HAIRLINE_DARK
+    } else {
+        HAIRLINE_LIGHT
+    };
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -278,7 +285,8 @@ pub(in crate::ui) fn theme_css(
          @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
          @define-color reprise_hint_fg_color alpha({fg}, {hint_alpha});\n\
          @define-color reprise_dim_fg_color {dim};\n\
-         @define-color reprise_player_accent @accent_color;\n",
+         @define-color reprise_player_accent @accent_color;\n\
+         @define-color reprise_hairline {hairline};\n",
         win = p.window_bg,
         fg = p.fg,
         view = p.view_bg,
@@ -294,6 +302,7 @@ pub(in crate::ui) fn theme_css(
         secondary_alpha = SECONDARY_TEXT_ALPHA,
         hint_alpha = HINT_TEXT_ALPHA,
         dim = p.dim_fg,
+        hairline = hairline,
     )
 }
 
@@ -459,6 +468,24 @@ mod tests {
                     assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
                 }
             }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn hairline_token_uses_gtk_define_color_grammar() {
+        gtk4::init().unwrap();
+        for is_dark in [true, false] {
+            let mut css = theme_css(Theme::PerpetualRain, is_dark, AccentSource::App);
+            assert!(css.contains("@define-color reprise_hairline rgba("));
+            css.push_str("@define-color grammar_alpha alpha(@reprise_hairline, 0.5);\n");
+            let errors = crate::ui::style::css_parse_errors(&css);
+            assert!(
+                errors.is_empty(),
+                "theme CSS has {} parser error(s):\n  {}",
+                errors.len(),
+                errors.join("\n  ")
+            );
         }
     }
 

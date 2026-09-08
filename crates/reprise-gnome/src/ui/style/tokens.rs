@@ -70,6 +70,14 @@ pub(in crate::ui) const SECTION_HEADER_MIN_HEIGHT: i32 = 36;
 
 // --- Redesign interaction + surface vocabulary (see `super::interactions`) ---
 
+/// Hairline colour on dark surfaces, kept literal so the dark appearance is
+/// unchanged when the light appearance receives its own edge colour.
+pub(in crate::ui) const HAIRLINE_DARK: &str = "rgba(255, 255, 255, 0.06)";
+
+/// Hairline colour on light surfaces. The dark twin cannot be reused because
+/// a translucent white edge disappears against the near-white palettes.
+pub(in crate::ui) const HAIRLINE_LIGHT: &str = "rgba(0, 0, 6, 0.09)";
+
 /// Corner radius for layered redesign surfaces (cards, panels).
 pub(in crate::ui) const RADIUS_SURFACE: &str = "12px";
 
