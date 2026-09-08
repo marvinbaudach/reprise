@@ -37,6 +37,7 @@ class DurationFormatTest {
         // Mirrors crates/reprise-core/src/format.rs.
         assertEquals("3:01", formatDuration(181_000))
         assertEquals("0:59", formatDuration(59_000))
+        assertEquals("1:00", formatDuration(60_000))
         assertEquals("1:02:33", formatDuration(3_753_000))
         assertEquals("0:00", formatDuration(-5))
         assertEquals("0:00", formatDuration(0))

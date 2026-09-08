@@ -418,6 +418,11 @@ mod tests {
     }
 
     #[test]
+    fn formats_exact_minute_boundary() {
+        assert_eq!(format_duration(60_000), "1:00");
+    }
+
+    #[test]
     fn formats_hours_once_past_the_hour_mark() {
         assert_eq!(format_duration(3_753_000), "1:02:33");
     }
