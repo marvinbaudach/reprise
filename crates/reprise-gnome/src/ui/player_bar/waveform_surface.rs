@@ -187,6 +187,7 @@ pub(super) fn draw_cached_bars(
     height: f64,
     head_x: f64,
     accent: (f64, f64, f64),
+    appearance: WaveformAppearance,
 ) {
     let (Some(mask), Some(colour)) = (&state.mask_surface, &state.colour_surface) else {
         return;
@@ -197,8 +198,22 @@ pub(super) fn draw_cached_bars(
 
     match state.colouring {
         SeekColouring::Frequency => {
-            paint_surface(cr, colour, UNPLAYED_ALPHA, hover_x, width, height);
-            paint_surface(cr, colour, HOVER_PREVIEW_ALPHA, head_x, hover_x, height);
+            paint_surface(
+                cr,
+                colour,
+                appearance.unplayed_alpha,
+                hover_x,
+                width,
+                height,
+            );
+            paint_surface(
+                cr,
+                colour,
+                appearance.hover_preview_alpha,
+                head_x,
+                hover_x,
+                height,
+            );
             paint_surface(cr, colour, 1.0, 0.0, head_x, height);
         }
         SeekColouring::Solid => {
@@ -210,7 +225,7 @@ pub(super) fn draw_cached_bars(
         }
     }
 
-    render::draw_section_marks(cr, width, height, state);
+    render::draw_section_marks(cr, width, height, state, appearance);
 
     if let Some(drag) = state.drag_fraction {
         let drag_x = (drag * width).clamp(0.0, width);
@@ -218,7 +233,7 @@ pub(super) fn draw_cached_bars(
             cr,
             mask,
             accent,
-            GHOST_ALPHA,
+            appearance.ghost_alpha,
             head_x.min(drag_x),
             head_x.max(drag_x),
             height,
