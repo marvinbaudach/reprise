@@ -4,6 +4,49 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.157] - 2026-09-08
+
+### Library
+
+- Every album gets its own cover again. One embedded picture reused across many
+  album tags made a band's whole discography show the same artwork; Reprise now
+  notices a picture already seen under a different album and lets the automatic
+  download step in instead of trusting the wrong one.
+
+### Browsing
+
+- Releases, Radio, Podcasts and Concerts share one filter grammar. The same
+  chips, the same "+ Add filter" popover and the same sorting behave alike in
+  every source list, and "+ Add filter" turns insensitive once no facet is left
+  to add.
+
+### Editing and deleting
+
+- The window stays responsive while you edit or delete. The tag editor opens
+  before its cover art has arrived, a delete batch uses one trash session
+  instead of one connection per file, and the deleted rows leave the list before
+  the sidebar and browse bar catch up.
+- A tag save only touches what it changed. A metadata-only save re-renders the
+  edited cells instead of rebuilding the list, and a save that patches the sort
+  field moves the edited block and keeps it selected in the viewport instead of
+  reloading every row.
+- Up Next pays for the change only. Deleting a track updates the rows around it
+  rather than the whole queue projection.
+
+### Discovery
+
+- The Updates popover no longer stops updating for good. A failed artist fetch
+  is due again at the next check instead of counting as fresh, a check in which
+  at least one artist succeeded counts as completed, failures reach the log, and
+  the footer keeps pulsing while a check runs.
+
+### Android
+
+- Library reads leave the main thread, and the results keep up with you. The
+  newest search answer wins instead of being overwritten by a slower earlier
+  one, an artist you abandoned can no longer reopen itself over what you are
+  doing now, and an error stays with the surface that produced it.
+
 ## [0.1.139] - 2026-09-04
 
 ### Playback
