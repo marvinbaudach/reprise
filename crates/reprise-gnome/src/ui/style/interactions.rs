@@ -22,7 +22,7 @@ pub(super) fn css() -> String {
            box-shadow: 0 0 {FOCUS_GLOW_BLUR} alpha(@accent_color, {FOCUS_GLOW_ALPHA}); \
            transition: box-shadow {TRANSITION}; }}\n\
          .reprise-hover {{ transition: background-color {TRANSITION}; }}\n\
-         .reprise-hover:hover {{ background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
+         .reprise-hover:hover {{ background-color: @reprise_hover_bg; }}\n\
          .reprise-surface {{ \
            border-radius: {RADIUS_SURFACE}; \
            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
@@ -65,6 +65,11 @@ mod tests {
         assert!(css.contains(":focus-within"));
         assert!(css.contains("@accent_color"));
         assert!(css.contains(".reprise-hover:hover"));
+        assert!(css.contains("background-color: @reprise_hover_bg"));
+        assert!(css.contains(&format!(
+            "background-color: alpha(@accent_bg_color, {})",
+            super::super::tokens::HOVER_BG_ALPHA
+        )));
         assert!(css.contains(".reprise-surface"));
         assert!(css.contains(".reprise-panel-toggle:checked"));
         assert!(css.contains("border-radius"));

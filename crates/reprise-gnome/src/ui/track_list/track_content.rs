@@ -24,9 +24,10 @@ pub(in crate::ui) fn build(
 
 pub(in crate::ui) fn css() -> String {
     ".reprise-list-status-bar { \
-       background-color: @sidebar_bg_color; \
+       background-color: @reprise_pill_bg; \
        color: @reprise_secondary_fg_color; \
-       border: 1px solid rgba(255, 255, 255, 0.10); \
+       border: 1px solid @reprise_pill_border; \
+       box-shadow: 0 1px 3px @reprise_cover_shadow; \
        border-radius: 999px; }"
         .into()
 }
@@ -45,8 +46,9 @@ mod tests {
         let css = css();
 
         assert!(css.contains(".reprise-list-status-bar"));
-        assert!(css.contains("background-color: @sidebar_bg_color"));
-        assert!(css.contains("border: 1px solid rgba(255, 255, 255, 0.10)"));
+        assert!(css.contains("background-color: @reprise_pill_bg"));
+        assert!(css.contains("border: 1px solid @reprise_pill_border"));
+        assert!(css.contains("box-shadow: 0 1px 3px @reprise_cover_shadow"));
         assert!(css.contains("border-radius: 999px"));
         assert!(!css.contains("border-top:"));
     }

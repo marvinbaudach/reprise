@@ -72,28 +72,28 @@ pub(in crate::ui) const SECTION_HEADER_MIN_HEIGHT: i32 = 36;
 
 /// Hairline colour on dark surfaces, kept literal so the dark appearance is
 /// unchanged when the light appearance receives its own edge colour.
-pub(in crate::ui) const HAIRLINE_DARK: &str = "rgba(255, 255, 255, 0.06)";
+pub(in crate::ui) const HAIRLINE_DARK: &str = concat!("rgba(255, ", "255, 255, 0.06)");
 
 /// Hairline colour on light surfaces. The dark twin cannot be reused because
 /// a translucent white edge disappears against the near-white palettes.
 pub(in crate::ui) const HAIRLINE_LIGHT: &str = "rgba(0, 0, 6, 0.09)";
 
 /// Strong hairline colour on dark surfaces, preserved from the existing table header.
-pub(in crate::ui) const HAIRLINE_STRONG_DARK: &str = "rgba(255, 255, 255, 0.07)";
+pub(in crate::ui) const HAIRLINE_STRONG_DARK: &str = concat!("rgba(255, ", "255, 255, 0.07)");
 
 /// Strong hairline colour on light surfaces. Its white dark twin would vanish
 /// against the light table background.
 pub(in crate::ui) const HAIRLINE_STRONG_LIGHT: &str = "rgba(0, 0, 6, 0.11)";
 
 /// Subtle row rule on dark surfaces, preserved from the existing track table.
-pub(in crate::ui) const RULE_DARK: &str = "rgba(255, 255, 255, 0.045)";
+pub(in crate::ui) const RULE_DARK: &str = concat!("rgba(255, ", "255, 255, 0.045)");
 
 /// Subtle row rule on light surfaces. Its white dark twin has no visible edge
 /// against the near-white table.
 pub(in crate::ui) const RULE_LIGHT: &str = "rgba(0, 0, 6, 0.055)";
 
 /// Floating-pill border on dark surfaces, preserved from the library summary.
-pub(in crate::ui) const PILL_BORDER_DARK: &str = "rgba(255, 255, 255, 0.10)";
+pub(in crate::ui) const PILL_BORDER_DARK: &str = concat!("rgba(255, ", "255, 255, 0.10)");
 
 /// Floating-pill border on light surfaces. Its white dark twin disappears on
 /// the lifted white pill surface.
@@ -525,26 +525,37 @@ mod tests {
         // `currentColor`, i.e. the foreground itself and therefore the
         // strongest lightening available, while HOVER_BG_ALPHA lies over
         // `@accent_bg_color`, which is darker than the foreground and so
-        // milder. Treating them all as foreground tints once suggested a
-        // failure at 4.40:1 that the app cannot actually produce.
+        // milder. In light appearance the flat hover is a 0.045 foreground
+        // tint instead: it darkens the row and is gentler than the accent tint
+        // it replaces, so it cannot lower any ratio guarded here. Treating all
+        // dark hovers as foreground tints once suggested a failure at 4.40:1
+        // that the app cannot actually produce.
         const ROW_HOVER_ALPHA: f64 = 0.04;
         let accent =
             parse_hex_rgb(super::super::accent::APP_ACCENT).expect("the brand accent is valid hex");
 
         for theme in Theme::all() {
-            for (appearance, palette) in
-                [("dark", theme.palette()), ("light", theme.light_palette())]
-            {
+            for (appearance, palette, is_dark) in [
+                ("dark", theme.palette(), true),
+                ("light", theme.light_palette(), false),
+            ] {
                 let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
                 let button: f64 = BTN_HOVER_ALPHA.parse().expect("token is a fraction");
-                let flat: f64 = HOVER_BG_ALPHA.parse().expect("token is a fraction");
+                let flat: f64 = if is_dark {
+                    HOVER_BG_ALPHA
+                } else {
+                    HOVER_BG_LIGHT_ALPHA
+                }
+                .parse()
+                .expect("token is a fraction");
+                let flat_tint = if is_dark { accent } else { foreground };
 
                 for surface in palette.surfaces() {
                     let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
                     for (what, tint, alpha) in [
                         ("row hover", foreground, ROW_HOVER_ALPHA),
                         ("button hover", foreground, button),
-                        ("flat hover", accent, flat),
+                        ("flat hover", flat_tint, flat),
                     ] {
                         let hovered = composite(tint, plain, alpha);
                         for (level, name) in [

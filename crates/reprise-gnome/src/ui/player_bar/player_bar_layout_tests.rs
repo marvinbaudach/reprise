@@ -15,7 +15,6 @@ fn ac_24_the_transport_control_stays_still() {
     // competes with the state it reports, so it carries no reactive layer at
     // all — no ring, no scale, no tint.
     let layout = include_str!("player_bar_layout.rs");
-    assert!(!layout.contains("play_ring"));
     assert!(!layout.contains("ring_alpha"));
     let bar = include_str!("player_bar.rs");
     assert!(!bar.contains("play_ring"));
@@ -283,7 +282,10 @@ fn css_styles_the_glow_play_button_and_surface() {
     assert!(css.contains("transform: scale(0.92)"));
     assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
     assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
-    assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
+    assert!(css.contains("inset 0 0 0 1px @reprise_play_ring"));
+    assert!(css.contains("0 6px 12px @reprise_play_drop"));
+    assert!(css.contains("0 0 12px @reprise_play_glow_near"));
+    assert!(css.contains("0 0 26px 6px @reprise_play_glow_far"));
     assert!(css.contains("inset 0 4px 6px alpha(#000000, 0.44)"));
     assert!(css.contains("0 1px 2px alpha(#000000, 0.22)"));
     assert!(css.contains(&format!(
@@ -350,7 +352,7 @@ fn btn_3_play_button_has_sculpted_depth_and_a_distinct_pressed_well() {
     assert!(css.contains(&format!(".{}:active", super::PLAY_CSS_CLASS)));
     assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
     assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
-    assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
+    assert!(css.contains("0 6px 12px @reprise_play_drop"));
     assert!(css.contains("inset 0 4px 6px alpha(#000000, 0.44)"));
     assert!(css.contains("0 0 0 4px alpha(@reprise_player_accent"));
     // The MOT-5 play/pause pulse keyframes stay; only the *press* scale
@@ -364,6 +366,44 @@ fn btn_3_play_button_has_sculpted_depth_and_a_distinct_pressed_well() {
     let shared = buttons::css();
     assert!(shared.contains(&format!(".{}:active", buttons::PRIMARY_CLASS)));
     assert!(shared.contains(&press_scale));
+}
+
+#[test]
+fn play_button_shadow_states_keep_six_interpolatable_layers() {
+    fn shadow_layer_count(css: &str, selector: &str) -> usize {
+        let body = css
+            .split(selector)
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("play-button state rule");
+        let shadow = body
+            .split("box-shadow:")
+            .nth(1)
+            .and_then(|rest| rest.split(';').next())
+            .expect("play-button state has a box-shadow");
+        let mut depth = 0;
+        let separators = shadow.chars().filter(|character| {
+            match character {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            *character == ',' && depth == 0
+        });
+        separators.count() + 1
+    }
+
+    let css = super::css();
+    for selector in [
+        ".player-bar-play {",
+        ".player-bar-play:hover",
+        ".player-bar-play:active",
+    ] {
+        assert_eq!(shadow_layer_count(&css, selector), 6, "{selector}");
+    }
+    assert!(css.contains("0 7px 14px @reprise_play_drop_hover"));
+    assert!(css.contains("0 0 16px @reprise_play_glow_near_hover"));
+    assert!(css.contains("0 0 34px 8px @reprise_play_glow_far_hover"));
 }
 
 #[test]

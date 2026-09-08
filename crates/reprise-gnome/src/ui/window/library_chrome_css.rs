@@ -4,10 +4,10 @@ pub(in crate::ui) fn css() -> String {
     format!(
         ".reprise-library-split .reprise-library-sidebar {{ \
        background-color: @sidebar_bg_color; \
-       border-right: 1px solid rgba(255, 255, 255, 0.06); }}\n\
+       border-right: 1px solid @reprise_hairline; }}\n\
      .reprise-library-header {{ \
        background-color: @headerbar_bg_color; \
-       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }}\n\
+       border-bottom: 1px solid @reprise_hairline; }}\n\
      .reprise-search-popover > contents {{ \
        background-color: @headerbar_bg_color; \
        border: 1px solid alpha(@window_fg_color, 0.16); \

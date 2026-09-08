@@ -462,6 +462,22 @@ mod tests {
     }
 
     #[test]
+    fn system_accent_still_defines_no_adwaita_roles() {
+        for theme in Theme::all() {
+            for is_dark in [true, false] {
+                let css = theme_css(theme, is_dark, AccentSource::System);
+                for name in ["accent_color", "accent_bg_color", "accent_fg_color"] {
+                    assert!(
+                        !css.contains(&format!("@define-color {name}")),
+                        "{theme:?} is_dark={is_dark}: system accent must leave {name} to libadwaita"
+                    );
+                }
+                assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
+            }
+        }
+    }
+
+    #[test]
     fn distinct_themes_produce_distinct_css() {
         assert_ne!(
             theme_css(Theme::PerpetualRain, true, AccentSource::App),

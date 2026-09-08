@@ -6,7 +6,21 @@ fn ac_24_static_ellipse_dims_so_the_bloom_can_carry_the_movement() {
     // too much: the ellipse stays put at a lower alpha, the bloom moves.
     assert_eq!(crate::ui::style::tokens::NOW_PLAYING_GLOW_ALPHA, "0.15");
     let css = crate::ui::now_playing::surface_css::css();
-    assert!(css.contains("0.15"));
+    assert!(css.contains("@reprise_now_playing_glow"));
+    let dark_theme = crate::ui::style::theme::theme_css(
+        crate::ui::style::theme::Theme::PerpetualRain,
+        true,
+        crate::ui::style::accent::AccentSource::App,
+    );
+    let light_theme = crate::ui::style::theme::theme_css(
+        crate::ui::style::theme::Theme::PerpetualRain,
+        false,
+        crate::ui::style::accent::AccentSource::App,
+    );
+    assert!(dark_theme
+        .contains("@define-color reprise_now_playing_glow alpha(@reprise_player_accent, 0.15);"));
+    assert!(light_theme
+        .contains("@define-color reprise_now_playing_glow alpha(@reprise_player_accent, 0.05);"));
     // The idle rule (no track at all) is untouched: with no cover there is no
     // bloom either, so the panel must still go dark.
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));

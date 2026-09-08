@@ -307,8 +307,8 @@ mod tests {
             ".reprise-library-split .reprise-library-sidebar { background-color: @sidebar_bg_color;"
         ));
         assert!(css.contains(".reprise-now-playing-stage { background-color: @sidebar_bg_color;"));
-        assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
-        assert!(css.contains("border-left: 1px solid rgba(255, 255, 255, 0.06)"));
+        assert!(css.contains("border-right: 1px solid @reprise_hairline"));
+        assert!(css.contains("border-left: 1px solid @reprise_hairline"));
 
         for theme in super::theme::Theme::all() {
             for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {

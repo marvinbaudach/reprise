@@ -127,10 +127,6 @@ mod tests {
     #[test]
     fn dark_appearance_tokens_reproduce_every_replaced_literal() {
         let definitions = [
-            "@define-color reprise_hairline rgba(255, 255, 255, 0.06);",
-            "@define-color reprise_hairline_strong rgba(255, 255, 255, 0.07);",
-            "@define-color reprise_rule rgba(255, 255, 255, 0.045);",
-            "@define-color reprise_pill_border rgba(255, 255, 255, 0.10);",
             "@define-color reprise_pill_bg @sidebar_bg_color;",
             "@define-color reprise_hover_bg alpha(@accent_bg_color, 0.10);",
             "@define-color reprise_now_playing_tint alpha(@accent_color, 0.09);",

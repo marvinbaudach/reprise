@@ -217,7 +217,11 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
-    assert!(css.contains("alpha(@reprise_player_accent, 0.15)"));
+    assert!(css.contains("@reprise_now_playing_glow"));
+    assert!(css.contains("border-left: 1px solid @reprise_hairline"));
+    assert!(css.contains(
+        "box-shadow: inset 0 0 0 1px @reprise_cover_edge, 0 2px 6px @reprise_cover_shadow"
+    ));
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
     assert!(css.contains(".reprise-now-playing-head { padding: 22px 18px 0; }"));
     assert!(css.contains(".reprise-now-playing-metadata { padding: 0 18px 16px; }"));
@@ -241,7 +245,8 @@ fn npp_11_now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
     assert!(css.contains(".reprise-now-playing-tabs"));
     assert!(css.contains("border-radius: 99px"));
     assert!(css.contains("alpha(@sidebar_fg_color, 0.06)"));
-    assert!(css.contains("alpha(@sidebar_fg_color, 0.14)"));
+    assert!(css.contains("background-color: @reprise_tab_active_bg"));
+    assert!(css.contains("box-shadow: 0 1px 2px @reprise_tab_active_shadow"));
     assert!(css.contains(".reprise-now-playing-footer"));
     assert!(css.contains("font-size: 10.5px"));
     assert!(css.contains("color: @reprise_secondary_fg_color"));
@@ -694,8 +699,8 @@ fn npp_3_glow_uses_the_effective_accent_over_a_neutral_stage() {
 
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient(ellipse at center"));
-    // The effective accent comes through the shared player token, not a literal.
-    assert!(css.contains("alpha(@reprise_player_accent"));
+    // The appearance token resolves from the shared player accent, never a literal here.
+    assert!(css.contains("@reprise_now_playing_glow"));
     // It has to fade out, otherwise it is a tint and not a glow.
     assert!(css.contains("0) 70%"));
     // The stage underneath stays neutral so lyric contrast is constant.
