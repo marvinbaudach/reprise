@@ -1,14 +1,7 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performScrollToIndex
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -66,16 +59,16 @@ class BrowseScreenLoadGuardsTest {
     @Test
     fun aRelaunchedSentinelDoesNotDuplicateTheStillRunningRead() {
         application.blockTitleContinuation()
-        scrollLibraryListTo("library-titles-list", 200)
+        compose.scrollLibraryListTo("library-titles-list", 200)
         compose.waitUntil(timeoutMillis = 5_000) { application.continuationHasStarted() }
 
         // Far enough that the sentinel row's own composition is disposed,
         // then back to the same offset: the row that comes back is a fresh
         // composition, and its LaunchedEffect fires again with the same key
         // while the first read is still gated below.
-        scrollLibraryListTo("library-titles-list", 0)
+        compose.scrollLibraryListTo("library-titles-list", 0)
         compose.waitForIdle()
-        scrollLibraryListTo("library-titles-list", 200)
+        compose.scrollLibraryListTo("library-titles-list", 200)
         compose.waitForIdle()
 
         application.releaseTitleContinuation()
@@ -89,9 +82,9 @@ class BrowseScreenLoadGuardsTest {
         // fetch the next window once nothing is left in flight for it to
         // collide with.
         application.blockTitleContinuation()
-        scrollLibraryListTo("library-titles-list", 0)
+        compose.scrollLibraryListTo("library-titles-list", 0)
         compose.waitForIdle()
-        scrollLibraryListTo("library-titles-list", 200)
+        compose.scrollLibraryListTo("library-titles-list", 200)
         compose.waitUntil(timeoutMillis = 5_000) { application.continuationHasStarted() }
         application.releaseTitleContinuation()
         compose.waitUntil(timeoutMillis = 5_000) { application.continuationHasFinished() }
@@ -116,12 +109,12 @@ class BrowseScreenLoadGuardsTest {
     @Test
     fun anAbandonedReadShowsNoBrowseError() {
         application.blockTitleContinuation()
-        scrollLibraryListTo("library-titles-list", 200)
+        compose.scrollLibraryListTo("library-titles-list", 200)
         compose.waitUntil(timeoutMillis = 5_000) { application.continuationHasStarted() }
 
         // Disposes the sentinel's composition and cancels its
         // LaunchedEffect while the read is still gated below.
-        scrollLibraryListTo("library-titles-list", 0)
+        compose.scrollLibraryListTo("library-titles-list", 0)
         compose.waitForIdle()
 
         application.releaseTitleContinuation()
@@ -134,45 +127,30 @@ class BrowseScreenLoadGuardsTest {
         compose.onNodeWithText("Could not load more titles:", substring = true)
             .assertDoesNotExist()
     }
-
-    private fun scrollLibraryListTo(tag: String, index: Int) {
-        val node = compose.onNodeWithTag(tag)
-        node.assertExists()
-        compose.waitUntil(timeoutMillis = 5_000) {
-            runCatching { node.performScrollToIndex(index) }.isSuccess
-        }
-    }
 }
 
 internal class BrowseScreenLoadGuardsTestApplication : ConfigurationTestApplication() {
-    private val calls = AtomicInteger()
-    private var started: CountDownLatch? = null
-    private var gate: CompletableDeferred<Unit>? = null
-    private var finished: CountDownLatch? = null
+    private val titleContinuation = BlockingReadTestGate(BlockingReadMode.EVERY_CALL)
 
     fun blockTitleContinuation() {
-        started = CountDownLatch(1)
-        gate = CompletableDeferred()
-        finished = CountDownLatch(1)
+        titleContinuation.arm()
     }
 
-    fun continuationHasStarted(): Boolean = checkNotNull(started).count == 0L
+    fun continuationHasStarted(): Boolean = titleContinuation.hasStarted()
 
     fun releaseTitleContinuation() {
-        checkNotNull(gate).complete(Unit)
+        titleContinuation.release()
     }
 
-    fun continuationHasFinished(): Boolean = checkNotNull(finished).count == 0L
+    fun continuationHasFinished(): Boolean = titleContinuation.hasFinished()
 
-    fun continuationCallCount(): Int = calls.get()
+    fun continuationCallCount(): Int = titleContinuation.callCount()
 
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val dependencies = super.mainActivitySurface()
         return dependencies.copy(
             searchTitles = { query, range ->
                 if (range.offset > 0) {
-                    calls.incrementAndGet()
-                    started?.countDown()
                     // NonCancellable so disposing the composable that asked
                     // for this — the sentinel row, once scrolled away — does
                     // not interrupt the wait, the same way a blocking
@@ -180,10 +158,7 @@ internal class BrowseScreenLoadGuardsTestApplication : ConfigurationTestApplicat
                     // finished countdown lives inside this block because
                     // resuming past it can throw once the caller is
                     // cancelled, which would otherwise leave it uncounted.
-                    withContext(NonCancellable) {
-                        gate?.await()
-                        finished?.countDown()
-                    }
+                    titleContinuation.blockCall()
                 }
                 dependencies.searchTitles(query, range)
             },

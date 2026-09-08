@@ -29,7 +29,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
@@ -480,19 +479,6 @@ class MainActivityConfigurationTest {
         compose.waitForIdle()
     }
 
-    /**
-     * Scrolls to [index], retrying until the row exists. A library window now grows
-     * through an off-main-thread read, so the row an index names can arrive a moment
-     * after the scroll that asked for it.
-     */
-    private fun scrollLibraryListTo(tag: String, index: Int) {
-        val node = compose.onNodeWithTag(tag)
-        node.assertExists()
-        compose.waitUntil(timeoutMillis = 5_000) {
-            runCatching { node.performScrollToIndex(index) }.isSuccess
-        }
-    }
-
     private fun openDeepAlbum() {
         compose.onNodeWithText("Artists").performClick()
         scrollLibraryListTo("library-artists-list", 0)
@@ -505,6 +491,9 @@ class MainActivityConfigurationTest {
             compose.onAllNodesWithTag("library-album-tracks-list").fetchSemanticsNodes().isNotEmpty()
         }
     }
+
+    private fun scrollLibraryListTo(tag: String, index: Int) =
+        compose.scrollLibraryListTo(tag, index)
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config
@@ -566,10 +555,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     private var firstAlbumOpenGate: CompletableDeferred<Unit>? = null
     private var firstAlbumOpenFinished: CountDownLatch? = null
     private val firstAlbumOpenCalls = AtomicInteger()
-    private var failingTitleContinuationStarted: CountDownLatch? = null
-    private var failingTitleContinuationGate: CompletableDeferred<Unit>? = null
-    private var failingTitleContinuationFinished: CountDownLatch? = null
-    private val failingTitleContinuationCalls = AtomicInteger()
+    private val failingTitleContinuation = BlockingReadTestGate(BlockingReadMode.FIRST_CALL)
     val trackRatings = Collections.synchronizedMap(mutableMapOf<Long, Int>())
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
@@ -821,21 +807,16 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     fun firstAlbumOpenHasFinished(): Boolean = checkNotNull(firstAlbumOpenFinished).count == 0L
 
     fun blockFailingTitleContinuation() {
-        failingTitleContinuationCalls.set(0)
-        failingTitleContinuationStarted = CountDownLatch(1)
-        failingTitleContinuationGate = CompletableDeferred()
-        failingTitleContinuationFinished = CountDownLatch(1)
+        failingTitleContinuation.arm(resetCallCount = true)
     }
 
-    fun failingTitleContinuationHasStarted(): Boolean =
-        checkNotNull(failingTitleContinuationStarted).count == 0L
+    fun failingTitleContinuationHasStarted(): Boolean = failingTitleContinuation.hasStarted()
 
     fun releaseFailingTitleContinuation() {
-        checkNotNull(failingTitleContinuationGate).complete(Unit)
+        failingTitleContinuation.release()
     }
 
-    fun failingTitleContinuationHasFinished(): Boolean =
-        checkNotNull(failingTitleContinuationFinished).count == 0L
+    fun failingTitleContinuationHasFinished(): Boolean = failingTitleContinuation.hasFinished()
 
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
@@ -866,14 +847,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
             chooseFolder = { _, _ -> },
             rescan = {},
             searchTitles = { query, range ->
-                if (
-                    range.offset > 0 &&
-                    failingTitleContinuationStarted != null &&
-                    failingTitleContinuationCalls.getAndIncrement() == 0
-                ) {
-                    failingTitleContinuationStarted?.countDown()
-                    withContext(NonCancellable) { failingTitleContinuationGate?.await() }
-                    failingTitleContinuationFinished?.countDown()
+                if (range.offset > 0 && failingTitleContinuation.blockCall()) {
                     error("title continuation unavailable")
                 }
                 tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
