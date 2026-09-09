@@ -53,6 +53,33 @@ fn ac_23_audio_filter_exposes_normalized_mono_pcm_to_cava() {
 }
 
 #[test]
+fn ac_23_audio_filter_splits_cava_pcm_into_sixty_hertz_buffers() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    gst::init().unwrap();
+    let filter = build_audio_filter(&AudioEffects::default())
+        .unwrap()
+        .unwrap();
+    let bin = filter.downcast::<gst::Bin>().unwrap();
+    let splitter = bin
+        .iterate_elements()
+        .into_iter()
+        .flatten()
+        .find(|element| {
+            element
+                .factory()
+                .is_some_and(|factory| factory.name() == "audiobuffersplit")
+        })
+        .expect("the CAVA branch contains an audiobuffersplit element");
+
+    assert_eq!(
+        splitter.property::<gst::Fraction>("output-buffer-duration"),
+        gst::Fraction::new(1, 60)
+    );
+}
+
+#[test]
 fn ac_23_cava_pcm_branch_splits_before_replay_gain_normalization() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
@@ -122,6 +149,57 @@ fn ac_23_enabled_player_emits_live_cava_frames() {
     assert!(frame.bands().iter().any(|value| *value > 0.0));
     player.stop().unwrap();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
+}
+
+#[test]
+fn ac_23_flac_playback_emits_spectrum_at_display_cadence() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+
+    let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
+    let player = Player::new(Box::new(move |event| {
+        let _ = tx.send(event);
+    }))
+    .unwrap();
+    player.set_spectrum_enabled(true).unwrap();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+    player.play(path).unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut spectrum_frames = 0;
+    loop {
+        while gst::glib::MainContext::default().pending() {
+            gst::glib::MainContext::default().iteration(false);
+        }
+        let mut finished = false;
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                PlayerEvent::Spectrum(_) => spectrum_frames += 1,
+                PlayerEvent::TrackFinished => {
+                    finished = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if finished {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "playback did not reach TrackFinished within timeout; counted {spectrum_frames} spectrum frames"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    player.stop().unwrap();
+    std::env::remove_var(AUDIO_SINK_ENV_VAR);
+    assert!(
+        spectrum_frames >= 40,
+        "the 4608-blocksize FLAC emitted only {spectrum_frames} spectrum frames"
+    );
 }
 
 #[test]
