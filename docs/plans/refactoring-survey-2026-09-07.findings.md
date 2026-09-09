@@ -1,6 +1,6 @@
 ---
 slug: refactoring-survey-2026-09-07
-phase: findings
+phase: shipped
 created: 2026-09-07
 base: fe89dc51ad (origin/dev)
 branch: chore/cleanup-2026-09-07
