@@ -12,6 +12,8 @@ pub(super) struct ThemeTokens {
     pub(super) mini_card_edge: &'static str,
     pub(super) mini_cover_edge: &'static str,
     pub(super) mini_artist_fg: String,
+    pub(super) mini_play_glow: String,
+    pub(super) mini_play_glow_hover: String,
     pub(super) hover_bg: String,
     pub(super) now_playing_tint: String,
     pub(super) now_playing_glow: String,
@@ -44,6 +46,17 @@ impl ThemeTokens {
             mini_artist_fg: format!(
                 "alpha(@window_fg_color, {})",
                 select(t::MINI_ARTIST_ALPHA, t::MINI_ARTIST_LIGHT_ALPHA)
+            ),
+            mini_play_glow: format!(
+                "alpha(@reprise_player_accent, {})",
+                select(t::MINI_PLAY_GLOW_DARK_ALPHA, t::MINI_PLAY_GLOW_LIGHT_ALPHA)
+            ),
+            mini_play_glow_hover: format!(
+                "alpha(@reprise_player_accent, {})",
+                select(
+                    t::MINI_PLAY_GLOW_HOVER_DARK_ALPHA,
+                    t::MINI_PLAY_GLOW_HOVER_LIGHT_ALPHA,
+                )
             ),
             hover_bg: if is_dark {
                 format!("alpha(@accent_bg_color, {})", t::HOVER_BG_ALPHA)
@@ -143,6 +156,8 @@ mod tests {
             "@define-color reprise_mini_card_edge alpha(white, 0.09);",
             "@define-color reprise_mini_cover_edge alpha(white, 0.08);",
             "@define-color reprise_mini_artist_fg alpha(@window_fg_color, 0.6);",
+            "@define-color reprise_mini_play_glow alpha(@reprise_player_accent, 0.40);",
+            "@define-color reprise_mini_play_glow_hover alpha(@reprise_player_accent, 0.60);",
             "@define-color reprise_hover_bg alpha(@accent_bg_color, 0.10);",
             "@define-color reprise_now_playing_tint alpha(@accent_color, 0.09);",
             "@define-color reprise_now_playing_glow alpha(@reprise_player_accent, 0.15);",

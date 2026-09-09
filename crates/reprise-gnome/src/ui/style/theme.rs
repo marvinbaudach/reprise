@@ -295,6 +295,8 @@ pub(in crate::ui) fn theme_css(
          @define-color reprise_mini_card_edge {mini_card_edge};\n\
          @define-color reprise_mini_cover_edge {mini_cover_edge};\n\
          @define-color reprise_mini_artist_fg {mini_artist_fg};\n\
+         @define-color reprise_mini_play_glow {mini_play_glow};\n\
+         @define-color reprise_mini_play_glow_hover {mini_play_glow_hover};\n\
          @define-color reprise_hover_bg {hover_bg};\n\
          @define-color reprise_now_playing_tint {now_playing_tint};\n\
          @define-color reprise_now_playing_glow {now_playing_glow};\n\
@@ -334,6 +336,8 @@ pub(in crate::ui) fn theme_css(
         mini_card_edge = appearance.mini_card_edge,
         mini_cover_edge = appearance.mini_cover_edge,
         mini_artist_fg = appearance.mini_artist_fg,
+        mini_play_glow = appearance.mini_play_glow,
+        mini_play_glow_hover = appearance.mini_play_glow_hover,
         hover_bg = appearance.hover_bg,
         now_playing_tint = appearance.now_playing_tint,
         now_playing_glow = appearance.now_playing_glow,
