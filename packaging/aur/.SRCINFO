@@ -16,6 +16,7 @@ pkgbase = reprise-git
 	depends = graphene
 	depends = gstreamer>=1.0
 	depends = gst-plugins-base-libs
+	depends = gst-plugins-bad
 	depends = gst-plugins-good
 	depends = gtk4>=1:4.22
 	depends = gvfs-mtp
@@ -24,7 +25,6 @@ pkgbase = reprise-git
 	depends = pango
 	optdepends = gnome-keyring: Secret Service provider for stored account credentials
 	optdepends = gst-libav: additional FFmpeg-backed audio codecs
-	optdepends = gst-plugins-bad: additional GStreamer audio codecs
 	optdepends = gst-plugins-ugly: additional GStreamer audio codecs
 	optdepends = onnxruntime: experimental ML stem separation
 	provides = reprise
