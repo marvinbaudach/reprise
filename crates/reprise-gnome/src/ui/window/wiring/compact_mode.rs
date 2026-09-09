@@ -12,7 +12,6 @@ pub(super) fn wire_compact_mode(w: &RuntimeWiring<'_>) {
     } = *w;
     let compact_preferences = preferences.clone();
     super::compact_mode_controls::install(
-        window,
         minimal_view,
         player.as_ref().map(|player| &player.compact_player),
         conn,

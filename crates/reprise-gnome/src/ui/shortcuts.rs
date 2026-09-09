@@ -264,14 +264,7 @@ fn widget_contains_focus(window: &adw::ApplicationWindow, widget: &gtk4::Widget)
 }
 
 fn wire_window_lifecycle(app: &adw::Application, window: &adw::ApplicationWindow) {
-    let close = gio::SimpleAction::new("close", None);
-    let window_weak = window.downgrade();
-    close.connect_activate(move |_, _| {
-        if let Some(window) = window_weak.upgrade() {
-            window.close();
-        }
-    });
-    window.add_action(&close);
+    wire_close(window);
     app.set_accels_for_action("win.close", &["<Control>w"]);
 
     let quit = gio::SimpleAction::new("quit", None);
@@ -283,6 +276,17 @@ fn wire_window_lifecycle(app: &adw::Application, window: &adw::ApplicationWindow
     });
     app.add_action(&quit);
     app.set_accels_for_action("app.quit", &["<Control>q"]);
+}
+
+pub(in crate::ui) fn wire_close(window: &adw::ApplicationWindow) {
+    let close = gio::SimpleAction::new("close", None);
+    let window_weak = window.downgrade();
+    close.connect_activate(move |_, _| {
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
+        }
+    });
+    window.add_action(&close);
 }
 
 #[cfg(test)]

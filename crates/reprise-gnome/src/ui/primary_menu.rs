@@ -132,29 +132,19 @@ pub(super) fn install(
         .build();
     header.pack_end(&menu_button);
 
-    let open_primary_menu = gio::SimpleAction::new(ACTION_OPEN_PRIMARY_MENU, None);
-    {
+    let open_primary_menu = {
         let menu_button = menu_button.downgrade();
-        open_primary_menu.connect_activate(move |_, _| {
+        Rc::new(move || {
             let Some(menu_button) = menu_button.upgrade() else {
                 return;
             };
-            // Upgrading proves the button is alive, not that it is still in a
-            // window. Compact mode detaches the whole Library tree via
-            // `content_host.set_content()` while this struct keeps it alive, so
-            // the weak ref upgrades on a widget with no toplevel. `popup()`
-            // then realizes a popover whose parent surface is NULL, and GTK
-            // dereferences it without checking — a segfault, not a warning.
-            // The F10 accelerator still reaches this action in compact mode,
-            // which is exactly how it was hit.
             if gtk4::prelude::WidgetExt::root(&menu_button).is_none() {
                 tracing::debug!("primary menu: button is not in a window; ignoring");
                 return;
             }
             menu_button.popup();
-        });
-    }
-    window.add_action(&open_primary_menu);
+        }) as Rc<dyn Fn()>
+    };
 
     let edit = gio::SimpleAction::new(ACTION_EDIT_COLUMN_LAYOUT, None);
     edit.set_enabled(active_table.get().is_some());
@@ -210,38 +200,12 @@ pub(super) fn install(
     }
     window.add_action(&stop_playback);
 
-    let preferences = gio::SimpleAction::new(ACTION_PREFERENCES, None);
-    {
-        let cb = callbacks.on_preferences.clone();
-        preferences.connect_activate(move |_, _| cb());
-    }
-    window.add_action(&preferences);
+    let preferences =
+        install_surface_actions(window, callbacks.on_preferences.clone(), open_primary_menu);
     if std::env::var(crate::ui::preferences::SMOKE_ENV).is_ok() {
         let preferences = preferences.clone();
         glib::idle_add_local_once(move || preferences.activate(None));
     }
-
-    let keyboard_shortcuts = gio::SimpleAction::new(ACTION_KEYBOARD_SHORTCUTS, None);
-    {
-        let window = window.downgrade();
-        keyboard_shortcuts.connect_activate(move |_, _| {
-            if let Some(window) = window.upgrade() {
-                crate::ui::help::present(&window);
-            }
-        });
-    }
-    window.add_action(&keyboard_shortcuts);
-
-    let help = gio::SimpleAction::new(ACTION_HELP, None);
-    {
-        let window = window.downgrade();
-        help.connect_activate(move |_, _| {
-            if let Some(window) = window.upgrade() {
-                crate::ui::help::present(&window);
-            }
-        });
-    }
-    window.add_action(&help);
 
     let about = gio::SimpleAction::new(ACTION_ABOUT, None);
     {
@@ -249,6 +213,32 @@ pub(super) fn install(
         about.connect_activate(move |_, _| cb());
     }
     window.add_action(&about);
+}
+
+pub(in crate::ui) fn install_surface_actions(
+    window: &adw::ApplicationWindow,
+    on_preferences: Rc<dyn Fn()>,
+    on_open_primary_menu: Rc<dyn Fn()>,
+) -> gio::SimpleAction {
+    let preferences = gio::SimpleAction::new(ACTION_PREFERENCES, None);
+    preferences.connect_activate(move |_, _| on_preferences());
+    window.add_action(&preferences);
+
+    for name in [ACTION_KEYBOARD_SHORTCUTS, ACTION_HELP] {
+        let action = gio::SimpleAction::new(name, None);
+        let window_weak = window.downgrade();
+        action.connect_activate(move |_, _| {
+            if let Some(window) = window_weak.upgrade() {
+                crate::ui::help::present(&window);
+            }
+        });
+        window.add_action(&action);
+    }
+
+    let open_primary_menu = gio::SimpleAction::new(ACTION_OPEN_PRIMARY_MENU, None);
+    open_primary_menu.connect_activate(move |_, _| on_open_primary_menu());
+    window.add_action(&open_primary_menu);
+    preferences
 }
 
 fn arm_smoke_minimal_view(window: &adw::ApplicationWindow, action: &gio::SimpleAction) {

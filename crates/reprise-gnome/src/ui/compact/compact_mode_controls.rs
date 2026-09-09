@@ -121,16 +121,16 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
 }
 
 pub(in crate::ui) fn install(
-    _window: &adw::ApplicationWindow,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,
     conn: &Rc<Db>,
     on_preferences: Rc<dyn Fn()>,
 ) {
     if let Some(compact) = compact {
-        let compact_window = mode
-            .compact_window()
-            .expect("a compact player always has a compact window");
+        let Some(compact_window) = mode.compact_window() else {
+            tracing::warn!("compact controls unavailable without a compact window");
+            return;
+        };
         let toggle =
             gio::SimpleAction::new(crate::ui::primary_menu::ACTION_TOGGLE_MINIMAL_VIEW, None);
         {
@@ -142,6 +142,19 @@ pub(in crate::ui) fn install(
             });
         }
         compact_window.add_action(&toggle);
+
+        crate::ui::shortcuts::wire_close(&compact_window);
+        let open_primary_menu = {
+            let compact = compact.clone();
+            Rc::new(move || compact.open_primary_menu()) as Rc<dyn Fn()>
+        };
+        crate::ui::primary_menu::install_surface_actions(
+            &compact_window,
+            on_preferences.clone(),
+            open_primary_menu,
+        );
+        // Search, navigation, and jump-to-now-playing stay library-only: the
+        // compact window has none of the UI those actions target.
 
         let weak = Rc::downgrade(mode);
         compact.set_on_restore(Rc::new(move || {
@@ -318,7 +331,7 @@ mod tests {
         );
         mode.apply_initial();
         let header = adw::HeaderBar::new();
-        install(&window, &mode, Some(&compact), &conn, Rc::new(|| {}));
+        install(&mode, Some(&compact), &conn, Rc::new(|| {}));
         assert!(!has_button_with_tooltip(&header, "Open Compact View"));
         assert_eq!(app.windows().len(), 2);
         assert!(mode
@@ -326,6 +339,30 @@ mod tests {
             .unwrap()
             .lookup_action(crate::ui::primary_menu::ACTION_TOGGLE_MINIMAL_VIEW)
             .is_some());
+        let compact_window = mode.compact_window().unwrap();
+        for action in [
+            "close",
+            crate::ui::primary_menu::ACTION_PREFERENCES,
+            crate::ui::primary_menu::ACTION_KEYBOARD_SHORTCUTS,
+            crate::ui::primary_menu::ACTION_HELP,
+            crate::ui::primary_menu::ACTION_OPEN_PRIMARY_MENU,
+        ] {
+            assert!(
+                compact_window.lookup_action(action).is_some(),
+                "compact window is missing win.{action}"
+            );
+        }
+        for action in [
+            "focus-search",
+            "nav-back",
+            "nav-forward",
+            "jump-to-now-playing",
+        ] {
+            assert!(
+                compact_window.lookup_action(action).is_none(),
+                "library-only win.{action} leaked into the compact window"
+            );
+        }
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
         mode.toggle();
@@ -343,6 +380,13 @@ mod tests {
         );
         assert!(!window.is_visible());
         assert!(compact_window.is_visible());
+        gtk4::prelude::ActionGroupExt::activate_action(
+            &compact_window,
+            crate::ui::primary_menu::ACTION_OPEN_PRIMARY_MENU,
+            None,
+        );
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(compact.primary_menu_is_visible_for_test());
         assert_eq!(
             content_host.content().as_ref(),
             Some(full_root.upcast_ref()),
@@ -357,7 +401,19 @@ mod tests {
         );
         assert!(window.is_visible());
         assert!(!compact_window.is_visible());
-        window.close();
+
+        let library_close_seen = Rc::new(Cell::new(false));
+        let library_close_seen_from_signal = library_close_seen.clone();
+        window.connect_close_request(move |_| {
+            library_close_seen_from_signal.set(true);
+            glib::Propagation::Proceed
+        });
+        mode.toggle();
+        wait_for("compact visible before close action", || {
+            compact_window.is_visible()
+        });
+        gtk4::prelude::ActionGroupExt::activate_action(&compact_window, "close", None);
+        wait_for("library close-request", || library_close_seen.get());
     }
 
     fn wait_for(label: &str, mut condition: impl FnMut() -> bool) {
