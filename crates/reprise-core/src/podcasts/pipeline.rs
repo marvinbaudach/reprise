@@ -452,6 +452,10 @@ mod youtube_test_support;
 mod youtube_projection_tests;
 
 #[cfg(test)]
+#[path = "pipeline_youtube_duration_tests.rs"]
+mod youtube_duration_tests;
+
+#[cfg(test)]
 #[path = "pipeline_youtube_handle_tests.rs"]
 mod youtube_handle_tests;
 

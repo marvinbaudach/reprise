@@ -30,6 +30,98 @@ fn parsed_episode(title: &str) -> ParsedEpisode {
 }
 
 #[test]
+fn duration_gaps_ignore_channel_tab_guids() {
+    let db = conn();
+    let subscription_id = add_or_restore(
+        &db,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            ..subscription_draft()
+        },
+        10,
+    )
+    .unwrap();
+    let mut video = parsed_episode("Video");
+    video.guid = "abcdefghijk".to_owned();
+    upsert_episode(&db, subscription_id, &video, 20).unwrap();
+    let mut channel_tab = parsed_episode("Channel - Shorts");
+    channel_tab.guid = "UClDzr-KM5H2-bsO3xIC32mg".to_owned();
+    upsert_episode(&db, subscription_id, &channel_tab, 20).unwrap();
+
+    assert_eq!(
+        episodes_missing_duration_in(db.conn(), subscription_id).unwrap(),
+        1
+    );
+}
+
+#[test]
+fn duration_fill_ignores_unknown_guids() {
+    let db = conn();
+    let subscription_id = add_or_restore(&db, &subscription_draft(), 10).unwrap();
+    upsert_episode(&db, subscription_id, &parsed_episode("Episode"), 20).unwrap();
+
+    let changed = fill_missing_durations_in(
+        db.conn(),
+        subscription_id,
+        &[("unknown-guid".to_owned(), 225)],
+    )
+    .unwrap();
+
+    assert_eq!(changed, 0);
+}
+
+#[test]
+fn duration_fill_ignores_zero_durations() {
+    let db = conn();
+    let subscription_id = add_or_restore(&db, &subscription_draft(), 10).unwrap();
+    let episode_id = upsert_episode(&db, subscription_id, &parsed_episode("Episode"), 20)
+        .unwrap()
+        .unwrap()
+        .episode_id;
+
+    let changed =
+        fill_missing_durations_in(db.conn(), subscription_id, &[("stable-guid".to_owned(), 0)])
+            .unwrap();
+
+    assert_eq!(changed, 0);
+    assert_eq!(
+        episode(&db, episode_id).unwrap().unwrap().duration_secs,
+        None
+    );
+}
+
+#[test]
+fn duration_fill_is_scoped_to_one_subscription() {
+    let db = conn();
+    let first_subscription = add_or_restore(&db, &subscription_draft(), 10).unwrap();
+    let mut second_draft = subscription_draft();
+    second_draft.feed_url = "https://example.test/second.xml".to_owned();
+    let second_subscription = add_or_restore(&db, &second_draft, 10).unwrap();
+    let episode_id = upsert_episode(
+        &db,
+        second_subscription,
+        &parsed_episode("Second show episode"),
+        20,
+    )
+    .unwrap()
+    .unwrap()
+    .episode_id;
+
+    let changed = fill_missing_durations_in(
+        db.conn(),
+        first_subscription,
+        &[("stable-guid".to_owned(), 225)],
+    )
+    .unwrap();
+
+    assert_eq!(changed, 0);
+    assert_eq!(
+        episode(&db, episode_id).unwrap().unwrap().duration_secs,
+        None
+    );
+}
+
+#[test]
 fn pod_2_episode_upsert_changes_metadata_but_preserves_listening_state() {
     let conn = conn();
     let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();

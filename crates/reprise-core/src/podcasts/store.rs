@@ -240,6 +240,26 @@ pub(crate) fn future_only_baseline_in(
     guids
 }
 
+pub(crate) fn episodes_missing_duration_in(
+    conn: &Connection,
+    subscription_id: i64,
+) -> Result<usize, rusqlite::Error> {
+    // YouTube video IDs are 11 characters. The 24-character channel IDs
+    // UClDzr-KM5H2-bsO3xIC32mg and UCLTQVYwu-M-MnfOJDKlFnOQ came from channel
+    // tabs and must not keep triggering duration listings that can never match.
+    conn.query_row(
+        "SELECT COUNT(*)
+         FROM podcast_episodes
+         WHERE subscription_id = ?1
+           AND removed_at IS NULL
+           AND (duration_secs IS NULL OR duration_secs = 0)
+           AND length(guid) = 11",
+        [subscription_id],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| count.max(0) as usize)
+}
+
 pub fn upsert_episode(
     db: &Db,
     subscription_id: i64,
@@ -436,6 +456,26 @@ pub fn save_duration(db: &Db, episode_id: i64, duration_secs: i64) -> Result<(),
         params![episode_id, duration_secs],
     )?;
     Ok(())
+}
+
+pub(crate) fn fill_missing_durations_in(
+    conn: &Connection,
+    subscription_id: i64,
+    durations: &[(String, i64)],
+) -> Result<usize, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "UPDATE podcast_episodes
+         SET duration_secs = ?3
+         WHERE subscription_id = ?1
+           AND guid = ?2
+           AND (duration_secs IS NULL OR duration_secs = 0)
+           AND ?3 > 0",
+    )?;
+    let mut changed = 0;
+    for (guid, duration_secs) in durations {
+        changed += statement.execute(params![subscription_id, guid, duration_secs])?;
+    }
+    Ok(changed)
 }
 
 pub fn mark_played(db: &Db, episode_id: i64, now: i64) -> Result<(), rusqlite::Error> {
