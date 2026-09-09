@@ -36,7 +36,7 @@
 
 .shot-tile--phone {
   min-width: 108px;
-  border-color: oklch(34% 0.018 269);
+  --edge: oklch(34% 0.018 269);
   border-radius: 14px;
   --ambient-geom: 0 30px 70px -34px;
   --ambient: oklch(3% 0.02 269 / 0.95);

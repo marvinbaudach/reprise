@@ -16,6 +16,11 @@
   position: relative;
 }
 
+.hero-product__desktop .shot-tile__caption {
+  align-items: flex-end;
+  padding-left: 32%;
+}
+
 /*
  * The phone leans past the frame's edge on purpose. It must not lean past the
  * window's: --frame-pad is the room there actually is, and below roughly 800px
@@ -25,7 +30,7 @@
  */
 .hero-product__phone {
   position: absolute;
-  right: max(-5%, calc(-1 * var(--frame-pad)));
+  left: max(-5%, calc(-1 * var(--frame-pad)));
   bottom: -6%;
   width: 24%;
 }

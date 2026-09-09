@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { verifyDesktopScene } from './desktop-scene.mjs';
+import { verifyPhoneEffects } from './phone-effects.mjs';
 
 // Browser verification is opt-in: serve the showroom first, then run this file.
 // No dependency or personal browser profile is used.
@@ -17,6 +19,7 @@ const browser = spawn(
     '--disable-gpu',
     '--no-first-run',
     '--disable-extensions',
+    '--blink-settings=availableHoverTypes=2,primaryHoverType=2,availablePointerTypes=4,primaryPointerType=4',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
     'about:blank',
@@ -155,6 +158,8 @@ try {
     ),
   );
   await assertPhoneAnimates('desktop');
+  await verifyPhoneEffects({ call, evaluate, until, screenshot });
+  await verifyDesktopScene({ evaluate, until, screenshot });
   await screenshot('desktop.png');
   console.log('PASS: player is discoverable and waits for an explicit start');
   await evaluate('document.querySelector("#film").scrollIntoView({behavior:"instant"})');
@@ -308,6 +313,8 @@ try {
         'product appears on the first mobile screen',
       );
       await assertPhoneAnimates('mobile');
+      await verifyPhoneEffects({ call, evaluate, until }, 'mobile');
+      await verifyDesktopScene({ evaluate, until, screenshot }, 'mobile');
       await screenshot('mobile.png');
     }
     await evaluate('document.querySelector("#film").scrollIntoView({behavior:"instant"})');
@@ -447,6 +454,8 @@ try {
   const reducedPhone = await phoneFrame();
   await delay(350);
   assert.equal(await phoneFrame(), reducedPhone, 'reduced motion keeps a still phone frame');
+  await verifyPhoneEffects({ call, evaluate, until }, 'reduced');
+  await verifyDesktopScene({ evaluate, until, screenshot }, 'reduced');
   assert.ok(
     await evaluate(
       '[...document.querySelectorAll("h1, h2, [data-counter]")].filter(x => x.getClientRects().length).every(x => getComputedStyle(x).opacity === "1")',

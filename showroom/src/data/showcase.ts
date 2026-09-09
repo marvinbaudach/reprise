@@ -15,6 +15,7 @@ export interface ProductCapture {
   readonly sizes: string;
   /** Carries the live visualizer plate wherever the capture is shown. */
   readonly visualizer?: boolean;
+  readonly desktopScene?: boolean;
 }
 
 function capture(
@@ -28,18 +29,19 @@ export const HERO_CAPTURES: readonly [ProductCapture, ProductCapture] = [
     id: 'gnome-library',
     title: 'Music library',
     platform: 'GNOME',
-    description: 'A dense native table, spectral seek, lyrics and Now Playing in one window.',
-    alt: 'Reprise running on GNOME with the music library and Now Playing visible',
-    filename: 'gnome-library.webp',
+    description: 'The music library with a looping song visualization and rotating cover glow.',
+    alt: 'Reprise on GNOME playing Elevator Operator, with cover glow and a neon song visualization',
+    filename: 'gnome-visualizer.webp',
     width: 2400,
     height: 1456,
     sizes: '(max-width: 900px) 90vw, 43vw',
+    desktopScene: true,
   }),
   capture({
     id: 'android-visualizer',
     title: 'Now Playing',
     platform: 'Android',
-    description: "The scene is the engine's own, ported from bars.rs.",
+    description: 'Now Playing with a looping song visualization and a softly drifting color field.',
     alt: 'Reprise on Android showing the audio-reactive Now Playing scene',
     filename: 'android-visualizer.webp',
     width: 1080,

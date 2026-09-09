@@ -136,3 +136,87 @@ The repository gates were invoked individually on this local branch. A clean
 integration-wrapper run against the latest `dev` is deferred until integration;
 `dev` advanced independently while this preview was being verified. This record
 does not claim a hosted CI result or permission to push, merge or deploy.
+
+## Desktop song scene — local preview
+
+The supplied GNOME capture replaces the desktop hero image. A segmented spectrum
+and a slowly rotating, cover-derived color disc bring the right sidebar to life.
+The sharp cover stays stationary and readable. The phone moves to the lower left
+so both visualizations remain visible; the desktop caption aligns to the right.
+The enlarged screenshot carries the same scene and zoom geometry.
+
+The source is the user-supplied 3456 × 2096 screenshot dated 2026-09-09 15:26:27.
+The `gnome-visualizer` WebP ladder contains 800, 1200, 1600 and 2400 pixel widths.
+`desktop-cover.webp` crops its existing artwork; `desktop-cover-glow.webp` is a
+small, preblurred derivative, rotated by CSS every 25 seconds. No full-frame
+video or external player is loaded for this effect. The bars reuse the existing
+recorded visualization loop; they are illustrative and are not an analysis of
+Elevator Operator. The screenshot's track metadata remains part of the capture.
+
+Both canvas scenes and the disc stop outside the viewport, in a hidden document,
+under reduced motion, and when the hero is covered by its modal. The static
+capture remains usable without JavaScript. Canvas dimensions have a small lower
+bound for legible segments and an upper bound for enlargement; simulation
+catch-up paints at most once per browser frame.
+
+The implementation plan is one bounded local stage: reproduce the missing
+animation in the browser, add the capture and scene, verify desktop/mobile/modal
+behavior and performance, run project gates, review the diff, and commit as
+`The desktop showcase keeps its song scene alive`. Publication follows local
+review. There is no separate repository coordination board for showroom work.
+
+The first browser regression failed because no desktop canvas existed. The new
+browser checks observe successive changing frames and disc transforms, check
+phone/sidebar separation at desktop and mobile sizes, exercise the enlarged
+scene, and verify offscreen, covered and reduced-motion pauses. The existing
+film controls, touch seeking, responsive layout and keyboard checks remain.
+
+Review found and corrected a covered GNOME caption and unnecessary rendering
+work. Glow fills now touch only their radial bounds, constant band colors are
+cached, and the hero requests a 120-pixel cover (about 4 KB); its larger derivative
+is requested only in the lightbox. The animation still uses the same spectrum,
+colors and simulation cadence. This avoids full-canvas fills for every bar.
+
+Before the phone follow-up, three local Lighthouse 13.4.1 runs per mode measured mobile performance
+95/95/95 and desktop 100/100/100. Median LCP was 2.929 seconds on mobile and
+0.586 seconds on desktop; CLS was zero throughout. Median mobile TBT was
+17.5 ms, with zero on desktop. Mobile LCP remains above the good threshold;
+these navigation audits do not measure field INP or prove deployed Web Vitals.
+Browser interaction checks and native gates ran separately from the timing
+measurements. Physical-device and Firefox/Safari review remain manual checks.
+
+### Phone atmosphere and hover follow-up
+
+Local review requested the moving oil-like atmosphere on the phone as well and
+reported a different hover response. A failing browser check reproduced the
+phone's fixed border color overriding the shared hover token. The phone now
+sets the resting token, so hover and keyboard focus use the shared edge color.
+A second failing check reproduced the absent phone atmosphere. A slowly drifting
+CSS color layer now accompanies the spectrum in the hero and enlarged phone.
+It uses the same visibility, modal and reduced-motion policy as the other scene.
+
+The Chromium harness now starts with an actual hover-capable pointer, then
+switches to touch emulation for phones. Browser checks cover hover-color parity,
+phone atmosphere movement, offscreen/covered pauses, enlargement and reduced
+motion. The original atmosphere and sharper app controls remain in the capture;
+this is an illustrative website loop rather than a live audio analysis.
+
+### Completed local verification
+
+After the phone follow-up, all 101 showroom tests, source quality, TypeScript
+and the complete browser suite passed again. The final local Lighthouse runs
+remain 95/95/95 on mobile and 100/100/100 on desktop. Median LCP is 2.928 seconds
+on mobile and 0.666 seconds on desktop, CLS is zero, and median TBT is 4 ms on
+mobile and zero on desktop. Field INP and mobile LCP remain the stated limits.
+
+Every command from the repository merge-readiness gate passed locally, including
+Rust formatting, Clippy, documentation, workspace tests, 590 isolated rule-owned
+display tests and the dependency audit (only the accepted paste advisory).
+The final phone changes touch only showroom code; the affected source-quality,
+showroom, browser and performance checks were rerun. All changed code files are
+under 800 lines. Review found no remaining defect in the implemented scope.
+
+This is a committed local preview. The commands ran individually before commit;
+a clean integration-wrapper run and hosted CI belong to subsequent integration.
+Safari/Firefox and physical-device checks remain manual. The worktree's temporary
+lock is released at completion; no unrelated checkout or user library was changed.

@@ -1,7 +1,9 @@
 import { useCallback, useState } from 'react';
 import { HERO_CAPTURES } from '../../data/showcase';
 import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
+import { DesktopScene } from './DesktopScene';
 import { Lightbox } from './Lightbox';
+import { PhoneAtmosphere } from './PhoneAtmosphere';
 import { ShotTile } from './ShotTile';
 import './showcase.css';
 
@@ -36,7 +38,9 @@ export function HeroProduct() {
         eager
         variant="desktop"
         onOpen={(trigger) => open(0, trigger)}
-      />
+      >
+        <DesktopScene />
+      </ShotTile>
 
       <ShotTile
         className="hero-product__phone"
@@ -45,6 +49,7 @@ export function HeroProduct() {
         variant="phone"
         onOpen={(trigger) => open(1, trigger)}
       >
+        <PhoneAtmosphere />
         <VisualizerPlate />
       </ShotTile>
 

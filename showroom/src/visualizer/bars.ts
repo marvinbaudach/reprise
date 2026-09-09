@@ -34,6 +34,10 @@ const PEAK_ALPHA_MIN = 0.38;
 const PEAK_ALPHA_RANGE = 0.48;
 const PEAK_COLOR = '240,245,255';
 const MIN_GRADIENT_RADIUS = 0.01;
+const NEON_COLORS = Array.from({ length: BAND_COUNT }, (_, bar) => {
+  const hue = HUE_START + ((HUE_END - HUE_START) * bar) / (BAND_COUNT - 1);
+  return hslaToRgb(hue, NEON_SATURATION, NEON_LIGHTNESS).join(',');
+});
 
 function clampUnit(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -45,9 +49,7 @@ function smoothstep(value: number): number {
 }
 
 function neonRgb(bar: number): string {
-  const across = bar / (BAND_COUNT - 1);
-  const hue = HUE_START + (HUE_END - HUE_START) * across;
-  return hslaToRgb(hue, NEON_SATURATION, NEON_LIGHTNESS).join(',');
+  return NEON_COLORS[bar] ?? '63,219,243';
 }
 
 function neon(bar: number, alpha: number): string {
@@ -76,7 +78,16 @@ function drawGlow(
   gradient.addColorStop(0, `rgba(${rgb},${clampUnit(alpha).toFixed(4)})`);
   gradient.addColorStop(1, `rgba(${rgb},0)`);
   context.fillStyle = gradient;
-  context.fillRect(0, 0, width, height);
+  // Everything outside the radial gradient is transparent. Avoid repainting
+  // the entire canvas for each of the 64 small bar glows.
+  const left = Math.max(0, centerX - radius);
+  const top = Math.max(0, centerY - radius);
+  context.fillRect(
+    left,
+    top,
+    Math.min(width, centerX + radius) - left,
+    Math.min(height, centerY + radius) - top,
+  );
 }
 
 export function drawBars(
@@ -84,6 +95,7 @@ export function drawBars(
   width: number,
   height: number,
   frame: VisualizerFrame,
+  background = BACKGROUND,
 ): void {
   const margin = width * HORIZONTAL_MARGIN;
   const gap = width * BAR_GAP;
@@ -93,7 +105,7 @@ export function drawBars(
   const segmentHeight = (maxHeight - SEGMENT_GAP * (SEGMENT_COUNT - 1)) / SEGMENT_COUNT;
 
   context.setTransform(1, 0, 0, 1, 0, 0);
-  context.fillStyle = BACKGROUND;
+  context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
   if (frame.bassImpact > 0) {

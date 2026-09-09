@@ -13,6 +13,8 @@ import {
   type ProductCapture,
 } from '../../data/showcase';
 import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
+import { DesktopScene } from './DesktopScene';
+import { PhoneAtmosphere } from './PhoneAtmosphere';
 import './lightbox.css';
 
 // Ten seconds leaves a slow but healthy download ample time to preserve the
@@ -271,7 +273,9 @@ export function Lightbox({
               data-zoomed={activeZoom ? 'true' : 'false'}
               draggable={false}
             />
+            {capture.visualizer && <PhoneAtmosphere />}
             {capture.visualizer && <VisualizerPlate />}
+            {capture.desktopScene && <DesktopScene />}
           </span>
         </button>
       </div>
