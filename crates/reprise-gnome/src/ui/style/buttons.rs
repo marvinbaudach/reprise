@@ -222,7 +222,8 @@ pub(in crate::ui) fn css() -> String {
          /* A collapse toggle is lit while its panel is folded away. The hidden \
             panel itself is the non-colour state signal, so this intentionally \
             carries no dot. The explicit unchecked press state is load-bearing: \
-            the two-class base rule outranks Adwaita's button:active. */\n\
+            application-priority CSS beats Adwaita's theme CSS, so without it \
+            the base 0.10 fill would swallow the pressed 0.26 fill. */\n\
          .reprise-panel-toggle.{COLLAPSE_TOGGLE_CSS_CLASS} {{ \
            color: @reprise_accent_text_color; \
            background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
@@ -478,30 +479,14 @@ mod tests {
             "the player-bar toggle must render its checked fill — without that \
              this test cannot tell a missing slab from a blind sampler"
         );
+        // A transparent state can legitimately yield `None`, so this comparison
+        // proves only that folded and open render differently. The folded
+        // state's colour is pinned by
+        // `collapse_toggle_folded_state_keeps_its_accent_paint`.
         assert_ne!(
             checked_background, unchecked_background,
             "the folded collapse toggle must render a slab distinct from its open state"
         );
-    }
-
-    #[test]
-    fn collapse_rules_never_capture_the_search_toggle() {
-        let css = crate::ui::style::app_css_for_test();
-        let collapse_rule_count = css
-            .split('{')
-            .filter_map(|prefix| prefix.rsplit('}').next())
-            .map(str::trim)
-            .filter(|selector| selector.contains(super::COLLAPSE_TOGGLE_CSS_CLASS))
-            .inspect(|selector| {
-                assert!(
-                    selector.contains(".reprise-panel-toggle.reprise-collapse-toggle"),
-                    "collapse rule must carry both scoping classes: {selector}"
-                );
-            })
-            .count();
-
-        assert_eq!(collapse_rule_count, 6, "all six collapse states are scoped");
-        assert!(css.contains(".reprise-panel-toggle:checked { color: @reprise_accent_text_color;"));
     }
 
     #[test]

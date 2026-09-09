@@ -100,7 +100,7 @@ Specificity is what makes this safe without touching the generic rule:
 |---|---|---|
 | `.reprise-panel-toggle` | 0,1,0 | — |
 | `.reprise-panel-toggle:checked` (generic, interactions) | 0,2,0 | — |
-| `.reprise-panel-toggle.reprise-collapse-toggle` | 0,2,0 | only matches when unchecked, so never ties in practice |
+| `.reprise-panel-toggle.reprise-collapse-toggle` | 0,2,0 | matches every state; the more specific checked-state rules below win whenever the toggle is checked |
 | `.reprise-panel-toggle.reprise-collapse-toggle:checked` | 0,3,0 | the generic `:checked`, **regardless of source order** |
 | `.reprise-panel-toggle.reprise-collapse-toggle:checked:hover` | 0,4,0 | the generic `:checked:hover` (0,3,0) |
 
@@ -127,9 +127,12 @@ keeps serving the search toggle — the only remaining widget that is both a
 ```
 
 The `:active` line for the **unchecked** state is load-bearing, not symmetry for
-its own sake: the class rule (0,2,0) sets `background-color` and thereby
-outranks Adwaita's own `button:active` (0,1,1). Without an explicit press state
-the highlighted button would swallow its own click feedback.
+its own sake: Reprise's app CSS runs at
+`STYLE_PROVIDER_PRIORITY_APPLICATION`, so it beats Adwaita's theme CSS
+regardless of selector specificity. Without an explicit press state, the base
+rule's resting `HOVER_BG_ALPHA` fill (0.10) would remain in effect instead of
+changing to `BTN_CHECKED_FILL_PRESS_ALPHA` (0.26), and the highlighted button
+would swallow its own click feedback.
 
 ## Tasks
 
