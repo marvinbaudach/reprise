@@ -78,7 +78,8 @@ struct Inner {
     pressure: Cell<f64>,
     swell: Cell<f64>,
     started_at_us: Cell<i64>,
-    frame_time_us: Cell<i64>,
+    phase_us: Cell<i64>,
+    elapsed_us: Cell<i64>,
     pinned: Cell<bool>,
 }
 
@@ -101,7 +102,8 @@ impl CoverShimmer {
             pressure: Cell::new(0.0),
             swell: Cell::new(0.0),
             started_at_us: Cell::new(0),
-            frame_time_us: Cell::new(0),
+            phase_us: Cell::new(0),
+            elapsed_us: Cell::new(0),
             pinned: Cell::new(true),
         });
         area.set_draw_func({
@@ -157,8 +159,7 @@ impl CoverShimmer {
             return;
         }
         if frame_time_us <= 0 || !crate::ui::motion::animations_enabled() {
-            self.inner.started_at_us.set(0);
-            if self.inner.frame_time_us.replace(0) != 0 {
+            if self.hold_phase() {
                 self.area.queue_draw();
             }
             return;
@@ -170,10 +171,27 @@ impl CoverShimmer {
         } else {
             started_at_us
         };
-        let elapsed_us = frame_time_us.saturating_sub(started_at_us);
-        if self.inner.frame_time_us.replace(elapsed_us) != elapsed_us {
+        let elapsed_us = self
+            .inner
+            .phase_us
+            .get()
+            .saturating_add(frame_time_us.saturating_sub(started_at_us));
+        if self.inner.elapsed_us.replace(elapsed_us) != elapsed_us {
             self.area.queue_draw();
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn elapsed_s(&self) -> f64 {
+        elapsed_s(&self.inner)
+    }
+
+    fn hold_phase(&self) -> bool {
+        if self.inner.started_at_us.replace(0) == 0 {
+            return false;
+        }
+        self.inner.phase_us.set(self.inner.elapsed_us.get());
+        true
     }
 
     pub(super) fn set_pinned(&self, pinned: bool) {
@@ -182,11 +200,14 @@ impl CoverShimmer {
         if pinned {
             self.inner.pressure.set(0.0);
             self.inner.swell.set(0.0);
-            self.inner.started_at_us.set(0);
-            self.inner.frame_time_us.set(0);
+            self.hold_phase();
         }
         self.area.queue_draw();
     }
+}
+
+fn elapsed_s(inner: &Inner) -> f64 {
+    inner.elapsed_us.get() as f64 / 1_000_000.0
 }
 
 fn build_surface(texture: &gtk4::gdk::Texture) -> Option<cairo::ImageSurface> {
@@ -230,7 +251,7 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     };
     let diameter = SHIMMER_DIAMETER_PER_COVER * f64::from(tokens::NOW_PLAYING_COVER_SIZE);
     let scale = diameter / f64::from(SHIMMER_SURFACE_EDGE);
-    let elapsed_s = inner.frame_time_us.get() as f64 / 1_000_000.0;
+    let elapsed_s = elapsed_s(inner);
     cr.save().ok();
     cr.rectangle(
         0.0,
@@ -273,6 +294,25 @@ mod tests {
         assert!((shimmer_angle(25.0) - shimmer_angle(0.0)).abs() < 1e-9);
         assert!((shimmer_angle(26.0) - shimmer_angle(1.0)).abs() < 1e-9);
         assert!((shimmer_angle(86_400.0) - shimmer_angle(0.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn npp_18_the_disc_keeps_its_phase_across_a_pin() {
+        gtk4::init().expect("GTK test display");
+        let shimmer = CoverShimmer::new();
+        shimmer.set_pinned(false);
+        shimmer.set_frame_time(1_000_000);
+        shimmer.set_frame_time(11_000_000);
+        let before = shimmer.elapsed_s();
+        assert!(before > 0.0, "the disc did not start turning");
+        shimmer.set_pinned(true);
+        shimmer.set_pinned(false);
+        shimmer.set_frame_time(500_000_000);
+        let after = shimmer.elapsed_s();
+        assert!(
+            (after - before).abs() < 1e-6,
+            "the disc jumped from {before:.3}s to {after:.3}s across a pin"
+        );
     }
 
     #[test]
