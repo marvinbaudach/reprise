@@ -16,8 +16,6 @@ fn integrated_chrome_visible(mode: WindowDecorationMode) -> bool {
 pub(in crate::ui) struct WindowContentHost {
     root: adw::ToolbarView,
     separate_titlebar: gtk4::HeaderBar,
-    titlebar_wanted: Rc<Cell<bool>>,
-    compact: Rc<Cell<bool>>,
 }
 
 impl WindowContentHost {
@@ -34,8 +32,6 @@ impl WindowContentHost {
         Self {
             root,
             separate_titlebar,
-            titlebar_wanted: Rc::new(Cell::new(false)),
-            compact: Rc::new(Cell::new(false)),
         }
     }
 
@@ -48,7 +44,8 @@ impl WindowContentHost {
         self.root.content()
     }
 
-    pub(in crate::ui) fn additional_height(&self) -> i32 {
+    #[cfg(test)]
+    fn additional_height(&self) -> i32 {
         if !self.separate_titlebar.is_visible() {
             return 0;
         }
@@ -59,25 +56,13 @@ impl WindowContentHost {
     }
 
     fn set_separate_titlebar_visible(&self, visible: bool) {
-        self.titlebar_wanted.set(visible);
-        self.sync_titlebar();
-    }
-
-    /// Hides the separate titlebar while the compact mini-player is shown — it
-    /// is a chromeless floating card, never a titled window (MINI-1).
-    pub(in crate::ui) fn set_compact(&self, compact: bool) {
-        self.compact.set(compact);
-        self.sync_titlebar();
-    }
-
-    fn sync_titlebar(&self) {
-        self.separate_titlebar
-            .set_visible(self.titlebar_wanted.get() && !self.compact.get());
+        self.separate_titlebar.set_visible(visible);
     }
 }
 
 pub(in crate::ui) struct WindowDecorations {
     window: adw::ApplicationWindow,
+    compact_window: RefCell<Option<adw::ApplicationWindow>>,
     content_host: WindowContentHost,
     library_header: adw::HeaderBar,
     compact_headers: Vec<adw::HeaderBar>,
@@ -107,6 +92,7 @@ impl WindowDecorations {
         let content_host = WindowContentHost::new(window);
         let decorations = Rc::new(Self {
             window: window.clone(),
+            compact_window: RefCell::new(None),
             content_host,
             library_header: library_header.clone(),
             compact_headers,
@@ -127,6 +113,9 @@ impl WindowDecorations {
 
     pub(in crate::ui) fn apply(&self, mode: WindowDecorationMode) {
         self.window.set_decorated(true);
+        if let Some(window) = self.compact_window.borrow().as_ref() {
+            window.set_decorated(true);
+        }
         self.mode.set(mode);
         self.content_host
             .set_separate_titlebar_visible(mode == WindowDecorationMode::System);
@@ -151,17 +140,27 @@ impl WindowDecorations {
         self.on_mode_changed.replace(Some(on_mode_changed));
     }
 
+    pub(in crate::ui) fn set_compact_window(self: &Rc<Self>, window: &adw::ApplicationWindow) {
+        self.compact_window.replace(Some(window.clone()));
+        let weak = Rc::downgrade(self);
+        window.connect_realize(move |_| {
+            if let Some(decorations) = weak.upgrade() {
+                decorations.apply_compact_surface_request();
+                decorations.sync_controls();
+            }
+        });
+        self.apply_compact_surface_request();
+    }
+
     fn apply_surface_request(&self) {
-        let Some(surface) = self.window.surface() else {
-            return;
-        };
-        let Ok(toplevel) = surface.downcast::<gdk::Toplevel>() else {
-            tracing::warn!("window surface is not a GDK toplevel; decoration request skipped");
-            return;
-        };
-        // Both supported modes are client-drawn. The separate native GTK
-        // titlebar is the reliable GNOME Wayland fallback for unavailable SSD.
-        toplevel.set_decorated(false);
+        apply_surface_request_to(&self.window);
+        self.apply_compact_surface_request();
+    }
+
+    fn apply_compact_surface_request(&self) {
+        if let Some(window) = self.compact_window.borrow().as_ref() {
+            apply_surface_request_to(window);
+        }
     }
 
     fn sync_controls(&self) {
@@ -179,6 +178,19 @@ impl WindowDecorations {
             controls.set_visible(visible);
         }
     }
+}
+
+fn apply_surface_request_to(window: &adw::ApplicationWindow) {
+    let Some(surface) = window.surface() else {
+        return;
+    };
+    let Ok(toplevel) = surface.downcast::<gdk::Toplevel>() else {
+        tracing::warn!("window surface is not a GDK toplevel; decoration request skipped");
+        return;
+    };
+    // Both supported modes are client-drawn. The separate native GTK
+    // titlebar is the reliable GNOME Wayland fallback for unavailable SSD.
+    toplevel.set_decorated(false);
 }
 
 fn collect_decorations(

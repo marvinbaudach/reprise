@@ -1,10 +1,11 @@
-//! Persistent Library/Compact root switching and geometry isolation.
+//! Persistent Library/Compact window switching.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use libadwaita::prelude::AdwApplicationWindowExt;
 use reprise_core::db::Db;
 use reprise_core::library::settings::{self, CompactLayout, WindowViewMode};
 
@@ -15,19 +16,12 @@ use super::compact_player_layouts::{
 use super::file_open::StartupOpenIntent;
 use super::first_run::FirstRunDecision;
 use super::strings;
-use super::window_decorations::WindowContentHost;
-
-const FULL_MIN_WIDTH: i32 = 600;
-const FULL_MIN_HEIGHT: i32 = 400;
-const FULL_DEFAULT_WIDTH: i32 = 1200;
-const FULL_DEFAULT_HEIGHT: i32 = 800;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) struct ViewTransition {
     pub(in crate::ui) mode: WindowViewMode,
     pub(in crate::ui) layout: CompactLayout,
 }
-
 pub(in crate::ui) fn startup_transition(
     persisted_mode: WindowViewMode,
     persisted_layout: CompactLayout,
@@ -76,37 +70,13 @@ fn selected_layout_transition(
     }
 }
 
-fn full_dimension(value: i32, minimum: i32, fallback: i32) -> i32 {
-    if value > 0 {
-        value.max(minimum)
-    } else {
-        fallback
-    }
-}
-
-fn updated_full_geometry(current: (i32, i32), live: (i32, i32), maximized: bool) -> (i32, i32) {
-    if maximized {
-        current
-    } else {
-        (
-            full_dimension(live.0, FULL_MIN_WIDTH, current.0),
-            full_dimension(live.1, FULL_MIN_HEIGHT, current.1),
-        )
-    }
-}
-
 pub(in crate::ui) struct MinimalView {
-    window: adw::ApplicationWindow,
-    content_host: WindowContentHost,
-    full_root: gtk4::Widget,
+    library_window: adw::ApplicationWindow,
+    compact_window: Option<adw::ApplicationWindow>,
     compact: Option<CompactPlayer>,
     compact_root: Option<adw::ToastOverlay>,
     conn: Rc<Db>,
     transition: Cell<ViewTransition>,
-    full_width: Cell<i32>,
-    full_height: Cell<i32>,
-    full_maximized: Cell<bool>,
-    geometry_suppressed: Rc<Cell<bool>>,
     toast: Rc<dyn Fn(&str)>,
 }
 
@@ -147,8 +117,6 @@ fn set_container_passthrough(
 impl MinimalView {
     pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
-        content_host: &WindowContentHost,
-        full_root: &gtk4::Widget,
         compact: Option<&CompactPlayer>,
         conn: Rc<Db>,
         initial: ViewTransition,
@@ -169,34 +137,59 @@ impl MinimalView {
             overlay.set_child(Some(compact.handle()));
             overlay
         });
-        let state = Rc::new(Self {
-            window: window.clone(),
-            content_host: content_host.clone(),
-            full_root: full_root.clone(),
+        let compact_window = compact_root.as_ref().map(|compact_root| {
+            let app = window
+                .application()
+                .expect("the Library window belongs to the application");
+            let compact_window = adw::ApplicationWindow::builder()
+                .application(&app)
+                .title(strings::text(strings::APP_NAME))
+                .transient_for(window)
+                .decorated(true)
+                .build();
+            compact_window.set_content(Some(compact_root));
+            compact_window.add_css_class(CSS_WINDOW_CLASS);
+            set_container_passthrough(compact_root, &compact_window, true);
+            apply_compact_metrics(&compact_window);
+            let library_window = window.downgrade();
+            compact_window.connect_close_request(move |_| {
+                if let Some(library_window) = library_window.upgrade() {
+                    library_window.close();
+                }
+                gtk4::glib::Propagation::Proceed
+            });
+            let compact_window_weak = compact_window.downgrade();
+            window.connect_close_request(move |_| {
+                if let Some(compact_window) = compact_window_weak.upgrade() {
+                    compact_window.destroy();
+                }
+                gtk4::glib::Propagation::Proceed
+            });
+            compact_window
+        });
+        Rc::new(Self {
+            library_window: window.clone(),
+            compact_window,
             compact,
             compact_root,
             conn,
             transition: Cell::new(initial),
-            full_width: Cell::new(full_dimension(
-                window.default_width(),
-                FULL_MIN_WIDTH,
-                FULL_DEFAULT_WIDTH,
-            )),
-            full_height: Cell::new(full_dimension(
-                window.default_height(),
-                FULL_MIN_HEIGHT,
-                FULL_DEFAULT_HEIGHT,
-            )),
-            full_maximized: Cell::new(window.is_maximized()),
-            geometry_suppressed: Rc::new(Cell::new(false)),
             toast,
-        });
-        state.wire_full_geometry_tracking();
-        state
+        })
     }
 
-    pub(in crate::ui) fn geometry_guard(&self) -> Rc<Cell<bool>> {
-        self.geometry_suppressed.clone()
+    pub(in crate::ui) fn compact_window(&self) -> Option<adw::ApplicationWindow> {
+        self.compact_window.clone()
+    }
+
+    pub(in crate::ui) fn active_window(&self) -> adw::ApplicationWindow {
+        match self.transition.get().mode {
+            WindowViewMode::Library => self.library_window.clone(),
+            WindowViewMode::Compact => self
+                .compact_window
+                .clone()
+                .unwrap_or_else(|| self.library_window.clone()),
+        }
     }
 
     pub(in crate::ui) fn is_library_mode(&self) -> bool {
@@ -222,7 +215,7 @@ impl MinimalView {
         }
         match desired.mode {
             WindowViewMode::Library => self.restore_library(),
-            WindowViewMode::Compact => self.enter_compact(true),
+            WindowViewMode::Compact => self.enter_compact(),
         }
         self.transition.set(desired);
         tracing::info!(mode = ?desired.mode, layout = ?desired.layout, "window view mode changed");
@@ -232,84 +225,32 @@ impl MinimalView {
         let initial = self.transition.get();
         match initial.mode {
             WindowViewMode::Library => self.restore_library(),
-            WindowViewMode::Compact => self.enter_compact(false),
+            WindowViewMode::Compact => self.enter_compact(),
         }
         tracing::info!(mode = ?initial.mode, layout = ?initial.layout, "initial window view applied");
     }
 
     pub(in crate::ui) fn refresh_geometry(&self) {
         if self.transition.get().mode == WindowViewMode::Compact {
-            self.apply_compact_metrics();
+            if let Some(window) = &self.compact_window {
+                apply_compact_metrics(window);
+            }
         }
     }
 
-    fn enter_compact(&self, capture_full_geometry: bool) {
-        let Some(compact_root) = &self.compact_root else {
+    fn enter_compact(&self) {
+        let Some(compact_window) = &self.compact_window else {
             return;
         };
-        if capture_full_geometry {
-            let maximized = self.window.is_maximized();
-            let geometry = updated_full_geometry(
-                (self.full_width.get(), self.full_height.get()),
-                (self.window.width(), self.window.height()),
-                maximized,
-            );
-            self.full_width.set(geometry.0);
-            self.full_height.set(geometry.1);
-            self.full_maximized.set(maximized);
-        }
-        self.geometry_suppressed.set(true);
-        if self.window.is_maximized() {
-            self.window.unmaximize();
-        }
-        // Drop the Library root and its much larger minimum before making the
-        // toplevel non-resizable. Otherwise GTK/WM can freeze the old Library
-        // allocation and leave a small compact child floating in a large
-        // window after a maximized or otherwise wide Library session.
-        self.window.set_resizable(true);
-        self.window.set_width_request(-1);
-        self.window.set_height_request(-1);
-        self.content_host.set_content(compact_root);
-        self.content_host.set_compact(true);
-        self.window.add_css_class(CSS_WINDOW_CLASS);
-        set_container_passthrough(compact_root, &self.window, true);
-        self.apply_compact_metrics();
+        compact_window.present();
+        self.library_window.set_visible(false);
     }
 
     fn restore_library(&self) {
-        // Drop the compact passthrough tags before remounting, so the shared
-        // containers are opaque again for the full Library view.
-        if let Some(compact_root) = &self.compact_root {
-            set_container_passthrough(compact_root, &self.window, false);
+        self.library_window.present();
+        if let Some(compact_window) = &self.compact_window {
+            compact_window.set_visible(false);
         }
-        // Mount the full Library tree before requesting its much larger
-        // geometry. Resizing first lets the compositor draw one intermediate
-        // frame with the Compact tree stretched to Library dimensions.
-        self.content_host.set_content(&self.full_root);
-        self.content_host.set_compact(false);
-        self.window.remove_css_class(CSS_WINDOW_CLASS);
-        self.window.set_width_request(FULL_MIN_WIDTH);
-        self.window.set_height_request(FULL_MIN_HEIGHT);
-        self.window.set_resizable(true);
-        self.window
-            .set_default_size(self.full_width.get(), self.full_height.get());
-        if self.full_maximized.get() {
-            self.window.maximize();
-        }
-        self.geometry_suppressed.set(false);
-    }
-
-    fn apply_compact_metrics(&self) {
-        // The window is the card plus its shadow-room margin on every side, so
-        // the card renders at full size with room for the drop shadow instead
-        // of overflowing a too-small toplevel (MINI-1).
-        let width = MINI_WIDTH + 2 * CARD_MARGIN;
-        let height = MINI_HEIGHT + 2 * CARD_MARGIN + self.content_host.additional_height();
-        self.window.set_resizable(true);
-        self.window.set_width_request(width);
-        self.window.set_height_request(height);
-        self.window.set_default_size(width, height);
-        self.window.set_resizable(false);
     }
 
     fn show_toast(&self, message: &str) {
@@ -322,36 +263,23 @@ impl MinimalView {
         }
         (self.toast)(&message);
     }
+}
 
-    fn wire_full_geometry_tracking(self: &Rc<Self>) {
-        for property in ["width", "height", "maximized"] {
-            let state = Rc::downgrade(self);
-            self.window
-                .connect_notify_local(Some(property), move |window, _| {
-                    let Some(state) = state.upgrade() else {
-                        return;
-                    };
-                    if state.geometry_suppressed.get() {
-                        return;
-                    }
-                    let maximized = window.is_maximized();
-                    let geometry = updated_full_geometry(
-                        (state.full_width.get(), state.full_height.get()),
-                        (window.width(), window.height()),
-                        maximized,
-                    );
-                    state.full_width.set(geometry.0);
-                    state.full_height.set(geometry.1);
-                    state.full_maximized.set(maximized);
-                });
-        }
-    }
+fn apply_compact_metrics(window: &adw::ApplicationWindow) {
+    // The window is the card plus its shadow-room margin on every side, so the
+    // card renders at full size with room for the drop shadow instead of
+    // overflowing a too-small toplevel (MINI-1).
+    let width = MINI_WIDTH + 2 * CARD_MARGIN;
+    let height = MINI_HEIGHT + 2 * CARD_MARGIN;
+    window.set_resizable(true);
+    window.set_width_request(width);
+    window.set_height_request(height);
+    window.set_default_size(width, height);
+    window.set_resizable(false);
 }
 
 #[cfg(test)]
 mod tests {
-    use gtk4::gio;
-
     use super::*;
     use crate::ui::file_open::StartupOpenIntent;
 
@@ -375,64 +303,6 @@ mod tests {
         assert_eq!(compact.mode, WindowViewMode::Compact);
         assert_eq!(compact.layout, CompactLayout::Card);
         assert_eq!(toggled_transition(compact), current);
-        assert_eq!(full_dimension(900, FULL_MIN_WIDTH, FULL_DEFAULT_WIDTH), 900);
-        assert_eq!(full_dimension(0, FULL_MIN_WIDTH, FULL_DEFAULT_WIDTH), 1200);
-        assert_eq!(
-            updated_full_geometry((900, 600), (1920, 1080), true),
-            (900, 600)
-        );
-        assert_eq!(
-            updated_full_geometry((900, 600), (820, 540), false),
-            (820, 540)
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn library_root_is_mounted_before_full_geometry_is_requested() {
-        gtk4::init().unwrap();
-        let app = adw::Application::builder()
-            .application_id("io.github.marvinbaudach.Reprise.RestoreOrderTest")
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.register(None::<&gio::Cancellable>).unwrap();
-        let window = adw::ApplicationWindow::new(&app);
-        let content_host = WindowContentHost::new(&window);
-        let full_root = gtk4::Label::new(Some("Library")).upcast::<gtk4::Widget>();
-        let compact_root = gtk4::Label::new(Some("Compact"));
-        content_host.set_content(&compact_root);
-        let state = MinimalView {
-            window: window.clone(),
-            content_host: content_host.clone(),
-            full_root: full_root.clone(),
-            compact: None,
-            compact_root: None,
-            conn: Rc::new(crate::test_db::open().unwrap()),
-            transition: Cell::new(ViewTransition {
-                mode: WindowViewMode::Compact,
-                layout: CompactLayout::Card,
-            }),
-            full_width: Cell::new(900),
-            full_height: Cell::new(600),
-            full_maximized: Cell::new(false),
-            geometry_suppressed: Rc::new(Cell::new(true)),
-            toast: Rc::new(|_| {}),
-        };
-        let observed = Rc::new(Cell::new(false));
-        let library_was_mounted = Rc::new(Cell::new(false));
-        let observed_for_notify = observed.clone();
-        let mounted_for_notify = library_was_mounted.clone();
-        window.connect_notify_local(Some("width-request"), move |_, _| {
-            if observed_for_notify.replace(true) {
-                return;
-            }
-            mounted_for_notify.set(content_host.content().as_ref() == Some(&full_root));
-        });
-
-        state.restore_library();
-
-        assert!(observed.get());
-        assert!(library_was_mounted.get());
     }
 
     #[test]

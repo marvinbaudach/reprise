@@ -2,8 +2,8 @@
 
 use std::rc::Rc;
 
-use gtk4::glib;
 use gtk4::prelude::*;
+use gtk4::{gio, glib};
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
@@ -12,6 +12,7 @@ use super::compact_player::CompactPlayer;
 use super::file_open::StartupOpenIntent;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
+#[cfg(test)]
 use super::window_decorations::WindowContentHost;
 
 pub(in crate::ui) fn initial_transition(
@@ -29,8 +30,6 @@ pub(in crate::ui) fn initial_transition(
 
 pub(in crate::ui) fn build_mode(
     window: &adw::ApplicationWindow,
-    content_host: &WindowContentHost,
-    full_root: &gtk4::Widget,
     compact: Option<&CompactPlayer>,
     conn: &Rc<Db>,
     initial: ViewTransition,
@@ -39,8 +38,6 @@ pub(in crate::ui) fn build_mode(
     let toast_overlay = toast_overlay.clone();
     MinimalView::new(
         window,
-        content_host,
-        full_root,
         compact,
         conn.clone(),
         initial,
@@ -124,13 +121,28 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
 }
 
 pub(in crate::ui) fn install(
-    window: &adw::ApplicationWindow,
+    _window: &adw::ApplicationWindow,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,
     conn: &Rc<Db>,
     on_preferences: Rc<dyn Fn()>,
 ) {
     if let Some(compact) = compact {
+        let compact_window = mode
+            .compact_window()
+            .expect("a compact player always has a compact window");
+        let toggle =
+            gio::SimpleAction::new(crate::ui::primary_menu::ACTION_TOGGLE_MINIMAL_VIEW, None);
+        {
+            let mode = Rc::downgrade(mode);
+            toggle.connect_activate(move |_, _| {
+                if let Some(mode) = mode.upgrade() {
+                    mode.toggle();
+                }
+            });
+        }
+        compact_window.add_action(&toggle);
+
         let weak = Rc::downgrade(mode);
         compact.set_on_restore(Rc::new(move || {
             if let Some(mode) = weak.upgrade() {
@@ -150,7 +162,7 @@ pub(in crate::ui) fn install(
             if above {
                 compact.set_always_on_top_active(true);
                 let window_weak = glib::WeakRef::new();
-                window_weak.set(Some(window));
+                window_weak.set(Some(&compact_window));
                 // Defer until the window is mapped so the surface exists.
                 gtk4::glib::idle_add_local_once(move || {
                     if let Some(window) = window_weak.upgrade() {
@@ -162,7 +174,7 @@ pub(in crate::ui) fn install(
 
         let conn_weak = Rc::downgrade(conn);
         let window_weak = glib::WeakRef::new();
-        window_weak.set(Some(window));
+        window_weak.set(Some(&compact_window));
         compact.set_on_always_on_top(Rc::new(move |above| {
             if let Some(window) = window_weak.upgrade() {
                 set_always_on_top(&window, above);
@@ -175,7 +187,7 @@ pub(in crate::ui) fn install(
         }));
 
         let window_weak = glib::WeakRef::new();
-        window_weak.set(Some(window));
+        window_weak.set(Some(&compact_window));
         compact.set_on_quit(Rc::new(move || {
             if let Some(window) = window_weak.upgrade() {
                 window.close();
@@ -233,10 +245,9 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         settings::set_window_view_mode(&conn, WindowViewMode::Library).unwrap();
         let content_host = WindowContentHost::new(&window);
+        content_host.set_content(&full_root);
         let mode = MinimalView::new(
             &window,
-            &content_host,
-            full_root.upcast_ref(),
             Some(&compact),
             conn.clone(),
             ViewTransition {
@@ -271,7 +282,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn library_entry_wiring_adds_no_header_button_and_restore_reuses_the_window() {
+    fn library_entry_wiring_adds_no_header_button_and_uses_a_transient_compact_window() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
             return;
@@ -290,10 +301,9 @@ mod tests {
         let compact = CompactPlayer::new();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let content_host = WindowContentHost::new(&window);
+        content_host.set_content(&full_root);
         let mode = MinimalView::new(
             &window,
-            &content_host,
-            full_root.upcast_ref(),
             Some(&compact),
             conn.clone(),
             ViewTransition {
@@ -306,16 +316,34 @@ mod tests {
         let header = adw::HeaderBar::new();
         install(&window, &mode, Some(&compact), &conn, Rc::new(|| {}));
         assert!(!has_button_with_tooltip(&header, "Open Compact View"));
+        assert_eq!(app.windows().len(), 2);
+        assert!(mode
+            .compact_window()
+            .unwrap()
+            .lookup_action(crate::ui::primary_menu::ACTION_TOGGLE_MINIMAL_VIEW)
+            .is_some());
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
-        let same_window = window.clone();
-
         mode.toggle();
         while gtk4::glib::MainContext::default().iteration(false) {}
 
-        assert!(compact.handle().is_ancestor(&window));
-        assert_eq!(window, same_window);
-        assert!(window.is_visible());
+        let compact_window = compact
+            .handle()
+            .root()
+            .and_downcast::<adw::ApplicationWindow>()
+            .expect("the compact card has its own application window");
+        assert_ne!(compact_window, window);
+        assert_eq!(
+            compact_window.transient_for().as_ref(),
+            Some(window.upcast_ref())
+        );
+        assert!(!window.is_visible());
+        assert!(compact_window.is_visible());
+        assert_eq!(
+            content_host.content().as_ref(),
+            Some(full_root.upcast_ref()),
+            "the Library tree remains mounted while compact mode is visible"
+        );
 
         compact.activate_restore_for_test();
 
@@ -323,7 +351,8 @@ mod tests {
             content_host.content().as_ref(),
             Some(full_root.upcast_ref())
         );
-        assert_eq!(window, same_window);
+        assert!(window.is_visible());
+        assert!(!compact_window.is_visible());
         window.close();
     }
 
