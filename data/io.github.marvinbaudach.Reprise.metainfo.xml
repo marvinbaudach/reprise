@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.160" date="2026-09-09" type="stable">
+      <description>
+        <p>Gives the light appearance its own edges, so surfaces, the cover bloom, a search match and the seek waveform stay legible instead of leaving the accent to carry all the structure, and on Android lets the Now Playing swipe animate again while keeping a real cover from falling back to a generated note.</p>
+        <p xml:lang="de">Gibt der hellen Darstellung eigene Kanten, sodass Flächen, das Cover-Leuchten, ein Suchtreffer und die Wellenform zum Spulen lesbar bleiben, statt die gesamte Struktur dem Akzent zu überlassen, und lässt unter Android das Wischen im Wiedergabebildschirm wieder animieren, während ein echtes Cover nicht mehr auf eine erzeugte Note zurückfällt.</p>
+      </description>
+    </release>
     <release version="0.1.157" date="2026-09-08" type="stable">
       <description>
         <p>Gives every album its own cover back when one embedded picture was shared across a whole discography, puts Releases, Radio, Podcasts and Concerts on one filter grammar, keeps the window responsive while you edit or delete so a tag save touches only what it changed, stops the Updates popover from giving up for good, and on Android moves library reads off the main thread so the newest search answer wins.</p>

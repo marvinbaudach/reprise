@@ -4,6 +4,27 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.160] - 2026-09-09
+
+### Appearance
+
+- The light appearance gets its own edges. Every hairline, tint and elevation
+  rung was authored as a literal white: right on the dark palettes, invisible on
+  the light ones, which is why light read flat and left the accent to carry all
+  the structure. Surfaces are separated by visible edges again, the cover bloom
+  is no longer washed out, a search match stays readable on its own tinted
+  background, and the seek waveform keeps its unplayed bars legible. The dark
+  appearance is unchanged.
+
+### Android
+
+- The Now Playing swipe animates again. Titles sat left of centre at rest with
+  their first letters clipped off the screen, and the settle after a swipe never
+  rendered. The card now follows the gesture and eases into place.
+- A cover no longer falls back to the generated note. When the full-size read
+  came back empty, the panel replaced the real artwork it was already showing
+  with a generated one; it now keeps the cover it already has.
+
 ## [0.1.157] - 2026-09-08
 
 ### Library
