@@ -374,7 +374,11 @@ impl NowPlayingPanel {
             toggle: gtk4::ToggleButton::builder()
                 .icon_name("sidebar-show-right-symbolic")
                 .tooltip_text(strings::text(strings::INFO_PANEL_TOGGLE))
-                .css_classes(["flat", "reprise-panel-toggle"])
+                .css_classes([
+                    "flat",
+                    "reprise-panel-toggle",
+                    crate::ui::style::buttons::COLLAPSE_TOGGLE_CSS_CLASS,
+                ])
                 .active(visible)
                 .build(),
             conn,
@@ -731,3 +735,22 @@ mod tab_tests;
 #[cfg(test)]
 #[path = "now_playing_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod collapse_toggle_tests {
+    use gtk4::prelude::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn now_playing_panel_toggle_carries_the_collapse_class() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let (_window, panel) = super::tests::test_panel(
+            "io.github.marvinbaudach.Reprise.NowPlayingCollapseToggleTest",
+        );
+
+        assert!(panel
+            .toggle_button()
+            .has_css_class(crate::ui::style::buttons::COLLAPSE_TOGGLE_CSS_CLASS));
+    }
+}

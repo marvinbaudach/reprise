@@ -86,6 +86,7 @@ mod tests {
             )),
             ".reprise-panel-toggle:checked must keep its accent state fill: {panel_toggle_rule}"
         );
+        assert!(panel_toggle_rule.contains("color: @reprise_accent_text_color"));
         assert!(css.contains("border-radius"));
         assert!(css.contains("floating-sheet > dimming"));
         assert!(css.contains("floating-sheet > sheet"));

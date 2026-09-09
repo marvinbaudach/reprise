@@ -32,6 +32,9 @@ pub(in crate::ui) const PRIMARY_CLASS: &str = "reprise-btn-primary";
 pub(in crate::ui) const ADD_ACTION_CLASS: &str = "reprise-btn-add";
 /// Tertiary/flat entries: background hover only, deliberately no press scale.
 pub(in crate::ui) const TERTIARY_CLASS: &str = "reprise-btn-tertiary";
+/// Panel-collapse toggles whose highlight means the sidebar or Now Playing
+/// panel is folded away.
+pub(in crate::ui) const COLLAPSE_TOGGLE_CSS_CLASS: &str = "reprise-collapse-toggle";
 /// Full-width button nested in a selectable navigation sidebar row. The row
 /// owns every visual interaction state and the sole keyboard focus stop.
 pub(in crate::ui) const SIDEBAR_ROW_ACTION_CLASS: &str = "reprise-sidebar-row-action";
@@ -142,8 +145,8 @@ pub(in crate::ui) fn css() -> String {
         ADD_ACTION_FILL_ALPHA, ADD_ACTION_FILL_HOVER_ALPHA, ADD_ACTION_FILL_PRESS_ALPHA,
         BTN_CHECKED_FILL_HOVER_ALPHA, BTN_CHECKED_FILL_PRESS_ALPHA, BTN_DOT_SIZE,
         BTN_DOT_VERTICAL_POSITION, BTN_HOVER_ALPHA, BTN_PRESS_ALPHA, BTN_PRESS_SCALE,
-        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH,
-        PRIMARY_DISABLED_FILL_ALPHA, TRANSITION,
+        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, FOCUS_RING_OFFSET, FOCUS_RING_WIDTH, HOVER_BG_ALPHA,
+        HOVER_BG_ALPHA_STRONG, PRIMARY_DISABLED_FILL_ALPHA, TRANSITION,
     };
 
     let focus_ring = format!(
@@ -216,11 +219,22 @@ pub(in crate::ui) fn css() -> String {
            background-color: alpha(@accent_bg_color, {BTN_CHECKED_FILL_HOVER_ALPHA}); }}\n\
          .{TOGGLE_CLASS}:checked:active {{ \
            background-color: alpha(@accent_bg_color, {BTN_CHECKED_FILL_PRESS_ALPHA}); }}\n\
-         .reprise-panel-toggle.{sidebar_toggle}:checked {{ \
+         /* A collapse toggle is lit while its panel is folded away. The hidden \
+            panel itself is the non-colour state signal, so this intentionally \
+            carries no dot. The explicit unchecked press state is load-bearing: \
+            the two-class base rule outranks Adwaita's button:active. */\n\
+         .reprise-panel-toggle.{COLLAPSE_TOGGLE_CSS_CLASS} {{ \
+           color: @reprise_accent_text_color; \
+           background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
+         .reprise-panel-toggle.{COLLAPSE_TOGGLE_CSS_CLASS}:hover {{ \
+           background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA_STRONG}); }}\n\
+         .reprise-panel-toggle.{COLLAPSE_TOGGLE_CSS_CLASS}:active {{ \
+           background-color: alpha(@accent_bg_color, {BTN_CHECKED_FILL_PRESS_ALPHA}); }}\n\
+         .reprise-panel-toggle.{COLLAPSE_TOGGLE_CSS_CLASS}:checked {{ \
            background-color: transparent; background-image: none; color: inherit; }}\n\
-         .reprise-panel-toggle.{sidebar_toggle}:checked:hover {{ \
+         .reprise-panel-toggle.{COLLAPSE_TOGGLE_CSS_CLASS}:checked:hover {{ \
            background-color: alpha(currentColor, {BTN_HOVER_ALPHA}); }}\n\
-         .reprise-panel-toggle.{sidebar_toggle}:checked:active {{ \
+         .reprise-panel-toggle.{COLLAPSE_TOGGLE_CSS_CLASS}:checked:active {{ \
            background-color: alpha(currentColor, {BTN_PRESS_ALPHA}); }}\n\
          /* BTN-3: primary tier — Adwaita already paints the accent surface, so \
             only the extra press sink and the hover glow are added here. */\n\
@@ -280,7 +294,6 @@ pub(in crate::ui) fn css() -> String {
            background-color: transparent; box-shadow: none; transform: none; }}\n\
          /* BTN-1: keyboard focus is its own signal, never the hover look. */\n\
          {focus_ring}",
-        sidebar_toggle = crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS,
     )
 }
 
@@ -381,17 +394,17 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_toggle_checked_state_keeps_no_mode_slab() {
+    fn collapse_toggle_checked_state_keeps_no_mode_slab() {
         let css = super::css();
         let selector = format!(
             ".reprise-panel-toggle.{}:checked",
-            crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS
+            super::COLLAPSE_TOGGLE_CSS_CLASS
         );
         let rule = css
             .split(&selector)
             .nth(1)
             .and_then(|rest| rest.split('}').next())
-            .expect("sidebar toggle checked rule");
+            .expect("collapse toggle checked rule");
 
         assert!(rule.contains("background-color: transparent"));
         assert!(rule.contains("background-image: none"));
@@ -399,17 +412,17 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_toggle_carries_no_accent_in_any_checked_state() {
+    fn collapse_toggle_carries_no_accent_in_any_checked_state() {
         let css = super::css();
         let selector = format!(
             ".reprise-panel-toggle.{}:checked:active",
-            crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS
+            super::COLLAPSE_TOGGLE_CSS_CLASS
         );
         let rule = css
             .split(&selector)
             .nth(1)
             .and_then(|rest| rest.split('}').next())
-            .expect("sidebar toggle checked-active rule");
+            .expect("collapse toggle checked-active rule");
 
         assert!(rule.contains(&format!("alpha(currentColor, {})", tokens::BTN_PRESS_ALPHA)));
         assert!(!rule.contains("@accent_bg_color"));
@@ -417,7 +430,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn sidebar_toggle_checked_state_renders_no_mode_slab() {
+    fn collapse_toggle_folded_state_renders_a_distinct_slab() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         use gtk4::prelude::*;
 
@@ -428,7 +441,7 @@ mod tests {
             .css_classes([
                 "flat",
                 "reprise-panel-toggle",
-                crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS,
+                super::COLLAPSE_TOGGLE_CSS_CLASS,
             ])
             .width_request(48)
             .height_request(48)
@@ -443,11 +456,9 @@ mod tests {
         let checked_background = rendered_center_pixel(&window, &button);
         window.close();
 
-        // The control arm. Both sidebar samples may legitimately be `None` —
-        // the de-coloured toggle paints nothing in either state — and comparing
-        // nothing with nothing proves nothing on its own. The player-bar toggle
-        // fills on `:checked` by design, so its two samples differing is what
-        // establishes that this sampler can see a slab where one exists.
+        // The control arm. The player-bar toggle fills on `:checked` by design,
+        // so its two samples differing establishes that this sampler can see a
+        // slab where one exists.
         let control = gtk4::ToggleButton::builder()
             .css_classes(["flat", super::TOGGLE_CLASS])
             .width_request(48)
@@ -467,10 +478,30 @@ mod tests {
             "the player-bar toggle must render its checked fill — without that \
              this test cannot tell a missing slab from a blind sampler"
         );
-        assert_eq!(
+        assert_ne!(
             checked_background, unchecked_background,
-            "the production sidebar toggle classes must render no checked-mode slab"
+            "the folded collapse toggle must render a slab distinct from its open state"
         );
+    }
+
+    #[test]
+    fn collapse_rules_never_capture_the_search_toggle() {
+        let css = crate::ui::style::app_css_for_test();
+        let collapse_rule_count = css
+            .split('{')
+            .filter_map(|prefix| prefix.rsplit('}').next())
+            .map(str::trim)
+            .filter(|selector| selector.contains(super::COLLAPSE_TOGGLE_CSS_CLASS))
+            .inspect(|selector| {
+                assert!(
+                    selector.contains(".reprise-panel-toggle.reprise-collapse-toggle"),
+                    "collapse rule must carry both scoping classes: {selector}"
+                );
+            })
+            .count();
+
+        assert_eq!(collapse_rule_count, 6, "all six collapse states are scoped");
+        assert!(css.contains(".reprise-panel-toggle:checked { color: @reprise_accent_text_color;"));
     }
 
     #[test]
@@ -692,7 +723,7 @@ mod tests {
     /// operation, and a flat toggle whose background is fully transparent is
     /// exactly that widget — so "paints nothing" is a legitimate outcome here,
     /// not a broken harness. Treating it as fatal made
-    /// `sidebar_toggle_checked_state_renders_no_mode_slab` panic on its very
+    /// `collapse_toggle_folded_state_renders_a_distinct_slab` panic on its very
     /// first sample, before it had asserted anything. `render` above already
     /// carries the same distinction.
     fn rendered_center_pixel(
