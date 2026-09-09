@@ -2,7 +2,7 @@
 slug: the-visualizer-review-fixes
 worktree: /home/marvin/Projects/reprise-visualizer-review-fixes
 branch: feature/visualizer-review-fixes
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-09
 ---
