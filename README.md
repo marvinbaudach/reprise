@@ -1,26 +1,22 @@
 # Reprise
 
-Build a music player people enjoy using — without treating their library as a
-cloud account. Reprise is a native GNOME player written in Rust, with a shared
-engine that also powers an Android client. It is a welcoming place to work on
-real desktop, mobile, audio, and library-management problems.
+A native music player for GNOME and Android, powered by a shared Rust engine.
+Browse your own music, build a queue, follow the lyrics, and take your library
+with you — with audio-reactive visuals that make listening feel alive.
 
 <p align="center">
-  <img src="showroom/public/media/showroom/gnome-library.webp" width="760" alt="Reprise on GNOME with a sortable music library, queue, playback bar, and connected-device sync status." />
-  <img src="showroom/public/media/showroom/android-visualizer.webp" width="190" alt="Reprise on Android showing the audio-reactive Now Playing scene." />
+  <img src="showroom/public/media/showroom/gnome-visualizer.webp" width="77%" alt="Reprise on GNOME with a sortable music library, album artwork, spectrum visualizer, and waveform playback controls." />
+  <img src="showroom/public/media/showroom/android-visualizer.webp" width="20%" alt="Reprise on Android showing the audio-reactive Now Playing scene." />
 </p>
 
-Reprise keeps scanning, metadata, search, playlists, listening history,
-podcasts, radio, and device sync local. GTK4/libadwaita gives the desktop client
-its GNOME feel; the portable Rust core keeps the product rules shared rather
-than duplicated across platforms.
+**[Explore the interactive showcase](https://marvinbaudach.github.io/reprise/)**
+— animated desktop and mobile scenes, a short product film, and the engineering
+behind them.
 
 ## Downloads
 
-Each [latest release](https://github.com/marvinbaudach/reprise/releases/latest)
-contains the GNOME Flatpak bundle, and the
-[same release](https://github.com/marvinbaudach/reprise/releases/latest)
-contains the universal Android APK.
+- [GNOME desktop](https://github.com/marvinbaudach/reprise/releases/latest) — Flatpak bundle
+- [Android](https://github.com/marvinbaudach/reprise/releases/latest) — universal APK
 
 ```sh
 flatpak install --user flathub org.gnome.Platform//50
@@ -33,9 +29,12 @@ release page.
 
 ## Why Reprise
 
-- **Local first:** library data and playback stay on the device.
-- **Native clients:** GTK4/libadwaita on GNOME; a shared Rust engine on Android.
-- **Evidence-led:** architecture, UX, accessibility, and performance have gates.
+- **Your music, organized:** sortable library, search, playlists, metadata
+  editing, and listening history, backed by a local database.
+- **More in every listen:** lyrics, artwork, audio-reactive visualizers,
+  podcasts, and radio; online features are opt-in.
+- **At home and on the move:** native GTK4/libadwaita on GNOME, Kotlin/Compose
+  on Android, and device synchronization from the desktop.
 
 ## Architecture
 
@@ -46,8 +45,9 @@ release page.
 - `reprise-platform-linux` implements GStreamer, MPRIS, MTP, and Trash.
 - `reprise-gnome` owns native GTK4/libadwaita presentation and interaction.
 
-The CLI, MCP server, runtime, view model, and Android FFI stay behind those
-boundaries. `scripts/check-architecture.sh` enforces them.
+Android reaches the shared core through a narrow UniFFI boundary; the CLI and
+MCP server expose dedicated headless interfaces.
+`scripts/check-architecture.sh` enforces the dependency boundaries.
 
 ## Engineering contracts
 
@@ -80,7 +80,9 @@ meson compile -C _build
 meson install -C _build
 ```
 
-See [flatpak/README.md](flatpak/README.md) for Flatpak and `reprise-mcp` builds.
+See [flatpak/README.md](flatpak/README.md) for Flatpak packaging. Build the
+optional MCP server separately with `cargo build --locked -p reprise-mcp`; add
+`--features mpris` to include desktop playback controls.
 
 ## Verification
 
@@ -114,5 +116,7 @@ Reprise is **GPL-3.0-or-later**. See [LICENSE](LICENSE) and [LICENSING.md](LICEN
 
 ## How this project is built
 
-Reprise uses AI assistance under human-owned architecture and review. The
-maintainer owns product decisions and the commit history preserves co-authorship.
+Reprise is built with AI assistance. The maintainer directs the product,
+reviews changes, and remains responsible for the result. Architecture, UX,
+accessibility, and source quality are checked by automated gates;
+[TESTING.md](TESTING.md) records what those checks can and cannot prove.

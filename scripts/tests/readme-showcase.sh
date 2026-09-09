@@ -32,7 +32,7 @@ reject_fixed() {
 (( $(wc -l < "$english") <= 140 )) || fail "$english must remain a concise developer entry point"
 [[ $(rg -c 'docs/assets/reprise-architecture\.svg' "$english") -eq 1 ]] ||
   fail "$english must contain exactly one architecture visual"
-[[ $(rg -c 'showroom/public/media/showroom/gnome-library\.webp' "$english") -eq 1 ]] ||
+[[ $(rg -c 'showroom/public/media/showroom/gnome-visualizer\.webp' "$english") -eq 1 ]] ||
   fail "$english must contain exactly one GNOME Showcase capture"
 [[ $(rg -c 'showroom/public/media/showroom/android-visualizer\.webp' "$english") -eq 1 ]] ||
   fail "$english must contain exactly one Android Showcase capture"

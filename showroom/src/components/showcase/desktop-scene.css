@@ -1,0 +1,70 @@
+.desktop-scene {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Coordinates are relative to the complete 3456 × 2096 capture. */
+.desktop-scene__atmosphere {
+  position: absolute;
+  left: 82.65%;
+  top: 5.2%;
+  width: 17.3%;
+  height: 26.5%;
+  overflow: hidden;
+  background: #22272d;
+  mask-image: linear-gradient(#000 75%, transparent);
+}
+
+.desktop-scene__disc {
+  position: absolute;
+  left: -12%;
+  top: -17%;
+  width: 124%;
+  aspect-ratio: 1;
+  background: url("/media/showroom/desktop-cover-glow.webp") center / cover;
+  mask-image: radial-gradient(closest-side, #000 25%, transparent 100%);
+  opacity: 0.7;
+  animation: desktop-cover-turn 25s linear infinite;
+  animation-play-state: paused;
+}
+
+.desktop-scene[data-active="true"] .desktop-scene__disc {
+  animation-play-state: running;
+}
+
+.desktop-scene__cover {
+  position: absolute;
+  left: 86.38%;
+  top: 7.33%;
+  width: 9.82%;
+  height: 16.18%;
+  border-radius: 5%;
+  background: url("/media/showroom/desktop-cover-120.webp") center / cover;
+}
+
+.lightbox .desktop-scene__cover {
+  background-image: url("/media/showroom/desktop-cover.webp");
+}
+
+.desktop-scene__visualizer {
+  position: absolute;
+  left: 83.65%;
+  top: 43.85%;
+  width: 15.3%;
+  height: 19.86%;
+  border: 1px solid #30434a;
+  border-radius: 9%;
+}
+
+@keyframes desktop-cover-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-scene .desktop-scene__disc {
+    animation: none;
+  }
+}

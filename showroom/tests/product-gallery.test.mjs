@@ -14,7 +14,10 @@ test('the prerendered page opens with real GNOME and Android product media', asy
   const html = await prerenderedPage();
 
   assert.match(html, /data-showcase="hero-product"/);
-  assert.match(html, /Reprise running on GNOME with the music library and Now Playing visible/);
+  assert.match(
+    html,
+    /Reprise on GNOME playing Elevator Operator, with cover glow and a neon song visualization/,
+  );
   assert.match(html, /Reprise on Android showing the audio-reactive Now Playing scene/);
 });
 

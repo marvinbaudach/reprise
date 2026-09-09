@@ -1,0 +1,41 @@
+.phone-atmosphere {
+  position: absolute;
+  left: 0;
+  top: 7%;
+  width: 100%;
+  height: 48%;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(transparent, #000 15%, #000 70%, transparent);
+}
+
+.phone-atmosphere__oil {
+  position: absolute;
+  inset: -35%;
+  background:
+    radial-gradient(ellipse at 28% 64%, rgb(51 187 206 / 0.52), transparent 48%),
+    radial-gradient(ellipse at 72% 28%, rgb(184 55 151 / 0.52), transparent 48%);
+  mix-blend-mode: screen;
+  animation: phone-oil-drift 14s ease-in-out -5s infinite alternate;
+  animation-play-state: paused;
+}
+
+.phone-atmosphere[data-active="true"] .phone-atmosphere__oil {
+  animation-play-state: running;
+}
+
+@keyframes phone-oil-drift {
+  from {
+    transform: translate(-14%, 9%) rotate(-50deg);
+  }
+
+  to {
+    transform: translate(14%, -9%) rotate(50deg) scale(1.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-atmosphere .phone-atmosphere__oil {
+    animation: none;
+  }
+}

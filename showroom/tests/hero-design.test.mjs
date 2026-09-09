@@ -37,7 +37,7 @@ test('the design hero opens with two screenshot buttons', async () => {
   // 5% of the frame is wider than --frame-pad, and the tile was drawn outside
   // the window and clipped. `max` keeps -5% wherever it fits.
   for (const declaration of [
-    'right:max(-5%, calc(-1 * var(--frame-pad)))',
+    'left:max(-5%, calc(-1 * var(--frame-pad)))',
     'bottom:-6%',
     'width:24%',
   ]) {
