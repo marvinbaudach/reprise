@@ -173,7 +173,11 @@
   }
 
   .ledger caption {
-    font-size: 0.62rem;
+    display: block;
+    width: 100%;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    letter-spacing: 0.04em;
   }
 
   .ledger tbody tr {

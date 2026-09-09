@@ -1,11 +1,11 @@
 import './chrome.css';
 
 const CHAPTERS: readonly { id: string; label: string }[] = [
-  { id: 'ch-01', label: '01 Core' },
-  { id: 'ch-02', label: '02 Judgement' },
-  { id: 'ch-03', label: '03 Signature' },
-  { id: 'ch-04', label: '04 Headless' },
-  { id: 'ch-05', label: '05 Measured' },
+  { id: 'film', label: 'Product' },
+  { id: 'ch-01', label: 'Architecture' },
+  { id: 'ch-05', label: 'Performance' },
+  { id: 'ch-02', label: 'Quality' },
+  { id: 'ch-03', label: 'Design' },
 ];
 
 const MARK = `${import.meta.env.BASE_URL}brand/reprise-mark.svg`;
@@ -19,7 +19,7 @@ const MARK = `${import.meta.env.BASE_URL}brand/reprise-mark.svg`;
 export function SiteHeader() {
   return (
     <header id="site-header" className="site-header" data-lifted="false">
-      <a className="site-header__id" href="#hero">
+      <a className="site-header__id" href="#rp-top">
         <img className="site-header__mark" src={MARK} alt="" width={24} height={24} />
         <span className="site-header__wordmark">Reprise</span>
         <span className="site-header__state">Alpha</span>

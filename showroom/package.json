@@ -13,7 +13,8 @@
     "prerender": "node prerender.mjs",
     "preview": "vite preview",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:browser": "node browser-tests/player.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

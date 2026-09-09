@@ -1,99 +1,283 @@
 .film-frame {
-  margin-top: clamp(3.5rem, 2.5rem + 3vw, 6rem);
+  margin-block: 3rem 5rem;
+  scroll-margin-top: 6rem;
 }
-
 .film-heading {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  align-items: end;
   justify-content: space-between;
-  gap: var(--gap-line);
-  margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.5rem);
+  gap: 2rem;
+  margin-bottom: 1.75rem;
 }
-
-.film-heading h3 {
-  max-width: 30ch;
+.film-heading .eyebrow {
+  color: var(--accent);
+  margin-bottom: 0.8rem;
+}
+.film-heading h2 {
   color: var(--text-strong);
-  font-size: clamp(1.4rem, 1.15rem + 1.2vw, 2.2rem);
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  letter-spacing: -0.035em;
   font-variation-settings:
-    "wdth" 104,
-    "wght" 560;
-  letter-spacing: -0.02em;
+    "wdth" 105,
+    "wght" 600;
+  line-height: 1.15;
 }
-
-.film-heading p {
-  max-width: 42ch;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.film-heading > p {
+  max-width: 38ch;
+  color: var(--text-body);
+  font-size: 1rem;
+  line-height: 1.5;
 }
-
 .film {
   overflow: hidden;
   border: 1px solid var(--surface-line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface-raised);
-  box-shadow: 0 26px 60px -40px oklch(4% 0.02 269 / 0.95);
+  box-shadow: 0 28px 70px -44px #000;
 }
-
+.film__screen {
+  position: relative;
+  background: #000;
+  isolation: isolate;
+}
 .film__video {
   display: block;
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 9;
-  background: var(--surface-base);
-  object-fit: cover;
+  object-fit: contain;
 }
-
-.film__controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-tight);
-  padding: var(--gap-line) var(--gap-block) 0;
-}
-
-.film__control {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gap-tight);
-  min-height: 38px;
-  padding: var(--gap-tight) var(--gap-line);
-  border: 1px solid var(--surface-line);
-  border-radius: 999px;
-  background: var(--surface-stage);
-  color: var(--text-strong);
-  font: inherit;
+.film__surface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: white;
   cursor: pointer;
 }
-
-/*
- * The global :focus-visible (global.css) also sets --radius-sharp, at the same
- * specificity as .film__control's own 999px — so at equal weight the emitted
- * order would decide whether the pill squares off on focus. Restating the
- * radius here wins on specificity instead, whatever order the bundler picks.
- * outline and outline-offset come from the global rule unchanged.
- */
+.film__surface:focus-visible {
+  outline-offset: -5px;
+}
+.film__big-play {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 62px;
+  border-radius: 18px;
+  background: var(--brand-teal);
+  color: var(--accent-ink);
+  box-shadow: 0 4px 40px #0008;
+  transition: background-color 160ms ease;
+}
+.film__big-play svg {
+  width: 32px;
+  height: 32px;
+}
+.film__surface:hover .film__big-play,
+.film__surface:focus-visible .film__big-play {
+  background: #a5f4ef;
+}
+.film__badge {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: #000b;
+  color: white;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font: 0.8rem var(--font-mono);
+  pointer-events: none;
+}
+.film__controls {
+  position: absolute;
+  bottom: 0;
+  inset-inline: 0;
+  padding: 38px 18px 8px;
+  color: white;
+  background: linear-gradient(transparent, #000d);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.film__screen[data-active="true"] .film__controls,
+.film__screen:has(:focus-visible) .film__controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+.film__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.film__control {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: white;
+  cursor: pointer;
+}
+.film__control:hover,
 .film__control:focus-visible {
-  border-radius: 999px;
+  background: #ffffff20;
 }
-
+.film__fullscreen {
+  margin-left: auto;
+}
+.film__time {
+  margin-left: 12px;
+  font: 0.75rem var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.film__time > span {
+  color: #ccc;
+}
+.film__seek {
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.film__seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--brand-teal) var(--played), #ffffff55 var(--played));
+}
+.film__seek::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #ffffff55;
+}
+.film__seek::-moz-range-progress {
+  background: var(--brand-teal);
+  height: 4px;
+}
+.film__seek::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand-teal);
+  margin-top: -4px;
+}
+.film__seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand-teal);
+}
+.film__seek:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.film__volume {
+  width: 70px;
+  height: 32px;
+  margin: 0;
+  accent-color: var(--brand-teal);
+  cursor: pointer;
+}
+.film__loading {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  background: #000c;
+  color: white;
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+.film__error {
+  position: absolute;
+  inset: 15% 8% auto;
+  padding: 1rem;
+  border-radius: 8px;
+  background: #111e;
+  color: white;
+  text-align: center;
+  font-size: 0.9rem;
+}
 .film__caption {
-  max-width: var(--measure);
-  padding: var(--gap-line) var(--gap-block) var(--gap-block);
+  padding: 1rem 1.5rem;
   color: var(--text-body);
+  font-size: 0.92rem;
+  line-height: 1.55;
 }
-
-/* Must match SMALL_VIEWPORT in ShowreelFilm.tsx for the source ladder. */
+.film__screen:fullscreen {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+.film__screen:fullscreen .film__video {
+  width: 100%;
+  height: 100%;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .film__screen {
+    scroll-margin-top: 66px;
+  }
+  .film__screen:not(:fullscreen) .film__video {
+    max-height: calc(100svh - 82px);
+  }
+}
+/* Matches SMALL_VIEWPORT in ShowreelFilm.tsx and the source ladder. */
 @media (max-width: 900px) {
   .film-heading {
-    align-items: flex-start;
+    align-items: start;
     flex-direction: column;
+    gap: 1rem;
   }
-
-  .film__controls,
+}
+@media (max-width: 34rem) {
+  .film-frame {
+    margin-block: 2rem 3rem;
+  }
+  .film__controls {
+    padding: 24px 8px 2px;
+  }
+  .film__volume {
+    width: 44px;
+  }
+  .film__time {
+    font-size: 0.62rem;
+    margin-left: 3px;
+  }
+  .film__toolbar {
+    gap: 0;
+  }
+  .film__big-play {
+    width: 68px;
+    height: 48px;
+    border-radius: 12px;
+  }
   .film__caption {
-    padding-inline: var(--gap-line);
+    padding: 0.9rem 1rem;
+  }
+  .film__badge {
+    top: 10px;
+    right: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .film__controls,
+  .film__big-play {
+    transition: none;
   }
 }

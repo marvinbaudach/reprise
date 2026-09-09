@@ -18,17 +18,11 @@ test('the design hero opens with two screenshot buttons', async () => {
   const hero = html.match(/<section[^>]+data-showcase="design-hero"[\s\S]+?<\/section>/)?.[0];
 
   assert.ok(hero);
-  assert.match(hero, /data-reveal=""[^>]*>A music player for GNOME and Android/);
-  assert.match(hero, /data-showcase="scroll-cue"/);
+  assert.match(hero, /A music player for GNOME and Android/);
+  assert.match(hero, /href="#film"/);
+  assert.doesNotMatch(hero, /data-showcase="scroll-cue"/);
   assert.equal((hero.match(/<button[^>]+type="button"[^>]+data-shot=""/g) ?? []).length, 2);
-  assert.match(
-    hero,
-    /class="[^"]*hero-product__phone[^"]*"[\s\S]+?data-showcase="visualizer-plate"/,
-  );
-  assert.match(
-    css,
-    /\.hero\{[^}]*padding:clamp\(6rem,4\.5rem \+ 6vw,10rem\) 0 clamp\(3rem,2rem \+ 4vw,6rem\)/,
-  );
+  assert.match(css, /\.hero__actions/);
   assert.match(css, /\.hero__grid\{[^}]*max-width:78rem/);
   assert.match(
     css,
@@ -49,15 +43,6 @@ test('the design hero opens with two screenshot buttons', async () => {
   ]) {
     assert.ok(phone.includes(declaration), `.hero-product__phone must carry ${declaration}`);
   }
-  const visualizer = css.match(/\.hero-product__visualizer\{[^}]*\}/)?.[0];
-  assert.ok(visualizer, '.hero-product__visualizer must exist in the built CSS');
-  for (const declaration of ['left:19.63%', 'top:24.46%', 'width:60.74%', 'height:27.87%']) {
-    assert.ok(
-      visualizer.includes(declaration),
-      `.hero-product__visualizer must carry ${declaration}`,
-    );
-  }
-  assert.match(css, /@keyframes rp-cue/);
 });
 
 test('the header and hero offer one in-page route to availability', async () => {
@@ -79,17 +64,10 @@ test('the header and hero offer one in-page route to availability', async () => 
   assert.doesNotMatch(hire, /data-navlink/);
 
   const normalizedHero = hero.replace(/<!-- -->/g, '').replace(/\s+/g, ' ');
-  const cue = normalizedHero.indexOf('data-showcase="scroll-cue"');
-  const offer = normalizedHero.indexOf('class="hero__offer"');
-  assert.ok(cue > -1 && offer > cue, 'the offer must follow the scroll cue without lifting it');
-  for (const copy of [
-    'Available · Q4',
-    'Five weeks, one developer, agents under gate control.',
-    'The same method, your codebase ↓',
-  ]) {
-    assert.ok(normalizedHero.includes(copy), `the hero offer must carry "${copy}"`);
-  }
-  assert.match(normalizedHero, /class="hero__offer-link" href="#availability"/);
+  assert.match(normalizedHero, /Marvin Baudach/);
+  assert.match(normalizedHero, /Product design, architecture and quality/);
+  assert.match(normalizedHero, /href="#availability"/);
+  assert.match(normalizedHero, /href="#film"/);
   assert.doesNotMatch(html, /mailto:/);
   assert.match(
     chromeCss,

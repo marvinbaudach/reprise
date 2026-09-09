@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 const showroomRoot = new URL('..', import.meta.url).pathname;
-const chapterThreeSource = join(showroomRoot, 'src', 'components', 'chapters', 'ChapterThree.tsx');
+const appSource = join(showroomRoot, 'src', 'App.tsx');
 // Intentionally loose: a false positive fails loudly, while a false negative would fail silently.
-const mounted = /ShowreelFilm/.test(await readFile(chapterThreeSource, 'utf8'));
+const mounted = /ShowreelFilm/.test(await readFile(appSource, 'utf8'));
 const filmDir = mounted
   ? join(showroomRoot, 'public', 'media', 'showreel')
   : join(showroomRoot, 'media', 'showreel');
@@ -19,14 +19,12 @@ const filmFiles = [
   'showreel-poster.webp',
 ];
 
-test('CH.03 closes on the film, in place of the mosaic it replaced', async () => {
+test('the product film appears before the engineering chapters', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
-  const chapter = html.match(/<section id="ch-03"[\s\S]+?<section id="ch-04"/)?.[0];
+  const chapter = html.match(/<section id="film"[\s\S]+?<section id="ch-01"/)?.[0];
   assert.ok(chapter);
 
-  // The film is the chapter's closing statement now. The screenshot mosaic it
-  // replaced must be gone from the page — leaving both would say the same thing
-  // twice, once in stills and once in motion.
+  // The approved redesign brings the film forward and retains one product film.
   assert.match(chapter, /data-showcase="showreel-film"/);
   assert.match(chapter, /<video/);
   assert.doesNotMatch(chapter, /data-layout="design-mosaic"/);

@@ -262,91 +262,96 @@ export function ChapterTwo() {
     >
       <div className="frame">
         <p className="chapter__eyebrow" data-reveal>
-          CH.02
+          Quality
         </p>
         <h2 id="ch-02-heading" className="chapter__title" data-reveal>
-          Nobody judges their own writing.
+          AI-assisted development. Verified changes.
         </h2>
 
         <p className="chapter__intro" data-reveal>
-          An agent will tell you its work is finished. So will a green test. Neither counts here.
+          I use AI agents to implement focused changes, with architecture rules and automated checks
+          governing what can merge. I also test the tests: a useful check must detect the defect it
+          claims to prevent.
         </p>
 
-        <div className="incident" data-reveal>
-          <p className="incident__eyebrow">One incident · {INCIDENT.date}</p>
-          <h3 className="incident__title">A test was measuring an app that never ships.</h3>
-        </div>
-
-        <p className="chapter__intro" data-reveal>
-          A queue test failed on header heights. The headers were fine. The fixture never installs
-          the app stylesheet, so it was measuring widgets the app never renders.
-        </p>
-
-        <figure className="incident-figure" data-reveal aria-labelledby="ch-02-figure-caption">
-          <div className="incident-figure__panels">
-            <HeightPanel
-              bars={MEASURED}
-              eyebrow="what the test measured"
-              title="Fixture, no stylesheet"
-              tone="measured"
-            />
-            <HeightPanel
-              bars={SHIPPED}
-              eyebrow="what ships"
-              title="The app, with its stylesheet"
-              tone="shipped"
-            />
+        <details className="evidence-details">
+          <summary>Read the quality case study</summary>
+          <div className="incident" data-reveal>
+            <p className="incident__eyebrow">One incident · {INCIDENT.date}</p>
+            <h3 className="incident__title">A test was measuring an app that never ships.</h3>
           </div>
-          <figcaption id="ch-02-figure-caption" className="incident-figure__caption">
-            Section header heights, drawn at {SCALE}×. The unstyled fixture measured 20 px for Now
-            Playing as a bare label and 34 px for Play Next with a button. The app stylesheet makes
-            both uniform at the {FLOOR_PX} px floor.
-          </figcaption>
-        </figure>
 
-        <blockquote className="incident-quote" data-reveal>
-          <p>
-            “A geometry assertion against unstyled widgets passes while the shipped button is a
-            different size.”
+          <p className="chapter__intro" data-reveal>
+            A queue test failed on header heights. The headers were fine. The fixture never installs
+            the app stylesheet, so it was measuring widgets the app never renders.
           </p>
-          <footer>
-            the doc comment on <a href={QUOTE_LINK}>app_css_for_test()</a> — written before the
-            incident, naming the trap that produced it
-          </footer>
-        </blockquote>
 
-        <p className="chapter__intro" data-reveal>
-          Since then no pull request may claim <a href={RULE_LINK}>Fixes #444</a> until three
-          mutations turn the suite red. If one leaves it green, the claim does not go in.
-        </p>
+          <figure className="incident-figure" data-reveal aria-labelledby="ch-02-figure-caption">
+            <div className="incident-figure__panels">
+              <HeightPanel
+                bars={MEASURED}
+                eyebrow="what the test measured"
+                title="Fixture, no stylesheet"
+                tone="measured"
+              />
+              <HeightPanel
+                bars={SHIPPED}
+                eyebrow="what ships"
+                title="The app, with its stylesheet"
+                tone="shipped"
+              />
+            </div>
+            <figcaption id="ch-02-figure-caption" className="incident-figure__caption">
+              Section header heights, drawn at {SCALE}×. The unstyled fixture measured 20 px for Now
+              Playing as a bare label and 34 px for Play Next with a button. The app stylesheet
+              makes both uniform at the {FLOOR_PX} px floor.
+            </figcaption>
+          </figure>
 
-        <div className="incident" data-reveal>
-          <p className="incident__eyebrow incident__eyebrow--accent">Fail closed</p>
-          <h3 className="incident__title">There is no partial merge.</h3>
-        </div>
+          <blockquote className="incident-quote" data-reveal>
+            <p>
+              “A geometry assertion against unstyled widgets passes while the shipped button is a
+              different size.”
+            </p>
+            <footer>
+              the doc comment on <a href={QUOTE_LINK}>app_css_for_test()</a> — written before the
+              incident, naming the trap that produced it
+            </footer>
+          </blockquote>
 
-        <figure className="gate-figure" data-reveal aria-labelledby="ch-02-gate-caption">
-          <GateStrip />
-          <figcaption id="ch-02-gate-caption" className="gate-figure__caption">
-            {GATES.length} checks from <a href={GATE_LINK}>check-merge-readiness.sh</a>. Hover one
-            to see what it is; click one to fail it. A red check does not stop the report. It stops
-            the merge.
-          </figcaption>
-        </figure>
+          <p className="chapter__intro" data-reveal>
+            Since then no pull request may claim <a href={RULE_LINK}>Fixes #444</a> until three
+            mutations turn the suite red. If one leaves it green, the claim does not go in.
+          </p>
 
-        <div className="incident" data-reveal>
-          <p className="incident__eyebrow incident__eyebrow--accent">What the checks refuse</p>
-          <h3 className="incident__title">Six ways a change can stop short of the branch.</h3>
-        </div>
+          <div className="incident" data-reveal>
+            <p className="incident__eyebrow incident__eyebrow--accent">Fail closed</p>
+            <h3 className="incident__title">There is no partial merge.</h3>
+          </div>
 
-        <div data-reveal>
-          <GateGroups />
-        </div>
+          <figure className="gate-figure" data-reveal aria-labelledby="ch-02-gate-caption">
+            <GateStrip />
+            <figcaption id="ch-02-gate-caption" className="gate-figure__caption">
+              {GATES.length} checks from <a href={GATE_LINK}>check-merge-readiness.sh</a>. Hover one
+              to see what it is; click one to fail it. A red check does not stop the report. It
+              stops the merge.
+            </figcaption>
+          </figure>
 
-        <p className="chapter__intro chapter__intro--closing" data-reveal>
-          A rule ID leads to a test, the test to a commit, the commit to the decision. None of that
-          makes an agent trustworthy. It makes trust unnecessary.
-        </p>
+          <div className="incident" data-reveal>
+            <p className="incident__eyebrow incident__eyebrow--accent">What the checks refuse</p>
+            <h3 className="incident__title">Six ways a change can stop short of the branch.</h3>
+          </div>
+
+          <div data-reveal>
+            <GateGroups />
+          </div>
+
+          <p className="chapter__intro chapter__intro--closing" data-reveal>
+            A rule ID leads to a test, the test to a commit, and the commit to the decision. This
+            keeps the reasoning and verification behind each change available for review.
+          </p>
+        </details>
       </div>
     </section>
   );

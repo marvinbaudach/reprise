@@ -24,6 +24,7 @@ export function CodeRatioBar() {
             key={segment.key}
             className={`ratio__segment ratio__segment--${segment.key}`}
             data-w={segment.share}
+            style={{ width: `${segment.share}%` }}
             title={segment.label}
           />
         ))}

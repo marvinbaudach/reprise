@@ -14,23 +14,29 @@ export function ChapterOne() {
     >
       <div className="frame">
         <p className="chapter__eyebrow" data-reveal>
-          CH.01
+          Architecture
         </p>
         <h2 id="ch-01-heading" className="chapter__title" data-reveal>
           One core, four frontends.
         </h2>
 
-        <FigureGrid figures={HEADLINE_FIGURES} variant="headline" />
-
         <p className="chapter__intro" data-reveal>
-          A GNOME desktop app in GTK4 and an Android app in Kotlin with Media3 sit on the same Rust
-          core. So do a CLI and an MCP server — four frontends over one verified application layer,
-          not four codebases that happen to share a name.
+          I separated the music library and application logic from platform code. GNOME and Android
+          keep their native interfaces; the CLI and MCP server use the same core without a screen.
+          Adding a platform builds on existing behaviour.
         </p>
 
         <CoreArchitecture />
 
-        <CodeRatioBar />
+        <p className="case-result">
+          The boundary is enforced in the build: the core cannot depend on a UI framework.{' '}
+          <a href="#ch-04">Explore CLI and MCP</a>.
+        </p>
+        <details className="evidence-details">
+          <summary>Code breakdown</summary>
+          <FigureGrid figures={HEADLINE_FIGURES} variant="headline" />
+          <CodeRatioBar />
+        </details>
       </div>
     </section>
   );
