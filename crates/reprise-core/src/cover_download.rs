@@ -161,54 +161,6 @@ pub(crate) fn escape_lucene(value: &str) -> String {
     escaped
 }
 
-fn strip_release_decoration(album: &str) -> Option<String> {
-    let album = album.trim();
-    let spaced_dash = album.char_indices().rev().find(|(index, dash)| {
-        matches!(dash, '-' | '–' | '—')
-            && album[..*index]
-                .chars()
-                .next_back()
-                .is_some_and(char::is_whitespace)
-            && album[*index + dash.len_utf8()..]
-                .chars()
-                .next()
-                .is_some_and(char::is_whitespace)
-    });
-    if let Some((dash_index, dash)) = spaced_dash {
-        let title = &album[..dash_index];
-        let suffix = &album[dash_index + dash.len_utf8()..];
-        if matches!(suffix.trim().to_ascii_lowercase().as_str(), "single" | "ep") {
-            let title = title.trim_end();
-            if !title.is_empty() {
-                return Some(title.to_owned());
-            }
-            return None;
-        }
-    }
-
-    let (opening, closing) = match album.chars().last() {
-        Some(')') => ('(', ')'),
-        Some(']') => ('[', ']'),
-        _ => return None,
-    };
-    let mut depth = 0;
-    let mut opening_index = None;
-    for (index, character) in album.char_indices().rev() {
-        if character == closing {
-            depth += 1;
-        } else if character == opening {
-            depth -= 1;
-            if depth == 0 {
-                opening_index = Some(index);
-                break;
-            }
-        }
-    }
-    let opening_index = opening_index?;
-    let title = album[..opening_index].trim_end();
-    (!title.is_empty()).then(|| title.to_owned())
-}
-
 pub(crate) fn caa_front_url(mbid: &str) -> String {
     format!(
         "https://coverartarchive.org/release/{}/front",
@@ -614,6 +566,11 @@ fn store_album_downloaded_with(
     let _ = writeback(album_dirs, bytes, ext);
     Some(cached)
 }
+
+#[path = "cover_download_title.rs"]
+mod title;
+
+use title::strip_release_decoration;
 
 #[cfg(test)]
 #[path = "cover_download_retry_tests.rs"]

@@ -52,31 +52,6 @@ fn album_key_distinguishes_different_albums() {
 }
 
 #[test]
-fn release_decoration_stripping_removes_exactly_one_trailing_decoration() {
-    for (album, expected) in [
-        ("Leave (Get Out) - Single", Some("Leave (Get Out)")),
-        ("Number[s] (Deluxe Version)", Some("Number[s]")),
-        ("Self Inflicted (Deluxe Edition)", Some("Self Inflicted")),
-        ("Evolve [Explicit]", Some("Evolve")),
-        ("My Forever Drug - Single", Some("My Forever Drug")),
-        ("Album – Single", Some("Album")),
-        ("Album — EP", Some("Album")),
-        ("X-Single", None),
-        ("The Black Crown (2011)", Some("The Black Crown")),
-        ("Mixtape (Vol. 1) Part 2)", None),
-        ("(What's the Story) Morning Glory?", None),
-        ("Genesi[s]", Some("Genesi")),
-        ("The Wall", None),
-    ] {
-        assert_eq!(
-            strip_release_decoration(album).as_deref(),
-            expected,
-            "unexpected decoration stripping for {album:?}"
-        );
-    }
-}
-
-#[test]
 fn downloaded_dir_is_under_cache_dir() {
     assert!(downloaded_dir().starts_with(crate::cover::cache_dir()));
 }
