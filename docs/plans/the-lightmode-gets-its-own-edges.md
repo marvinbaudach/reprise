@@ -2,7 +2,7 @@
 slug: the-lightmode-gets-its-own-edges
 worktree: /home/marvin/Projects/reprise-the-lightmode-gets-its-own-edges
 branch: feature/the-lightmode-gets-its-own-edges
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-09-08
 ---
