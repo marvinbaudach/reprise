@@ -44,6 +44,18 @@ pub(super) fn build_audio_filter(
         .field("rate", CAVA_SAMPLE_RATE_HZ)
         .field("layout", "interleaved")
         .build();
+    let cava_capsfilter = gst::ElementFactory::make("capsfilter")
+        .property("caps", &cava_caps)
+        .build()
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let cava_splitter = gst::ElementFactory::make("audiobuffersplit")
+        .property("output-buffer-duration", gst::Fraction::new(1, 60))
+        .build()
+        .map_err(|error| {
+            PlaybackError::Backend(format!(
+                "GStreamer: audiobuffersplit requires gst-plugins-bad: {error}"
+            ))
+        })?;
     let cava_sink = gst_app::AppSink::builder()
         .caps(&cava_caps)
         .sync(true)
@@ -74,6 +86,8 @@ pub(super) fn build_audio_filter(
             cava_queue.clone(),
             cava_convert.clone(),
             cava_resample.clone(),
+            cava_capsfilter.clone(),
+            cava_splitter.clone(),
             cava_sink.clone().upcast(),
         ],
     ]
@@ -92,6 +106,8 @@ pub(super) fn build_audio_filter(
         &cava_queue,
         &cava_convert,
         &cava_resample,
+        &cava_capsfilter,
+        &cava_splitter,
         cava_sink.upcast_ref(),
     ])
     .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;

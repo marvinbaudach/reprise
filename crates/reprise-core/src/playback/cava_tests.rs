@@ -220,6 +220,39 @@ fn caller_owned_output_matches_the_allocating_compatibility_path() {
 }
 
 #[test]
+fn sub_fft_hops_expose_a_transient_that_one_decoder_sized_block_skips() {
+    const DECODER_BLOCK_SIZE: usize = 4_608;
+    const DISPLAY_HOP_SIZE: usize = 735;
+    const SKIPPED_TRANSIENT: usize = 100;
+    const VISIBLE_TRANSIENT: usize = 4_000;
+
+    let skipped = transient_block(DECODER_BLOCK_SIZE, SKIPPED_TRANSIENT);
+    let visible = transient_block(DECODER_BLOCK_SIZE, VISIBLE_TRANSIENT);
+
+    assert_eq!(single_block_peak(&skipped), 0.0);
+    assert!(hopped_peak(&skipped, DISPLAY_HOP_SIZE) > 0.0);
+    assert!(single_block_peak(&visible) > 0.0);
+    assert!(hopped_peak(&visible, DISPLAY_HOP_SIZE) > 0.0);
+}
+
+#[test]
+fn oversized_input_is_equivalent_to_its_newest_four_thousand_ninety_six_samples() {
+    let newest: Vec<f32> = (0..4_096)
+        .map(|sample| (std::f32::consts::TAU * 2_000.0 * sample as f32 / 44_100.0).sin() * 0.25)
+        .collect();
+    let oversized = [vec![0.75; 4_096], newest.clone()].concat();
+    let mut oversized_processor = CavaBarProcessor::new(CavaConfig::new(44_100, 64)).unwrap();
+    let mut newest_processor = CavaBarProcessor::new(CavaConfig::new(44_100, 64)).unwrap();
+    let mut oversized_bars = [f32::NAN; 64];
+    let mut newest_bars = [f32::NAN; 64];
+
+    oversized_processor.process_into(&oversized, &mut oversized_bars);
+    newest_processor.process_into(&newest, &mut newest_bars);
+
+    assert_eq!(oversized_bars, newest_bars);
+}
+
+#[test]
 fn reset_restores_a_fresh_processor_state() {
     let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
     let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
@@ -233,6 +266,36 @@ fn reset_restores_a_fresh_processor_state() {
         processor.process(&sine_chunk(2_000.0, 0)),
         fresh.process(&sine_chunk(2_000.0, 0))
     );
+}
+
+fn test_transient_processor() -> CavaBarProcessor {
+    let mut config = CavaConfig::new(44_100, 8);
+    config.low_cutoff_hz = 1_000;
+    config.noise_reduction = 0.0;
+    config.noise_floor = 0.0;
+    config.autosensitivity = 0;
+    CavaBarProcessor::new(config).unwrap()
+}
+
+fn transient_block(len: usize, transient_at: usize) -> Vec<f32> {
+    let mut samples = vec![0.0; len];
+    samples[transient_at] = 1.0;
+    samples
+}
+
+fn single_block_peak(samples: &[f32]) -> f32 {
+    test_transient_processor()
+        .process(samples)
+        .into_iter()
+        .fold(0.0, f32::max)
+}
+
+fn hopped_peak(samples: &[f32], hop_size: usize) -> f32 {
+    let mut processor = test_transient_processor();
+    samples
+        .chunks(hop_size)
+        .flat_map(|hop| processor.process(hop))
+        .fold(0.0, f32::max)
 }
 
 fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {

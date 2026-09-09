@@ -22,6 +22,7 @@ const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
 const DEFAULT_NOISE_FLOOR: f32 = 0.04;
 const DEFAULT_AUTOSENSITIVITY: u32 = 1;
+const MAX_INPUT_SAMPLES: usize = 4_096;
 /// PCM below this magnitude is silence for the renderer's gain search. CAVA
 /// ages its autosensitivity on individual samples, not on a windowed level.
 const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
@@ -144,7 +145,9 @@ impl CavaBarProcessor {
     /// Adds normalized mono PCM samples into caller-owned bar storage.
     ///
     /// Audio-thread integrations can retain this storage between buffers and
-    /// avoid allocating one vector for every spectrum frame.
+    /// avoid allocating one vector for every spectrum frame. Oversized input
+    /// silently keeps only the newest `min(len, 4096)` samples (or the full
+    /// analysis window when it is shorter).
     pub fn process_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
         assert_eq!(
             bars.len(),
@@ -169,7 +172,10 @@ impl CavaBarProcessor {
             *target =
                 workspace.band_magnitude_sum(band.bins()) * equalizer * CAVA_FIXED_POINT_SCALE;
         }
-        let new_samples = mono_samples.len().min(self.input_buffer.len());
+        let new_samples = mono_samples
+            .len()
+            .min(self.input_buffer.len())
+            .min(MAX_INPUT_SAMPLES);
         self.smoother.apply(
             bars,
             new_samples,
@@ -186,7 +192,7 @@ impl CavaBarProcessor {
 
     fn push_samples(&mut self, mono_samples: &[f32]) -> bool {
         let buffer_len = self.input_buffer.len();
-        let kept = mono_samples.len().min(buffer_len);
+        let kept = mono_samples.len().min(buffer_len).min(MAX_INPUT_SAMPLES);
         self.input_buffer.copy_within(..buffer_len - kept, kept);
         let mut signal_present = false;
         for (target, sample) in self.input_buffer[..kept]
