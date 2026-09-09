@@ -23,7 +23,7 @@ use crate::ui::cover_glow;
 use crate::ui::style::tokens;
 
 /// Raised from 0.34 with the turn rate: motion and resting brightness share one
-/// factor here, so the wash around the cover is 40 % denser at rest. The
+/// factor here, so the wash around the cover is about 41 % denser at rest. The
 /// reactive terms below are deliberately not scaled with it.
 const SHIMMER_REST_OPACITY: f64 = 0.48;
 const SHIMMER_OPACITY_PER_PRESSURE: f64 = 0.14;
@@ -295,8 +295,8 @@ mod tests {
 
     #[test]
     fn ac_24_the_shimmer_opacity_matches_the_backdrop_it_lies_on() {
-        // 0.48 + 0.14·pres + 0.16·sw — the base rose, the slope still mirrors the
-        // backdrop's own (0.15 / 0.16).
+        // 0.48 + 0.14·pres + 0.16·sw — the base rose, while the unchanged slope
+        // stays close to the backdrop's own (0.15 / 0.16).
         assert!((shimmer_opacity(0.0, 0.0) - 0.48).abs() < 1e-9);
         assert!((shimmer_opacity(1.0, 0.0) - 0.62).abs() < 1e-9);
         assert!((shimmer_opacity(1.0, 1.0) - 0.78).abs() < 1e-9);

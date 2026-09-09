@@ -4311,7 +4311,7 @@ STYLE-1).
   pixels: below the rate at which it reads as moving at all, which is what was
   reported from use. The rate carries most of the correction and the disc's
   resting opacity the rest, rising from 0.34 to 0.48. That makes the wash
-  around the cover 40 % denser at rest, accepted for that price: motion and
+  around the cover about 41 % denser at rest, accepted for that price: motion and
   resting brightness share one factor here and cannot be bought apart. The
   reactive terms are unchanged and still mirror the backdrop's slope, so the
   music shows through exactly as much as before. On greyscale and near-black
