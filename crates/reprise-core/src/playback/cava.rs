@@ -22,7 +22,6 @@ const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
 const DEFAULT_NOISE_FLOOR: f32 = 0.04;
 const DEFAULT_AUTOSENSITIVITY: u32 = 1;
-const MAX_INPUT_SAMPLES: usize = 4_096;
 /// PCM below this magnitude is silence for the renderer's gain search. CAVA
 /// ages its autosensitivity on individual samples, not on a windowed level.
 const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
@@ -145,15 +144,26 @@ impl CavaBarProcessor {
     /// Adds normalized mono PCM samples into caller-owned bar storage.
     ///
     /// Audio-thread integrations can retain this storage between buffers and
-    /// avoid allocating one vector for every spectrum frame. Oversized input
-    /// silently keeps only the newest `min(len, 4096)` samples (or the full
-    /// analysis window when it is shorter).
+    /// avoid allocating one vector for every spectrum frame. Input larger than
+    /// one FFT window is processed oldest-first in consecutive FFT-sized hops;
+    /// the final hop determines the returned bars.
     pub fn process_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
         assert_eq!(
             bars.len(),
             self.config.bar_count,
             "CAVA output must match its configured bar count"
         );
+        if mono_samples.is_empty() {
+            self.process_chunk_into(mono_samples, bars);
+            return;
+        }
+        let hop_size = self.main_fft.len();
+        for chunk in mono_samples.chunks(hop_size) {
+            self.process_chunk_into(chunk, bars);
+        }
+    }
+
+    fn process_chunk_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
         let signal_present = self.push_samples(mono_samples);
         self.main_fft
             .process(&self.input_buffer[..self.main_fft.len()]);
@@ -172,13 +182,9 @@ impl CavaBarProcessor {
             *target =
                 workspace.band_magnitude_sum(band.bins()) * equalizer * CAVA_FIXED_POINT_SCALE;
         }
-        let new_samples = mono_samples
-            .len()
-            .min(self.input_buffer.len())
-            .min(MAX_INPUT_SAMPLES);
         self.smoother.apply(
             bars,
-            new_samples,
+            mono_samples.len(),
             self.config.sample_rate_hz,
             signal_present,
         );
@@ -192,7 +198,7 @@ impl CavaBarProcessor {
 
     fn push_samples(&mut self, mono_samples: &[f32]) -> bool {
         let buffer_len = self.input_buffer.len();
-        let kept = mono_samples.len().min(buffer_len).min(MAX_INPUT_SAMPLES);
+        let kept = mono_samples.len();
         self.input_buffer.copy_within(..buffer_len - kept, kept);
         let mut signal_present = false;
         for (target, sample) in self.input_buffer[..kept]

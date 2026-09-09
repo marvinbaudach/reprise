@@ -236,20 +236,13 @@ fn sub_fft_hops_expose_a_transient_that_one_decoder_sized_block_skips() {
 }
 
 #[test]
-fn oversized_input_is_equivalent_to_its_newest_four_thousand_ninety_six_samples() {
-    let newest: Vec<f32> = (0..4_096)
-        .map(|sample| (std::f32::consts::TAU * 2_000.0 * sample as f32 / 44_100.0).sin() * 0.25)
-        .collect();
-    let oversized = [vec![0.75; 4_096], newest.clone()].concat();
-    let mut oversized_processor = CavaBarProcessor::new(CavaConfig::new(44_100, 64)).unwrap();
-    let mut newest_processor = CavaBarProcessor::new(CavaConfig::new(44_100, 64)).unwrap();
-    let mut oversized_bars = [f32::NAN; 64];
-    let mut newest_bars = [f32::NAN; 64];
+fn one_call_keeps_every_sample_above_an_eight_thousand_sample_window() {
+    assert_one_call_matches_consecutive_hops(44_100, 4_096, 10_000);
+}
 
-    oversized_processor.process_into(&oversized, &mut oversized_bars);
-    newest_processor.process_into(&newest, &mut newest_bars);
-
-    assert_eq!(oversized_bars, newest_bars);
+#[test]
+fn one_call_uses_the_fft_hop_for_a_lower_sample_rate() {
+    assert_one_call_matches_consecutive_hops(22_050, 2_048, 5_000);
 }
 
 #[test]
@@ -296,6 +289,31 @@ fn hopped_peak(samples: &[f32], hop_size: usize) -> f32 {
         .chunks(hop_size)
         .flat_map(|hop| processor.process(hop))
         .fold(0.0, f32::max)
+}
+
+fn assert_one_call_matches_consecutive_hops(
+    sample_rate_hz: u32,
+    hop_size: usize,
+    sample_count: usize,
+) {
+    let samples: Vec<f32> = (0..sample_count)
+        .map(|sample| {
+            let time = sample as f32 / sample_rate_hz as f32;
+            ((std::f32::consts::TAU * 80.0 * time).sin() * 0.35)
+                + ((std::f32::consts::TAU * 2_000.0 * time).sin() * 0.15)
+        })
+        .collect();
+    let mut one_call = CavaBarProcessor::new(CavaConfig::new(sample_rate_hz, 64)).unwrap();
+    let mut consecutive_hops = CavaBarProcessor::new(CavaConfig::new(sample_rate_hz, 64)).unwrap();
+    let mut one_call_bars = [f32::NAN; 64];
+    let mut hopped_bars = [f32::NAN; 64];
+
+    one_call.process_into(&samples, &mut one_call_bars);
+    for hop in samples.chunks(hop_size) {
+        consecutive_hops.process_into(hop, &mut hopped_bars);
+    }
+
+    assert_eq!(one_call_bars, hopped_bars);
 }
 
 fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {
