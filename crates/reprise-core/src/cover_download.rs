@@ -315,6 +315,17 @@ fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSea
     }
 }
 
+fn well_formed_uuid(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let bytes = value.as_bytes();
+    let valid = bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        });
+    valid.then_some(value)
+}
+
 pub fn fetch_and_cache(
     album_artist: &str,
     album: &str,
@@ -350,9 +361,9 @@ where
         CoverState::KnownMissing => return CoverFetchOutcome::NotFound,
         CoverState::Unknown => {}
     }
-    // 2. Resolve a release MBID: embedded first, else conservative search.
-    let release_mbids = match mbid {
-        Some(id) if !id.is_empty() => vec![id.to_string()],
+    // 2. Resolve a release MBID: valid embedded UUID first, else conservative search.
+    let release_mbids = match mbid.and_then(well_formed_uuid) {
+        Some(id) => vec![id.to_owned()],
         _ => {
             let Some(body) = mb_fetch(&musicbrainz_search_url(album_artist, album)) else {
                 return CoverFetchOutcome::TransientFailure;
@@ -427,11 +438,14 @@ fn http_get_bytes(url: &str) -> CaaFetchResult {
         .call()
     {
         Ok(response) => response,
-        Err(ureq::Error::StatusCode(status)) if is_clean_caa_miss(status) => {
-            return CaaFetchResult::NotFound;
-        }
+        Err(ureq::Error::StatusCode(status)) => return classify_caa_status(status),
         Err(_) => return CaaFetchResult::TransientFailure,
     };
+    let content_type = response
+        .headers()
+        .get("Content-Type")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let mut bytes = Vec::new();
     use std::io::Read;
     if response
@@ -443,21 +457,41 @@ fn http_get_bytes(url: &str) -> CaaFetchResult {
     {
         return CaaFetchResult::TransientFailure;
     }
-    classify_caa_body(bytes)
+    classify_caa_body(bytes, content_type.as_deref())
 }
 
-fn classify_caa_body(bytes: Vec<u8>) -> CaaFetchResult {
+fn classify_caa_body(bytes: Vec<u8>, content_type: Option<&str>) -> CaaFetchResult {
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
         return CaaFetchResult::UnusableBody;
     }
     match validated_image_extension(&bytes) {
         Some(ext) => CaaFetchResult::Found(bytes, ext),
-        None => CaaFetchResult::UnusableBody,
+        None if content_type.is_some_and(is_image_content_type) => CaaFetchResult::UnusableBody,
+        None => CaaFetchResult::TransientFailure,
     }
+}
+
+fn is_image_content_type(content_type: &str) -> bool {
+    content_type
+        .split(';')
+        .next()
+        .map(str::trim)
+        .and_then(|mime_type| mime_type.get(..6))
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("image/"))
 }
 
 fn is_clean_caa_miss(status: u16) -> bool {
     status == 404
+}
+
+fn classify_caa_status(status: u16) -> CaaFetchResult {
+    if is_clean_caa_miss(status) {
+        return CaaFetchResult::NotFound;
+    }
+    if (400..=499).contains(&status) && !matches!(status, 408 | 429) {
+        return CaaFetchResult::UnusableBody;
+    }
+    CaaFetchResult::TransientFailure
 }
 
 pub(crate) struct DecodedImage {

@@ -348,6 +348,7 @@ fn candidate_walk_marks_the_album_missing_when_every_body_is_undecodable() {
     let key = album_key("Candidate Band", &album);
     let marker = negative_marker_path(&key);
     let body = matching_releases("Candidate Band", &album, &["invalid-1", "invalid-2"]);
+    let mut caa_calls = 0;
 
     let outcome = fetch_and_cache_with(
         "Candidate Band",
@@ -355,10 +356,14 @@ fn candidate_walk_marks_the_album_missing_when_every_body_is_undecodable() {
         None,
         &[],
         &mut |_| Some(body.clone()),
-        &mut |_| classify_caa_body(b"not an image".to_vec()),
+        &mut |_| {
+            caa_calls += 1;
+            classify_caa_body(b"not an image".to_vec(), Some("image/jpeg"))
+        },
     );
 
     assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert_eq!(caa_calls, 2);
     assert!(marker.exists());
     std::fs::remove_file(marker).ok();
 }
@@ -380,7 +385,7 @@ fn candidate_walk_continues_after_an_undecodable_body_and_downloads_art() {
             if url == caa_front_url("has-art") {
                 CaaFetchResult::Found(b"art".to_vec(), "jpg")
             } else {
-                classify_caa_body(b"not an image".to_vec())
+                classify_caa_body(b"not an image".to_vec(), Some("image/jpeg"))
             }
         },
     );

@@ -4,6 +4,21 @@ const MB_WEAK: &str = r#"{"releases":[
   {"id":"22222222-2222-2222-2222-222222222222","score":42,
    "title":"Something Else","artist-credit":[{"name":"Other Band"}]}]}"#;
 
+fn matching_releases(album_artist: &str, album: &str, ids: &[&str]) -> String {
+    let releases = ids
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "score": 100,
+                "title": album,
+                "artist-credit": [{"name": album_artist}],
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({"releases": releases}).to_string()
+}
+
 #[test]
 fn malformed_musicbrainz_search_does_not_write_a_negative_marker() {
     for (case, body) in [
@@ -150,7 +165,7 @@ fn an_oversized_caa_body_is_a_definitive_candidate_miss() {
     let bytes = vec![0; MAX_IMAGE_BYTES as usize + 1];
 
     assert!(matches!(
-        classify_caa_body(bytes),
+        classify_caa_body(bytes, Some("text/html")),
         CaaFetchResult::UnusableBody
     ));
 }
@@ -158,7 +173,99 @@ fn an_oversized_caa_body_is_a_definitive_candidate_miss() {
 #[test]
 fn an_unreadable_caa_image_is_a_definitive_candidate_miss() {
     assert!(matches!(
-        classify_caa_body(b"not an image".to_vec()),
+        classify_caa_body(b"not an image".to_vec(), Some("image/jpeg")),
         CaaFetchResult::UnusableBody
     ));
+}
+
+#[test]
+fn an_html_success_body_is_retryable_and_writes_no_negative_marker() {
+    let album = format!("Retry HTML body {:016x}", fastrand::u64(..));
+    let key = album_key("Retry Band", &album);
+    let marker = negative_marker_path(&key);
+    std::fs::remove_file(&marker).ok();
+
+    let outcome = fetch_and_cache_with(
+        "Retry Band",
+        &album,
+        Some("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+        &[],
+        &mut |_| panic!("an embedded release id must skip MusicBrainz search"),
+        &mut |_| classify_caa_body(b"temporarily unavailable".to_vec(), Some("text/html")),
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::TransientFailure);
+    assert!(!marker.exists());
+}
+
+#[test]
+fn deterministic_client_errors_exhaust_the_candidate_walk_and_write_a_marker() {
+    let album = format!("Client errors {:016x}", fastrand::u64(..));
+    let key = album_key("Client Error Band", &album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Client Error Band", &album, &["bad-1", "bad-2"]);
+    let mut caa_calls = 0;
+
+    let outcome = fetch_and_cache_with(
+        "Client Error Band",
+        &album,
+        None,
+        &[],
+        &mut |_| Some(body.clone()),
+        &mut |_| {
+            caa_calls += 1;
+            classify_caa_status(400)
+        },
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert_eq!(caa_calls, 2);
+    assert!(marker.exists());
+    std::fs::remove_file(marker).ok();
+}
+
+#[test]
+fn server_and_rate_limit_statuses_remain_retryable_without_a_marker() {
+    for status in [503, 429, 408] {
+        let album = format!("Retry status {status} {:016x}", fastrand::u64(..));
+        let key = album_key("Retry Status Band", &album);
+        let marker = negative_marker_path(&key);
+
+        let outcome = fetch_and_cache_with(
+            "Retry Status Band",
+            &album,
+            Some("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+            &[],
+            &mut |_| panic!("an embedded release id must skip MusicBrainz search"),
+            &mut |_| classify_caa_status(status),
+        );
+
+        assert_eq!(outcome, CoverFetchOutcome::TransientFailure);
+        assert!(!marker.exists(), "status {status} wrote a negative marker");
+    }
+}
+
+#[test]
+fn invalid_embedded_release_mbid_is_rejected_before_the_caa_request() {
+    let album = format!("Invalid embedded MBID {:016x}", fastrand::u64(..));
+    let key = album_key("Invalid ID Band", &album);
+    let marker = negative_marker_path(&key);
+    let mut caa_calls = 0;
+
+    let outcome = fetch_and_cache_with(
+        "Invalid ID Band",
+        &album,
+        Some("not-a-uuid"),
+        &[],
+        &mut |_| Some(r#"{"releases":[]}"#.to_owned()),
+        &mut |_| {
+            caa_calls += 1;
+            CaaFetchResult::NotFound
+        },
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert_eq!(caa_calls, 0);
+    assert!(marker.exists());
+    std::fs::remove_file(marker).ok();
 }
