@@ -2,7 +2,7 @@
 slug: the-mini-player-follows-the-appearance
 worktree: /home/marvin/Projects/reprise-the-mini-player-follows-the-appearance
 branch: feature/the-mini-player-follows-the-appearance
-phase: reviewed
+phase: coded
 codex_session:
 created: 2026-09-09
 ---
@@ -267,25 +267,27 @@ Do **not** claim the fix works from a passing build. The failing state was
   `mini_css()` from `panel_contrast.rs`. Do not add it to `PANEL_ROLES` while
   you are in there: `rendered_foreground` cannot parse `alpha(@window_fg_color,
   0.6)` and would panic on an unsupported alpha colour.
-- **`fixed_foregrounds` only flags `color:` declarations** and only runs against
-  `now_playing::css()` and `lyrics_view::css()`. `alpha(white, 0.09)` as a
-  *border* value is not caught and must not be made to be.
+- **`fixed_foregrounds` only flags `color:` declarations.** Its sweep over the
+  composed `app_css()` does reach `mini_css()`, but a border value such as
+  `alpha(white, 0.09)` is not caught because the guard filters on
+  `property == "color"`. The `.mini-player-play` rule is exempted by selector,
+  alongside `.player-bar-play` and `.reprise-build-badge`, so renaming it fails
+  loudly instead of silently widening the exemption.
 - **`concat!("rgba(255, ", "255, 255, …)")` in `tokens.rs` is deliberate** —
   it keeps the literal out of source-text scans. The new constants contain no
   `255, 255, 255` and need no such trick; do not add one, and do not "clean up"
   the existing ones.
 - **A light drop shadow was considered and rejected.** #891 established the
   pattern (`COVER_SHADOW_LIGHT_ALPHA = 0.16` where the dark twin is `alpha(#000000, 0)`),
-  and the geometry allows it — `minimal_view.rs:306` sizes the window
-  `MINI_WIDTH + 2 * CARD_MARGIN`, so there are 12 px outside the card to render
-  into. It is still out of scope: the request is "same style as the big player",
-  and the big player bar carries no shadow either; `box-shadow: none` on the card
-  is existing deliberate behaviour from the MINI-1/MINI-2 CSD-halo fight; and
-  there is **no measurement** showing the `0.14` light edge is insufficient
-  separation. Inventing one would move pixels nobody has measured. If the light
-  card reads flat in practice, that is a follow-up with a measurement attached —
-  not a guess folded into this change. Reviewers: this is deliberate, not an
-  oversight.
+  but the geometry forbids it: `CARD_MARGIN` is zero, so `MINI_WIDTH + 2 *
+  CARD_MARGIN` leaves no room outside the card to render a shadow. It is also out
+  of scope because the request is "same style as the big player", and the big
+  player bar carries no shadow either; `box-shadow: none` on the card is existing
+  deliberate behaviour from the MINI-1/MINI-2 CSD-halo fight; and there is **no
+  measurement** showing the `0.14` light edge is insufficient separation.
+  Inventing one would move pixels nobody has measured. If the light card reads
+  flat in practice, that is a follow-up with a measurement attached — not a
+  guess folded into this change. Reviewers: this is deliberate, not an oversight.
 - **Base is `origin/dev` @ `0970978e70`.** `theme_tokens.rs` does not exist on
   the session's current branch — #891 is on dev and is not its ancestor.
   `worktree.sh` bases new branches on `origin/dev` already, so this is automatic;
