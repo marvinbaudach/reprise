@@ -4,7 +4,7 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
-## [0.1.161] - 2026-09-09
+## [0.1.162] - 2026-09-09
 
 ### Appearance
 
@@ -15,6 +15,20 @@ messages.
   is no longer washed out, a search match stays readable on its own tinted
   background, and the seek waveform keeps its unplayed bars legible. The dark
   appearance is unchanged.
+
+### Playback
+
+- The visualizer sees every beat. Its bars were driven at the decoder's block
+  rate — under ten updates a second on a typical FLAC, a fraction of the rate
+  the engine is tuned for, with most of the audio never reaching the analysis at
+  all. It read as fluid but late, and soft where the beat should land. The audio
+  is now split into buffers of the size the visualizer was designed for.
+
+### Packaging
+
+- Source and AUR installs need `gst-plugins-bad`. The visualizer's new audio
+  splitting comes from that plugin set, which moves from an optional to a
+  required dependency. The Flatpak already carries it, so nothing changes there.
 
 ### Android
 
