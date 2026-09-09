@@ -53,6 +53,7 @@ impl From<musicbrainz::FetchError> for SourceError {
 enum CaaFetchResult {
     Found(Vec<u8>, &'static str),
     NotFound,
+    UnusableBody,
     TransientFailure,
 }
 
@@ -296,7 +297,7 @@ where
     match fetch(&caa_release_group_front_url(mbid)) {
         CaaFetchResult::Found(bytes, extension) => store_downloaded(&key, &bytes, extension)
             .map_or(ReleaseGroupCover::Fallback, ReleaseGroupCover::Image),
-        CaaFetchResult::NotFound => {
+        CaaFetchResult::NotFound | CaaFetchResult::UnusableBody => {
             write_negative(&key);
             ReleaseGroupCover::Fallback
         }
@@ -444,7 +445,7 @@ where
                     CoverFetchOutcome::Downloaded,
                 );
             }
-            CaaFetchResult::NotFound => {}
+            CaaFetchResult::NotFound | CaaFetchResult::UnusableBody => {}
             CaaFetchResult::TransientFailure => saw_transient_failure = true,
         }
     }
@@ -461,7 +462,7 @@ fn mb_get(url: &str) -> Option<String> {
     musicbrainz::get(url).ok()
 }
 
-/// A rate-limited GET returning validated image bytes, a clean miss, or a retryable failure.
+/// A rate-limited GET returning validated image bytes, a definitive miss, or a retryable failure.
 fn http_get_bytes(url: &str) -> CaaFetchResult {
     let _ = musicbrainz::wait_for_request_slot(&mut || false);
     let user_agent = musicbrainz::user_agent();
@@ -495,11 +496,11 @@ fn http_get_bytes(url: &str) -> CaaFetchResult {
 
 fn classify_caa_body(bytes: Vec<u8>) -> CaaFetchResult {
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
-        return CaaFetchResult::TransientFailure;
+        return CaaFetchResult::UnusableBody;
     }
     match validated_image_extension(&bytes) {
         Some(ext) => CaaFetchResult::Found(bytes, ext),
-        None => CaaFetchResult::TransientFailure,
+        None => CaaFetchResult::UnusableBody,
     }
 }
 

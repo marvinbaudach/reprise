@@ -368,7 +368,57 @@ fn candidate_walk_downloads_from_the_first_release_with_art() {
 }
 
 #[test]
-fn candidate_walk_writes_one_marker_after_every_release_is_missing() {
+fn candidate_walk_marks_the_album_missing_when_every_body_is_undecodable() {
+    let album = format!("All candidates undecodable {:016x}", fastrand::u64(..));
+    let key = album_key("Candidate Band", &album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Candidate Band", &album, &["invalid-1", "invalid-2"]);
+
+    let outcome = fetch_and_cache_with(
+        "Candidate Band",
+        &album,
+        None,
+        &[],
+        &mut |_| Some(body.clone()),
+        &mut |_| classify_caa_body(b"not an image".to_vec()),
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert!(marker.exists());
+    std::fs::remove_file(marker).ok();
+}
+
+#[test]
+fn candidate_walk_continues_after_an_undecodable_body_and_downloads_art() {
+    let album = format!("Undecodable then art {:016x}", fastrand::u64(..));
+    let key = album_key("Candidate Band", &album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Candidate Band", &album, &["invalid", "has-art"]);
+
+    let outcome = fetch_and_cache_with(
+        "Candidate Band",
+        &album,
+        None,
+        &[],
+        &mut |_| Some(body.clone()),
+        &mut |url| {
+            if url == caa_front_url("has-art") {
+                CaaFetchResult::Found(b"art".to_vec(), "jpg")
+            } else {
+                classify_caa_body(b"not an image".to_vec())
+            }
+        },
+    );
+
+    let CoverFetchOutcome::Downloaded(path) = outcome else {
+        panic!("the second release should supply the cover");
+    };
+    assert!(!marker.exists());
+    std::fs::remove_file(path).ok();
+}
+
+#[test]
+fn candidate_walk_writes_a_marker_after_every_release_is_missing() {
     let album = format!("All candidates missing {:016x}", fastrand::u64(..));
     let key = album_key("Candidate Band", &album);
     let marker = negative_marker_path(&key);
