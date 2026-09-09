@@ -126,22 +126,6 @@ pub fn oklch_clamp(color: Rgb) -> Option<Rgb> {
     })
 }
 
-pub const LIGHT_CHROMA_FLOOR: f64 = 0.16;
-pub const LIGHT_CHROMA_CEIL: f64 = 0.30;
-
-pub fn oklch_light(color: Rgb) -> Rgb {
-    let (l, a, b) = linear_rgb_to_oklab(to_linear(color.r), to_linear(color.g), to_linear(color.b));
-    let chroma = (a * a + b * b).sqrt();
-    let hue = b.atan2(a);
-    let chroma = chroma.clamp(LIGHT_CHROMA_FLOOR, LIGHT_CHROMA_CEIL);
-    let (r, g, b) = oklab_to_linear_rgb(l, chroma * hue.cos(), chroma * hue.sin());
-    Rgb {
-        r: from_linear(r),
-        g: from_linear(g),
-        b: from_linear(b),
-    }
-}
-
 pub fn is_usable(color: &Rgb) -> bool {
     let (_, a, b) = linear_rgb_to_oklab(to_linear(color.r), to_linear(color.g), to_linear(color.b));
     (a * a + b * b).sqrt() >= 0.03

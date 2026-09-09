@@ -193,30 +193,6 @@ fn prepare_tag_reconciliation(conn: &Connection, id: i64, path: &Path) -> Result
     super::tag_mutation::prepare_reconciliation(conn, id, path)
 }
 
-/// Like `apply_patch_batch`, but calls `watcher::ignore_path` on each file
-/// immediately before *that file's own* write — not upfront for the whole
-/// batch, so an early file's ignore window can't expire while later files
-/// are still being processed (see `tag_edit_write`'s module doc).
-pub fn apply_patch_batch_ignored(
-    db: &Db,
-    tracks: &[(i64, PathBuf)],
-    patch: &TagPatch,
-) -> TagBatchReport {
-    let conn = db.conn();
-    apply_patch_batch_inner(conn, tracks, patch, true)
-}
-
-/// Like `apply_track_edit_batch`, but with watcher-ignore support (see
-/// `apply_patch_batch_ignored`'s doc comment for the per-file timing).
-pub fn apply_track_edit_batch_ignored(
-    db: &Db,
-    tracks: &[(i64, PathBuf)],
-    patch: &TrackEditPatch,
-) -> TagBatchReport {
-    let conn = db.conn();
-    apply_track_edit_batch_inner(conn, tracks, patch, true)
-}
-
 pub fn apply_patch_batch(db: &Db, tracks: &[(i64, PathBuf)], patch: &TagPatch) -> TagBatchReport {
     let conn = db.conn();
     apply_patch_batch_inner(conn, tracks, patch, false)

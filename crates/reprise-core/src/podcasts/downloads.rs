@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection};
 
+use crate::artist_news_refresh::fnv1a_64;
 use crate::db::Db;
 
 use super::config::CleanupPolicy;
@@ -448,14 +449,6 @@ fn safe_extension(extension: &str) -> &str {
     } else {
         "audio"
     }
-}
-
-fn fnv1a_64(bytes: &[u8]) -> u64 {
-    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    bytes.iter().fold(OFFSET_BASIS, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(PRIME)
-    })
 }
 
 #[cfg(test)]

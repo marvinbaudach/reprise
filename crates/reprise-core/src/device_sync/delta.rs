@@ -25,13 +25,6 @@ pub struct SyncDelta {
     pub est_secs: u32,
 }
 
-impl SyncDelta {
-    pub fn add_transfer_bytes(&mut self, bytes: u64) {
-        self.bytes = self.bytes.saturating_add(bytes);
-        self.est_secs = estimated_seconds(self.bytes);
-    }
-}
-
 pub fn compute_delta(
     selected: &[SyncCandidate],
     files: &[DeviceFileRecord],

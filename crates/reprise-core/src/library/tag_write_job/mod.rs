@@ -3,7 +3,6 @@ mod store;
 mod types;
 
 pub use recovery::recover_incomplete_tag_write_jobs;
-pub(crate) use recovery::recover_incomplete_tag_write_jobs_in;
 pub(crate) use recovery::{recover_incomplete_tag_write_fields, TagWriteFieldRecovery};
 #[cfg(test)]
 pub(crate) use store::execute_tag_write_file;

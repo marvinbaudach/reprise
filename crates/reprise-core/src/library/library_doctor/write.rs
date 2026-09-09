@@ -13,7 +13,7 @@ use crate::library::tag_mutation::{
     classify_write_error, commit_guarded_tag_changes, read_tag_field_values, GuardedTagChange,
     GuardedTagField, TagMutationFailure, WriteErrorKind,
 };
-use crate::library::tag_write_job::{TagWriteJobLock, TagWriteRecovery};
+use crate::library::tag_write_job::TagWriteJobLock;
 use crate::library::TagWriteLockAttempt;
 
 #[derive(Debug, Clone)]
@@ -751,10 +751,5 @@ impl LibraryDoctor<'_> {
         progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
     ) -> Result<DoctorWriteReport, DoctorError> {
         self.apply_review_plan_with_lock(plan, TagWriteLockAttempt::Unenforceable, progress)
-    }
-
-    pub fn recover_incomplete_writes(&self) -> Result<Vec<TagWriteRecovery>, DoctorError> {
-        crate::library::tag_write_job::recover_incomplete_tag_write_jobs_in(self.conn)
-            .map_err(DoctorError::from)
     }
 }

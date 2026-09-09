@@ -51,6 +51,7 @@ pub mod device_sync;
 pub mod effects;
 pub mod endpoint;
 pub mod jobs;
+pub mod mpris;
 pub mod playback;
 pub mod queue;
 pub mod runtime;

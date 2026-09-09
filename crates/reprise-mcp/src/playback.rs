@@ -18,11 +18,8 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 use crate::dto::{PlaybackStateDto, QueueParams, QueueStateDto, SetPlaybackParams};
 
-/// The app's MPRIS well-known name (mirrors `reprise-platform-linux`'s server).
-const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
-/// The standard MPRIS object path and player interface.
-const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
-const PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2.Player";
+pub(crate) use reprise_runtime_protocol::mpris::is_absent_player;
+use reprise_runtime_protocol::mpris::{BUS_NAME, OBJECT_PATH, PLAYER_INTERFACE};
 /// The Reprise-specific interface carrying `PlayTrackIds`.
 const REPRISE_INTERFACE: &str = "org.reprise.Player1";
 
@@ -104,8 +101,11 @@ impl QueueAction {
                 if ids.is_empty() {
                     return Err("track_ids must not be empty".to_owned());
                 }
-                if ids.len() > 500 {
-                    return Err("track_ids accepts at most 500 ids".to_owned());
+                if ids.len() > crate::data::MAX_TRACK_IDS {
+                    return Err(format!(
+                        "track_ids accepts at most {} ids",
+                        crate::data::MAX_TRACK_IDS
+                    ));
                 }
                 if params.action == "add_next" {
                     Ok(Self::AddNext(ids))
@@ -170,16 +170,6 @@ impl PlaybackSetting {
     }
 }
 
-/// D-Bus error names that mean no MPRIS player is registered under our name —
-/// i.e. the Reprise app is not running. Anything else is a genuine fault.
-/// Mirrors `reprise-cli`'s `commands::playback::is_absent_player` exactly.
-fn is_absent_player(error_name: &str) -> bool {
-    matches!(
-        error_name,
-        "org.freedesktop.DBus.Error.ServiceUnknown" | "org.freedesktop.DBus.Error.NameHasNoOwner"
-    )
-}
-
 /// Opens the session bus and a proxy to the app on the given interface. A
 /// missing session bus is a `Bus` error; an absent player is classified by
 /// `map_zbus_error`, mirroring `reprise-cli`'s `connect`.
@@ -193,7 +183,7 @@ fn connect(interface: &'static str) -> Result<zbus::blocking::Proxy<'static>, Pl
 /// Maps a zbus error to a playback error, recognising the "no player" case.
 /// Mirrors `reprise-cli`'s `commands::playback::map_zbus_error` exactly (same
 /// `MethodError` destructuring, same absent-player classification).
-fn map_zbus_error(error: &zbus::Error) -> PlaybackError {
+pub(crate) fn map_zbus_error(error: &zbus::Error) -> PlaybackError {
     if let zbus::Error::MethodError(name, _, _) = error {
         if is_absent_player(name.as_str()) {
             return PlaybackError::NoPlayer;

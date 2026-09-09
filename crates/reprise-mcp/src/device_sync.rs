@@ -5,16 +5,15 @@ use crate::device_dto::{
     DeviceSyncParams, DeviceSyncPlaylistDto, DeviceSyncProgressDto, DeviceSyncSourceParam,
     DeviceSyncStateDto, DeviceSyncStorageCompositionDto, DeviceSyncStorageDto, DeviceSyncTargetDto,
 };
-use crate::playback::PlaybackError;
+use crate::playback::{map_zbus_error, PlaybackError};
 
-const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
-const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const DEVICE_SYNC_INTERFACE: &str = "org.reprise.DeviceSync1";
 
 use reprise_runtime_protocol::device_sync::{
     DeviceChangeCounts, DeviceSnapshot, DeviceSourceSelection, DeviceSourceSnapshot,
     DeviceStorageComposition, DeviceStorageSnapshot, DeviceTargetSnapshot,
 };
+use reprise_runtime_protocol::mpris::{BUS_NAME, OBJECT_PATH};
 use reprise_runtime_protocol::{ProtocolVersion, PROTOCOL_VERSION};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,19 +123,6 @@ fn connect() -> Result<zbus::blocking::Proxy<'static>, PlaybackError> {
         .map_err(|error| PlaybackError::Bus(format!("no D-Bus session bus available: {error}")))?;
     zbus::blocking::Proxy::new(&connection, BUS_NAME, OBJECT_PATH, DEVICE_SYNC_INTERFACE)
         .map_err(|error| map_zbus_error(&error))
-}
-
-fn map_zbus_error(error: &zbus::Error) -> PlaybackError {
-    if let zbus::Error::MethodError(name, _, _) = error {
-        if matches!(
-            name.as_str(),
-            "org.freedesktop.DBus.Error.ServiceUnknown"
-                | "org.freedesktop.DBus.Error.NameHasNoOwner"
-        ) {
-            return PlaybackError::NoPlayer;
-        }
-    }
-    PlaybackError::Bus(error.to_string())
 }
 
 pub fn state() -> Result<DeviceSyncStateDto, PlaybackError> {
