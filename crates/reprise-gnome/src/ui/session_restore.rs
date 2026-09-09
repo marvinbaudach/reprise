@@ -115,7 +115,7 @@ pub(super) fn wire_close(
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     loaded: &SessionState,
-    geometry_suppressed: &Rc<Cell<bool>>,
+    _geometry_suppressed: &Rc<Cell<bool>>,
     nav_history: &Rc<crate::ui::nav_history::NavHistory>,
 ) {
     let geometry = Rc::new(Cell::new((
@@ -123,7 +123,7 @@ pub(super) fn wire_close(
         loaded.window_height,
         loaded.maximized,
     )));
-    wire_geometry_tracking(window, &geometry, geometry_suppressed);
+    wire_geometry_tracking(window, &geometry);
 
     let conn = conn.clone();
     let track_list = Rc::downgrade(track_list);
@@ -131,7 +131,6 @@ pub(super) fn wire_close(
     let loaded = loaded.clone();
     let saved = Cell::new(false);
     let geometry = geometry.clone();
-    let geometry_suppressed = geometry_suppressed.clone();
     let nav_history = nav_history.clone();
     window.connect_close_request(move |window| {
         if saved.replace(true) {
@@ -139,8 +138,7 @@ pub(super) fn wire_close(
         }
         let mut state = loaded.clone();
         let live = (window.width(), window.height(), window.is_maximized());
-        let (width, height, maximized) =
-            geometry_for_save(geometry_suppressed.get(), geometry.get(), live);
+        let (width, height, maximized) = geometry_for_save(geometry.get(), live);
         state.window_width = width;
         state.window_height = height;
         state.maximized = maximized;
@@ -198,38 +196,50 @@ pub(super) fn arm_seed_close(window: &adw::ApplicationWindow) {
     });
 }
 
-fn wire_geometry_tracking(
-    window: &adw::ApplicationWindow,
-    geometry: &Rc<Cell<(i32, i32, bool)>>,
-    suppressed: &Rc<Cell<bool>>,
-) {
-    for property in ["width", "height", "maximized"] {
-        let geometry = geometry.clone();
-        let suppressed = suppressed.clone();
-        window.connect_notify_local(Some(property), move |window, _| {
-            if suppressed.get() {
-                return;
-            }
-            let (width, height, _) = geometry.get();
-            let maximized = window.is_maximized();
-            let size = if !maximized && window.width() > 0 && window.height() > 0 {
-                (window.width(), window.height())
-            } else {
-                (width, height)
-            };
-            geometry.set((size.0, size.1, maximized));
-        });
-    }
+fn wire_geometry_tracking(window: &adw::ApplicationWindow, geometry: &Rc<Cell<(i32, i32, bool)>>) {
+    let geometry_for_realize = geometry.clone();
+    window.connect_realize(move |window| {
+        let Some(surface) = window.surface() else {
+            return;
+        };
+        for property in ["width", "height"] {
+            let geometry = geometry_for_realize.clone();
+            let window = window.downgrade();
+            surface.connect_notify_local(Some(property), move |_, _| {
+                let geometry = geometry.clone();
+                let window = window.clone();
+                glib::idle_add_local_once(move || {
+                    let Some(window) = window.upgrade() else {
+                        return;
+                    };
+                    if window.is_maximized() {
+                        return;
+                    }
+                    let width = window.width();
+                    let height = window.height();
+                    if width > 0 && height > 0 {
+                        geometry.set((width, height, false));
+                    }
+                });
+            });
+        }
+    });
+
+    let geometry = geometry.clone();
+    window.connect_notify_local(Some("maximized"), move |window, _| {
+        let (width, height, _) = geometry.get();
+        let maximized = window.is_maximized();
+        let size = if !maximized && window.width() > 0 && window.height() > 0 {
+            (window.width(), window.height())
+        } else {
+            (width, height)
+        };
+        geometry.set((size.0, size.1, maximized));
+    });
 }
 
-fn geometry_for_save(
-    suppressed: bool,
-    tracked: (i32, i32, bool),
-    live: (i32, i32, bool),
-) -> (i32, i32, bool) {
-    if suppressed {
-        tracked
-    } else if live.2 {
+fn geometry_for_save(tracked: (i32, i32, bool), live: (i32, i32, bool)) -> (i32, i32, bool) {
+    if live.2 {
         (tracked.0, tracked.1, true)
     } else {
         live
@@ -356,7 +366,9 @@ fn close_should_proceed(_save_succeeded: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::process::{Child, Command, Stdio};
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     use reprise_core::playback::{
         AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
@@ -467,17 +479,135 @@ mod tests {
         assert!(close_should_proceed(true));
         assert!(close_should_proceed(false));
         assert_eq!(
-            geometry_for_save(true, (1200, 800, true), (440, 240, false)),
-            (1200, 800, true)
-        );
-        assert_eq!(
-            geometry_for_save(false, (1200, 800, true), (900, 600, false)),
+            geometry_for_save((1200, 800, true), (900, 600, false)),
             (900, 600, false)
         );
         assert_eq!(
-            geometry_for_save(false, (1200, 800, true), (1920, 1080, true)),
+            geometry_for_save((1200, 800, true), (1920, 1080, true)),
             (1200, 800, true)
         );
+    }
+
+    struct TestWindowManager(Child);
+
+    impl TestWindowManager {
+        fn start() -> Self {
+            let child = Command::new("openbox")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("the display regression needs the test window manager");
+            std::thread::sleep(Duration::from_millis(250));
+            Self(child)
+        }
+    }
+
+    impl Drop for TestWindowManager {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    fn wait_for_window_state(label: &str, mut condition: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !condition() && Instant::now() < deadline {
+            while glib::MainContext::default().iteration(false) {}
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(condition(), "window manager did not reach: {label}");
+    }
+
+    fn resize_window(window: &adw::ApplicationWindow, width: i32, height: i32) {
+        let surface = window
+            .surface()
+            .unwrap()
+            .downcast::<gdk4_x11::X11Surface>()
+            .unwrap();
+        let xid = unsafe { gdk4_x11::ffi::gdk_x11_surface_get_xid(surface.as_ptr() as *mut _) };
+        let status = Command::new("xdotool")
+            .args([
+                "windowsize",
+                "--sync",
+                &xid.to_string(),
+                &width.to_string(),
+                &height.to_string(),
+            ])
+            .status()
+            .expect("the display regression needs xdotool");
+        assert!(status.success(), "xdotool could not resize the test window");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn resized_size_survives_maximize_close_and_reopen() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let _window_manager = TestWindowManager::start();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.GeometryRestoreTest")
+            .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let db = Rc::new(crate::test_db::open().unwrap());
+        let requested_size = (987, 654);
+        let loaded = SessionState {
+            window_width: 800,
+            window_height: 600,
+            ..SessionState::default()
+        };
+        let window = adw::ApplicationWindow::builder()
+            .application(&app)
+            .default_width(loaded.window_width)
+            .default_height(loaded.window_height)
+            .build();
+        let tracked = Rc::new(Cell::new((
+            loaded.window_width,
+            loaded.window_height,
+            loaded.maximized,
+        )));
+        wire_geometry_tracking(&window, &tracked);
+        window.present();
+        wait_for_window_state("mapped", || window.is_mapped());
+        wait_for_window_state("allocated", || window.width() > 0 && window.height() > 0);
+        let initial_size = (window.width(), window.height());
+        resize_window(&window, requested_size.0, requested_size.1);
+        wait_for_window_state("resized", || {
+            (window.width(), window.height()) != initial_size
+        });
+        while glib::MainContext::default().iteration(false) {}
+        let resized = (window.width(), window.height());
+        window.maximize();
+        wait_for_window_state("maximized", || window.is_maximized());
+
+        let db_for_close = db.clone();
+        let tracked_for_close = tracked.clone();
+        window.connect_close_request(move |window| {
+            let mut state = loaded.clone();
+            let live = (window.width(), window.height(), window.is_maximized());
+            let geometry = geometry_for_save(tracked_for_close.get(), live);
+            (state.window_width, state.window_height, state.maximized) = geometry;
+            session::save(&db_for_close, &state).unwrap();
+            glib::Propagation::Proceed
+        });
+        window.close();
+        wait_for_window_state("closed", || !window.is_visible());
+
+        let restored = session::load(&db);
+        let reopened = adw::ApplicationWindow::builder()
+            .application(&app)
+            .default_width(restored.window_width)
+            .default_height(restored.window_height)
+            .build();
+        apply_initial_geometry(&reopened, &restored);
+
+        assert_eq!((restored.window_width, restored.window_height), resized);
+        assert!(restored.maximized);
+        assert_eq!(
+            (reopened.default_width(), reopened.default_height()),
+            resized
+        );
+        reopened.close();
     }
 
     #[test]

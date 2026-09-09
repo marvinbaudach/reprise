@@ -198,6 +198,9 @@ pub(in crate::ui) fn install(
 
 #[cfg(test)]
 mod tests {
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
     use gtk4::gio;
     use reprise_core::library::settings::{CompactLayout, WindowViewMode};
 
@@ -353,6 +356,102 @@ mod tests {
         );
         assert!(window.is_visible());
         assert!(!compact_window.is_visible());
+        window.close();
+    }
+
+    fn wait_for(label: &str, mut condition: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !condition() && Instant::now() < deadline {
+            while glib::MainContext::default().iteration(false) {}
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(condition(), "window manager did not reach: {label}");
+    }
+
+    fn x11_window_id(window: &adw::ApplicationWindow) -> String {
+        let surface = window
+            .surface()
+            .unwrap()
+            .downcast::<gdk4_x11::X11Surface>()
+            .unwrap();
+        unsafe { gdk4_x11::ffi::gdk_x11_surface_get_xid(surface.as_ptr() as *mut _).to_string() }
+    }
+
+    fn xdotool(args: &[&str]) -> String {
+        let output = Command::new("xdotool")
+            .args(args)
+            .output()
+            .expect("the display regression needs xdotool");
+        assert!(output.status.success(), "xdotool command failed: {args:?}");
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn x11_geometry(window: &adw::ApplicationWindow) -> (i32, i32, i32, i32, bool) {
+        let output = xdotool(&["getwindowgeometry", "--shell", &x11_window_id(window)]);
+        let field = |name: &str| {
+            output
+                .lines()
+                .find_map(|line| line.strip_prefix(&format!("{name}=")))
+                .unwrap()
+                .parse::<i32>()
+                .unwrap()
+        };
+        (
+            field("X"),
+            field("Y"),
+            field("WIDTH"),
+            field("HEIGHT"),
+            window.is_maximized(),
+        )
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mode_switch_preserves_library_window_geometry() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.ModeGeometryTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::builder()
+            .application(&app)
+            .default_width(900)
+            .default_height(600)
+            .build();
+        WindowContentHost::new(&window).set_content(&test_split_view());
+        let compact = CompactPlayer::new();
+        let mode = MinimalView::new(
+            &window,
+            Some(&compact),
+            Rc::new(crate::test_db::open().unwrap()),
+            ViewTransition {
+                mode: WindowViewMode::Library,
+                layout: CompactLayout::Card,
+            },
+            Rc::new(|_| {}),
+        );
+        mode.apply_initial();
+        wait_for("library mapped", || {
+            window.is_mapped() && window.width() > 0
+        });
+        let xid = x11_window_id(&window);
+        xdotool(&["windowsize", "--sync", &xid, "987", "654"]);
+        xdotool(&["windowmove", "--sync", &xid, "137", "91"]);
+        wait_for("library positioned", || {
+            let geometry = x11_geometry(&window);
+            geometry.0 == 137 && geometry.1 == 91
+        });
+
+        let restored_geometry = x11_geometry(&window);
+        mode.toggle();
+        wait_for("compact visible", || !window.is_visible());
+        mode.toggle();
+        wait_for("library restored", || window.is_visible());
+        wait_for("library geometry restored", || {
+            x11_geometry(&window) == restored_geometry
+        });
         window.close();
     }
 
