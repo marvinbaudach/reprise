@@ -47,7 +47,7 @@ export function VisualizerPlate({ variant = 'phone' }: { readonly variant?: 'pho
         canvas.width,
         canvas.height,
         engine.frame(),
-        variant === 'desktop' ? '#242a2f' : undefined,
+        variant === 'desktop' ? '#242a2f' : '#000',
       );
     };
     const stopAnimation = () => {

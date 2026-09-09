@@ -230,3 +230,16 @@ movement easier to see. Visibility and reduced-motion pauses remain unchanged.
 Showroom lint, the production build and the complete browser suite passed;
 the enlarged phone was visually inspected. Native sources are unchanged from
 the preceding full gate run. Lighthouse was not rerun for this CSS-only tuning.
+
+### Native phone visualization shape
+
+Review identified the square-edged web overlay as different from the actual
+Android capture. The overlay now follows the native 272 dp square, its 18 dp
+corner radius, and `AmbientTrueBlack`. Its placement aligns with the capture's
+664-pixel square at (208, 592), preserving the existing shadow and atmosphere.
+The browser regression first failed on the non-square overlay, then passed on
+desktop, mobile and enlarged views. Its corner ratio comes from the Android
+source, so changes to the native shape require an explicit website decision.
+Showroom lint, TypeScript, all 101 tests and the complete browser suite passed.
+The enlarged result was visually compared with the original Android screenshot.
+Native sources remain unchanged; their preceding full gate evidence still applies.
