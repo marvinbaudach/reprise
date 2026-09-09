@@ -2,7 +2,7 @@
 slug: the-cover-search-finds-what-is-there
 worktree: /home/marvin/Projects/reprise-the-cover-search-finds-what-is-there
 branch: feature/the-cover-search-finds-what-is-there
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-09
 ---
