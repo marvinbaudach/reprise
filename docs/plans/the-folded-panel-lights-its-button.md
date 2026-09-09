@@ -2,7 +2,7 @@
 slug: the-folded-panel-lights-its-button
 worktree: /home/marvin/Projects/reprise-the-folded-panel-lights-its-button
 branch: feature/the-folded-panel-lights-its-button
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-09-09
 ---
