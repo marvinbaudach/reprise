@@ -4294,7 +4294,11 @@ STYLE-1).
   eye reads luminance change in peripheral vision, so a brightening
   cover pulls attention off the list; it lifts on its shadow, carries a
   one-pixel light seam along its edge, and has a soft disc of the blurred
-  artwork turning behind it — one turn a minute. The seam sits
+  artwork turning behind it — one turn every 25 seconds in dark appearance
+  and every 40 seconds in light appearance. The split aims for equal salience
+  rather than an equal period: light appearance already has a denser bloom
+  underneath, and a dark blurred disc carries more contrast on light ground.
+  The seam sits
   one pixel outside the artwork, so the cover's footprint grows by exactly
   one pixel on each side; nothing crosses the picture itself. The seam
   uses the effective app or system accent (`@accent_color`), exactly like
@@ -4305,7 +4309,24 @@ STYLE-1).
   greyscale or near-black and yield no usable colour at all, and most of
   the rest are monochrome artwork, so the sweep came out as one flat tone
   lying on a backdrop of the same tone. The blurred cover always has
-  structure, even in black and white. The lift is
+  structure, even in black and white.
+  At one turn a minute the disc changed the visible ring by 2.40 of 255
+  luminance units per second, 0.04× the bloom's own breathing on the same
+  pixels: below the rate at which it reads as moving at all, which is what was
+  reported from use. The rate carries most of the correction and the disc's
+  resting opacity the rest: both arms were accepted by eye in the running app.
+  The dark arm turns in 25 seconds and rises from 0.34 to 0.48, while the light
+  arm turns in 40 seconds and rests at 0.40.
+  The lighter arm is quieter because the denser light-mode bloom and the higher
+  contrast of a dark disc on light ground already make the same motion more
+  salient. The dark arm makes the wash around the cover about 41 % denser at
+  rest, accepted for that price: motion and resting brightness share one factor
+  here and cannot be bought apart. The
+  reactive terms are unchanged in both themes: in dark they still mirror the
+  backdrop's own 0.15 / 0.16 slope, while in light the backdrop has already
+  widened to 0.26 / 0.24 and the disc remains at 0.14 / 0.16. On greyscale and
+  near-black artwork the disc stays faint, accepted for the same measured reason the
+  palette sweep was rejected in the first place. The lift is
   two cached shadow layers
   whose opacities cross-fade with the composite coverage held constant —
   a linear `1 - swell` pair sums to one and still dips 14 %, which reads

@@ -1,4 +1,4 @@
-//! A soft disc of the cover itself, turning behind it once a minute.
+//! A soft disc of the cover itself, turning behind it at a theme-aware rate.
 //!
 //! The mockup draws this as a conic gradient of the cover's three dominant
 //! colours. Measured against this library that failed: half the covers are
@@ -8,6 +8,9 @@
 //! structure, even in black and white, so the disc is the blurred cover rather
 //! than colours extracted from it. Same honesty rule as the bloom, and it works
 //! on every record instead of two in five.
+//! The two owner-approved arms were accepted by eye in the running app. The
+//! dark arm turns every 25 seconds at 0.48 resting opacity; the quieter light
+//! arm turns every 40 seconds at 0.40 against its denser bloom.
 //!
 //! Cost is the bloom's bargain: the masked disc is rasterized once per cover;
 //! per frame there is a translate, a rotate and one `paint_with_alpha`. The
@@ -22,7 +25,11 @@ use gtk4::prelude::*;
 use crate::ui::cover_glow;
 use crate::ui::style::tokens;
 
-const SHIMMER_REST_OPACITY: f64 = 0.34;
+/// Approved dark resting opacity, raised from 0.34 with the turn rate.
+const SHIMMER_REST_OPACITY: f64 = 0.48;
+/// Owner-approved light resting opacity, accepted by eye in the running app.
+/// It stays thinner against the denser light-mode bloom.
+const LIGHT_SHIMMER_REST_OPACITY: f64 = 0.40;
 const SHIMMER_OPACITY_PER_PRESSURE: f64 = 0.14;
 const SHIMMER_OPACITY_PER_SWELL: f64 = 0.16;
 /// The mockup's 520 px disc over its 168 px cover.
@@ -31,8 +38,12 @@ const SHIMMER_DIAMETER_PER_COVER: f64 = 520.0 / 168.0;
 const SHIMMER_CENTRE_Y: f64 = 100.0;
 /// The disc is clipped to the same artwork band as the cover and bloom.
 const SHIMMER_BAND_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
-/// One turn a minute.
-const SHIMMER_TURN_S: f64 = 60.0;
+/// Approved dark turn period. At a minute the disc measured 0.04x the bloom.
+const SHIMMER_TURN_S: f64 = 25.0;
+/// Owner-approved light turn period, accepted by eye in the running app. The
+/// slower turn balances the denser bloom and greater contrast of a dark disc on
+/// light ground, where the same rotation reads as more salient, not faster.
+const LIGHT_SHIMMER_TURN_S: f64 = 40.0;
 /// `radial-gradient(circle closest-side, #000 12%, transparent 68%)`.
 const SHIMMER_MASK_SOLID: f64 = 0.12;
 const SHIMMER_MASK_CLEAR: f64 = 0.68;
@@ -43,15 +54,43 @@ const SHIMMER_SURFACE_EDGE: i32 = 260;
 /// A reading below this threshold cannot visibly change the light.
 const LIGHT_EPSILON: f64 = 0.01;
 
-pub(super) fn shimmer_opacity(pressure: f64, swell: f64) -> f64 {
-    SHIMMER_REST_OPACITY
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ShimmerModel {
+    turn_s: f64,
+    rest_opacity: f64,
+}
+
+/// Both arms are owner-approved from judgment in the running app. The light arm
+/// is slower and thinner because its bloom rests at 0.14 instead of 0.06 and
+/// reacts at 0.26 / 0.24 instead of 0.15 / 0.16. A dark blurred disc on light
+/// ground also carries more contrast, making the same rotation more salient.
+fn shimmer_model(is_dark: bool) -> ShimmerModel {
+    if is_dark {
+        ShimmerModel {
+            turn_s: SHIMMER_TURN_S,
+            rest_opacity: SHIMMER_REST_OPACITY,
+        }
+    } else {
+        ShimmerModel {
+            turn_s: LIGHT_SHIMMER_TURN_S,
+            rest_opacity: LIGHT_SHIMMER_REST_OPACITY,
+        }
+    }
+}
+
+fn previous_turn_s_if_changed(previous: Option<f64>, current: f64) -> Option<f64> {
+    previous.filter(|previous| *previous != current)
+}
+
+pub(super) fn shimmer_opacity(pressure: f64, swell: f64, is_dark: bool) -> f64 {
+    shimmer_model(is_dark).rest_opacity
         + SHIMMER_OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
         + SHIMMER_OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
 }
 
 /// Rotation at `elapsed_s`, wrapped so a long session cannot lose precision.
-pub(super) fn shimmer_angle(elapsed_s: f64) -> f64 {
-    std::f64::consts::TAU * (elapsed_s / SHIMMER_TURN_S).rem_euclid(1.0)
+pub(super) fn shimmer_angle(elapsed_s: f64, is_dark: bool) -> f64 {
+    std::f64::consts::TAU * (elapsed_s / shimmer_model(is_dark).turn_s).rem_euclid(1.0)
 }
 
 /// Mask alpha at `r` ∈ [0, 1] of the disc's radius.
@@ -65,6 +104,61 @@ pub(super) fn shimmer_mask(r: f64) -> f64 {
     (SHIMMER_MASK_CLEAR - r) / (SHIMMER_MASK_CLEAR - SHIMMER_MASK_SOLID)
 }
 
+#[derive(Clone, Copy, Default)]
+struct Phase {
+    started_at_us: i64,
+    phase_us: i64,
+    elapsed_us: i64,
+}
+
+impl Phase {
+    /// Returns whether `elapsed_us` changed, meaning a redraw is due.
+    fn advance(&mut self, frame_time_us: i64) -> bool {
+        if self.started_at_us == 0 {
+            self.started_at_us = frame_time_us;
+        }
+        let elapsed_us = self
+            .phase_us
+            .saturating_add(frame_time_us.saturating_sub(self.started_at_us));
+        if self.elapsed_us == elapsed_us {
+            return false;
+        }
+        self.elapsed_us = elapsed_us;
+        true
+    }
+
+    /// Folds the running segment, returning whether anything was folded.
+    fn hold(&mut self) -> bool {
+        if self.started_at_us == 0 {
+            return false;
+        }
+        self.started_at_us = 0;
+        self.phase_us = self.elapsed_us;
+        true
+    }
+
+    /// Re-anchors the running segment at the same angle for a new turn rate.
+    fn retime(&mut self, old_turn_s: f64, new_turn_s: f64, frame_time_us: i64) {
+        let elapsed_us = if self.started_at_us == 0 {
+            self.elapsed_us
+        } else {
+            self.phase_us
+                .saturating_add(frame_time_us.saturating_sub(self.started_at_us))
+        };
+        let elapsed_s = elapsed_us as f64 / 1_000_000.0;
+        let new_elapsed_s = (elapsed_s / old_turn_s).rem_euclid(1.0) * new_turn_s;
+        let new_elapsed_us = (new_elapsed_s * 1_000_000.0).round() as i64;
+
+        self.started_at_us = frame_time_us;
+        self.phase_us = new_elapsed_us;
+        self.elapsed_us = new_elapsed_us;
+    }
+
+    fn elapsed_s(self) -> f64 {
+        self.elapsed_us as f64 / 1_000_000.0
+    }
+}
+
 struct Inner {
     surface: RefCell<Option<cairo::ImageSurface>>,
     /// Cover generation the cached disc was built from; the panel bumps it once
@@ -72,8 +166,10 @@ struct Inner {
     generation: Cell<Option<u64>>,
     pressure: Cell<f64>,
     swell: Cell<f64>,
-    started_at_us: Cell<i64>,
-    frame_time_us: Cell<i64>,
+    phase: Cell<Phase>,
+    /// `None` until the first tick observes the actual theme, so only an
+    /// observed rate transition can retime the phase.
+    last_turn_s: Cell<Option<f64>>,
     pinned: Cell<bool>,
 }
 
@@ -95,8 +191,8 @@ impl CoverShimmer {
             generation: Cell::new(None),
             pressure: Cell::new(0.0),
             swell: Cell::new(0.0),
-            started_at_us: Cell::new(0),
-            frame_time_us: Cell::new(0),
+            phase: Cell::new(Phase::default()),
+            last_turn_s: Cell::new(None),
             pinned: Cell::new(true),
         });
         area.set_draw_func({
@@ -151,24 +247,46 @@ impl CoverShimmer {
         if self.inner.pinned.get() {
             return;
         }
-        if frame_time_us <= 0 || !crate::ui::motion::animations_enabled() {
-            self.inner.started_at_us.set(0);
-            if self.inner.frame_time_us.replace(0) != 0 {
+        if frame_time_us <= 0 {
+            if self.hold_phase() {
                 self.area.queue_draw();
             }
             return;
         }
-        let started_at_us = self.inner.started_at_us.get();
-        let started_at_us = if started_at_us == 0 {
-            self.inner.started_at_us.set(frame_time_us);
-            frame_time_us
+        let is_dark = libadwaita::StyleManager::default().is_dark();
+        let turn_s = shimmer_model(is_dark).turn_s;
+        let mut phase = self.inner.phase.get();
+        let old_turn_s = self.inner.last_turn_s.replace(Some(turn_s));
+        let retimed = previous_turn_s_if_changed(old_turn_s, turn_s);
+        if let Some(old_turn_s) = retimed {
+            phase.retime(old_turn_s, turn_s, frame_time_us);
+        }
+        if !crate::ui::motion::animations_enabled() {
+            let held = phase.hold();
+            if retimed.is_some() || held {
+                self.inner.phase.set(phase);
+                self.area.queue_draw();
+            }
+            return;
+        }
+        let changed = if retimed.is_some() {
+            true
         } else {
-            started_at_us
+            phase.advance(frame_time_us)
         };
-        let elapsed_us = frame_time_us.saturating_sub(started_at_us);
-        if self.inner.frame_time_us.replace(elapsed_us) != elapsed_us {
+        self.inner.phase.set(phase);
+        if changed {
             self.area.queue_draw();
         }
+    }
+
+    fn hold_phase(&self) -> bool {
+        let mut phase = self.inner.phase.get();
+        let held = phase.hold();
+        if held {
+            self.inner.phase.set(phase);
+        }
+        held
     }
 
     pub(super) fn set_pinned(&self, pinned: bool) {
@@ -177,8 +295,7 @@ impl CoverShimmer {
         if pinned {
             self.inner.pressure.set(0.0);
             self.inner.swell.set(0.0);
-            self.inner.started_at_us.set(0);
-            self.inner.frame_time_us.set(0);
+            self.hold_phase();
         }
         self.area.queue_draw();
     }
@@ -225,7 +342,8 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     };
     let diameter = SHIMMER_DIAMETER_PER_COVER * f64::from(tokens::NOW_PLAYING_COVER_SIZE);
     let scale = diameter / f64::from(SHIMMER_SURFACE_EDGE);
-    let elapsed_s = inner.frame_time_us.get() as f64 / 1_000_000.0;
+    let elapsed_s = inner.phase.get().elapsed_s();
+    let is_dark = libadwaita::StyleManager::default().is_dark();
     cr.save().ok();
     cr.rectangle(
         0.0,
@@ -235,13 +353,17 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     );
     cr.clip();
     cr.translate(f64::from(width) / 2.0, SHIMMER_CENTRE_Y);
-    cr.rotate(shimmer_angle(elapsed_s));
+    cr.rotate(shimmer_angle(elapsed_s, is_dark));
     cr.scale(scale, scale);
     let centre = f64::from(SHIMMER_SURFACE_EDGE) / 2.0;
     if cr.set_source_surface(surface, -centre, -centre).is_ok() {
         cr.source().set_filter(cairo::Filter::Bilinear);
-        cr.paint_with_alpha(shimmer_opacity(inner.pressure.get(), inner.swell.get()))
-            .ok();
+        cr.paint_with_alpha(shimmer_opacity(
+            inner.pressure.get(),
+            inner.swell.get(),
+            is_dark,
+        ))
+        .ok();
     }
     cr.restore().ok();
 }
@@ -251,24 +373,107 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ac_24_the_shimmer_opacity_matches_the_backdrop_it_lies_on() {
-        // Straight from the mockup: 0.34 + 0.14·pres + 0.16·sw.
-        assert!((shimmer_opacity(0.0, 0.0) - 0.34).abs() < 1e-9);
-        assert!((shimmer_opacity(1.0, 0.0) - 0.48).abs() < 1e-9);
-        assert!((shimmer_opacity(1.0, 1.0) - 0.64).abs() < 1e-9);
-        assert!((shimmer_opacity(-1.0, 4.0) - 0.50).abs() < 1e-9);
+    fn ac_24_light_shimmer_is_quieter_while_dark_keeps_its_approved_opacity_model() {
+        let dark = shimmer_model(true);
+        let light = shimmer_model(false);
+
+        assert_eq!(dark.rest_opacity, 0.48);
+        assert_eq!(light.rest_opacity, 0.40);
+        assert!((shimmer_opacity(1.0, 0.0, true) - 0.62).abs() < 1e-9);
+        assert!((shimmer_opacity(1.0, 1.0, true) - 0.78).abs() < 1e-9);
+        assert!((shimmer_opacity(-1.0, 4.0, true) - 0.64).abs() < 1e-9);
+        assert!((shimmer_opacity(1.0, 0.0, false) - 0.54).abs() < 1e-9);
+        assert!((shimmer_opacity(1.0, 1.0, false) - 0.70).abs() < 1e-9);
+        assert!((shimmer_opacity(-1.0, 4.0, false) - 0.56).abs() < 1e-9);
+        assert!(light.rest_opacity < dark.rest_opacity);
     }
 
     #[test]
-    fn ac_24_the_shimmer_turns_once_a_minute() {
-        // "eine Umdrehung pro Minute" — and it must not jump at the wrap.
-        assert!((shimmer_angle(0.0) - 0.0).abs() < 1e-9);
-        assert!((shimmer_angle(15.0) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-        assert!((shimmer_angle(30.0) - std::f64::consts::PI).abs() < 1e-9);
-        assert!((shimmer_angle(60.0) - shimmer_angle(0.0)).abs() < 1e-9);
-        assert!((shimmer_angle(61.0) - shimmer_angle(1.0)).abs() < 1e-9);
-        // A long session must not lose precision into a stutter.
-        assert!((shimmer_angle(86_400.0) - shimmer_angle(0.0)).abs() < 1e-6);
+    fn ac_24_the_shimmer_turn_rate_is_theme_aware() {
+        let dark = shimmer_model(true);
+        let light = shimmer_model(false);
+
+        assert_eq!(dark.turn_s, 25.0);
+        assert_eq!(light.turn_s, 40.0);
+        assert!((shimmer_angle(0.0, true) - 0.0).abs() < 1e-9);
+        assert!((shimmer_angle(6.25, true) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert!((shimmer_angle(12.5, true) - std::f64::consts::PI).abs() < 1e-9);
+        assert!((shimmer_angle(25.0, true) - shimmer_angle(0.0, true)).abs() < 1e-9);
+        assert!((shimmer_angle(26.0, true) - shimmer_angle(1.0, true)).abs() < 1e-9);
+        assert!((shimmer_angle(86_400.0, true) - shimmer_angle(0.0, true)).abs() < 1e-6);
+        assert!((shimmer_angle(10.0, false) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert!((shimmer_angle(20.0, false) - std::f64::consts::PI).abs() < 1e-9);
+        assert!((shimmer_angle(40.0, false) - shimmer_angle(0.0, false)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_the_disc_keeps_its_phase_across_a_hold_and_resume() {
+        let mut phase = Phase::default();
+        phase.advance(1_000_000);
+        phase.advance(11_000_000);
+        let before = phase.elapsed_s();
+        assert!(before > 0.0, "the disc did not start turning");
+        assert!(phase.hold());
+        phase.advance(12_000_000);
+        phase.advance(14_000_000);
+        let after = phase.elapsed_s();
+        assert!(
+            (after - (before + 2.0)).abs() < 1e-6,
+            "the disc did not resume from its held phase"
+        );
+    }
+
+    #[test]
+    fn npp_18_a_double_hold_does_not_fold_the_phase_twice() {
+        let mut phase = Phase::default();
+        phase.advance(1_000_000);
+        phase.advance(11_000_000);
+
+        assert!(phase.hold());
+        let held = phase.elapsed_s();
+        assert!(!phase.hold());
+        assert!((phase.elapsed_s() - held).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_resuming_after_a_huge_gap_does_not_jump() {
+        let mut phase = Phase::default();
+        phase.advance(1_000_000);
+        phase.advance(11_000_000);
+        phase.hold();
+        let before = phase.elapsed_s();
+
+        assert!(!phase.advance(500_000_000));
+        assert!((phase.elapsed_s() - before).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_advance_reports_no_change_when_elapsed_does_not_move() {
+        let mut phase = Phase::default();
+
+        assert!(!phase.advance(1_000_000));
+        assert!(!phase.advance(1_000_000));
+        assert_eq!(phase.elapsed_s(), 0.0);
+    }
+
+    #[test]
+    fn npp_18_retiming_keeps_the_disc_angle_continuous() {
+        let mut phase = Phase::default();
+        phase.advance(1_000_000);
+        phase.advance(11_000_000);
+        let before = shimmer_angle(12.0, true);
+
+        phase.retime(25.0, 40.0, 13_000_000);
+        let after = shimmer_angle(phase.elapsed_s(), false);
+
+        assert!((after - before).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_only_an_observed_turn_rate_change_requests_retiming() {
+        assert_eq!(previous_turn_s_if_changed(None, 40.0), None);
+        assert_eq!(previous_turn_s_if_changed(Some(40.0), 40.0), None);
+        assert_eq!(previous_turn_s_if_changed(Some(25.0), 40.0), Some(25.0));
     }
 
     #[test]
