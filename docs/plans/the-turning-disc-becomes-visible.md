@@ -2,7 +2,7 @@
 slug: the-turning-disc-becomes-visible
 worktree: /home/marvin/Projects/reprise-the-turning-disc-becomes-visible
 branch: feature/the-turning-disc-becomes-visible
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-09-09
 ---
