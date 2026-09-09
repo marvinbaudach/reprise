@@ -2,7 +2,7 @@
 slug: the-visualizer-sees-every-beat
 worktree: /home/marvin/Projects/reprise-the-visualizer-sees-every-beat
 branch: feature/the-visualizer-sees-every-beat
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-08
 ---
