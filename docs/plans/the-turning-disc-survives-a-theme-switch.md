@@ -2,7 +2,7 @@
 slug: the-turning-disc-survives-a-theme-switch
 worktree: /home/marvin/Projects/reprise-the-turning-disc-survives-a-theme-switch
 branch: feature/the-turning-disc-survives-a-theme-switch
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-09
 ---
