@@ -6,6 +6,9 @@ use reprise_core::playback::{AudioEffects, PlaybackError};
 
 pub(super) const CAVA_SINK_NAME: &str = "reprise-cava-sink";
 pub(super) const CAVA_SAMPLE_RATE_HZ: i32 = 44_100;
+// Keep about 130 ms of 60 Hz analysis buffers for short scheduling stalls, but
+// stay bounded because this branch must never back-pressure audible playback.
+const CAVA_SINK_MAX_QUEUED_BUFFERS: u32 = 8;
 
 pub(super) fn build_audio_filter(
     effects: &AudioEffects,
@@ -59,7 +62,7 @@ pub(super) fn build_audio_filter(
     let cava_sink = gst_app::AppSink::builder()
         .caps(&cava_caps)
         .sync(true)
-        .max_buffers(2)
+        .max_buffers(CAVA_SINK_MAX_QUEUED_BUFFERS)
         .drop(true)
         .enable_last_sample(false)
         .build();
