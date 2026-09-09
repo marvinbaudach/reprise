@@ -443,6 +443,30 @@ mod tests {
         let checked_background = rendered_center_pixel(&window, &button);
         window.close();
 
+        // The control arm. Both sidebar samples may legitimately be `None` —
+        // the de-coloured toggle paints nothing in either state — and comparing
+        // nothing with nothing proves nothing on its own. The player-bar toggle
+        // fills on `:checked` by design, so its two samples differing is what
+        // establishes that this sampler can see a slab where one exists.
+        let control = gtk4::ToggleButton::builder()
+            .css_classes(["flat", super::TOGGLE_CLASS])
+            .width_request(48)
+            .height_request(48)
+            .build();
+        let control_window = gtk4::Window::builder().child(&control).build();
+        control_window.present();
+        pump();
+        let control_unchecked = rendered_center_pixel(&control_window, &control);
+        control.set_active(true);
+        pump();
+        let control_checked = rendered_center_pixel(&control_window, &control);
+        control_window.close();
+
+        assert_ne!(
+            control_checked, control_unchecked,
+            "the player-bar toggle must render its checked fill — without that \
+             this test cannot tell a missing slab from a blind sampler"
+        );
         assert_eq!(
             checked_background, unchecked_background,
             "the production sidebar toggle classes must render no checked-mode slab"
@@ -661,7 +685,20 @@ mod tests {
             .to_vec()
     }
 
-    fn rendered_center_pixel(window: &gtk4::Window, button: &gtk4::ToggleButton) -> [u8; 4] {
+    /// The centre pixel of the button's own rendering, or `None` when the
+    /// button paints nothing at all.
+    ///
+    /// `Snapshot::to_node` returns `None` for a widget that issued no drawing
+    /// operation, and a flat toggle whose background is fully transparent is
+    /// exactly that widget — so "paints nothing" is a legitimate outcome here,
+    /// not a broken harness. Treating it as fatal made
+    /// `sidebar_toggle_checked_state_renders_no_mode_slab` panic on its very
+    /// first sample, before it had asserted anything. `render` above already
+    /// carries the same distinction.
+    fn rendered_center_pixel(
+        window: &gtk4::Window,
+        button: &gtk4::ToggleButton,
+    ) -> Option<[u8; 4]> {
         use gtk4::prelude::*;
 
         let paintable = gtk4::WidgetPaintable::new(Some(button));
@@ -671,9 +708,7 @@ mod tests {
             f64::from(button.width()),
             f64::from(button.height()),
         );
-        let node = snapshot
-            .to_node()
-            .expect("the sidebar toggle paints a node");
+        let node = snapshot.to_node()?;
         let renderer = window
             .native()
             .and_then(|native| native.renderer())
@@ -685,9 +720,11 @@ mod tests {
         let x = texture.width() as usize / 2;
         let y = texture.height() as usize / 2;
         let offset = y * stride + x * 4;
-        pixels[offset..offset + 4]
-            .try_into()
-            .expect("one rendered RGBA pixel")
+        Some(
+            pixels[offset..offset + 4]
+                .try_into()
+                .expect("one rendered RGBA pixel"),
+        )
     }
 
     fn with_state(
