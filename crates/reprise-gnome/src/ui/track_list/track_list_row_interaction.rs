@@ -22,7 +22,7 @@ pub(in crate::ui) fn css() -> String {
          .{REORDER_TARGET_CSS_CLASS}:drop(active) {{ \
          box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}\n\
          .reprise-track-cell.now-playing {{ \
-           background-color: alpha(@accent_color, 0.09); }}\n\
+           background-color: @reprise_now_playing_tint; }}\n\
          .now-playing-leading {{ box-shadow: inset 2px 0 0 @accent_color; }}\n\
          .now-playing-title {{ color: @reprise_accent_text_color; font-weight: bold; }}\n\
          .missing-track-title {{ opacity: 0.5; }}"

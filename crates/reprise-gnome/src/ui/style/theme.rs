@@ -71,11 +71,7 @@ impl Palette {
     /// tint reproduced the same blind spot one rung up: the checked player-bar
     /// toggle fills brighter than a chip, and its label measured 2.97:1 in the
     /// dark palettes while this function reported the palette safe.
-    pub(in crate::ui::style) fn critical_accent_surface(
-        &self,
-        is_dark: bool,
-        accent: [u8; 3],
-    ) -> [u8; 3] {
+    pub(in crate::ui) fn critical_accent_surface(&self, is_dark: bool, accent: [u8; 3]) -> [u8; 3] {
         use super::color_math::{composite, parse_hex_rgb, relative_luminance};
 
         const WHITE: [u8; 3] = [255, 255, 255];
@@ -239,14 +235,13 @@ pub(in crate::ui) fn theme_css(
     is_dark: bool,
     source: super::accent::AccentSource,
 ) -> String {
-    use super::tokens::{HINT_TEXT_ALPHA, PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA};
+    use super::tokens as t;
 
     let p = if is_dark {
         theme.palette()
     } else {
         theme.light_palette()
     };
-    let accent_css = super::accent::css_overrides(source);
     // Accent foregrounds are used app-wide, so the role is derived against the
     // palette's worst-case surface rather than against any one widget's.
     let accent = super::accent::effective_accent_rgb(source);
@@ -255,7 +250,19 @@ pub(in crate::ui) fn theme_css(
         p.critical_accent_surface(is_dark, accent),
         is_dark,
     );
+    // The app accent source currently emits the same derived value for
+    // `accent_color` and `reprise_accent_text_color` in light only. That is a
+    // consequence of this derivation, not a guarantee: new CSS must choose
+    // `accent_color` for libadwaita accent semantics and
+    // `reprise_accent_text_color` for app-authored text and glyphs.
+    let accent_color = if is_dark {
+        super::accent::APP_ACCENT
+    } else {
+        &accent_text
+    };
+    let accent_css = super::accent::css_overrides(source, accent_color);
     let category_css = super::category_colors::theme_definitions(is_dark);
+    let appearance = super::theme_tokens::ThemeTokens::for_appearance(is_dark);
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -278,7 +285,27 @@ pub(in crate::ui) fn theme_css(
          @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
          @define-color reprise_hint_fg_color alpha({fg}, {hint_alpha});\n\
          @define-color reprise_dim_fg_color {dim};\n\
-         @define-color reprise_player_accent @accent_color;\n",
+         @define-color reprise_player_accent @accent_color;\n\
+         @define-color reprise_hairline {hairline};\n\
+         @define-color reprise_hairline_strong {hairline_strong};\n\
+         @define-color reprise_rule {rule};\n\
+         @define-color reprise_pill_border {pill_border};\n\
+         @define-color reprise_pill_bg {pill_bg};\n\
+         @define-color reprise_hover_bg {hover_bg};\n\
+         @define-color reprise_now_playing_tint {now_playing_tint};\n\
+         @define-color reprise_now_playing_glow {now_playing_glow};\n\
+         @define-color reprise_cover_edge {cover_edge};\n\
+         @define-color reprise_cover_shadow {cover_shadow};\n\
+         @define-color reprise_tab_active_bg {tab_active_bg};\n\
+         @define-color reprise_tab_active_shadow {tab_active_shadow};\n\
+         @define-color reprise_toggle_checked_fill {toggle_checked_fill};\n\
+         @define-color reprise_play_glow_near {play_glow_near};\n\
+         @define-color reprise_play_glow_far {play_glow_far};\n\
+         @define-color reprise_play_glow_near_hover {play_glow_near_hover};\n\
+         @define-color reprise_play_glow_far_hover {play_glow_far_hover};\n\
+         @define-color reprise_play_ring {play_ring};\n\
+         @define-color reprise_play_drop {play_drop};\n\
+         @define-color reprise_play_drop_hover {play_drop_hover};\n",
         win = p.window_bg,
         fg = p.fg,
         view = p.view_bg,
@@ -290,10 +317,30 @@ pub(in crate::ui) fn theme_css(
         category_css = category_css,
         accent_css = accent_css,
         accent_text = accent_text,
-        primary_alpha = PRIMARY_TEXT_ALPHA,
-        secondary_alpha = SECONDARY_TEXT_ALPHA,
-        hint_alpha = HINT_TEXT_ALPHA,
+        primary_alpha = t::PRIMARY_TEXT_ALPHA,
+        secondary_alpha = t::SECONDARY_TEXT_ALPHA,
+        hint_alpha = t::HINT_TEXT_ALPHA,
         dim = p.dim_fg,
+        hairline = appearance.hairline,
+        hairline_strong = appearance.hairline_strong,
+        rule = appearance.rule,
+        pill_border = appearance.pill_border,
+        pill_bg = appearance.pill_bg,
+        hover_bg = appearance.hover_bg,
+        now_playing_tint = appearance.now_playing_tint,
+        now_playing_glow = appearance.now_playing_glow,
+        cover_edge = appearance.cover_edge,
+        cover_shadow = appearance.cover_shadow,
+        tab_active_bg = appearance.tab_active_bg,
+        tab_active_shadow = appearance.tab_active_shadow,
+        toggle_checked_fill = appearance.toggle_checked_fill,
+        play_glow_near = appearance.play_glow_near,
+        play_glow_far = appearance.play_glow_far,
+        play_glow_near_hover = appearance.play_glow_near_hover,
+        play_glow_far_hover = appearance.play_glow_far_hover,
+        play_ring = appearance.play_ring,
+        play_drop = appearance.play_drop,
+        play_drop_hover = appearance.play_drop_hover,
     )
 }
 
@@ -344,6 +391,68 @@ mod tests {
     }
 
     #[test]
+    fn dark_keeps_the_brand_accent_for_every_role() {
+        for theme in Theme::all() {
+            let css = theme_css(theme, true, AccentSource::App);
+            assert!(css.contains(&format!("@define-color accent_color {APP_ACCENT};")));
+            assert!(css.contains(&format!("@define-color accent_bg_color {APP_ACCENT};")));
+        }
+    }
+
+    #[test]
+    fn light_accent_text_clears_aa_on_the_view_background() {
+        use crate::ui::style::color_math::{contrast_ratio, parse_hex_rgb};
+
+        for theme in Theme::all() {
+            let css = theme_css(theme, false, AccentSource::App);
+            let accent_color = css
+                .lines()
+                .find_map(|line| {
+                    line.strip_prefix("@define-color accent_color ")
+                        .and_then(|value| value.strip_suffix(';'))
+                })
+                .expect("the app accent source defines accent_color");
+            let accent = parse_hex_rgb(accent_color).expect("accent_color is emitted as hex");
+            let view = parse_hex_rgb(theme.light_palette().view_bg).expect("view_bg is valid hex");
+            let ratio = contrast_ratio(accent, view);
+            assert!(
+                ratio >= 4.5,
+                "{theme:?}: light accent text reaches only {ratio:.2}:1 on the view background"
+            );
+            assert_ne!(accent_color, APP_ACCENT);
+        }
+    }
+
+    #[test]
+    fn light_accent_text_clears_aa_on_the_running_row() {
+        use crate::ui::style::color_math::{composite, contrast_ratio, parse_hex_rgb};
+
+        for theme in Theme::all() {
+            let palette = theme.light_palette();
+            let view = parse_hex_rgb(palette.view_bg).expect("view_bg is valid hex");
+            // The system accent is only readable after GTK has initialized on
+            // its main thread; headless unit tests otherwise receive APP_ACCENT
+            // and would merely repeat this arm under a misleading name.
+            let accent = crate::ui::style::accent::effective_accent_rgb(AccentSource::App);
+            let accent_text = crate::ui::style::accent::accent_text_color(
+                accent,
+                palette.critical_accent_surface(false, accent),
+                false,
+            );
+            let accent_text = parse_hex_rgb(&accent_text).expect("accent text is emitted as hex");
+            let tint_alpha = super::super::tokens::NOW_PLAYING_TINT_LIGHT_ALPHA
+                .parse::<f64>()
+                .expect("the running-row tint alpha is numeric");
+            let running_row = composite(accent, view, tint_alpha);
+            let ratio = contrast_ratio(accent_text, running_row);
+            assert!(
+                ratio >= 4.5,
+                "{theme:?}: app accent text reaches only {ratio:.2}:1 on the running row"
+            );
+        }
+    }
+
+    #[test]
     fn system_accent_css_leaves_adwaita_roles_undefined_and_keeps_player_alias() {
         let css = theme_css(Theme::PerpetualRain, true, AccentSource::System);
         for name in ["accent_color", "accent_bg_color", "accent_fg_color"] {
@@ -354,6 +463,22 @@ mod tests {
         }
         assert!(css.contains("@define-color reprise_accent_text_color #"));
         assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
+    }
+
+    #[test]
+    fn system_accent_still_defines_no_adwaita_roles() {
+        for theme in Theme::all() {
+            for is_dark in [true, false] {
+                let css = theme_css(theme, is_dark, AccentSource::System);
+                for name in ["accent_color", "accent_bg_color", "accent_fg_color"] {
+                    assert!(
+                        !css.contains(&format!("@define-color {name}")),
+                        "{theme:?} is_dark={is_dark}: system accent must leave {name} to libadwaita"
+                    );
+                }
+                assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
+            }
+        }
     }
 
     #[test]
@@ -458,6 +583,74 @@ mod tests {
                     let css = theme_css(theme, is_dark, source);
                     assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
                 }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn hairline_token_uses_gtk_define_color_grammar() {
+        gtk4::init().unwrap();
+        for is_dark in [true, false] {
+            let mut css = theme_css(Theme::PerpetualRain, is_dark, AccentSource::App);
+            assert!(css.contains("@define-color reprise_hairline rgba("));
+            css.push_str("@define-color grammar_alpha alpha(@reprise_hairline, 0.5);\n");
+            let errors = crate::ui::style::css_parse_errors(&css);
+            assert!(
+                errors.is_empty(),
+                "theme CSS has {} parser error(s):\n  {}",
+                errors.len(),
+                errors.join("\n  ")
+            );
+        }
+    }
+
+    #[test]
+    fn dark_hairline_tokens_reproduce_the_literals_they_replaced() {
+        for theme in Theme::all() {
+            for source in [AccentSource::App, AccentSource::System] {
+                let css = theme_css(theme, true, source);
+                for definition in [
+                    "@define-color reprise_hairline rgba(255, 255, 255, 0.06);",
+                    "@define-color reprise_hairline_strong rgba(255, 255, 255, 0.07);",
+                    "@define-color reprise_rule rgba(255, 255, 255, 0.045);",
+                    "@define-color reprise_pill_border rgba(255, 255, 255, 0.10);",
+                ] {
+                    assert!(
+                        css.contains(definition),
+                        "{theme:?} {source:?}: {definition}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn light_hairlines_are_dark_on_light() {
+        for theme in Theme::all() {
+            for source in [AccentSource::App, AccentSource::System] {
+                let css = theme_css(theme, false, source);
+                for definition in [
+                    "@define-color reprise_hairline rgba(0, 0, 6, 0.09);",
+                    "@define-color reprise_hairline_strong rgba(0, 0, 6, 0.11);",
+                    "@define-color reprise_rule rgba(0, 0, 6, 0.055);",
+                    "@define-color reprise_pill_border rgba(0, 0, 6, 0.14);",
+                ] {
+                    assert!(
+                        css.contains(definition),
+                        "{theme:?} {source:?}: {definition}"
+                    );
+                }
+                assert!(
+                    css.lines()
+                        .filter(|line| {
+                            line.contains("reprise_hairline")
+                                || line.contains("reprise_rule")
+                                || line.contains("reprise_pill_border")
+                        })
+                        .all(|line| !line.contains("rgba(255, 255, 255,")),
+                    "{theme:?} {source:?}: a light hairline still uses white"
+                );
             }
         }
     }

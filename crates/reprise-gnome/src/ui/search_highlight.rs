@@ -86,22 +86,60 @@ pub(in crate::ui) fn highlight_from_filter(
     highlight_markup(text, &needle, Some(&palette))
 }
 
-/// Resolves the selected accent once for both Pango roles. The foreground is
-/// nudged toward the label's own text color, preserving contrast on ordinary
-/// and dim labels; the background stays the exact selected accent at the
-/// fixed 18% alpha declared in the markup.
-pub(in crate::ui) fn accent_palette(widget: &impl IsA<gtk4::Widget>) -> HighlightPalette {
-    let accent = crate::ui::style::accent::accent_rgba();
-    let text = widget.color();
-    let mix = |accent: f32, text: f32| accent + (text - accent) * TEXT_COLOR_MIX;
+fn accent_palette_for_appearance(
+    theme: crate::ui::style::theme::Theme,
+    is_dark: bool,
+    accent: [u8; 3],
+    dark_foreground: String,
+) -> HighlightPalette {
+    let foreground = if is_dark {
+        dark_foreground
+    } else {
+        let palette = theme.light_palette();
+        crate::ui::style::accent::accent_text_color(
+            accent,
+            palette.critical_accent_surface(false, accent),
+            false,
+        )
+    };
     HighlightPalette {
-        foreground: rgba_hex(
-            mix(accent.red(), text.red()),
-            mix(accent.green(), text.green()),
-            mix(accent.blue(), text.blue()),
+        foreground,
+        background: rgba_hex(
+            f32::from(accent[0]) / 255.0,
+            f32::from(accent[1]) / 255.0,
+            f32::from(accent[2]) / 255.0,
         ),
-        background: rgba_hex(accent.red(), accent.green(), accent.blue()),
     }
+}
+
+fn dark_highlight_foreground(accent: gtk4::gdk::RGBA, text: gtk4::gdk::RGBA) -> String {
+    let mix = |accent: f32, text: f32| accent + (text - accent) * TEXT_COLOR_MIX;
+    rgba_hex(
+        mix(accent.red(), text.red()),
+        mix(accent.green(), text.green()),
+        mix(accent.blue(), text.blue()),
+    )
+}
+
+/// Resolves the selected accent once for both Pango roles. Light appearance
+/// uses the same contrast-derived foreground as theme CSS against the same
+/// critical surface. Dark keeps the established label-color mix unchanged.
+/// The background stays the exact selected accent at the fixed 18% alpha
+/// declared in the markup.
+pub(in crate::ui) fn accent_palette(widget: &impl IsA<gtk4::Widget>) -> HighlightPalette {
+    let accent_rgba = crate::ui::style::accent::accent_rgba();
+    let dark_foreground = dark_highlight_foreground(accent_rgba, widget.color());
+    let accent = [
+        (accent_rgba.red() * 255.0).round() as u8,
+        (accent_rgba.green() * 255.0).round() as u8,
+        (accent_rgba.blue() * 255.0).round() as u8,
+    ];
+    accent_palette_for_appearance(
+        crate::ui::style::current_theme(),
+        crate::ui::style::accent::is_dark(),
+        accent,
+        dark_foreground,
+    )
 }
 
 pub(in crate::ui) fn apply(label: &gtk4::Label, text: &str, needle: &str) {
@@ -130,6 +168,48 @@ mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::*;
+
+    #[test]
+    fn fil_5a_light_highlight_foreground_clears_aa_on_its_own_tint() {
+        use crate::ui::style::accent::APP_ACCENT;
+        use crate::ui::style::color_math::{composite, contrast_ratio, parse_hex_rgb};
+        use crate::ui::style::theme::Theme;
+
+        for theme in Theme::all() {
+            let accent = parse_hex_rgb(APP_ACCENT).expect("app accent is valid hex");
+            let palette =
+                accent_palette_for_appearance(theme, false, accent, "#unused".to_string());
+            let foreground =
+                parse_hex_rgb(&palette.foreground).expect("highlight foreground is hex");
+            let background =
+                parse_hex_rgb(&palette.background).expect("highlight background is hex");
+            let view =
+                parse_hex_rgb(theme.light_palette().view_bg).expect("view background is hex");
+            let tinted = composite(background, view, 0.18);
+            let ratio = contrast_ratio(foreground, tinted);
+
+            assert!(
+                ratio >= 4.5,
+                "{theme:?}: light search highlight reaches only {ratio:.2}:1 on its own tint"
+            );
+        }
+    }
+
+    #[test]
+    fn fil_5a_dark_highlight_keeps_the_existing_label_colour_mix() {
+        let accent = gtk4::gdk::RGBA::new(79.0 / 255.0, 219.0 / 255.0, 212.0 / 255.0, 1.0);
+        let text = gtk4::gdk::RGBA::new(231.0 / 255.0, 233.0 / 255.0, 236.0 / 255.0, 1.0);
+        let dark_foreground = dark_highlight_foreground(accent, text);
+        let palette = accent_palette_for_appearance(
+            crate::ui::style::theme::Theme::DEFAULT,
+            true,
+            [79, 219, 212],
+            dark_foreground,
+        );
+
+        assert_eq!(palette.foreground, "#6dded9");
+        assert_eq!(palette.background, "#4fdbd4");
+    }
 
     #[test]
     fn fil_5a_highlight_matches_are_ascii_case_insensitive() {

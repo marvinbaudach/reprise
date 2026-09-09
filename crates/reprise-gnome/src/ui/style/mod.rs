@@ -23,6 +23,7 @@ mod panel_contrast;
 pub(super) mod reduced_motion;
 mod text_levels;
 pub(super) mod theme;
+mod theme_tokens;
 pub(super) mod tokens;
 
 use std::cell::{Cell, RefCell};
@@ -265,6 +266,10 @@ pub(in crate::ui) fn set_theme(theme: theme::Theme) {
     });
 }
 
+pub(in crate::ui) fn current_theme() -> theme::Theme {
+    CURRENT_THEME.with(Cell::get)
+}
+
 /// Switches between Reprise's brand accent and libadwaita's system accent,
 /// then reloads the palette provider so every named-color consumer updates.
 pub(in crate::ui) fn set_accent_source(source: accent::AccentSource) {
@@ -306,8 +311,8 @@ mod tests {
             ".reprise-library-split .reprise-library-sidebar { background-color: @sidebar_bg_color;"
         ));
         assert!(css.contains(".reprise-now-playing-stage { background-color: @sidebar_bg_color;"));
-        assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
-        assert!(css.contains("border-left: 1px solid rgba(255, 255, 255, 0.06)"));
+        assert!(css.contains("border-right: 1px solid @reprise_hairline"));
+        assert!(css.contains("border-left: 1px solid @reprise_hairline"));
 
         for theme in super::theme::Theme::all() {
             for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {

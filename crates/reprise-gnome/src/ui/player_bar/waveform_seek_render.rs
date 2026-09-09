@@ -17,9 +17,10 @@ pub(super) fn draw(
     }
     let w = f64::from(width);
     let h = f64::from(height);
+    let appearance = WaveformAppearance::current();
 
     if state.display_peaks.is_empty() {
-        draw_fallback(area, cr, w, h, state);
+        draw_fallback(area, cr, w, h, state, appearance);
         return;
     }
 
@@ -40,9 +41,16 @@ pub(super) fn draw(
     let bar_head_x = (state.fraction * w).clamp(0.0, w);
     let playhead_x = bar_head_x.clamp(1.5, (w - 1.5).max(1.5));
     let cache_live = waveform_surface::cache_is_live(state)
-        && waveform_surface::ensure_cache(state, width, height, area.scale_factor(), widget_colour);
+        && waveform_surface::ensure_cache(
+            state,
+            width,
+            height,
+            area.scale_factor(),
+            widget_colour,
+            appearance,
+        );
     if cache_live {
-        waveform_surface::draw_cached_bars(cr, state, w, h, bar_head_x, (r, g, b));
+        waveform_surface::draw_cached_bars(cr, state, w, h, bar_head_x, (r, g, b), appearance);
     } else if state.crossfade_progress < 1.0 && !state.previous_bars.is_empty() {
         draw_bars(
             cr,
@@ -55,6 +63,7 @@ pub(super) fn draw(
                 centroid: &state.previous_centroid,
                 build_progress: 1.0,
                 opacity: 1.0 - state.crossfade_progress,
+                appearance,
             },
         );
         draw_bars(
@@ -68,6 +77,7 @@ pub(super) fn draw(
                 centroid: &state.shaped_centroid,
                 build_progress: 1.0,
                 opacity: state.crossfade_progress,
+                appearance,
             },
         );
     } else {
@@ -82,11 +92,12 @@ pub(super) fn draw(
                 centroid: &state.shaped_centroid,
                 build_progress: state.build_progress,
                 opacity: 1.0,
+                appearance,
             },
         );
     }
 
-    draw_section_marks(cr, w, h, state);
+    draw_section_marks(cr, w, h, state, appearance);
 
     let animations_enabled = motion::animations_enabled();
     let head_colour = if state.colour_curve.is_empty() {
@@ -114,7 +125,7 @@ pub(super) fn draw(
         head_colour,
         decorations.glow,
         if animations_enabled {
-            PLAYHEAD_ALPHA
+            appearance.playhead_alpha
         } else {
             1.0
         },
@@ -128,12 +139,18 @@ pub(super) fn draw(
 /// Hairlines where the music changes — the single-colour bar's replacement for
 /// the structure the spectral fill shows as colour. Drawn over the bars and
 /// under the playhead: they mark positions, they do not compete with it.
-pub(super) fn draw_section_marks(cr: &gtk4::cairo::Context, w: f64, h: f64, state: &State) {
+pub(super) fn draw_section_marks(
+    cr: &gtk4::cairo::Context,
+    w: f64,
+    h: f64,
+    state: &State,
+    appearance: WaveformAppearance,
+) {
     if state.section_marks.is_empty() {
         return;
     }
     cr.save().ok();
-    cr.set_source_rgba(1.0, 1.0, 1.0, SECTION_MARK_ALPHA);
+    cr.set_source_rgba(1.0, 1.0, 1.0, appearance.section_mark_alpha);
     for mark in &state.section_marks {
         let x = (mark * w).clamp(0.0, (w - SECTION_MARK_WIDTH).max(0.0));
         cr.rectangle(
@@ -153,6 +170,7 @@ struct BarDrawStyle<'a> {
     centroid: &'a [f32],
     build_progress: f64,
     opacity: f64,
+    appearance: WaveformAppearance,
 }
 
 /// Where a bar sits relative to the playhead.
@@ -178,15 +196,18 @@ pub(super) fn bar_fill(
     side: BarSide,
     spectral: (f64, f64, f64),
     accent: (f64, f64, f64),
+    appearance: WaveformAppearance,
 ) -> ((f64, f64, f64), f64) {
     match (colouring, side) {
         (SeekColouring::Frequency, BarSide::Played) => (spectral, 1.0),
-        (SeekColouring::Frequency, BarSide::HoverPreview) => (spectral, HOVER_PREVIEW_ALPHA),
-        (SeekColouring::Frequency, BarSide::Buffered) => (spectral, BUFFERED_ALPHA),
-        (SeekColouring::Frequency, BarSide::Coming) => (spectral, UNPLAYED_ALPHA),
+        (SeekColouring::Frequency, BarSide::HoverPreview) => {
+            (spectral, appearance.hover_preview_alpha)
+        }
+        (SeekColouring::Frequency, BarSide::Buffered) => (spectral, appearance.buffered_alpha),
+        (SeekColouring::Frequency, BarSide::Coming) => (spectral, appearance.unplayed_alpha),
         (SeekColouring::Solid, BarSide::Played) => (accent, 1.0),
         (SeekColouring::Solid, BarSide::HoverPreview) => (SOLID_HOVER_PREVIEW, 1.0),
-        (SeekColouring::Solid, BarSide::Buffered) => (accent, BUFFERED_ALPHA),
+        (SeekColouring::Solid, BarSide::Buffered) => (accent, appearance.buffered_alpha),
         (SeekColouring::Solid, BarSide::Coming) => (SOLID_UNPLAYED, 1.0),
     }
 }
@@ -269,10 +290,20 @@ fn draw_bars(
             .map(|value| spectral_colour(f64::from(*value)));
         let (r, g, b) = spectral.map_or(accent, |colour| {
             let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
-            scale_chroma(colour.0, colour.1, colour.2, chroma_factor)
+            style.appearance.adjust_spectral(scale_chroma(
+                colour.0,
+                colour.1,
+                colour.2,
+                chroma_factor,
+            ))
         });
         if is_ghost {
-            cr.set_source_rgba(accent.0, accent.1, accent.2, GHOST_ALPHA * style.opacity);
+            cr.set_source_rgba(
+                accent.0,
+                accent.1,
+                accent.2,
+                style.appearance.ghost_alpha * style.opacity,
+            );
         } else {
             let side = if played {
                 BarSide::Played
@@ -283,7 +314,8 @@ fn draw_bars(
             } else {
                 BarSide::Coming
             };
-            let (fill, alpha) = bar_fill(state.colouring, side, (r, g, b), accent);
+            let (fill, alpha) =
+                bar_fill(state.colouring, side, (r, g, b), accent, style.appearance);
             cr.set_source_rgba(fill.0, fill.1, fill.2, alpha * style.opacity);
         }
         rounded_bar(cr, x, y, bar_w, bar_h, bar_radius);
@@ -324,6 +356,7 @@ fn draw_fallback(
     w: f64,
     h: f64,
     state: &State,
+    appearance: WaveformAppearance,
 ) {
     let count = resolve_bar_count(state.bar_count_override, w as i32);
     if count == 0 {
@@ -362,9 +395,10 @@ fn draw_fallback(
             .buffered_fraction
             .is_some_and(|fraction| bar_center <= fraction)
         {
-            cr.set_source_rgba(r, g, b, BUFFERED_ALPHA);
+            cr.set_source_rgba(r, g, b, appearance.buffered_alpha);
         } else {
-            cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * 0.6);
+            let (r, g, b) = appearance.fallback_unplayed;
+            cr.set_source_rgba(r, g, b, appearance.unplayed_alpha * 0.6);
         }
         rounded_bar(cr, x, y, bar_w, bar_h, bar_radius);
         let _ = cr.fill();

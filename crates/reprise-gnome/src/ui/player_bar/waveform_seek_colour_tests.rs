@@ -6,7 +6,42 @@
 //! result.
 
 use super::super::*;
-use super::{accent_rgb, composited_luminance};
+use super::{accent_rgb, composited_luminance, dark_waveform_appearance};
+
+#[test]
+fn light_spectral_colours_clear_graphical_contrast_against_the_view() {
+    use crate::ui::style::color_math::{contrast_ratio, parse_hex_rgb};
+
+    for theme in crate::ui::style::theme::Theme::all() {
+        let background =
+            parse_hex_rgb(theme.light_palette().view_bg).expect("view colour is valid");
+        let appearance = WaveformAppearance::for_appearance(false, theme);
+        for chroma_factor in [1.0, 0.725, 0.45] {
+            for step in 0..=100 {
+                let position = f64::from(step) / 100.0;
+                let spectral = spectral_colour(position);
+                let spectral = crate::ui::style::color_math::scale_chroma(
+                    spectral.0,
+                    spectral.1,
+                    spectral.2,
+                    chroma_factor,
+                );
+                let spectral = appearance.adjust_spectral(spectral);
+                let rgb = [
+                    (spectral.0 * 255.0).round() as u8,
+                    (spectral.1 * 255.0).round() as u8,
+                    (spectral.2 * 255.0).round() as u8,
+                ];
+                let ratio = contrast_ratio(rgb, background);
+                assert!(
+                    ratio >= 3.0,
+                    "{theme:?}: light spectral colour at {position:.2} and chroma \
+                     {chroma_factor:.3} reaches only {ratio:.2}:1"
+                );
+            }
+        }
+    }
+}
 
 /// A curve that alternates every point — the beat-to-beat swing that made
 /// neighbouring bars land a third of the axis apart.
@@ -135,18 +170,29 @@ fn seek_1_the_two_sides_carry_one_colour_and_differ_only_in_opacity() {
     // carry it now, and progress is the step between 1.0 and 0.34.
     let spectral = spectral_colour(0.3);
     let accent = accent_rgb();
-    let (played, played_alpha) =
-        bar_fill(SeekColouring::Frequency, BarSide::Played, spectral, accent);
-    let (coming, coming_alpha) =
-        bar_fill(SeekColouring::Frequency, BarSide::Coming, spectral, accent);
+    let appearance = dark_waveform_appearance();
+    let (played, played_alpha) = bar_fill(
+        SeekColouring::Frequency,
+        BarSide::Played,
+        spectral,
+        accent,
+        appearance,
+    );
+    let (coming, coming_alpha) = bar_fill(
+        SeekColouring::Frequency,
+        BarSide::Coming,
+        spectral,
+        accent,
+        appearance,
+    );
     assert_eq!(played, spectral);
     assert_eq!(
         coming, spectral,
         "the coming side must not fall back to grey"
     );
     assert_eq!(played_alpha, 1.0);
-    assert_eq!(coming_alpha, UNPLAYED_ALPHA);
-    assert_eq!(UNPLAYED_ALPHA, 0.34);
+    assert_eq!(coming_alpha, appearance.unplayed_alpha);
+    assert_eq!(appearance.unplayed_alpha, 0.34);
 
     // The seek preview sits between the two, so it reads as "this much would
     // be played" rather than as a third state.
@@ -155,6 +201,7 @@ fn seek_1_the_two_sides_carry_one_colour_and_differ_only_in_opacity() {
         BarSide::HoverPreview,
         spectral,
         accent,
+        appearance,
     );
     assert!(coming_alpha < preview_alpha && preview_alpha < played_alpha);
 }
@@ -175,9 +222,10 @@ fn seek_1_buffered_media_reads_as_ahead_of_what_has_not_arrived() {
     // the numbers may be retuned, the order may not.
     let spectral = spectral_colour(0.4);
     let accent = accent_rgb();
+    let appearance = dark_waveform_appearance();
     for colouring in [SeekColouring::Frequency, SeekColouring::Solid] {
         let luminance = |side| {
-            let (colour, alpha) = bar_fill(colouring, side, spectral, accent);
+            let (colour, alpha) = bar_fill(colouring, side, spectral, accent, appearance);
             composited_luminance(colour, alpha)
         };
         let coming = luminance(BarSide::Coming);
@@ -197,12 +245,25 @@ fn the_single_colour_bar_keeps_its_grey_coming_side() {
 
     let spectral = spectral_colour(0.3);
     let accent = accent_rgb();
+    let appearance = dark_waveform_appearance();
     assert_eq!(
-        bar_fill(SeekColouring::Solid, BarSide::Played, spectral, accent),
+        bar_fill(
+            SeekColouring::Solid,
+            BarSide::Played,
+            spectral,
+            accent,
+            appearance,
+        ),
         (accent, 1.0)
     );
     assert_eq!(
-        bar_fill(SeekColouring::Solid, BarSide::Coming, spectral, accent),
+        bar_fill(
+            SeekColouring::Solid,
+            BarSide::Coming,
+            spectral,
+            accent,
+            appearance,
+        ),
         (SOLID_UNPLAYED, 1.0)
     );
     // The preview is a step *lighter* than the grey, never a dimmed copy of
@@ -212,6 +273,7 @@ fn the_single_colour_bar_keeps_its_grey_coming_side() {
         BarSide::HoverPreview,
         spectral,
         accent,
+        appearance,
     );
     assert!(preview.0 > SOLID_UNPLAYED.0 && preview.1 > SOLID_UNPLAYED.1);
 }
@@ -236,7 +298,7 @@ fn ac_24_the_progress_boundary_is_legible_at_both_ends_of_the_axis() {
         let position = f64::from(step) / 10.0;
         let colour = spectral_colour(position);
         let played = composited_luminance(colour, 1.0);
-        let coming = composited_luminance(colour, UNPLAYED_ALPHA);
+        let coming = composited_luminance(colour, dark_waveform_appearance().unplayed_alpha);
         let ratio = (played.max(coming) + 0.05) / (played.min(coming) + 0.05);
         assert!(
             ratio >= 3.0,
@@ -253,7 +315,10 @@ fn a_bass_intro_is_still_visible_on_the_coming_side() {
     // of a bass intro must still separate from the bar's own background, or
     // the first seconds of such a track read as an empty bar.
     let background = composited_luminance((0.0, 0.0, 0.0), 0.0);
-    let deepest = composited_luminance(spectral_colour(0.0), UNPLAYED_ALPHA);
+    let deepest = composited_luminance(
+        spectral_colour(0.0),
+        dark_waveform_appearance().unplayed_alpha,
+    );
     let ratio = (deepest + 0.05) / (background + 0.05);
     assert!(
         ratio >= 1.5,

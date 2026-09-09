@@ -6,6 +6,7 @@ const NORMAL_TEXT_MINIMUM_RATIO: f64 = 4.5;
 
 /// White-glyph contrast measured against the default Reprise brand accent.
 const DEFAULT_BRAND_ACCENT_GLYPH_RATIO: f64 = 1.69;
+const DEFAULT_LIGHT_ACCENT_GLYPH_RATIO: f64 = 6.02;
 
 /// Rounding tolerance for the recorded default-brand-accent measurement.
 const DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE: f64 = 0.01;
@@ -179,7 +180,10 @@ fn npp_17_the_panel_takes_its_foreground_from_the_appearance() {
 
     for allowed in [
         ".x { background-color: alpha(#ffffff, 0.06); }",
-        ".x { border-left: 1px solid rgba(255, 255, 255, 0.06); }",
+        concat!(
+            ".x { border-left: 1px solid rgba(255, ",
+            "255, 255, 0.06); }"
+        ),
     ] {
         assert!(
             fixed_foregrounds(allowed).is_empty(),
@@ -275,6 +279,27 @@ fn play_16_the_play_buttons_keep_the_playback_accent_and_white_glyph() {
             < DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE,
         "PLAY-16 records the default brand accent's measured 1.69:1 cost; a build with a \
          different REPRISE_APP_ACCENT will legitimately differ, measured {ratio:.2}:1"
+    );
+
+    let light_css = super::theme::theme_css(
+        super::theme::Theme::DEFAULT,
+        false,
+        super::accent::AccentSource::App,
+    );
+    let light_accent = light_css
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("@define-color accent_color ")
+                .and_then(|value| value.strip_suffix(';'))
+        })
+        .and_then(parse_hex_rgb)
+        .expect("light app accent is emitted as hex");
+    let light_ratio = contrast_ratio(white, light_accent);
+    assert!(
+        (light_ratio - DEFAULT_LIGHT_ACCENT_GLYPH_RATIO).abs()
+            < DEFAULT_BRAND_ACCENT_GLYPH_RATIO_TOLERANCE,
+        "PLAY-16 records the default derived light accent's measured 6.02:1 pairing; measured \
+         {light_ratio:.2}:1"
     );
 }
 
@@ -391,17 +416,11 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
     use super::color_math::{composite, contrast_ratio, parse_hex_rgb};
     use super::theme::Theme;
 
-    let glow_alpha = super::tokens::NOW_PLAYING_GLOW_ALPHA
-        .parse::<f64>()
-        .expect("the shipped glow alpha is numeric");
     let glow_css = crate::ui::now_playing::css();
     let glow_rule = rule_body(&glow_css, ".reprise-now-playing-glow");
     assert!(
-        glow_rule.contains(&format!(
-            "alpha(@reprise_player_accent, {})",
-            super::tokens::NOW_PLAYING_GLOW_ALPHA
-        )),
-        "the contrast model must read the alpha used by the shipped glow: {glow_rule}"
+        glow_rule.contains("@reprise_now_playing_glow"),
+        "the contrast model must follow the appearance token used by the shipped glow: {glow_rule}"
     );
     let roles = PANEL_ROLES
         .iter()
@@ -414,7 +433,19 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
         .collect::<Vec<_>>();
     assert_eq!(roles.len(), 2, "the head band has title and subtitle roles");
     for theme in Theme::all() {
-        for (appearance, palette) in [("dark", theme.palette()), ("light", theme.light_palette())] {
+        for (appearance, palette, glow_alpha) in [
+            (
+                "dark",
+                theme.palette(),
+                super::tokens::NOW_PLAYING_GLOW_ALPHA,
+            ),
+            (
+                "light",
+                theme.light_palette(),
+                super::tokens::NOW_PLAYING_GLOW_LIGHT_ALPHA,
+            ),
+        ] {
+            let glow_alpha = glow_alpha.parse::<f64>().expect("glow alpha is numeric");
             let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
             let surface = parse_hex_rgb(palette.sidebar_bg).expect("palette sidebar is valid hex");
             for (accent_name, accent) in [("black", [0, 0, 0]), ("white", [255, 255, 255])] {

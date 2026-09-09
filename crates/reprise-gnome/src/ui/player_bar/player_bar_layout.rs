@@ -466,29 +466,37 @@ pub(in crate::ui) fn css() -> String {
            border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
          /* PLAY-16: the play button deliberately keeps the playback accent and
             a white glyph as its product identity. This measured 1.69:1 and does
-            not meet the 3:1 a non-text control would otherwise owe. */\n\
+            not meet the 3:1 a non-text control would otherwise owe. That is the
+            dark measurement; in light, the playback accent follows the derived
+            accent colour and raises the ratio to 6.02:1. */\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
            box-shadow: inset 0 2px 1px alpha(#ffffff, 0.34), \
                        inset 0 -4px 3px alpha(#000000, 0.30), \
-                       0 6px 12px alpha(#000000, 0.36), \
-                       0 0 12px alpha(@reprise_player_accent, 0.60), \
-                       0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
+                       inset 0 0 0 1px @reprise_play_ring, \
+                       0 6px 12px @reprise_play_drop, \
+                       0 0 12px @reprise_play_glow_near, \
+                       0 0 26px 6px @reprise_play_glow_far; \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: inset 0 2px 1px alpha(#ffffff, 0.42), \
                        inset 0 -4px 3px alpha(#000000, 0.26), \
-                       0 7px 14px alpha(#000000, 0.34), \
-                       0 0 16px alpha(@reprise_player_accent, 0.75), \
-                       0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
+                       inset 0 0 0 1px @reprise_play_ring, \
+                       0 7px 14px @reprise_play_drop_hover, \
+                       0 0 16px @reprise_play_glow_near_hover, \
+                       0 0 34px 8px @reprise_play_glow_far_hover; }}\n\
          /* BTN-3: the main action may answer a press more loudly than its \
             neighbours — a ring pulse in the playback accent on top of the \
-            shared press sink from `style::buttons`. */\n\
+            shared press sink from `style::buttons`. The press ring is \
+            momentary, and in light `@reprise_player_accent` already resolves \
+            to the darkened accent, so it reads as a dark ring rather than the \
+            glare the near/far glow tokens were zeroed to avoid. */\n\
          .{PLAY_CSS_CLASS}:active {{ \
            box-shadow: inset 0 4px 6px alpha(#000000, 0.44), \
                        inset 0 -1px 0 alpha(#ffffff, 0.12), \
+                       inset 0 0 0 1px @reprise_play_ring, \
                        0 1px 2px alpha(#000000, 0.22), \
                        0 0 0 4px alpha(@reprise_player_accent, 0.45), \
                        0 0 18px alpha(@reprise_player_accent, 0.80); }}\n\

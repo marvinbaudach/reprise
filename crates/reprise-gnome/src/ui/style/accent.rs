@@ -156,12 +156,12 @@ pub(in crate::ui) const fn accent_fg(source: AccentSource) -> Option<&'static st
 
 /// CSS definitions owned by the selected source. The System choice returns no
 /// definitions so libadwaita's named accent colors remain authoritative.
-pub(super) fn css_overrides(source: AccentSource) -> String {
+pub(super) fn css_overrides(source: AccentSource, accent_color: &str) -> String {
     match accent_fg(source) {
         Some(foreground) => format!(
             "@define-color accent_bg_color {APP_ACCENT};\n\
              @define-color accent_fg_color {foreground};\n\
-             @define-color accent_color {APP_ACCENT};\n"
+             @define-color accent_color {accent_color};\n"
         ),
         None => String::new(),
     }

@@ -22,7 +22,7 @@ pub(super) fn css() -> String {
            box-shadow: 0 0 {FOCUS_GLOW_BLUR} alpha(@accent_color, {FOCUS_GLOW_ALPHA}); \
            transition: box-shadow {TRANSITION}; }}\n\
          .reprise-hover {{ transition: background-color {TRANSITION}; }}\n\
-         .reprise-hover:hover {{ background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
+         .reprise-hover:hover {{ background-color: @reprise_hover_bg; }}\n\
          .reprise-surface {{ \
            border-radius: {RADIUS_SURFACE}; \
            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
@@ -64,9 +64,28 @@ mod tests {
         let css = super::css();
         assert!(css.contains(":focus-within"));
         assert!(css.contains("@accent_color"));
-        assert!(css.contains(".reprise-hover:hover"));
+        let hover_rule = css
+            .split(".reprise-hover:hover")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("the reprise-hover hover rule is present");
+        assert!(
+            hover_rule.contains("background-color: @reprise_hover_bg"),
+            ".reprise-hover:hover must use the appearance-aware hover token: {hover_rule}"
+        );
         assert!(css.contains(".reprise-surface"));
-        assert!(css.contains(".reprise-panel-toggle:checked"));
+        let panel_toggle_rule = css
+            .split(".reprise-panel-toggle:checked")
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .expect("the checked panel-toggle rule is present");
+        assert!(
+            panel_toggle_rule.contains(&format!(
+                "background-color: alpha(@accent_bg_color, {})",
+                super::super::tokens::HOVER_BG_ALPHA
+            )),
+            ".reprise-panel-toggle:checked must keep its accent state fill: {panel_toggle_rule}"
+        );
         assert!(css.contains("border-radius"));
         assert!(css.contains("floating-sheet > dimming"));
         assert!(css.contains("floating-sheet > sheet"));

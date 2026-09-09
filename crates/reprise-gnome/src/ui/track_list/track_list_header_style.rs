@@ -12,11 +12,11 @@ const TRACK_LIST_CLASS: &str = "reprise-track-list";
 /// Quieter column-title rule plus the table's own hairline separators, all
 /// scoped to [`TRACK_LIST_CLASS`] roots. Both built-in `GtkColumnView`
 /// separators are disabled (`track_list.rs`), so these rules fully own the
-/// grid: a 1 px horizontal rule under each cell at white 4.5 % (no vertical
-/// column lines at all), and a slightly stronger white 7 % rule under the
-/// sortable header. The `rgba(white)` literals are deliberate — these are
-/// fixed hairlines on the dark surface, not theme-tinted borders, so they
-/// don't route through a palette `@`-color.
+/// grid: a fixed 1 px horizontal rule under each cell (no vertical column
+/// lines at all), and a slightly stronger rule under the sortable header.
+/// These are not theme-tinted borders, but they are appearance-dependent:
+/// `theme_css` supplies dark and light edge colours where the appearance is
+/// known.
 ///
 /// Sort-indicator visibility is shared by
 /// [`crate::ui::table_columns::single_sort_indicator`].
@@ -24,10 +24,10 @@ pub(in crate::ui) fn css() -> String {
     format!(
         ".{TRACK_LIST_CLASS} > header label {{ color: @reprise_secondary_fg_color; }}\n\
          .{TRACK_LIST_CLASS} > header {{ \
-           border-bottom: 1px solid rgba(255, 255, 255, 0.07); }}\n\
+           border-bottom: 1px solid @reprise_hairline_strong; }}\n\
          .{TRACK_LIST_CLASS} > listview > row > cell {{ \
            border-left: none; border-right: none; \
-           border-bottom: 1px solid rgba(255, 255, 255, 0.045); }}"
+           border-bottom: 1px solid @reprise_rule; }}"
     )
 }
 
@@ -47,6 +47,9 @@ mod tests {
 
         assert!(css.contains(".reprise-track-list > header label"));
         assert!(css.contains("@reprise_secondary_fg_color"));
+        assert!(css.contains("@reprise_hairline_strong"));
+        assert!(css.contains("@reprise_rule"));
+        assert!(!css.contains(concat!("rgba(255", ", 255, 255")));
         assert!(!css.contains("reprise-track-cell"));
         assert!(!css.contains("sort-indicator"));
     }

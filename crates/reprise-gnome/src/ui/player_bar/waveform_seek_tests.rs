@@ -65,6 +65,45 @@ fn accent_rgb() -> (f64, f64, f64) {
     rgb_from_hex(crate::ui::style::accent::APP_ACCENT)
 }
 
+fn dark_waveform_appearance() -> WaveformAppearance {
+    WaveformAppearance::for_appearance(true, crate::ui::style::theme::Theme::DEFAULT)
+}
+
+#[test]
+fn dark_waveform_appearance_keeps_every_original_alpha() {
+    let appearance =
+        WaveformAppearance::for_appearance(true, crate::ui::style::theme::Theme::DEFAULT);
+
+    assert_eq!(appearance.unplayed_alpha, 0.34);
+    assert_eq!(appearance.hover_preview_alpha, 0.62);
+    assert_eq!(appearance.buffered_alpha, 0.48);
+    assert_eq!(appearance.section_mark_alpha, 0.30);
+    assert_eq!(appearance.ghost_alpha, 0.40);
+    assert_eq!(appearance.playhead_alpha, 0.70);
+    assert_eq!(
+        appearance.adjust_spectral((0.82, 0.67, 0.91)),
+        (0.82, 0.67, 0.91)
+    );
+}
+
+#[test]
+fn light_waveform_appearance_strengthens_every_alpha_and_uses_foreground_fallback() {
+    let appearance =
+        WaveformAppearance::for_appearance(false, crate::ui::style::theme::Theme::DEFAULT);
+
+    assert_eq!(appearance.unplayed_alpha, 0.55);
+    assert_eq!(appearance.hover_preview_alpha, 0.78);
+    assert_eq!(appearance.buffered_alpha, 0.66);
+    assert_eq!(appearance.section_mark_alpha, 0.42);
+    assert_eq!(appearance.ghost_alpha, 0.55);
+    assert_eq!(appearance.playhead_alpha, 0.85);
+    assert_ne!(appearance.fallback_unplayed, (1.0, 1.0, 1.0));
+    assert_eq!(
+        appearance.fallback_unplayed,
+        rgb_from_hex(crate::ui::style::theme::Theme::DEFAULT.light_palette().fg)
+    );
+}
+
 fn composited_luminance(rgb: (f64, f64, f64), alpha: f64) -> f64 {
     let background = rgb_from_hex(
         crate::ui::style::theme::Theme::DEFAULT

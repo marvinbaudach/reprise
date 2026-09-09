@@ -13,6 +13,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
+use self::appearance::WaveformAppearance;
 #[cfg(test)]
 use super::waveform_primitives::BAR_GAP;
 use super::waveform_primitives::{
@@ -43,17 +44,6 @@ const CONTENT_HEIGHT: i32 = 28;
 /// Audible bars span 15%..100% of the max bar height.
 const MIN_BAR_HEIGHT: f64 = MAX_BAR_HEIGHT * 0.15;
 const MAX_BAR_HEIGHT: f64 = 26.0;
-/// Alpha for not-yet-played bars, which carry the same spectral colour as the
-/// played ones: progress is an opacity step, not a change of colour.
-///
-/// Measured, not chosen: below this the deep-blue stretches of a bass intro
-/// disappear against the bar's own background, and above it the played/unplayed
-/// boundary stops being readable at a glance.
-const UNPLAYED_ALPHA: f64 = 0.34;
-/// Alpha for unplayed bars between the playhead and the hovered position —
-/// the seek preview. Between the two sides, so the preview reads as "this much
-/// would be played" rather than as a third state.
-const HOVER_PREVIEW_ALPHA: f64 = 0.62;
 /// The coming side of the single-colour bar.
 const SOLID_UNPLAYED: (f64, f64, f64) = (
     0x3C as f64 / 255.0,
@@ -67,22 +57,7 @@ const SOLID_HOVER_PREVIEW: (f64, f64, f64) = (
     0x60 as f64 / 255.0,
     0x68 as f64 / 255.0,
 );
-/// Hairlines at detected section boundaries — the single-colour bar's only
-/// remaining hint at where the music changes.
-const SECTION_MARK_ALPHA: f64 = 0.30;
 const SECTION_MARK_WIDTH: f64 = 1.0;
-/// Buffered-but-unplayed remote media, between the coming side and the played
-/// one.
-///
-/// Re-derived, not carried over: the 0.24 this arrived with was picked against
-/// an unplayed side of 0.12, and against 0.34 it would sit *below* the very
-/// thing it is supposed to be ahead of. It keeps its meaning — visibly more
-/// than not-yet-loaded, visibly less than played — on the new scale.
-const BUFFERED_ALPHA: f64 = 0.48;
-/// Alpha of the rounded playhead drawn over the bars.
-const PLAYHEAD_ALPHA: f64 = 0.70;
-/// Alpha for bars in the drag ghost region.
-const GHOST_ALPHA: f64 = 0.40;
 /// Ambient build-up animation duration in seconds.
 const BUILD_DURATION_S: f64 = motion::AMBIENT_MS as f64 / 1_000.0;
 /// Track-change alpha crossfade duration in seconds.
@@ -760,6 +735,9 @@ mod seek_state;
 pub(in crate::ui::player_bar::waveform_seek) use seek_state::{
     ensure_resampled, rebuild_colour_curve, State,
 };
+
+#[path = "waveform_seek_appearance.rs"]
+mod appearance;
 
 #[path = "waveform_seek_render.rs"]
 mod render;
