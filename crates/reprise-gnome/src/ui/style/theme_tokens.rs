@@ -8,6 +8,10 @@ pub(super) struct ThemeTokens {
     pub(super) rule: &'static str,
     pub(super) pill_border: &'static str,
     pub(super) pill_bg: &'static str,
+    pub(super) mini_card_bg: String,
+    pub(super) mini_card_edge: String,
+    pub(super) mini_cover_edge: String,
+    pub(super) mini_artist_fg: String,
     pub(super) hover_bg: String,
     pub(super) now_playing_tint: String,
     pub(super) now_playing_glow: String,
@@ -34,6 +38,13 @@ impl ThemeTokens {
             rule: select(t::RULE_DARK, t::RULE_LIGHT),
             pill_border: select(t::PILL_BORDER_DARK, t::PILL_BORDER_LIGHT),
             pill_bg: select(t::PILL_BG_DARK, t::PILL_BG_LIGHT),
+            mini_card_bg: select(t::MINI_CARD_BG_DARK, t::MINI_CARD_BG_LIGHT).to_owned(),
+            mini_card_edge: select(t::MINI_CARD_EDGE_DARK, t::MINI_CARD_EDGE_LIGHT).to_owned(),
+            mini_cover_edge: select(t::MINI_COVER_EDGE_DARK, t::MINI_COVER_EDGE_LIGHT).to_owned(),
+            mini_artist_fg: format!(
+                "alpha(@window_fg_color, {})",
+                select(t::MINI_ARTIST_ALPHA, t::MINI_ARTIST_LIGHT_ALPHA)
+            ),
             hover_bg: if is_dark {
                 format!("alpha(@accent_bg_color, {})", t::HOVER_BG_ALPHA)
             } else {
@@ -128,6 +139,10 @@ mod tests {
     fn dark_appearance_tokens_reproduce_every_replaced_literal() {
         let definitions = [
             "@define-color reprise_pill_bg @sidebar_bg_color;",
+            "@define-color reprise_mini_card_bg rgba(34, 34, 34, 0.92);",
+            "@define-color reprise_mini_card_edge alpha(white, 0.09);",
+            "@define-color reprise_mini_cover_edge alpha(white, 0.08);",
+            "@define-color reprise_mini_artist_fg alpha(@window_fg_color, 0.6);",
             "@define-color reprise_hover_bg alpha(@accent_bg_color, 0.10);",
             "@define-color reprise_now_playing_tint alpha(@accent_color, 0.09);",
             "@define-color reprise_now_playing_glow alpha(@reprise_player_accent, 0.15);",
@@ -153,6 +168,24 @@ mod tests {
                         "{selected_theme:?} {source:?}: {definition}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn generated_light_theme_css_parses_for_every_theme_and_accent_source() {
+        gtk4::init().expect("GTK initializes for CSS parser coverage");
+        for selected_theme in theme::Theme::all() {
+            for source in [AccentSource::App, AccentSource::System] {
+                let css = theme::theme_css(selected_theme, false, source);
+                let errors = crate::ui::style::css_parse_errors(&css);
+                assert!(
+                    errors.is_empty(),
+                    "{selected_theme:?} {source:?} has {} parser error(s):\n  {}",
+                    errors.len(),
+                    errors.join("\n  ")
+                );
             }
         }
     }

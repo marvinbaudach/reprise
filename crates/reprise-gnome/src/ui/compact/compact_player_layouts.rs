@@ -165,13 +165,13 @@ pub(in crate::ui) fn mini_css() -> String {
     format!(
         ".{CSS_CARD} {{ \
            padding: 10px 14px 10px 10px; \
-           background-color: rgba(34, 34, 34, 0.92); \
-           border: 1px solid alpha(white, 0.09); \
+           background-color: @reprise_mini_card_bg; \
+           border: 1px solid @reprise_mini_card_edge; \
            border-radius: {CARD_RADIUS}px; \
            box-shadow: none; }}\n\
          .{CSS_COVER} {{ \
            border-radius: {COVER_RADIUS}px; \
-           box-shadow: inset 0 0 0 1px alpha(white, 0.08); }}\n\
+           box-shadow: inset 0 0 0 1px @reprise_mini_cover_edge; }}\n\
          /* PLAY-16: the playback accent and white glyph are a deliberate
             product identity; see the full player bar's explicit exception. */\n\
          .{CSS_PLAY} {{ \
@@ -188,9 +188,9 @@ pub(in crate::ui) fn mini_css() -> String {
            box-shadow: 0 0 0 3px alpha(@reprise_player_accent, 0.45), \
                        0 0 18px alpha(@reprise_player_accent, 0.70); }}\n\
          .{CSS_TITLE} {{ font-weight: bold; font-size: 13px; }}\n\
-         /* Artist on the tint: raised from 0.5 to keep CONTRAST-Glas ≥ 4.5:1 \
-            against the card's near-black; still clearly secondary to the title. */\n\
-         .{CSS_ARTIST} {{ color: alpha(@window_fg_color, 0.6); font-size: 11.5px; }}\n\
+         /* Artist on the tint stays clearly secondary while its appearance-aware \
+            colour clears CONTRAST-Glas ≥ 4.5:1 on the card. */\n\
+         .{CSS_ARTIST} {{ color: @reprise_mini_artist_fg; font-size: 11.5px; }}\n\
          .{CSS_VOL_BAR} {{ background-color: @reprise_player_accent; \
            border-radius: 0 {CARD_RADIUS}px 0 {CARD_RADIUS}px; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
@@ -239,7 +239,7 @@ mod tests {
         let css = mini_css();
         assert!(css.contains("mini-player-card"));
         assert!(css.contains("@reprise_player_accent"));
-        assert!(css.contains("rgba(34, 34, 34, 0.92)"));
+        assert!(css.contains("@reprise_mini_card_bg"));
         assert!(css.contains("border-radius: 16px"));
         // The window floats the card on a transparent toplevel (MINI-1).
         assert!(css.contains(CSS_WINDOW_CLASS));
@@ -349,23 +349,58 @@ mod tests {
 
     #[test]
     fn mini_artist_contrast_on_tint() {
-        // Artist = white at the alpha in `.mini-player-artist`, composited over
-        // the card tint rgba(34,34,34,0.92) on a dark desktop ≈ #222. The pair
-        // must clear WCAG AA body text, ≥ 4.5:1 (CONTRAST-Glas).
-        const ARTIST_ALPHA: f64 = 0.6;
-        let bg = 34.0 / 255.0;
-        let fg = ARTIST_ALPHA + bg * (1.0 - ARTIST_ALPHA); // white over the tint
-        let luminance = |c: f64| {
-            if c <= 0.03928 {
-                c / 12.92
-            } else {
-                ((c + 0.055) / 1.055).powf(2.4)
+        use crate::ui::style::accent::AccentSource;
+        use crate::ui::style::color_math::{composite, contrast_ratio, parse_hex_rgb};
+        use crate::ui::style::theme::{theme_css, Theme};
+        use crate::ui::style::tokens::{MINI_ARTIST_ALPHA, MINI_ARTIST_LIGHT_ALPHA};
+
+        const WHITE: [u8; 3] = [255, 255, 255];
+        const MINIMUM_RATIO: f64 = 4.5;
+
+        // Dark models the existing card on a dark desktop ≈ #222. Its artist
+        // remains white at the preserved alpha over that measured ground.
+        let dark_card = parse_hex_rgb("#222222").expect("dark card is valid hex");
+        let dark_alpha = MINI_ARTIST_ALPHA.parse().expect("dark alpha is numeric");
+        let dark_artist = composite(WHITE, dark_card, dark_alpha);
+        let dark_ratio = contrast_ratio(dark_artist, dark_card);
+        assert!(
+            dark_ratio >= MINIMUM_RATIO,
+            "dark artist contrast {dark_ratio:.2}:1 is below {MINIMUM_RATIO}:1"
+        );
+
+        let light_alpha = MINI_ARTIST_LIGHT_ALPHA
+            .parse()
+            .expect("light alpha is numeric");
+        // The card is 0.92 glass over an arbitrary wallpaper. White, #808080,
+        // and black are a modelled range, not an exhaustive proof: they bracket
+        // the luminance extremes and midpoint. An opaque card would not need
+        // this backdrop sweep.
+        for backdrop in ["#ffffff", "#808080", "#000000"] {
+            let backdrop = parse_hex_rgb(backdrop).expect("backdrop is valid hex");
+            for theme in Theme::all() {
+                let palette = theme.light_palette();
+                let headerbar = parse_hex_rgb(palette.headerbar_bg)
+                    .expect("light headerbar background is valid hex");
+                let artist = parse_hex_rgb(palette.fg).expect("light foreground is valid hex");
+                let card = composite(headerbar, backdrop, 0.92);
+                let rendered_artist = composite(artist, card, light_alpha);
+                let ratio = contrast_ratio(rendered_artist, card);
+                assert!(
+                    ratio >= MINIMUM_RATIO,
+                    "{theme:?} light artist contrast {ratio:.2}:1 is below \
+                     {MINIMUM_RATIO}:1"
+                );
+
+                let css = theme_css(theme, false, AccentSource::App);
+                assert!(
+                    css.contains(
+                        "@define-color reprise_mini_artist_fg \
+                                  alpha(@window_fg_color, 0.70);"
+                    ),
+                    "{theme:?}: light theme CSS does not define the verified artist colour"
+                );
             }
-        };
-        let (l_fg, l_bg) = (luminance(fg), luminance(bg));
-        let ratio = (l_fg.max(l_bg) + 0.05) / (l_fg.min(l_bg) + 0.05);
-        assert!(ratio >= 4.5, "artist contrast {ratio:.2} < 4.5:1");
-        // … and the stylesheet actually uses that alpha.
-        assert!(mini_css().contains("alpha(@window_fg_color, 0.6)"));
+        }
+        assert!(mini_css().contains("color: @reprise_mini_artist_fg"));
     }
 }

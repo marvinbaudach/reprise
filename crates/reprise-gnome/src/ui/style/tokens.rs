@@ -297,6 +297,30 @@ pub(in crate::ui) const NOW_PLAYING_QUEUE_TITLE_SIZE: &str = "13.5px";
 
 // --- Appearance-specific edges and shadows ---
 
+/// Mini-player card surface in dark mode, preserved from the existing glass.
+pub(in crate::ui) const MINI_CARD_BG_DARK: &str = "rgba(34, 34, 34, 0.92)";
+/// Mini-player card surface in light mode. The fixed near-black dark twin
+/// contradicts the light waveform and text, so light follows the player bar.
+pub(in crate::ui) const MINI_CARD_BG_LIGHT: &str = "alpha(@headerbar_bg_color, 0.92)";
+
+/// Mini-player card edge in dark mode, preserved from the existing hairline.
+pub(in crate::ui) const MINI_CARD_EDGE_DARK: &str = "alpha(white, 0.09)";
+/// Mini-player card edge in light mode. The white dark twin disappears on a
+/// pale floating surface, so light uses the matching raised-surface edge.
+pub(in crate::ui) const MINI_CARD_EDGE_LIGHT: &str = "rgba(0, 0, 6, 0.14)";
+
+/// Mini-player cover edge in dark mode, preserved from the existing inset.
+pub(in crate::ui) const MINI_COVER_EDGE_DARK: &str = "alpha(white, 0.08)";
+/// Mini-player cover edge in light mode. The white dark twin disappears on
+/// pale artwork and surfaces, so light uses a restrained black inset.
+pub(in crate::ui) const MINI_COVER_EDGE_LIGHT: &str = "alpha(#000000, 0.10)";
+
+/// Mini-player artist alpha in dark mode, preserved from the existing label.
+pub(in crate::ui) const MINI_ARTIST_ALPHA: &str = "0.6";
+/// Mini-player artist alpha in light mode. The dark level cannot clear AA on
+/// the translucent light card, so light uses the verified secondary level.
+pub(in crate::ui) const MINI_ARTIST_LIGHT_ALPHA: &str = "0.70";
+
 /// Running-row tint alpha on dark surfaces, preserved from the existing rule.
 pub(in crate::ui) const NOW_PLAYING_TINT_DARK_ALPHA: &str = "0.09";
 /// Running-row tint alpha on light surfaces. The dark twin uses the derived

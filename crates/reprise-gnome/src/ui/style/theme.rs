@@ -291,6 +291,10 @@ pub(in crate::ui) fn theme_css(
          @define-color reprise_rule {rule};\n\
          @define-color reprise_pill_border {pill_border};\n\
          @define-color reprise_pill_bg {pill_bg};\n\
+         @define-color reprise_mini_card_bg {mini_card_bg};\n\
+         @define-color reprise_mini_card_edge {mini_card_edge};\n\
+         @define-color reprise_mini_cover_edge {mini_cover_edge};\n\
+         @define-color reprise_mini_artist_fg {mini_artist_fg};\n\
          @define-color reprise_hover_bg {hover_bg};\n\
          @define-color reprise_now_playing_tint {now_playing_tint};\n\
          @define-color reprise_now_playing_glow {now_playing_glow};\n\
@@ -326,6 +330,10 @@ pub(in crate::ui) fn theme_css(
         rule = appearance.rule,
         pill_border = appearance.pill_border,
         pill_bg = appearance.pill_bg,
+        mini_card_bg = appearance.mini_card_bg,
+        mini_card_edge = appearance.mini_card_edge,
+        mini_cover_edge = appearance.mini_cover_edge,
+        mini_artist_fg = appearance.mini_artist_fg,
         hover_bg = appearance.hover_bg,
         now_playing_tint = appearance.now_playing_tint,
         now_playing_glow = appearance.now_playing_glow,
