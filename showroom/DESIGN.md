@@ -220,3 +220,13 @@ This is a committed local preview. The commands ran individually before commit;
 a clean integration-wrapper run and hosted CI belong to subsequent integration.
 Safari/Firefox and physical-device checks remain manual. The worktree's temporary
 lock is released at completion; no unrelated checkout or user library was changed.
+
+### Stronger phone oil movement
+
+The local review asked for a more visible flow. The phone now travels farther,
+rotates through a wider arc, and completes each leg in 14 rather than 24 seconds.
+A negative delay starts the loop in motion; slightly stronger color makes the
+movement easier to see. Visibility and reduced-motion pauses remain unchanged.
+Showroom lint, the production build and the complete browser suite passed;
+the enlarged phone was visually inspected. Native sources are unchanged from
+the preceding full gate run. Lighthouse was not rerun for this CSS-only tuning.

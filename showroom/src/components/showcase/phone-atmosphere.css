@@ -13,10 +13,10 @@
   position: absolute;
   inset: -35%;
   background:
-    radial-gradient(ellipse at 28% 64%, rgb(51 187 206 / 0.42), transparent 48%),
-    radial-gradient(ellipse at 72% 28%, rgb(184 55 151 / 0.42), transparent 48%);
+    radial-gradient(ellipse at 28% 64%, rgb(51 187 206 / 0.52), transparent 48%),
+    radial-gradient(ellipse at 72% 28%, rgb(184 55 151 / 0.52), transparent 48%);
   mix-blend-mode: screen;
-  animation: phone-oil-drift 24s ease-in-out infinite alternate;
+  animation: phone-oil-drift 14s ease-in-out -5s infinite alternate;
   animation-play-state: paused;
 }
 
@@ -26,11 +26,11 @@
 
 @keyframes phone-oil-drift {
   from {
-    transform: translate(-4%, 2%) rotate(-18deg);
+    transform: translate(-14%, 9%) rotate(-50deg);
   }
 
   to {
-    transform: translate(4%, -2%) rotate(18deg) scale(1.08);
+    transform: translate(14%, -9%) rotate(50deg) scale(1.18);
   }
 }
 
