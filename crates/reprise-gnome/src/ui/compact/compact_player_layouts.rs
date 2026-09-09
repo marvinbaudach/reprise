@@ -234,6 +234,13 @@ pub(in crate::ui) fn mini_css() -> String {
 mod tests {
     use super::*;
 
+    fn rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
+        css.split(selector)
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .unwrap_or_else(|| panic!("no rules for {selector}"))
+    }
+
     #[test]
     fn mini_1_card_matches_frame_geometry() {
         assert_eq!(MINI_WIDTH, 430);
@@ -255,15 +262,24 @@ mod tests {
     #[test]
     fn mini_play_button_ring_and_glow_follow_appearance() {
         let css = mini_css();
-        assert_eq!(
-            css.matches("inset 0 0 0 1px @reprise_play_ring").count(),
-            3,
-            "the appearance-aware ring must survive every complete box-shadow state"
-        );
+        let selectors = [
+            ".mini-player-play {",
+            ".mini-player-play:hover {",
+            ".mini-player-play:active {",
+        ];
+        let play_rule_bodies = selectors.map(|selector| rule_body(&css, selector));
+        for (selector, body) in selectors.iter().zip(play_rule_bodies.iter()) {
+            assert!(
+                body.contains("inset 0 0 0 1px @reprise_play_ring"),
+                "{selector} must repeat the appearance-aware ring; add it to every new box-shadow state and extend this assertion"
+            );
+        }
         assert!(css.contains("0 0 12px @reprise_mini_play_glow"));
         assert!(css.contains("0 0 18px @reprise_mini_play_glow_hover"));
-        assert!(!css.contains("alpha(@reprise_player_accent, 0.40)"));
-        assert!(!css.contains("alpha(@reprise_player_accent, 0.60)"));
+        for body in play_rule_bodies {
+            assert!(!body.contains("alpha(@reprise_player_accent, 0.40)"));
+            assert!(!body.contains("alpha(@reprise_player_accent, 0.60)"));
+        }
         assert!(css.contains("alpha(@reprise_player_accent, 0.45)"));
         assert!(css.contains("alpha(@reprise_player_accent, 0.70)"));
     }

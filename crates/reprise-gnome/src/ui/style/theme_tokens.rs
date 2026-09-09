@@ -188,6 +188,24 @@ mod tests {
     }
 
     #[test]
+    fn light_mini_play_glows_are_transparent() {
+        for selected_theme in theme::Theme::all() {
+            for source in [AccentSource::App, AccentSource::System] {
+                let css = theme::theme_css(selected_theme, false, source);
+                for definition in [
+                    "@define-color reprise_mini_play_glow alpha(@reprise_player_accent, 0);",
+                    "@define-color reprise_mini_play_glow_hover alpha(@reprise_player_accent, 0);",
+                ] {
+                    assert!(
+                        css.contains(definition),
+                        "{selected_theme:?} {source:?}: {definition}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn generated_light_theme_css_parses_for_every_theme_and_accent_source() {
         gtk4::init().expect("GTK initializes for CSS parser coverage");
