@@ -72,6 +72,10 @@ fn shimmer_model(is_dark: bool) -> ShimmerModel {
     }
 }
 
+fn previous_turn_s_if_changed(previous: Option<f64>, current: f64) -> Option<f64> {
+    previous.filter(|previous| *previous != current)
+}
+
 pub(super) fn shimmer_opacity(pressure: f64, swell: f64, is_dark: bool) -> f64 {
     shimmer_model(is_dark).rest_opacity
         + SHIMMER_OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
@@ -157,7 +161,9 @@ struct Inner {
     pressure: Cell<f64>,
     swell: Cell<f64>,
     phase: Cell<Phase>,
-    last_turn_s: Cell<f64>,
+    /// `None` until the first tick observes the actual theme, so only an
+    /// observed rate transition can retime the phase.
+    last_turn_s: Cell<Option<f64>>,
     pinned: Cell<bool>,
 }
 
@@ -180,7 +186,7 @@ impl CoverShimmer {
             pressure: Cell::new(0.0),
             swell: Cell::new(0.0),
             phase: Cell::new(Phase::default()),
-            last_turn_s: Cell::new(SHIMMER_TURN_S),
+            last_turn_s: Cell::new(None),
             pinned: Cell::new(true),
         });
         area.set_draw_func({
@@ -244,20 +250,20 @@ impl CoverShimmer {
         let is_dark = libadwaita::StyleManager::default().is_dark();
         let turn_s = shimmer_model(is_dark).turn_s;
         let mut phase = self.inner.phase.get();
-        let old_turn_s = self.inner.last_turn_s.replace(turn_s);
-        let retimed = old_turn_s != turn_s;
-        if retimed {
+        let old_turn_s = self.inner.last_turn_s.replace(Some(turn_s));
+        let retimed = previous_turn_s_if_changed(old_turn_s, turn_s);
+        if let Some(old_turn_s) = retimed {
             phase.retime(old_turn_s, turn_s, frame_time_us);
         }
         if !crate::ui::motion::animations_enabled() {
             let held = phase.hold();
-            if retimed || held {
+            if retimed.is_some() || held {
                 self.inner.phase.set(phase);
                 self.area.queue_draw();
             }
             return;
         }
-        let changed = if retimed {
+        let changed = if retimed.is_some() {
             true
         } else {
             phase.advance(frame_time_us)
@@ -455,6 +461,13 @@ mod tests {
         let after = shimmer_angle(phase.elapsed_s(), false);
 
         assert!((after - before).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_only_an_observed_turn_rate_change_requests_retiming() {
+        assert_eq!(previous_turn_s_if_changed(None, 40.0), None);
+        assert_eq!(previous_turn_s_if_changed(Some(40.0), 40.0), None);
+        assert_eq!(previous_turn_s_if_changed(Some(25.0), 40.0), Some(25.0));
     }
 
     #[test]
