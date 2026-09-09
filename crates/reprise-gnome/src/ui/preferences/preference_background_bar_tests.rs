@@ -176,6 +176,46 @@ fn the_idle_footer_widget_is_hidden_until_activity_arrives() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open() {
+    gtk4::init().unwrap();
+    let bar = BackgroundBar::new();
+    // Stand-ins for the scan line and chip: both start hidden and hide
+    // themselves again when no scan runs, exactly as `ScanChromeView` builds
+    // them — without its fade, which is time-gated and not what is under test.
+    let line = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    line.set_visible(false);
+    let chip = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    chip.set_visible(false);
+    bar.adopt_scan_chrome(line.upcast_ref(), chip.upcast_ref());
+
+    assert!(
+        !bar.widget().get_visible(),
+        "adopting the scan chrome must not pin the footer open under every page"
+    );
+
+    chip.set_visible(true);
+    assert!(
+        bar.widget().get_visible(),
+        "a running scan brings the footer back"
+    );
+
+    chip.set_visible(false);
+    assert!(
+        !bar.widget().get_visible(),
+        "and the footer closes again once the scan chrome hides itself"
+    );
+
+    bar.publish(JobOwner::Artwork, Some(artwork(0.25)));
+    assert!(
+        bar.widget().get_visible(),
+        "a plugin job opens the footer on its own"
+    );
+    bar.publish(JobOwner::Artwork, None);
+    assert!(!bar.widget().get_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn the_footer_css_parses_without_gtk_errors() {
     gtk4::init().unwrap();
     let errors = crate::ui::style::css_parse_errors(&css());

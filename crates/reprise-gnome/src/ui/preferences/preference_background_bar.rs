@@ -153,6 +153,10 @@ struct BackgroundBarInner {
     rows_box: gtk4::Box,
     empty: gtk4::Label,
     scan_slot: gtk4::Box,
+    /// The scan chrome handed over by [`BackgroundBar::adopt_scan_chrome`].
+    /// Kept so every render can ask it whether a scan is on screen right now —
+    /// the footer is the sum of what actually runs, never a permanent fixture.
+    scan_chrome: RefCell<Vec<gtk4::Widget>>,
     jobs: RefCell<Vec<Option<JobRowState>>>,
     online_enabled: std::cell::Cell<bool>,
     on_cancel: RefCell<Option<CancelJob>>,
@@ -202,6 +206,7 @@ impl BackgroundBar {
             rows_box,
             empty,
             scan_slot,
+            scan_chrome: RefCell::new(Vec::new()),
             jobs: RefCell::new(vec![None; JobOwner::ORDER.len()]),
             online_enabled: std::cell::Cell::new(true),
             on_cancel: RefCell::new(None),
@@ -217,6 +222,11 @@ impl BackgroundBar {
 
     /// The library scan keeps its own presentation; it is given a place in the
     /// footer rather than an overlay over the dialog head.
+    ///
+    /// Adopting the chrome does not open the footer. The scan chrome hides
+    /// itself when no scan runs, and the footer follows it: it is subscribed to
+    /// the chrome's own `visible` flag, so an idle dialog shows no heading at
+    /// all rather than an empty "Background activity" band under every page.
     pub(in crate::ui) fn adopt_scan_chrome(&self, line: &gtk4::Widget, chip: &gtk4::Widget) {
         line.set_halign(gtk4::Align::Fill);
         line.set_hexpand(true);
@@ -225,8 +235,23 @@ impl BackgroundBar {
         chip.set_margin_end(0);
         self.inner.scan_slot.append(line);
         self.inner.scan_slot.append(chip);
-        self.inner.scan_slot.set_visible(true);
-        self.inner.root.set_visible(true);
+        self.inner
+            .scan_chrome
+            .replace(vec![line.clone(), chip.clone()]);
+        for widget in [line, chip] {
+            // Weak, like the cancel handler: the chrome hangs in this footer's
+            // own tree, so a strong handle would be a cycle and would keep one
+            // footer alive per dialog that was ever opened.
+            let inner = Rc::downgrade(&self.inner);
+            widget.connect_visible_notify(move |_| {
+                if let Some(inner) = inner.upgrade() {
+                    inner.render();
+                }
+            });
+        }
+        // The gate republish that follows construction returns early when it
+        // finds the value unchanged, so nothing else guarantees a render here.
+        self.inner.render();
     }
 
     pub(in crate::ui) fn set_on_cancel(&self, callback: impl Fn(JobOwner) + 'static) {
@@ -257,39 +282,60 @@ impl BackgroundBar {
         self.render();
     }
 
-    fn state(&self) -> BarState {
-        bar_state(&self.inner.jobs.borrow(), self.inner.online_enabled.get())
+    fn render(&self) {
+        self.inner.render();
+    }
+}
+
+impl BackgroundBarInner {
+    /// Whether the adopted scan chrome is showing anything.
+    ///
+    /// `get_visible` — the widget's own flag — not `is_visible`, which also
+    /// asks every ancestor. Once this footer correctly hides itself the chrome
+    /// sits under a hidden root, so `is_visible` would answer "no" forever and
+    /// the scan could never bring the footer back.
+    fn scan_visible(&self) -> bool {
+        self.scan_chrome
+            .borrow()
+            .iter()
+            .any(gtk4::prelude::WidgetExt::get_visible)
     }
 
-    fn render(&self) {
+    fn state(&self) -> BarState {
+        bar_state(&self.jobs.borrow(), self.online_enabled.get())
+    }
+
+    fn render(self: &Rc<Self>) {
         let state = self.state();
-        while let Some(child) = self.inner.rows_box.first_child() {
-            self.inner.rows_box.remove(&child);
+        while let Some(child) = self.rows_box.first_child() {
+            self.rows_box.remove(&child);
         }
         for row in &state.rows {
-            self.inner.rows_box.append(&self.job_row(row));
+            self.rows_box.append(&self.job_row(row));
         }
-        self.inner.rows_box.set_visible(!state.rows.is_empty());
+        self.rows_box.set_visible(!state.rows.is_empty());
         match &state.count_badge {
             Some(text) => {
-                self.inner.count.set_label(text);
-                self.inner.count.set_visible(true);
+                self.count.set_label(text);
+                self.count.set_visible(true);
             }
-            None => self.inner.count.set_visible(false),
+            None => self.count.set_visible(false),
         }
         match &state.empty_notice {
             Some(text) => {
-                self.inner.empty.set_label(text);
-                self.inner.empty.set_visible(true);
+                self.empty.set_label(text);
+                self.empty.set_visible(true);
             }
-            None => self.inner.empty.set_visible(false),
+            None => self.empty.set_visible(false),
         }
-        self.inner
-            .root
-            .set_visible(state.visible || self.inner.scan_slot.is_visible());
+        // The slot is only a container: it opens with the scan chrome inside
+        // it and closes with it, so an idle scan leaves no spacing behind.
+        let scan_visible = self.scan_visible();
+        self.scan_slot.set_visible(scan_visible);
+        self.root.set_visible(state.visible || scan_visible);
     }
 
-    fn job_row(&self, state: &JobRowState) -> gtk4::Box {
+    fn job_row(self: &Rc<Self>, state: &JobRowState) -> gtk4::Box {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, COLUMN_SPACING_PX);
 
         let owner_title = state.owner.title();
@@ -338,7 +384,7 @@ impl BackgroundBar {
             let owner = state.owner;
             // Through the shared inner: rows are built while progress replays,
             // which happens before the cancel handler is registered.
-            let inner = Rc::downgrade(&self.inner);
+            let inner = Rc::downgrade(self);
             cancel.connect_clicked(move |_| {
                 let Some(inner) = inner.upgrade() else {
                     return;
