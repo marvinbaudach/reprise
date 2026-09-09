@@ -318,7 +318,27 @@ pub(super) fn refresh_one_in(params: RefreshOneParams<'_, '_>) -> Result<(), Pip
     )?;
     abort_if_requested(abort)?;
     transaction.commit()?;
-    fill_missing_youtube_durations(conn, youtube_fetcher, youtube_allowed, subscription)?;
+    if !abort.is_cancelled() {
+        // Keep this listing after the commit: the IMMEDIATE transaction holds the write lock,
+        // and running a 1-3 s yt-dlp subprocess inside it would block every other writer.
+        let channel_url = read
+            .resolved_channel_url
+            .as_deref()
+            .unwrap_or(&subscription.feed_url);
+        if let Err(error) = fill_missing_youtube_durations(
+            conn,
+            youtube_fetcher,
+            youtube_allowed,
+            subscription,
+            channel_url,
+        ) {
+            tracing::warn!(
+                subscription_id = subscription.id,
+                %error,
+                "podcast duration store failed"
+            );
+        }
+    }
     clear_retry(retry_key);
     summary.refreshed += 1;
     Ok(())
@@ -329,6 +349,7 @@ fn fill_missing_youtube_durations(
     youtube_fetcher: &dyn YoutubeFetcher,
     youtube_allowed: bool,
     subscription: &SubscriptionRow,
+    channel_url: &str,
 ) -> Result<(), rusqlite::Error> {
     if subscription.kind != PodcastKind::Youtube || !youtube_allowed {
         return Ok(());
@@ -337,18 +358,7 @@ fn fill_missing_youtube_durations(
     if gaps == 0 {
         return Ok(());
     }
-    let channel_url = match youtube_channel_url(youtube_fetcher, subscription) {
-        Ok(url) => url,
-        Err(error) => {
-            tracing::warn!(
-                subscription_id = subscription.id,
-                %error,
-                "podcast duration listing failed"
-            );
-            return Ok(());
-        }
-    };
-    let feed = match youtube_fetcher.list_range(&channel_url, DURATION_FILL_WINDOW) {
+    let feed = match youtube_fetcher.list_range(channel_url, DURATION_FILL_WINDOW) {
         Ok(feed) => feed,
         Err(error) => {
             tracing::warn!(

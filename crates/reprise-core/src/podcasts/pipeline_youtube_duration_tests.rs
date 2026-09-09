@@ -10,6 +10,13 @@ use crate::podcasts::store::{self, NewSubscription};
 const VIDEO_ID: &str = "abcdefghijk";
 const CHANNEL_URL: &str = "https://www.youtube.com/channel/UCduration";
 
+unsafe extern "C" fn cancel_sync_at_commit(context: *mut std::ffi::c_void) -> i32 {
+    // SAFETY: The test keeps this `SyncAbort` alive until it removes the hook.
+    let abort = unsafe { &*context.cast::<SyncAbort>() };
+    abort.cancel();
+    0
+}
+
 struct FixedFeed {
     body: String,
 }
@@ -259,6 +266,86 @@ fn failing_duration_listing_keeps_the_successful_refresh() {
     assert_eq!(summary.refreshed, 1);
     assert_eq!(summary.failed, 0);
     assert_eq!(youtube.calls.get(), 1);
+    assert_eq!(
+        super::super::query::episodes_for_subscription(&db, subscription_id)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn failing_duration_store_keeps_the_successful_refresh() {
+    let db = conn();
+    let subscription_id = add_subscription(&db, PodcastKind::Youtube, CHANNEL_URL);
+    db.conn()
+        .execute_batch(
+            "CREATE TRIGGER fail_duration_fill
+             BEFORE UPDATE OF duration_secs ON podcast_episodes
+             BEGIN
+               SELECT RAISE(FAIL, 'duration fill failed');
+             END;",
+        )
+        .unwrap();
+    let youtube = CountingYoutube::duration(VIDEO_ID, 225);
+
+    let summary = refresh_with(&db, &youtube_feed(VIDEO_ID), &youtube).unwrap();
+
+    assert_eq!(summary.refreshed, 1);
+    assert_eq!(summary.failed, 0);
+    assert_eq!(youtube.calls.get(), 1);
+    assert_eq!(
+        super::super::query::episodes_for_subscription(&db, subscription_id)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn cancellation_after_commit_keeps_the_successful_refresh_without_listing() {
+    let db = conn();
+    let subscription_id = add_subscription(&db, PodcastKind::Youtube, CHANNEL_URL);
+    let subscription = store::subscription(&db, subscription_id).unwrap().unwrap();
+    let config = crate::podcasts::config::load(&db).unwrap();
+    let feed = youtube_feed(VIDEO_ID);
+    let youtube = CountingYoutube::duration(VIDEO_ID, 225);
+    let abort = SyncAbort::new();
+    let abort_at_commit = abort.clone();
+    // SAFETY: The callback context remains alive until the hook is removed below.
+    unsafe {
+        rusqlite::ffi::sqlite3_commit_hook(
+            db.conn().handle(),
+            Some(cancel_sync_at_commit),
+            std::ptr::from_ref(&abort_at_commit).cast_mut().cast(),
+        );
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut summary = RefreshSummary::default();
+
+    let result = super::sync::refresh_one_in(super::sync::RefreshOneParams {
+        conn: db.conn(),
+        feed_fetcher: &feed,
+        youtube_fetcher: &youtube,
+        now: 10,
+        policy: crate::podcasts::refresh::RefreshPolicy::Force,
+        download_root: directory.path(),
+        config: &config,
+        rss_allowed: true,
+        youtube_allowed: true,
+        subscription: &subscription,
+        summary: &mut summary,
+        abort: &abort,
+        on_progress: &mut |_| {},
+    });
+    // SAFETY: Removing the hook before its callback context goes out of scope.
+    unsafe {
+        rusqlite::ffi::sqlite3_commit_hook(db.conn().handle(), None, std::ptr::null_mut());
+    }
+
+    assert!(result.is_ok());
+    assert_eq!(summary.refreshed, 1);
+    assert_eq!(youtube.calls.get(), 0);
     assert_eq!(
         super::super::query::episodes_for_subscription(&db, subscription_id)
             .unwrap()
