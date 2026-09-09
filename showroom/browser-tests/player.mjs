@@ -261,6 +261,14 @@ try {
       await evaluate('document.documentElement.scrollWidth <= innerWidth'),
       `no horizontal overflow at ${width}`,
     );
+    assert.ok(
+      await evaluate(`(() => {
+        const table = document.querySelector('.ledger').getBoundingClientRect();
+        const caption = document.querySelector('.ledger caption').getBoundingClientRect();
+        return caption.width >= table.width * 0.95;
+      })()`),
+      `measurement explanation uses the reading width at ${width}`,
+    );
     if (width === 390) {
       assert.ok(
         await evaluate(
@@ -291,7 +299,53 @@ try {
         await evaluate('document.querySelector("video").currentSrc.includes("720")'),
         'mobile selects the smaller encode',
       );
-      await evaluate('document.querySelector("video").pause()');
+      const pausePoint = await evaluate(`(() => {
+        const r = document.querySelector('.film__toolbar button[aria-label="Pause"]').getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`);
+      await call('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [pausePoint],
+      });
+      await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await until(
+        () => evaluate('document.querySelector("video").paused'),
+        Boolean,
+        'touch pauses',
+      );
+      const track = await evaluate(`(() => {
+        const v = document.querySelector('video');
+        const r = document.querySelector('.film__seek').getBoundingClientRect();
+        return { x: r.x + 6 + (r.width - 12) * v.currentTime / v.duration,
+          end: r.x + r.width * 0.65, y: r.y + r.height / 2 };
+      })()`);
+      await call('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: track.x, y: track.y }],
+      });
+      for (let step = 1; step <= 8; step += 1) {
+        await call('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [
+            {
+              x: track.x + ((track.end - track.x) * step) / 8,
+              y: track.y,
+            },
+          ],
+        });
+        await delay(25);
+      }
+      await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await until(
+        () => evaluate('document.querySelector("video").currentTime'),
+        (value) => value > 30 && value < 45,
+        'finger drag seeks',
+      );
+      assert.ok(
+        await evaluate('document.querySelector("video").paused'),
+        'touch seeking preserves pause',
+      );
+      await screenshot('mobile-player-seek.png');
     }
     const controls = await evaluate(`(() => {
       const frame = document.querySelector('.film__screen').getBoundingClientRect();
@@ -302,6 +356,40 @@ try {
     })()`);
     assert.ok(controls, `controls fit at ${width}`);
   }
+  await call('Emulation.setDeviceMetricsOverride', {
+    width: 844,
+    height: 390,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await evaluate(
+    'document.querySelector(".film__screen").scrollIntoView({block:"end",behavior:"instant"})',
+  );
+  await delay(250);
+  assert.ok(
+    await evaluate(`(() => {
+      const frame = document.querySelector('.film__screen').getBoundingClientRect();
+      const header = document.querySelector('.site-header').getBoundingClientRect();
+      return frame.top >= header.bottom && frame.bottom <= innerHeight + 1;
+    })()`),
+    'landscape keeps the complete player below the fixed header',
+  );
+  await screenshot('mobile-landscape.png');
+  await evaluate('document.querySelector(".film__fullscreen").click()');
+  await until(() => evaluate('!!document.fullscreenElement'), Boolean, 'landscape fullscreen');
+  assert.ok(
+    await evaluate(
+      'document.querySelector("video").getBoundingClientRect().height >= innerHeight - 1',
+    ),
+    'full screen uses the complete landscape height',
+  );
+  await evaluate('document.exitFullscreen()');
+  await call('Emulation.setDeviceMetricsOverride', {
+    width: 1440,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await evaluate('document.querySelector("#ch-01 details").open=true');
   await evaluate('document.querySelector("#ch-01").scrollIntoView({behavior:"instant"})');
   await delay(250);

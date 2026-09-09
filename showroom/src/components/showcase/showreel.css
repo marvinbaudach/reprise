@@ -229,6 +229,14 @@
   width: 100%;
   height: 100%;
 }
+@media (orientation: landscape) and (max-height: 500px) {
+  .film__screen {
+    scroll-margin-top: 66px;
+  }
+  .film__screen:not(:fullscreen) .film__video {
+    max-height: calc(100svh - 82px);
+  }
+}
 /* Matches SMALL_VIEWPORT in ShowreelFilm.tsx and the source ladder. */
 @media (max-width: 900px) {
   .film-heading {

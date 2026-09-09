@@ -81,6 +81,31 @@ content visibility. Browser tests use an isolated Chromium profile and local med
 
 ## Local review
 
+### Mobile follow-up
+
+The focused mobile review found two layout defects that the earlier overflow
+checks did not detect: the performance-table caption retained table-caption
+layout inside a block table and collapsed to a narrow column; the landscape
+video exceeded the usable height below the fixed header. The caption now uses
+the reading width with larger type. Short landscape viewports cap the inline
+video height while fullscreen keeps the complete viewport.
+
+Both defects were reproduced by failing browser assertions before the CSS fixes.
+The permanent browser suite now also checks touch pause, finger-drag seeking
+without resuming playback, and landscape fullscreen height. Additional review
+sizes are 320×568, 360×800, 390×844, 430×932, 844×390 and 768×1024. Expanded
+technical evidence is included in the mobile review.
+
+The follow-up passed project/showroom source quality, all 101 showroom tests,
+the browser suite against the production build, and the additional mobile
+walkthrough with inspected screenshots. Rust formatting, workspace Clippy,
+all 5,707 workspace tests and the dependency audit were rerun and passed. No
+native, Android, packaging or workflow files changed in this follow-up. All
+edited code remains under 800 lines. Its local commit is titled
+`The showcase stays readable on phones in both orientations`.
+
+### Preview and verification
+
 Run `npm run dev -- --host 127.0.0.1 --port 4175 --strictPort` from `showroom/`,
 then open `http://localhost:4175/reprise/`. The current session also serves the
 production build at `http://127.0.0.1:4176/reprise/`.
