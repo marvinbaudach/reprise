@@ -344,6 +344,17 @@ pub(in crate::ui) const TAB_ACTIVE_SHADOW_DARK_ALPHA: &str = "0";
 /// express the lifted active tab against the pale strip.
 pub(in crate::ui) const TAB_ACTIVE_SHADOW_LIGHT_ALPHA: &str = "0.14";
 
+/// Mini play-button glow alpha in dark mode, preserved from the existing glow.
+pub(in crate::ui) const MINI_PLAY_GLOW_DARK_ALPHA: &str = "0.40";
+/// Mini play-button glow alpha in light mode. The dark twin becomes glare, so
+/// the colour is fully transparent while retaining the shadow layer.
+pub(in crate::ui) const MINI_PLAY_GLOW_LIGHT_ALPHA: &str = "0";
+/// Mini play-button hover glow alpha in dark mode, preserved from the existing hover state.
+pub(in crate::ui) const MINI_PLAY_GLOW_HOVER_DARK_ALPHA: &str = "0.60";
+/// Mini play-button hover glow alpha in light mode. The dark twin becomes glare,
+/// so the colour is fully transparent while retaining the shadow layer.
+pub(in crate::ui) const MINI_PLAY_GLOW_HOVER_LIGHT_ALPHA: &str = "0";
+
 /// Near play-button glow alpha in dark mode, preserved from the existing glow.
 pub(in crate::ui) const PLAY_GLOW_NEAR_DARK_ALPHA: &str = "0.60";
 /// Near play-button glow alpha in light mode. The dark twin becomes glare, so
