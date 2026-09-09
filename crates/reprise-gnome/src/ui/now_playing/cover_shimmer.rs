@@ -70,6 +70,44 @@ pub(super) fn shimmer_mask(r: f64) -> f64 {
     (SHIMMER_MASK_CLEAR - r) / (SHIMMER_MASK_CLEAR - SHIMMER_MASK_SOLID)
 }
 
+#[derive(Clone, Copy, Default)]
+struct Phase {
+    started_at_us: i64,
+    phase_us: i64,
+    elapsed_us: i64,
+}
+
+impl Phase {
+    /// Returns whether `elapsed_us` changed, meaning a redraw is due.
+    fn advance(&mut self, frame_time_us: i64) -> bool {
+        if self.started_at_us == 0 {
+            self.started_at_us = frame_time_us;
+        }
+        let elapsed_us = self
+            .phase_us
+            .saturating_add(frame_time_us.saturating_sub(self.started_at_us));
+        if self.elapsed_us == elapsed_us {
+            return false;
+        }
+        self.elapsed_us = elapsed_us;
+        true
+    }
+
+    /// Folds the running segment, returning whether anything was folded.
+    fn hold(&mut self) -> bool {
+        if self.started_at_us == 0 {
+            return false;
+        }
+        self.started_at_us = 0;
+        self.phase_us = self.elapsed_us;
+        true
+    }
+
+    fn elapsed_s(self) -> f64 {
+        self.elapsed_us as f64 / 1_000_000.0
+    }
+}
+
 struct Inner {
     surface: RefCell<Option<cairo::ImageSurface>>,
     /// Cover generation the cached disc was built from; the panel bumps it once
@@ -77,9 +115,7 @@ struct Inner {
     generation: Cell<Option<u64>>,
     pressure: Cell<f64>,
     swell: Cell<f64>,
-    started_at_us: Cell<i64>,
-    phase_us: Cell<i64>,
-    elapsed_us: Cell<i64>,
+    phase: Cell<Phase>,
     pinned: Cell<bool>,
 }
 
@@ -101,9 +137,7 @@ impl CoverShimmer {
             generation: Cell::new(None),
             pressure: Cell::new(0.0),
             swell: Cell::new(0.0),
-            started_at_us: Cell::new(0),
-            phase_us: Cell::new(0),
-            elapsed_us: Cell::new(0),
+            phase: Cell::new(Phase::default()),
             pinned: Cell::new(true),
         });
         area.set_draw_func({
@@ -164,34 +198,21 @@ impl CoverShimmer {
             }
             return;
         }
-        let started_at_us = self.inner.started_at_us.get();
-        let started_at_us = if started_at_us == 0 {
-            self.inner.started_at_us.set(frame_time_us);
-            frame_time_us
-        } else {
-            started_at_us
-        };
-        let elapsed_us = self
-            .inner
-            .phase_us
-            .get()
-            .saturating_add(frame_time_us.saturating_sub(started_at_us));
-        if self.inner.elapsed_us.replace(elapsed_us) != elapsed_us {
+        let mut phase = self.inner.phase.get();
+        let changed = phase.advance(frame_time_us);
+        self.inner.phase.set(phase);
+        if changed {
             self.area.queue_draw();
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn elapsed_s(&self) -> f64 {
-        elapsed_s(&self.inner)
-    }
-
     fn hold_phase(&self) -> bool {
-        if self.inner.started_at_us.replace(0) == 0 {
-            return false;
+        let mut phase = self.inner.phase.get();
+        let held = phase.hold();
+        if held {
+            self.inner.phase.set(phase);
         }
-        self.inner.phase_us.set(self.inner.elapsed_us.get());
-        true
+        held
     }
 
     pub(super) fn set_pinned(&self, pinned: bool) {
@@ -204,10 +225,6 @@ impl CoverShimmer {
         }
         self.area.queue_draw();
     }
-}
-
-fn elapsed_s(inner: &Inner) -> f64 {
-    inner.elapsed_us.get() as f64 / 1_000_000.0
 }
 
 fn build_surface(texture: &gtk4::gdk::Texture) -> Option<cairo::ImageSurface> {
@@ -251,7 +268,7 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     };
     let diameter = SHIMMER_DIAMETER_PER_COVER * f64::from(tokens::NOW_PLAYING_COVER_SIZE);
     let scale = diameter / f64::from(SHIMMER_SURFACE_EDGE);
-    let elapsed_s = elapsed_s(inner);
+    let elapsed_s = inner.phase.get().elapsed_s();
     cr.save().ok();
     cr.rectangle(
         0.0,
@@ -297,22 +314,53 @@ mod tests {
     }
 
     #[test]
-    fn npp_18_the_disc_keeps_its_phase_across_a_pin() {
-        gtk4::init().expect("GTK test display");
-        let shimmer = CoverShimmer::new();
-        shimmer.set_pinned(false);
-        shimmer.set_frame_time(1_000_000);
-        shimmer.set_frame_time(11_000_000);
-        let before = shimmer.elapsed_s();
+    fn npp_18_the_disc_keeps_its_phase_across_a_hold_and_resume() {
+        let mut phase = Phase::default();
+        phase.advance(1_000_000);
+        phase.advance(11_000_000);
+        let before = phase.elapsed_s();
         assert!(before > 0.0, "the disc did not start turning");
-        shimmer.set_pinned(true);
-        shimmer.set_pinned(false);
-        shimmer.set_frame_time(500_000_000);
-        let after = shimmer.elapsed_s();
+        assert!(phase.hold());
+        phase.advance(12_000_000);
+        phase.advance(14_000_000);
+        let after = phase.elapsed_s();
         assert!(
-            (after - before).abs() < 1e-6,
-            "the disc jumped from {before:.3}s to {after:.3}s across a pin"
+            (after - (before + 2.0)).abs() < 1e-6,
+            "the disc did not resume from its held phase"
         );
+    }
+
+    #[test]
+    fn npp_18_a_double_hold_does_not_fold_the_phase_twice() {
+        let mut phase = Phase::default();
+        phase.advance(1_000_000);
+        phase.advance(11_000_000);
+
+        assert!(phase.hold());
+        let held = phase.elapsed_s();
+        assert!(!phase.hold());
+        assert!((phase.elapsed_s() - held).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_resuming_after_a_huge_gap_does_not_jump() {
+        let mut phase = Phase::default();
+        phase.advance(1_000_000);
+        phase.advance(11_000_000);
+        phase.hold();
+        let before = phase.elapsed_s();
+
+        assert!(!phase.advance(500_000_000));
+        assert!((phase.elapsed_s() - before).abs() < 1e-9);
+    }
+
+    #[test]
+    fn npp_18_advance_reports_no_change_when_elapsed_does_not_move() {
+        let mut phase = Phase::default();
+
+        assert!(!phase.advance(1_000_000));
+        assert!(!phase.advance(1_000_000));
+        assert_eq!(phase.elapsed_s(), 0.0);
     }
 
     #[test]
