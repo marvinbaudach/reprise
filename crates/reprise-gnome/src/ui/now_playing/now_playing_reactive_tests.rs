@@ -70,6 +70,51 @@ fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn npp_18_the_turning_disc_survives_a_theme_switch() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let (_window, panel) = super::tests::test_panel(
+        "io.github.marvinbaudach.Reprise.NowPlayingShimmerThemeSwitchTest",
+    );
+    let settings = gtk4::Settings::default().unwrap();
+    let animations_were_enabled = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+    crate::ui::style::set_color_scheme("dark");
+
+    panel.set_transient_visibility(true);
+    panel.set_song_visuals_enabled(true);
+    assert!(shimmer_unpinned(&panel));
+
+    let bytes = gtk4::glib::Bytes::from_owned(vec![0x80_u8; 4 * 4 * 4]);
+    let cover =
+        gtk4::gdk::MemoryTexture::new(4, 4, gtk4::gdk::MemoryFormat::R8g8b8a8, &bytes, 4 * 4);
+    panel.widgets.shimmer.set_cover(Some(cover.upcast_ref()), 1);
+    assert!(
+        panel.widgets.shimmer.drawn_angle_for_test().is_some(),
+        "the shimmer must have a cover or the disc draws nothing"
+    );
+
+    panel.widgets.shimmer.set_frame_time(1_000_000);
+    panel.widgets.shimmer.set_frame_time(6_000_000);
+    panel.widgets.shimmer.set_frame_time(11_000_000);
+    let before = panel.widgets.shimmer.drawn_angle_for_test().unwrap();
+    assert!(before > 0.0, "the disc must be turning before the switch");
+
+    crate::ui::style::set_color_scheme("light");
+    panel.widgets.shimmer.set_frame_time(11_000_001);
+    let after = panel.widgets.shimmer.drawn_angle_for_test().unwrap();
+
+    crate::ui::style::set_color_scheme("default");
+    settings.set_gtk_enable_animations(animations_were_enabled);
+    assert!(
+        (after - before).abs() < 1e-6,
+        "the disc snapped from {before} to {after} radians across the theme switch"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
     if gtk4::init().is_err() {
         return;
