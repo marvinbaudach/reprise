@@ -363,17 +363,22 @@ Deliver both. The question they answer is exactly one: is the disc's motion
 visible without being told to look for it, and does it stay on the right side of
 "at the edge of vision"?
 
-- [ ] **Step 3: The escalation ladder, if the answer is "still not enough"**
+- [ ] **Step 3: The escalation ladder, if either theme still misses the target**
 
 Cheapest first, and no step without the owner's word:
 
-1. `SHIMMER_TURN_S` 25 → 20 s. One constant, +15 %, no blast radius.
-2. Parameterise `cover_glow::blurred_surface(texture, edge)`; the shimmer asks
+1. Retune only the rate for the arm that missed. If dark is still too faint,
+   `SHIMMER_TURN_S` goes 25 → 20 s. If light is still too salient,
+   `LIGHT_SHIMMER_TURN_S` goes above 40 s; if it has become too faint, it goes
+   below 40 s. One constant, no blast radius.
+2. If either arm is still too faint, parameterise
+   `cover_glow::blurred_surface(texture, edge)`; the shimmer asks
    for 48, the player bar and the bloom keep 32. +14 %, and the only lever that
    adds *structure* rather than amplitude — the one that helps greyscale covers
    most. Costs a shared function and 2.25× the raster.
-3. `SHIMMER_REST_OPACITY` above 0.48. Denser wash again; needs its own AC-24
-   decision.
+3. Move only the missed arm's resting opacity: dark above 0.48 if it is still
+   too faint; light below 0.40 if it is still too salient, or above it if it has
+   become too faint. A denser or thinner wash needs its own AC-24 decision.
 
 ---
 
@@ -396,8 +401,9 @@ crates/reprise-gnome/src/ui/now_playing/cover_shimmer.rs
 ```
 
 Nothing else is touched. `cover_glow.rs`, `cover_bloom.rs`, `now_playing_light.rs`
-and `tokens.rs` stay exactly as they are on `dev`; the escalation ladder's step 2
-would change the first of them, and that is deliberately not part of this plan.
+and `tokens.rs` stay exactly as they are on `dev`; the escalation ladder's
+faintness-only step 2 would change the first of them, and that is deliberately
+not part of this plan.
 
 **Post-merge cross-checks:** none. No verification step here reads a file the
 plan does not own.
