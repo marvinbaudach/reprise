@@ -1,17 +1,22 @@
 //! Resolving a @handle subscription to a channel before the refresh runs.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 
 use super::youtube_test_support::*;
 use super::{RefreshRequest as R, *};
 use crate::podcasts::store::{self, NewSubscription};
 
-struct HandleYoutube;
+#[derive(Default)]
+struct HandleYoutube {
+    resolve_calls: Cell<usize>,
+    duration_urls: RefCell<Vec<String>>,
+}
 
 impl YoutubeFetcher for HandleYoutube {
     fn resolve_channel_url(&self, url: &str) -> Result<Option<String>, PodcastError> {
         assert_eq!(url, "https://www.youtube.com/@show");
+        self.resolve_calls.set(self.resolve_calls.get() + 1);
         Ok(Some(
             "https://www.youtube.com/channel/UCresolved".to_owned(),
         ))
@@ -19,6 +24,17 @@ impl YoutubeFetcher for HandleYoutube {
 
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
         panic!("a resolved channel identity must use the official Atom feed")
+    }
+
+    fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
+        assert_eq!(end, 200);
+        self.duration_urls.borrow_mut().push(url.to_owned());
+        Ok(ParsedFeed {
+            title: None,
+            author: None,
+            image_url: None,
+            episodes: Vec::new(),
+        })
     }
 
     fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
@@ -46,19 +62,21 @@ fn handle_subscription_resolves_channel_identity_before_refresh() {
         requested_urls: RefCell::new(Vec::new()),
         author: Some("Renamed Channel"),
     };
+    let youtube = HandleYoutube {
+        resolve_calls: Cell::new(0),
+        duration_urls: RefCell::new(Vec::new()),
+    };
     let directory = tempfile::tempdir().unwrap();
 
-    let summary = refresh_to_root(
-        &conn,
-        &feed,
-        &HandleYoutube,
-        10,
-        R::force(),
-        directory.path(),
-    )
-    .unwrap();
+    let summary =
+        refresh_to_root(&conn, &feed, &youtube, 10, R::force(), directory.path()).unwrap();
 
     assert_eq!(summary.episodes_inserted, 2);
+    assert_eq!(youtube.resolve_calls.get(), 1);
+    assert_eq!(
+        youtube.duration_urls.into_inner(),
+        ["https://www.youtube.com/channel/UCresolved"]
+    );
     assert_eq!(
         feed.requested_urls.into_inner(),
         ["https://www.youtube.com/feeds/videos.xml?playlist_id=UULFresolved"]
@@ -270,7 +288,7 @@ fn resolved_handle_is_adopted_when_the_official_feed_is_not_modified() {
     let summary = refresh_to_root(
         &conn,
         &UnchangedOfficialFeed,
-        &HandleYoutube,
+        &HandleYoutube::default(),
         10,
         R::force(),
         directory.path(),

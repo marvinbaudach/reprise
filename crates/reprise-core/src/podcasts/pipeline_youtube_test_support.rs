@@ -73,9 +73,9 @@ impl FeedFetcher for OfficialYoutubeFeed {
                 r#"<feed xmlns="http://www.w3.org/2005/Atom"
                           xmlns:yt="http://www.youtube.com/xml/schemas/2015">
               <title>Videos</title>{author}
-              <entry><id>yt:video:newest</id><yt:videoId>newest</yt:videoId>
+              <entry><id>yt:video:newest00001</id><yt:videoId>newest00001</yt:videoId>
                 <title>Newest</title><published>2026-07-28T08:00:00Z</published></entry>
-              <entry><id>yt:video:older</id><yt:videoId>older</yt:videoId>
+              <entry><id>yt:video:older000001</id><yt:videoId>older000001</yt:videoId>
                 <title>Older</title><published>2026-07-27T08:00:00Z</published></entry>
             </feed>"#
             ),

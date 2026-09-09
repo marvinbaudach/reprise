@@ -50,7 +50,7 @@ fn pod_10_initial_youtube_window_uses_the_official_long_form_feed() {
             .into_iter()
             .map(|episode| episode.guid)
             .collect::<Vec<_>>(),
-        ["newest", "older"]
+        ["newest00001", "older000001"]
     );
     assert_eq!(
         store::subscription(&conn, subscription_id)

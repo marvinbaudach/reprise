@@ -29,6 +29,14 @@ pub(super) fn parse(operation: &'static str, body: &str) -> Result<YtDlpPlaylist
     let entries = raw_entries
         .iter()
         .filter_map(|entry| {
+            // Channel tabs are playlists, not episodes. `source_url` is
+            // unaffected because it was derived from `raw_entries` above this
+            // filter. This parser is shared by list, list_range, and search,
+            // where a playlist is never an episode; search_channels uses its
+            // separate `parse_search_channels` parser.
+            if entry.get("_type").and_then(Value::as_str) == Some("playlist") {
+                return None;
+            }
             let id = entry.get("id")?.as_str()?.trim().to_string();
             let title = entry.get("title")?.as_str()?.trim().to_string();
             if id.is_empty() || title.is_empty() {

@@ -19,6 +19,13 @@ use crate::podcasts::store::FetchSuccess;
 use crate::podcasts::{PodcastError, PodcastKind, SubscriptionRow};
 use crate::source_error::SourceErrorKind;
 
+/// Entries to ask yt-dlp for when filling missing runtimes. Fixed, not
+/// derived from the gap count: the gaps are not always the newest episodes
+/// (Nordheim Melodies needed ~98 entries for gaps that a 30-entry window
+/// missed), and a window that leaves a residue re-lists on every later
+/// refresh. Measured cost at 200 entries: ~3 s.
+const DURATION_FILL_WINDOW: usize = 200;
+
 #[derive(Clone, Debug, Default)]
 pub struct SyncAbort {
     cancelled: Arc<AtomicBool>,
@@ -311,9 +318,66 @@ pub(super) fn refresh_one_in(params: RefreshOneParams<'_, '_>) -> Result<(), Pip
     )?;
     abort_if_requested(abort)?;
     transaction.commit()?;
+    if !abort.is_cancelled() {
+        // Keep this listing after the commit: the IMMEDIATE transaction holds the write lock,
+        // and running a 1-3 s yt-dlp subprocess inside it would block every other writer.
+        let channel_url = read
+            .resolved_channel_url
+            .as_deref()
+            .unwrap_or(&subscription.feed_url);
+        if let Err(error) = fill_missing_youtube_durations(
+            conn,
+            youtube_fetcher,
+            youtube_allowed,
+            subscription,
+            channel_url,
+        ) {
+            tracing::warn!(
+                subscription_id = subscription.id,
+                %error,
+                "podcast duration store failed"
+            );
+        }
+    }
     clear_retry(retry_key);
     summary.refreshed += 1;
     Ok(())
+}
+
+fn fill_missing_youtube_durations(
+    conn: &Connection,
+    youtube_fetcher: &dyn YoutubeFetcher,
+    youtube_allowed: bool,
+    subscription: &SubscriptionRow,
+    channel_url: &str,
+) -> Result<(), rusqlite::Error> {
+    if subscription.kind != PodcastKind::Youtube || !youtube_allowed {
+        return Ok(());
+    }
+    let gaps = crate::podcasts::store::episodes_missing_duration_in(conn, subscription.id)?;
+    if gaps == 0 {
+        return Ok(());
+    }
+    let feed = match youtube_fetcher.list_range(channel_url, DURATION_FILL_WINDOW) {
+        Ok(feed) => feed,
+        Err(error) => {
+            tracing::warn!(
+                subscription_id = subscription.id,
+                %error,
+                "podcast duration listing failed"
+            );
+            return Ok(());
+        }
+    };
+    let durations: Vec<(String, i64)> = feed
+        .episodes
+        .into_iter()
+        .filter_map(|episode| Some((episode.guid, episode.duration_secs?)))
+        .filter(|(_, secs)| *secs > 0)
+        .collect();
+    let transaction = conn.unchecked_transaction()?;
+    crate::podcasts::store::fill_missing_durations_in(&transaction, subscription.id, &durations)?;
+    transaction.commit()
 }
 
 fn read_feed(
@@ -359,14 +423,7 @@ fn read_youtube_feed(
     config: &PodcastConfig,
     subscription: &SubscriptionRow,
 ) -> Result<FeedReadOutcome, PodcastError> {
-    let channel_url =
-        if crate::podcasts::youtube::long_form_feed_url(&subscription.feed_url).is_some() {
-            subscription.feed_url.clone()
-        } else {
-            youtube_fetcher
-                .resolve_channel_url(&subscription.feed_url)?
-                .unwrap_or_else(|| subscription.feed_url.clone())
-        };
+    let channel_url = youtube_channel_url(youtube_fetcher, subscription)?;
     let resolved_channel_url = (channel_url != subscription.feed_url).then(|| channel_url.clone());
     if let Some(feed_url) = crate::podcasts::youtube::long_form_feed_url(&channel_url) {
         let official = feed_fetcher
@@ -409,6 +466,19 @@ fn read_youtube_feed(
                     resolved_channel_url,
                 })
             })
+    }
+}
+
+fn youtube_channel_url(
+    youtube_fetcher: &dyn YoutubeFetcher,
+    subscription: &SubscriptionRow,
+) -> Result<String, PodcastError> {
+    if crate::podcasts::youtube::long_form_feed_url(&subscription.feed_url).is_some() {
+        Ok(subscription.feed_url.clone())
+    } else {
+        Ok(youtube_fetcher
+            .resolve_channel_url(&subscription.feed_url)?
+            .unwrap_or_else(|| subscription.feed_url.clone()))
     }
 }
 
