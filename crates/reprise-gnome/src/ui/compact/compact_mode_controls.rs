@@ -198,7 +198,7 @@ pub(in crate::ui) fn install(
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
+    use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
     use gtk4::gio;
@@ -452,6 +452,22 @@ mod tests {
         wait_for("library geometry restored", || {
             x11_geometry(&window) == restored_geometry
         });
+
+        let mut window_manager = Command::new("openbox")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the maximize regression needs the test window manager");
+        std::thread::sleep(Duration::from_millis(250));
+        window.maximize();
+        wait_for("library maximized", || window.is_maximized());
+        mode.toggle();
+        wait_for("compact visible from maximized", || !window.is_visible());
+        mode.toggle();
+        wait_for("maximized library restored", || window.is_visible());
+        assert!(window.is_maximized());
+        let _ = window_manager.kill();
+        let _ = window_manager.wait();
         window.close();
     }
 
