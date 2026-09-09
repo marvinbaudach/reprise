@@ -14,7 +14,7 @@ async function builtCss() {
   return readFile(join(assets, stylesheet), 'utf8');
 }
 
-test('chapter one carries the design figures counters and animated ratio band', async () => {
+test('chapter one retains source-derived figures in its optional code breakdown', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const css = await builtCss();
   const chapter = html.match(/<section id="ch-01"[\s\S]+?<section id="ch-02"/)?.[0];
@@ -48,6 +48,10 @@ test('chapter one carries the design figures counters and animated ratio band', 
   ]) {
     const width = ((lines / counted.total) * 100).toFixed(1);
     assert.match(ratio, new RegExp(`data-w="${width.replace('.', '\\.')}"`));
+    assert.ok(
+      ratio.includes(`style="width:${width}%"`),
+      'the rendered bar must use its current share without JavaScript',
+    );
   }
   // Lightning CSS (Vite 8's minifier) sorts declarations inside a block; the bar
   // is checked for what it carries, not for the order it carries it in.
@@ -56,7 +60,7 @@ test('chapter one carries the design figures counters and animated ratio band', 
   for (const declaration of ['height:40px', 'border-radius:6px']) {
     assert.ok(bar.includes(declaration), `.ratio__bar must carry ${declaration}`);
   }
-  assert.match(css, /width 1\.4s cubic-bezier\(\.16,1,\.3,1\)/);
+  assert.doesNotMatch(css, /width 1\.4s cubic-bezier\(\.16,1,\.3,1\)/);
 });
 
 test('chapter two is one incident, with no process diagram left in it', async () => {
@@ -66,7 +70,7 @@ test('chapter two is one incident, with no process diagram left in it', async ()
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(13\.5% 0\.02 205\)"/);
   assert.match(chapter, /id="ch-02-heading"/);
-  assert.match(chapter, /Nobody judges their own writing\./);
+  assert.match(chapter, /AI-assisted development\. Verified changes\./);
   assert.match(chapter, /A test was measuring an app that never ships\./);
 
   // The swimlane and the wall of 27 labels are gone, and nothing rebuilt them.
@@ -84,11 +88,11 @@ test('chapter two is one incident, with no process diagram left in it', async ()
   }
 });
 
-test('reduced motion settles every prepared counter at its authored value', async () => {
+test('all motion preferences keep the authored figures without counting up', async () => {
   const choreography = await readFile(
     join(showroomRoot, 'src', 'hooks', 'usePageChoreography.ts'),
     'utf8',
   );
 
-  assert.match(choreography, /if \(still\) runCounter\(element, 0, true\)/);
+  assert.doesNotMatch(choreography, /prepareCounter|runCounter/);
 });

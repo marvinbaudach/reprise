@@ -24,11 +24,11 @@ test('chapter four presents the exact CLI commands and six MCP capability defaul
   const html = await prerenderedPage();
   const css = await builtCss();
   const authoredCss = await sourceCss('ChapterFour.css');
-  const chapter = html.match(/<section id="ch-04"[\s\S]+?<section[^>]+data-chapter="05"/)?.[0];
+  const chapter = html.match(/<section id="ch-04"[\s\S]+?<\/section>/)?.[0];
 
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(13% 0\.016 269\)"/);
-  assert.match(chapter, /The other two frontends have no screen at all\./);
+  assert.match(chapter, /The same library, ready for automation\./);
   assert.doesNotMatch(chapter, / style=/);
   for (const command of [
     'library summary',
@@ -77,7 +77,7 @@ test('chapter five exposes the complete measured ledger and its price without a 
 
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(12\.5% 0\.018 24\)"/);
-  assert.match(chapter, /Measured afterwards\. Price attached\./);
+  assert.match(chapter, /A faster library\. A measured trade-off\./);
   const table = chapter.match(/<table[^>]+class="ledger"[\s\S]+?<\/table>/)?.[0];
   assert.ok(table);
   assert.match(table, /<table[^>]+role="table"/);

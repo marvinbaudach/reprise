@@ -7,7 +7,7 @@ import { formatSeekTime, parseSeekTrack } from '../src/lib/seekTrack.ts';
 
 const showroomRoot = new URL('..', import.meta.url).pathname;
 
-test('the Hero seek strip presents the measured duration', async () => {
+test('the interactive design example preserves measured seeking without a duplicate hero strip', async () => {
   const [html, binary, component] = await Promise.all([
     readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8'),
     readFile(join(showroomRoot, 'public/media/showroom/seek-track.bin')),
@@ -16,13 +16,9 @@ test('the Hero seek strip presents the measured duration', async () => {
   const hero = html.match(/<section[^>]+data-showcase="design-hero"[\s\S]+?<\/section>/)?.[0];
 
   assert.ok(hero);
-  assert.match(hero, /data-showcase="hero-seek-track"/);
-  assert.match(hero, /src="\/reprise\/brand\/reprise-mark\.svg"[^>]+width="24" height="24"/);
-  assert.match(hero, />0:00</);
-  assert.match(hero, /data-seek-canvas=""/);
-  // The strip is a control, but only once the measured track has arrived: the
-  // prerendered document must not hand out a tab stop that cannot move.
-  assert.doesNotMatch(hero, /role="slider"|aria-valuemin|aria-valuemax|tabindex="0"/);
+  assert.doesNotMatch(hero, /data-showcase="hero-seek-track"|data-seek-canvas/);
+  assert.equal((html.match(/data-showcase="spectral-seek-track"/g) ?? []).length, 1);
+  assert.match(html, /Explore the interactive seek bar/);
   assert.match(component, /role: 'slider'/);
   assert.match(component, /aria-valuetext/);
   assert.doesNotMatch(hero, /−3:34/);

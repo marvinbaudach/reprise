@@ -1,12 +1,7 @@
-import { HeroSeekTrack } from '../seek/MeasuredSeekTrack';
 import { HeroProduct } from '../showcase/HeroProduct';
 import './chapters.css';
 
-interface HeroProps {
-  readonly reducedMotion: boolean;
-}
-
-export function Hero({ reducedMotion }: HeroProps) {
+export function Hero() {
   return (
     <section
       id="rp-top"
@@ -17,44 +12,36 @@ export function Hero({ reducedMotion }: HeroProps) {
     >
       <div className="hero__grid">
         <div className="hero__copy">
-          <p className="hero__eyebrow" data-reveal="">
-            A music player for GNOME and Android
-          </p>
-
-          <h1 id="hero-heading" className="hero__headline" data-reveal="">
+          <p className="hero__eyebrow">A music player for GNOME and Android</p>
+          <h1 id="hero-heading" className="hero__headline">
             <span>Two native apps.</span>
             <span>One Rust core.</span>
           </h1>
-
-          <p className="hero__lead" data-reveal="">
-            Built with AI agents. What gets merged is decided by the gates, not by the agent.
+          <p className="hero__lead">
+            Your music library, at home and on the move. Built to feel at home on each platform.
           </p>
-
-          <p className="hero__note" data-reveal="">
-            The core carries no interface. That is not an architectural preference, it is the reason
-            the second platform had a price tag instead of a rewrite — and the reason a third one
-            would have a price tag too.
+          <p className="hero__note">
+            An independent project by <strong>Marvin Baudach</strong>.<br />
+            Product design, architecture and quality — with AI-assisted development.
           </p>
-
-          <div className="hero__scroll-cue" data-reveal="" data-showcase="scroll-cue">
-            <span className="hero__scroll-line" aria-hidden="true" />
-            <span>Scroll</span>
-          </div>
-
-          <div className="hero__offer" data-reveal="">
-            <span className="hero__offer-state">Available · Q4</span>
-            <span className="hero__offer-copy">
-              Five weeks, one developer, agents under gate control.
-            </span>
-            <a className="hero__offer-link" href="#availability">
-              The same method, your codebase ↓
+          <div className="hero__actions">
+            <a className="action action--primary" href="#film">
+              <span aria-hidden="true">▶</span> Watch the film{' '}
+              <span className="action__duration">0:58</span>
+            </a>
+            <a className="action action--text" href="#ch-01">
+              Explore the engineering <span aria-hidden="true">↓</span>
             </a>
           </div>
         </div>
-
         <HeroProduct />
       </div>
-      <HeroSeekTrack reducedMotion={reducedMotion} />
+      <div className="hero__byline frame">
+        <span>Rust · GTK4 · Kotlin · Compose</span>
+        <a href="#availability">
+          Open to opportunities <span aria-hidden="true">↗</span>
+        </a>
+      </div>
     </section>
   );
 }

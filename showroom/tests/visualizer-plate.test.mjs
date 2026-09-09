@@ -6,7 +6,7 @@ import { test } from 'node:test';
 const showroomRoot = new URL('..', import.meta.url).pathname;
 const bytesPerFrame = 65;
 
-test('the hero phone carries a complete recorded visualizer track', async () => {
+test('the hero phone is a still screenshot and the original visualizer recording remains intact', async () => {
   const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
   const track = await stat(
     join(showroomRoot, 'public', 'media', 'showroom', 'visualizer-track.bin'),
@@ -18,5 +18,6 @@ test('the hero phone carries a complete recorded visualizer track', async () => 
     /<button[^>]+class="[^"]*hero-product__phone[^"]*"[\s\S]+?<\/button>/,
   )?.[0];
   assert.ok(phone);
-  assert.match(phone, /<canvas[^>]+data-showcase="visualizer-plate"/);
+  assert.doesNotMatch(phone, /<canvas/);
+  assert.match(phone, /<img[^>]+class="product-shot"/);
 });

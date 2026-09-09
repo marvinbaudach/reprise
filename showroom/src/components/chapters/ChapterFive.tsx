@@ -17,12 +17,11 @@ export function ChapterFive() {
     >
       <div className="chapter-five__frame">
         <header className="chapter-five__heading" data-reveal>
-          <p>CH.05</p>
-          <h2 id="ch-05-heading">Measured afterwards. Price attached.</h2>
+          <p>Performance</p>
+          <h2 id="ch-05-heading">A faster library. A measured trade-off.</h2>
           <p>
-            The title index was rebuilt for one reason: the track list was too slow over a large
-            library. What it bought was measured after the fact rather than asserted before it — and
-            what it cost sits in the same table, not in the small print.
+            A slow title-list query led me to rebuild its database index. The measurements below
+            show the before and after, alongside the extra storage it needs.
           </p>
         </header>
 

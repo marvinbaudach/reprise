@@ -283,7 +283,6 @@
   width: clamp(26px, 3vw, 34px);
   height: 1px;
   background: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 6px);
-  animation: pipeline-flow var(--duration-slow) ease infinite;
 }
 
 .pipeline__mutations {
@@ -507,12 +506,6 @@
 
   .gate-strip[data-blocked="true"] .pipeline__link--merge {
     background: repeating-linear-gradient(180deg, var(--second) 0 6px, transparent 6px 10px);
-  }
-}
-
-@keyframes pipeline-flow {
-  to {
-    background-position: var(--pipeline-shift-x) var(--pipeline-shift-y);
   }
 }
 
