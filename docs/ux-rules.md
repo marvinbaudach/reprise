@@ -4314,10 +4314,9 @@ STYLE-1).
   luminance units per second, 0.04× the bloom's own breathing on the same
   pixels: below the rate at which it reads as moving at all, which is what was
   reported from use. The rate carries most of the correction and the disc's
-  resting opacity the rest: the approved dark arm turns in 25 seconds and rises
-  from 0.34 to 0.48, while the light arm is a placeholder pending the owner's
-  live re-tuning in front of the running app: it turns in 40 seconds and rests
-  at 0.40.
+  resting opacity the rest: both arms were accepted by eye in the running app.
+  The dark arm turns in 25 seconds and rises from 0.34 to 0.48, while the light
+  arm turns in 40 seconds and rests at 0.40.
   The lighter arm is quieter because the denser light-mode bloom and the higher
   contrast of a dark disc on light ground already make the same motion more
   salient. The dark arm makes the wash around the cover about 41 % denser at

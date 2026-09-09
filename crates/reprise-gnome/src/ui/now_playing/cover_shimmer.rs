@@ -8,8 +8,9 @@
 //! structure, even in black and white, so the disc is the blurred cover rather
 //! than colours extracted from it. Same honesty rule as the bloom, and it works
 //! on every record instead of two in five.
-//! The approved dark arm turns every 25 seconds at 0.48 resting opacity. The
-//! quieter light arm turns every 40 seconds at 0.40 against its denser bloom.
+//! The two owner-approved arms were accepted by eye in the running app. The
+//! dark arm turns every 25 seconds at 0.48 resting opacity; the quieter light
+//! arm turns every 40 seconds at 0.40 against its denser bloom.
 //!
 //! Cost is the bloom's bargain: the masked disc is rasterized once per cover;
 //! per frame there is a translate, a rotate and one `paint_with_alpha`. The
@@ -26,7 +27,8 @@ use crate::ui::style::tokens;
 
 /// Approved dark resting opacity, raised from 0.34 with the turn rate.
 const SHIMMER_REST_OPACITY: f64 = 0.48;
-/// Light resting opacity, tuned by eye against the denser light-mode bloom.
+/// Owner-approved light resting opacity, accepted by eye in the running app.
+/// It stays thinner against the denser light-mode bloom.
 const LIGHT_SHIMMER_REST_OPACITY: f64 = 0.40;
 const SHIMMER_OPACITY_PER_PRESSURE: f64 = 0.14;
 const SHIMMER_OPACITY_PER_SWELL: f64 = 0.16;
@@ -38,7 +40,9 @@ const SHIMMER_CENTRE_Y: f64 = 100.0;
 const SHIMMER_BAND_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
 /// Approved dark turn period. At a minute the disc measured 0.04x the bloom.
 const SHIMMER_TURN_S: f64 = 25.0;
-/// Light turn period, tuned by eye against the denser light-mode bloom.
+/// Owner-approved light turn period, accepted by eye in the running app. The
+/// slower turn balances the denser bloom and greater contrast of a dark disc on
+/// light ground, where the same rotation reads as more salient, not faster.
 const LIGHT_SHIMMER_TURN_S: f64 = 40.0;
 /// `radial-gradient(circle closest-side, #000 12%, transparent 68%)`.
 const SHIMMER_MASK_SOLID: f64 = 0.12;
@@ -56,8 +60,10 @@ struct ShimmerModel {
     rest_opacity: f64,
 }
 
-/// The dark arm is owner-approved. The light arm is a placeholder tuned by eye
-/// against the denser light-mode bloom until the next visual pass.
+/// Both arms are owner-approved from judgment in the running app. The light arm
+/// is slower and thinner because its bloom rests at 0.14 instead of 0.06 and
+/// reacts at 0.26 / 0.24 instead of 0.15 / 0.16. A dark blurred disc on light
+/// ground also carries more contrast, making the same rotation more salient.
 fn shimmer_model(is_dark: bool) -> ShimmerModel {
     if is_dark {
         ShimmerModel {
