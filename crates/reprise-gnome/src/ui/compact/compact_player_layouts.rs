@@ -173,19 +173,25 @@ pub(in crate::ui) fn mini_css() -> String {
            border-radius: {COVER_RADIUS}px; \
            box-shadow: inset 0 0 0 1px @reprise_mini_cover_edge; }}\n\
          /* PLAY-16: the playback accent and white glyph are a deliberate
-            product identity; see the full player bar's explicit exception. */\n\
+            product identity; the ring and glow resolve through appearance-aware
+            tokens. The ring repeats because pseudo-class box-shadow lists replace
+            rather than extend the resting list. */\n\
          .{CSS_PLAY} {{ \
            min-width: {PLAY_SIZE}px; min-height: {PLAY_SIZE}px; \
            background-color: @reprise_player_accent; \
            color: #ffffff; \
-           box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.40); \
+           box-shadow: inset 0 0 0 1px @reprise_play_ring, \
+                       0 0 12px @reprise_mini_play_glow; \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
-         .{CSS_PLAY}:hover {{ box-shadow: 0 0 18px alpha(@reprise_player_accent, 0.60); }}\n\
+         .{CSS_PLAY}:hover {{ \
+           box-shadow: inset 0 0 0 1px @reprise_play_ring, \
+                       0 0 18px @reprise_mini_play_glow_hover; }}\n\
          /* BTN-3: the press sink comes from `style::buttons`; the mini card \
             only adds the accent ring its main action is allowed. */\n\
          .{CSS_PLAY}:active {{ \
-           box-shadow: 0 0 0 3px alpha(@reprise_player_accent, 0.45), \
+           box-shadow: inset 0 0 0 1px @reprise_play_ring, \
+                       0 0 0 3px alpha(@reprise_player_accent, 0.45), \
                        0 0 18px alpha(@reprise_player_accent, 0.70); }}\n\
          .{CSS_TITLE} {{ font-weight: bold; font-size: 13px; }}\n\
          /* Artist on the tint stays clearly secondary while its appearance-aware \
@@ -228,6 +234,13 @@ pub(in crate::ui) fn mini_css() -> String {
 mod tests {
     use super::*;
 
+    fn rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
+        css.split(selector)
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .unwrap_or_else(|| panic!("no rules for {selector}"))
+    }
+
     #[test]
     fn mini_1_card_matches_frame_geometry() {
         assert_eq!(MINI_WIDTH, 430);
@@ -244,6 +257,31 @@ mod tests {
         // The window floats the card on a transparent toplevel (MINI-1).
         assert!(css.contains(CSS_WINDOW_CLASS));
         assert!(css.contains("background-color: transparent"));
+    }
+
+    #[test]
+    fn mini_play_button_ring_and_glow_follow_appearance() {
+        let css = mini_css();
+        let selectors = [
+            ".mini-player-play {",
+            ".mini-player-play:hover {",
+            ".mini-player-play:active {",
+        ];
+        let play_rule_bodies = selectors.map(|selector| rule_body(&css, selector));
+        for (selector, body) in selectors.iter().zip(play_rule_bodies.iter()) {
+            assert!(
+                body.contains("inset 0 0 0 1px @reprise_play_ring"),
+                "{selector} must repeat the appearance-aware ring; add it to every new box-shadow state and extend this assertion"
+            );
+        }
+        assert!(css.contains("0 0 12px @reprise_mini_play_glow"));
+        assert!(css.contains("0 0 18px @reprise_mini_play_glow_hover"));
+        for body in play_rule_bodies {
+            assert!(!body.contains("alpha(@reprise_player_accent, 0.40)"));
+            assert!(!body.contains("alpha(@reprise_player_accent, 0.60)"));
+        }
+        assert!(css.contains("alpha(@reprise_player_accent, 0.45)"));
+        assert!(css.contains("alpha(@reprise_player_accent, 0.70)"));
     }
 
     #[test]
