@@ -59,6 +59,8 @@ pub(super) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{buttons, tokens};
+
     #[test]
     fn css_defines_focus_glow_hover_and_surface() {
         let css = super::css();
@@ -86,8 +88,89 @@ mod tests {
             )),
             ".reprise-panel-toggle:checked must keep its accent state fill: {panel_toggle_rule}"
         );
+        assert!(panel_toggle_rule.contains("color: @reprise_accent_text_color"));
         assert!(css.contains("border-radius"));
         assert!(css.contains("floating-sheet > dimming"));
         assert!(css.contains("floating-sheet > sheet"));
+    }
+
+    #[test]
+    fn collapse_toggle_folded_state_keeps_its_accent_paint() {
+        let css = buttons::css();
+        let selector = format!(
+            ".reprise-panel-toggle.{}",
+            buttons::COLLAPSE_TOGGLE_CSS_CLASS
+        );
+        let rule = css_rule(&css, &selector);
+
+        assert!(
+            rule.contains("color: @reprise_accent_text_color"),
+            "the folded collapse toggle must keep its accent foreground: {rule}"
+        );
+        assert!(
+            rule.contains(&format!(
+                "background-color: alpha(@accent_bg_color, {})",
+                tokens::HOVER_BG_ALPHA
+            )),
+            "the folded collapse toggle must keep its accent background: {rule}"
+        );
+    }
+
+    #[test]
+    fn collapse_rules_never_capture_the_search_toggle() {
+        let css = crate::ui::style::app_css_for_test();
+        let scoped_selector = format!(
+            ".reprise-panel-toggle.{}",
+            buttons::COLLAPSE_TOGGLE_CSS_CLASS
+        );
+        let collapse_rule_count = css
+            .split('{')
+            .filter_map(|prefix| prefix.rsplit('}').next())
+            .map(|selector| {
+                selector
+                    .rsplit("*/")
+                    .next()
+                    .expect("rsplit always yields one segment")
+                    .trim()
+            })
+            .filter(|selector| selector.contains(buttons::COLLAPSE_TOGGLE_CSS_CLASS))
+            .inspect(|selector_group| {
+                for selector_arm in selector_group.split(',').map(str::trim) {
+                    assert!(
+                        selector_arm.contains(&scoped_selector),
+                        "every collapse-rule selector arm must carry both scoping classes: \
+                         {selector_arm}"
+                    );
+                }
+            })
+            .count();
+
+        assert_eq!(collapse_rule_count, 6, "all six collapse states are scoped");
+        let search_toggle_rule = css_rule(&css, ".reprise-panel-toggle:checked");
+        let normalized_rule = search_toggle_rule
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            normalized_rule.contains("color: @reprise_accent_text_color;"),
+            "the generic checked panel toggle must keep its accent foreground: \
+             {search_toggle_rule}"
+        );
+    }
+
+    fn css_rule<'a>(css: &'a str, selector: &str) -> &'a str {
+        css.split('}')
+            .filter_map(|rule| rule.split_once('{'))
+            .find_map(|(selectors, body)| {
+                selectors
+                    .rsplit("*/")
+                    .next()
+                    .expect("rsplit always yields one segment")
+                    .split(',')
+                    .map(str::trim)
+                    .any(|arm| arm == selector)
+                    .then_some(body)
+            })
+            .unwrap_or_else(|| panic!("CSS rule is present for {selector}"))
     }
 }

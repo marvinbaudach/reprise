@@ -37,7 +37,11 @@ pub(super) fn build() -> WindowHeader {
     let sidebar_toggle = gtk4::ToggleButton::builder()
         .icon_name("sidebar-show-symbolic")
         .tooltip_text(strings::text(strings::SIDEBAR_TOGGLE))
-        .css_classes(["flat", "reprise-panel-toggle"])
+        .css_classes([
+            "flat",
+            "reprise-panel-toggle",
+            crate::ui::style::buttons::COLLAPSE_TOGGLE_CSS_CLASS,
+        ])
         .visible(false)
         .build();
 
@@ -56,5 +60,23 @@ pub(super) fn build() -> WindowHeader {
         sidebar_toggle,
         header,
         scan_button,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gtk4::prelude::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sidebar_panel_toggle_carries_the_collapse_class() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let header = super::build();
+
+        assert!(header
+            .sidebar_toggle
+            .has_css_class(crate::ui::style::buttons::COLLAPSE_TOGGLE_CSS_CLASS));
     }
 }
