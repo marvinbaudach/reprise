@@ -1,6 +1,4 @@
-use crate::db_grandfather::grandfather_network_features;
-use rusqlite::Connection;
-use std::path::Path;
+use {crate::db_grandfather::grandfather_network_features, rusqlite::Connection, std::path::Path};
 
 #[path = "db_handle.rs"]
 mod handle;
@@ -23,7 +21,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 83;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 84;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -763,6 +761,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_sync_log::migrate_v81(conn)?;
     crate::db_sort_indexes::migrate_v82(conn)?;
     crate::db_cover_download::migrate_v83(conn)?;
+    crate::db_cover_download::migrate_v84(conn)?;
     Ok(())
 }
 

@@ -10,6 +10,21 @@ const MB_WEAK: &str = r#"{"releases":[
   {"id":"22222222-2222-2222-2222-222222222222","score":42,
    "title":"Something Else","artist-credit":[{"name":"Other Band"}]}]}"#;
 
+fn matching_releases(album_artist: &str, album: &str, ids: &[&str]) -> String {
+    let releases = ids
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "score": 100,
+                "title": album,
+                "artist-credit": [{"name": album_artist}],
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({"releases": releases}).to_string()
+}
+
 #[test]
 fn cover_failures_project_without_displaying_the_http_status() {
     let error = SourceError::from(musicbrainz::FetchError::HttpStatus(599));
@@ -37,6 +52,27 @@ fn album_key_distinguishes_different_albums() {
 }
 
 #[test]
+fn release_decoration_stripping_removes_exactly_one_trailing_decoration() {
+    for (album, expected) in [
+        ("Leave (Get Out) - Single", Some("Leave (Get Out)")),
+        ("Number[s] (Deluxe Version)", Some("Number[s]")),
+        ("Self Inflicted (Deluxe Edition)", Some("Self Inflicted")),
+        ("Evolve [Explicit]", Some("Evolve")),
+        ("My Forever Drug - Single", Some("My Forever Drug")),
+        ("The Black Crown (2011)", Some("The Black Crown")),
+        ("(What's the Story) Morning Glory?", None),
+        ("Genesi[s]", Some("Genesi")),
+        ("The Wall", None),
+    ] {
+        assert_eq!(
+            strip_release_decoration(album).as_deref(),
+            expected,
+            "unexpected decoration stripping for {album:?}"
+        );
+    }
+}
+
+#[test]
 fn downloaded_dir_is_under_cache_dir() {
     assert!(downloaded_dir().starts_with(crate::cover::cache_dir()));
 }
@@ -56,14 +92,72 @@ fn downloaded_cover_path_finds_an_existing_file_and_none_otherwise() {
 fn parse_best_release_accepts_a_strong_match() {
     assert_eq!(
         parse_best_release(MB_STRONG, "Pink Floyd", "The Wall"),
-        ReleaseSearchResult::Match("11111111-1111-1111-1111-111111111111".to_owned())
+        ReleaseSearchResult::Match(vec!["11111111-1111-1111-1111-111111111111".to_owned()])
     );
+}
+
+#[test]
+fn parse_best_release_keeps_five_matching_releases_in_response_order() {
+    let releases = r#"{"releases":[
+      {"id":"release-3","score":100,"title":"The Wall","artist-credit":[{"name":"Pink Floyd"}]},
+      {"id":"release-1","score":100,"title":"The Wall","artist-credit":[{"name":"Pink Floyd"}]},
+      {"id":"release-5","score":99,"title":"The Wall","artist-credit":[{"name":"Pink Floyd"}]},
+      {"id":"release-2","score":95,"title":"The Wall","artist-credit":[{"name":"Pink Floyd"}]},
+      {"id":"release-4","score":90,"title":"The Wall","artist-credit":[{"name":"Pink Floyd"}]}
+    ]}"#;
+
+    assert_eq!(
+        parse_best_release(releases, "Pink Floyd", "The Wall"),
+        ReleaseSearchResult::Match(vec![
+            "release-3".to_owned(),
+            "release-1".to_owned(),
+            "release-5".to_owned(),
+            "release-2".to_owned(),
+            "release-4".to_owned(),
+        ])
+    );
+}
+
+#[test]
+fn parse_best_release_caps_matching_candidates_at_five() {
+    let releases = matching_releases(
+        "Pink Floyd",
+        "The Wall",
+        &[
+            "release-1",
+            "release-2",
+            "release-3",
+            "release-4",
+            "release-5",
+            "release-6",
+        ],
+    );
+
+    let ReleaseSearchResult::Match(matches) =
+        parse_best_release(&releases, "Pink Floyd", "The Wall")
+    else {
+        panic!("the matching releases should be retained");
+    };
+    assert_eq!(matches.len(), 5);
+    assert_eq!(matches.last().map(String::as_str), Some("release-5"));
 }
 
 #[test]
 fn parse_best_release_rejects_a_weak_match() {
     assert_eq!(
         parse_best_release(MB_WEAK, "Pink Floyd", "The Wall"),
+        ReleaseSearchResult::NoMatch
+    );
+}
+
+#[test]
+fn parse_best_release_rejects_a_strong_match_from_another_artist() {
+    let compilation = r#"{"releases":[
+      {"id":"compilation","score":100,"title":"The Wall","artist-credit":[{"name":"Various Artists"}]}
+    ]}"#;
+
+    assert_eq!(
+        parse_best_release(compilation, "Pink Floyd", "The Wall"),
         ReleaseSearchResult::NoMatch
     );
 }
@@ -102,7 +196,14 @@ fn fetch_returns_cached_path_without_network_when_already_downloaded() {
     std::fs::write(&f, b"img").unwrap();
     // Already cached -> must return it, never touching the network.
     assert_eq!(
-        fetch_and_cache("CachedBand", "CachedAlbum", None, &[]),
+        fetch_and_cache_with(
+            "CachedBand",
+            "CachedAlbum",
+            None,
+            &[],
+            &mut |_| panic!("a cached cover must not search MusicBrainz"),
+            &mut |_| panic!("a cached cover must not reach Cover Art Archive"),
+        ),
         CoverFetchOutcome::Downloaded(f.clone())
     );
     std::fs::remove_file(&f).ok();
@@ -115,10 +216,60 @@ fn fetch_short_circuits_on_negative_marker_without_network() {
     let marker = negative_marker_path(&key);
     std::fs::write(&marker, b"").unwrap();
     assert_eq!(
-        fetch_and_cache("MissBand", "MissAlbum", None, &[]),
+        fetch_and_cache_with(
+            "MissBand",
+            "MissAlbum",
+            None,
+            &[],
+            &mut |_| panic!("a fresh marker must not search MusicBrainz"),
+            &mut |_| panic!("a fresh marker must not reach Cover Art Archive"),
+        ),
         CoverFetchOutcome::NotFound
     );
     std::fs::remove_file(&marker).ok();
+}
+
+#[test]
+fn album_negative_marker_uses_the_one_shot_generation() {
+    let marker = negative_marker_path("album-key");
+
+    assert_eq!(
+        marker.file_name().and_then(|name| name.to_str()),
+        Some("album-key.notfound2")
+    );
+}
+
+#[test]
+fn stale_album_negative_marker_does_not_block_a_new_search() {
+    let album = format!("Stale marker {:016x}", fastrand::u64(..));
+    let key = album_key("Marker Band", &album);
+    let marker = negative_marker_path(&key);
+    std::fs::create_dir_all(downloaded_dir()).unwrap();
+    std::fs::write(&marker, b"").unwrap();
+    let stale = SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
+    std::fs::File::options()
+        .write(true)
+        .open(&marker)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(stale))
+        .unwrap();
+    let mut mb_calls = 0;
+
+    let outcome = fetch_and_cache_with(
+        "Marker Band",
+        &album,
+        None,
+        &[],
+        &mut |_| {
+            mb_calls += 1;
+            Some(r#"{"releases":[]}"#.to_owned())
+        },
+        &mut |_| panic!("a definitive search miss must not reach Cover Art Archive"),
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert_eq!(mb_calls, 1);
+    std::fs::remove_file(marker).ok();
 }
 
 #[test]
@@ -161,6 +312,221 @@ fn definitive_album_miss_writes_a_negative_marker() {
 }
 
 #[test]
+fn candidate_walk_downloads_from_the_first_release_with_art() {
+    let album = format!("Candidate fallback {:016x}", fastrand::u64(..));
+    let key = album_key("Candidate Band", &album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Candidate Band", &album, &["no-art", "has-art"]);
+    let mut requested = Vec::new();
+
+    let outcome = fetch_and_cache_with(
+        "Candidate Band",
+        &album,
+        None,
+        &[],
+        &mut |_| Some(body.clone()),
+        &mut |url| {
+            requested.push(url.to_owned());
+            if url == caa_front_url("has-art") {
+                CaaFetchResult::Found(b"art".to_vec(), "jpg")
+            } else {
+                CaaFetchResult::NotFound
+            }
+        },
+    );
+
+    let CoverFetchOutcome::Downloaded(path) = outcome else {
+        panic!("the second release should supply the cover");
+    };
+    assert_eq!(
+        requested,
+        [caa_front_url("no-art"), caa_front_url("has-art")]
+    );
+    assert!(!marker.exists());
+    std::fs::remove_file(path).ok();
+}
+
+#[test]
+fn candidate_walk_writes_one_marker_after_every_release_is_missing() {
+    let album = format!("All candidates missing {:016x}", fastrand::u64(..));
+    let key = album_key("Candidate Band", &album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Candidate Band", &album, &["missing-1", "missing-2"]);
+    let mut caa_calls = 0;
+
+    let outcome = fetch_and_cache_with(
+        "Candidate Band",
+        &album,
+        None,
+        &[],
+        &mut |_| Some(body.clone()),
+        &mut |_| {
+            caa_calls += 1;
+            CaaFetchResult::NotFound
+        },
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert_eq!(caa_calls, 2);
+    assert!(marker.exists());
+    std::fs::remove_file(marker).ok();
+}
+
+#[test]
+fn candidate_walk_continues_after_a_transient_failure_and_downloads_art() {
+    let album = format!("Transient then art {:016x}", fastrand::u64(..));
+    let key = album_key("Candidate Band", &album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Candidate Band", &album, &["transient", "has-art"]);
+
+    let outcome = fetch_and_cache_with(
+        "Candidate Band",
+        &album,
+        None,
+        &[],
+        &mut |_| Some(body.clone()),
+        &mut |url| {
+            if url == caa_front_url("has-art") {
+                CaaFetchResult::Found(b"art".to_vec(), "jpg")
+            } else {
+                CaaFetchResult::TransientFailure
+            }
+        },
+    );
+
+    let CoverFetchOutcome::Downloaded(path) = outcome else {
+        panic!("a later candidate should recover from the transient failure");
+    };
+    assert!(!marker.exists());
+    std::fs::remove_file(path).ok();
+}
+
+#[test]
+fn candidate_walk_keeps_a_transient_failure_retryable_after_clean_misses() {
+    let album = format!("Transient then missing {:016x}", fastrand::u64(..));
+    let key = album_key("Candidate Band", &album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Candidate Band", &album, &["transient", "missing"]);
+    let mut caa_calls = 0;
+
+    let outcome = fetch_and_cache_with(
+        "Candidate Band",
+        &album,
+        None,
+        &[],
+        &mut |_| Some(body.clone()),
+        &mut |url| {
+            caa_calls += 1;
+            if url == caa_front_url("transient") {
+                CaaFetchResult::TransientFailure
+            } else {
+                CaaFetchResult::NotFound
+            }
+        },
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::TransientFailure);
+    assert_eq!(caa_calls, 2);
+    assert!(!marker.exists());
+}
+
+#[test]
+fn strict_search_match_never_issues_a_stripped_fallback() {
+    let album = "Songs (Live)";
+    let key = album_key("Strict Band", album);
+    let marker = negative_marker_path(&key);
+    let body = matching_releases("Strict Band", album, &["strict-match"]);
+    let mut mb_urls = Vec::new();
+
+    let outcome = fetch_and_cache_with(
+        "Strict Band",
+        album,
+        None,
+        &[],
+        &mut |url| {
+            mb_urls.push(url.to_owned());
+            Some(body.clone())
+        },
+        &mut |_| CaaFetchResult::Found(b"art".to_vec(), "jpg"),
+    );
+
+    let CoverFetchOutcome::Downloaded(path) = outcome else {
+        panic!("the strict match should download");
+    };
+    assert_eq!(mb_urls, [musicbrainz_search_url("Strict Band", album)]);
+    assert!(!marker.exists());
+    std::fs::remove_file(path).ok();
+}
+
+#[test]
+fn stripped_search_fallback_uses_the_stripped_title_for_query_and_comparison() {
+    let album = format!("Evolve {:016x} [Explicit]", fastrand::u64(..));
+    let stripped = strip_release_decoration(&album).unwrap();
+    let raw_key = album_key("Fallback Band", &album);
+    let marker = negative_marker_path(&raw_key);
+    let body = matching_releases("Fallback Band", &stripped, &["stripped-match"]);
+    let mut mb_urls = Vec::new();
+
+    let outcome = fetch_and_cache_with(
+        "Fallback Band",
+        &album,
+        None,
+        &[],
+        &mut |url| {
+            mb_urls.push(url.to_owned());
+            if mb_urls.len() == 1 {
+                Some(r#"{"releases":[]}"#.to_owned())
+            } else {
+                Some(body.clone())
+            }
+        },
+        &mut |_| CaaFetchResult::Found(b"art".to_vec(), "jpg"),
+    );
+
+    let CoverFetchOutcome::Downloaded(path) = outcome else {
+        panic!("the stripped fallback should download");
+    };
+    assert_eq!(
+        mb_urls,
+        [
+            musicbrainz_search_url("Fallback Band", &album),
+            musicbrainz_search_url("Fallback Band", &stripped),
+        ]
+    );
+    assert_eq!(
+        path.file_stem().and_then(|stem| stem.to_str()),
+        Some(raw_key.as_str())
+    );
+    assert!(!marker.exists());
+    std::fs::remove_file(path).ok();
+}
+
+#[test]
+fn undecorated_search_miss_issues_one_request_and_writes_a_marker() {
+    let album = format!("Undecorated miss {:016x}", fastrand::u64(..));
+    let key = album_key("Missing Band", &album);
+    let marker = negative_marker_path(&key);
+    let mut mb_calls = 0;
+
+    let outcome = fetch_and_cache_with(
+        "Missing Band",
+        &album,
+        None,
+        &[],
+        &mut |_| {
+            mb_calls += 1;
+            Some(r#"{"releases":[]}"#.to_owned())
+        },
+        &mut |_| panic!("a definitive search miss must not reach Cover Art Archive"),
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert_eq!(mb_calls, 1);
+    assert!(marker.exists());
+    std::fs::remove_file(marker).ok();
+}
+
+#[test]
 fn only_caa_not_found_is_a_clean_http_miss() {
     assert!(is_clean_caa_miss(404));
     assert!(!is_clean_caa_miss(500));
@@ -179,21 +545,21 @@ fn nr_2a_missing_cover_uses_fallback_tile() {
 }
 
 #[test]
-fn release_group_cover_state_distinguishes_cached_known_missing_and_unknown() {
+fn cover_state_distinguishes_cached_known_missing_and_unknown() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000_000);
     let cached_path = PathBuf::from("/isolated/release-cover.png");
     assert_eq!(
-        release_group_cover_state_from(Some(cached_path.clone()), None, now),
+        cover_state_from(Some(cached_path.clone()), None, now),
         CoverState::Cached(cached_path.clone())
     );
 
     let modified = now - Duration::from_secs(60);
     assert_eq!(
-        release_group_cover_state_from(None, Some(modified), now),
+        cover_state_from(None, Some(modified), now),
         CoverState::KnownMissing
     );
     assert_eq!(
-        release_group_cover_state_from(
+        cover_state_from(
             None,
             Some(modified),
             modified + NEGATIVE_MARKER_MAX_AGE + Duration::from_secs(1),

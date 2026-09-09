@@ -375,7 +375,7 @@ fn mtime_nanos(path: &Path) -> u128 {
 /// had settled without a resolution behind it was indistinguishable from "this
 /// track has no cover" — both are an empty answer line — so those entries have
 /// to be discarded rather than believed.
-const RESOLUTION_FORMAT: u32 = 3;
+const RESOLUTION_FORMAT: u32 = 4;
 
 /// What has to stay the same for a remembered resolution to still be true.
 ///

@@ -17,14 +17,19 @@ pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "b
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 
-/// How long a release-group negative cover marker blocks a network re-fetch.
-/// Unlike the album path (permanent negative cache), release-group covers can
-/// appear on the Cover Art Archive after the fact, so a stale 404 gets
-/// rechecked instead of being cached forever.
+/// How long an album or release-group negative cover marker blocks a re-fetch.
+/// Covers can appear on the Cover Art Archive after the fact, so a stale 404
+/// gets rechecked instead of being cached forever.
 const NEGATIVE_MARKER_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+/// One-shot invalidation for negative markers created before self-healing TTLs.
+/// Do not bump this again: future stale markers must be retired by the TTL, and
+/// a need for another generation means that mechanism should be investigated.
+const NEGATIVE_MARKER_GENERATION: u32 = 2;
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
+const MAX_RELEASE_CANDIDATES: usize = 5;
 
 impl From<&musicbrainz::FetchError> for SourceErrorKind {
     fn from(error: &musicbrainz::FetchError) -> Self {
@@ -109,9 +114,9 @@ fn downloaded_cover_path_from_dir(dir: &Path, key: &str) -> Option<PathBuf> {
         .find(|p| p.exists())
 }
 
-/// Marker written when a lookup found nothing — stops re-querying that album.
+/// Marker written when a lookup found nothing — temporarily stops re-querying.
 pub fn negative_marker_path(key: &str) -> PathBuf {
-    downloaded_dir().join(format!("{key}.notfound"))
+    downloaded_dir().join(format!("{key}.notfound{NEGATIVE_MARKER_GENERATION}"))
 }
 
 pub(crate) fn musicbrainz_search_url(album_artist: &str, album: &str) -> String {
@@ -155,6 +160,28 @@ pub(crate) fn escape_lucene(value: &str) -> String {
     escaped
 }
 
+fn strip_release_decoration(album: &str) -> Option<String> {
+    let album = album.trim();
+    if let Some((title, suffix)) = album.rsplit_once('-') {
+        if matches!(suffix.trim().to_ascii_lowercase().as_str(), "single" | "ep") {
+            let title = title.trim_end();
+            if !title.is_empty() {
+                return Some(title.to_owned());
+            }
+            return None;
+        }
+    }
+
+    let opening = match album.chars().last() {
+        Some(')') => '(',
+        Some(']') => '[',
+        _ => return None,
+    };
+    let opening_index = album.rfind(opening)?;
+    let title = album[..opening_index].trim_end();
+    (!title.is_empty()).then(|| title.to_owned())
+}
+
 pub(crate) fn caa_front_url(mbid: &str) -> String {
     format!("https://coverartarchive.org/release/{mbid}/front")
 }
@@ -170,8 +197,8 @@ fn release_group_key(mbid: &str) -> String {
     cover::hash_hex(format!("release-group\u{1}{}", mbid.trim()).as_bytes())
 }
 
-/// Does an existing release-group negative marker still block a network
-/// re-fetch? Only while it's fresh (younger than `NEGATIVE_MARKER_MAX_AGE`).
+/// Does an existing negative marker still block a network re-fetch? Only while
+/// it's fresh (younger than `NEGATIVE_MARKER_MAX_AGE`).
 /// A marker with no known mtime doesn't block; a marker whose mtime is in
 /// the future (clock skew) is treated as fresh.
 fn negative_marker_blocks(marker_modified: Option<SystemTime>, now: SystemTime) -> bool {
@@ -197,10 +224,18 @@ fn release_group_cover_state_at(mbid: &str, now: SystemTime) -> CoverState {
     let marker_modified = std::fs::metadata(negative_marker_path(&key))
         .and_then(|metadata| metadata.modified())
         .ok();
-    release_group_cover_state_from(cached, marker_modified, now)
+    cover_state_from(cached, marker_modified, now)
 }
 
-fn release_group_cover_state_from(
+fn album_cover_state_at(key: &str, now: SystemTime) -> CoverState {
+    let cached = downloaded_cover_path(key);
+    let marker_modified = std::fs::metadata(negative_marker_path(key))
+        .and_then(|metadata| metadata.modified())
+        .ok();
+    cover_state_from(cached, marker_modified, now)
+}
+
+fn cover_state_from(
     cached: Option<PathBuf>,
     marker_modified: Option<SystemTime>,
     now: SystemTime,
@@ -242,7 +277,7 @@ where
 
 #[derive(Debug, PartialEq, Eq)]
 enum ReleaseSearchResult {
-    Match(String),
+    Match(Vec<String>),
     NoMatch,
     Malformed,
 }
@@ -261,6 +296,7 @@ fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSea
         return ReleaseSearchResult::Malformed;
     };
     let (want_artist, want_album) = (norm(album_artist), norm(album));
+    let mut matches = Vec::new();
     for r in releases {
         let score = r
             .get("score")
@@ -284,10 +320,17 @@ fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSea
             let Some(id) = r.get("id").and_then(serde_json::Value::as_str) else {
                 return ReleaseSearchResult::Malformed;
             };
-            return ReleaseSearchResult::Match(id.to_owned());
+            matches.push(id.to_owned());
+            if matches.len() == MAX_RELEASE_CANDIDATES {
+                break;
+            }
         }
     }
-    ReleaseSearchResult::NoMatch
+    if matches.is_empty() {
+        ReleaseSearchResult::NoMatch
+    } else {
+        ReleaseSearchResult::Match(matches)
+    }
 }
 
 pub fn fetch_and_cache(
@@ -319,45 +362,69 @@ where
     C: FnMut(&str) -> CaaFetchResult,
 {
     let key = album_key(album_artist, album);
-    // 1. Already resolved (positive or negative) -> no network.
-    if let Some(existing) = downloaded_cover_path(&key) {
-        return CoverFetchOutcome::Downloaded(existing);
-    }
-    if negative_marker_path(&key).exists() {
-        return CoverFetchOutcome::NotFound;
+    // 1. Already resolved by a cached cover or a fresh marker -> no network.
+    match album_cover_state_at(&key, SystemTime::now()) {
+        CoverState::Cached(path) => return CoverFetchOutcome::Downloaded(path),
+        CoverState::KnownMissing => return CoverFetchOutcome::NotFound,
+        CoverState::Unknown => {}
     }
     // 2. Resolve a release MBID: embedded first, else conservative search.
-    let release_mbid = match mbid {
-        Some(id) if !id.is_empty() => id.to_string(),
+    let release_mbids = match mbid {
+        Some(id) if !id.is_empty() => vec![id.to_string()],
         _ => {
             let Some(body) = mb_fetch(&musicbrainz_search_url(album_artist, album)) else {
                 return CoverFetchOutcome::TransientFailure;
             };
             match parse_best_release(&body, album_artist, album) {
-                ReleaseSearchResult::Match(id) => id,
+                ReleaseSearchResult::Match(ids) => ids,
                 ReleaseSearchResult::NoMatch => {
-                    write_negative(&key);
-                    return CoverFetchOutcome::NotFound;
+                    let Some(stripped) = strip_release_decoration(album) else {
+                        write_negative(&key);
+                        return CoverFetchOutcome::NotFound;
+                    };
+                    let Some(body) = mb_fetch(&musicbrainz_search_url(album_artist, &stripped))
+                    else {
+                        return CoverFetchOutcome::TransientFailure;
+                    };
+                    match parse_best_release(&body, album_artist, &stripped) {
+                        ReleaseSearchResult::Match(ids) => ids,
+                        ReleaseSearchResult::NoMatch => {
+                            write_negative(&key);
+                            return CoverFetchOutcome::NotFound;
+                        }
+                        ReleaseSearchResult::Malformed => {
+                            return CoverFetchOutcome::TransientFailure;
+                        }
+                    }
                 }
                 ReleaseSearchResult::Malformed => return CoverFetchOutcome::TransientFailure,
             }
         }
     };
-    // 3. Fetch the CAA front cover (follows the 302 to the image).
-    let (bytes, ext) = match caa_fetch(&caa_front_url(&release_mbid)) {
-        CaaFetchResult::Found(bytes, ext) => (bytes, ext),
-        CaaFetchResult::NotFound => {
-            write_negative(&key);
-            return CoverFetchOutcome::NotFound;
+    // 3. Walk matching releases until CAA has a front cover. A transient
+    // failure never turns a later definitive miss into a negative marker.
+    let mut saw_transient_failure = false;
+    for release_mbid in release_mbids {
+        match caa_fetch(&caa_front_url(&release_mbid)) {
+            CaaFetchResult::Found(bytes, ext) => {
+                // Publish atomically under the download cache, then best-effort
+                // beside the album tracks. Folder writeback never changes
+                // download success.
+                return store_album_downloaded(&key, &bytes, ext, album_dirs).map_or(
+                    CoverFetchOutcome::TransientFailure,
+                    CoverFetchOutcome::Downloaded,
+                );
+            }
+            CaaFetchResult::NotFound => {}
+            CaaFetchResult::TransientFailure => saw_transient_failure = true,
         }
-        CaaFetchResult::TransientFailure => return CoverFetchOutcome::TransientFailure,
-    };
-    // 4. Publish atomically under the download cache, then best-effort beside
-    // the album tracks. Folder writeback never changes download success.
-    store_album_downloaded(&key, &bytes, ext, album_dirs).map_or(
-        CoverFetchOutcome::TransientFailure,
-        CoverFetchOutcome::Downloaded,
-    )
+    }
+    if saw_transient_failure {
+        CoverFetchOutcome::TransientFailure
+    } else {
+        write_negative(&key);
+        CoverFetchOutcome::NotFound
+    }
 }
 
 /// A rate-limited MusicBrainz GET returning the response body as text.
