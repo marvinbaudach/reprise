@@ -189,17 +189,23 @@ impl MinimalView {
             compact_window.add_css_class(CSS_WINDOW_CLASS);
             set_container_passthrough(compact_root, &compact_window, true);
             apply_compact_metrics(&compact_window);
+            let closing = Rc::new(Cell::new(false));
             let library_window = window.downgrade();
+            let closing_from_compact = closing.clone();
             compact_window.connect_close_request(move |_| {
-                if let Some(library_window) = library_window.upgrade() {
-                    library_window.close();
+                if !closing_from_compact.replace(true) {
+                    if let Some(library_window) = library_window.upgrade() {
+                        library_window.close();
+                    }
                 }
                 gtk4::glib::Propagation::Proceed
             });
             let compact_window_weak = compact_window.downgrade();
             window.connect_close_request(move |_| {
-                if let Some(compact_window) = compact_window_weak.upgrade() {
-                    compact_window.destroy();
+                if !closing.replace(true) {
+                    if let Some(compact_window) = compact_window_weak.upgrade() {
+                        compact_window.destroy();
+                    }
                 }
                 gtk4::glib::Propagation::Proceed
             });

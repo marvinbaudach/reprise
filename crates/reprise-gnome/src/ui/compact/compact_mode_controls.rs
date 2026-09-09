@@ -198,6 +198,7 @@ pub(in crate::ui) fn install(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
@@ -469,6 +470,77 @@ mod tests {
         let _ = window_manager.kill();
         let _ = window_manager.wait();
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn quitting_from_compact_persists_the_visible_library_size() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.CompactGeometrySaveTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::builder()
+            .application(&app)
+            .default_width(900)
+            .default_height(600)
+            .build();
+        let compact = CompactPlayer::new();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let mode = MinimalView::new(
+            &window,
+            Some(&compact),
+            conn.clone(),
+            ViewTransition {
+                mode: WindowViewMode::Library,
+                layout: CompactLayout::Card,
+            },
+            Rc::new(|_| {}),
+        );
+        let tracked = Rc::new(Cell::new((900, 600, false)));
+        crate::ui::session_restore::wire_geometry_tracking(&window, &tracked);
+        let conn_for_close = conn.clone();
+        let saved = Rc::new(Cell::new(false));
+        let saved_from_close = saved.clone();
+        window.connect_close_request(move |window| {
+            let live = (window.width(), window.height(), window.is_maximized());
+            let (width, height, maximized) =
+                crate::ui::session_restore::geometry_for_save(tracked.get(), live);
+            let state = reprise_core::library::session::SessionState {
+                window_width: width,
+                window_height: height,
+                maximized,
+                ..Default::default()
+            };
+            reprise_core::library::session::save(&conn_for_close, &state).unwrap();
+            saved_from_close.set(true);
+            glib::Propagation::Proceed
+        });
+        mode.apply_initial();
+        wait_for("library allocated", || {
+            window.width() > 0 && window.height() > 0
+        });
+        let xid = x11_window_id(&window);
+        xdotool(&["windowsize", "--sync", &xid, "987", "654"]);
+        wait_for("library resized", || {
+            (window.width(), window.height()) != (900, 600)
+        });
+        while glib::MainContext::default().iteration(false) {}
+        let visible_size = (window.width(), window.height());
+
+        mode.toggle();
+        wait_for("compact visible", || !window.is_visible());
+        mode.compact_window().unwrap().close();
+        wait_for("session saved", || saved.get());
+
+        let persisted = reprise_core::library::session::load(&conn);
+        assert_eq!(
+            (persisted.window_width, persisted.window_height),
+            visible_size
+        );
+        assert!(!persisted.maximized);
     }
 
     fn test_split_view() -> adw::NavigationSplitView {

@@ -115,7 +115,6 @@ pub(super) fn wire_close(
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     loaded: &SessionState,
-    _geometry_suppressed: &Rc<Cell<bool>>,
     nav_history: &Rc<crate::ui::nav_history::NavHistory>,
 ) {
     let geometry = Rc::new(Cell::new((
@@ -196,7 +195,13 @@ pub(super) fn arm_seed_close(window: &adw::ApplicationWindow) {
     });
 }
 
-fn wire_geometry_tracking(window: &adw::ApplicationWindow, geometry: &Rc<Cell<(i32, i32, bool)>>) {
+pub(in crate::ui) fn wire_geometry_tracking(
+    window: &adw::ApplicationWindow,
+    geometry: &Rc<Cell<(i32, i32, bool)>>,
+) {
+    // Measured on GTK 4.22: while a 900 x 640 window was maximized at
+    // 1728 x 1048, default_size() still returned 900 x 640. Track the real
+    // GdkSurface dimensions so later saves do not rely on that stale default.
     let geometry_for_realize = geometry.clone();
     window.connect_realize(move |window| {
         let Some(surface) = window.surface() else {
@@ -238,11 +243,16 @@ fn wire_geometry_tracking(window: &adw::ApplicationWindow, geometry: &Rc<Cell<(i
     });
 }
 
-fn geometry_for_save(tracked: (i32, i32, bool), live: (i32, i32, bool)) -> (i32, i32, bool) {
+pub(in crate::ui) fn geometry_for_save(
+    tracked: (i32, i32, bool),
+    live: (i32, i32, bool),
+) -> (i32, i32, bool) {
     if live.2 {
         (tracked.0, tracked.1, true)
-    } else {
+    } else if live.0 > 0 && live.1 > 0 {
         live
+    } else {
+        (tracked.0, tracked.1, false)
     }
 }
 
@@ -485,6 +495,10 @@ mod tests {
         assert_eq!(
             geometry_for_save((1200, 800, true), (1920, 1080, true)),
             (1200, 800, true)
+        );
+        assert_eq!(
+            geometry_for_save((987, 654, false), (0, 0, false)),
+            (987, 654, false)
         );
     }
 

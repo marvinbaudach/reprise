@@ -419,7 +419,6 @@ pub fn build(
             }
         }));
     }
-    let geometry_guard = Rc::new(Cell::new(false));
     let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
         conn,
         &cover_download,
@@ -506,7 +505,6 @@ pub fn build(
         library_player_bar: &library_player_bar,
         info_panel: &info_panel,
         session_state: &session_state,
-        geometry_guard: &geometry_guard,
         scan_button: &scan_button,
         minimal_view: &minimal_view,
         preferences: &preferences,

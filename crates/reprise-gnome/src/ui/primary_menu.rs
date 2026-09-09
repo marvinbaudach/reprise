@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
+use gtk4::prelude::{GtkApplicationExt, GtkWindowExt};
 use libadwaita as adw;
 
 use crate::ui::strings;
@@ -179,7 +180,7 @@ pub(super) fn install(
         minimal.connect_activate(move |_, _| cb());
     }
     window.add_action(&minimal);
-    arm_smoke_minimal_view(&minimal);
+    arm_smoke_minimal_view(window, &minimal);
 
     let library_doctor = gio::SimpleAction::new(ACTION_LIBRARY_DOCTOR, None);
     {
@@ -250,7 +251,7 @@ pub(super) fn install(
     window.add_action(&about);
 }
 
-fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
+fn arm_smoke_minimal_view(window: &adw::ApplicationWindow, action: &gio::SimpleAction) {
     let Ok(mode) = std::env::var(SMOKE_MINIMAL_VIEW_ENV_VAR) else {
         return;
     };
@@ -278,9 +279,12 @@ fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
             }
         }
         let quit_after = settle_s + cycles * 2 * gap_s + gap_s;
-        glib::timeout_add_seconds_local_once(quit_after, || {
+        let app = window.application().map(|app| app.downgrade());
+        glib::timeout_add_seconds_local_once(quit_after, move || {
             tracing::info!(target: "measure", "smoke:quit");
-            std::process::exit(0);
+            if let Some(window) = app.and_then(|app| app.upgrade()?.active_window()) {
+                window.close();
+            }
         });
         return;
     }
