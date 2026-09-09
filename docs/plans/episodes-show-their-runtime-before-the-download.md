@@ -2,7 +2,7 @@
 slug: episodes-show-their-runtime-before-the-download
 worktree: /home/marvin/Projects/reprise-episodes-show-their-runtime-before-the-download
 branch: feature/episodes-show-their-runtime-before-the-download
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-07
 ---
