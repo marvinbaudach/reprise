@@ -2,7 +2,7 @@
 slug: the-mini-play-button-follows-the-appearance
 worktree: /home/marvin/Projects/reprise-the-mini-play-button-follows-the-appearance
 branch: feature/the-mini-play-button-follows-the-appearance
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-09
 ---
