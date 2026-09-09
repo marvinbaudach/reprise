@@ -59,7 +59,11 @@ fn release_decoration_stripping_removes_exactly_one_trailing_decoration() {
         ("Self Inflicted (Deluxe Edition)", Some("Self Inflicted")),
         ("Evolve [Explicit]", Some("Evolve")),
         ("My Forever Drug - Single", Some("My Forever Drug")),
+        ("Album – Single", Some("Album")),
+        ("Album — EP", Some("Album")),
+        ("X-Single", None),
         ("The Black Crown (2011)", Some("The Black Crown")),
+        ("Mixtape (Vol. 1) Part 2)", None),
         ("(What's the Story) Morning Glory?", None),
         ("Genesi[s]", Some("Genesi")),
         ("The Wall", None),
@@ -115,6 +119,19 @@ fn parse_best_release_keeps_five_matching_releases_in_response_order() {
             "release-2".to_owned(),
             "release-4".to_owned(),
         ])
+    );
+}
+
+#[test]
+fn parse_best_release_keeps_an_earlier_match_when_a_later_match_has_no_id() {
+    let releases = r#"{"releases":[
+      {"id":"release-with-id","score":100,"title":"The Wall","artist-credit":[{"name":"Pink Floyd"}]},
+      {"score":100,"title":"The Wall","artist-credit":[{"name":"Pink Floyd"}]}
+    ]}"#;
+
+    assert_eq!(
+        parse_best_release(releases, "Pink Floyd", "The Wall"),
+        ReleaseSearchResult::Match(vec!["release-with-id".to_owned()])
     );
 }
 
@@ -181,6 +198,10 @@ fn urls_are_well_formed() {
     assert_eq!(
         caa_front_url("11111111-1111-1111-1111-111111111111"),
         "https://coverartarchive.org/release/11111111-1111-1111-1111-111111111111/front"
+    );
+    assert_eq!(
+        caa_front_url("release id/with?delimiters"),
+        "https://coverartarchive.org/release/release%20id%2Fwith%3Fdelimiters/front"
     );
     assert_eq!(
         caa_release_group_front_url("11111111-1111-1111-1111-111111111111"),
