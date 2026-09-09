@@ -4315,15 +4315,18 @@ STYLE-1).
   pixels: below the rate at which it reads as moving at all, which is what was
   reported from use. The rate carries most of the correction and the disc's
   resting opacity the rest: the approved dark arm turns in 25 seconds and rises
-  from 0.34 to 0.48, while the light arm turns in 40 seconds and rests at 0.40.
+  from 0.34 to 0.48, while the light arm is a placeholder pending the owner's
+  live re-tuning in front of the running app: it turns in 40 seconds and rests
+  at 0.40.
   The lighter arm is quieter because the denser light-mode bloom and the higher
   contrast of a dark disc on light ground already make the same motion more
   salient. The dark arm makes the wash around the cover about 41 % denser at
   rest, accepted for that price: motion and resting brightness share one factor
   here and cannot be bought apart. The
-  reactive terms are unchanged and still mirror the backdrop's slope, so the
-  music shows through exactly as much as before. On greyscale and near-black
-  artwork the disc stays faint, accepted for the same measured reason the
+  reactive terms are unchanged in both themes: in dark they still mirror the
+  backdrop's own 0.15 / 0.16 slope, while in light the backdrop has already
+  widened to 0.26 / 0.24 and the disc remains at 0.14 / 0.16. On greyscale and
+  near-black artwork the disc stays faint, accepted for the same measured reason the
   palette sweep was rejected in the first place. The lift is
   two cached shadow layers
   whose opacities cross-fade with the composite coverage held constant —
