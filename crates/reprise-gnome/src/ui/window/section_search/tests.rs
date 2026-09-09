@@ -46,7 +46,7 @@ fn harness() -> Harness {
                 if scope != SearchScope::Tracks {
                     return;
                 }
-                track_filter_layout.replace_scoped_search(SearchScope::Tracks, query, || {});
+                track_filter_layout.replace_search_chip(query, || {});
             },
             move || cleared.borrow_mut().push(scope),
         );
@@ -75,14 +75,8 @@ impl Drop for Harness {
     }
 }
 
-fn track_chip_label(harness: &Harness) -> Option<String> {
-    harness
-        .track_filter_layout
-        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)?
-        .downcast::<gtk4::Button>()
-        .ok()?
-        .label()
-        .map(|label| label.to_string())
+fn track_chip_value(harness: &Harness) -> Option<String> {
+    harness.track_filter_layout.search_chip_value()
 }
 
 fn settle() {
@@ -226,10 +220,7 @@ fn search_8a_drilling_into_an_artist_place_keeps_query_and_chip_then_back_restor
     settle();
 
     assert_eq!(harness.entry.text(), "falling");
-    assert_eq!(
-        track_chip_label(&harness).as_deref(),
-        Some("⌕ “falling” in track, artist and album  ×")
-    );
+    assert_eq!(track_chip_value(&harness).as_deref(), Some("falling"));
 
     let restored = history
         .go_back_from(artist.browser_place().clone())
@@ -253,10 +244,7 @@ fn search_8a_drilling_into_an_artist_place_keeps_query_and_chip_then_back_restor
 
     assert_eq!(harness.entry.text(), "falling");
     assert_eq!(restored_state.browse.genre.as_deref(), Some("Metalcore"));
-    assert_eq!(
-        track_chip_label(&harness).as_deref(),
-        Some("⌕ “falling” in track, artist and album  ×")
-    );
+    assert_eq!(track_chip_value(&harness).as_deref(), Some("falling"));
 }
 
 // UX SEARCH-8a: while a view stays active, its query reaches that view and

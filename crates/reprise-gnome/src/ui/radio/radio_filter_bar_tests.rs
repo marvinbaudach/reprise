@@ -140,8 +140,7 @@ fn search_4a_radio_escape_and_chip_share_the_section_clear_path() {
     bar.set_query("nova");
     bar.set_committed_query("nova");
     bar.layout
-        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-        .and_downcast::<gtk4::Button>()
+        .search_chip_remove_button()
         .expect("Radio search chip")
         .emit_clicked();
     bar.layout.assert_search_cleared(&bar.filter().query);
@@ -176,15 +175,11 @@ fn fil_2a_radio_fills_filters_count_and_clear_slots_in_order() {
         crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
         &bar.clear_all
     ));
-    let first = bar
+    assert!(bar
         .layout
         .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-        .expect("search chip");
-    assert!(first
-        .downcast::<gtk4::Button>()
-        .ok()
-        .and_then(|button| button.label())
-        .is_some_and(|label| label.starts_with('⌕')));
+        .is_some());
+    assert_eq!(bar.layout.search_chip_value().as_deref(), Some("nova"));
     assert!(bar.add_filter.has_css_class("pill"));
     assert!(bar.clear_all.is_visible());
 }

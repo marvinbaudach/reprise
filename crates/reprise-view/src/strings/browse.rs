@@ -20,9 +20,7 @@ pub const UNKNOWN_ALBUM: &str = N_!("Unknown album");
 pub const UNKNOWN_YEAR: &str = N_!("Unknown year");
 pub const UNKNOWN_RATING: &str = N_!("Unrated");
 
-const CHIP_LABEL: &str = N_!("{facet}: {value}");
 const REMOVE_FILTER_LABEL: &str = N_!("Remove {facet} filter: {value}");
-const SEARCH_CHIP_LABEL_IN: &str = N_!("⌕ “{query}” in {scope}");
 const SEARCHES_SCOPE: &str = N_!("Searches {scope}");
 const SEARCH_FIELDS_ANY_FIELD: &str = N_!("any field");
 const SEARCH_FIELDS_TRACKS: &str = N_!("track, artist and album");
@@ -42,31 +40,11 @@ const FILTERED_TRACKS: (&str, &str) = plural(
     "{filtered} of {total} tracks",
 );
 
-pub fn chip_label(facet: &str, value: &str) -> Message {
-    Message {
-        id: CHIP_LABEL,
-        plural: None,
-        args: vec![("facet", facet.to_owned()), ("value", value.to_owned())],
-    }
-}
-
 pub fn remove_filter_label(facet: &str, value: &str) -> Message {
     Message {
         id: REMOVE_FILTER_LABEL,
         plural: None,
         args: vec![("facet", facet.to_owned()), ("value", value.to_owned())],
-    }
-}
-
-/// FIL-1d: the search chip names the fields its own view actually reads.
-pub fn search_chip_label_in(scope: SearchScope, query: &str) -> Message {
-    Message {
-        id: SEARCH_CHIP_LABEL_IN,
-        plural: None,
-        args: vec![
-            ("query", query.to_owned()),
-            ("scope", search_fields(scope).to_owned()),
-        ],
     }
 }
 
@@ -194,14 +172,6 @@ mod tests {
             ]
         );
         assert_eq!(
-            chip_label("Genre", "Metal"),
-            Message {
-                id: "{facet}: {value}",
-                plural: None,
-                args: vec![("facet", "Genre".to_owned()), ("value", "Metal".to_owned()),],
-            }
-        );
-        assert_eq!(
             remove_filter_label("Genre", "Metal"),
             Message {
                 id: "Remove {facet} filter: {value}",
@@ -213,19 +183,9 @@ mod tests {
         assert_eq!(leave_place_label("Lorna Shore").id, "Leave {place}");
     }
 
-    // UX FIL-1d: the chip names the fields the view reads.
-    #[test]
-    fn fil_1d_search_chip_msgid_follows_the_scope() {
-        assert_eq!(
-            search_chip_label_in(SearchScope::Podcasts, "wer").args,
-            vec![
-                ("query", "wer".to_owned()),
-                ("scope", "episode titles".to_owned()),
-            ]
-        );
-    }
-
-    // UX SEARCH-2c: the popover caption names the same fields as the chip.
+    // UX SEARCH-2c: the popover caption names the fields the view reads. FIL-1d
+    // used to repeat this on the chip itself; the chip now shows only the bare
+    // query, and this caption is where the promise lives.
     #[test]
     fn search_2c_scope_caption_names_the_fields_of_its_view() {
         let cases = [

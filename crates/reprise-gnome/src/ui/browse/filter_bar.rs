@@ -414,12 +414,11 @@ impl<M: FilterModel> FilterBar<M> {
     fn rebuild_search(self: &Rc<Self>) {
         let query = self.committed_query.borrow().clone();
         let weak = Rc::downgrade(self);
-        self.layout
-            .replace_scoped_search(self.model.search_scope(), &query, move || {
-                if let Some(bar) = weak.upgrade() {
-                    bar.request_search_clear();
-                }
-            });
+        self.layout.replace_search_chip(&query, move || {
+            if let Some(bar) = weak.upgrade() {
+                bar.request_search_clear();
+            }
+        });
     }
 
     fn rebuild_chips(self: &Rc<Self>) {

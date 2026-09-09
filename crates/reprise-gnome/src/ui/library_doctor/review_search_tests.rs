@@ -326,12 +326,13 @@ fn doc_12a_a_committed_query_renders_exactly_one_chip() {
         .unwrap();
     let chip = search_slot.first_child().unwrap();
     assert!(chip.next_sibling().is_none());
-    assert!(chip
-        .downcast::<gtk4::Button>()
-        .unwrap()
-        .label()
-        .unwrap()
-        .contains("second"));
+    let value = crate::ui::filter_bar_chip::child_with_css_class(
+        &chip,
+        crate::ui::filter_bar_chip::CHIP_VALUE_CSS_CLASS,
+    )
+    .and_downcast::<gtk4::Label>()
+    .expect("the chip carries its own value label");
+    assert_eq!(value.text(), "second");
 }
 
 #[test]
@@ -445,13 +446,13 @@ fn doc_12a_clear_all_drops_both_the_query_and_the_category() {
 }
 
 #[test]
-fn fil_1d_the_review_chip_names_exactly_the_fields_the_search_reads() {
+fn search_2c_the_review_caption_names_exactly_the_fields_the_search_reads() {
+    // FIL-1d: this promise used to repeat on the chip itself; the chip now
+    // shows only the bare query, and the search popover's own caption is
+    // where the scope still gets named.
     assert_eq!(
-        crate::ui::filter_bar_strings::scoped_search_chip_label(
-            SearchScope::DoctorReview,
-            "needle",
-        ),
-        "⌕ “needle” in track, album and artist"
+        crate::ui::filter_bar_strings::searches_scope(SearchScope::DoctorReview),
+        "Searches track, album and artist"
     );
     let (_, mut snapshot) = snapshot("");
     let row = &mut snapshot.rows[0];

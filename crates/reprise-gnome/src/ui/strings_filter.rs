@@ -12,10 +12,6 @@ pub const SEARCH_SETTINGS: &str = N_!("Search settings");
 pub const ALL_RESULTS: &str = N_!("All results");
 pub const SETTINGS_CLEAR_ALL: &str = N_!("Clear all");
 
-pub fn settings_search_chip_label(query: &str) -> String {
-    super::formatted(N_!("⌕ “{query}” in settings  ×"), &[("query", query)])
-}
-
 pub fn settings_filtered_count_markup(shown: usize, total: usize) -> String {
     let shown = reprise_core::format::format_thousands(shown as i64);
     let total = reprise_core::format::format_thousands(total as i64);

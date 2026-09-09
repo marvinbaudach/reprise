@@ -203,9 +203,11 @@ fn accent_text_surfaces_stay_inside_the_contrast_checked_tint_ceiling() {
     };
     let active_ground = background_alpha(".device-card-active {");
     let active_hover_ground = background_alpha(".device-card-active:hover {");
-    let checked_ceiling: f64 = crate::ui::style::tokens::CHIP_BG_HOVER_ALPHA
-        .parse()
-        .expect("shared tint ceiling is numeric");
+    // The filter chip's own hover alpha used to double as this ceiling —
+    // coincidence, not a shared design token, so the redesign that retired
+    // that chip fill (no longer accent-tinted at all) leaves this figure
+    // behind as its own literal rather than losing the check it backs.
+    const CHECKED_CEILING: f64 = 0.18;
 
     for (selector, parent_tint) in [
         (
@@ -218,8 +220,8 @@ fn accent_text_surfaces_stay_inside_the_contrast_checked_tint_ceiling() {
         let overlay = background_alpha(selector);
         let effective = parent_tint + overlay * (1.0 - parent_tint);
         assert!(
-            effective <= checked_ceiling,
-            "{selector} produces an effective {effective:.3} tint above the checked {checked_ceiling:.3} ceiling"
+            effective <= CHECKED_CEILING,
+            "{selector} produces an effective {effective:.3} tint above the checked {CHECKED_CEILING:.3} ceiling"
         );
     }
 }

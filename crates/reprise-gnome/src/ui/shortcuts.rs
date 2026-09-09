@@ -481,11 +481,7 @@ mod tests {
             {
                 let layout = layout.clone();
                 move |query| {
-                    layout.replace_scoped_search(
-                        reprise_view::search_scope::SearchScope::Tracks,
-                        query,
-                        || {},
-                    );
+                    layout.replace_search_chip(query, || {});
                 }
             },
             || {},
@@ -546,11 +542,7 @@ mod tests {
             {
                 let layout = layout.clone();
                 move |query| {
-                    layout.replace_scoped_search(
-                        reprise_view::search_scope::SearchScope::Tracks,
-                        query,
-                        || {},
-                    );
+                    layout.replace_search_chip(query, || {});
                 }
             },
             || {},

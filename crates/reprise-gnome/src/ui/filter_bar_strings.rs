@@ -13,17 +13,8 @@ pub(in crate::ui) fn text(message: &str) -> String {
     crate::i18n::gettext(message)
 }
 
-pub(in crate::ui) fn chip_label(facet: &str, value: &str) -> String {
-    render(&messages::chip_label(facet, value))
-}
-
 pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
     render(&messages::remove_filter_label(facet, value))
-}
-
-/// FIL-1d: the same chip, naming the fields the current view searches.
-pub(in crate::ui) fn scoped_search_chip_label(scope: SearchScope, query: &str) -> String {
-    render_search_scope_message(messages::search_chip_label_in(scope, query))
 }
 
 /// SEARCH-2c: the popover names the fields the current view searches.
@@ -98,41 +89,12 @@ mod tests {
         assert_eq!(leave_place_label("Lorna Shore"), "Leave Lorna Shore");
     }
 
-    // UX FIL-1d: Music's chip names the three fields its free-text query reads.
+    // UX FIL-1d: the × accessible label stays the same regardless of which
+    // fields the view searches — that promise now lives only in the caption
+    // `search_2c_caption_names_the_fields_of_its_view` covers below.
     #[test]
-    fn fil_1d_music_search_chip_label_names_all_searched_fields() {
-        assert_eq!(
-            scoped_search_chip_label(SearchScope::Tracks, "falling"),
-            "⌕ “falling” in track, artist and album"
-        );
+    fn fil_1d_remove_search_label_stays_scope_independent() {
         assert_eq!(remove_search_label("falling"), "Remove search: falling");
-    }
-
-    // UX FIL-1d: the chip label names the fields each scope actually reads.
-    // The remove label stays scope-independent.
-    #[test]
-    fn fil_1d_chip_label_names_the_fields_of_its_view() {
-        let cases = [
-            (SearchScope::Tracks, "⌕ “wer” in track, artist and album"),
-            (SearchScope::Podcasts, "⌕ “wer” in episode titles"),
-            (SearchScope::Youtube, "⌕ “wer” in video titles"),
-            (SearchScope::Radio, "⌕ “wer” in station names"),
-            (SearchScope::Releases, "⌕ “wer” in title and artist"),
-            (SearchScope::Concerts, "⌕ “wer” in artist and venue"),
-            (SearchScope::Missing, "⌕ “wer” in file paths"),
-            (
-                SearchScope::DoctorReview,
-                "⌕ “wer” in track, album and artist",
-            ),
-        ];
-
-        for (scope, expected) in cases {
-            assert_eq!(
-                scoped_search_chip_label(scope, "wer"),
-                expected,
-                "{scope:?}"
-            );
-        }
         assert_eq!(remove_search_label("wer"), "Remove search: wer");
     }
 

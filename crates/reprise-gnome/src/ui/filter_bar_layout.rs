@@ -1,15 +1,14 @@
 //! Shared filter-bar geometry and slot ordering.
 
 use gtk4::prelude::*;
-use reprise_view::search_scope::SearchScope;
+
+use super::filter_bar_chip;
+pub(in crate::ui) use filter_bar_chip::{build_chip, ChipLead};
 
 pub(in crate::ui) const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 pub(in crate::ui) const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
 pub(in crate::ui) const ADD_FILTER_CSS_CLASS: &str = "reprise-filter-add";
 pub(in crate::ui) const CLEAR_ALL_CSS_CLASS: &str = "reprise-filter-clear";
-
-/// The minimum ×-click target FIL-1a requires of a removable search chip.
-const CHIP_MIN_HIT_PX: i32 = 20;
 
 const PLACE_SLOT_NAME: &str = "reprise-filter-slot-place";
 const SEARCH_SLOT_NAME: &str = "reprise-filter-slot-search";
@@ -129,45 +128,23 @@ impl FilterBarLayout {
         clear(&self.search);
     }
 
-    /// Replaces the search slot with the canonical chip for this view. The
-    /// query is the committed query; blank means there is no chip.
-    pub(in crate::ui) fn replace_scoped_search(
-        &self,
-        scope: SearchScope,
-        query: &str,
-        on_clear: impl Fn() + 'static,
-    ) {
+    /// Replaces the search slot with the canonical chip: a magnifier and the
+    /// bare query. The query is the committed query; blank means there is no
+    /// chip. FIL-1d's scope promise moved to the search popover's own caption
+    /// (`filter_bar_strings::searches_scope`) — the chip no longer repeats it.
+    pub(in crate::ui) fn replace_search_chip(&self, query: &str, on_clear: impl Fn() + 'static) {
         let query = query.trim();
         if query.is_empty() {
             self.clear_search();
             return;
         }
-        self.replace_search(
-            &format!(
-                "{}  ×",
-                crate::ui::filter_bar_strings::scoped_search_chip_label(scope, query)
-            ),
+        let chip = build_chip(
+            ChipLead::Search,
+            query,
             &crate::ui::filter_bar_strings::remove_search_label(query),
             on_clear,
         );
-    }
-
-    /// Replaces the search slot with a canonical removable chip whose complete
-    /// visible label has already been rendered for a surface outside
-    /// [`SearchScope`].
-    pub(in crate::ui) fn replace_search(
-        &self,
-        label: &str,
-        accessible_remove_label: &str,
-        on_clear: impl Fn() + 'static,
-    ) {
-        let button = gtk4::Button::with_label(label);
-        button.add_css_class("flat");
-        button.add_css_class(CHIP_CSS_CLASS);
-        button.set_size_request(-1, CHIP_MIN_HIT_PX);
-        button.update_property(&[gtk4::accessible::Property::Label(accessible_remove_label)]);
-        button.connect_clicked(move |_| on_clear());
-        self.fill_search(&button);
+        self.fill_search(&chip);
     }
 
     pub(in crate::ui) fn fill_facets(&self, widget: &impl IsA<gtk4::Widget>) {
@@ -281,6 +258,28 @@ impl FilterBarLayout {
         );
     }
 
+    /// The search chip's own × remove button, reached by CSS class rather
+    /// than by assuming the chip's internal child order.
+    #[cfg(test)]
+    pub(in crate::ui) fn search_chip_remove_button(&self) -> Option<gtk4::Button> {
+        let chip = self.slot_child(FilterBarSlot::Search)?;
+        filter_bar_chip::child_with_css_class(&chip, filter_bar_chip::CHIP_REMOVE_CSS_CLASS)?
+            .downcast::<gtk4::Button>()
+            .ok()
+    }
+
+    /// The search chip's visible value — the bare query, without the icon or
+    /// the ×.
+    #[cfg(test)]
+    pub(in crate::ui) fn search_chip_value(&self) -> Option<String> {
+        let chip = self.slot_child(FilterBarSlot::Search)?;
+        let label =
+            filter_bar_chip::child_with_css_class(&chip, filter_bar_chip::CHIP_VALUE_CSS_CLASS)?
+                .downcast::<gtk4::Label>()
+                .ok()?;
+        Some(label.text().to_string())
+    }
+
     #[cfg(test)]
     fn slot_widget(&self, slot: FilterBarSlot) -> gtk4::Widget {
         let mut child = self.root.first_child();
@@ -294,8 +293,14 @@ impl FilterBarLayout {
     }
 }
 
-pub(in crate::ui) fn style_add_filter(button: &impl IsA<gtk4::Widget>) {
+pub(in crate::ui) fn style_add_filter(button: &gtk4::MenuButton) {
     button.add_css_class(ADD_FILTER_CSS_CLASS);
+    // Adwaita's internal toggle button paints its own filled, bold surface —
+    // without a frame it stops competing with the dashed 8px outline
+    // `ADD_FILTER_CSS_CLASS` draws on the outer node. The companion rule in
+    // `css()` below closes the gap this alone leaves open: `.flat:hover`
+    // still paints its own hover surface on that inner node.
+    button.set_has_frame(false);
 }
 
 pub(in crate::ui) fn style_clear_all(button: &impl IsA<gtk4::Widget>) {
@@ -354,18 +359,28 @@ pub(in crate::ui) fn facet_row() -> gtk4::Box {
 }
 
 pub(in crate::ui) fn css() -> String {
-    use crate::ui::style::tokens::{CHIP_BG_ALPHA, CHIP_BG_HOVER_ALPHA};
+    use crate::ui::style::tokens::{RADIUS_CHIP, SECONDARY_TEXT_ALPHA};
 
     format!(
-        ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
-         background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @reprise_accent_text_color; }} \
-         .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {CHIP_BG_HOVER_ALPHA}); }} \
-         .{ADD_FILTER_CSS_CLASS} {{ border: 1px dashed alpha(currentColor, 0.18); \
-         border-radius: 9999px; background-color: transparent; }} \
-         .{ADD_FILTER_CSS_CLASS}:hover {{ background-color: alpha(currentColor, 0.08); }} \
+        "{} \
+         /* A GtkMenuButton's outer node paints nothing — every surface, border \
+            and radius belongs to the `button` child, which is why the dashed \
+            outline lives there and not on the class's own node. Putting it on \
+            the outer node renders no border at all: measured 2026-09-10, the \
+            outline was simply absent from the captured bar in both themes. */ \
+         .{ADD_FILTER_CSS_CLASS} {{ border: none; background-color: transparent; \
+         color: alpha(@window_fg_color, {SECONDARY_TEXT_ALPHA}); }} \
+         .{ADD_FILTER_CSS_CLASS} > button {{ background-image: none; \
+         background-color: transparent; box-shadow: none; font-weight: normal; \
+         border: 1px dashed alpha(currentColor, 0.30); border-radius: {RADIUS_CHIP}; \
+         min-height: {}px; }} \
+         .{ADD_FILTER_CSS_CLASS} > button:hover {{ \
+         background-color: alpha(currentColor, 0.08); }} \
          .{CLEAR_ALL_CSS_CLASS} {{ border: 1px solid alpha(currentColor, 0.30); \
          border-radius: 9999px; background-color: transparent; }} \
-         .{CLEAR_ALL_CSS_CLASS}:hover {{ background-color: alpha(currentColor, 0.08); }}"
+         .{CLEAR_ALL_CSS_CLASS}:hover {{ background-color: alpha(currentColor, 0.08); }}",
+        filter_bar_chip::css(),
+        filter_bar_chip::CHIP_MIN_HEIGHT
     )
 }
 
@@ -453,26 +468,30 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_1d_search_slot_uses_the_real_scoped_removable_chip() {
+    fn fil_1d_search_slot_uses_the_real_removable_chip() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let layout = FilterBarLayout::new();
         let cleared = Rc::new(Cell::new(false));
         let flag = cleared.clone();
 
-        layout.replace_scoped_search(SearchScope::Podcasts, "  wer  ", move || flag.set(true));
+        layout.replace_search_chip("  wer  ", move || flag.set(true));
 
         let chip = layout
             .slot_child(FilterBarSlot::Search)
-            .and_downcast::<gtk4::Button>()
             .expect("the search slot contains the canonical chip");
-        assert_eq!(
-            chip.label().as_deref(),
-            Some("⌕ “wer” in episode titles  ×")
-        );
         assert!(chip.has_css_class(CHIP_CSS_CLASS));
-        assert_eq!(chip.height_request(), CHIP_MIN_HIT_PX);
-        chip.emit_clicked();
+        assert!(
+            filter_bar_chip::child_with_css_class(&chip, filter_bar_chip::CHIP_ICON_CSS_CLASS)
+                .is_some(),
+            "a search chip carries the magnifier icon that marks it as coming from search, \
+             distinguishing it from a facet chip"
+        );
+        assert_eq!(layout.search_chip_value().as_deref(), Some("wer"));
+        let remove = layout
+            .search_chip_remove_button()
+            .expect("the chip carries its own × remove button");
+        remove.emit_clicked();
         assert!(cleared.get(), "the × must clear the query");
     }
 
@@ -560,7 +579,8 @@ mod tests {
 
     fn measure_geometry(search_present: bool, facets_full: bool, width: i32) -> Geometry {
         let layout = FilterBarLayout::new();
-        let search = search_present.then(|| gtk4::Button::with_label("⌕ falling"));
+        let search = search_present
+            .then(|| build_chip(ChipLead::Search, "falling", "Remove search: falling", || {}));
         if let Some(search) = &search {
             layout.fill_search(search);
         }

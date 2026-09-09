@@ -360,15 +360,12 @@ impl SettingsSearch {
 
     fn update_filter_bar(&self, query: &str, shown: usize, total: usize) {
         let weak = self.weak_self.borrow().clone();
-        self.filter_layout.replace_search(
-            &crate::ui::strings::settings_search_chip_label(query.trim()),
-            &crate::ui::filter_bar_strings::remove_search_label(query.trim()),
-            move || {
+        self.filter_layout
+            .replace_search_chip(query.trim(), move || {
                 if let Some(search) = weak.upgrade() {
                     search.entry.set_text("");
                 }
-            },
-        );
+            });
         self.count_label
             .set_markup(&crate::ui::strings::settings_filtered_count_markup(
                 shown, total,
