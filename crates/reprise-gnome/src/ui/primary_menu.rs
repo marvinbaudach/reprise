@@ -42,7 +42,7 @@ pub(super) const ACTION_KEYBOARD_SHORTCUTS: &str = "keyboard-shortcuts";
 pub(super) const ACTION_HELP: &str = "help";
 pub(super) const ACTION_ABOUT: &str = "about";
 pub(super) const ACTION_OPEN_PRIMARY_MENU: &str = "open-primary-menu";
-const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
+pub(in crate::ui) const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
 pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
@@ -254,6 +254,36 @@ fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
     let Ok(mode) = std::env::var(SMOKE_MINIMAL_VIEW_ENV_VAR) else {
         return;
     };
+    if mode == "cycle" {
+        let settle_s = std::env::var("REPRISE_SMOKE_SETTLE_S")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(8);
+        let gap_s = std::env::var("REPRISE_SMOKE_GAP_S")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(4);
+        let cycles = std::env::var("REPRISE_SMOKE_CYCLES")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(3);
+        for cycle in 0..cycles {
+            for (step, label) in [(0, "enter"), (1, "restore")] {
+                let action = action.clone();
+                let delay = settle_s + (cycle * 2 + step) * gap_s;
+                glib::timeout_add_seconds_local_once(delay, move || {
+                    tracing::info!(target: "measure", cycle, step = label, "smoke:activate");
+                    action.activate(None);
+                });
+            }
+        }
+        let quit_after = settle_s + cycles * 2 * gap_s + gap_s;
+        glib::timeout_add_seconds_local_once(quit_after, || {
+            tracing::info!(target: "measure", "smoke:quit");
+            std::process::exit(0);
+        });
+        return;
+    }
     let enter = action.clone();
     glib::idle_add_local_once(move || enter.activate(None));
     if mode == "stay" {

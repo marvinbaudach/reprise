@@ -17,6 +17,44 @@ use super::file_open::StartupOpenIntent;
 use super::first_run::FirstRunDecision;
 use super::strings;
 
+const FRAME_MEASURE_MODE: &str = "cycle";
+const FRAME_MEASURE_BUDGET_MS: f64 = 3_000.0;
+
+/// Logs each presented frame after a smoke-driven mode transition. The hook
+/// installs no tick callback unless the explicit measurement mode is active.
+fn measure_frames(window: &adw::ApplicationWindow, phase: &'static str) {
+    if std::env::var(crate::ui::primary_menu::SMOKE_MINIMAL_VIEW_ENV_VAR).as_deref()
+        != Ok(FRAME_MEASURE_MODE)
+    {
+        return;
+    }
+    let started = std::time::Instant::now();
+    let frame = Cell::new(0_u32);
+    window.add_tick_callback(move |window, _| {
+        let current = frame.get() + 1;
+        frame.set(current);
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
+        tracing::info!(
+            target: "measure",
+            phase,
+            frame = current,
+            elapsed_ms,
+            width = window.width(),
+            height = window.height(),
+            default_width = window.default_width(),
+            default_height = window.default_height(),
+            maximized = window.is_maximized(),
+            resizable = window.is_resizable(),
+            "frame"
+        );
+        if elapsed_ms > FRAME_MEASURE_BUDGET_MS {
+            gtk4::glib::ControlFlow::Break
+        } else {
+            gtk4::glib::ControlFlow::Continue
+        }
+    });
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) struct ViewTransition {
     pub(in crate::ui) mode: WindowViewMode,
@@ -242,11 +280,13 @@ impl MinimalView {
         let Some(compact_window) = &self.compact_window else {
             return;
         };
+        measure_frames(compact_window, "enter_compact");
         compact_window.present();
         self.library_window.set_visible(false);
     }
 
     fn restore_library(&self) {
+        measure_frames(&self.library_window, "restore_library");
         self.library_window.present();
         if let Some(compact_window) = &self.compact_window {
             compact_window.set_visible(false);
