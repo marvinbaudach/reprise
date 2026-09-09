@@ -1,4 +1,4 @@
-//! A soft disc of the cover itself, turning behind it once a minute.
+//! A soft disc of the cover itself, turning behind it every 25 seconds.
 //!
 //! The mockup draws this as a conic gradient of the cover's three dominant
 //! colours. Measured against this library that failed: half the covers are
@@ -22,7 +22,10 @@ use gtk4::prelude::*;
 use crate::ui::cover_glow;
 use crate::ui::style::tokens;
 
-const SHIMMER_REST_OPACITY: f64 = 0.34;
+/// Raised from 0.34 with the turn rate: motion and resting brightness share one
+/// factor here, so the wash around the cover is 40 % denser at rest. The
+/// reactive terms below are deliberately not scaled with it.
+const SHIMMER_REST_OPACITY: f64 = 0.48;
 const SHIMMER_OPACITY_PER_PRESSURE: f64 = 0.14;
 const SHIMMER_OPACITY_PER_SWELL: f64 = 0.16;
 /// The mockup's 520 px disc over its 168 px cover.
@@ -31,8 +34,10 @@ const SHIMMER_DIAMETER_PER_COVER: f64 = 520.0 / 168.0;
 const SHIMMER_CENTRE_Y: f64 = 100.0;
 /// The disc is clipped to the same artwork band as the cover and bloom.
 const SHIMMER_BAND_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
-/// One turn a minute.
-const SHIMMER_TURN_S: f64 = 60.0;
+/// One turn every 25 seconds. At a minute the disc changed the visible ring by
+/// 2.40 of 255 luminance units per second — 0.04x the bloom's own breathing on
+/// the same pixels, below the rate at which it reads as moving at all.
+const SHIMMER_TURN_S: f64 = 25.0;
 /// `radial-gradient(circle closest-side, #000 12%, transparent 68%)`.
 const SHIMMER_MASK_SOLID: f64 = 0.12;
 const SHIMMER_MASK_CLEAR: f64 = 0.68;
@@ -252,22 +257,21 @@ mod tests {
 
     #[test]
     fn ac_24_the_shimmer_opacity_matches_the_backdrop_it_lies_on() {
-        // Straight from the mockup: 0.34 + 0.14·pres + 0.16·sw.
-        assert!((shimmer_opacity(0.0, 0.0) - 0.34).abs() < 1e-9);
-        assert!((shimmer_opacity(1.0, 0.0) - 0.48).abs() < 1e-9);
-        assert!((shimmer_opacity(1.0, 1.0) - 0.64).abs() < 1e-9);
-        assert!((shimmer_opacity(-1.0, 4.0) - 0.50).abs() < 1e-9);
+        // 0.48 + 0.14·pres + 0.16·sw — the base rose, the slope still mirrors the
+        // backdrop's own (0.15 / 0.16).
+        assert!((shimmer_opacity(0.0, 0.0) - 0.48).abs() < 1e-9);
+        assert!((shimmer_opacity(1.0, 0.0) - 0.62).abs() < 1e-9);
+        assert!((shimmer_opacity(1.0, 1.0) - 0.78).abs() < 1e-9);
+        assert!((shimmer_opacity(-1.0, 4.0) - 0.64).abs() < 1e-9);
     }
 
     #[test]
-    fn ac_24_the_shimmer_turns_once_a_minute() {
-        // "eine Umdrehung pro Minute" — and it must not jump at the wrap.
+    fn ac_24_the_shimmer_turns_every_twenty_five_seconds() {
         assert!((shimmer_angle(0.0) - 0.0).abs() < 1e-9);
-        assert!((shimmer_angle(15.0) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-        assert!((shimmer_angle(30.0) - std::f64::consts::PI).abs() < 1e-9);
-        assert!((shimmer_angle(60.0) - shimmer_angle(0.0)).abs() < 1e-9);
-        assert!((shimmer_angle(61.0) - shimmer_angle(1.0)).abs() < 1e-9);
-        // A long session must not lose precision into a stutter.
+        assert!((shimmer_angle(6.25) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert!((shimmer_angle(12.5) - std::f64::consts::PI).abs() < 1e-9);
+        assert!((shimmer_angle(25.0) - shimmer_angle(0.0)).abs() < 1e-9);
+        assert!((shimmer_angle(26.0) - shimmer_angle(1.0)).abs() < 1e-9);
         assert!((shimmer_angle(86_400.0) - shimmer_angle(0.0)).abs() < 1e-6);
     }
 
