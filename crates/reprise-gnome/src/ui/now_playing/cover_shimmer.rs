@@ -206,6 +206,14 @@ impl CoverShimmer {
         &self.area
     }
 
+    #[cfg(test)]
+    pub(super) fn drawn_angle_for_test(&self) -> Option<f64> {
+        self.inner.surface.borrow().as_ref()?;
+        let elapsed_s = self.inner.phase.get().elapsed_s();
+        let is_dark = libadwaita::StyleManager::default().is_dark();
+        Some(shimmer_angle(elapsed_s, is_dark))
+    }
+
     /// The cover the disc is cut from, or `None` for external media, a
     /// placeholder, or no track. Without artwork the disc stays dark: a light
     /// whose colour is not in the record is the dishonesty this whole layer
