@@ -65,6 +65,25 @@ for value in \
 done
 reject_fixed 'Future native frontends' "$architecture_visual"
 
+python3 - <<'PY'
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
+graphic = Path("docs/assets/reprise-architecture.svg")
+diagram = ET.parse(graphic).getroot()
+brand = ET.parse("showroom/public/brand/reprise-mark.svg").getroot()
+mark = diagram.find(".//*[@id='reprise-mark']")
+assert mark is not None, "Architecture graphic must use the current Reprise mark"
+
+def shapes(element):
+    return [(child.tag, dict(child.attrib)) for child in element]
+
+assert shapes(mark) == shapes(brand), "Architecture mark must match the canonical brand artwork"
+labels = {node.text for node in diagram.iter() if node.tag.endswith("}text")}
+assert {"GNOME", "Android", "CLI", "MCP"} <= labels, "Architecture must include the four shipped interfaces"
+assert "three-crate" not in graphic.read_text().lower(), "Architecture must not claim the workspace has three crates"
+PY
+
 for value in \
   '## Downloads' \
   '## Architecture' \

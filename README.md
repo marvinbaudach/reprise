@@ -38,7 +38,7 @@ release page.
 
 ## Architecture
 
-![Reprise architecture: a portable Rust core, a Linux platform adapter, and a native GTK4/libadwaita frontend with enforced dependency direction.](docs/assets/reprise-architecture.svg)
+![Reprise architecture: GNOME, Android, CLI, and MCP share a portable Rust core; Linux adapters implement its contracts and automated checks enforce the core boundary.](docs/assets/reprise-architecture.svg)
 
 - `reprise-core` owns library rules, queries, scanning, playlists, settings, and
   platform contracts — never GTK, GStreamer, or D-Bus.
