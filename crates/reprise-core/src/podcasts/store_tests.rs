@@ -71,6 +71,32 @@ fn duration_fill_ignores_unknown_guids() {
 }
 
 #[test]
+fn duration_fill_ignores_non_video_guids() {
+    const CHANNEL_TAB_ID: &str = "UClDzr-KM5H2-bsO3xIC32mg";
+    let db = conn();
+    let subscription_id = add_or_restore(&db, &subscription_draft(), 10).unwrap();
+    let mut channel_tab = parsed_episode("Channel - Shorts");
+    channel_tab.guid = CHANNEL_TAB_ID.to_owned();
+    let episode_id = upsert_episode(&db, subscription_id, &channel_tab, 20)
+        .unwrap()
+        .unwrap()
+        .episode_id;
+
+    let changed = fill_missing_durations_in(
+        db.conn(),
+        subscription_id,
+        &[(CHANNEL_TAB_ID.to_owned(), 225)],
+    )
+    .unwrap();
+
+    assert_eq!(changed, 0);
+    assert_eq!(
+        episode(&db, episode_id).unwrap().unwrap().duration_secs,
+        None
+    );
+}
+
+#[test]
 fn duration_fill_ignores_zero_durations() {
     let db = conn();
     let subscription_id = add_or_restore(&db, &subscription_draft(), 10).unwrap();

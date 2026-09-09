@@ -7,6 +7,9 @@ use crate::db::Db;
 use super::feed::ParsedEpisode;
 use super::{EpisodeRow, PodcastKind, SubscriptionRow};
 
+/// YouTube video IDs contain exactly 11 characters.
+const YOUTUBE_VIDEO_ID_LENGTH: i64 = 11;
+
 pub use super::downloads::{
     downloaded_paths_for_subscription, set_downloaded_file, set_downloaded_path,
 };
@@ -244,20 +247,21 @@ pub(crate) fn episodes_missing_duration_in(
     conn: &Connection,
     subscription_id: i64,
 ) -> Result<usize, rusqlite::Error> {
-    // YouTube video IDs are 11 characters. The 24-character channel IDs
-    // UClDzr-KM5H2-bsO3xIC32mg and UCLTQVYwu-M-MnfOJDKlFnOQ came from channel
-    // tabs and must not keep triggering duration listings that can never match.
+    // The channel-tab rows UClDzr-KM5H2-bsO3xIC32mg ("Bjorth - Shorts") and
+    // UCLTQVYwu-M-MnfOJDKlFnOQ ("Danheim - Shorts") are not video IDs; without
+    // this length filter, both channels spawn yt-dlp on every refresh forever and
+    // never close the gap.
     conn.query_row(
         "SELECT COUNT(*)
          FROM podcast_episodes
          WHERE subscription_id = ?1
            AND removed_at IS NULL
            AND (duration_secs IS NULL OR duration_secs = 0)
-           AND length(guid) = 11",
-        [subscription_id],
+           AND length(guid) = ?2",
+        params![subscription_id, YOUTUBE_VIDEO_ID_LENGTH],
         |row| row.get::<_, i64>(0),
     )
-    .map(|count| count.max(0) as usize)
+    .map(|count| count as usize)
 }
 
 pub fn upsert_episode(
@@ -469,11 +473,17 @@ pub(crate) fn fill_missing_durations_in(
          WHERE subscription_id = ?1
            AND guid = ?2
            AND (duration_secs IS NULL OR duration_secs = 0)
-           AND ?3 > 0",
+           AND ?3 > 0
+           AND length(guid) = ?4",
     )?;
     let mut changed = 0;
     for (guid, duration_secs) in durations {
-        changed += statement.execute(params![subscription_id, guid, duration_secs])?;
+        changed += statement.execute(params![
+            subscription_id,
+            guid,
+            duration_secs,
+            YOUTUBE_VIDEO_ID_LENGTH
+        ])?;
     }
     Ok(changed)
 }
