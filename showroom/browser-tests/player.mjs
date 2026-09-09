@@ -60,6 +60,33 @@ async function screenshot(name) {
   const { data } = await call('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(output, name), Buffer.from(data, 'base64'));
 }
+async function phoneFrame() {
+  return evaluate('document.querySelector(".hero-product__phone canvas")?.toDataURL() ?? null');
+}
+async function assertPhoneAnimates(label) {
+  await until(() => phoneFrame(), Boolean, `${label}: phone canvas exists`);
+  const first = await phoneFrame();
+  await until(
+    () => phoneFrame(),
+    (frame) => frame !== first,
+    `${label}: phone visualization moves`,
+  );
+  const running = await phoneFrame();
+  await until(
+    () => phoneFrame(),
+    (frame) => frame !== running,
+    `${label}: phone visualization keeps moving after its first frame`,
+  );
+  assert.ok(
+    await evaluate(`(() => {
+      const phone = document.querySelector('.hero-product__phone').getBoundingClientRect();
+      const canvas = document.querySelector('.hero-product__phone canvas').getBoundingClientRect();
+      return canvas.width > 0 && canvas.height > 0 && canvas.left >= phone.left
+        && canvas.right <= phone.right && canvas.top >= phone.top && canvas.bottom <= phone.bottom;
+    })()`),
+    `${label}: visualization stays inside the phone`,
+  );
+}
 try {
   const port = await until(
     async () => {
@@ -127,10 +154,14 @@ try {
       'document.querySelector("#film").getBoundingClientRect().top < document.querySelector("#ch-01").getBoundingClientRect().top',
     ),
   );
+  await assertPhoneAnimates('desktop');
   await screenshot('desktop.png');
   console.log('PASS: player is discoverable and waits for an explicit start');
   await evaluate('document.querySelector("#film").scrollIntoView({behavior:"instant"})');
   await screenshot('player-poster.png');
+  const offscreenPhone = await phoneFrame();
+  await delay(350);
+  assert.equal(await phoneFrame(), offscreenPhone, 'offscreen phone stops drawing');
   await evaluate('document.querySelector(\'button[aria-label="Play film"]\').click()');
   await until(
     () => evaluate('document.querySelector("video").currentTime'),
@@ -276,6 +307,7 @@ try {
         ),
         'product appears on the first mobile screen',
       );
+      await assertPhoneAnimates('mobile');
       await screenshot('mobile.png');
     }
     await evaluate('document.querySelector("#film").scrollIntoView({behavior:"instant"})');
@@ -412,6 +444,9 @@ try {
   });
   await evaluate('window.scrollTo({top:0,behavior:"instant"})');
   await delay(250);
+  const reducedPhone = await phoneFrame();
+  await delay(350);
+  assert.equal(await phoneFrame(), reducedPhone, 'reduced motion keeps a still phone frame');
   assert.ok(
     await evaluate(
       '[...document.querySelectorAll("h1, h2, [data-counter]")].filter(x => x.getClientRects().length).every(x => getComputedStyle(x).opacity === "1")',

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { HERO_CAPTURES } from '../../data/showcase';
+import { VisualizerPlate } from '../../visualizer/VisualizerPlate';
 import { Lightbox } from './Lightbox';
 import { ShotTile } from './ShotTile';
 import './showcase.css';
@@ -43,7 +44,9 @@ export function HeroProduct() {
         eager
         variant="phone"
         onOpen={(trigger) => open(1, trigger)}
-      />
+      >
+        <VisualizerPlate />
+      </ShotTile>
 
       {activeIndex !== null && (
         <Lightbox

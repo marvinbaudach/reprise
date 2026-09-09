@@ -12,9 +12,10 @@ technical case studies. Move the timeline, code census, detailed quality inciden
 headless contract and source methodology into optional disclosures. Retain the
 full measurements and their trade-off together. Use descriptive navigation.
 
-Text, figures and screenshots stay still and readable. Remove scroll entrances,
-count-ups, pointer parallax and background drift. Keep one interactive spectral
-example in the design details, honouring reduced motion.
+Text, figures and screenshot frames stay still and readable. Remove scroll
+entrances, count-ups, pointer parallax and background drift. The phone keeps its
+recorded visualization moving inside its display on desktop and mobile. Keep one
+interactive spectral example in the design details, honouring reduced motion.
 
 The existing 58-second film uses a central play button, duration badge, seek bar,
 elapsed/total time, mute/volume, fullscreen and replay. Playback only follows an
@@ -105,6 +106,18 @@ edited code remains under 800 lines. Its local commit is titled
 `The showcase stays readable on phones in both orientations`.
 
 ### Preview and verification
+
+The phone visualization was restored after the mobile review, as explicitly
+requested. It reuses the existing recorded track, renderer and playback policy.
+Browser checks observe consecutive changing canvas frames on desktop and mobile,
+verify that the canvas stays inside the phone, and verify that drawing stops
+offscreen and under reduced motion. The screenshot frame and reading surface
+retain the calmer layout. The regression first failed against the static phone.
+Project/showroom source quality, all 101 showroom tests and the production
+browser checks passed. Rust formatting, Clippy, workspace tests and dependency
+audit passed as well; the workspace run completed on retry after an initial
+SIGTERM without an assertion failure. The local commit is titled
+`The phone keeps its visualization alive`.
 
 Run `npm run dev -- --host 127.0.0.1 --port 4175 --strictPort` from `showroom/`,
 then open `http://localhost:4175/reprise/`. The current session also serves the
