@@ -225,6 +225,35 @@ fn deterministic_client_errors_exhaust_the_candidate_walk_and_write_a_marker() {
 }
 
 #[test]
+fn a_throttled_client_error_keeps_walking_and_leaves_no_marker() {
+    // CDNs in front of the Cover Art Archive answer 401/403 while throttling,
+    // so neither may end the walk early or cache "no cover" for a week.
+    for status in [401, 403] {
+        let album = format!("Throttled {status} {:016x}", fastrand::u64(..));
+        let key = album_key("Throttled Band", &album);
+        let marker = negative_marker_path(&key);
+        let body = matching_releases("Throttled Band", &album, &["bad-1", "bad-2"]);
+        let mut caa_calls = 0;
+
+        let outcome = fetch_and_cache_with(
+            "Throttled Band",
+            &album,
+            None,
+            &[],
+            &mut |_| Some(body.clone()),
+            &mut |_| {
+                caa_calls += 1;
+                classify_caa_status(status)
+            },
+        );
+
+        assert_eq!(outcome, CoverFetchOutcome::TransientFailure);
+        assert_eq!(caa_calls, 2, "status {status} cut the candidate walk short");
+        assert!(!marker.exists(), "status {status} wrote a negative marker");
+    }
+}
+
+#[test]
 fn server_and_rate_limit_statuses_remain_retryable_without_a_marker() {
     for status in [503, 429, 408] {
         let album = format!("Retry status {status} {:016x}", fastrand::u64(..));
