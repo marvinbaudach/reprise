@@ -1,8 +1,12 @@
 //! Shared home for sidebar device state and replacement progress cards.
 //!
 //! Scan and device sync own their cards and update loops. This module owns
-//! only their stable layout relationship, so construction order cannot move
-//! either activity out of the slot or reorder the two relative to each other.
+//! their stable layout relationship. While a card is docked here, the slot also
+//! owns the revealer child's (the card body's) `visible` state; card modules
+//! must not set it. Card modules may still set the revealer's own `visible`
+//! state: a collapsed revealer with a hidden child measures zero, so that is
+//! harmless. Construction order cannot move either activity out of the slot or
+//! reorder the two relative to each other.
 
 use std::cell::RefCell;
 
@@ -89,11 +93,11 @@ impl SidebarActivitySlot {
         Self::track_progress_visibility(card);
     }
 
-    /// An unrevealed `GtkRevealer` still reports its child's natural height, so
-    /// the sidebar would reserve room for cards nobody can see. Keep each card's
-    /// `visible` in step with its reveal state; that is all this tracking has to
-    /// do now that the Issues block above it no longer moves out of the way
-    /// (FB-8, amended).
+    /// An unrevealed crossfade `GtkRevealer` still reports a visible child's
+    /// natural height, so the sidebar would reserve room for cards nobody can
+    /// see. Keep both the child and its container in step with the reveal state;
+    /// that is all this tracking has to do now that the Issues block above it no
+    /// longer moves out of the way (FB-8, amended).
     fn track_progress_visibility(card: &gtk4::Widget) {
         if let Some(revealer) = card.downcast_ref::<gtk4::Revealer>() {
             revealer.add_css_class("sidebar-job-card-dock");
@@ -106,6 +110,11 @@ impl SidebarActivitySlot {
 
 fn sync_revealer_visibility(revealer: &gtk4::Revealer) {
     let should_be_visible = revealer.reveals_child() || revealer.is_child_revealed();
+    if let Some(child) = revealer.child() {
+        if child.is_visible() != should_be_visible {
+            child.set_visible(should_be_visible);
+        }
+    }
     if revealer.is_visible() != should_be_visible {
         revealer.set_visible(should_be_visible);
     }
