@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier};
 
 use gtk4::prelude::*;
 use reprise_core::lyrics::{
@@ -138,6 +138,26 @@ fn wait_for_lookups(observed: impl Fn() -> usize, expected: usize) -> usize {
     }
 }
 
+fn drive_main_context_until(condition: impl Fn() -> bool) {
+    let deadline = std::time::Instant::now() + LOOKUP_DEADLINE;
+    while !condition() {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the GTK main context must reach the expected lyrics state within {LOOKUP_DEADLINE:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+fn drive_main_context_for(duration: std::time::Duration) {
+    let deadline = std::time::Instant::now() + duration;
+    while std::time::Instant::now() < deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn lyr_2_interactive_online_lookup_respects_tab_and_module_gates() {
     // Both bodies spawn on the global main context; per `test_main_context`
@@ -220,6 +240,115 @@ fn a_loaded_track_fetches_lyrics_before_playback_starts() {
         1,
         "a restored track fetches exactly once"
     );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lyr_2_local_plain_text_stays_visible_while_the_online_upgrade_is_running() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let online_started = Arc::new(AtomicBool::new(false));
+    let release_online = Arc::new(Barrier::new(2));
+    let local_plain = hit(
+        LyricsBody::Plain("local sidecar text".into()),
+        LyricsSource::Sidecar,
+    );
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
+        let online_started = online_started.clone();
+        let release_online = release_online.clone();
+        let local_plain = local_plain.clone();
+        move |_, _, options| {
+            if options.allow_network {
+                online_started.store(true, Ordering::SeqCst);
+                release_online.wait();
+            }
+            Ok(local_plain.clone())
+        }
+    }));
+    let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
+    let view = LyricsView::new();
+    view.set_tab_open(true);
+    lyrics.set_view(&view);
+
+    lyrics.set_track(Some(lyrics_track("Local text")));
+    drive_main_context_until(|| online_started.load(Ordering::SeqCst));
+
+    assert_eq!(view.visible_state_name().as_deref(), Some("content"));
+    assert_eq!(view.line_labels()[0].text(), "local sidecar text");
+    release_online.wait();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lyr_2_loading_remains_visible_when_no_local_lyrics_exist() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let online_started = Arc::new(AtomicBool::new(false));
+    let release_online = Arc::new(Barrier::new(2));
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
+        let online_started = online_started.clone();
+        let release_online = release_online.clone();
+        move |_, _, options| {
+            if options.allow_network {
+                online_started.store(true, Ordering::SeqCst);
+                release_online.wait();
+            }
+            Err(reprise_core::lyrics::LyricsError::Temporary)
+        }
+    }));
+    let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
+    let view = LyricsView::new();
+    view.set_tab_open(true);
+    lyrics.set_view(&view);
+
+    lyrics.set_track(Some(lyrics_track("Missing text")));
+    drive_main_context_until(|| online_started.load(Ordering::SeqCst));
+
+    assert_eq!(view.visible_state_name().as_deref(), Some("loading"));
+    assert!(view.line_labels().is_empty());
+    release_online.wait();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lyr_2_an_identical_online_fallback_keeps_the_rendered_local_line() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let online_started = Arc::new(AtomicBool::new(false));
+    let online_finished = Arc::new(AtomicBool::new(false));
+    let release_online = Arc::new(Barrier::new(2));
+    let local_plain = hit(
+        LyricsBody::Plain("local sidecar text".into()),
+        LyricsSource::Sidecar,
+    );
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
+        let online_started = online_started.clone();
+        let online_finished = online_finished.clone();
+        let release_online = release_online.clone();
+        let local_plain = local_plain.clone();
+        move |_, _, options| {
+            if options.allow_network {
+                online_started.store(true, Ordering::SeqCst);
+                release_online.wait();
+                online_finished.store(true, Ordering::SeqCst);
+            }
+            Ok(local_plain.clone())
+        }
+    }));
+    let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
+    let view = LyricsView::new();
+    view.set_tab_open(true);
+    lyrics.set_view(&view);
+
+    lyrics.set_track(Some(lyrics_track("Same fallback")));
+    drive_main_context_until(|| online_started.load(Ordering::SeqCst));
+    let rendered_line = view.line_labels()[0].clone();
+
+    release_online.wait();
+    drive_main_context_until(|| online_finished.load(Ordering::SeqCst));
+    drive_main_context_for(std::time::Duration::from_millis(50));
+
+    assert_eq!(view.line_labels()[0], rendered_line);
 }
 
 #[test]

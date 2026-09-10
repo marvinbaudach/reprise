@@ -168,8 +168,10 @@ impl PlayerLyrics {
         if !self.tab_open.get() {
             return;
         }
-        if let Some(view) = self.view() {
-            view.show_loading(&intent.track.query.title, &intent.track.query.artist);
+        if self.state.borrow().hit().is_none() {
+            if let Some(view) = self.view() {
+                view.show_loading(&intent.track.query.title, &intent.track.query.artist);
+            }
         }
         let (sender, receiver) = async_channel::bounded(1);
         self.runtime.request(LyricsRequest {
@@ -257,6 +259,10 @@ impl PlayerLyrics {
     }
 
     fn apply_hit(self: &Rc<Self>, hit: &LyricsHit) {
+        if self.state.borrow().hit() == Some(hit) {
+            self.schedule_next_line();
+            return;
+        }
         self.state.borrow_mut().set_hit(hit.clone());
         if let Some(view) = self.view() {
             view.show_result(hit);
