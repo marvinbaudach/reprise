@@ -395,8 +395,13 @@ if rg --quiet 'db::migrate\(&conn\)\.ok' \
   exit 1
 fi
 
+# Both entries are test-only: a display-regression test needs the window's X11
+# XID to drive it with xdotool, and `gdk4_x11::ffi::gdk_x11_surface_get_xid` is
+# a raw FFI binding, so the block cannot be written safely wherever it lives.
+# #917 added the second one without this line and left dev's contract job red.
 check_frontend_allowlist 'unsafe[[:space:]]*\{' 'unsafe frontend block' \
-  crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs
+  crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs \
+  crates/reprise-gnome/src/ui/session_restore.rs
 
 if rg --quiet 'reqwest::blocking' crates/reprise-gnome/src --glob '*.rs'; then
   echo "blocking HTTP is forbidden in the GTK frontend" >&2

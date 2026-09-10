@@ -284,12 +284,16 @@ jobs:
       REPRISE_AUDIO_SINK: fakesink
       DISPLAY_TEST_JOBS: 4
     steps:
+      # openbox is this job's alone: two display regressions start a window
+      # manager themselves, because a maximize is a request the WM answers and
+      # a bare Xvfb answers nothing. Missing here, `Command::new("openbox")`
+      # fails with NotFound and the tests panic — which is what #917 left red.
       - name: Install system dependencies
         run: >-
           pacman -Syu --noconfirm --needed
           base-devel cargo-audit dbus gettext git gstreamer gst-plugins-base
           gst-plugins-bad gst-plugins-good gtk4 jq libadwaita libsecret mesa
-          meson openssh pkgconf
+          meson openbox openssh pkgconf
           ripgrep shellcheck rust sqlite xdotool xorg-server-xvfb xorg-xauth
 
       - name: Check out the tested revision
