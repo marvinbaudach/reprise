@@ -314,10 +314,17 @@ Alles im eigenen Worktree, ohne Netz und ohne die echte Bibliothek:
 ```
 cargo test -p reprise-core lyrics
 cargo test -p reprise-view lyrics
-cargo test -p reprise-gnome --lib ui::lyrics
+cargo test -p reprise-gnome ui::lyrics
+scripts/check-display-tests.sh --rule-named
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 ```
+
+After the review, an incomplete provider round no longer earns the full
+seven-day suppression from Task 2. Its first partial answer is deferred only
+for the five-minute breaker window; a second incomplete attempt earns the
+seven-day suppression so that a permanently unavailable provider cannot make
+every playback repeat the lookup forever.
 
 Kein Test darf `~/.cache/reprise/lyrics` oder `~/Music` anfassen — die
 vorhandenen Tests arbeiten bereits mit `cache_dir`-Parameter und `tempfile`,
@@ -327,9 +334,10 @@ Die Beweise pro Defekt:
 
 - **A** — der neue Test in `player_lyrics_tests.rs`: die Content-Seite bleibt
   während der Aufwertung stehen, und ein identischer Treffer rendert nicht neu.
-- **B** — der neue Test in `mod_tests.rs`: der zweite Aufruf fragt keinen
-  Provider mehr, nachdem einer geantwortet hat; und er fragt sehr wohl erneut,
-  wenn nur `Failed` kam.
+- **B** — die neuen Tests in `mod_tests.rs`: eine unvollständige Runde wartet
+  zunächst nur das Breaker-Fenster ab; bleibt ein Provider beim zweiten Versuch
+  unerreichbar, wird der wiederholte Lauf sieben Tage gedrosselt. Eine reine
+  `Failed`-Runde wird weiterhin erneut versucht.
 - **C** — der neue Test in `batch_tests.rs`: plain-lokal erreicht den
   Online-Lookup, synced-lokal nicht.
 
@@ -340,7 +348,8 @@ Gruppe „NETZ: plain sidecar, synced-retry fällig" von 403 aus schrumpfen, und
 nach einem Massenlauf muss die Zahl der plain Sidecars unter 403 fallen. Das
 Skript bleibt im Scratchpad, nur die Zahlen kommen ins Repo.
 
-Die Display-Suite ist für die Abnahme nicht erforderlich.
+The rule-named display suite executes the three ignored Task 1 tests under the
+repository's isolated Xvfb convention.
 
 ## Parallelität
 

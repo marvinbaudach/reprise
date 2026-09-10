@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Barrier};
+use std::sync::{mpsc, Arc, Mutex};
 
 use gtk4::prelude::*;
 use reprise_core::lyrics::{
@@ -248,19 +248,20 @@ fn lyr_2_local_plain_text_stays_visible_while_the_online_upgrade_is_running() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let online_started = Arc::new(AtomicBool::new(false));
-    let release_online = Arc::new(Barrier::new(2));
+    let (release_online, wait_online) = mpsc::channel();
+    let wait_online = Arc::new(Mutex::new(wait_online));
     let local_plain = hit(
         LyricsBody::Plain("local sidecar text".into()),
         LyricsSource::Sidecar,
     );
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
         let online_started = online_started.clone();
-        let release_online = release_online.clone();
+        let wait_online = wait_online.clone();
         let local_plain = local_plain.clone();
         move |_, _, options| {
             if options.allow_network {
                 online_started.store(true, Ordering::SeqCst);
-                release_online.wait();
+                let _ = wait_online.lock().unwrap().recv();
             }
             Ok(local_plain.clone())
         }
@@ -275,23 +276,25 @@ fn lyr_2_local_plain_text_stays_visible_while_the_online_upgrade_is_running() {
 
     assert_eq!(view.visible_state_name().as_deref(), Some("content"));
     assert_eq!(view.line_labels()[0].text(), "local sidecar text");
-    release_online.wait();
+    release_online.send(()).unwrap();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn lyr_2_loading_remains_visible_when_no_local_lyrics_exist() {
+    // Control arm: the empty-result loading state passed before upgrades kept text visible.
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let online_started = Arc::new(AtomicBool::new(false));
-    let release_online = Arc::new(Barrier::new(2));
+    let (release_online, wait_online) = mpsc::channel();
+    let wait_online = Arc::new(Mutex::new(wait_online));
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
         let online_started = online_started.clone();
-        let release_online = release_online.clone();
+        let wait_online = wait_online.clone();
         move |_, _, options| {
             if options.allow_network {
                 online_started.store(true, Ordering::SeqCst);
-                release_online.wait();
+                let _ = wait_online.lock().unwrap().recv();
             }
             Err(reprise_core::lyrics::LyricsError::Temporary)
         }
@@ -306,7 +309,7 @@ fn lyr_2_loading_remains_visible_when_no_local_lyrics_exist() {
 
     assert_eq!(view.visible_state_name().as_deref(), Some("loading"));
     assert!(view.line_labels().is_empty());
-    release_online.wait();
+    release_online.send(()).unwrap();
 }
 
 #[test]
@@ -316,7 +319,8 @@ fn lyr_2_an_identical_online_fallback_keeps_the_rendered_local_line() {
     gtk4::init().unwrap();
     let online_started = Arc::new(AtomicBool::new(false));
     let online_finished = Arc::new(AtomicBool::new(false));
-    let release_online = Arc::new(Barrier::new(2));
+    let (release_online, wait_online) = mpsc::channel();
+    let wait_online = Arc::new(Mutex::new(wait_online));
     let local_plain = hit(
         LyricsBody::Plain("local sidecar text".into()),
         LyricsSource::Sidecar,
@@ -324,12 +328,12 @@ fn lyr_2_an_identical_online_fallback_keeps_the_rendered_local_line() {
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
         let online_started = online_started.clone();
         let online_finished = online_finished.clone();
-        let release_online = release_online.clone();
+        let wait_online = wait_online.clone();
         let local_plain = local_plain.clone();
         move |_, _, options| {
             if options.allow_network {
                 online_started.store(true, Ordering::SeqCst);
-                release_online.wait();
+                let _ = wait_online.lock().unwrap().recv();
                 online_finished.store(true, Ordering::SeqCst);
             }
             Ok(local_plain.clone())
@@ -344,7 +348,7 @@ fn lyr_2_an_identical_online_fallback_keeps_the_rendered_local_line() {
     drive_main_context_until(|| online_started.load(Ordering::SeqCst));
     let rendered_line = view.line_labels()[0].clone();
 
-    release_online.wait();
+    release_online.send(()).unwrap();
     drive_main_context_until(|| online_finished.load(Ordering::SeqCst));
     drive_main_context_for(std::time::Duration::from_millis(50));
 
