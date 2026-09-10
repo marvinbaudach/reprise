@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.175" date="2026-09-10" type="stable">
+      <description>
+        <p>Stops treating a rate-limited cover request as proof that an album has no cover art. The Cover Art Archive answers through CDNs that reply &quot;401&quot; or &quot;403&quot; while throttling, and a single such answer used to mark the album as coverless for a week; both are now retried like any other temporary failure.</p>
+        <p xml:lang="de">Wertet eine gedrosselte Cover-Anfrage nicht mehr als Beweis, dass ein Album kein Titelbild hat. Das Cover Art Archive antwortet über CDNs, die beim Drosseln &quot;401&quot; oder &quot;403&quot; senden, und eine einzige solche Antwort merkte das Album eine Woche lang als bildlos vor; beide werden jetzt wie jeder andere vorübergehende Fehler erneut versucht.</p>
+      </description>
+    </release>
     <release version="0.1.174" date="2026-09-10" type="stable">
       <description>
         <p>Finds album covers that were there all along when the tag carries a store decoration such as &quot;[Explicit]&quot; or &quot;(Deluxe Edition)&quot;, and keeps asking further releases instead of giving up when the first one holds no art, gives the mini player and its play button the light appearance they never had, makes the turning cover behind the album art visible again, lights a panel's toggle while the panel is folded away, shows an episode's runtime before you download it, and on Android stops the visualizer from discarding samples when the interface stalls. The first launch searches covers for the whole library once, and an older build can no longer open the library afterwards.</p>
