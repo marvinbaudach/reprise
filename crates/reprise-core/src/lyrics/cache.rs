@@ -146,7 +146,9 @@ pub(super) fn write_incomplete_retry(
                 body: LyricsBody::Plain(_),
                 ..
             })
-        ) && record.incomplete_synced_retry_at.is_some()
+        ) && record
+            .incomplete_synced_retry_at
+            .is_some_and(|retried_at| is_fresh_for(retried_at, now, INCOMPLETE_RETRY_TTL_SECONDS))
     });
     if repeated {
         write_found(cache_dir, now, query, hit, true);

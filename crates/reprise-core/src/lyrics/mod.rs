@@ -239,9 +239,7 @@ fn load_or_fetch_with_cache_context_at_from(
         Err(error) => {
             if let Some(CachedResult::Found(hit)) = cached.as_ref().map(|record| &record.result) {
                 let fallback = prefer_local_plain(local_plain, hit.clone());
-                if report.network_consensus_not_found
-                    || (report.network_answered && !report.network_incomplete)
-                {
+                if report.network_consensus_not_found {
                     cache::write_found(cache_dir, now, query, &fallback, true);
                 } else if report.network_answered {
                     cache::write_incomplete_retry(cache_dir, now, query, &fallback);

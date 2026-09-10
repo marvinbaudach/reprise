@@ -353,6 +353,14 @@ fn lyr_6_only_synced_and_instrumental_local_hits_are_complete() {
 }
 
 #[test]
+fn lyr_6_plain_tag_hit_is_complete() {
+    assert!(local_hit_is_complete(&LyricsHit {
+        body: LyricsBody::Plain("embedded lyrics".into()),
+        source: LyricsSource::Tag,
+    }));
+}
+
+#[test]
 fn lyr_6_a_stamped_plain_sidecar_is_skipped_on_the_second_batch_run() {
     let temp = tempfile::tempdir().unwrap();
     let cache_dir = temp.path().join("cache");

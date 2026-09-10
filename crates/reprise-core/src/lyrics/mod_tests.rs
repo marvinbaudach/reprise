@@ -259,6 +259,45 @@ fn repeatedly_unavailable_provider_eventually_throttles_plain_upgrades() {
     let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
     let answered = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
     let unavailable = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
+    let second_attempt = 100 + cache::INCOMPLETE_RETRY_TTL_SECONDS - 1;
+
+    for (now, force) in [(100, false), (second_attempt, true)] {
+        assert_eq!(
+            load_or_fetch_at(
+                temp.path(),
+                now,
+                &query(),
+                Some(Path::new("/fixture/song.flac")),
+                options(force),
+                &[&local],
+                &[&answered, &unavailable],
+            ),
+            Ok(local_hit.clone())
+        );
+    }
+
+    assert_eq!(answered.calls.get(), 2);
+    assert_eq!(unavailable.calls.get(), 2);
+    assert_eq!(
+        cache::needs_fetch_at(
+            temp.path(),
+            second_attempt + cache::NEGATIVE_TTL_SECONDS,
+            &query()
+        ),
+        NeedsFetch::Skip
+    );
+}
+
+#[test]
+fn separate_unavailable_provider_rounds_restart_the_short_retry_window() {
+    let temp = TempDir::new().unwrap();
+    let local_hit = LyricsHit {
+        body: LyricsBody::Plain("local sidecar text".into()),
+        source: LyricsSource::Sidecar,
+    };
+    let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
+    let answered = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+    let unavailable = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
     let second_attempt = 101 + cache::INCOMPLETE_RETRY_TTL_SECONDS;
 
     for now in [100, second_attempt] {
@@ -281,10 +320,18 @@ fn repeatedly_unavailable_provider_eventually_throttles_plain_upgrades() {
     assert_eq!(
         cache::needs_fetch_at(
             temp.path(),
-            second_attempt + cache::NEGATIVE_TTL_SECONDS,
+            second_attempt + cache::INCOMPLETE_RETRY_TTL_SECONDS,
             &query()
         ),
         NeedsFetch::Skip
+    );
+    assert_eq!(
+        cache::needs_fetch_at(
+            temp.path(),
+            second_attempt + cache::INCOMPLETE_RETRY_TTL_SECONDS + 1,
+            &query()
+        ),
+        NeedsFetch::RetryForSynced
     );
 }
 
