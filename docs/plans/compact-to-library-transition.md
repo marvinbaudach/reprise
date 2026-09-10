@@ -2,7 +2,7 @@
 slug: compact-to-library-transition
 worktree: /home/marvin/Projects/reprise-compact-to-library-transition
 branch: feature/compact-to-library-transition
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-09
 ---
