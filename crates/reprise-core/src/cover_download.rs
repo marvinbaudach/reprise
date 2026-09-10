@@ -488,7 +488,10 @@ fn classify_caa_status(status: u16) -> CaaFetchResult {
     if is_clean_caa_miss(status) {
         return CaaFetchResult::NotFound;
     }
-    if (400..=499).contains(&status) && !matches!(status, 408 | 429) {
+    // 401 and 403 look like refusals, but CDNs in front of the Cover Art
+    // Archive also serve them while throttling, so they stay retryable rather
+    // than marking a cover that is there as missing.
+    if (400..=499).contains(&status) && !matches!(status, 401 | 403 | 408 | 429) {
         return CaaFetchResult::UnusableBody;
     }
     CaaFetchResult::TransientFailure
