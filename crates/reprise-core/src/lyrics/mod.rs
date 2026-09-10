@@ -223,6 +223,8 @@ fn load_or_fetch_with_cache_context_at_from(
             if is_local(hit.source) {
                 if report.network_consensus_not_found {
                     cache::write_not_found(cache_dir, now, query);
+                } else if report.network_answered {
+                    cache::write_found(cache_dir, now, query, &hit, true);
                 }
             } else {
                 cache::write_found(cache_dir, now, query, &hit, true);

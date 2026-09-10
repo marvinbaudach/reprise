@@ -278,6 +278,68 @@ fn all_network_not_found_writes_negative_cache_but_mixed_failure_does_not() {
 }
 
 #[test]
+fn lyr_6_an_answered_plain_upgrade_is_stamped_and_skipped_within_the_ttl() {
+    let temp = TempDir::new().unwrap();
+    let local_hit = LyricsHit {
+        body: LyricsBody::Plain("local sidecar text".into()),
+        source: LyricsSource::Sidecar,
+    };
+    let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
+    let answered = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+    let failed = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
+
+    for _ in 0..2 {
+        assert_eq!(
+            load_or_fetch_at(
+                temp.path(),
+                100,
+                &query(),
+                Some(Path::new("/fixture/song.flac")),
+                options(false),
+                &[&local],
+                &[&answered, &failed],
+            ),
+            Ok(local_hit.clone())
+        );
+    }
+
+    let record = cache::read_cache(temp.path(), &query()).unwrap();
+    assert_eq!(record.result, CachedResult::Found(local_hit));
+    assert!(cache::plain_retry_is_fresh(&record, 100));
+    assert_eq!(answered.calls.get(), 1);
+    assert_eq!(failed.calls.get(), 1);
+}
+
+#[test]
+fn lyr_6_a_failed_plain_upgrade_is_not_stamped_and_is_retried() {
+    let temp = TempDir::new().unwrap();
+    let local_hit = LyricsHit {
+        body: LyricsBody::Plain("local sidecar text".into()),
+        source: LyricsSource::Sidecar,
+    };
+    let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
+    let failed = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::Failed);
+
+    for _ in 0..2 {
+        assert_eq!(
+            load_or_fetch_at(
+                temp.path(),
+                100,
+                &query(),
+                Some(Path::new("/fixture/song.flac")),
+                options(false),
+                &[&local],
+                &[&failed],
+            ),
+            Ok(local_hit.clone())
+        );
+    }
+
+    assert!(cache::read_cache(temp.path(), &query()).is_none());
+    assert_eq!(failed.calls.get(), 2);
+}
+
+#[test]
 fn forced_refresh_keeps_positive_cache_on_temporary_failure() {
     let temp = TempDir::new().unwrap();
     let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
