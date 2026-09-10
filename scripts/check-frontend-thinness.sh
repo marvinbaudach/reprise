@@ -53,7 +53,13 @@ shared_view=crates/reprise-view/src
 # instead. This lowers the floor for the same reason the preparation-progress
 # API did: presentation code with no consumer left is not shared logic, and a
 # floor held up by dead lines measures nothing.
-view_floor=2154
+# The filter pill's chip model (#909) removed two message functions this
+# floor never noticed losing, because the GTK-only `ChipLead` and its
+# lead/value/remove-label decisions still lived in reprise-gnome. Moving that
+# model into `reprise-view::filter_chip` — the owned `ChipLead`, the
+# `ChipRemoveLabel` split between shared and GTK-only remove text, the chip
+# model itself and its three constructors — raised the floor by 28 lines.
+view_floor=2182
 
 echo "== Frontend thinness =="
 

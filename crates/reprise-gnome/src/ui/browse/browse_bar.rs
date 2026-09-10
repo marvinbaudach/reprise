@@ -10,6 +10,7 @@ use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
 use reprise_core::view_source::ViewSource;
+use reprise_view::filter_chip::FilterChipModel;
 
 use super::browse_bar_chips::{
     append_chip, apply_selection, available_facets, displayed_value, facet_label, filter_chips,
@@ -432,34 +433,28 @@ impl BrowseBar {
         for chip in filter_chips(filter) {
             let facet = chip.facet;
             let weak = Rc::downgrade(self);
-            let widget = filter_bar_layout::build_chip(
-                filter_bar_layout::ChipLead::Field(&chip.field),
-                &chip.value,
-                &chip.accessible_remove_label,
-                move || {
-                    let Some(bar) = weak.upgrade() else {
-                        return;
-                    };
-                    let next = remove_filter(&bar.filter(), facet);
-                    bar.apply_filter(next);
-                },
-            );
+            let widget = filter_bar_layout::build_chip(&chip.model, move || {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                let next = remove_filter(&bar.filter(), facet);
+                bar.apply_filter(next);
+            });
             append_chip(&self.chips, &widget);
         }
         // FIL-7: the active "Hide AI music" filter shows as its own chip whose ×
         // turns it off (FIL-1a).
         if self.exclude_ai.get() && self.ai_filter_available() {
             let weak = Rc::downgrade(self);
-            let widget = filter_bar_layout::build_chip(
-                filter_bar_layout::ChipLead::Bare,
+            let model = FilterChipModel::bare(
                 &crate::ui::strings::text(crate::ui::strings::FILTER_HIDE_AI),
-                &crate::ui::strings::remove_hide_ai_filter(),
-                move || {
-                    if let Some(bar) = weak.upgrade() {
-                        bar.set_exclude_ai(false);
-                    }
-                },
+                crate::ui::strings::remove_hide_ai_filter(),
             );
+            let widget = filter_bar_layout::build_chip(&model, move || {
+                if let Some(bar) = weak.upgrade() {
+                    bar.set_exclude_ai(false);
+                }
+            });
             append_chip(&self.chips, &widget);
         }
         self.chips.set_visible(self.chips.first_child().is_some());
@@ -615,7 +610,7 @@ fn schedule_smoke_step(
         };
         let chips: Vec<_> = filter_chips(&browse)
             .into_iter()
-            .map(|chip| format!("{} {}", chip.field, chip.value))
+            .map(|chip| format!("{} {}", facet_label(chip.facet), chip.model.value))
             .collect();
         let result_count = shared.browse_bar.result_count();
         tracing::info!(

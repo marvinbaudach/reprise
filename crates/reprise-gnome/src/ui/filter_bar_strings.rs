@@ -13,10 +13,6 @@ pub(in crate::ui) fn text(message: &str) -> String {
     crate::i18n::gettext(message)
 }
 
-pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
-    render(&messages::remove_filter_label(facet, value))
-}
-
 /// SEARCH-2c: the popover names the fields the current view searches.
 pub(in crate::ui) fn searches_scope(scope: SearchScope) -> String {
     render_search_scope_message(messages::searches_scope(scope))
@@ -32,10 +28,6 @@ fn render_search_scope_message(mut message: reprise_view::strings::Message) -> S
 /// SEARCH-8a: the tooltip on the insensitive lens of a view without a list.
 pub(in crate::ui) fn nothing_to_filter(section: &str) -> String {
     render(&messages::nothing_to_filter(section))
-}
-
-pub(in crate::ui) fn remove_search_label(query: &str) -> String {
-    render(&messages::remove_search_label(query))
 }
 
 pub(in crate::ui) fn leave_place_label(place: &str) -> String {
@@ -67,7 +59,11 @@ fn borrowed<'a>(args: &'a [(&'static str, String)]) -> Vec<(&'static str, &'a st
         .collect()
 }
 
-fn render(message: &reprise_view::strings::Message) -> String {
+/// Renders any shared [`reprise_view::strings::Message`] through gettext and
+/// substitutes its placeholders — the last step every filter-bar surface
+/// shares, including `filter_bar_chip::render_remove_label` for a chip's
+/// accessible remove name.
+pub(in crate::ui) fn render(message: &reprise_view::strings::Message) -> String {
     let template = match &message.plural {
         Some(plural) => crate::i18n::ngettext(
             message.id,
@@ -87,15 +83,6 @@ mod tests {
     #[test]
     fn fil_1c_place_pill_label_says_leave_not_remove() {
         assert_eq!(leave_place_label("Lorna Shore"), "Leave Lorna Shore");
-    }
-
-    // UX FIL-1d: the × accessible label stays the same regardless of which
-    // fields the view searches — that promise now lives only in the caption
-    // `search_2c_caption_names_the_fields_of_its_view` covers below.
-    #[test]
-    fn fil_1d_remove_search_label_stays_scope_independent() {
-        assert_eq!(remove_search_label("falling"), "Remove search: falling");
-        assert_eq!(remove_search_label("wer"), "Remove search: wer");
     }
 
     // UX SEARCH-2c: the caption names the same fields for every search scope.
