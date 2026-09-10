@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.172" date="2026-09-10" type="stable">
+      <description>
+        <p>Finds album covers that were there all along when the tag carries a store decoration such as &quot;[Explicit]&quot; or &quot;(Deluxe Edition)&quot;, and keeps asking further releases instead of giving up when the first one holds no art, gives the mini player and its play button the light appearance they never had, makes the turning cover behind the album art visible again, lights a panel's toggle while the panel is folded away, shows an episode's runtime before you download it, and on Android stops the visualizer from discarding samples when the interface stalls. The first launch searches covers for the whole library once, and an older build can no longer open the library afterwards.</p>
+        <p xml:lang="de">Findet Album-Cover, die immer schon da waren, wenn der Tag eine Verkaufsverzierung wie &quot;[Explicit]&quot; oder &quot;(Deluxe Edition)&quot; trägt, und fragt weitere Veröffentlichungen ab, statt aufzugeben, wenn die erste kein Bild hat, gibt dem Mini-Player und seiner Wiedergabetaste die helle Darstellung, die ihnen fehlte, macht das drehende Cover hinter dem Albumbild wieder sichtbar, lässt die Taste eines eingeklappten Bereichs leuchten, zeigt die Laufzeit einer Episode schon vor dem Herunterladen und verhindert unter Android, dass der Visualizer Samples verwirft, wenn die Oberfläche stockt. Der erste Start durchsucht einmalig die Cover der gesamten Bibliothek, und eine ältere Version kann die Bibliothek danach nicht mehr öffnen.</p>
+      </description>
+    </release>
     <release version="0.1.162" date="2026-09-09" type="stable">
       <description>
         <p>Gives the light appearance its own edges, so surfaces, the cover bloom, a search match and the seek waveform stay legible instead of leaving the accent to carry all the structure, lets the visualizer see every beat instead of running at the decoder's block rate, and on Android lets the Now Playing swipe animate again while keeping a real cover from falling back to a generated note.</p>

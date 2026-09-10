@@ -4,6 +4,67 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.172] - 2026-09-10
+
+### Library
+
+- The cover search finds what is there. An album whose tag carries a store
+  decoration — `Evolve [Explicit]`, `Self Inflicted (Deluxe Edition)`,
+  anything ending in `- Single` — returned no search results at all, because
+  the decoration went into the query verbatim and MusicBrainz matched nothing.
+  The search now retries once with the decoration stripped, and only when the
+  strict attempt found nothing, so an album that already worked cannot change.
+  A second defect sat behind it: only the first matching release was ever asked
+  for art, and when that one had none the album was given up on even though a
+  later release carried the cover. The search now walks the candidates.
+- The background-activity panel in Preferences stays hidden while nothing is
+  running. It used to show its heading on every page, leaving an empty band
+  under it.
+- The filter pill shows only the term. It used to spell out every field it
+  searches inside the chip itself, which made it long and repeated the same
+  list in every view; where the search looks is still explained by the scope
+  caption.
+
+### Appearance
+
+- The mini player follows the appearance. Its card, edges and text had never
+  been re-themed for light mode — the title and artist were near-black on a
+  near-black tint, which is a contrast ratio of about 1.05 and effectively
+  invisible. The play button's teal glow was hardcoded in the same way and read
+  as glare once the card around it turned light.
+- The turning disc becomes visible again. The blurred cover behind the album
+  art in Now Playing had faded below the threshold of perception. Dark mode
+  keeps exactly the feel it had; light mode turns slower and stays dimmer,
+  because the same motion reads as distracting on the paler card.
+- The folded panel lights its button. The sidebar and Now Playing toggles now
+  both carry the accent while their panel is folded away and stay neutral while
+  it is open. The Now Playing toggle used to be lit the wrong way round and the
+  sidebar toggle was never lit at all.
+
+### Podcasts
+
+- Episodes show their runtime before the download. The length only appeared
+  once the file had been fetched, which is the wrong way round for deciding
+  whether to fetch it.
+
+### Android
+
+- The visualizer keeps every sample it is handed. A clamp meant for the desktop
+  decoder also capped the phone's visualizer input and discarded fresh
+  low-frequency audio whenever the UI thread stalled. The desktop visualizer was
+  never affected by this.
+
+### Upgrading
+
+- The first launch after this update runs the album-cover pass over the whole
+  library once. This is deliberate: the fixes above cannot reach albums that
+  were already recorded as having no cover, so that record is cleared. How long
+  it takes scales with the size of your library and with the pacing the
+  MusicBrainz and Cover Art Archive requests are held to.
+- This update raises the library database format. An older Reprise build will
+  refuse to open the library afterwards, so going back to a previous version is
+  not possible without restoring a copy of the database made beforehand.
+
 ## [0.1.162] - 2026-09-09
 
 ### Appearance
