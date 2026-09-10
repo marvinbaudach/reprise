@@ -125,8 +125,7 @@ fn search_4a_podcasts_escape_and_chip_share_the_section_clear_path() {
     bar.set_query("falling");
     bar.set_committed_query("falling");
     bar.layout
-        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-        .and_downcast::<gtk4::Button>()
+        .search_chip_remove_button()
         .expect("Podcasts search chip")
         .emit_clicked();
     bar.layout.assert_search_cleared(&bar.filter().query);
@@ -174,15 +173,11 @@ fn fil_2a_podcasts_and_youtube_fill_the_same_ordered_slots() {
             crate::ui::filter_bar_layout::FilterBarSlot::TrailingAction,
             &bar.clear_selection
         ));
-        let first = bar
+        assert!(bar
             .layout
             .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-            .expect("search chip");
-        assert!(first
-            .downcast::<gtk4::Button>()
-            .ok()
-            .and_then(|button| button.label())
-            .is_some_and(|label| label.starts_with('⌕')));
+            .is_some());
+        assert_eq!(bar.layout.search_chip_value().as_deref(), Some("falling"));
         assert!(bar.clear_all.is_visible());
         assert!(bar.clear_selection.is_visible());
     }

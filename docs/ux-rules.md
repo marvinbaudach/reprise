@@ -1673,7 +1673,7 @@ result.
 - **FIL-1a** [active] [gtk] — One truth about restrictions (track
   lists): anything that restricts the visible track list appears as a
   chip in the filter row directly above the list — including the
-  header-bar search (chip ⌕ "falling" in any field, own ×-click target
+  header-bar search (chip ⌕ falling, own ×-click target
   ≥ 20 px; the × removes only the search, Esc per NAV-6). Applies in
   every track source (Library, Playlist, Smart, Queue, Missing). The
   search remains only while the same track list stays current; its chip
@@ -1685,8 +1685,7 @@ result.
   sidebar destination drops only the query, while drilling into an Artist,
   Album or Genre place carries it into that narrower context; Back restores
   the complete history-owned list state. Every list view still carries its
-  active query as its first chip, worded for the fields that view actually
-  reads — FIL-1d.)
+  active query as its first chip — FIL-1d.)
 - **FIL-1b** [planned] [gtk] — Albums/Artists mode: the global search
   already works there (grid filtering); the same chip row incl.
   counting and "Clear all" will follow there per the pattern of
@@ -1709,23 +1708,36 @@ result.
   removable scope chips under the FILTER heading — one shape for two
   meanings, which measurably read as a filter that turned out to be a
   navigation.)
-- **FIL-1d** [active] [gtk] — The search chip names its scope. Every
-  list view accepts the section's query as its **first** chip, ahead of
-  the facet chips and with the same removable ×-affordance FIL-1a gave
-  the Library one — whether or not the list is playable: Music,
-  Podcasts, YouTube, Radio, Queue, playlists, Releases, Concerts,
-  Missing files. The wording is not decoration but a promise about what
-  was matched, so it names the fields that view actually reads: Music
-  and its sibling track sources say "⌕ "{query}" in track, artist and album";
-  Podcasts says "in episode titles", YouTube "in video titles", Radio
-  "in station names", Releases "in title and artist", Concerts "in
-  artist and venue", Missing files "in file paths". A view may never
-  claim a field it does not search, and may never quietly search one it
-  does not name. Matching is case-insensitive substring matching,
-  mid-word included ("wer" matches "Antwerpen"). The chip's accessible
-  remove name stays "Remove search: {query}" everywhere. The chip's ×
-  and "Clear all" clear the query and the facets of the **current**
-  view only (FIL-2a, SEARCH-8a).
+- **FIL-1d** [active] [gtk] — The search chip shows the term, and the
+  view names its own scope. Every list view accepts the section's query
+  as its **first** chip, ahead of the facet chips and with the same
+  removable ×-affordance FIL-1a gave the Library one — whether or not the
+  list is playable: Music, Podcasts, YouTube, Radio, Queue, playlists,
+  Releases, Concerts, Missing files. The chip carries a magnifier, the
+  bare query, and its ×; nothing else. The magnifier is what says the
+  chip came from the search, so a chip raised through "+ Add filter"
+  carries its field instead, as a short muted prefix ahead of the value
+  ("Year 2022") — the two kinds stay distinguishable without either
+  explaining itself.
+  The promise about what was matched is not dropped, it is spoken where
+  the query is entered: the search popover's caption names the fields
+  that view actually reads (SEARCH-2c) — "track, artist and album" for
+  Music and its sibling track sources, "episode titles" for Podcasts,
+  "video titles" for YouTube, "station names" for Radio, "title and
+  artist" for Releases, "artist and venue" for Concerts, "file paths"
+  for Missing files. A view may never claim a field it does not search,
+  and may never quietly search one it does not name. Matching is
+  case-insensitive substring matching, mid-word included ("wer" matches
+  "Antwerpen"). The chip's accessible remove name stays
+  "Remove search: {query}" everywhere, and it sits on the × itself: the
+  chip body is not a focus stop. The chip's × and "Clear all" clear the
+  query and the facets of the **current** view only (FIL-2a, SEARCH-8a).
+  (Revised 2026-09-09: the chip used to repeat the scope clause inline —
+  "⌕ "falling" in track, artist and album". Every part of it carried the
+  same colour and weight, so the term the reader was looking for had only
+  the quotation marks to mark it. The clause moved to the popover, which
+  is read once when the search is set rather than on every glance at the
+  filter row.)
 - **FIL-2** [replaced by FIL-2a] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
@@ -6598,8 +6610,9 @@ listening statistics.
   `pod_24_external_session_never_scrobbles`.
 - **POD-25** [active] [gtk] — The Podcasts and YouTube search matches
   **episode titles only**, case-insensitively and mid-word — not show
-  names, not authors, not descriptions (FIL-1d: "in episode titles" /
-  "in video titles"). A show is rendered when at least one of its
+  names, not authors, not descriptions — which is what the search
+  popover's caption promises there (FIL-1d, SEARCH-2c: "episode titles" /
+  "video titles"). A show is rendered when at least one of its
   episodes matches; it is then auto-expanded and renders only the
   matching episodes, and a show without a match drops out of the list
   entirely. Auto-expansion is for the duration of the query only: it

@@ -18,7 +18,8 @@ pub(super) const FACETS: [BrowseFacet; 5] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FilterChip {
     pub(super) facet: BrowseFacet,
-    pub(super) label: String,
+    pub(super) field: String,
+    pub(super) value: String,
     pub(super) accessible_remove_label: String,
 }
 
@@ -98,11 +99,12 @@ pub(super) fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
         .into_iter()
         .filter_map(|facet| {
             let value = displayed_value(facet, filter_value(filter, facet)?);
-            let facet_name = facet_label(facet);
+            let field = facet_label(facet);
             Some(FilterChip {
                 facet,
-                label: filter_strings::chip_label(&facet_name, &value),
-                accessible_remove_label: filter_strings::remove_filter_label(&facet_name, &value),
+                accessible_remove_label: filter_strings::remove_filter_label(&field, &value),
+                field,
+                value,
             })
         })
         .collect()

@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_view::search_scope::SearchScope;
 
 use super::review_model::ReviewCategory;
 use crate::ui::strings;
@@ -111,19 +110,13 @@ impl ReviewFilterBar {
         if query.is_empty() {
             return;
         }
-        let label = crate::ui::filter_bar_strings::scoped_search_chip_label(
-            SearchScope::DoctorReview,
-            query,
-        );
-        let chip = gtk4::Button::with_label(&format!("{label}  ×"));
-        chip.add_css_class("flat");
-        chip.add_css_class(crate::ui::filter_bar_layout::CHIP_CSS_CLASS);
-        chip.set_size_request(-1, 20);
-        chip.update_property(&[gtk4::accessible::Property::Label(
-            &crate::ui::filter_bar_strings::remove_search_label(query),
-        )]);
         let clear_search = self.clear_search.clone();
-        chip.connect_clicked(move |_| clear_search());
+        let chip = crate::ui::filter_bar_layout::build_chip(
+            crate::ui::filter_bar_layout::ChipLead::Search,
+            query,
+            &crate::ui::filter_bar_strings::remove_search_label(query),
+            move || clear_search(),
+        );
         self.search.append(&chip);
     }
 

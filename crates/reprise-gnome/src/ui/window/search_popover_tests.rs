@@ -64,7 +64,7 @@ impl ReceiptHarness {
             move |query| applying.borrow_mut().push(query.to_owned()),
             move |query| {
                 let coordinator = coordinator_for_clear.clone();
-                committed_layout.replace_scoped_search(SearchScope::Tracks, query, move || {
+                committed_layout.replace_search_chip(query, move || {
                     if let Some(coordinator) = coordinator.upgrade() {
                         coordinator.set_query(SearchScope::Tracks, "");
                     }
@@ -104,10 +104,8 @@ impl ReceiptHarness {
         });
     }
 
-    fn search_chip(&self) -> Option<gtk4::Button> {
-        self.layout
-            .slot_child(FilterBarSlot::Search)
-            .and_downcast::<gtk4::Button>()
+    fn search_chip(&self) -> Option<gtk4::Widget> {
+        self.layout.slot_child(FilterBarSlot::Search)
     }
 }
 

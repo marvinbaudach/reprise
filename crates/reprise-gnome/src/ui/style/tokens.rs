@@ -13,18 +13,27 @@ pub(in crate::ui) const SECONDARY_TEXT_ALPHA: f64 = 0.70;
 /// Hint text alpha for placeholders and disabled secondary copy.
 pub(in crate::ui) const HINT_TEXT_ALPHA: f64 = 0.50;
 
-/// Resting background alpha for filter chips (over `@accent_bg_color`).
-///
-/// Bounded by the chip's own label: the fill drags the surface toward the
-/// accent, and accent text on accent tint has nowhere to go. At the previous
-/// 0.22/0.32 the label measured 4.17:1 and 3.37:1 — below AA. Lightening the
-/// accent instead would need a near-white pastel that wrecks the brand colour
-/// everywhere else, so the fill yields and the accent stays itself.
-pub(in crate::ui) const CHIP_BG_ALPHA: &str = "0.14";
+/// Corner radius of a filter-bar chip and of "+ Add filter" beside it.
+pub(in crate::ui) const RADIUS_CHIP: &str = "8px";
 
-/// Hover background alpha for filter chips. See [`CHIP_BG_ALPHA`] for why this
-/// is capped rather than chosen freely.
-pub(in crate::ui) const CHIP_BG_HOVER_ALPHA: &str = "0.18";
+/// Resting surface alpha of a filter chip (over `@window_fg_color`).
+///
+/// The chip used to sit on `@accent_bg_color`: at 0.22/0.32 its label measured
+/// 4.17:1 and 3.37:1 — below AA — and even after that was pulled back to
+/// 0.14/0.18 (see the retired `CHIP_BG_ALPHA`), the label still bounded the
+/// fill. The redesign drops the accent tint from the chip entirely — only the
+/// left edge and the search icon still carry `@accent_color` — so the surface
+/// is neutral instead and the bound that used to cap it no longer applies.
+pub(in crate::ui) const CHIP_SURFACE_ALPHA: &str = "0.07";
+
+/// Border alpha of a filter chip (over `@window_fg_color`). See
+/// [`CHIP_SURFACE_ALPHA`] for why the chip moved off the accent surface.
+pub(in crate::ui) const CHIP_BORDER_ALPHA: &str = "0.14";
+
+/// Hover background alpha of a chip's own × remove button (over
+/// `@window_fg_color`) — a glyph with a hover state of its own, distinct from
+/// the chip surface it sits on.
+pub(in crate::ui) const CHIP_REMOVE_HOVER_BG_ALPHA: &str = "0.12";
 
 /// Border alpha of the Layout preference preview cards (over
 /// `@window_fg_color`).
@@ -401,8 +410,6 @@ mod tests {
     /// a tint added here without raising the ceiling ships unmeasured.
     fn accent_tint_alphas() -> Vec<(&'static str, f64)> {
         [
-            ("chip", CHIP_BG_ALPHA),
-            ("chip:hover", CHIP_BG_HOVER_ALPHA),
             ("flat:hover", HOVER_BG_ALPHA),
             ("panel toggle:checked:hover", HOVER_BG_ALPHA_STRONG),
             ("toggle:checked", BTN_CHECKED_FILL_ALPHA),

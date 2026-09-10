@@ -128,14 +128,14 @@ fn filter_chips_follow_cascade_order_and_render_unknown_values() {
     let chips = filter_chips(&filter);
     let projection: Vec<_> = chips
         .iter()
-        .map(|chip| (chip.facet, chip.label.as_str()))
+        .map(|chip| (chip.facet, chip.field.as_str(), chip.value.as_str()))
         .collect();
     assert_eq!(
         projection,
         vec![
-            (BrowseFacet::Genre, "Genre: Unknown genre"),
-            (BrowseFacet::Artist, "Artist: Brand of Sacrifice"),
-            (BrowseFacet::Album, "Album: Unknown album"),
+            (BrowseFacet::Genre, "Genre", "Unknown genre"),
+            (BrowseFacet::Artist, "Artist", "Brand of Sacrifice"),
+            (BrowseFacet::Album, "Album", "Unknown album"),
         ]
     );
     assert_eq!(
@@ -282,14 +282,11 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
         crate::ui::filter_bar_layout::FilterBarSlot::AddFilter,
         &bar.add_filter
     ));
-    assert_eq!(
-        bar.layout
-            .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-            .and_then(|widget| widget.downcast::<gtk4::Button>().ok())
-            .and_then(|button| button.label())
-            .as_deref(),
-        Some("⌕ “falling” in track, artist and album  ×")
-    );
+    assert!(bar
+        .layout
+        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
+        .is_some());
+    assert_eq!(bar.layout.search_chip_value().as_deref(), Some("falling"));
     assert!(bar.layout.slot_contains(
         crate::ui::filter_bar_layout::FilterBarSlot::Count,
         &bar.result_label
@@ -300,10 +297,40 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
     ));
 
     let genre_chip = bar.chips.first_child().unwrap();
-    genre_chip
-        .downcast::<gtk4::Button>()
-        .unwrap()
-        .emit_clicked();
+    // A facet chip names its field as a muted prefix and carries the value
+    // separately — asserted so swapping the two at a call site (or swapping
+    // `ChipLead::Field` for `ChipLead::Search`) fails a test instead of
+    // silently passing (see the search chip's mirror assertion in
+    // `filter_bar_layout::fil_1d_search_slot_uses_the_real_removable_chip`).
+    assert_eq!(
+        crate::ui::filter_bar_chip::child_with_css_class(
+            &genre_chip,
+            crate::ui::filter_bar_chip::CHIP_FIELD_CSS_CLASS,
+        )
+        .and_downcast::<gtk4::Label>()
+        .expect("the facet chip carries its muted field prefix")
+        .text()
+        .to_string(),
+        facet_label(BrowseFacet::Genre)
+    );
+    assert_eq!(
+        crate::ui::filter_bar_chip::child_with_css_class(
+            &genre_chip,
+            crate::ui::filter_bar_chip::CHIP_VALUE_CSS_CLASS,
+        )
+        .and_downcast::<gtk4::Label>()
+        .expect("the facet chip carries its value")
+        .text()
+        .to_string(),
+        "Rock"
+    );
+    crate::ui::filter_bar_chip::child_with_css_class(
+        &genre_chip,
+        crate::ui::filter_bar_chip::CHIP_REMOVE_CSS_CLASS,
+    )
+    .and_downcast::<gtk4::Button>()
+    .expect("the facet chip carries its own × remove button")
+    .emit_clicked();
     let context = glib::MainContext::default();
     while context.pending() {
         context.iteration(false);
@@ -311,6 +338,10 @@ fn fil_2a_music_fills_place_filters_count_and_clear_slots() {
     assert_eq!(bar.filter(), BrowseFilter::default());
     assert_eq!(bar.chips.observe_children().n_items(), 0);
     assert!(!bar.add_filter.has_css_class("flat"));
+    // The + Add filter button keeps its dashed outline as the only visible
+    // shape (review defect 1): frameless so the internal toggle button no
+    // longer paints Adwaita's own filled, bold surface on top of it.
+    assert!(!bar.add_filter.has_frame());
     assert_eq!(
         bar.add_filter
             .child()
@@ -372,8 +403,7 @@ fn search_4a_music_escape_and_chip_share_the_section_clear_path() {
     bar.set_search("falling");
     bar.set_committed_query("falling");
     bar.layout
-        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-        .and_downcast::<gtk4::Button>()
+        .search_chip_remove_button()
         .expect("Music search chip")
         .emit_clicked();
 

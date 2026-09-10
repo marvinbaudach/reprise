@@ -103,7 +103,8 @@ impl BrowseBar {
         let add_filter = gtk4::MenuButton::new();
         add_filter.set_child(Some(&add_label));
         add_filter.set_popover(Some(&popover));
-        add_filter.add_css_class("pill");
+        // libadwaita's "pill" forces a 9999px radius that would defeat the
+        // 8px corner `ADD_FILTER_CSS_CLASS` now draws.
         filter_bar_layout::style_add_filter(&add_filter);
         add_filter.update_property(&[gtk4::accessible::Property::Label(&filter_strings::text(
             filter_strings::ADD_FILTER,
@@ -280,12 +281,6 @@ impl BrowseBar {
         self.sync_visibility();
     }
 
-    /// FIL-1d: the scope this bar's search chip speaks for — derived from the
-    /// source it is currently describing, never guessed.
-    pub(in crate::ui) fn search_scope(&self) -> reprise_view::search_scope::SearchScope {
-        reprise_view::search_scope::scope_for(&self.source.borrow())
-    }
-
     pub fn set_search(self: &Rc<Self>, text: &str) {
         *self.search.borrow_mut() = text.to_string();
         self.refresh();
@@ -422,55 +417,50 @@ impl BrowseBar {
             self.chips.remove(&child);
         }
         let committed_query = self.committed_query();
-        // FIL-1d: the shared chip renderer names the fields this source
-        // actually searches.
+        // FIL-1d: the search popover's own caption still names the fields
+        // this source actually searches; the chip itself just shows the query.
         let weak = Rc::downgrade(self);
-        self.layout
-            .replace_scoped_search(self.search_scope(), &committed_query, move || {
-                let Some(bar) = weak.upgrade() else {
-                    return;
-                };
-                let callback = bar.on_search_cleared.borrow().clone();
-                if let Some(callback) = callback {
-                    callback();
-                }
-            });
+        self.layout.replace_search_chip(&committed_query, move || {
+            let Some(bar) = weak.upgrade() else {
+                return;
+            };
+            let callback = bar.on_search_cleared.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
         for chip in filter_chips(filter) {
-            let button = gtk4::Button::with_label(&format!("{}  ×", chip.label));
-            button.add_css_class("flat");
-            button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
-            button.update_property(&[gtk4::accessible::Property::Label(
-                &chip.accessible_remove_label,
-            )]);
+            let facet = chip.facet;
             let weak = Rc::downgrade(self);
-            button.connect_clicked(move |_| {
-                let Some(bar) = weak.upgrade() else {
-                    return;
-                };
-                let next = remove_filter(&bar.filter(), chip.facet);
-                bar.apply_filter(next);
-            });
-            append_chip(&self.chips, &button);
+            let widget = filter_bar_layout::build_chip(
+                filter_bar_layout::ChipLead::Field(&chip.field),
+                &chip.value,
+                &chip.accessible_remove_label,
+                move || {
+                    let Some(bar) = weak.upgrade() else {
+                        return;
+                    };
+                    let next = remove_filter(&bar.filter(), facet);
+                    bar.apply_filter(next);
+                },
+            );
+            append_chip(&self.chips, &widget);
         }
         // FIL-7: the active "Hide AI music" filter shows as its own chip whose ×
         // turns it off (FIL-1a).
         if self.exclude_ai.get() && self.ai_filter_available() {
-            let button = gtk4::Button::with_label(&format!(
-                "{}  ×",
-                crate::ui::strings::text(crate::ui::strings::FILTER_HIDE_AI)
-            ));
-            button.add_css_class("flat");
-            button.add_css_class(filter_bar_layout::CHIP_CSS_CLASS);
-            button.update_property(&[gtk4::accessible::Property::Label(
-                &crate::ui::strings::remove_hide_ai_filter(),
-            )]);
             let weak = Rc::downgrade(self);
-            button.connect_clicked(move |_| {
-                if let Some(bar) = weak.upgrade() {
-                    bar.set_exclude_ai(false);
-                }
-            });
-            append_chip(&self.chips, &button);
+            let widget = filter_bar_layout::build_chip(
+                filter_bar_layout::ChipLead::Bare,
+                &crate::ui::strings::text(crate::ui::strings::FILTER_HIDE_AI),
+                &crate::ui::strings::remove_hide_ai_filter(),
+                move || {
+                    if let Some(bar) = weak.upgrade() {
+                        bar.set_exclude_ai(false);
+                    }
+                },
+            );
+            append_chip(&self.chips, &widget);
         }
         self.chips.set_visible(self.chips.first_child().is_some());
         self.add_filter.set_visible(self.is_library.get());
@@ -625,7 +615,7 @@ fn schedule_smoke_step(
         };
         let chips: Vec<_> = filter_chips(&browse)
             .into_iter()
-            .map(|chip| chip.label)
+            .map(|chip| format!("{} {}", chip.field, chip.value))
             .collect();
         let result_count = shared.browse_bar.result_count();
         tracing::info!(

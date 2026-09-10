@@ -114,8 +114,7 @@ fn search_4a_concerts_escape_and_chip_share_the_section_clear_path() {
     bar.set_query("winterthur");
     bar.set_committed_query("winterthur");
     bar.layout
-        .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-        .and_downcast::<gtk4::Button>()
+        .search_chip_remove_button()
         .expect("Concerts search chip")
         .emit_clicked();
     bar.layout.assert_search_cleared(&bar.query());
@@ -195,15 +194,14 @@ fn fil_2a_concerts_fill_filters_count_and_clear_slots_in_order() {
         crate::ui::filter_bar_layout::FilterBarSlot::ClearAll,
         &bar.clear_all
     ));
-    let first = bar
+    assert!(bar
         .layout
         .slot_child(crate::ui::filter_bar_layout::FilterBarSlot::Search)
-        .expect("query fills the search slot");
-    assert!(first
-        .downcast::<gtk4::Button>()
-        .ok()
-        .and_then(|button| button.label())
-        .is_some_and(|label| label.starts_with('⌕')));
+        .is_some());
+    assert_eq!(
+        bar.layout.search_chip_value().as_deref(),
+        Some("winterthur")
+    );
     assert!(!descendant_labels(bar.widget())
         .iter()
         .any(|text| text == "FILTER"));
