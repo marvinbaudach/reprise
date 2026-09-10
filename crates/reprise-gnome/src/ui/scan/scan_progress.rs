@@ -235,9 +235,8 @@ impl ScanProgressView {
             .child(&container)
             .reveal_child(false)
             .build();
-        // Start both widgets hidden. Once docked, the activity slot owns the
+        // The revealer starts hidden. Once docked, the activity slot owns the
         // card body's visibility; setting the revealer remains allowed and harmless.
-        container.set_visible(false);
         revealer.set_visible(false);
 
         let on_cancel: OnCancelSlot = Rc::new(RefCell::new(None));
@@ -431,9 +430,6 @@ impl ScanProgressView {
 
     fn begin_visibility(&self) {
         self.inner.revealer.set_visible(true);
-        if !self.inner.revealer.has_css_class("sidebar-job-card-dock") {
-            self.inner.container.set_visible(true);
-        }
         self.inner
             .visibility_generation
             .set(self.inner.visibility_generation.get().wrapping_add(1));
