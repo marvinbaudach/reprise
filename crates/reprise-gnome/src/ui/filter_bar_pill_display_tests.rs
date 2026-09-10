@@ -2,9 +2,10 @@
 //! with: the search pill and "+ Add filter". Both carry `min-height: 36px`
 //! in CSS, but they are different widget trees — a `GtkBox` chip and a
 //! `GtkMenuButton` — so the authored value alone does not prove they render
-//! at the same height. Adwaita's own `button` padding stacks on top of the
-//! `min-height` on the MenuButton side; nothing does on the chip's. This
-//! measures the rendered allocation rather than trusting the stylesheet.
+//! at the same height. On the MenuButton side Adwaita stacks two things on
+//! top of the `min-height` that nothing stacks on the chip's: the `button`
+//! node's own padding, and 1px of vertical margin. This measures what the two
+//! shapes ask for rather than trusting the stylesheet.
 
 use std::time::Duration;
 
@@ -71,20 +72,6 @@ fn the_search_pill_and_add_filter_render_at_the_same_height() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
-
-    // CI measured 40px against this machine's 38px, so some Adwaita versions
-    // give the MenuButton's outer node padding of their own — a node the
-    // height rule never touched, because it is the inner `button` that paints.
-    // Injecting that padding here reproduces the runner locally: without a
-    // rule of its own the outer node adds it straight onto the authored
-    // height, and a fix that only zeroes the inner node passes here and fails
-    // there.
-    // At *theme* priority, which is where Adwaita's own declarations sit: the
-    // app's rule must outrank it, and would not if this went in at
-    // application priority alongside it.
-    crate::ui::style::install_theme_css_string_for_test(
-        ".reprise-filter-add { padding-top: 1px; padding-bottom: 1px; }",
-    );
 
     let heights = measure();
 

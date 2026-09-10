@@ -80,6 +80,15 @@ class ArtistSearchActivityTest {
         compose.onNode(
             hasText("Artist 45") and hasText("45 tracks", substring = true),
         ).performClick()
+        // Wait for the detail screen's own node before clicking it. Without
+        // this the click races the composition and fails on a node that is not
+        // there yet - it did on dev run 34489026865, in a test file no commit
+        // had touched since #783. The sibling test below already waits this
+        // way; the difference between them was only this call.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.waitUntil {
             application.artistListAttempts.get() >= attemptsBeforeFailure + 2
