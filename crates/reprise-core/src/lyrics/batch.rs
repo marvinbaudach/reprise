@@ -135,7 +135,10 @@ struct BatchServices<'a> {
 impl<'a> BatchServices<'a> {
     fn production(source: &'a dyn crate::library::source::LibrarySource) -> Self {
         Self {
-            local: Arc::new(move |path| super::local_hit_with_source(source, path).is_some()),
+            local: Arc::new(move |path| {
+                super::local_hit_with_source(source, path)
+                    .is_some_and(|hit| local_hit_is_complete(&hit))
+            }),
             needs: Arc::new(super::cache::decision),
             online: Arc::new(move |query, path, decision| {
                 super::load_or_fetch_with_cache_decision(source, query, Some(path), decision)
@@ -143,6 +146,10 @@ impl<'a> BatchServices<'a> {
             all_breakers_open: Arc::new(super::all_network_breakers_open),
         }
     }
+}
+
+fn local_hit_is_complete(hit: &LyricsHit) -> bool {
+    matches!(hit.body, LyricsBody::Synced(_) | LyricsBody::Instrumental)
 }
 
 /// Populates the lyrics cache for `tracks` synchronously and serially.

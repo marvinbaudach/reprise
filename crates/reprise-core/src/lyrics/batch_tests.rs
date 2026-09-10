@@ -1,9 +1,36 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::*;
-use crate::lyrics::{cache, LyricsSource, TimedLine};
+use crate::lyrics::{cache, LookupOptions, LyricsProvider, LyricsSource, SourceOutcome, TimedLine};
+
+struct ThreadSafeProvider {
+    source: LyricsSource,
+    outcome: SourceOutcome,
+    calls: AtomicUsize,
+}
+
+impl ThreadSafeProvider {
+    fn new(source: LyricsSource, outcome: SourceOutcome) -> Self {
+        Self {
+            source,
+            outcome,
+            calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl LyricsProvider for ThreadSafeProvider {
+    fn source(&self) -> LyricsSource {
+        self.source
+    }
+
+    fn lookup(&self, _query: &LyricsQuery, _track_path: Option<&Path>) -> SourceOutcome {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.outcome.clone()
+    }
+}
 
 fn track(title: &str) -> BatchTrack {
     BatchTrack {
@@ -247,6 +274,135 @@ fn lyr_6_local_and_cache_hits_skip_network_but_still_advance_progress() {
     assert_eq!(progress.state, BatchState::Complete);
     assert_eq!(progress.checked, 2);
     assert_eq!(progress.downloaded, 0);
+}
+
+#[test]
+fn lyr_6_a_plain_sidecar_reaches_the_online_lookup() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("Plain.flac");
+    std::fs::write(&path, b"fixture").unwrap();
+    std::fs::write(path.with_extension("lrc"), "plain sidecar text").unwrap();
+    let track = BatchTrack {
+        query: track("Plain").query,
+        path,
+    };
+    let calls = Arc::new(Mutex::new(0));
+    let mut services = BatchServices::production(&crate::library::source::UnixLibrarySource);
+    services.needs = Arc::new(|query| cache_decision(query, NeedsFetch::RetryForSynced));
+    services.online = Arc::new({
+        let calls = calls.clone();
+        move |_, _, _| {
+            *calls.lock().unwrap() += 1;
+            Ok(LyricsHit {
+                body: LyricsBody::Plain("plain sidecar text".into()),
+                source: LyricsSource::Sidecar,
+            })
+        }
+    });
+
+    let (_, progress) = run(&[track], &services, || false, || true);
+
+    assert_eq!(*calls.lock().unwrap(), 1);
+    assert_eq!(progress.last().unwrap().checked, 1);
+}
+
+#[test]
+fn lyr_6_a_synced_sidecar_still_skips_the_online_lookup() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("Synced.flac");
+    std::fs::write(&path, b"fixture").unwrap();
+    std::fs::write(path.with_extension("lrc"), "[00:01.00]synced line").unwrap();
+    let track = BatchTrack {
+        query: track("Synced").query,
+        path,
+    };
+    let calls = Arc::new(Mutex::new(0));
+    let mut services = BatchServices::production(&crate::library::source::UnixLibrarySource);
+    services.needs = Arc::new(|query| cache_decision(query, NeedsFetch::RetryForSynced));
+    services.online = Arc::new({
+        let calls = calls.clone();
+        move |_, _, _| {
+            *calls.lock().unwrap() += 1;
+            Err(LyricsError::Temporary)
+        }
+    });
+
+    let (_, progress) = run(&[track], &services, || false, || true);
+
+    assert_eq!(*calls.lock().unwrap(), 0);
+    assert_eq!(progress.last().unwrap().checked, 1);
+}
+
+#[test]
+fn lyr_6_only_synced_and_instrumental_local_hits_are_complete() {
+    for (body, expected) in [
+        (LyricsBody::Plain("plain".into()), false),
+        (LyricsBody::Synced(Vec::new()), true),
+        (LyricsBody::Instrumental, true),
+    ] {
+        assert_eq!(
+            local_hit_is_complete(&LyricsHit {
+                body,
+                source: LyricsSource::Sidecar,
+            }),
+            expected
+        );
+    }
+}
+
+#[test]
+fn lyr_6_a_stamped_plain_sidecar_is_skipped_on_the_second_batch_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache_dir = temp.path().join("cache");
+    let path = temp.path().join("Stamped.flac");
+    std::fs::write(&path, b"fixture").unwrap();
+    std::fs::write(path.with_extension("lrc"), "plain sidecar text").unwrap();
+    let track = BatchTrack {
+        query: track("Stamped").query,
+        path,
+    };
+    let source = &crate::library::source::UnixLibrarySource;
+    let answered = Arc::new(ThreadSafeProvider::new(
+        LyricsSource::Lrclib,
+        SourceOutcome::NotFound,
+    ));
+    let failed = Arc::new(ThreadSafeProvider::new(
+        LyricsSource::Netease,
+        SourceOutcome::Failed,
+    ));
+    let mut services = BatchServices::production(source);
+    services.needs = Arc::new({
+        let cache_dir = cache_dir.clone();
+        move |query| cache::decision_at(&cache_dir, 100, query)
+    });
+    services.online = Arc::new({
+        let cache_dir = cache_dir.clone();
+        let answered = answered.clone();
+        let failed = failed.clone();
+        move |query, path, decision| {
+            let local = crate::lyrics::LocalProvider { source };
+            crate::lyrics::load_or_fetch_with_cache_context_at(
+                &cache_dir,
+                100,
+                query,
+                Some(path),
+                LookupOptions::default(),
+                Some(decision),
+                crate::lyrics::LookupProviders {
+                    source,
+                    local: &[&local],
+                    network: &[answered.as_ref(), failed.as_ref()],
+                },
+            )
+        }
+    });
+
+    let _ = run(std::slice::from_ref(&track), &services, || false, || true);
+    let (_, second_progress) = run(&[track], &services, || false, || true);
+
+    assert_eq!(answered.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(failed.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(second_progress.last().unwrap().downloaded, 0);
 }
 
 #[test]
