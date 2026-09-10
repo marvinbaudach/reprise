@@ -130,6 +130,8 @@ pub(crate) mod test_log_capture;
 pub(crate) mod test_main_context;
 #[cfg(test)]
 pub(crate) mod test_settle;
+#[cfg(test)]
+pub(crate) mod test_x11_window;
 pub mod toasts;
 #[cfg(test)]
 pub(crate) mod tooltip_discipline;

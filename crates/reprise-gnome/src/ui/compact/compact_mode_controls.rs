@@ -212,14 +212,15 @@ pub(in crate::ui) fn install(
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
-    use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
 
     use gtk4::gio;
     use reprise_core::library::settings::{CompactLayout, WindowViewMode};
 
     use super::*;
     use crate::ui::minimal_view::ViewTransition;
+    use crate::ui::test_x11_window::{
+        wait_for_window_state, x11_window_id, xdotool, TestWindowManager,
+    };
 
     #[test]
     fn mini_always_on_top_hidden_wayland_visible_x11() {
@@ -409,38 +410,11 @@ mod tests {
             glib::Propagation::Proceed
         });
         mode.toggle();
-        wait_for("compact visible before close action", || {
+        wait_for_window_state("compact visible before close action", || {
             compact_window.is_visible()
         });
         gtk4::prelude::ActionGroupExt::activate_action(&compact_window, "close", None);
-        wait_for("library close-request", || library_close_seen.get());
-    }
-
-    fn wait_for(label: &str, mut condition: impl FnMut() -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while !condition() && Instant::now() < deadline {
-            while glib::MainContext::default().iteration(false) {}
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(condition(), "window manager did not reach: {label}");
-    }
-
-    fn x11_window_id(window: &adw::ApplicationWindow) -> String {
-        let surface = window
-            .surface()
-            .unwrap()
-            .downcast::<gdk4_x11::X11Surface>()
-            .unwrap();
-        unsafe { gdk4_x11::ffi::gdk_x11_surface_get_xid(surface.as_ptr() as *mut _).to_string() }
-    }
-
-    fn xdotool(args: &[&str]) -> String {
-        let output = Command::new("xdotool")
-            .args(args)
-            .output()
-            .expect("the display regression needs xdotool");
-        assert!(output.status.success(), "xdotool command failed: {args:?}");
-        String::from_utf8(output.stdout).unwrap()
+        wait_for_window_state("library close-request", || library_close_seen.get());
     }
 
     fn x11_geometry(window: &adw::ApplicationWindow) -> (i32, i32, i32, i32, bool) {
@@ -490,41 +464,35 @@ mod tests {
             Rc::new(|_| {}),
         );
         mode.apply_initial();
-        wait_for("library mapped", || {
+        wait_for_window_state("library mapped", || {
             window.is_mapped() && window.width() > 0
         });
         let xid = x11_window_id(&window);
         xdotool(&["windowsize", "--sync", &xid, "987", "654"]);
         xdotool(&["windowmove", "--sync", &xid, "137", "91"]);
-        wait_for("library positioned", || {
+        wait_for_window_state("library positioned", || {
             let geometry = x11_geometry(&window);
             geometry.0 == 137 && geometry.1 == 91
         });
 
         let restored_geometry = x11_geometry(&window);
         mode.toggle();
-        wait_for("compact visible", || !window.is_visible());
+        wait_for_window_state("compact visible", || !window.is_visible());
         mode.toggle();
-        wait_for("library restored", || window.is_visible());
-        wait_for("library geometry restored", || {
+        wait_for_window_state("library restored", || window.is_visible());
+        wait_for_window_state("library geometry restored", || {
             x11_geometry(&window) == restored_geometry
         });
 
-        let mut window_manager = Command::new("openbox")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("the maximize regression needs the test window manager");
-        std::thread::sleep(Duration::from_millis(250));
+        let window_manager = TestWindowManager::start();
         window.maximize();
-        wait_for("library maximized", || window.is_maximized());
+        wait_for_window_state("library maximized", || window.is_maximized());
         mode.toggle();
-        wait_for("compact visible from maximized", || !window.is_visible());
+        wait_for_window_state("compact visible from maximized", || !window.is_visible());
         mode.toggle();
-        wait_for("maximized library restored", || window.is_visible());
+        wait_for_window_state("maximized library restored", || window.is_visible());
         assert!(window.is_maximized());
-        let _ = window_manager.kill();
-        let _ = window_manager.wait();
+        drop(window_manager);
         window.close();
     }
 
@@ -575,21 +543,21 @@ mod tests {
             glib::Propagation::Proceed
         });
         mode.apply_initial();
-        wait_for("library allocated", || {
+        wait_for_window_state("library allocated", || {
             window.width() > 0 && window.height() > 0
         });
         let xid = x11_window_id(&window);
         xdotool(&["windowsize", "--sync", &xid, "987", "654"]);
-        wait_for("library resized", || {
+        wait_for_window_state("library resized", || {
             (window.width(), window.height()) != (900, 600)
         });
         while glib::MainContext::default().iteration(false) {}
         let visible_size = (window.width(), window.height());
 
         mode.toggle();
-        wait_for("compact visible", || !window.is_visible());
+        wait_for_window_state("compact visible", || !window.is_visible());
         mode.compact_window().unwrap().close();
-        wait_for("session saved", || saved.get());
+        wait_for_window_state("session saved", || saved.get());
 
         let persisted = reprise_core::library::session::load(&conn);
         assert_eq!(

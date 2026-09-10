@@ -395,13 +395,15 @@ if rg --quiet 'db::migrate\(&conn\)\.ok' \
   exit 1
 fi
 
-# Both entries are test-only: a display-regression test needs the window's X11
-# XID to drive it with xdotool, and `gdk4_x11::ffi::gdk_x11_surface_get_xid` is
-# a raw FFI binding, so the block cannot be written safely wherever it lives.
-# #917 added the second one without this line and left dev's contract job red.
+# compact_mode_controls.rs: a production block that sends the
+# _NET_WM_STATE_ABOVE client message for always-on-top, plus its own display
+# tests. test_x11_window.rs: the test-only XID lookup shared by two
+# display-regression test modules, which need it to drive xdotool and can
+# only reach it through `gdk4_x11::ffi::gdk_x11_surface_get_xid`, a raw FFI
+# binding that cannot be written safely wherever it lives.
 check_frontend_allowlist 'unsafe[[:space:]]*\{' 'unsafe frontend block' \
   crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs \
-  crates/reprise-gnome/src/ui/session_restore.rs
+  crates/reprise-gnome/src/ui/test_x11_window.rs
 
 if rg --quiet 'reqwest::blocking' crates/reprise-gnome/src --glob '*.rs'; then
   echo "blocking HTTP is forbidden in the GTK frontend" >&2

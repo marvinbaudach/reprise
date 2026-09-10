@@ -376,9 +376,7 @@ fn close_should_proceed(_save_succeeded: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::process::{Child, Command, Stdio};
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
 
     use reprise_core::playback::{
         AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
@@ -388,6 +386,9 @@ mod tests {
     use super::*;
     use crate::ui::playback::player_controller::PlayerControllerBackends;
     use crate::ui::scrobble_runtime::ScrobbleRuntime;
+    use crate::ui::test_x11_window::{
+        wait_for_window_state, x11_window_id, xdotool, TestWindowManager,
+    };
 
     struct TestPlayback;
 
@@ -502,54 +503,14 @@ mod tests {
         );
     }
 
-    struct TestWindowManager(Child);
-
-    impl TestWindowManager {
-        fn start() -> Self {
-            let child = Command::new("openbox")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("the display regression needs the test window manager");
-            std::thread::sleep(Duration::from_millis(250));
-            Self(child)
-        }
-    }
-
-    impl Drop for TestWindowManager {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-
-    fn wait_for_window_state(label: &str, mut condition: impl FnMut() -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while !condition() && Instant::now() < deadline {
-            while glib::MainContext::default().iteration(false) {}
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(condition(), "window manager did not reach: {label}");
-    }
-
     fn resize_window(window: &adw::ApplicationWindow, width: i32, height: i32) {
-        let surface = window
-            .surface()
-            .unwrap()
-            .downcast::<gdk4_x11::X11Surface>()
-            .unwrap();
-        let xid = unsafe { gdk4_x11::ffi::gdk_x11_surface_get_xid(surface.as_ptr() as *mut _) };
-        let status = Command::new("xdotool")
-            .args([
-                "windowsize",
-                "--sync",
-                &xid.to_string(),
-                &width.to_string(),
-                &height.to_string(),
-            ])
-            .status()
-            .expect("the display regression needs xdotool");
-        assert!(status.success(), "xdotool could not resize the test window");
+        xdotool(&[
+            "windowsize",
+            "--sync",
+            &x11_window_id(window),
+            &width.to_string(),
+            &height.to_string(),
+        ]);
     }
 
     #[test]
