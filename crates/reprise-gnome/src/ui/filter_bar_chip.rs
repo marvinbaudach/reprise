@@ -28,7 +28,13 @@ const CHIP_SPACING: i32 = 8;
 /// read as one family.
 pub(in crate::ui) const CHIP_MIN_HEIGHT: i32 = 36;
 const CHIP_ICON_NAME: &str = "system-search-symbolic";
-const CHIP_ICON_SIZE: i32 = 13;
+/// Symbolic icons are drawn on a 16px grid, and the chip is an even number of
+/// pixels tall, so 16 is the one nearby size that neither blurs nor lands
+/// off-centre. Measured 2026-09-10 at 13px: the glyph was scaled by 13/16 and
+/// centred at `(36 - 13) / 2 = 11.5`, half a pixel above where it belongs,
+/// while the 22px `×` beside it divided evenly and looked right. Any odd
+/// size brings that half-pixel back.
+pub(in crate::ui) const CHIP_ICON_SIZE: i32 = 16;
 const CHIP_REMOVE_GLYPH: &str = "×";
 const CHIP_REMOVE_SIZE: i32 = 22;
 const CHIP_REMOVE_RADIUS: &str = "11px";
@@ -66,6 +72,10 @@ pub(in crate::ui) fn build_chip(
         ChipLead::Search => {
             let icon = gtk4::Image::from_icon_name(CHIP_ICON_NAME);
             icon.set_pixel_size(CHIP_ICON_SIZE);
+            // Without this the image fills the chip's full height and does its
+            // own centring inside that; with it the box centres a square 16px
+            // allocation, which is the same arithmetic the `×` already uses.
+            icon.set_valign(gtk4::Align::Center);
             icon.add_css_class(CHIP_ICON_CSS_CLASS);
             chip.append(&icon);
         }

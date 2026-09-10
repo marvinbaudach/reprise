@@ -366,10 +366,22 @@ pub(in crate::ui) fn css() -> String {
             outline was simply absent from the captured bar in both themes. */ \
          .{ADD_FILTER_CSS_CLASS} {{ border: none; background-color: transparent; \
          color: alpha(@window_fg_color, {SECONDARY_TEXT_ALPHA}); }} \
+         /* `min-height` alone does not settle the height: Adwaita's own \
+            `button` padding stacks on top of it, and the `pill` class this \
+            button also carries adds 10px more on each side. Measured \
+            2026-09-10 with `filter_bar_pill_display_tests`: 58px against the \
+            chip's 38px, both authored at 36px. The filter bar's slots stretch \
+            their children (`valign: fill`), so the two shapes still *looked* \
+            aligned — the row simply took its height from this button instead \
+            of from the chip. Zeroing the vertical padding is what makes the \
+            authored 36px the height that actually renders. The two sides are \
+            written out rather than as a `padding` shorthand: the shorthand \
+            would drop Adwaita's horizontal padding too and narrow the button, \
+            which is a width change nothing here measures. */ \
          .{ADD_FILTER_CSS_CLASS} > button {{ background-image: none; \
          background-color: transparent; box-shadow: none; font-weight: normal; \
          border: 1px dashed alpha(currentColor, 0.30); border-radius: {RADIUS_CHIP}; \
-         min-height: {}px; }} \
+         min-height: {}px; padding-top: 0; padding-bottom: 0; }} \
          .{ADD_FILTER_CSS_CLASS} > button:hover {{ \
          background-color: alpha(currentColor, 0.08); }} \
          .{CLEAR_ALL_CSS_CLASS} {{ border: 1px solid alpha(currentColor, 0.30); \
