@@ -4,6 +4,7 @@
 
 use gtk4::prelude::*;
 use reprise_core::queries::{BrowseFacet, BrowseFilter};
+use reprise_view::filter_chip::FilterChipModel;
 
 use crate::ui::filter_bar_strings as filter_strings;
 
@@ -18,9 +19,7 @@ pub(super) const FACETS: [BrowseFacet; 5] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FilterChip {
     pub(super) facet: BrowseFacet,
-    pub(super) field: String,
-    pub(super) value: String,
-    pub(super) accessible_remove_label: String,
+    pub(super) model: FilterChipModel,
 }
 
 pub(super) fn apply_selection(
@@ -102,9 +101,7 @@ pub(super) fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
             let field = facet_label(facet);
             Some(FilterChip {
                 facet,
-                accessible_remove_label: filter_strings::remove_filter_label(&field, &value),
-                field,
-                value,
+                model: FilterChipModel::facet(&field, &value),
             })
         })
         .collect()

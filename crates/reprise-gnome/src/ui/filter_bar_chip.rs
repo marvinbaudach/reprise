@@ -2,8 +2,13 @@
 //! magnifier and the bare query) or a facet chip (a muted field prefix and
 //! its value). Split out of `filter_bar_layout` to keep that file under the
 //! repository's size limit.
+//!
+//! What each chip leads with, shows and names its remove affordance is
+//! decided in `reprise_view::filter_chip` — this module only renders that
+//! decision into GTK widgets and translated text.
 
 use gtk4::prelude::*;
+use reprise_view::filter_chip::{ChipLead, ChipRemoveLabel, FilterChipModel};
 
 use crate::ui::style::tokens::{
     BTN_PRESS_ALPHA, CHIP_BORDER_ALPHA, CHIP_REMOVE_HOVER_BG_ALPHA, CHIP_SURFACE_ALPHA,
@@ -34,33 +39,30 @@ const CHIP_REMOVE_RADIUS: &str = "11px";
 #[cfg(test)]
 const CHIP_MIN_HIT_PX: i32 = 20;
 
-/// What a chip shows ahead of its value.
-#[derive(Clone, Copy)]
-pub(in crate::ui) enum ChipLead<'a> {
-    /// A chip that came from the search: the magnifier marks its origin.
-    Search,
-    /// A chip that came from "+ Add filter": its field, muted, as a prefix.
-    Field(&'a str),
-    /// A chip that is its own name, such as the "Hide AI music" toggle.
-    Bare,
+/// Renders a [`ChipRemoveLabel`]: a shared, translatable message goes
+/// through gettext and its placeholders; a resolved label is already final
+/// text and passes through unchanged.
+pub(in crate::ui) fn render_remove_label(label: &ChipRemoveLabel) -> String {
+    match label {
+        ChipRemoveLabel::Translatable(message) => crate::ui::filter_bar_strings::render(message),
+        ChipRemoveLabel::Resolved(text) => text.clone(),
+    }
 }
 
-/// Builds one filter-bar chip: an optional lead (icon or muted field name),
-/// the value, and a round × that removes it. The container itself is not
-/// focusable and carries no accessible name — the × takes over the
-/// accessible name the chip used to carry as a whole button, so FIL-1a/FIL-1d
-/// still name what removing the chip does.
+/// Builds one filter-bar chip from its model: an optional lead (icon or
+/// muted field name), the value, and a round × that removes it. The
+/// container itself is not focusable and carries no accessible name — the ×
+/// takes over the accessible name the chip used to carry as a whole button,
+/// so FIL-1a/FIL-1d still name what removing the chip does.
 pub(in crate::ui) fn build_chip(
-    lead: ChipLead<'_>,
-    value: &str,
-    accessible_remove_label: &str,
+    model: &FilterChipModel,
     on_remove: impl Fn() + 'static,
 ) -> gtk4::Box {
     let chip = gtk4::Box::new(gtk4::Orientation::Horizontal, CHIP_SPACING);
     chip.add_css_class(CHIP_CSS_CLASS);
     chip.set_size_request(-1, CHIP_MIN_HEIGHT);
 
-    match lead {
+    match &model.lead {
         ChipLead::Search => {
             let icon = gtk4::Image::from_icon_name(CHIP_ICON_NAME);
             icon.set_pixel_size(CHIP_ICON_SIZE);
@@ -76,10 +78,11 @@ pub(in crate::ui) fn build_chip(
         ChipLead::Bare => {}
     }
 
-    let value_label = gtk4::Label::new(Some(value));
+    let value_label = gtk4::Label::new(Some(&model.value));
     value_label.add_css_class(CHIP_VALUE_CSS_CLASS);
     chip.append(&value_label);
 
+    let accessible_remove_label = render_remove_label(&model.accessible_remove_label);
     let remove = gtk4::Button::with_label(CHIP_REMOVE_GLYPH);
     remove.add_css_class(CHIP_REMOVE_CSS_CLASS);
     remove.set_size_request(CHIP_REMOVE_SIZE, CHIP_REMOVE_SIZE);
@@ -89,7 +92,9 @@ pub(in crate::ui) fn build_chip(
     remove.set_valign(gtk4::Align::Center);
     // a11y-semantics: role=button name=explicit-label state=focusable action=activate
     remove.set_focusable(true);
-    remove.update_property(&[gtk4::accessible::Property::Label(accessible_remove_label)]);
+    remove.update_property(&[gtk4::accessible::Property::Label(
+        accessible_remove_label.as_str(),
+    )]);
     remove.connect_clicked(move |_| on_remove());
     chip.append(&remove);
 
@@ -151,5 +156,41 @@ mod tests {
                 "the remove button must clear the FIL-1a click-target floor"
             );
         }
+    }
+
+    // UX FIL-1d: the × accessible label stays the same regardless of which
+    // fields the view searches — that promise lives in the caption
+    // (`filter_bar_strings::search_2c_caption_names_the_fields_of_its_view`),
+    // not on the chip itself.
+    #[test]
+    fn fil_1d_remove_search_label_stays_scope_independent() {
+        let falling = FilterChipModel::search("falling").expect("non-blank query is a chip");
+        let wer = FilterChipModel::search("wer").expect("non-blank query is a chip");
+        assert_eq!(
+            render_remove_label(&falling.accessible_remove_label),
+            "Remove search: falling"
+        );
+        assert_eq!(
+            render_remove_label(&wer.accessible_remove_label),
+            "Remove search: wer"
+        );
+    }
+
+    #[test]
+    fn facet_remove_label_names_both_field_and_value() {
+        let chip = FilterChipModel::facet("Genre", "Metal");
+        assert_eq!(
+            render_remove_label(&chip.accessible_remove_label),
+            "Remove Genre filter: Metal"
+        );
+    }
+
+    #[test]
+    fn bare_remove_label_passes_its_resolved_text_through_unchanged() {
+        let chip = FilterChipModel::bare("Hide AI music", "Remove filter: Hide AI music");
+        assert_eq!(
+            render_remove_label(&chip.accessible_remove_label),
+            "Remove filter: Hide AI music"
+        );
     }
 }
