@@ -284,6 +284,84 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn fb_8_idle_job_cards_leave_devices_on_sidebar_floor() {
+    assert_idle_job_cards_leave_devices_on_sidebar_floor(false);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_8_drifted_idle_job_card_leaves_devices_on_sidebar_floor() {
+    assert_idle_job_cards_leave_devices_on_sidebar_floor(true);
+}
+
+fn assert_idle_job_cards_leave_devices_on_sidebar_floor(force_scan_visible: bool) {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    libadwaita::init().unwrap();
+    crate::ui::style::install();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let window = adw::ApplicationWindow::builder()
+        .default_width(240)
+        .default_height(900)
+        .build();
+    let sidebar = Sidebar::new(conn, &window, || 0);
+    sidebar.widget().set_size_request(240, -1);
+
+    let device = crate::ui::sidebar::sidebar_device_card::tests::view(
+        crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+    );
+    let device_section =
+        crate::ui::sidebar::sidebar_device_section::present_device_section_for_test(&device);
+    sidebar.activity_slot.set_device_section(&device_section);
+
+    let scanner = ScanProgressView::new();
+    sidebar.append_scan_card(scanner.widget());
+    let doctor = idle_crossfade_job_card();
+    sidebar.append_doctor_card(&doctor);
+    let relink = idle_crossfade_job_card();
+    sidebar.append_relink_card(&relink);
+    assert!(!scanner.widget().reveals_child());
+    assert!(!doctor.reveals_child());
+    assert!(!relink.reveals_child());
+    window.set_content(Some(sidebar.widget()));
+    window.present();
+    drain_display_events();
+    if force_scan_visible {
+        scanner.widget().set_visible(true);
+        drain_display_events();
+    }
+
+    let root = sidebar.widget();
+    let bottom_region = root.last_child().expect("sidebar bottom region");
+    assert_eq!(
+        bottom_region.height(),
+        0,
+        "three idle job cards must leave the bottom region at 0px"
+    );
+    let devices = device_section
+        .compute_bounds(root)
+        .expect("the visible Devices section is allocated");
+    let devices_bottom = devices.y() + devices.height() + device_section.margin_bottom() as f32;
+    assert!(
+        (devices_bottom - root.height() as f32).abs() < 1.0,
+        "Devices bottom plus margin={devices_bottom}, root height={}",
+        root.height()
+    );
+
+    window.close();
+}
+
+fn idle_crossfade_job_card() -> gtk4::Revealer {
+    let body = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    body.set_height_request(88);
+    gtk4::Revealer::builder()
+        .transition_type(gtk4::RevealerTransitionType::Crossfade)
+        .child(&body)
+        .reveal_child(false)
+        .build()
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn npp_1_visible_job_card_keeps_the_real_split_sidebar_at_240px() {
     libadwaita::init().unwrap();
     crate::ui::style::install();

@@ -233,14 +233,9 @@ impl ScanProgressView {
             .reveal_child(false)
             .build();
         // `AdwToolbarView::add_top_bar` still allocates an unrevealed child's
-        // natural height. Keep the complete widget out of layout while idle,
-        // then hide it only after the crossfade has finished.
+        // natural height. Keep the complete widget out of layout initially;
+        // the sidebar activity slot owns its docked visibility afterwards.
         revealer.set_visible(false);
-        revealer.connect_child_revealed_notify(|revealer| {
-            if !revealer.is_child_revealed() && !revealer.reveals_child() {
-                revealer.set_visible(false);
-            }
-        });
 
         let on_cancel: OnCancelSlot = Rc::new(RefCell::new(None));
 
