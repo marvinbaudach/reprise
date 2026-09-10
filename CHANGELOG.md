@@ -4,6 +4,35 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.179] - 2026-09-10
+
+### Playback and presentation
+
+- Leaving the compact player no longer flashes the library at the wrong size.
+  The switch back used to resize the one window from the mini card's dimensions
+  to the library's, with the library content already mounted in it, and held
+  that visibly wrong frame for about a sixth of a second. The compact player is
+  now a window of its own: switching modes presents one window and hides the
+  other, so no frame is ever shown at a size it should not have. The library
+  window keeps its geometry across a round trip through compact mode and across
+  quitting from it, the maximized state survives the switch, and the mini player
+  keeps its window shortcuts.
+
+### Appearance
+
+- The filter row is as tall as the pills in it. `+ Add filter` and the search
+  chip are both authored at 36px, but only the chip rendered there: Adwaita's
+  own button padding stacked on top of the authored height, the `pill` class
+  added ten more pixels per side, and because the bar stretches its children the
+  38px chip was pulled up to the button's 58px. The two looked aligned while the
+  row simply took its height from the button. Zeroing the vertical padding makes
+  the authored height the one that renders, so **the filter row is 20px
+  shorter**.
+- The magnifier in the search chip sits on its centre line. At 13px it was
+  scaled off the 16px grid symbolic icons are drawn on, and the image was
+  centred inside the chip's full height — half a pixel high. It is 16px now, and
+  the centring is left to the box, the way the `x` beside it already did it.
+
 ## [0.1.175] - 2026-09-10
 
 ### Library

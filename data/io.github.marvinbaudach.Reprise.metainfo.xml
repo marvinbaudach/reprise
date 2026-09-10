@@ -139,6 +139,14 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.179" date="2026-09-10" type="stable">
+      <description>
+        <p>Gives the compact player a window of its own, so leaving it no longer shows the library at the mini card's size for a moment before it spreads out. Window geometry, the maximized state and the mini player's shortcuts all survive the switch.</p>
+        <p xml:lang="de">Gibt dem Kompaktplayer ein eigenes Fenster, sodass die Bibliothek beim Verlassen nicht mehr kurz in der Größe der Minikarte erscheint, bevor sie sich ausbreitet. Fenstergeometrie, Vollbildzustand und die Tastenkürzel des Miniplayers überstehen den Wechsel.</p>
+        <p>Makes the filter row as tall as the pills it contains: both were authored at 36px, but the theme's own button padding stacked on top and stretched the row to 58px. The row is now 20px shorter, and the magnifier in the search chip sits on its centre line instead of half a pixel above it.</p>
+        <p xml:lang="de">Macht die Filterzeile so hoch wie die Pillen darin: beide sind mit 36px angelegt, doch der Innenabstand der Themenschaltflächen kam obendrauf und zog die Zeile auf 58px. Die Zeile ist jetzt 20px niedriger, und die Lupe im Suchfeld sitzt auf ihrer Mittellinie statt einen halben Pixel darüber.</p>
+      </description>
+    </release>
     <release version="0.1.175" date="2026-09-10" type="stable">
       <description>
         <p>Stops treating a rate-limited cover request as proof that an album has no cover art. The Cover Art Archive answers through CDNs that reply &quot;401&quot; or &quot;403&quot; while throttling, and a single such answer used to mark the album as coverless for a week; both are now retried like any other temporary failure.</p>
