@@ -2,7 +2,7 @@
 slug: lyrics-on-disk-appear-before-the-network
 worktree: /home/marvin/Projects/reprise-lyrics-on-disk-appear-before-the-network
 branch: feature/lyrics-on-disk-appear-before-the-network
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-09-10
 ---
