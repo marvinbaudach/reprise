@@ -294,6 +294,15 @@ impl CompactPlayer {
         self.0.menu.set_on_preferences(callback);
     }
 
+    pub(in crate::ui) fn open_primary_menu(&self) {
+        compact_player_menu::popup_at(&self.0.menu.popover, self.0.widgets.card.upcast_ref(), None);
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn primary_menu_is_visible_for_test(&self) -> bool {
+        self.0.menu.popover.is_visible()
+    }
+
     pub(in crate::ui) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
         self.0.menu.set_on_always_on_top(callback);
     }

@@ -4,7 +4,7 @@
 //! callbacks, startup restoration, scan/watcher triggers, and smoke hooks once
 //! every participant exists.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -114,7 +114,6 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) library_player_bar: &'a LibraryPlayerBarShell,
     pub(in crate::ui) info_panel: &'a Rc<NowPlayingPanel>,
     pub(in crate::ui) session_state: &'a SessionState,
-    pub(in crate::ui) geometry_guard: &'a Rc<Cell<bool>>,
     pub(in crate::ui) scan_button: &'a gtk4::Button,
     pub(in crate::ui) minimal_view: &'a Rc<MinimalView>,
     pub(in crate::ui) preferences: &'a Rc<PreferencesContext>,

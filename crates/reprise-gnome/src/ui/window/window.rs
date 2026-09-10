@@ -400,15 +400,17 @@ pub fn build(
     let decorations =
         super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
     let content_host = decorations.content_host();
+    content_host.set_content(&library_chrome.root);
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
-        &content_host,
-        library_chrome.root.upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,
         &toast_overlay,
     );
+    if let Some(compact_window) = minimal_view.compact_window() {
+        decorations.set_compact_window(&compact_window);
+    }
     {
         let minimal_view = Rc::downgrade(&minimal_view);
         decorations.set_on_mode_changed(Rc::new(move || {
@@ -417,7 +419,6 @@ pub fn build(
             }
         }));
     }
-    let geometry_guard = minimal_view.geometry_guard();
     let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
         conn,
         &cover_download,
@@ -504,7 +505,6 @@ pub fn build(
         library_player_bar: &library_player_bar,
         info_panel: &info_panel,
         session_state: &session_state,
-        geometry_guard: &geometry_guard,
         scan_button: &scan_button,
         minimal_view: &minimal_view,
         preferences: &preferences,
@@ -529,9 +529,10 @@ pub fn build(
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel);
     tracing::info!("main window built");
+    let startup_window = minimal_view.active_window();
     let startup_completion = if startup_report_armed {
         let mapped = Rc::new(Cell::new(false));
-        window.connect_map(move |_| {
+        startup_window.connect_map(move |_| {
             if !mapped.replace(true) {
                 super::startup_report::mark("window mapped");
             }
@@ -541,7 +542,7 @@ pub fn build(
         let first_idle_seen = Rc::new(Cell::new(false));
         let first_frame_for_tick = first_frame_drawn.clone();
         let first_idle_for_tick = first_idle_seen.clone();
-        window.add_tick_callback(move |_, frame_clock| {
+        startup_window.add_tick_callback(move |_, frame_clock| {
             // A tick supplies the mapped window's frame clock. The report itself
             // waits until after paint and the first low-priority idle so
             // serialization cannot delay either milestone.
@@ -567,7 +568,7 @@ pub fn build(
     } else {
         None
     };
-    window.present();
+    startup_window.present();
     super::startup_report::mark("window.present()");
     if let Some((first_frame_drawn, first_idle_seen)) = startup_completion {
         gtk4::glib::idle_add_local_full(gtk4::glib::Priority::LOW, move || {

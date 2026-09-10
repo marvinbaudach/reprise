@@ -17,7 +17,6 @@ pub(super) fn wire_session_restore(w: &RuntimeWiring<'_>, scratch: &WiringScratc
         window_title,
         window,
         conn,
-        geometry_guard,
         preferences,
         db_path,
         scan_controls,
@@ -61,7 +60,6 @@ pub(super) fn wire_session_restore(w: &RuntimeWiring<'_>, scratch: &WiringScratc
         track_list,
         player.as_ref(),
         session_state,
-        geometry_guard,
         nav_history,
     );
     super::session_restore_ui::arm_seed_close(window);

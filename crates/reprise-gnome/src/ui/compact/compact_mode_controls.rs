@@ -2,8 +2,8 @@
 
 use std::rc::Rc;
 
-use gtk4::glib;
 use gtk4::prelude::*;
+use gtk4::{gio, glib};
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
@@ -12,6 +12,7 @@ use super::compact_player::CompactPlayer;
 use super::file_open::StartupOpenIntent;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
+#[cfg(test)]
 use super::window_decorations::WindowContentHost;
 
 pub(in crate::ui) fn initial_transition(
@@ -29,8 +30,6 @@ pub(in crate::ui) fn initial_transition(
 
 pub(in crate::ui) fn build_mode(
     window: &adw::ApplicationWindow,
-    content_host: &WindowContentHost,
-    full_root: &gtk4::Widget,
     compact: Option<&CompactPlayer>,
     conn: &Rc<Db>,
     initial: ViewTransition,
@@ -39,8 +38,6 @@ pub(in crate::ui) fn build_mode(
     let toast_overlay = toast_overlay.clone();
     MinimalView::new(
         window,
-        content_host,
-        full_root,
         compact,
         conn.clone(),
         initial,
@@ -124,13 +121,41 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
 }
 
 pub(in crate::ui) fn install(
-    window: &adw::ApplicationWindow,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,
     conn: &Rc<Db>,
     on_preferences: Rc<dyn Fn()>,
 ) {
     if let Some(compact) = compact {
+        let Some(compact_window) = mode.compact_window() else {
+            tracing::warn!("compact controls unavailable without a compact window");
+            return;
+        };
+        let toggle =
+            gio::SimpleAction::new(crate::ui::primary_menu::ACTION_TOGGLE_MINIMAL_VIEW, None);
+        {
+            let mode = Rc::downgrade(mode);
+            toggle.connect_activate(move |_, _| {
+                if let Some(mode) = mode.upgrade() {
+                    mode.toggle();
+                }
+            });
+        }
+        compact_window.add_action(&toggle);
+
+        crate::ui::shortcuts::wire_close(&compact_window);
+        let open_primary_menu = {
+            let compact = compact.clone();
+            Rc::new(move || compact.open_primary_menu()) as Rc<dyn Fn()>
+        };
+        crate::ui::primary_menu::install_surface_actions(
+            &compact_window,
+            on_preferences.clone(),
+            open_primary_menu,
+        );
+        // Search, navigation, and jump-to-now-playing stay library-only: the
+        // compact window has none of the UI those actions target.
+
         let weak = Rc::downgrade(mode);
         compact.set_on_restore(Rc::new(move || {
             if let Some(mode) = weak.upgrade() {
@@ -150,7 +175,7 @@ pub(in crate::ui) fn install(
             if above {
                 compact.set_always_on_top_active(true);
                 let window_weak = glib::WeakRef::new();
-                window_weak.set(Some(window));
+                window_weak.set(Some(&compact_window));
                 // Defer until the window is mapped so the surface exists.
                 gtk4::glib::idle_add_local_once(move || {
                     if let Some(window) = window_weak.upgrade() {
@@ -162,7 +187,7 @@ pub(in crate::ui) fn install(
 
         let conn_weak = Rc::downgrade(conn);
         let window_weak = glib::WeakRef::new();
-        window_weak.set(Some(window));
+        window_weak.set(Some(&compact_window));
         compact.set_on_always_on_top(Rc::new(move |above| {
             if let Some(window) = window_weak.upgrade() {
                 set_always_on_top(&window, above);
@@ -175,7 +200,7 @@ pub(in crate::ui) fn install(
         }));
 
         let window_weak = glib::WeakRef::new();
-        window_weak.set(Some(window));
+        window_weak.set(Some(&compact_window));
         compact.set_on_quit(Rc::new(move || {
             if let Some(window) = window_weak.upgrade() {
                 window.close();
@@ -186,6 +211,10 @@ pub(in crate::ui) fn install(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
     use gtk4::gio;
     use reprise_core::library::settings::{CompactLayout, WindowViewMode};
 
@@ -233,10 +262,9 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         settings::set_window_view_mode(&conn, WindowViewMode::Library).unwrap();
         let content_host = WindowContentHost::new(&window);
+        content_host.set_content(&full_root);
         let mode = MinimalView::new(
             &window,
-            &content_host,
-            full_root.upcast_ref(),
             Some(&compact),
             conn.clone(),
             ViewTransition {
@@ -271,7 +299,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn library_entry_wiring_adds_no_header_button_and_restore_reuses_the_window() {
+    fn library_entry_wiring_adds_no_header_button_and_uses_a_transient_compact_window() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
             return;
@@ -290,10 +318,9 @@ mod tests {
         let compact = CompactPlayer::new();
         let conn = Rc::new(crate::test_db::open().unwrap());
         let content_host = WindowContentHost::new(&window);
+        content_host.set_content(&full_root);
         let mode = MinimalView::new(
             &window,
-            &content_host,
-            full_root.upcast_ref(),
             Some(&compact),
             conn.clone(),
             ViewTransition {
@@ -304,18 +331,67 @@ mod tests {
         );
         mode.apply_initial();
         let header = adw::HeaderBar::new();
-        install(&window, &mode, Some(&compact), &conn, Rc::new(|| {}));
+        install(&mode, Some(&compact), &conn, Rc::new(|| {}));
         assert!(!has_button_with_tooltip(&header, "Open Compact View"));
+        assert_eq!(app.windows().len(), 2);
+        assert!(mode
+            .compact_window()
+            .unwrap()
+            .lookup_action(crate::ui::primary_menu::ACTION_TOGGLE_MINIMAL_VIEW)
+            .is_some());
+        let compact_window = mode.compact_window().unwrap();
+        for action in [
+            "close",
+            crate::ui::primary_menu::ACTION_PREFERENCES,
+            crate::ui::primary_menu::ACTION_KEYBOARD_SHORTCUTS,
+            crate::ui::primary_menu::ACTION_HELP,
+            crate::ui::primary_menu::ACTION_OPEN_PRIMARY_MENU,
+        ] {
+            assert!(
+                compact_window.lookup_action(action).is_some(),
+                "compact window is missing win.{action}"
+            );
+        }
+        for action in [
+            "focus-search",
+            "nav-back",
+            "nav-forward",
+            "jump-to-now-playing",
+        ] {
+            assert!(
+                compact_window.lookup_action(action).is_none(),
+                "library-only win.{action} leaked into the compact window"
+            );
+        }
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
-        let same_window = window.clone();
-
         mode.toggle();
         while gtk4::glib::MainContext::default().iteration(false) {}
 
-        assert!(compact.handle().is_ancestor(&window));
-        assert_eq!(window, same_window);
-        assert!(window.is_visible());
+        let compact_window = compact
+            .handle()
+            .root()
+            .and_downcast::<adw::ApplicationWindow>()
+            .expect("the compact card has its own application window");
+        assert_ne!(compact_window, window);
+        assert_eq!(
+            compact_window.transient_for().as_ref(),
+            Some(window.upcast_ref())
+        );
+        assert!(!window.is_visible());
+        assert!(compact_window.is_visible());
+        gtk4::prelude::ActionGroupExt::activate_action(
+            &compact_window,
+            crate::ui::primary_menu::ACTION_OPEN_PRIMARY_MENU,
+            None,
+        );
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(compact.primary_menu_is_visible_for_test());
+        assert_eq!(
+            content_host.content().as_ref(),
+            Some(full_root.upcast_ref()),
+            "the Library tree remains mounted while compact mode is visible"
+        );
 
         compact.activate_restore_for_test();
 
@@ -323,8 +399,204 @@ mod tests {
             content_host.content().as_ref(),
             Some(full_root.upcast_ref())
         );
-        assert_eq!(window, same_window);
+        assert!(window.is_visible());
+        assert!(!compact_window.is_visible());
+
+        let library_close_seen = Rc::new(Cell::new(false));
+        let library_close_seen_from_signal = library_close_seen.clone();
+        window.connect_close_request(move |_| {
+            library_close_seen_from_signal.set(true);
+            glib::Propagation::Proceed
+        });
+        mode.toggle();
+        wait_for("compact visible before close action", || {
+            compact_window.is_visible()
+        });
+        gtk4::prelude::ActionGroupExt::activate_action(&compact_window, "close", None);
+        wait_for("library close-request", || library_close_seen.get());
+    }
+
+    fn wait_for(label: &str, mut condition: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !condition() && Instant::now() < deadline {
+            while glib::MainContext::default().iteration(false) {}
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(condition(), "window manager did not reach: {label}");
+    }
+
+    fn x11_window_id(window: &adw::ApplicationWindow) -> String {
+        let surface = window
+            .surface()
+            .unwrap()
+            .downcast::<gdk4_x11::X11Surface>()
+            .unwrap();
+        unsafe { gdk4_x11::ffi::gdk_x11_surface_get_xid(surface.as_ptr() as *mut _).to_string() }
+    }
+
+    fn xdotool(args: &[&str]) -> String {
+        let output = Command::new("xdotool")
+            .args(args)
+            .output()
+            .expect("the display regression needs xdotool");
+        assert!(output.status.success(), "xdotool command failed: {args:?}");
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn x11_geometry(window: &adw::ApplicationWindow) -> (i32, i32, i32, i32, bool) {
+        let output = xdotool(&["getwindowgeometry", "--shell", &x11_window_id(window)]);
+        let field = |name: &str| {
+            output
+                .lines()
+                .find_map(|line| line.strip_prefix(&format!("{name}=")))
+                .unwrap()
+                .parse::<i32>()
+                .unwrap()
+        };
+        (
+            field("X"),
+            field("Y"),
+            field("WIDTH"),
+            field("HEIGHT"),
+            window.is_maximized(),
+        )
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mode_switch_preserves_library_window_geometry() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.ModeGeometryTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::builder()
+            .application(&app)
+            .default_width(900)
+            .default_height(600)
+            .build();
+        WindowContentHost::new(&window).set_content(&test_split_view());
+        let compact = CompactPlayer::new();
+        let mode = MinimalView::new(
+            &window,
+            Some(&compact),
+            Rc::new(crate::test_db::open().unwrap()),
+            ViewTransition {
+                mode: WindowViewMode::Library,
+                layout: CompactLayout::Card,
+            },
+            Rc::new(|_| {}),
+        );
+        mode.apply_initial();
+        wait_for("library mapped", || {
+            window.is_mapped() && window.width() > 0
+        });
+        let xid = x11_window_id(&window);
+        xdotool(&["windowsize", "--sync", &xid, "987", "654"]);
+        xdotool(&["windowmove", "--sync", &xid, "137", "91"]);
+        wait_for("library positioned", || {
+            let geometry = x11_geometry(&window);
+            geometry.0 == 137 && geometry.1 == 91
+        });
+
+        let restored_geometry = x11_geometry(&window);
+        mode.toggle();
+        wait_for("compact visible", || !window.is_visible());
+        mode.toggle();
+        wait_for("library restored", || window.is_visible());
+        wait_for("library geometry restored", || {
+            x11_geometry(&window) == restored_geometry
+        });
+
+        let mut window_manager = Command::new("openbox")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the maximize regression needs the test window manager");
+        std::thread::sleep(Duration::from_millis(250));
+        window.maximize();
+        wait_for("library maximized", || window.is_maximized());
+        mode.toggle();
+        wait_for("compact visible from maximized", || !window.is_visible());
+        mode.toggle();
+        wait_for("maximized library restored", || window.is_visible());
+        assert!(window.is_maximized());
+        let _ = window_manager.kill();
+        let _ = window_manager.wait();
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn quitting_from_compact_persists_the_visible_library_size() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.CompactGeometrySaveTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::builder()
+            .application(&app)
+            .default_width(900)
+            .default_height(600)
+            .build();
+        let compact = CompactPlayer::new();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let mode = MinimalView::new(
+            &window,
+            Some(&compact),
+            conn.clone(),
+            ViewTransition {
+                mode: WindowViewMode::Library,
+                layout: CompactLayout::Card,
+            },
+            Rc::new(|_| {}),
+        );
+        let tracked = Rc::new(Cell::new((900, 600, false)));
+        crate::ui::session_restore::wire_geometry_tracking(&window, &tracked);
+        let conn_for_close = conn.clone();
+        let saved = Rc::new(Cell::new(false));
+        let saved_from_close = saved.clone();
+        window.connect_close_request(move |window| {
+            let live = (window.width(), window.height(), window.is_maximized());
+            let (width, height, maximized) =
+                crate::ui::session_restore::geometry_for_save(tracked.get(), live);
+            let state = reprise_core::library::session::SessionState {
+                window_width: width,
+                window_height: height,
+                maximized,
+                ..Default::default()
+            };
+            reprise_core::library::session::save(&conn_for_close, &state).unwrap();
+            saved_from_close.set(true);
+            glib::Propagation::Proceed
+        });
+        mode.apply_initial();
+        wait_for("library allocated", || {
+            window.width() > 0 && window.height() > 0
+        });
+        let xid = x11_window_id(&window);
+        xdotool(&["windowsize", "--sync", &xid, "987", "654"]);
+        wait_for("library resized", || {
+            (window.width(), window.height()) != (900, 600)
+        });
+        while glib::MainContext::default().iteration(false) {}
+        let visible_size = (window.width(), window.height());
+
+        mode.toggle();
+        wait_for("compact visible", || !window.is_visible());
+        mode.compact_window().unwrap().close();
+        wait_for("session saved", || saved.get());
+
+        let persisted = reprise_core::library::session::load(&conn);
+        assert_eq!(
+            (persisted.window_width, persisted.window_height),
+            visible_size
+        );
+        assert!(!persisted.maximized);
     }
 
     fn test_split_view() -> adw::NavigationSplitView {
