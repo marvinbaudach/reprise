@@ -2,7 +2,7 @@
 slug: the-devices-section-sits-on-the-sidebar-floor
 worktree: /home/marvin/Projects/reprise-the-devices-section-sits-on-the-sidebar-floor
 branch: feature/the-devices-section-sits-on-the-sidebar-floor
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-10
 ---
