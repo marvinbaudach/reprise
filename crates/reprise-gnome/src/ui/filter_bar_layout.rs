@@ -364,7 +364,15 @@ pub(in crate::ui) fn css() -> String {
             outline lives there and not on the class's own node. Putting it on \
             the outer node renders no border at all: measured 2026-09-10, the \
             outline was simply absent from the captured bar in both themes. */ \
+         /* The outer node needs the same zeroing as the inner one. It paints \
+            nothing, but some Adwaita versions still give it vertical padding, \
+            and that lands straight on top of the authored height: measured \
+            40px on the CI runner against 38px here, from one pixel per side \
+            on a node no rule of ours addressed. The display test stands that \
+            declaration in at theme priority so the difference is reproducible \
+            away from the runner. */ \
          .{ADD_FILTER_CSS_CLASS} {{ border: none; background-color: transparent; \
+         padding-top: 0; padding-bottom: 0; \
          color: alpha(@window_fg_color, {SECONDARY_TEXT_ALPHA}); }} \
          /* `min-height` alone does not settle the height: Adwaita's own \
             `button` padding stacks on top of it, and the `pill` class this \
