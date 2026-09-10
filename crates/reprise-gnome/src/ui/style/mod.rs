@@ -190,27 +190,6 @@ pub(in crate::ui) fn install_css_string_for_test(css: &str) {
     );
 }
 
-/// Test-only: install a stylesheet at *theme* priority, below the app's own,
-/// so a layout test can stand in for a declaration Adwaita itself makes.
-/// Installing such a stand-in through [`install_css_string_for_test`] instead
-/// would put it at application priority, where it outranks the very rule under
-/// test — the emulation would then win and the test would report a failure the
-/// running app never has. Lives here because this module is the only one the
-/// frontend-lint allowlist permits to construct a `CssProvider`.
-#[cfg(test)]
-pub(in crate::ui) fn install_theme_css_string_for_test(css: &str) {
-    let Some(display) = gtk4::gdk::Display::default() else {
-        return;
-    };
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(css);
-    gtk4::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_THEME,
-    );
-}
-
 /// Formerly clipped `OverlaySplitView`'s internal wrappers so a resized column
 /// could not paint behind the info-panel sidebar.
 ///
