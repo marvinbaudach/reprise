@@ -2,7 +2,7 @@
 slug: the-filter-pill-shows-only-the-term
 worktree: /home/marvin/Projects/reprise-the-filter-pill-shows-only-the-term
 branch: feature/the-filter-pill-shows-only-the-term
-phase: reviewed
+phase: shipped
 created: 2026-09-09
 base: origin/dev @ 41f1d3387e
 ---
