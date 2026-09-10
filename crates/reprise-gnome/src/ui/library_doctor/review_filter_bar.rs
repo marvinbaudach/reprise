@@ -106,17 +106,11 @@ impl ReviewFilterBar {
         while let Some(child) = self.search.first_child() {
             self.search.remove(&child);
         }
-        let query = query.trim();
-        if query.is_empty() {
+        let Some(model) = reprise_view::filter_chip::FilterChipModel::search(query) else {
             return;
-        }
+        };
         let clear_search = self.clear_search.clone();
-        let chip = crate::ui::filter_bar_layout::build_chip(
-            crate::ui::filter_bar_layout::ChipLead::Search,
-            query,
-            &crate::ui::filter_bar_strings::remove_search_label(query),
-            move || clear_search(),
-        );
+        let chip = crate::ui::filter_bar_layout::build_chip(&model, move || clear_search());
         self.search.append(&chip);
     }
 

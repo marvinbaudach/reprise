@@ -190,7 +190,8 @@ pub(in crate::ui) const BTN_CHECKED_FILL_HOVER_ALPHA: &str = "0.22";
 /// `@reprise_accent_text_color` was still derived against the much quieter chip
 /// tint. The label on this fill therefore measured 2.97:1 in the dark palettes
 /// with the entire contrast suite green — nothing modelled the surface the text
-/// actually landed on. Following the precedent [`CHIP_BG_ALPHA`] set, the fill
+/// actually landed on. Following the precedent the filter chip set — see
+/// [`CHIP_SURFACE_ALPHA`], which now records that measurement — the fill
 /// yields and the accent stays itself.
 pub(in crate::ui) const BTN_CHECKED_FILL_PRESS_ALPHA: &str = "0.26";
 

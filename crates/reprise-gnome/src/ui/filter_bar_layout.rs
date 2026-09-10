@@ -1,9 +1,10 @@
 //! Shared filter-bar geometry and slot ordering.
 
 use gtk4::prelude::*;
+use reprise_view::filter_chip::FilterChipModel;
 
 use super::filter_bar_chip;
-pub(in crate::ui) use filter_bar_chip::{build_chip, ChipLead};
+pub(in crate::ui) use filter_bar_chip::build_chip;
 
 pub(in crate::ui) const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 pub(in crate::ui) const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
@@ -130,20 +131,15 @@ impl FilterBarLayout {
 
     /// Replaces the search slot with the canonical chip: a magnifier and the
     /// bare query. The query is the committed query; blank means there is no
-    /// chip. FIL-1d's scope promise moved to the search popover's own caption
+    /// chip — `FilterChipModel::search` carries that trim-and-empty rule.
+    /// FIL-1d's scope promise moved to the search popover's own caption
     /// (`filter_bar_strings::searches_scope`) — the chip no longer repeats it.
     pub(in crate::ui) fn replace_search_chip(&self, query: &str, on_clear: impl Fn() + 'static) {
-        let query = query.trim();
-        if query.is_empty() {
+        let Some(model) = FilterChipModel::search(query) else {
             self.clear_search();
             return;
-        }
-        let chip = build_chip(
-            ChipLead::Search,
-            query,
-            &crate::ui::filter_bar_strings::remove_search_label(query),
-            on_clear,
-        );
+        };
+        let chip = build_chip(&model, on_clear);
         self.fill_search(&chip);
     }
 
@@ -579,8 +575,12 @@ mod tests {
 
     fn measure_geometry(search_present: bool, facets_full: bool, width: i32) -> Geometry {
         let layout = FilterBarLayout::new();
-        let search = search_present
-            .then(|| build_chip(ChipLead::Search, "falling", "Remove search: falling", || {}));
+        let search = search_present.then(|| {
+            build_chip(
+                &FilterChipModel::search("falling").expect("non-blank query is a chip"),
+                || {},
+            )
+        });
         if let Some(search) = &search {
             layout.fill_search(search);
         }

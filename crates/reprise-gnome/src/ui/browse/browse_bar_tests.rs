@@ -1,5 +1,6 @@
 //! Tests for browse_bar.rs (extracted to keep the source under the 800-line gate).
 
+use super::super::browse_bar_chips::FilterChip;
 use super::*;
 
 #[cfg(test)]
@@ -126,20 +127,25 @@ fn filter_chips_follow_cascade_order_and_render_unknown_values() {
     };
 
     let chips = filter_chips(&filter);
-    let projection: Vec<_> = chips
-        .iter()
-        .map(|chip| (chip.facet, chip.field.as_str(), chip.value.as_str()))
-        .collect();
     assert_eq!(
-        projection,
+        chips,
         vec![
-            (BrowseFacet::Genre, "Genre", "Unknown genre"),
-            (BrowseFacet::Artist, "Artist", "Brand of Sacrifice"),
-            (BrowseFacet::Album, "Album", "Unknown album"),
+            FilterChip {
+                facet: BrowseFacet::Genre,
+                model: FilterChipModel::facet("Genre", "Unknown genre"),
+            },
+            FilterChip {
+                facet: BrowseFacet::Artist,
+                model: FilterChipModel::facet("Artist", "Brand of Sacrifice"),
+            },
+            FilterChip {
+                facet: BrowseFacet::Album,
+                model: FilterChipModel::facet("Album", "Unknown album"),
+            },
         ]
     );
     assert_eq!(
-        chips[1].accessible_remove_label,
+        crate::ui::filter_bar_chip::render_remove_label(&chips[1].model.accessible_remove_label),
         "Remove Artist filter: Brand of Sacrifice"
     );
 }
