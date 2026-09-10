@@ -1,10 +1,12 @@
 //! Shared home for sidebar device state and replacement progress cards.
 //!
 //! Scan and device sync own their cards and update loops. This module owns
-//! their stable layout relationship and each dock card container's `visible`
-//! state, so construction order cannot move either activity out of the slot or
-//! reorder the two relative to each other. Card modules must not set their
-//! container's `visible` state.
+//! their stable layout relationship. While a card is docked here, the slot also
+//! owns the revealer child's (the card body's) `visible` state; card modules
+//! must not set it. Card modules may still set the revealer's own `visible`
+//! state: a collapsed revealer with a hidden child measures zero, so that is
+//! harmless. Construction order cannot move either activity out of the slot or
+//! reorder the two relative to each other.
 
 use std::cell::RefCell;
 

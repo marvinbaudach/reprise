@@ -134,6 +134,9 @@ fn view_state(progress: &ScanProgress) -> ScanProgressState {
 /// progress bar, and detail label. Replaces the old headerbar banner.
 /// A generation token stops an old pulse timeout whenever the phase changes
 /// or a scan finishes, so repeated scans never retain stale GTK callbacks.
+/// An undocked view keeps the visibility left by its last reveal because the
+/// docked visibility contract belongs to `SidebarActivitySlot`; production
+/// docks this view unconditionally.
 #[derive(Clone)]
 pub(in crate::ui) struct ScanProgressView {
     inner: Rc<ScanProgressWidgets>,
@@ -232,9 +235,9 @@ impl ScanProgressView {
             .child(&container)
             .reveal_child(false)
             .build();
-        // `AdwToolbarView::add_top_bar` still allocates an unrevealed child's
-        // natural height. Keep the complete widget out of layout initially;
-        // the sidebar activity slot owns its docked visibility afterwards.
+        // Start both widgets hidden. Once docked, the activity slot owns the
+        // card body's visibility; setting the revealer remains allowed and harmless.
+        container.set_visible(false);
         revealer.set_visible(false);
 
         let on_cancel: OnCancelSlot = Rc::new(RefCell::new(None));
@@ -428,6 +431,9 @@ impl ScanProgressView {
 
     fn begin_visibility(&self) {
         self.inner.revealer.set_visible(true);
+        if !self.inner.revealer.has_css_class("sidebar-job-card-dock") {
+            self.inner.container.set_visible(true);
+        }
         self.inner
             .visibility_generation
             .set(self.inner.visibility_generation.get().wrapping_add(1));

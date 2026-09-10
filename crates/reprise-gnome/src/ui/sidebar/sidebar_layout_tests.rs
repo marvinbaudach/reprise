@@ -352,7 +352,7 @@ fn assert_idle_job_cards_leave_devices_on_sidebar_floor(force_scan_visible: bool
 
 fn idle_crossfade_job_card() -> gtk4::Revealer {
     let body = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    body.set_height_request(88);
+    body.set_height_request(crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
     gtk4::Revealer::builder()
         .transition_type(gtk4::RevealerTransitionType::Crossfade)
         .child(&body)
