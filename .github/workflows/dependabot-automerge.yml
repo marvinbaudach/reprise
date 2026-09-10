@@ -14,20 +14,6 @@ name: Dependabot auto-merge
 # So this reconciles instead of arming. Two triggers ask the same question:
 # a pull request event asks it about itself, and CI finishing on dev asks it
 # about every bump still open. Green arms, anything else disarms.
-#
-# The two triggers do not carry the same credentials, and cannot be made to.
-# REPRISE_AUTOMERGE_TOKEN is a Dependabot secret, and GitHub delivers those
-# only to runs it attributes to Dependabot -- so a pull_request run has it and
-# a workflow_run run never will, whatever is configured. It is not moved to the
-# Actions store on purpose: a merge that GITHUB_TOKEN performs starts no
-# downstream workflow, so a bump merged with it would leave dev without the
-# CI run whose quality gate every promotion reads.
-#
-# Hence the split. Disarming works with either token, so a red dev still
-# disarms a waiting bump on the workflow_run trigger -- the property #676 cost
-# us. Arming needs the PAT and therefore only happens on the pull_request
-# trigger; a bump that arrived while dev was red waits for Dependabot's next
-# synchronize instead of being re-armed the moment dev goes green.
 on:
   pull_request:
     branches:
@@ -47,10 +33,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  # Reading dev's check runs is only implicit for a PAT. An explicit
-  # permissions block sets every unlisted scope to none, so GITHUB_TOKEN --
-  # the fallback on a workflow_run event -- needs this spelled out.
-  checks: read
 
 jobs:
   reconcile-automerge:
@@ -99,7 +81,7 @@ jobs:
             echo "dev's last quality gate concluded '$conclusion'"
           fi
         env:
-          GH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
 
       # A pull request event reconciles itself; CI finishing on dev reconciles
       # every bump still waiting, which is the half the first version was
@@ -121,19 +103,14 @@ jobs:
           fi
           for url in $urls; do
             if [[ $CONCLUSION == success ]]; then
-              if [[ -n $HAVE_AUTOMERGE_TOKEN ]]; then
-                echo "arming $url"
-                gh pr merge --auto --squash "$url"
-              else
-                echo "not arming $url: no automerge token on a $GITHUB_EVENT_NAME run"
-              fi
+              echo "arming $url"
+              gh pr merge --auto --squash "$url"
             else
               echo "disarming $url"
               gh pr merge --disable-auto "$url" || true
             fi
           done
         env:
-          GH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
-          HAVE_AUTOMERGE_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
           CONCLUSION: ${{ steps.health.outputs.conclusion }}
           EVENT_PR_URL: ${{ github.event.pull_request.html_url }}
