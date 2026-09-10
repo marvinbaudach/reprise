@@ -4,6 +4,17 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.175] - 2026-09-10
+
+### Library
+
+- A cover that is only being throttled is no longer remembered as missing. The
+  Cover Art Archive sits behind CDNs that answer a rate-limited request with
+  `401` or `403`, and both were read as a definitive "this release has no art".
+  One such answer was enough to note the album as coverless for a week, so the
+  cover stayed away long after the throttling had passed. Those two answers are
+  now retried like any other temporary failure, and nothing is written down.
+
 ## [0.1.174] - 2026-09-10
 
 ### Library
