@@ -72,6 +72,20 @@ fn the_search_pill_and_add_filter_render_at_the_same_height() {
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
 
+    // CI measured 40px against this machine's 38px, so some Adwaita versions
+    // give the MenuButton's outer node padding of their own — a node the
+    // height rule never touched, because it is the inner `button` that paints.
+    // Injecting that padding here reproduces the runner locally: without a
+    // rule of its own the outer node adds it straight onto the authored
+    // height, and a fix that only zeroes the inner node passes here and fails
+    // there.
+    // At *theme* priority, which is where Adwaita's own declarations sit: the
+    // app's rule must outrank it, and would not if this went in at
+    // application priority alongside it.
+    crate::ui::style::install_theme_css_string_for_test(
+        ".reprise-filter-add { padding-top: 1px; padding-bottom: 1px; }",
+    );
+
     let heights = measure();
 
     // The authored height plus the 1px border each shape carries. Naming the
