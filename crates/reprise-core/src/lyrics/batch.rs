@@ -149,7 +149,8 @@ impl<'a> BatchServices<'a> {
 }
 
 fn local_hit_is_complete(hit: &LyricsHit) -> bool {
-    matches!(hit.body, LyricsBody::Synced(_) | LyricsBody::Instrumental)
+    hit.source == super::LyricsSource::Tag
+        || matches!(hit.body, LyricsBody::Synced(_) | LyricsBody::Instrumental)
 }
 
 /// Populates the lyrics cache for `tracks` synchronously and serially.

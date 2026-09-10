@@ -308,6 +308,7 @@ fn lyr_6_a_plain_sidecar_reaches_the_online_lookup() {
 
 #[test]
 fn lyr_6_a_synced_sidecar_still_skips_the_online_lookup() {
+    // Control arm: this passed before plain sidecars became upgrade candidates.
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("Synced.flac");
     std::fs::write(&path, b"fixture").unwrap();
@@ -335,6 +336,7 @@ fn lyr_6_a_synced_sidecar_still_skips_the_online_lookup() {
 
 #[test]
 fn lyr_6_only_synced_and_instrumental_local_hits_are_complete() {
+    // Control arm: this body-only matrix passed before the production guard changed.
     for (body, expected) in [
         (LyricsBody::Plain("plain".into()), false),
         (LyricsBody::Synced(Vec::new()), true),

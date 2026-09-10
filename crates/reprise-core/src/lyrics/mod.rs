@@ -223,6 +223,8 @@ fn load_or_fetch_with_cache_context_at_from(
             if is_local(hit.source) {
                 if report.network_consensus_not_found {
                     cache::write_not_found(cache_dir, now, query);
+                } else if report.network_answered && report.network_incomplete {
+                    cache::write_incomplete_retry(cache_dir, now, query, &hit);
                 } else if report.network_answered {
                     cache::write_found(cache_dir, now, query, &hit, true);
                 }
@@ -237,7 +239,13 @@ fn load_or_fetch_with_cache_context_at_from(
         Err(error) => {
             if let Some(CachedResult::Found(hit)) = cached.as_ref().map(|record| &record.result) {
                 let fallback = prefer_local_plain(local_plain, hit.clone());
-                cache::write_found(cache_dir, now, query, &fallback, true);
+                if report.network_consensus_not_found
+                    || (report.network_answered && !report.network_incomplete)
+                {
+                    cache::write_found(cache_dir, now, query, &fallback, true);
+                } else if report.network_answered {
+                    cache::write_incomplete_retry(cache_dir, now, query, &fallback);
+                }
                 return Ok(fallback);
             }
             if report.network_consensus_not_found {
@@ -272,6 +280,9 @@ fn best_local(
         };
         match &hit.body {
             LyricsBody::Synced(_) | LyricsBody::Instrumental => {
+                return LocalLookup::Final(hit);
+            }
+            LyricsBody::Plain(_) if hit.source == LyricsSource::Tag => {
                 return LocalLookup::Final(hit);
             }
             LyricsBody::Plain(_) if plain.is_none() => plain = Some(hit),
