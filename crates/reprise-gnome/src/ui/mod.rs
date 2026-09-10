@@ -50,6 +50,8 @@ pub(in crate::ui) mod feed_footer;
 pub(crate) mod file_open;
 mod filter_bar_chip;
 mod filter_bar_layout;
+#[cfg(test)]
+mod filter_bar_pill_display_tests;
 mod filter_bar_strings;
 pub mod first_run;
 mod first_run_sources;
