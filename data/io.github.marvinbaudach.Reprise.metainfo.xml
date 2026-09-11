@@ -139,6 +139,16 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.183" date="2026-09-11" type="stable">
+      <description>
+        <p>Lets two soft clouds of light drift behind the cover in place of the turning shimmer disc. Their colour comes from the blurred artwork itself, so a cover lights the panel in its own hue and a grey cover stays quiet; a track change crossfades one cover's light into the next, and the reduce-animation setting holds the clouds still.</p>
+        <p xml:lang="de">Lässt zwei weiche Lichtwolken hinter dem Cover treiben, an Stelle der drehenden Schimmerscheibe. Ihre Farbe stammt aus dem verwischten Albumbild selbst, sodass ein Cover das Panel in seinem eigenen Ton beleuchtet und ein graues Cover ruhig bleibt; ein Titelwechsel blendet das Licht des einen Covers in das des nächsten über, und die Einstellung für reduzierte Animationen hält die Wolken still.</p>
+        <p>Shows lyrics that already sit on disk at once instead of covering them with a spinner while the network is asked, remembers a network round that timed out so the next play does not ask again, and lets the batch scan upgrade the plain-text sidecars it used to skip.</p>
+        <p xml:lang="de">Zeigt Liedtexte, die bereits auf der Platte liegen, sofort an, statt sie hinter einem Ladekreis zu verbergen, während das Netz gefragt wird, merkt sich eine abgelaufene Netzanfrage, damit das nächste Abspielen nicht erneut fragt, und lässt den Sammellauf die reinen Textdateien nachrüsten, die er bisher übersprang.</p>
+        <p>Rests the Devices section on the sidebar floor: a collapsed job card kept reserving its full height while it revealed nothing, so the section floated about 95px above the bottom edge.</p>
+        <p xml:lang="de">Setzt den Bereich „Geräte“ auf den Boden der Seitenleiste: eine eingeklappte Auftragskarte reservierte weiterhin ihre volle Höhe, obwohl sie nichts zeigte, sodass der Bereich rund 95px über der Unterkante schwebte.</p>
+      </description>
+    </release>
     <release version="0.1.179" date="2026-09-10" type="stable">
       <description>
         <p>Gives the compact player a window of its own, so leaving it no longer shows the library at the mini card's size for a moment before it spreads out. Window geometry, the maximized state and the mini player's shortcuts all survive the switch.</p>

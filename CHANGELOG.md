@@ -4,6 +4,36 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.183] - 2026-09-11
+
+### Playback and presentation
+
+- Two soft clouds of light drift behind the cover. They replace the turning
+  shimmer disc, and their colour comes from the blurred artwork itself rather
+  than from an extracted palette, so a cover that is mostly one hue lights the
+  panel in that hue and a grey cover stays quiet instead of guessing. Dark
+  themes add the light to the band, light themes lay it over the band as a
+  veil. Both layers share one clock half a period apart, a track change
+  crossfades the old cover's light into the new one's, and GNOME's
+  reduce-animation setting holds the clouds still without snapping them to a
+  rest pose.
+- Lyrics that already sit on disk appear at once. Measured against a real
+  library, a third of all tracks went to the network on every play, and more
+  than half of those had a plain-text sidecar the app had already read — the
+  spinner covered lyrics that were sitting right there. The upgrade to synced
+  lyrics no longer wipes the plain text while it waits, a network round that
+  timed out is remembered so the next play does not ask again, and the batch
+  scan now upgrades the plain sidecars it used to skip. Lyrics that live only
+  in a tag are left alone by the automatic upgrade, because a downloaded `.lrc`
+  would shadow them for good.
+
+### Appearance
+
+- The Devices section rests on the sidebar floor. It floated about 95px above
+  the bottom edge because a collapsed job card kept reserving its full height
+  while it revealed nothing; the card's child now follows its revealed state,
+  so an idle dock measures zero.
+
 ## [0.1.179] - 2026-09-10
 
 ### Playback and presentation
