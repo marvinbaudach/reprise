@@ -205,7 +205,7 @@ fn precomputed_classification_rechecks_an_unchanged_record_after_its_ttl_expires
 }
 
 #[test]
-fn attempted_plain_upgrade_is_throttled_even_when_one_provider_fails() {
+fn incomplete_plain_upgrade_is_deferred_only_for_the_breaker_window() {
     let temp = TempDir::new().unwrap();
     let cached_plain = LyricsHit {
         body: LyricsBody::Plain("cached fixture".into()),
@@ -214,7 +214,7 @@ fn attempted_plain_upgrade_is_throttled_even_when_one_provider_fails() {
     cache::write_found(temp.path(), 100, &query(), &cached_plain, false);
     let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
     let lrclib = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
-    let netease = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
+    let netease = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Skipped);
 
     assert_eq!(
         load_or_fetch_at(
@@ -229,8 +229,106 @@ fn attempted_plain_upgrade_is_throttled_even_when_one_provider_fails() {
         Ok(cached_plain)
     );
     assert_eq!(
-        cache::needs_fetch_at(temp.path(), 102, &query()),
+        cache::needs_fetch_at(
+            temp.path(),
+            101 + cache::INCOMPLETE_RETRY_TTL_SECONDS,
+            &query()
+        ),
         NeedsFetch::Skip
+    );
+    assert_eq!(
+        cache::needs_fetch_at(
+            temp.path(),
+            102 + cache::INCOMPLETE_RETRY_TTL_SECONDS,
+            &query()
+        ),
+        NeedsFetch::RetryForSynced
+    );
+}
+
+#[test]
+fn repeatedly_unavailable_provider_eventually_throttles_plain_upgrades() {
+    let temp = TempDir::new().unwrap();
+    let local_hit = LyricsHit {
+        body: LyricsBody::Plain("local sidecar text".into()),
+        source: LyricsSource::Sidecar,
+    };
+    let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
+    let answered = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+    let unavailable = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
+    let second_attempt = 100 + cache::INCOMPLETE_RETRY_TTL_SECONDS - 1;
+
+    for (now, force) in [(100, false), (second_attempt, true)] {
+        assert_eq!(
+            load_or_fetch_at(
+                temp.path(),
+                now,
+                &query(),
+                Some(Path::new("/fixture/song.flac")),
+                options(force),
+                &[&local],
+                &[&answered, &unavailable],
+            ),
+            Ok(local_hit.clone())
+        );
+    }
+
+    assert_eq!(answered.calls.get(), 2);
+    assert_eq!(unavailable.calls.get(), 2);
+    assert_eq!(
+        cache::needs_fetch_at(
+            temp.path(),
+            second_attempt + cache::NEGATIVE_TTL_SECONDS,
+            &query()
+        ),
+        NeedsFetch::Skip
+    );
+}
+
+#[test]
+fn separate_unavailable_provider_rounds_restart_the_short_retry_window() {
+    let temp = TempDir::new().unwrap();
+    let local_hit = LyricsHit {
+        body: LyricsBody::Plain("local sidecar text".into()),
+        source: LyricsSource::Sidecar,
+    };
+    let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
+    let answered = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+    let unavailable = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
+    let second_attempt = 101 + cache::INCOMPLETE_RETRY_TTL_SECONDS;
+
+    for now in [100, second_attempt] {
+        assert_eq!(
+            load_or_fetch_at(
+                temp.path(),
+                now,
+                &query(),
+                Some(Path::new("/fixture/song.flac")),
+                options(false),
+                &[&local],
+                &[&answered, &unavailable],
+            ),
+            Ok(local_hit.clone())
+        );
+    }
+
+    assert_eq!(answered.calls.get(), 2);
+    assert_eq!(unavailable.calls.get(), 2);
+    assert_eq!(
+        cache::needs_fetch_at(
+            temp.path(),
+            second_attempt + cache::INCOMPLETE_RETRY_TTL_SECONDS,
+            &query()
+        ),
+        NeedsFetch::Skip
+    );
+    assert_eq!(
+        cache::needs_fetch_at(
+            temp.path(),
+            second_attempt + cache::INCOMPLETE_RETRY_TTL_SECONDS + 1,
+            &query()
+        ),
+        NeedsFetch::RetryForSynced
     );
 }
 
@@ -275,6 +373,75 @@ fn all_network_not_found_writes_negative_cache_but_mixed_failure_does_not() {
         cache::needs_fetch_at(mixed.path(), 101, &query()),
         NeedsFetch::Fetch
     );
+}
+
+#[test]
+fn lyr_6_a_completely_answered_plain_upgrade_is_skipped_within_the_ttl() {
+    let temp = TempDir::new().unwrap();
+    let local_hit = LyricsHit {
+        body: LyricsBody::Plain("local sidecar text".into()),
+        source: LyricsSource::Sidecar,
+    };
+    let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
+    let answered = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+    let answered_plain = FixedProvider::new(
+        LyricsSource::Netease,
+        hit(
+            LyricsSource::Netease,
+            LyricsBody::Plain("network fallback".into()),
+        ),
+    );
+
+    for _ in 0..2 {
+        assert_eq!(
+            load_or_fetch_at(
+                temp.path(),
+                100,
+                &query(),
+                Some(Path::new("/fixture/song.flac")),
+                options(false),
+                &[&local],
+                &[&answered, &answered_plain],
+            ),
+            Ok(local_hit.clone())
+        );
+    }
+
+    let record = cache::read_cache(temp.path(), &query()).unwrap();
+    assert_eq!(record.result, CachedResult::Found(local_hit));
+    assert!(cache::plain_retry_is_fresh(&record, 100));
+    assert_eq!(answered.calls.get(), 1);
+    assert_eq!(answered_plain.calls.get(), 1);
+}
+
+#[test]
+fn lyr_6_a_failed_plain_upgrade_is_not_stamped_and_is_retried() {
+    // Control arm: an entirely failed round was already retried before this fix.
+    let temp = TempDir::new().unwrap();
+    let local_hit = LyricsHit {
+        body: LyricsBody::Plain("local sidecar text".into()),
+        source: LyricsSource::Sidecar,
+    };
+    let local = FixedProvider::new(LyricsSource::Sidecar, SourceOutcome::Hit(local_hit.clone()));
+    let failed = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::Failed);
+
+    for _ in 0..2 {
+        assert_eq!(
+            load_or_fetch_at(
+                temp.path(),
+                100,
+                &query(),
+                Some(Path::new("/fixture/song.flac")),
+                options(false),
+                &[&local],
+                &[&failed],
+            ),
+            Ok(local_hit.clone())
+        );
+    }
+
+    assert!(cache::read_cache(temp.path(), &query()).is_none());
+    assert_eq!(failed.calls.get(), 2);
 }
 
 #[test]

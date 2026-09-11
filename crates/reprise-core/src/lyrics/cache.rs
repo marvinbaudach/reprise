@@ -6,6 +6,7 @@ use super::{LyricsBody, LyricsHit, LyricsQuery};
 
 const CACHE_VERSION: u32 = 3;
 pub(crate) const NEGATIVE_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
+pub(super) const INCOMPLETE_RETRY_TTL_SECONDS: i64 = 5 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NeedsFetch {
@@ -22,6 +23,8 @@ pub(super) struct CacheRecord {
     pub(super) result: CachedResult,
     #[serde(default)]
     synced_retry_at: Option<i64>,
+    #[serde(default)]
+    incomplete_synced_retry_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,6 +128,42 @@ pub(super) fn write_found(
             result: CachedResult::Found(hit.clone()),
             synced_retry_at: (synced_retry_attempted && matches!(&hit.body, LyricsBody::Plain(_)))
                 .then_some(now),
+            incomplete_synced_retry_at: None,
+        },
+    );
+}
+
+pub(super) fn write_incomplete_retry(
+    cache_dir: &Path,
+    now: i64,
+    query: &LyricsQuery,
+    hit: &LyricsHit,
+) {
+    let repeated = read_cache(cache_dir, query).is_some_and(|record| {
+        matches!(
+            record.result,
+            CachedResult::Found(LyricsHit {
+                body: LyricsBody::Plain(_),
+                ..
+            })
+        ) && record
+            .incomplete_synced_retry_at
+            .is_some_and(|retried_at| is_fresh_for(retried_at, now, INCOMPLETE_RETRY_TTL_SECONDS))
+    });
+    if repeated {
+        write_found(cache_dir, now, query, hit, true);
+        return;
+    }
+    write_cache(
+        cache_dir,
+        query,
+        &CacheRecord {
+            version: CACHE_VERSION,
+            query: query.canonical(),
+            fetched_at: now,
+            result: CachedResult::Found(hit.clone()),
+            synced_retry_at: None,
+            incomplete_synced_retry_at: Some(now),
         },
     );
 }
@@ -139,6 +178,7 @@ pub(super) fn write_not_found(cache_dir: &Path, now: i64, query: &LyricsQuery) {
             fetched_at: now,
             result: CachedResult::NotFound,
             synced_retry_at: None,
+            incomplete_synced_retry_at: None,
         },
     );
 }
@@ -154,9 +194,12 @@ pub(super) fn plain_retry_is_fresh(record: &CacheRecord, now: i64) -> bool {
             body: LyricsBody::Plain(_),
             ..
         })
-    ) && record
+    ) && (record
         .synced_retry_at
         .is_some_and(|retried_at| is_fresh(retried_at, now))
+        || record
+            .incomplete_synced_retry_at
+            .is_some_and(|retried_at| is_fresh_for(retried_at, now, INCOMPLETE_RETRY_TTL_SECONDS)))
 }
 
 pub(super) fn cache_file(cache_dir: &Path, query: &LyricsQuery) -> PathBuf {
@@ -171,7 +214,11 @@ pub(super) fn cache_dir() -> PathBuf {
 }
 
 fn is_fresh(timestamp: i64, now: i64) -> bool {
-    now.saturating_sub(timestamp).max(0) <= NEGATIVE_TTL_SECONDS
+    is_fresh_for(timestamp, now, NEGATIVE_TTL_SECONDS)
+}
+
+fn is_fresh_for(timestamp: i64, now: i64, ttl_seconds: i64) -> bool {
+    now.saturating_sub(timestamp).max(0) <= ttl_seconds
 }
 
 fn write_cache(cache_dir: &Path, query: &LyricsQuery, record: &CacheRecord) {

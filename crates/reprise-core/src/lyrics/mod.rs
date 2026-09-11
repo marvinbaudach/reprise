@@ -191,7 +191,7 @@ fn load_or_fetch_with_cache_context_at_from(
     cache_decision: Option<&cache::CacheDecision>,
     providers: LookupProviders<'_>,
 ) -> Result<LyricsHit, LyricsError> {
-    let local_plain = match best_local(query, track_path, providers.local) {
+    let local_plain = match best_local(query, track_path, providers.local, options.force) {
         LocalLookup::Final(hit) => return Ok(hit),
         LocalLookup::Plain(hit) => hit,
     };
@@ -223,6 +223,10 @@ fn load_or_fetch_with_cache_context_at_from(
             if is_local(hit.source) {
                 if report.network_consensus_not_found {
                     cache::write_not_found(cache_dir, now, query);
+                } else if report.network_answered && report.network_incomplete {
+                    cache::write_incomplete_retry(cache_dir, now, query, &hit);
+                } else if report.network_answered {
+                    cache::write_found(cache_dir, now, query, &hit, true);
                 }
             } else {
                 cache::write_found(cache_dir, now, query, &hit, true);
@@ -235,7 +239,11 @@ fn load_or_fetch_with_cache_context_at_from(
         Err(error) => {
             if let Some(CachedResult::Found(hit)) = cached.as_ref().map(|record| &record.result) {
                 let fallback = prefer_local_plain(local_plain, hit.clone());
-                cache::write_found(cache_dir, now, query, &fallback, true);
+                if report.network_consensus_not_found {
+                    cache::write_found(cache_dir, now, query, &fallback, true);
+                } else if report.network_answered {
+                    cache::write_incomplete_retry(cache_dir, now, query, &fallback);
+                }
                 return Ok(fallback);
             }
             if report.network_consensus_not_found {
@@ -262,6 +270,7 @@ fn best_local(
     query: &LyricsQuery,
     track_path: Option<&Path>,
     providers: &[&dyn LyricsProvider],
+    force: bool,
 ) -> LocalLookup {
     let mut plain = None;
     for provider in providers {
@@ -270,6 +279,9 @@ fn best_local(
         };
         match &hit.body {
             LyricsBody::Synced(_) | LyricsBody::Instrumental => {
+                return LocalLookup::Final(hit);
+            }
+            LyricsBody::Plain(_) if hit.source == LyricsSource::Tag && !force => {
                 return LocalLookup::Final(hit);
             }
             LyricsBody::Plain(_) if plain.is_none() => plain = Some(hit),
@@ -321,3 +333,7 @@ fn unix_timestamp() -> i64 {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tag_force_tests.rs"]
+mod tag_force_tests;

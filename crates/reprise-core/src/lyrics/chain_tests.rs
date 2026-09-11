@@ -138,6 +138,7 @@ fn instrumental_stops_the_chain_but_does_not_replace_local_text() {
         })
     );
     assert_eq!(netease.calls.get(), 0);
+    assert!(report.network_answered);
 }
 
 #[test]
@@ -150,6 +151,7 @@ fn all_skipped_or_failed_is_temporary_without_negative_consensus() {
 
     assert_eq!(report.result, Err(LyricsError::Temporary));
     assert!(!report.network_consensus_not_found);
+    assert!(report.network_incomplete);
 }
 
 #[test]
@@ -174,4 +176,36 @@ fn mixed_not_found_and_failed_is_temporary_without_negative_consensus() {
 
     assert_eq!(report.result, Err(LyricsError::Temporary));
     assert!(!report.network_consensus_not_found);
+    assert!(report.network_incomplete);
+}
+
+#[test]
+fn skipped_and_failed_network_providers_do_not_count_as_an_answer() {
+    let lrclib = FakeProvider::new(LyricsSource::Lrclib, SourceOutcome::Failed);
+    let netease = FakeProvider::new(LyricsSource::Netease, SourceOutcome::Skipped);
+
+    let report = run_chain(&query(), None, None, &[&lrclib, &netease]);
+
+    assert!(!report.network_answered);
+    assert!(report.network_incomplete);
+}
+
+#[test]
+fn not_found_and_hit_network_outcomes_each_count_as_an_answer() {
+    let not_found = FakeProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+    let not_found_report = run_chain(&query(), None, None, &[&not_found]);
+
+    let plain = FakeProvider::new(
+        LyricsSource::Lrclib,
+        hit(
+            LyricsSource::Lrclib,
+            LyricsBody::Plain("network text".into()),
+        ),
+    );
+    let hit_report = run_chain(&query(), None, None, &[&plain]);
+
+    assert!(not_found_report.network_answered);
+    assert!(hit_report.network_answered);
+    assert!(!not_found_report.network_incomplete);
+    assert!(!hit_report.network_incomplete);
 }
