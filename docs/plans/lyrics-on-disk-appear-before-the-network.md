@@ -326,6 +326,18 @@ for the five-minute breaker window; a second incomplete attempt earns the
 seven-day suppression so that a permanently unavailable provider cannot make
 every playback repeat the lookup forever.
 
+The review also found that a track whose only lyrics are plain ID3 tag text was
+newly eligible for a network upgrade, and that a downloaded `.lrc` sidecar
+would then shadow those tag lyrics permanently, because `sidecar_hit` always
+wins over `tag_hit`. Automatic lookups — playback and the batch run — therefore
+stop at plain tag lyrics and treat them as final. An explicit forced retry may
+still continue to the network and write a synchronized sidecar, because a
+deliberate user action carries the decision to replace the tag text. That
+forced path is not reachable from the GNOME frontend today: the retry button is
+offered only for temporary or invalid errors, never for a successfully rendered
+plain tag hit. Wiring a deliberate upgrade action into the lyrics content page
+is left as follow-up work.
+
 Kein Test darf `~/.cache/reprise/lyrics` oder `~/Music` anfassen — die
 vorhandenen Tests arbeiten bereits mit `cache_dir`-Parameter und `tempfile`,
 das bleibt so.
