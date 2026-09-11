@@ -24,7 +24,10 @@ pub(super) fn scrim_alpha(y_px: f64, title_top: f64) -> f64 {
 }
 
 pub(super) fn left_fade_alpha(x_px: f64, width: f64) -> f64 {
-    if width <= 0.0 || x_px <= 0.0 {
+    if width <= 0.0 {
+        return 0.0;
+    }
+    if x_px <= 0.0 {
         return 1.0;
     }
     let fade_width = tokens::NOW_PLAYING_LEFT_FADE_SHARE * width;

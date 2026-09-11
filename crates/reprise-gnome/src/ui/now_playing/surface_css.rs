@@ -39,6 +39,7 @@ pub(super) fn css() -> String {
      .reprise-now-playing-tabs toggle-group {{ \
        padding: 0; border: none; background: none; box-shadow: none; \
        min-height: 0; border-radius: 0; }}\n\
+     /* Libadwaita gives separators horizontal margins; clearing them keeps the measured gap at 2px. */\n\
      .reprise-now-playing-tabs separator {{ \
        min-width: 2px; margin: 0; background: none; opacity: 0; }}\n\
      .reprise-now-playing-tabs toggle {{ \

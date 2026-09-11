@@ -2236,7 +2236,8 @@ the panel).
   shadow, no hairline) 50 px from the top → 34 px → title 15 px bold →
   „Artist · Album" on one line, 12 px, the artist at the secondary tone
   (weight 500), separator and album at the tertiary tone → **segment control**
-  30 px, radius 7 px / 5 px inside, 262 px wide (segments, no tab-bar widget)
+  30 px, radius 7 px / 5 px inside, the stage's content width less the 18 px
+  margins on both sides (segments, no tab-bar widget)
   → 20 px → a 1 px rule in the border tone running out over 34 px at both ends
   → 8 px → tab content → footer 10.5 px 35%, whose content is provided by
   the active tab. No panel header: closing runs via the app-header
@@ -4251,16 +4252,17 @@ STYLE-1).
   canvas without reading or sampling the cover.
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
-  cover bloom, the cover in the player bar and the playhead, nowhere else.
-  The now-playing backdrop and the cover in the player bar read the
-  `BassPressure.pressure` that
-  already reaches the UI and its UI-side slow envelope, `swell` — never
+  cover bloom, the cover in the player bar and the playhead, nowhere else; the
+  panel cover itself deliberately keeps variant 4b's static shadow. The bloom
+  reads the `BassPressure.pressure` that already reaches the UI and its UI-side
+  slow envelope, `swell`, while the player-bar cover reads that slow envelope
+  and the playhead keeps its own playback light — never
   the CAVA bars, whose auto-sensitivity
   makes a quiet vocal reach the same value as a drop, and never
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
-  `pressure` carries the backdrop's base brightness and `swell` the slow
-  movement of every large surface. **Outside the Visualizer's own canvas,
+  `pressure` carries the bloom's base brightness and `swell` the slow movement
+  of the bloom and player-bar cover. **Outside the Visualizer's own canvas,
   nothing reads `kick` at all.** The panel cover used to take the beat
   while that tab was open — round 5's one exception — and it read as the
   cover twitching under its own shadow.

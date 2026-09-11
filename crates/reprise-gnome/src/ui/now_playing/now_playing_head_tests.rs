@@ -60,7 +60,10 @@ fn npp_2_the_segment_control_is_thirty_px_tall_with_two_px_gaps() {
         realized_panel("io.github.marvinbaudach.Reprise.NowPlayingSettledSegmentGeometryTest");
     let widgets = &panel.widgets;
     let switcher = widgets.tab_switcher.compute_bounds(&widgets.stage).unwrap();
-    assert_eq!(switcher.height().round() as i32, 30);
+    assert_eq!(
+        switcher.height().round() as i32,
+        tokens::NOW_PLAYING_SEGMENT_HEIGHT
+    );
     assert_eq!(switcher.width().round() as i32, widgets.stage.width() - 36);
 
     let group = widgets
@@ -114,7 +117,7 @@ fn npp_2_a_hairline_with_run_out_separates_the_switcher_from_the_list() {
 fn npp_18_the_fades_hand_the_title_calm_ground_and_keep_the_list_edge_clean() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let width = 300;
+    let width = super::super::now_playing_column::PANEL_WIDTH;
     let band = tokens::NOW_PLAYING_ARTWORK_BAND;
     let cloud = super::super::cover_cloud::CoverCloud::new();
     let texture = saturated_cover();

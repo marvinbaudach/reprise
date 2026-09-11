@@ -33,9 +33,9 @@ use crate::ui::style::tokens;
 
 /// The field, and how far it hangs off each edge, as multiples of the cover.
 ///
-/// The mockup is drawn against a 240 px cover; this panel's is 168. Carrying
+/// The mockup is drawn against a 240 px cover; this panel's is 184. Carrying
 /// the numbers as ratios rather than pixels is what lets the panel keep its own
-/// size — the same way the module this replaces carried its disc as `520/168`.
+/// size — the same way the module this replaces carried its disc as `520/184`.
 /// The overhang is widest on the right: the weight leans outward, away from the
 /// track list.
 const FIELD_HEIGHT_PER_COVER: f64 = 440.0 / 240.0;

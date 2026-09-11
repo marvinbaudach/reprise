@@ -30,19 +30,32 @@ fn npc_11_the_scrim_only_ever_darkens_on_the_way_down() {
 
 #[test]
 fn npc_12_the_text_never_sits_on_a_moving_ground() {
-    let title_top = f64::from(tokens::NOW_PLAYING_ARTWORK_BAND);
+    let title_top = f64::from(
+        tokens::NOW_PLAYING_HEAD_TOP
+            + tokens::NOW_PLAYING_COVER_SIZE
+            + tokens::NOW_PLAYING_COVER_TO_TITLE,
+    );
+    let cover_bottom = f64::from(tokens::NOW_PLAYING_HEAD_TOP + tokens::NOW_PLAYING_COVER_SIZE);
+
+    assert_eq!(tokens::NOW_PLAYING_ARTWORK_BAND, title_top as i32);
     assert_eq!(scrim_alpha(title_top, title_top), 1.0);
-    assert_eq!(title_top, f64::from(tokens::NOW_PLAYING_ARTWORK_BAND));
+    assert!(scrim_alpha(cover_bottom, title_top) < 1.0);
 }
 
 #[test]
-fn npc_13_the_left_fade_reaches_the_list_edge_at_a_fifth_of_the_panel() {
+fn npc_14_the_left_fade_reaches_the_list_edge_at_a_fifth_of_the_panel() {
     assert_eq!(left_fade_alpha(0.0, 300.0), 1.0);
     assert_eq!(left_fade_alpha(33.0, 300.0), 0.5);
     assert_eq!(left_fade_alpha(66.0, 300.0), 0.0);
     assert_eq!(left_fade_alpha(100.0, 300.0), 0.0);
     assert_eq!(left_fade_alpha(44.0, 400.0), 0.5);
     assert_eq!(left_fade_alpha(88.0, 400.0), 0.0);
+}
+
+#[test]
+fn npc_15_degenerate_fades_are_transparent() {
+    assert_eq!(scrim_alpha(10.0, 0.0), 0.0);
+    assert_eq!(left_fade_alpha(10.0, 0.0), 0.0);
 }
 
 #[test]

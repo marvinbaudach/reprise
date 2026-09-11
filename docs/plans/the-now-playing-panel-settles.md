@@ -2,7 +2,7 @@
 slug: the-now-playing-panel-settles
 worktree: /home/marvin/Projects/reprise-the-now-playing-panel-settles
 branch: feature/the-now-playing-panel-settles
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-09-11
 ---
@@ -99,15 +99,12 @@ stage (Box v 0): track_content, tab_switcher, tab_stack, footer   :286-296
    first — with a short artist and a long album (the common case) the album is
    cut exactly as the spec asks; strict "artist first" in every case would need
    a custom layout manager and is not built.
-2. **Album tone: 0.55 in dark, 0.65 in light**, as a new named colour
-   `@reprise_tertiary_fg_color`. Measured against all three palettes: 0.55 of
-   `fg` over `sidebar_bg` reaches 4.8:1 dark but only **3.7:1 light**, below
-   the 4.5:1 floor NPP-17 makes binding for every panel text role (0.50 — the
-   banned hint — is 3.2:1). 0.65 is the lowest even step that clears it in
-   light (5.0:1). The artist keeps `@reprise_secondary_fg_color` (0.70 — the
-   spec's "70 % of fg"). Per-appearance alpha has precedent
-   (`reprise_cover_edge`). The zero-token alternative (album at secondary,
-   weight alone) was considered and rejected in the grill.
+2. **Album tone: 0.70 in dark, 0.65 in light**, as a new named colour
+   `@reprise_tertiary_fg_color`. The head-band glow extreme leaves no room for
+   a third dark tone under NPP-17's 4.5:1 floor: 0.55 reaches only 3.58:1,
+   while 0.70 reaches 4.75:1. In dark, weight 400 and the separator carry the
+   quieter album role against the artist's weight 500; light retains the tonal
+   step, where 0.65 reaches 4.76:1. Per-appearance alpha has precedent.
 3. **Separator colour `@borders`** as the spec says — libadwaita 1.9 defines it
    (`color-mix(currentColor 15 %)`, 50 % in high contrast), so it follows the
    appearance without a literal. `@reprise_hairline` (6 %/9 %) is the fainter
@@ -163,7 +160,7 @@ Add, in the NOW_PLAYING block with doc comments naming the spec:
 "7px"`, `NOW_PLAYING_SEGMENT_INNER_RADIUS: &str = "5px"`,
 `NOW_PLAYING_LIST_RULE_RUN_OUT: i32 = 34`, `NOW_PLAYING_LIST_RULE_ABOVE: i32 =
 20`, `NOW_PLAYING_LIST_RULE_BELOW: i32 = 8`, `NOW_PLAYING_LEFT_FADE_SHARE: f64
-= 0.22`, `TERTIARY_TEXT_ALPHA_DARK: f64 = 0.55`, `TERTIARY_TEXT_ALPHA_LIGHT:
+= 0.22`, `TERTIARY_TEXT_ALPHA_DARK: f64 = 0.70`, `TERTIARY_TEXT_ALPHA_LIGHT:
 f64 = 0.65`.
 Change: `NOW_PLAYING_COVER_SIZE` 168 → 184; `NOW_PLAYING_ARTWORK_BAND` becomes
 the derived `NOW_PLAYING_HEAD_TOP + NOW_PLAYING_COVER_SIZE +
@@ -175,7 +172,7 @@ Remove: `NOW_PLAYING_PILL_RADIUS`, `COVER_EDGE_DARK_ALPHA`,
 ### 2. Theme colours (`style/theme.rs`, `style/theme_tokens.rs`)
 
 - Emit `@define-color reprise_tertiary_fg_color alpha({fg}, {tertiary_alpha})`
-  next to primary/secondary (`theme.rs:284-286`), dark 0.55 / light 0.65.
+  next to primary/secondary (`theme.rs:284-286`), dark 0.70 / light 0.65.
 - Drop both `reprise_cover_edge` define-colors; set both `reprise_cover_shadow`
   alphas from the 0.42 tokens.
 - Update the tests in `theme.rs` (`:714-722` expected strings, the `#891`
@@ -331,7 +328,8 @@ NPP-17 sentences: "Layout from top: cover 184 px (radius 12, shadow, no
 hairline) 50 px from the top → 34 px → title 15 px bold → „Artist · Album"
 on one line, 12 px, the artist at the secondary tone (weight 500), separator
 and album at the tertiary tone → **segment control** 30 px, radius 7 px /
-5 px inside, 262 px wide (segments, no tab-bar widget) → 20 px → a 1 px rule
+5 px inside, the stage's content width less the 18 px margins on both sides
+(segments, no tab-bar widget) → 20 px → a 1 px rule
 in the border tone running out over 34 px at both ends → 8 px → tab content →
 footer 10.5 px 35 %, whose content is provided by the active tab. …". In
 NPP-17 drop "the cover's inset hairline" from the list of surface washes.
