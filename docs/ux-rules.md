@@ -2232,10 +2232,13 @@ the panel).
   `sp`, and a child without `ellipsize` forces a minimum width via its
   text width that `max-sidebar-width` cannot go below — a status
   element in the sidebar must never dictate its width.
-- **NPP-2** [active] [gtk] — Layout from top: cover 168 px (radius 12,
-  shadow + 1 px inset hairline) → title 15 px bold → „Artist · Album"
-  12 px white 55% → **pill toggle** (segments, no tab-bar widget) →
-  tab content → footer 10.5 px white 35%, whose content is provided by
+- **NPP-2** [active] [gtk] — Layout from top: cover 184 px (radius 12,
+  shadow, no hairline) 50 px from the top → 34 px → title 15 px bold →
+  „Artist · Album" on one line, 12 px, the artist at the secondary tone
+  (weight 500), separator and album at the tertiary tone → **segment control**
+  30 px, radius 7 px / 5 px inside, 262 px wide (segments, no tab-bar widget)
+  → 20 px → a 1 px rule in the border tone running out over 34 px at both ends
+  → 8 px → tab content → footer 10.5 px 35%, whose content is provided by
   the active tab. No panel header: closing runs via the app-header
   toggle, a retry belongs in the tab's error state. **No volume
   control** (P-1). The colour named here follows the appearance per
@@ -3690,7 +3693,7 @@ property is set and yet nothing happens.
   footer, tab labels at rest and unsynchronized lyrics. Every one of those
   roles reaches at least 4.5:1 against `@sidebar_bg_color` in **both**
   appearances and in every theme. Surface washes (the pill fill, the canvas
-  tint, the cover's inset hairline) take the same foreground so that they
+  tint) take the same foreground so that they
   lighten on a dark panel and darken on a light one. `@reprise_hint_fg_color`
   is not available here: on the sidebar surface it reaches only 3.2:1 light /
   4.3:1 dark.
@@ -4247,9 +4250,10 @@ STYLE-1).
   color. Changing the app/system source or the live system accent updates the
   canvas without reading or sampling the cover.
 
-- **AC-24** [active] [gtk] — The reactive light lives on the cover and the
-  playhead, nowhere else. The now-playing backdrop, the cover in the panel
-  and the cover in the player bar read the `BassPressure.pressure` that
+- **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
+  cover bloom, the cover in the player bar and the playhead, nowhere else.
+  The now-playing backdrop and the cover in the player bar read the
+  `BassPressure.pressure` that
   already reaches the UI and its UI-side slow envelope, `swell` — never
   the CAVA bars, whose auto-sensitivity
   makes a quiet vocal reach the same value as a drop, and never

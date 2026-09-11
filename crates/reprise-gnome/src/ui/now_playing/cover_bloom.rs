@@ -30,9 +30,9 @@ type OnFrame = Rc<dyn Fn(i64)>;
 /// Height of the bloom band. It ends where the title block begins, so the
 /// cover-derived light cannot paint behind text.
 pub(super) const BLOOM_HEIGHT: f64 = tokens::NOW_PLAYING_ARTWORK_BAND as f64;
-/// The cover begins 22 px from the band's top and remains at full bloom
-/// strength through its bottom edge.
-pub(super) const BLOOM_FULL_STRENGTH_Y: f64 = 22.0 + tokens::NOW_PLAYING_COVER_SIZE as f64;
+/// The bloom remains at full strength through the cover's bottom edge.
+pub(super) const BLOOM_FULL_STRENGTH_Y: f64 =
+    tokens::NOW_PLAYING_HEAD_TOP as f64 + tokens::NOW_PLAYING_COVER_SIZE as f64;
 /// Width as a share of the panel width. The overflow is clipped by the panel.
 pub(super) const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
@@ -42,6 +42,8 @@ const OPACITY_PER_SWELL: f64 = 0.16;
 const LIGHT_REST_OPACITY: f64 = 0.14;
 const LIGHT_OPACITY_PER_PRESSURE: f64 = 0.26;
 const LIGHT_OPACITY_PER_SWELL: f64 = 0.24;
+const DARK_OPACITY_CAP: f64 = 0.35;
+const LIGHT_OPACITY_CAP: f64 = 0.60;
 const REST_SCALE: f64 = 1.0;
 const SCALE_PER_SWELL: f64 = 0.025;
 
@@ -57,6 +59,7 @@ struct BloomOpacityModel {
     rest: f64,
     per_pressure: f64,
     per_swell: f64,
+    cap: f64,
 }
 
 fn bloom_opacity_model(is_dark: bool) -> BloomOpacityModel {
@@ -65,21 +68,24 @@ fn bloom_opacity_model(is_dark: bool) -> BloomOpacityModel {
             rest: REST_OPACITY,
             per_pressure: OPACITY_PER_PRESSURE,
             per_swell: OPACITY_PER_SWELL,
+            cap: DARK_OPACITY_CAP,
         }
     } else {
         BloomOpacityModel {
             rest: LIGHT_REST_OPACITY,
             per_pressure: LIGHT_OPACITY_PER_PRESSURE,
             per_swell: LIGHT_OPACITY_PER_SWELL,
+            cap: LIGHT_OPACITY_CAP,
         }
     }
 }
 
 pub(super) fn bloom_opacity(pressure: f64, swell: f64, is_dark: bool) -> f64 {
     let model = bloom_opacity_model(is_dark);
-    model.rest
+    (model.rest
         + model.per_pressure * pressure.clamp(0.0, 1.0)
-        + model.per_swell * swell.clamp(0.0, 1.0)
+        + model.per_swell * swell.clamp(0.0, 1.0))
+    .min(model.cap)
 }
 
 /// Vertical alpha ramp of the bloom: 1.0 above `full`, 0.0 at `band`, linear
@@ -367,9 +373,11 @@ mod tests {
         assert_eq!(dark.rest, 0.06);
         assert_eq!(dark.per_pressure, 0.15);
         assert_eq!(dark.per_swell, 0.16);
+        assert_eq!(dark.cap, 0.35);
         assert_eq!(light.rest, 0.14);
         assert_eq!(light.per_pressure, 0.26);
         assert_eq!(light.per_swell, 0.24);
+        assert_eq!(light.cap, 0.60);
         assert!(light.rest > dark.rest);
     }
 
@@ -436,8 +444,10 @@ mod tests {
         assert!((bloom_opacity(0.9, 0.0, true) - 0.195).abs() < 1e-9);
         // A broad swell on a lit bed.
         assert!((bloom_opacity(0.85, 0.8, true) - 0.3155).abs() < 1e-9);
-        // Both at full: the ceiling.
-        assert!((bloom_opacity(1.0, 1.0, true) - 0.37).abs() < 1e-9);
+        // Both at full: the settled appearance caps.
+        assert!((bloom_opacity(1.0, 1.0, true) - 0.35).abs() < 1e-9);
+        assert!((bloom_opacity(1.0, 1.0, false) - 0.60).abs() < 1e-9);
+        assert!((bloom_opacity(1.0, 0.0, true) - 0.21).abs() < 1e-9);
         // The bed alone must never out-shine bed plus hit.
         assert!(bloom_opacity(1.0, 0.0, true) < bloom_opacity(1.0, 1.0, true));
 
@@ -445,7 +455,7 @@ mod tests {
         assert!((bloom_scale(1.0) - 1.025).abs() < 1e-9);
 
         // Out-of-range readings clamp, never extrapolate.
-        assert!((bloom_opacity(4.0, 4.0, true) - 0.37).abs() < 1e-9);
+        assert!((bloom_opacity(4.0, 4.0, true) - 0.35).abs() < 1e-9);
         assert!((bloom_opacity(-1.0, -1.0, true) - 0.06).abs() < 1e-9);
     }
 

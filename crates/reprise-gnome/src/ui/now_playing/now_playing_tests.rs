@@ -26,7 +26,7 @@ pub(super) fn loaded_track() -> NowPlaying {
     }
 }
 
-fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
+pub(super) fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     build_widgets(content, visible, &Rc::new(conn), &cover_loader)
@@ -219,11 +219,10 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     assert!(css.contains("radial-gradient"));
     assert!(css.contains("@reprise_now_playing_glow"));
     assert!(css.contains("border-left: 1px solid @reprise_hairline"));
-    assert!(css.contains(
-        "box-shadow: inset 0 0 0 1px @reprise_cover_edge, 0 2px 6px @reprise_cover_shadow"
-    ));
+    assert!(css.contains("box-shadow: 0 12px 30px @reprise_cover_shadow"));
+    assert!(!css.contains("reprise_cover_edge"));
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
-    assert!(css.contains(".reprise-now-playing-head { padding: 22px 18px 0; }"));
+    assert!(css.contains(".reprise-now-playing-head { padding: 50px 18px 0; }"));
     assert!(css.contains(".reprise-now-playing-metadata { padding: 0 18px 16px; }"));
     assert!(css.contains("border-radius: 12px"));
     assert!(css.contains("font-size: 15px"));
@@ -243,7 +242,12 @@ fn npp_11_now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-tabs"));
-    assert!(css.contains("border-radius: 99px"));
+    assert!(css.contains("border-radius: 7px"));
+    assert!(css.contains(".reprise-now-playing-tabs toggle-group"));
+    assert!(css.contains(".reprise-now-playing-tabs separator"));
+    assert!(css.contains(".reprise-now-playing-tabs toggle"));
+    assert!(css.contains(".reprise-now-playing-tabs toggle:checked"));
+    assert!(!css.contains(".reprise-now-playing-tabs button"));
     assert!(css.contains("alpha(@sidebar_fg_color, 0.06)"));
     assert!(css.contains("background-color: @reprise_tab_active_bg"));
     assert!(css.contains("box-shadow: 0 1px 2px @reprise_tab_active_shadow"));
@@ -291,12 +295,12 @@ fn head_and_pill_match_the_21a_structure() {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
 
-    assert_eq!(widgets.cover.pixel_size(), 168);
-    assert_eq!(widgets.cover.width_request(), 168);
-    assert_eq!(widgets.cover.height_request(), 168);
+    assert_eq!(widgets.cover.pixel_size(), 184);
+    assert_eq!(widgets.cover.width_request(), 184);
+    assert_eq!(widgets.cover.height_request(), 184);
     assert!(widgets.title.has_css_class("reprise-now-playing-title"));
-    assert!(widgets.artist.has_css_class("reprise-now-playing-subtitle"));
-    assert!(widgets.album.has_css_class("reprise-now-playing-subtitle"));
+    assert!(widgets.artist.has_css_class("reprise-now-playing-artist"));
+    assert!(widgets.album.has_css_class("reprise-now-playing-album"));
     assert_eq!(PANEL_TABS.len(), 3);
     assert!(widgets
         .tab_switcher
@@ -306,6 +310,14 @@ fn head_and_pill_match_the_21a_structure() {
         Some(&widgets.tab_stack)
     );
     assert!(widgets.tab_stack.child_by_name(VISUAL_PAGE).is_some());
+    assert_eq!(
+        widgets.tab_switcher.next_sibling().as_ref(),
+        Some(widgets.list_rule.upcast_ref())
+    );
+    assert_eq!(
+        widgets.list_rule.next_sibling().as_ref(),
+        Some(widgets.tab_stack.upcast_ref())
+    );
     assert_eq!(widgets.tab_stack.pages().n_items(), 3);
     let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
     let page = widgets.tab_stack.page(&visual);
@@ -339,12 +351,18 @@ fn npp_18_head_band_keeps_body_text_outside_every_artwork_layer() {
         artwork_children,
         [
             widgets.artwork_band.clone().upcast::<gtk4::Widget>(),
-            widgets.cloud.widget().clone().upcast::<gtk4::Widget>(),
             widgets.bloom.widget().clone().upcast::<gtk4::Widget>(),
+            widgets.cloud.widget().clone().upcast::<gtk4::Widget>(),
             widgets.head.clone().upcast::<gtk4::Widget>(),
         ],
-        "the artwork overlay must hold its geometry, the clouds, the bloom and the \
+        "the artwork overlay must hold its geometry, the bloom, the clouds and the \
          cover head, in that order: the cover is last so no moving layer can carry it"
+    );
+    assert_eq!(
+        tokens::NOW_PLAYING_ARTWORK_BAND,
+        tokens::NOW_PLAYING_HEAD_TOP
+            + tokens::NOW_PLAYING_COVER_SIZE
+            + tokens::NOW_PLAYING_COVER_TO_TITLE
     );
     assert!(!artwork_children.contains(&widgets.metadata.clone().upcast::<gtk4::Widget>()));
     assert_eq!(
@@ -492,7 +510,10 @@ fn loaded_and_idle_tracks_render_from_the_player_context() {
     panel.set_playback_state(PlaybackState::Playing);
     assert_eq!(panel.widgets.title.text(), "Loaded title");
     assert_eq!(panel.widgets.artist.text(), "Loaded artist");
-    assert_eq!(panel.widgets.album.text(), "Loaded album");
+    assert_eq!(
+        panel.widgets.album.text(),
+        album_label_text("Loaded artist", "Loaded album")
+    );
     panel.set_playback_state(PlaybackState::Paused);
     assert_eq!(panel.widgets.title.text(), "Loaded title");
 
@@ -646,7 +667,9 @@ fn npp_13_cold_cover_resolves_before_the_outgoing_cover_fades() {
     settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
-pub(super) fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
+pub(in crate::ui::now_playing) fn test_panel(
+    application_id: &str,
+) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
     let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     test_panel_with_cover_loader(application_id, CoverLoader::new(cover_runtime))
 }

@@ -21,7 +21,6 @@ pub(super) struct HeadWidgets {
     pub(super) bloom: cover_bloom::CoverBloom,
     pub(super) cloud: cover_cloud::CoverCloud,
     pub(super) cover_stack: gtk4::Stack,
-    pub(super) cover_lift: CoverLift,
     pub(super) external_cover: gtk4::Box,
     pub(super) cover: gtk4::Image,
     pub(super) outgoing_cover: gtk4::Image,
@@ -52,7 +51,7 @@ pub(super) fn build_head() -> HeadWidgets {
     let cover_transition = gtk4::Overlay::new();
     cover_transition.set_child(Some(&cover));
     cover_transition.add_overlay(&outgoing_cover);
-    let cover_lift = CoverLift::new(&cover_transition, tokens::NOW_PLAYING_COVER_SIZE);
+    let cover_lift = CoverLift::new_still(&cover_transition, tokens::NOW_PLAYING_COVER_SIZE);
     let external_cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     external_cover.set_size_request(
         tokens::NOW_PLAYING_COVER_SIZE,
@@ -68,7 +67,7 @@ pub(super) fn build_head() -> HeadWidgets {
     let title = gtk4::Label::builder()
         .xalign(0.5)
         .justify(gtk4::Justification::Center)
-        .wrap(true)
+        .wrap(false)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
     title.set_accessible_role(gtk4::AccessibleRole::Link);
@@ -76,31 +75,35 @@ pub(super) fn build_head() -> HeadWidgets {
     let artist = gtk4::Label::builder()
         .xalign(0.5)
         .justify(gtk4::Justification::Center)
-        .wrap(true)
+        .wrap(false)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
     artist.set_accessible_role(gtk4::AccessibleRole::Link);
-    artist.add_css_class("reprise-now-playing-subtitle");
+    artist.add_css_class("reprise-now-playing-artist");
     let album = gtk4::Label::builder()
         .xalign(0.5)
         .justify(gtk4::Justification::Center)
-        .wrap(true)
+        .wrap(false)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
     album.set_accessible_role(gtk4::AccessibleRole::Link);
-    album.add_css_class("reprise-now-playing-subtitle");
+    album.add_css_class("reprise-now-playing-album");
+
+    let subtitle_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    subtitle_row.set_halign(gtk4::Align::Center);
+    subtitle_row.add_css_class("reprise-now-playing-subtitle-row");
+    subtitle_row.append(&artist);
+    subtitle_row.append(&album);
 
     let metadata = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     metadata.add_css_class("reprise-now-playing-metadata");
     metadata.set_halign(gtk4::Align::Fill);
     metadata.append(&title);
-    metadata.append(&artist);
-    metadata.append(&album);
+    metadata.append(&subtitle_row);
     let head = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     head.add_css_class("reprise-now-playing-head");
     head.set_halign(gtk4::Align::Center);
-    // The artwork band has a fixed 280 px allocation. Start alignment keeps
-    // the cover's top edge at the established 22 px inset instead of
+    // Start alignment keeps the cover at the named head inset rather than
     // re-centering it when the title block leaves this box.
     head.set_valign(gtk4::Align::Start);
     head.append(&cover_stack);
@@ -116,12 +119,12 @@ pub(super) fn build_head() -> HeadWidgets {
     let bloom = cover_bloom::CoverBloom::new();
     let cloud = cover_cloud::CoverCloud::new();
     // Within the artwork band, bottom to top: the transparent geometry band,
-    // the drifting clouds, the blurred cover, then the cover. Metadata is a
-    // sibling below this overlay, so no cover-derived pixel can paint behind
-    // it — and the cover is above both moving layers, which is what keeps it
-    // from ever turning or growing with them.
-    artwork_overlay.add_overlay(cloud.widget());
+    // the blurred cover, the drifting clouds (which own the scrim), then the
+    // cover. Metadata is a sibling below this overlay, so no cover-derived
+    // pixel can paint behind it — and the cover is above both moving layers,
+    // which is what keeps it from ever turning or growing with them.
     artwork_overlay.add_overlay(bloom.widget());
+    artwork_overlay.add_overlay(cloud.widget());
     artwork_overlay.add_overlay(&head);
     let head_column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     head_column.append(&artwork_overlay);
@@ -146,7 +149,6 @@ pub(super) fn build_head() -> HeadWidgets {
         bloom,
         cloud,
         cover_stack,
-        cover_lift,
         external_cover,
         cover,
         outgoing_cover,
@@ -155,3 +157,7 @@ pub(super) fn build_head() -> HeadWidgets {
         album,
     }
 }
+
+#[cfg(test)]
+#[path = "now_playing_head_tests.rs"]
+mod tests;

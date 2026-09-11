@@ -19,24 +19,21 @@ use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::cover_lift::CoverLift;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
 use crate::ui::playing_links::LinkLabels;
-#[cfg(test)]
 use crate::ui::style::tokens;
 use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
-const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
 
 pub(super) struct PanelWidgets {
     pub(super) column: NowPlayingColumn,
-    stage: gtk4::Box,
+    pub(super) stage: gtk4::Box,
     #[cfg(test)]
     track_content: gtk4::Box,
     #[cfg(test)]
@@ -44,11 +41,11 @@ pub(super) struct PanelWidgets {
     #[cfg(test)]
     artwork_overlay: gtk4::Overlay,
     #[cfg(test)]
-    artwork_band: gtk4::Box,
+    pub(super) artwork_band: gtk4::Box,
     #[cfg(test)]
     head: gtk4::Box,
     #[cfg(test)]
-    metadata: gtk4::Box,
+    pub(super) metadata: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     pub(super) visualizer: SongVisualizer,
@@ -57,18 +54,19 @@ pub(super) struct PanelWidgets {
     lyrics_page: adw::ViewStackPage,
     pub(super) visual_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
-    pub(super) cover_lift: CoverLift,
     external_cover: gtk4::Box,
-    cover: gtk4::Image,
+    pub(super) cover: gtk4::Image,
     outgoing_cover: gtk4::Image,
-    title: gtk4::Label,
-    artist: gtk4::Label,
-    album: gtk4::Label,
+    pub(super) title: gtk4::Label,
+    pub(super) artist: gtk4::Label,
+    pub(super) album: gtk4::Label,
     // Retained for the tab session and NPP-13 acceptance test, which prove
     // the active tab stays outside the cover transition.
     pub(super) tab_stack: adw::ViewStack,
     #[cfg(test)]
-    tab_switcher: adw::InlineViewSwitcher,
+    pub(super) tab_switcher: adw::InlineViewSwitcher,
+    #[cfg(test)]
+    pub(super) list_rule: gtk4::Box,
     footer: gtk4::Label,
     footers: Rc<RefCell<TabFooters>>,
     pub(super) session: Rc<TabSession>,
@@ -106,7 +104,6 @@ fn build_widgets_for_session(
         bloom,
         cloud,
         cover_stack,
-        cover_lift,
         external_cover,
         cover,
         outgoing_cover,
@@ -152,7 +149,12 @@ fn build_widgets_for_session(
         .homogeneous(true)
         .build();
     tab_switcher.add_css_class("reprise-now-playing-tabs");
-    tab_switcher.set_size_request(1, TAB_SWITCHER_MIN_HEIGHT);
+    tab_switcher.set_size_request(1, tokens::NOW_PLAYING_SEGMENT_HEIGHT);
+
+    let list_rule = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    list_rule.add_css_class("reprise-now-playing-list-rule");
+    list_rule.set_can_target(false);
+    list_rule.set_height_request(1);
 
     let footer = gtk4::Label::new(None);
     footer.add_css_class("reprise-now-playing-footer");
@@ -218,6 +220,7 @@ fn build_widgets_for_session(
     track_content.append(&head_group);
     stage.append(&track_content);
     stage.append(&tab_switcher);
+    stage.append(&list_rule);
     stage.append(&tab_stack);
     stage.append(&footer);
 
@@ -247,7 +250,6 @@ fn build_widgets_for_session(
         lyrics_page,
         visual_page,
         cover_stack,
-        cover_lift,
         external_cover,
         cover,
         outgoing_cover,
@@ -257,6 +259,8 @@ fn build_widgets_for_session(
         tab_stack,
         #[cfg(test)]
         tab_switcher,
+        #[cfg(test)]
+        list_rule,
         footer,
         footers,
         session: session.clone(),
@@ -662,7 +666,7 @@ mod reactive_tests;
 mod tab_tests;
 #[cfg(test)]
 #[path = "now_playing_tests.rs"]
-mod tests;
+pub(super) mod tests;
 
 #[cfg(test)]
 mod collapse_toggle_tests {

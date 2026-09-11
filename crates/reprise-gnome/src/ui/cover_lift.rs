@@ -123,7 +123,6 @@ struct Readings {
 
 #[derive(Clone)]
 struct CoverLiftWidgets {
-    root: gtk4::Overlay,
     near: gtk4::Box,
     far: gtk4::Box,
     edge: Option<gtk4::Box>,
@@ -131,6 +130,7 @@ struct CoverLiftWidgets {
 
 #[derive(Clone)]
 pub(in crate::ui) struct CoverLift {
+    root: Option<gtk4::Overlay>,
     widgets: Option<CoverLiftWidgets>,
     readings: Rc<Cell<Readings>>,
 }
@@ -167,24 +167,35 @@ impl CoverLift {
             root.add_overlay(&edge);
             edge
         });
-        let widgets = CoverLiftWidgets {
-            root,
-            near,
-            far,
-            edge,
-        };
+        let widgets = CoverLiftWidgets { near, far, edge };
         Self {
+            root: Some(root),
             widgets: Some(widgets),
             readings: Rc::new(Cell::new(Readings::default())),
         }
     }
 
+    /// Wraps a cover without installing the reactive edge and shadow layers.
+    ///
+    /// The settled Now Playing head owns its one static shadow in panel CSS;
+    /// the player bar remains the sole consumer of the animated lift.
+    pub(in crate::ui) fn new_still(cover: &impl IsA<gtk4::Widget>, width: i32) -> Self {
+        let root = gtk4::Overlay::new();
+        root.set_size_request(width, width);
+        cover.set_halign(gtk4::Align::Center);
+        cover.set_valign(gtk4::Align::Center);
+        root.set_child(Some(cover));
+        Self {
+            root: Some(root),
+            widgets: None,
+            readings: Rc::new(Cell::new(Readings::default())),
+        }
+    }
+
     pub(in crate::ui) fn widget(&self) -> &gtk4::Overlay {
-        &self
-            .widgets
+        self.root
             .as_ref()
-            .expect("production cover lift has widgets")
-            .root
+            .expect("production cover lift has a root widget")
     }
 
     /// The player bar's entry point: it derives no pressure of its own and its
@@ -196,7 +207,8 @@ impl CoverLift {
         self.apply_reading();
     }
 
-    pub(in crate::ui) fn feed(&self, swell: f64, pressure: f64) {
+    #[cfg(test)]
+    fn feed(&self, swell: f64, pressure: f64) {
         self.readings.set(Readings {
             swell: swell.clamp(0.0, 1.0),
             pressure: pressure.clamp(0.0, 1.0),
@@ -213,6 +225,7 @@ impl CoverLift {
     #[cfg(test)]
     fn headless_for_test() -> Self {
         Self {
+            root: None,
             widgets: None,
             readings: Rc::new(Cell::new(Readings::default())),
         }

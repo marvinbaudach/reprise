@@ -25,9 +25,9 @@ use std::rc::Rc;
 use gtk4::cairo;
 use gtk4::prelude::*;
 
+use super::cover_scrim::{self, ScrimCache};
 #[cfg(test)]
-use super::cover_scrim::build_scrim;
-use super::cover_scrim::{cached_scrim, paint_scrim, ScrimCache};
+use super::cover_scrim::{build_scrim, paint_scrim};
 use crate::ui::cover_glow;
 use crate::ui::style::tokens;
 
@@ -434,6 +434,25 @@ impl CoverCloud {
         }
         self.area.queue_draw();
     }
+
+    #[cfg(test)]
+    pub(super) fn draw_for_test(&self, cr: &cairo::Context, width: i32, height: i32) {
+        draw(cr, width, height, &self.inner);
+    }
+
+    #[cfg(test)]
+    pub(super) fn paint_layers_only_for_test(&self, cr: &cairo::Context, width: i32, height: i32) {
+        let band = f64::from(tokens::NOW_PLAYING_ARTWORK_BAND).min(f64::from(height));
+        let width = f64::from(width);
+        if width <= 0.0 || band <= 0.0 {
+            return;
+        }
+        cr.save().ok();
+        cr.rectangle(0.0, 0.0, width, band);
+        cr.clip();
+        paint_layers_only(cr, width, &self.inner, crate::ui::style::accent::is_dark());
+        cr.restore().ok();
+    }
 }
 
 /// Bakes one layer: the blurred cover painted across the field, then the
@@ -492,19 +511,25 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     if width <= 0.0 || band <= 0.0 {
         return;
     }
-    let cover = f64::from(tokens::NOW_PLAYING_COVER_SIZE);
-    let (field_left, field_top, field_width, field_height) = field(width, cover);
-    let clock = inner.drift_clock.get();
-    let elapsed_s = clock.elapsed_s();
-
     cr.save().ok();
     cr.rectangle(0.0, 0.0, width, band);
     cr.clip();
 
-    let bounds = (field_left, field_top, field_width, field_height);
     // Read once per frame rather than once per layer: both the operator and the
     // scrim colour come from the same answer.
     let dark = crate::ui::style::accent::is_dark();
+    let painted = paint_layers_only(cr, width, inner, dark);
+    if painted {
+        cover_scrim::paint(cr, &inner.scrim, dark, width, band);
+    }
+    cr.restore().ok();
+}
+
+fn paint_layers_only(cr: &cairo::Context, width: f64, inner: &Inner, dark: bool) -> bool {
+    let cover = f64::from(tokens::NOW_PLAYING_COVER_SIZE);
+    let bounds = field(width, cover);
+    let clock = inner.drift_clock.get();
+    let elapsed_s = clock.elapsed_s();
     let operator = blend_operator(dark);
     let back_drift = drift_at(elapsed_s, BACK_PERIOD_S, 0.0);
     let front_drift = drift_at(elapsed_s, FRONT_PERIOD_S, FRONT_OFFSET_S);
@@ -531,7 +556,7 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
 
     // The outgoing cover first and underneath: both pairs drift on the same
     // clock, so what crosses over is the colour and not the movement.
-    let painted = paint_crossfade_layers(
+    paint_crossfade_layers(
         cr,
         &[
             (leaving_back.as_ref(), back_drift),
@@ -542,12 +567,7 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
         arrived,
         incoming_alpha,
         operator,
-    );
-    if painted {
-        let scrim = cached_scrim(&inner.scrim, dark, field_top, field_height);
-        paint_scrim(cr, width, band, &scrim);
-    }
-    cr.restore().ok();
+    )
 }
 
 fn blend_operator(dark: bool) -> cairo::Operator {

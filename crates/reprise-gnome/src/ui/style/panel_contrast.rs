@@ -1,4 +1,6 @@
-use super::tokens::{PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA};
+use super::tokens::{
+    PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA, TERTIARY_TEXT_ALPHA_DARK, TERTIARY_TEXT_ALPHA_LIGHT,
+};
 
 /// WCAG 1.4.3's minimum contrast ratio for normal text, matching
 /// `accent::ACCENT_TEXT_MINIMUM_RATIO`.
@@ -20,7 +22,7 @@ struct PanelRole {
     minimum: f64,
 }
 
-const PANEL_ROLES: [PanelRole; 13] = [
+const PANEL_ROLES: [PanelRole; 14] = [
     PanelRole {
         css: crate::ui::now_playing::css,
         selector: ".reprise-now-playing-stage",
@@ -35,8 +37,14 @@ const PANEL_ROLES: [PanelRole; 13] = [
     },
     PanelRole {
         css: crate::ui::now_playing::css,
-        selector: ".reprise-now-playing-subtitle",
+        selector: ".reprise-now-playing-artist",
         role: "@reprise_secondary_fg_color",
+        minimum: 4.5,
+    },
+    PanelRole {
+        css: crate::ui::now_playing::css,
+        selector: ".reprise-now-playing-album",
+        role: "@reprise_tertiary_fg_color",
         minimum: 4.5,
     },
     PanelRole {
@@ -119,13 +127,27 @@ fn color_declaration<'a>(css: &'a str, selector: &str) -> &'a str {
         .unwrap_or_else(|| panic!("no color declaration for {selector}"))
 }
 
-fn rendered_foreground(value: &str, foreground: [u8; 3], surface: [u8; 3]) -> [u8; 3] {
+fn rendered_foreground(
+    value: &str,
+    foreground: [u8; 3],
+    surface: [u8; 3],
+    is_dark: bool,
+) -> [u8; 3] {
     use super::color_math::{composite, parse_hex_rgb};
 
     match value {
         "@sidebar_fg_color" => foreground,
         "@reprise_primary_fg_color" => composite(foreground, surface, PRIMARY_TEXT_ALPHA),
         "@reprise_secondary_fg_color" => composite(foreground, surface, SECONDARY_TEXT_ALPHA),
+        "@reprise_tertiary_fg_color" => composite(
+            foreground,
+            surface,
+            if is_dark {
+                TERTIARY_TEXT_ALPHA_DARK
+            } else {
+                TERTIARY_TEXT_ALPHA_LIGHT
+            },
+        ),
         literal => {
             if let Some(rgb) = parse_hex_rgb(literal) {
                 return rgb;
@@ -390,7 +412,10 @@ fn contrast_3_now_playing_roles_clear_aa_on_the_panel_surface() {
     use super::theme::Theme;
 
     for theme in Theme::all() {
-        for (appearance, palette) in [("dark", theme.palette()), ("light", theme.light_palette())] {
+        for (appearance, is_dark, palette) in [
+            ("dark", true, theme.palette()),
+            ("light", false, theme.light_palette()),
+        ] {
             let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
             let surface = parse_hex_rgb(palette.sidebar_bg).expect("palette sidebar is valid hex");
 
@@ -398,7 +423,7 @@ fn contrast_3_now_playing_roles_clear_aa_on_the_panel_surface() {
                 let minimum = row.minimum;
                 let css = (row.css)();
                 let color = color_declaration(&css, row.selector);
-                let rendered = rendered_foreground(color, foreground, surface);
+                let rendered = rendered_foreground(color, foreground, surface, is_dark);
                 let ratio = contrast_ratio(rendered, surface);
                 assert!(
                     ratio >= minimum,
@@ -427,20 +452,22 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
         .filter(|row| {
             matches!(
                 row.selector,
-                ".reprise-now-playing-title" | ".reprise-now-playing-subtitle"
+                ".reprise-now-playing-title" | ".reprise-now-playing-artist"
             )
         })
         .collect::<Vec<_>>();
-    assert_eq!(roles.len(), 2, "the head band has title and subtitle roles");
+    assert_eq!(roles.len(), 2, "the head band has title and artist roles");
     for theme in Theme::all() {
-        for (appearance, palette, glow_alpha) in [
+        for (appearance, is_dark, palette, glow_alpha) in [
             (
                 "dark",
+                true,
                 theme.palette(),
                 super::tokens::NOW_PLAYING_GLOW_ALPHA,
             ),
             (
                 "light",
+                false,
                 theme.light_palette(),
                 super::tokens::NOW_PLAYING_GLOW_LIGHT_ALPHA,
             ),
@@ -453,7 +480,7 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
                 for row in &roles {
                     let css = (row.css)();
                     let color = color_declaration(&css, row.selector);
-                    let rendered = rendered_foreground(color, foreground, head_surface);
+                    let rendered = rendered_foreground(color, foreground, head_surface, is_dark);
                     let ratio = contrast_ratio(rendered, head_surface);
                     assert!(
                         ratio >= row.minimum,

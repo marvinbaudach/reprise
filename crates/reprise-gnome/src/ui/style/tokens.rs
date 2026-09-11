@@ -280,12 +280,15 @@ pub(in crate::ui) const DIALOG_CARD_ALPHA: &str = "0.07";
 
 // --- Now Playing panel (design 21a) ---
 
-pub(in crate::ui) const NOW_PLAYING_COVER_SIZE: i32 = 168;
-/// Height of the artwork band: the cover, the bloom and the clouds live in it
-/// and the title block begins below it. 280 is the bloom's height, and it is
-/// the taller claim — the clouds' scrim has closed over them by y = 127, so
-/// whatever they are doing is already gone well before the title starts.
-pub(in crate::ui) const NOW_PLAYING_ARTWORK_BAND: i32 = 280;
+/// Top inset from the settled Now Playing panel specification.
+pub(in crate::ui) const NOW_PLAYING_HEAD_TOP: i32 = 50;
+/// Cover edge from the settled Now Playing panel specification.
+pub(in crate::ui) const NOW_PLAYING_COVER_SIZE: i32 = 184;
+/// Gap between the cover and title in the settled panel specification.
+pub(in crate::ui) const NOW_PLAYING_COVER_TO_TITLE: i32 = 34;
+/// The artwork band ends exactly where the title begins.
+pub(in crate::ui) const NOW_PLAYING_ARTWORK_BAND: i32 =
+    NOW_PLAYING_HEAD_TOP + NOW_PLAYING_COVER_SIZE + NOW_PLAYING_COVER_TO_TITLE;
 /// Peak alpha of the accent glow. At 0.15 the subtitle clears 4.5:1 over the
 /// panel surface plus glow for both pure-white and pure-black accents, making
 /// the cap safe for any accent colour. The 0.17 boundary leaves no margin.
@@ -293,7 +296,24 @@ pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.15";
 /// Peak glow alpha in the light appearance. The dark twin is too luminous on
 /// the near-white sidebar, so light uses only a restrained accent bloom.
 pub(in crate::ui) const NOW_PLAYING_GLOW_LIGHT_ALPHA: &str = "0.05";
-pub(in crate::ui) const NOW_PLAYING_PILL_RADIUS: &str = "99px";
+/// Segment-control height from the settled Now Playing panel specification.
+pub(in crate::ui) const NOW_PLAYING_SEGMENT_HEIGHT: i32 = 30;
+/// Outer segment-control radius from the settled panel specification.
+pub(in crate::ui) const NOW_PLAYING_SEGMENT_RADIUS: &str = "7px";
+/// Checked-segment radius from the settled panel specification.
+pub(in crate::ui) const NOW_PLAYING_SEGMENT_INNER_RADIUS: &str = "5px";
+/// Distance the settled panel's list rule fades at each end.
+pub(in crate::ui) const NOW_PLAYING_LIST_RULE_RUN_OUT: i32 = 34;
+/// Gap above the settled panel's list rule.
+pub(in crate::ui) const NOW_PLAYING_LIST_RULE_ABOVE: i32 = 20;
+/// Gap below the settled panel's list rule.
+pub(in crate::ui) const NOW_PLAYING_LIST_RULE_BELOW: i32 = 8;
+/// Share of the settled panel width occupied by its left artwork fade.
+pub(in crate::ui) const NOW_PLAYING_LEFT_FADE_SHARE: f64 = 0.22;
+/// Tertiary album tone from the settled panel specification in dark mode.
+pub(in crate::ui) const TERTIARY_TEXT_ALPHA_DARK: f64 = 0.55;
+/// Stronger light-mode album tone needed to retain the specification's 4.5:1.
+pub(in crate::ui) const TERTIARY_TEXT_ALPHA_LIGHT: f64 = 0.65;
 pub(in crate::ui) const NOW_PLAYING_PILL_BG_ALPHA: &str = "0.06";
 pub(in crate::ui) const NOW_PLAYING_PILL_ACTIVE_ALPHA: &str = "0.14";
 /// Active Now Playing tab surface in the light appearance. The translucent
@@ -337,16 +357,9 @@ pub(in crate::ui) const NOW_PLAYING_TINT_DARK_ALPHA: &str = "0.09";
 /// text accent there, so light instead tints with the raw accent background.
 pub(in crate::ui) const NOW_PLAYING_TINT_LIGHT_ALPHA: &str = "0.12";
 
-/// Cover edge alpha on dark surfaces, preserved from the existing panel cover.
-pub(in crate::ui) const COVER_EDGE_DARK_ALPHA: &str = "0.12";
-/// Cover edge alpha on light surfaces. The sidebar-foreground dark twin is too
-/// strong on light, so the general foreground supplies a quieter edge.
-pub(in crate::ui) const COVER_EDGE_LIGHT_ALPHA: &str = "0.10";
-/// Cover shadow alpha in dark mode: zero preserves the shadow-free result.
-pub(in crate::ui) const COVER_SHADOW_DARK_ALPHA: &str = "0";
-/// Cover shadow alpha in light mode. The transparent dark twin cannot separate
-/// artwork or floating pills from pale surfaces.
-pub(in crate::ui) const COVER_SHADOW_LIGHT_ALPHA: &str = "0.16";
+/// Settled cover shadow strength, shared by dark and light appearances.
+pub(in crate::ui) const COVER_SHADOW_DARK_ALPHA: &str = "0.42";
+pub(in crate::ui) const COVER_SHADOW_LIGHT_ALPHA: &str = "0.42";
 
 /// Active-tab shadow alpha in dark mode: zero preserves the existing flat tab.
 pub(in crate::ui) const TAB_ACTIVE_SHADOW_DARK_ALPHA: &str = "0";
@@ -405,6 +418,21 @@ pub(in crate::ui) const PLAY_DROP_HOVER_LIGHT_ALPHA: &str = "0.22";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npp_2_now_playing_geometry_matches_the_settled_panel_spec() {
+        assert_eq!(NOW_PLAYING_HEAD_TOP, 50);
+        assert_eq!(NOW_PLAYING_COVER_SIZE, 184);
+        assert_eq!(NOW_PLAYING_COVER_TO_TITLE, 34);
+        assert_eq!(NOW_PLAYING_ARTWORK_BAND, 268);
+        assert_eq!(NOW_PLAYING_SEGMENT_HEIGHT, 30);
+        assert_eq!(NOW_PLAYING_SEGMENT_RADIUS, "7px");
+        assert_eq!(NOW_PLAYING_SEGMENT_INNER_RADIUS, "5px");
+        assert_eq!(NOW_PLAYING_LIST_RULE_RUN_OUT, 34);
+        assert_eq!(NOW_PLAYING_LIST_RULE_ABOVE, 20);
+        assert_eq!(NOW_PLAYING_LIST_RULE_BELOW, 8);
+        assert!((NOW_PLAYING_LEFT_FADE_SHARE - 0.22).abs() < f64::EPSILON);
+    }
 
     /// Every accent tint the app may paint, resting states included. The
     /// ceiling has to bound this list, not just the loudest single token —

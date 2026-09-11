@@ -263,6 +263,11 @@ pub(in crate::ui) fn theme_css(
     let accent_css = super::accent::css_overrides(source, accent_color);
     let category_css = super::category_colors::theme_definitions(is_dark);
     let appearance = super::theme_tokens::ThemeTokens::for_appearance(is_dark);
+    let tertiary_alpha = if is_dark {
+        t::TERTIARY_TEXT_ALPHA_DARK
+    } else {
+        t::TERTIARY_TEXT_ALPHA_LIGHT
+    };
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -283,6 +288,7 @@ pub(in crate::ui) fn theme_css(
          @define-color reprise_accent_text_color {accent_text};\n\
          @define-color reprise_primary_fg_color alpha({fg}, {primary_alpha});\n\
          @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
+         @define-color reprise_tertiary_fg_color alpha({fg}, {tertiary_alpha});\n\
          @define-color reprise_hint_fg_color alpha({fg}, {hint_alpha});\n\
          @define-color reprise_dim_fg_color {dim};\n\
          @define-color reprise_player_accent @accent_color;\n\
@@ -300,7 +306,6 @@ pub(in crate::ui) fn theme_css(
          @define-color reprise_hover_bg {hover_bg};\n\
          @define-color reprise_now_playing_tint {now_playing_tint};\n\
          @define-color reprise_now_playing_glow {now_playing_glow};\n\
-         @define-color reprise_cover_edge {cover_edge};\n\
          @define-color reprise_cover_shadow {cover_shadow};\n\
          @define-color reprise_tab_active_bg {tab_active_bg};\n\
          @define-color reprise_tab_active_shadow {tab_active_shadow};\n\
@@ -325,6 +330,7 @@ pub(in crate::ui) fn theme_css(
         accent_text = accent_text,
         primary_alpha = t::PRIMARY_TEXT_ALPHA,
         secondary_alpha = t::SECONDARY_TEXT_ALPHA,
+        tertiary_alpha = tertiary_alpha,
         hint_alpha = t::HINT_TEXT_ALPHA,
         dim = p.dim_fg,
         hairline = appearance.hairline,
@@ -341,7 +347,6 @@ pub(in crate::ui) fn theme_css(
         hover_bg = appearance.hover_bg,
         now_playing_tint = appearance.now_playing_tint,
         now_playing_glow = appearance.now_playing_glow,
-        cover_edge = appearance.cover_edge,
         cover_shadow = appearance.cover_shadow,
         tab_active_bg = appearance.tab_active_bg,
         tab_active_shadow = appearance.tab_active_shadow,
@@ -365,7 +370,6 @@ mod tests {
     fn default_theme_is_listed() {
         assert!(Theme::all().contains(&Theme::DEFAULT));
     }
-
     #[test]
     fn ids_round_trip_and_are_unique() {
         let mut seen = std::collections::HashSet::new();
@@ -376,7 +380,6 @@ mod tests {
         }
         assert_eq!(Theme::from_id("does-not-exist"), None);
     }
-
     #[test]
     fn app_accent_css_defines_the_brand_roles_and_player_alias() {
         let css = theme_css(Theme::PerpetualRain, true, AccentSource::App);
@@ -401,7 +404,6 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn dark_keeps_the_brand_accent_for_every_role() {
         for theme in Theme::all() {
@@ -410,7 +412,6 @@ mod tests {
             assert!(css.contains(&format!("@define-color accent_bg_color {APP_ACCENT};")));
         }
     }
-
     #[test]
     fn light_accent_text_clears_aa_on_the_view_background() {
         use crate::ui::style::color_math::{contrast_ratio, parse_hex_rgb};
@@ -434,7 +435,6 @@ mod tests {
             assert_ne!(accent_color, APP_ACCENT);
         }
     }
-
     #[test]
     fn light_accent_text_clears_aa_on_the_running_row() {
         use crate::ui::style::color_math::{composite, contrast_ratio, parse_hex_rgb};
@@ -463,7 +463,6 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn system_accent_css_leaves_adwaita_roles_undefined_and_keeps_player_alias() {
         let css = theme_css(Theme::PerpetualRain, true, AccentSource::System);
@@ -476,7 +475,6 @@ mod tests {
         assert!(css.contains("@define-color reprise_accent_text_color #"));
         assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
     }
-
     #[test]
     fn system_accent_still_defines_no_adwaita_roles() {
         for theme in Theme::all() {
@@ -492,7 +490,6 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn distinct_themes_produce_distinct_css() {
         assert_ne!(
@@ -504,7 +501,6 @@ mod tests {
             theme_css(Theme::MutedBloom, true, AccentSource::App)
         );
     }
-
     #[test]
     fn dialog_bg_is_distinct_from_card_and_window() {
         for theme in Theme::all() {
@@ -513,7 +509,6 @@ mod tests {
             assert_ne!(p.dialog_bg, p.window_bg, "{theme:?} dialog_bg == window_bg");
         }
     }
-
     #[test]
     fn dark_surface_ladder_places_popovers_between_cards_and_dialogs() {
         fn luminance(hex: &str) -> f64 {
@@ -716,6 +711,11 @@ mod tests {
                 )));
                 assert!(css.contains(&format!(
                     "@define-color reprise_secondary_fg_color alpha({}, 0.7);",
+                    palette.fg
+                )));
+                let tertiary = if is_dark { 0.55 } else { 0.65 };
+                assert!(css.contains(&format!(
+                    "@define-color reprise_tertiary_fg_color alpha({}, {tertiary});",
                     palette.fg
                 )));
                 assert!(css.contains(&format!(

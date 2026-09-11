@@ -17,7 +17,6 @@ pub(super) struct ThemeTokens {
     pub(super) hover_bg: String,
     pub(super) now_playing_tint: String,
     pub(super) now_playing_glow: String,
-    pub(super) cover_edge: String,
     pub(super) cover_shadow: String,
     pub(super) tab_active_bg: String,
     pub(super) tab_active_shadow: String,
@@ -75,11 +74,6 @@ impl ThemeTokens {
                 "alpha(@reprise_player_accent, {})",
                 select(t::NOW_PLAYING_GLOW_ALPHA, t::NOW_PLAYING_GLOW_LIGHT_ALPHA)
             ),
-            cover_edge: if is_dark {
-                format!("alpha(@sidebar_fg_color, {})", t::COVER_EDGE_DARK_ALPHA)
-            } else {
-                format!("alpha(@window_fg_color, {})", t::COVER_EDGE_LIGHT_ALPHA)
-            },
             cover_shadow: format!(
                 "alpha(#000000, {})",
                 select(t::COVER_SHADOW_DARK_ALPHA, t::COVER_SHADOW_LIGHT_ALPHA)
@@ -161,8 +155,7 @@ mod tests {
             "@define-color reprise_hover_bg alpha(@accent_bg_color, 0.10);",
             "@define-color reprise_now_playing_tint alpha(@accent_color, 0.09);",
             "@define-color reprise_now_playing_glow alpha(@reprise_player_accent, 0.15);",
-            "@define-color reprise_cover_edge alpha(@sidebar_fg_color, 0.12);",
-            "@define-color reprise_cover_shadow alpha(#000000, 0);",
+            "@define-color reprise_cover_shadow alpha(#000000, 0.42);",
             "@define-color reprise_tab_active_bg alpha(@sidebar_fg_color, 0.14);",
             "@define-color reprise_tab_active_shadow alpha(#000000, 0);",
             "@define-color reprise_toggle_checked_fill alpha(@accent_bg_color, 0.18);",
@@ -177,6 +170,7 @@ mod tests {
         for selected_theme in theme::Theme::all() {
             for source in [AccentSource::App, AccentSource::System] {
                 let css = theme::theme_css(selected_theme, true, source);
+                assert!(!css.contains("reprise_cover_edge"));
                 for definition in definitions {
                     assert!(
                         css.contains(definition),
@@ -201,6 +195,17 @@ mod tests {
                         "{selected_theme:?} {source:?}: {definition}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn settled_panel_cover_has_a_shadow_but_no_inset_edge_in_either_appearance() {
+        for selected_theme in theme::Theme::all() {
+            for is_dark in [true, false] {
+                let css = theme::theme_css(selected_theme, is_dark, AccentSource::App);
+                assert!(!css.contains("reprise_cover_edge"));
+                assert!(css.contains("@define-color reprise_cover_shadow alpha(#000000, 0.42);"));
             }
         }
     }

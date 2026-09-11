@@ -552,8 +552,7 @@ fn render_cover_cloud_gallery_ppm() {
                 1.0,
                 operator,
             );
-            let (_, field_top, _, field_height) = bounds;
-            let scrim = build_scrim(field_top, field_height);
+            let scrim = build_scrim(f64::from(band));
             paint_scrim(&cr, f64::from(width), f64::from(band), &scrim);
             drop(cr);
 
