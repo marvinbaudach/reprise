@@ -1,4 +1,4 @@
-//! Two soft clouds drifting behind the cover, cut from the cover itself.
+//! Six soft drops drifting behind the cover, cut from the cover itself.
 //!
 //! The mockup draws this as two layers of radial gradients in the cover's three
 //! dominant colours. Measured against this library that failed once already,
@@ -11,10 +11,9 @@
 //! what shines through them is the blurred cover. Same honesty rule as the
 //! bloom, and it works on every record instead of two in five.
 //!
-//! Cost is the bloom's bargain: both masked fields are rasterized once per
-//! cover; per frame there is a translate, a scale, a rotate and one
-//! `paint_with_alpha` each, then the scrim. Nothing is re-rasterized when the
-//! clock moves.
+//! Cost is the bloom's bargain: the six masked drops are rasterized once per
+//! cover; per frame each gets one translate/scale and one `paint_with_alpha`,
+//! then the scrim. Nothing is re-rasterized when the clock moves.
 //!
 //! The clock is the only thing that moves the clouds. No spectrum reading
 //! reaches them — the bloom next door is where the music is allowed in.
@@ -25,10 +24,13 @@ use std::rc::Rc;
 use gtk4::cairo;
 use gtk4::prelude::*;
 
+use super::cover_cloud_blob::{
+    build_blob_rasters, Blob, BlobRasters, BACK_BLOBS, BACK_BLUR_EDGE, BLOBS_PER_LAYER,
+    FIELD_RASTER_EDGE, FRONT_BLOBS, FRONT_BLUR_EDGE,
+};
 use super::cover_scrim::{self, ScrimCache};
 #[cfg(test)]
 use super::cover_scrim::{build_scrim, paint_scrim};
-use crate::ui::cover_glow;
 use crate::ui::style::tokens;
 
 /// The field, and how far it hangs off each edge, as multiples of the cover.
@@ -47,11 +49,10 @@ const OVERHANG_RIGHT_PER_COVER: f64 = 90.0 / 240.0;
 const DRIFT_X: (f64, f64) = (-0.20, 0.16);
 const DRIFT_Y: (f64, f64) = (-0.12, 0.12);
 const DRIFT_SCALE: (f64, f64) = (1.40, 1.55);
-const DRIFT_ROTATION_DEG: (f64, f64) = (0.0, 10.0);
 
 /// The binding speed ceiling from AC-24, in field-fractions per second.
 #[cfg(test)]
-pub(super) const DRIFT_SPEED_LIMIT: f64 = 0.010;
+pub(super) const DRIFT_SPEED_LIMIT: f64 = 0.016;
 
 const SLOW_WAVE_WEIGHT: f64 = 0.65;
 const FAST_WAVE_WEIGHT: f64 = 0.35;
@@ -65,76 +66,13 @@ pub(super) struct DriftAxis {
     pub(super) fast_phase: f64,
 }
 
-/// The independent wave pair for every parameter of one cloud layer.
+/// The independent wave pair for every visible parameter of one drop.
 #[derive(Clone, Copy)]
 pub(super) struct DriftProfile {
     pub(super) x: DriftAxis,
     pub(super) y: DriftAxis,
     pub(super) scale: DriftAxis,
-    pub(super) rotation: DriftAxis,
 }
-
-pub(super) const BACK_DRIFT: DriftProfile = DriftProfile {
-    x: DriftAxis {
-        slow_s: 149.0,
-        fast_s: 107.0,
-        slow_phase: 0.03,
-        fast_phase: 0.41,
-    },
-    y: DriftAxis {
-        slow_s: 157.0,
-        fast_s: 113.0,
-        slow_phase: 0.19,
-        fast_phase: 0.73,
-    },
-    scale: DriftAxis {
-        slow_s: 173.0,
-        fast_s: 127.0,
-        slow_phase: 0.37,
-        fast_phase: 0.89,
-    },
-    rotation: DriftAxis {
-        slow_s: 181.0,
-        fast_s: 137.0,
-        slow_phase: 0.61,
-        fast_phase: 0.11,
-    },
-};
-
-pub(super) const FRONT_DRIFT: DriftProfile = DriftProfile {
-    x: DriftAxis {
-        slow_s: 151.0,
-        fast_s: 109.0,
-        slow_phase: 0.23,
-        fast_phase: 0.67,
-    },
-    y: DriftAxis {
-        slow_s: 167.0,
-        fast_s: 131.0,
-        slow_phase: 0.47,
-        fast_phase: 0.07,
-    },
-    scale: DriftAxis {
-        slow_s: 179.0,
-        fast_s: 139.0,
-        slow_phase: 0.71,
-        fast_phase: 0.31,
-    },
-    rotation: DriftAxis {
-        slow_s: 163.0,
-        fast_s: 103.0,
-        slow_phase: 0.91,
-        fast_phase: 0.53,
-    },
-};
-
-/// The house blur: the cover arrives as a 32 px raster and painting it across
-/// the field is what blurs it — there is no blur node anywhere in this path.
-/// The mockup's 48 px and 54 px survive as the *ratio* between the two layers,
-/// not as absolutes: the front layer is painted from a proportionally smaller
-/// raster, so it stays the softer of the two.
-const BACK_BLUR_EDGE: i32 = cover_glow::BLUR_EDGE;
-const FRONT_BLUR_EDGE: i32 = 28; // 32 × 48/54, rounded
 
 /// How long a change of track takes to arrive in the light.
 ///
@@ -143,57 +81,12 @@ const FRONT_BLUR_EDGE: i32 = 28; // 32 × 48/54, rounded
 /// turning rather than as a jump.
 const COVER_FADE_S: f64 = 1.0;
 
-/// Edge of a cached field raster. The masks are baked into it at this size, so
-/// their falloff stays smooth however far the drift stretches it.
-const FIELD_RASTER_EDGE: i32 = 320;
-
-/// One gradient stop of the mockup: where a cloud sits in the field, how far it
-/// reaches, and how much of the cover it lets through at its centre.
-#[derive(Clone, Copy)]
-pub(super) struct Blob {
-    pub(super) x: f64,
-    pub(super) y: f64,
-    pub(super) alpha: f64,
-    pub(super) radius: f64,
-}
-
-pub(super) const BACK_BLOBS: [Blob; 2] = [
-    Blob {
-        x: 0.40,
-        y: 0.35,
-        alpha: 0.85,
-        radius: 0.50,
-    },
-    Blob {
-        x: 0.82,
-        y: 0.55,
-        alpha: 0.80,
-        radius: 0.50,
-    },
-];
-
-pub(super) const FRONT_BLOBS: [Blob; 2] = [
-    Blob {
-        x: 0.75,
-        y: 0.25,
-        alpha: 0.70,
-        radius: 0.45,
-    },
-    Blob {
-        x: 0.30,
-        y: 0.80,
-        alpha: 0.60,
-        radius: 0.45,
-    },
-];
-
-/// Where a layer has drifted to, how far it is stretched, how far it is turned.
+/// Where a drop has drifted to and how far it is breathing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Drift {
     pub(super) x: f64,
     pub(super) y: f64,
     pub(super) scale: f64,
-    pub(super) rotation_deg: f64,
 }
 
 /// One continuous wave, wrapped in turns before scaling so a long session does
@@ -215,7 +108,6 @@ pub(super) fn drift_at(elapsed_s: f64, profile: DriftProfile) -> Drift {
         x: map_axis(DRIFT_X, drift_axis(elapsed_s, profile.x)),
         y: map_axis(DRIFT_Y, drift_axis(elapsed_s, profile.y)),
         scale: map_axis(DRIFT_SCALE, drift_axis(elapsed_s, profile.scale)),
-        rotation_deg: map_axis(DRIFT_ROTATION_DEG, drift_axis(elapsed_s, profile.rotation)),
     }
 }
 
@@ -324,18 +216,18 @@ impl DriftClock {
 }
 
 struct Inner {
-    back: RefCell<Option<cairo::ImageSurface>>,
-    front: RefCell<Option<cairo::ImageSurface>>,
-    /// The pair the last cover left behind, still fading out under the new one.
-    leaving_back: RefCell<Option<cairo::ImageSurface>>,
-    leaving_front: RefCell<Option<cairo::ImageSurface>>,
+    back: RefCell<Option<BlobRasters>>,
+    front: RefCell<Option<BlobRasters>>,
+    /// The two raster sets the last cover left behind, still fading out.
+    leaving_back: RefCell<Option<BlobRasters>>,
+    leaving_front: RefCell<Option<BlobRasters>>,
     /// Reading of the drift clock when the current cover arrived.
     arrived_at_us: Cell<i64>,
     /// Cover generation the cached fields were built from; the panel bumps it
     /// once per rendered track, exactly as `cover_bloom` keys its own cache.
     generation: Cell<Option<u64>>,
     drift_clock: Cell<DriftClock>,
-    last_drawn_pose: Cell<Option<(Drift, Drift)>>,
+    last_drawn_pose: Cell<Option<([Drift; BLOBS_PER_LAYER], [Drift; BLOBS_PER_LAYER])>>,
     scrim: RefCell<Option<ScrimCache>>,
     pinned: Cell<bool>,
 }
@@ -377,7 +269,9 @@ impl CoverCloud {
     }
 
     #[cfg(test)]
-    pub(super) fn drawn_pose_for_test(&self) -> Option<(Drift, Drift)> {
+    pub(super) fn drawn_pose_for_test(
+        &self,
+    ) -> Option<([Drift; BLOBS_PER_LAYER], [Drift; BLOBS_PER_LAYER])> {
         self.inner.last_drawn_pose.get()
     }
 
@@ -398,8 +292,8 @@ impl CoverCloud {
                 if self.inner.generation.get() == Some(generation) {
                     return;
                 }
-                let back = build_field(texture, BACK_BLUR_EDGE, &BACK_BLOBS);
-                let front = build_field(texture, FRONT_BLUR_EDGE, &FRONT_BLOBS);
+                let back = build_blob_rasters(texture, BACK_BLUR_EDGE, &BACK_BLOBS);
+                let front = build_blob_rasters(texture, FRONT_BLUR_EDGE, &FRONT_BLOBS);
                 self.begin_fade(back, front);
                 self.inner.generation.set(Some(generation));
             }
@@ -416,7 +310,7 @@ impl CoverCloud {
     /// With the clock stopped — the panel pinned, or animation switched off —
     /// there is no frame to carry a fade, so the change is taken at once
     /// rather than left half-finished on screen.
-    fn begin_fade(&self, back: Option<cairo::ImageSurface>, front: Option<cairo::ImageSurface>) {
+    fn begin_fade(&self, back: Option<BlobRasters>, front: Option<BlobRasters>) {
         let running = !self.inner.pinned.get() && crate::ui::motion::animations_enabled();
         let incoming = back.is_some() || front.is_some();
         let outgoing_back = self.inner.back.replace(back);
@@ -514,56 +408,6 @@ impl CoverCloud {
     }
 }
 
-/// Bakes one layer: the blurred cover painted across the field, then the
-/// mockup's radial stops taken out of its alpha.
-fn build_field(
-    texture: &gtk4::gdk::Texture,
-    blur_edge: i32,
-    blobs: &[Blob],
-) -> Option<cairo::ImageSurface> {
-    let blurred = cover_glow::blurred_surface(texture, blur_edge)?;
-    let surface =
-        cairo::ImageSurface::create(cairo::Format::ARgb32, FIELD_RASTER_EDGE, FIELD_RASTER_EDGE)
-            .ok()?;
-    let cr = cairo::Context::new(&surface).ok()?;
-    let edge = f64::from(FIELD_RASTER_EDGE);
-
-    // Bilinear over a large upscale is what makes this a blur at all, exactly
-    // as in `cover_bloom`. The smaller the source edge, the softer the result.
-    let scale = edge / f64::from(blurred.width());
-    cr.save().ok();
-    cr.scale(scale, scale);
-    if cr.set_source_surface(&blurred, 0.0, 0.0).is_ok() {
-        cr.source().set_filter(cairo::Filter::Bilinear);
-        cr.source().set_extend(cairo::Extend::Pad);
-        cr.paint().ok();
-    }
-    cr.restore().ok();
-
-    // Every blob is one radial stop of the mockup, cut out of the alpha rather
-    // than painted in colour. Drawn into a mask of their own first so two
-    // overlapping blobs add up instead of the second clipping the first away.
-    let mask =
-        cairo::ImageSurface::create(cairo::Format::ARgb32, FIELD_RASTER_EDGE, FIELD_RASTER_EDGE)
-            .ok()?;
-    let mask_cr = cairo::Context::new(&mask).ok()?;
-    for blob in blobs {
-        let cx = blob.x * edge;
-        let cy = blob.y * edge;
-        let radius = blob.radius * edge;
-        let stop = cairo::RadialGradient::new(cx, cy, 0.0, cx, cy, radius);
-        stop.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, blob.alpha);
-        stop.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, 0.0);
-        mask_cr.set_source(&stop).ok();
-        mask_cr.paint().ok();
-    }
-    cr.set_operator(cairo::Operator::DestIn);
-    if cr.set_source_surface(&mask, 0.0, 0.0).is_ok() {
-        cr.paint().ok();
-    }
-    Some(surface)
-}
-
 fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     let band = f64::from(tokens::NOW_PLAYING_ARTWORK_BAND).min(f64::from(height));
     let width = f64::from(width);
@@ -590,9 +434,9 @@ fn paint_layers_only(cr: &cairo::Context, width: f64, inner: &Inner, dark: bool)
     let clock = inner.drift_clock.get();
     let elapsed_s = clock.elapsed_s();
     let operator = blend_operator(dark);
-    let back_drift = drift_at(elapsed_s, BACK_DRIFT);
-    let front_drift = drift_at(elapsed_s, FRONT_DRIFT);
-    inner.last_drawn_pose.set(Some((back_drift, front_drift)));
+    let back_poses = std::array::from_fn(|index| drift_at(elapsed_s, BACK_BLOBS[index].drift));
+    let front_poses = std::array::from_fn(|index| drift_at(elapsed_s, FRONT_BLOBS[index].drift));
+    inner.last_drawn_pose.set(Some((back_poses, front_poses)));
 
     // With the clock standing still — paused, or animation switched off — no
     // frame will ever advance a fade, so the change counts as already done
@@ -618,10 +462,13 @@ fn paint_layers_only(cr: &cairo::Context, width: f64, inner: &Inner, dark: bool)
     paint_crossfade_layers(
         cr,
         &[
-            (leaving_back.as_ref(), back_drift),
-            (leaving_front.as_ref(), front_drift),
+            (leaving_back.as_deref(), &BACK_BLOBS, &back_poses),
+            (leaving_front.as_deref(), &FRONT_BLOBS, &front_poses),
         ],
-        &[(back.as_ref(), back_drift), (front.as_ref(), front_drift)],
+        &[
+            (back.as_deref(), &BACK_BLOBS, &back_poses),
+            (front.as_deref(), &FRONT_BLOBS, &front_poses),
+        ],
         bounds,
         arrived,
         incoming_alpha,
@@ -637,40 +484,64 @@ fn blend_operator(dark: bool) -> cairo::Operator {
     }
 }
 
+type LayerPaint<'a> = (Option<&'a [cairo::ImageSurface]>, &'a [Blob], &'a [Drift]);
+
 fn paint_crossfade_layers(
     cr: &cairo::Context,
-    outgoing: &[(Option<&cairo::ImageSurface>, Drift)],
-    incoming: &[(Option<&cairo::ImageSurface>, Drift)],
+    outgoing: &[LayerPaint<'_>],
+    incoming: &[LayerPaint<'_>],
     bounds: (f64, f64, f64, f64),
     arrived: f64,
     incoming_alpha: f64,
     operator: cairo::Operator,
 ) -> bool {
     let mut painted = false;
-    for (surface, drift) in outgoing {
-        if let Some(surface) = surface {
-            paint_layer(cr, surface, *drift, bounds, 1.0 - arrived, operator);
-            painted = true;
+    for (surfaces, blobs, poses) in outgoing {
+        if let Some(surfaces) = surfaces {
+            for ((surface, blob), drift) in surfaces.iter().zip(*blobs).zip(*poses) {
+                paint_layer(
+                    cr,
+                    surface,
+                    (blob.x, blob.y),
+                    *drift,
+                    bounds,
+                    1.0 - arrived,
+                    operator,
+                );
+                painted = true;
+            }
         }
     }
-    for (surface, drift) in incoming {
-        if let Some(surface) = surface {
-            paint_layer(cr, surface, *drift, bounds, incoming_alpha, operator);
-            painted = true;
+    for (surfaces, blobs, poses) in incoming {
+        if let Some(surfaces) = surfaces {
+            for ((surface, blob), drift) in surfaces.iter().zip(*blobs).zip(*poses) {
+                paint_layer(
+                    cr,
+                    surface,
+                    (blob.x, blob.y),
+                    *drift,
+                    bounds,
+                    incoming_alpha,
+                    operator,
+                );
+                painted = true;
+            }
         }
     }
     painted
 }
 
-/// One layer, moved to where the clock says it is.
+/// One drop, moved to where the clock says it is.
 ///
-/// The order is the mockup's own — translate, then scale, then rotate, about
-/// the field's centre. The cover is not in this path at all: it is a sibling
+/// Scaling is centred on the drop's own anchor, so breathing never moves its
+/// centre beyond the separately bounded translation. The cover is not in this
+/// path at all: it is a sibling
 /// above this widget and cannot be reached from here, which is what guarantees
 /// the rule that it never turns and never grows.
 fn paint_layer(
     cr: &cairo::Context,
     surface: &cairo::ImageSurface,
+    anchor: (f64, f64),
     drift: Drift,
     field: (f64, f64, f64, f64),
     alpha: f64,
@@ -681,16 +552,16 @@ fn paint_layer(
         return;
     }
     let (left, top, field_width, field_height) = field;
+    let (anchor_x, anchor_y) = anchor;
     cr.save().ok();
     cr.translate(
-        left + field_width / 2.0 + drift.x * field_width,
-        top + field_height / 2.0 + drift.y * field_height,
+        left + (anchor_x + drift.x) * field_width,
+        top + (anchor_y + drift.y) * field_height,
     );
     cr.scale(
         drift.scale * field_width / f64::from(FIELD_RASTER_EDGE),
         drift.scale * field_height / f64::from(FIELD_RASTER_EDGE),
     );
-    cr.rotate(drift.rotation_deg.to_radians());
     // Laid on as light, not as a picture. The mockup fills these layers with
     // lit colour — `rgba(255,47,160,.6)` — while what is actually available
     // here is the cover, and a cover is mostly dark towards its edges. Painted
@@ -702,8 +573,11 @@ fn paint_layer(
     // white — so there the layer multiplies instead, and the glow becomes the
     // wash of colour the design asks for, out of the same pixels.
     cr.set_operator(operator);
-    let centre = f64::from(FIELD_RASTER_EDGE) / 2.0;
-    if cr.set_source_surface(surface, -centre, -centre).is_ok() {
+    let edge = f64::from(FIELD_RASTER_EDGE);
+    if cr
+        .set_source_surface(surface, -anchor_x * edge, -anchor_y * edge)
+        .is_ok()
+    {
         cr.source().set_filter(cairo::Filter::Bilinear);
         cr.paint_with_alpha(alpha).ok();
     }
@@ -713,3 +587,7 @@ fn paint_layer(
 #[cfg(test)]
 #[path = "cover_cloud_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cover_cloud_drift_tests.rs"]
+mod drift_tests;

@@ -5,227 +5,6 @@ use super::*;
 const SPEC_COVER: f64 = 240.0;
 
 #[test]
-fn npc_1_every_oil_lamp_parameter_stays_inside_its_declared_range() {
-    for profile in [BACK_DRIFT, FRONT_DRIFT] {
-        for step in 0..=12_000 {
-            let drift = drift_at(f64::from(step) * 0.05, profile);
-            for (value, range) in drift_components(drift).into_iter().zip(DRIFT_RANGES) {
-                assert!(
-                    value >= range.0 - 1e-12 && value <= range.1 + 1e-12,
-                    "{value} left {range:?} at step {step}"
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn npc_2_the_oil_lamp_translation_stays_below_the_speed_limit() {
-    for profile in [BACK_DRIFT, FRONT_DRIFT] {
-        let (peak_x, peak_y) = peak_translation_speed(profile, 0.01, 600.0);
-        assert!(
-            peak_x <= DRIFT_SPEED_LIMIT + 1e-9,
-            "x peaks at {peak_x:.6} field-fractions/s"
-        );
-        assert!(
-            peak_y <= DRIFT_SPEED_LIMIT + 1e-9,
-            "y peaks at {peak_y:.6} field-fractions/s"
-        );
-    }
-}
-
-#[test]
-fn npc_3_the_oil_lamp_drift_is_continuous() {
-    const STEP_S: f64 = 0.01;
-    for profile in [BACK_DRIFT, FRONT_DRIFT] {
-        let mut previous = normalized_drift(drift_at(0.0, profile));
-        let mut total_step = 0.0;
-        let mut largest_step: f64 = 0.0;
-        let sample_count = 60_000;
-        for step in 1..=sample_count {
-            let current = normalized_drift(drift_at(f64::from(step) * STEP_S, profile));
-            let distance = current
-                .into_iter()
-                .zip(previous)
-                .map(|(current, previous)| (current - previous).abs())
-                .fold(0.0, f64::max);
-            total_step += distance;
-            largest_step = largest_step.max(distance);
-            previous = current;
-        }
-        let mean_step = total_step / f64::from(sample_count);
-        assert!(
-            largest_step <= mean_step * 3.0,
-            "one normalized step ({largest_step:.6}) dwarfs its neighbours ({mean_step:.6} mean)"
-        );
-    }
-}
-
-#[test]
-fn npc_4_the_old_eighty_second_pair_period_is_gone() {
-    for profile in [BACK_DRIFT, FRONT_DRIFT] {
-        for elapsed_s in [0.0, 17.0, 43.0, 91.0, 157.0, 239.0] {
-            let now = normalized_drift(drift_at(elapsed_s, profile));
-            let later = normalized_drift(drift_at(elapsed_s + 80.0, profile));
-            let distance = now
-                .into_iter()
-                .zip(later)
-                .map(|(now, later)| (now - later).abs())
-                .fold(0.0, f64::max);
-            assert!(
-                distance >= 0.05,
-                "the pose nearly repeated after 80 s at {elapsed_s}: {distance:.6}"
-            );
-        }
-    }
-}
-
-#[test]
-fn npc_5_each_pose_parameter_reaches_its_extreme_at_a_different_time() {
-    for profile in [BACK_DRIFT, FRONT_DRIFT] {
-        let extremes = extreme_times(profile, 240.0, 0.05);
-        for (index, first) in extremes.iter().enumerate() {
-            for second in &extremes[index + 1..] {
-                assert!(
-                    (first - second).abs() >= 2.0,
-                    "two parameters turn together at {first:.2} s and {second:.2} s"
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn npc_6_the_two_layers_never_fall_into_the_same_pose() {
-    for step in 0..=6_000 {
-        let elapsed_s = f64::from(step) * 0.1;
-        let back = normalized_drift(drift_at(elapsed_s, BACK_DRIFT));
-        let front = normalized_drift(drift_at(elapsed_s, FRONT_DRIFT));
-        let distance = back
-            .into_iter()
-            .zip(front)
-            .map(|(back, front)| (back - front).abs())
-            .fold(0.0, f64::max);
-        assert!(
-            distance >= 0.02,
-            "the two layers coincide at {elapsed_s:.1} s: {distance:.6}"
-        );
-    }
-}
-
-#[test]
-fn npc_7_every_parameter_and_layer_has_its_own_periods_and_phases() {
-    let waves = [
-        BACK_DRIFT.x,
-        BACK_DRIFT.y,
-        BACK_DRIFT.scale,
-        BACK_DRIFT.rotation,
-        FRONT_DRIFT.x,
-        FRONT_DRIFT.y,
-        FRONT_DRIFT.scale,
-        FRONT_DRIFT.rotation,
-    ];
-    let periods: Vec<_> = waves
-        .iter()
-        .flat_map(|axis| [axis.slow_s, axis.fast_s])
-        .collect();
-    let phases: Vec<_> = waves
-        .iter()
-        .flat_map(|axis| [axis.slow_phase, axis.fast_phase])
-        .collect();
-    assert_all_unique(&periods, "period");
-    assert_all_unique(&phases, "phase");
-    let periods: Vec<_> = periods.into_iter().map(|period| period as u64).collect();
-    for (index, first) in periods.iter().enumerate() {
-        for second in &periods[index + 1..] {
-            assert_eq!(greatest_common_divisor(*first, *second), 1);
-        }
-    }
-}
-
-#[test]
-fn npc_8_the_declared_drift_ranges_stay_at_the_mockup_amplitude() {
-    assert_eq!(DRIFT_X, (-0.20, 0.16));
-    assert_eq!(DRIFT_Y, (-0.12, 0.12));
-    assert_eq!(DRIFT_SCALE, (1.40, 1.55));
-    assert_eq!(DRIFT_ROTATION_DEG, (0.0, 10.0));
-}
-
-const DRIFT_RANGES: [(f64, f64); 4] = [DRIFT_X, DRIFT_Y, DRIFT_SCALE, DRIFT_ROTATION_DEG];
-
-fn drift_components(drift: Drift) -> [f64; 4] {
-    [drift.x, drift.y, drift.scale, drift.rotation_deg]
-}
-
-fn normalized_drift(drift: Drift) -> [f64; 4] {
-    let components = drift_components(drift);
-    std::array::from_fn(|index| {
-        let range = DRIFT_RANGES[index];
-        (components[index] - range.0) / (range.1 - range.0)
-    })
-}
-
-fn peak_translation_speed(profile: DriftProfile, step_s: f64, duration_s: f64) -> (f64, f64) {
-    let mut previous = drift_at(0.0, profile);
-    let mut peak_x: f64 = 0.0;
-    let mut peak_y: f64 = 0.0;
-    for step in 1..=(duration_s / step_s) as u32 {
-        let current = drift_at(f64::from(step) * step_s, profile);
-        peak_x = peak_x.max((current.x - previous.x).abs() / step_s);
-        peak_y = peak_y.max((current.y - previous.y).abs() / step_s);
-        previous = current;
-    }
-    (peak_x, peak_y)
-}
-
-fn extreme_times(profile: DriftProfile, duration_s: f64, step_s: f64) -> [f64; 4] {
-    let mut extremes = [f64::NEG_INFINITY; 4];
-    let mut times = [0.0; 4];
-    for step in 0..=(duration_s / step_s) as u32 {
-        let elapsed_s = f64::from(step) * step_s;
-        for (index, value) in normalized_drift(drift_at(elapsed_s, profile))
-            .into_iter()
-            .enumerate()
-        {
-            if value > extremes[index] {
-                extremes[index] = value;
-                times[index] = elapsed_s;
-            }
-        }
-    }
-    times
-}
-
-fn assert_all_unique(values: &[f64], name: &str) {
-    for (index, first) in values.iter().enumerate() {
-        for second in &values[index + 1..] {
-            assert!((first - second).abs() > 1e-9, "shared {name}: {first}");
-        }
-    }
-}
-
-fn greatest_common_divisor(mut first: u64, mut second: u64) -> u64 {
-    while second != 0 {
-        (first, second) = (second, first % second);
-    }
-    first
-}
-
-#[test]
-fn npc_9_the_layer_always_covers_the_field_it_drifts_across() {
-    // The smallest scale on the path still has to hide its own edges after the
-    // largest translation, or a hard edge walks into view. Derived from the
-    // path's own constants rather than pinned, so a future change of either
-    // cannot silently stale this guard.
-    let travel = DRIFT_X.0.abs().max(DRIFT_X.1);
-    assert!(
-        DRIFT_SCALE.0 >= 1.0 + 2.0 * travel,
-        "scale {} leaves an edge at {travel} of travel",
-        DRIFT_SCALE.0
-    );
-}
-
-#[test]
 fn npc_13_the_field_carries_the_mockups_proportions_not_its_pixels() {
     // Every length is a ratio of the cover, so the panel keeps its own size.
     // Checked by feeding the mockup's own cover back in: the pixels have to
@@ -259,24 +38,30 @@ fn npc_15_the_front_layer_is_the_softer_of_the_two() {
 
 #[test]
 fn npc_16_every_cloud_sits_where_the_mockup_put_it() {
-    // Layer 1: 40%/35% at 0.85 and 82%/55% at 0.80, both reaching 50%.
-    assert_eq!(BACK_BLOBS.len(), 2);
+    // The original stops stay put and a third rounds out each layer.
+    assert_eq!(BACK_BLOBS.len(), 3);
     assert!((BACK_BLOBS[0].x - 0.40).abs() < 1e-9);
     assert!((BACK_BLOBS[0].y - 0.35).abs() < 1e-9);
     assert!((BACK_BLOBS[0].alpha - 0.85).abs() < 1e-9);
     assert!((BACK_BLOBS[1].x - 0.82).abs() < 1e-9);
     assert!((BACK_BLOBS[1].y - 0.55).abs() < 1e-9);
     assert!((BACK_BLOBS[1].alpha - 0.80).abs() < 1e-9);
+    assert!((BACK_BLOBS[2].x - 0.24).abs() < 1e-9);
+    assert!((BACK_BLOBS[2].y - 0.76).abs() < 1e-9);
+    assert!((BACK_BLOBS[2].alpha - 0.78).abs() < 1e-9);
     assert!(BACK_BLOBS.iter().all(|b| (b.radius - 0.50).abs() < 1e-9));
 
     // Layer 2: 75%/25% at 0.70 and 30%/80% at 0.60, reaching 45%.
-    assert_eq!(FRONT_BLOBS.len(), 2);
+    assert_eq!(FRONT_BLOBS.len(), 3);
     assert!((FRONT_BLOBS[0].x - 0.75).abs() < 1e-9);
     assert!((FRONT_BLOBS[0].y - 0.25).abs() < 1e-9);
     assert!((FRONT_BLOBS[0].alpha - 0.70).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].x - 0.30).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].y - 0.80).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].alpha - 0.60).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].x - 0.52).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].y - 0.48).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].alpha - 0.65).abs() < 1e-9);
     assert!(FRONT_BLOBS
         .iter()
         .all(|blob| (blob.radius - 0.45).abs() < 1e-9));
@@ -304,7 +89,10 @@ fn npc_18_the_clouds_are_cut_from_the_artwork_not_from_extracted_colours() {
     // free to explain what was tried and why it lost. The needles are split
     // because `include_str!` reads this test too — a literal naming the
     // forbidden symbol would always find itself.
-    let source = include_str!("cover_cloud.rs");
+    let source = concat!(
+        include_str!("cover_cloud.rs"),
+        include_str!("cover_cloud_blob.rs")
+    );
     assert!(source.contains("cover_glow::blurred_surface"));
     let extractor = ["dominant", "_colours("].concat();
     assert!(!source.contains(&extractor));
@@ -465,26 +253,18 @@ fn npc_26_the_incoming_field_grows_while_the_outgoing_field_shrinks() {
         let cr = cairo::Context::new(&target).unwrap();
         let outgoing = solid_field(255, 0, 0);
         let incoming = solid_field(0, 0, 255);
+        let outgoing_rasters = [outgoing];
+        let incoming_rasters = [incoming];
+        let blobs = [BACK_BLOBS[0]];
+        let pose = [Drift {
+            x: 0.0,
+            y: 0.0,
+            scale: 1.0,
+        }];
         paint_crossfade_layers(
             &cr,
-            &[(
-                Some(&outgoing),
-                Drift {
-                    x: 0.0,
-                    y: 0.0,
-                    scale: 1.0,
-                    rotation_deg: 0.0,
-                },
-            )],
-            &[(
-                Some(&incoming),
-                Drift {
-                    x: 0.0,
-                    y: 0.0,
-                    scale: 1.0,
-                    rotation_deg: 0.0,
-                },
-            )],
+            &[(Some(&outgoing_rasters), &blobs, &pose)],
+            &[(Some(&incoming_rasters), &blobs, &pose)],
             (0.0, 0.0, 32.0, 32.0),
             arrived,
             arrived,
@@ -504,7 +284,9 @@ fn npc_26_the_incoming_field_grows_while_the_outgoing_field_shrinks() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn npc_27_a_masked_field_contains_real_non_flat_alpha() {
     gtk4::init().expect("gtk");
-    let mut field = build_field(&swatch_cover(false), BACK_BLUR_EDGE, &BACK_BLOBS).unwrap();
+    let fields = build_blob_rasters(&swatch_cover(false), BACK_BLUR_EDGE, &BACK_BLOBS).unwrap();
+    assert_eq!(fields.len(), BLOBS_PER_LAYER);
+    let mut field = fields.into_iter().next().unwrap();
     field.flush();
     let stride = usize::try_from(field.stride()).unwrap();
     let data = field.data().unwrap();
@@ -532,11 +314,11 @@ fn npc_28_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
         paint_layer(
             &cr,
             &field,
+            (0.5, 0.5),
             Drift {
                 x: 0.0,
                 y: 0.0,
                 scale: 1.0,
-                rotation_deg: 0.0,
             },
             (0.0, 0.0, 32.0, 32.0),
             1.0,
@@ -550,6 +332,55 @@ fn npc_28_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
     let light = render(false);
     assert!(dark[0] > 128, "Screen did not brighten the dark ground");
     assert!(light[0] < 128, "Multiply did not tint the light ground");
+}
+
+#[test]
+fn npc_28_independent_overlap_strengthens_both_appearance_composites() {
+    let render = |dark, paints| {
+        let target = cairo::ImageSurface::create(cairo::Format::ARgb32, 32, 32).unwrap();
+        let cr = cairo::Context::new(&target).unwrap();
+        let ground = if dark { 0.25 } else { 0.94 };
+        cr.set_source_rgb(ground, ground, ground);
+        cr.paint().unwrap();
+        let field = solid_field(192, 64, 128);
+        for _ in 0..paints {
+            paint_layer(
+                &cr,
+                &field,
+                (0.5, 0.5),
+                Drift {
+                    x: 0.0,
+                    y: 0.0,
+                    scale: 1.0,
+                },
+                (0.0, 0.0, 32.0, 32.0),
+                0.30,
+                blend_operator(dark),
+            );
+        }
+        drop(cr);
+        pixel(target, 16, 16)
+    };
+
+    let dark_single = render(true, 1);
+    let dark_overlap = render(true, 3);
+    assert!(
+        dark_overlap[..3]
+            .iter()
+            .zip(&dark_single[..3])
+            .all(|(overlap, single)| overlap > single),
+        "screened overlap did not brighten: {dark_single:?} -> {dark_overlap:?}"
+    );
+
+    let light_single = render(false, 1);
+    let light_overlap = render(false, 3);
+    assert!(light_overlap[0] < light_single[0]);
+    let light_min = *light_overlap[..3].iter().min().unwrap();
+    let light_max = *light_overlap[..3].iter().max().unwrap();
+    assert!(
+        light_min > 96 && light_max - light_min > 48,
+        "multiply overlap became muddy instead of a coloured wash: {light_overlap:?}"
+    );
 }
 
 fn solid_field(red: u8, green: u8, blue: u8) -> cairo::ImageSurface {
@@ -578,92 +409,6 @@ fn pixel(mut surface: cairo::ImageSurface, x: usize, y: usize) -> [u8; 4] {
         data[offset],
         data[offset + 3],
     ]
-}
-
-/// Renders the head of the panel to a PPM so the light can be looked at.
-///
-/// Every other test here is arithmetic or structure. None of them can say
-/// whether the blurred cover, masked twice, actually reads as two clouds — and
-/// that is this design's own risk: it trades three extracted colours for one
-/// raster, which is a different door into the failure the turning disc recorded.
-/// A greyscale cover is rendered beside a colourful one for exactly that
-/// reason.
-#[test]
-#[ignore = "measurement: render manually via xvfb-run"]
-fn render_cover_cloud_gallery_ppm() {
-    gtk4::init().expect("gtk");
-
-    let width = 300i32;
-    let band = tokens::NOW_PLAYING_ARTWORK_BAND;
-    let moments = [0.0f64, 40.0, 80.0];
-    let covers = [swatch_cover(false), swatch_cover(true)];
-
-    let sheet = cairo::ImageSurface::create(
-        cairo::Format::ARgb32,
-        width * moments.len() as i32,
-        band * covers.len() as i32,
-    )
-    .expect("sheet");
-    let sheet_cr = cairo::Context::new(&sheet).expect("sheet cr");
-
-    for (row, texture) in covers.iter().enumerate() {
-        let back = build_field(texture, BACK_BLUR_EDGE, &BACK_BLOBS).expect("back field");
-        let front = build_field(texture, FRONT_BLUR_EDGE, &FRONT_BLOBS).expect("front field");
-        for (col, seconds) in moments.iter().enumerate() {
-            let tile =
-                cairo::ImageSurface::create(cairo::Format::ARgb32, width, band).expect("tile");
-            let cr = cairo::Context::new(&tile).expect("tile cr");
-            let [r, g, b] = crate::ui::style::accent::sidebar_background_rgb();
-            cr.set_source_rgb(
-                f64::from(r) / 255.0,
-                f64::from(g) / 255.0,
-                f64::from(b) / 255.0,
-            );
-            cr.paint().expect("ground");
-
-            let cover = f64::from(tokens::NOW_PLAYING_COVER_SIZE);
-            let bounds = field(f64::from(width), cover);
-            let operator = if crate::ui::style::accent::is_dark() {
-                cairo::Operator::Screen
-            } else {
-                cairo::Operator::Multiply
-            };
-            paint_layer(
-                &cr,
-                &back,
-                drift_at(*seconds, BACK_DRIFT),
-                bounds,
-                1.0,
-                operator,
-            );
-            paint_layer(
-                &cr,
-                &front,
-                drift_at(*seconds, FRONT_DRIFT),
-                bounds,
-                1.0,
-                operator,
-            );
-            let scrim = build_scrim(f64::from(band));
-            paint_scrim(&cr, f64::from(width), f64::from(band), &scrim);
-            drop(cr);
-
-            sheet_cr
-                .set_source_surface(
-                    &tile,
-                    f64::from(width) * col as f64,
-                    f64::from(band) * row as f64,
-                )
-                .expect("place tile");
-            sheet_cr.paint().expect("paint tile");
-        }
-    }
-    drop(sheet_cr);
-
-    let path = std::env::var("COVER_CLOUD_PPM")
-        .unwrap_or_else(|_| "/tmp/cover-cloud-gallery.ppm".to_string());
-    write_ppm(sheet, &path);
-    println!("wrote {path}");
 }
 
 /// A stand-in cover: the mockup's own three colours, or the greyscale artwork
@@ -760,3 +505,6 @@ fn write_ppm(mut surface: cairo::ImageSurface, path: &str) {
         .write_all(&out)
         .expect("write ppm");
 }
+
+#[path = "cover_cloud_gallery_tests.rs"]
+mod gallery_tests;

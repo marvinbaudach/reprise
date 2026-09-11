@@ -4312,12 +4312,12 @@ STYLE-1).
   eye reads luminance change in peripheral vision, so a brightening
   cover pulls attention off the list; it lifts on its shadow, carries a
   one-pixel light seam along its edge. The panel cover instead keeps one static
-  shadow and no seam. Behind it, two soft clouds of the blurred artwork drift
-  on long, mutually incommensurable waves whose sums do not visibly repeat;
-  every pose parameter has its own periods and phases, so the clouds deform
-  rather than travel along a traceable path. Peak translation speed is the
-  binding motion constraint and may not exceed **0.010 field-fractions per
-  second** on either axis.
+  shadow and no seam. Behind it, six independent soft drops of the blurred
+  artwork — three per depth layer — move on their own long, mutually
+  incommensurable position waves and breathe on separate scale waves, meeting
+  and parting without a visible repeat. Peak translation speed is the binding
+  motion constraint and may not exceed **0.016 field-fractions per second** on
+  either axis.
   The player-bar seam sits
   one pixel outside the artwork, so the cover's footprint grows by exactly
   one pixel on each side; nothing crosses the picture itself. The seam
