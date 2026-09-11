@@ -312,6 +312,7 @@ struct Inner {
     /// once per rendered track, exactly as `cover_bloom` keys its own cache.
     generation: Cell<Option<u64>>,
     drift_clock: Cell<DriftClock>,
+    last_drawn_pose: Cell<Option<(Drift, Drift)>>,
     scrim: RefCell<Option<ScrimCache>>,
     pinned: Cell<bool>,
 }
@@ -337,6 +338,7 @@ impl CoverCloud {
             arrived_at_us: Cell::new(0),
             generation: Cell::new(None),
             drift_clock: Cell::new(DriftClock::default()),
+            last_drawn_pose: Cell::new(None),
             scrim: RefCell::new(None),
             pinned: Cell::new(true),
         });
@@ -353,13 +355,7 @@ impl CoverCloud {
 
     #[cfg(test)]
     pub(super) fn drawn_pose_for_test(&self) -> Option<(Drift, Drift)> {
-        self.inner.back.borrow().as_ref()?;
-        self.inner.front.borrow().as_ref()?;
-        let elapsed_s = self.inner.drift_clock.get().elapsed_s();
-        Some((
-            drift_at(elapsed_s, BACK_PERIOD_S, 0.0),
-            drift_at(elapsed_s, FRONT_PERIOD_S, FRONT_OFFSET_S),
-        ))
+        self.inner.last_drawn_pose.get()
     }
 
     /// The cover both fields are cut from, or `None` for external media, a
@@ -541,6 +537,7 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     let operator = blend_operator(dark);
     let back_drift = drift_at(elapsed_s, BACK_PERIOD_S, 0.0);
     let front_drift = drift_at(elapsed_s, FRONT_PERIOD_S, FRONT_OFFSET_S);
+    inner.last_drawn_pose.set(Some((back_drift, front_drift)));
 
     // With the clock standing still — paused, or animation switched off — no
     // frame will ever advance a fade, so the change counts as already done

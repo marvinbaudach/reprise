@@ -70,10 +70,11 @@ fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
     }
-    let (_window, panel) =
+    let (window, panel) =
         super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingCloudThemeSwitch");
     let settings = gtk4::Settings::default().unwrap();
     let animations_were_enabled = settings.is_gtk_enable_animations();
@@ -82,6 +83,7 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
 
     panel.set_transient_visibility(true);
     panel.set_song_visuals_enabled(true);
+    panel.set_playback_state(PlaybackState::Playing);
     assert!(cloud_unpinned(&panel));
 
     let texture: gtk4::gdk::Texture = gtk4::gdk::MemoryTexture::new(
@@ -95,6 +97,18 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
     panel.widgets.cloud.set_cover(Some(&texture), 1);
     panel.widgets.cloud.set_frame_time(1_000_000);
     panel.widgets.cloud.set_frame_time(11_000_000);
+    assert!(
+        panel.widgets.cloud.drawn_pose_for_test().is_none(),
+        "setting the clock must not masquerade as a draw"
+    );
+
+    panel.retain_for_window(&window);
+    window.set_default_size(1_200, 800);
+    window.present();
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || panel.widgets.cloud.drawn_pose_for_test().is_some()
+    ));
     let dark = panel
         .widgets
         .cloud
@@ -108,6 +122,8 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
     // cannot move at a switch. Asserted rather than assumed, because a later
     // theme-dependent period would reintroduce exactly the old bug.
     crate::ui::style::set_color_scheme("light");
+    panel.widgets.cloud.widget().queue_draw();
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(20));
     let light = panel
         .widgets
         .cloud
@@ -118,6 +134,7 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
 
     crate::ui::style::set_color_scheme("default");
     settings.set_gtk_enable_animations(animations_were_enabled);
+    window.close();
     assert_eq!(
         dark.0, expected_back,
         "the test must observe an advanced pose"
