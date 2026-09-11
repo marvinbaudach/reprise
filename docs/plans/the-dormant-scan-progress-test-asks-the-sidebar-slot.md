@@ -2,7 +2,7 @@
 slug: the-dormant-scan-progress-test-asks-the-sidebar-slot
 worktree: /home/marvin/Projects/reprise-the-dormant-scan-progress-test-asks-the-sidebar-slot
 branch: feature/the-dormant-scan-progress-test-asks-the-sidebar-slot
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-09-11
 ---
