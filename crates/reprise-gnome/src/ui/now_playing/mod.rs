@@ -3,6 +3,7 @@ mod cover_bloom;
 mod cover_bloom_area;
 mod cover_cloud;
 pub(in crate::ui) mod now_playing_column;
+mod now_playing_head;
 mod now_playing_light;
 mod panel_state;
 pub(in crate::ui) mod song_visualizer;
