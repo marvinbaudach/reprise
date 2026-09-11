@@ -258,7 +258,8 @@ impl DriftClock {
         }
         let elapsed_us = self
             .carried_us
-            .saturating_add(frame_time_us.saturating_sub(self.started_at_us));
+            .saturating_add(frame_time_us.saturating_sub(self.started_at_us))
+            .max(self.elapsed_us);
         if elapsed_us == self.elapsed_us {
             return false;
         }

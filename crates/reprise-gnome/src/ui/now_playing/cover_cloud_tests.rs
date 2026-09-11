@@ -382,6 +382,17 @@ fn npp_18_the_cloud_clock_reports_no_change_when_elapsed_does_not_move() {
 }
 
 #[test]
+fn npp_18_an_earlier_frame_time_does_not_move_the_clouds_backwards() {
+    let mut clock = DriftClock::default();
+    clock.advance(5_000_000);
+    clock.advance(8_000_000);
+    let before = clock.elapsed_s();
+
+    assert!(!clock.advance(2_000_000));
+    assert!((clock.elapsed_s() - before).abs() < 1e-9);
+}
+
+#[test]
 fn npc_26_the_incoming_field_grows_while_the_outgoing_field_shrinks() {
     let render = |arrived| {
         let target = cairo::ImageSurface::create(cairo::Format::ARgb32, 32, 32).unwrap();
