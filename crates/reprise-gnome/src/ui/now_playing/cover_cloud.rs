@@ -43,18 +43,90 @@ const OVERHANG_TOP_PER_COVER: f64 = 60.0 / 240.0;
 const OVERHANG_LEFT_PER_COVER: f64 = 40.0 / 240.0;
 const OVERHANG_RIGHT_PER_COVER: f64 = 90.0 / 240.0;
 
-/// One turn of the drift, front and back. Neither may fall under 16 s.
-pub(super) const BACK_PERIOD_S: f64 = 16.0;
-const FRONT_PERIOD_S: f64 = 20.0;
-/// Half of the front layer's period, which is what sets the two against each
-/// other: at rest one lies at the start of the path and the other at its end.
-const FRONT_OFFSET_S: f64 = 10.0;
-
-/// The path both layers walk, from one end to the other.
+/// The full envelope available to each independently moving parameter.
 const DRIFT_X: (f64, f64) = (-0.20, 0.16);
 const DRIFT_Y: (f64, f64) = (-0.12, 0.12);
 const DRIFT_SCALE: (f64, f64) = (1.40, 1.55);
 const DRIFT_ROTATION_DEG: (f64, f64) = (0.0, 10.0);
+
+/// The binding speed ceiling from AC-24, in field-fractions per second.
+#[cfg(test)]
+pub(super) const DRIFT_SPEED_LIMIT: f64 = 0.010;
+
+const SLOW_WAVE_WEIGHT: f64 = 0.65;
+const FAST_WAVE_WEIGHT: f64 = 0.35;
+
+/// Two long waves for one pose parameter, with phase measured in turns.
+#[derive(Clone, Copy)]
+pub(super) struct DriftAxis {
+    pub(super) slow_s: f64,
+    pub(super) fast_s: f64,
+    pub(super) slow_phase: f64,
+    pub(super) fast_phase: f64,
+}
+
+/// The independent wave pair for every parameter of one cloud layer.
+#[derive(Clone, Copy)]
+pub(super) struct DriftProfile {
+    pub(super) x: DriftAxis,
+    pub(super) y: DriftAxis,
+    pub(super) scale: DriftAxis,
+    pub(super) rotation: DriftAxis,
+}
+
+pub(super) const BACK_DRIFT: DriftProfile = DriftProfile {
+    x: DriftAxis {
+        slow_s: 149.0,
+        fast_s: 107.0,
+        slow_phase: 0.03,
+        fast_phase: 0.41,
+    },
+    y: DriftAxis {
+        slow_s: 157.0,
+        fast_s: 113.0,
+        slow_phase: 0.19,
+        fast_phase: 0.73,
+    },
+    scale: DriftAxis {
+        slow_s: 173.0,
+        fast_s: 127.0,
+        slow_phase: 0.37,
+        fast_phase: 0.89,
+    },
+    rotation: DriftAxis {
+        slow_s: 181.0,
+        fast_s: 137.0,
+        slow_phase: 0.61,
+        fast_phase: 0.11,
+    },
+};
+
+pub(super) const FRONT_DRIFT: DriftProfile = DriftProfile {
+    x: DriftAxis {
+        slow_s: 151.0,
+        fast_s: 109.0,
+        slow_phase: 0.23,
+        fast_phase: 0.67,
+    },
+    y: DriftAxis {
+        slow_s: 167.0,
+        fast_s: 131.0,
+        slow_phase: 0.47,
+        fast_phase: 0.07,
+    },
+    scale: DriftAxis {
+        slow_s: 179.0,
+        fast_s: 139.0,
+        slow_phase: 0.71,
+        fast_phase: 0.31,
+    },
+    rotation: DriftAxis {
+        slow_s: 163.0,
+        fast_s: 103.0,
+        slow_phase: 0.91,
+        fast_phase: 0.53,
+    },
+};
 
 /// The house blur: the cover arrives as a 32 px raster and painting it across
 /// the field is what blurs it — there is no blur node anywhere in this path.
@@ -124,46 +196,33 @@ pub(super) struct Drift {
     pub(super) rotation_deg: f64,
 }
 
-/// How far along the path a layer is at `elapsed_s`, from 0 to 1 and back.
-///
-/// A period is the whole round trip, not one leg of it: 16 s means the layer
-/// leaves, arrives and returns inside 16 s. The mockup's `ease-in-out` on each
-/// leg is taken as a smoothstep, which parts from `cubic-bezier(.42,0,.58,1)`
-/// by well under a pixel of travel across a field this size.
-///
-/// The mockup also asks the front layer to run `reverse`. On a keyframe list
-/// whose first and last poses are the same, playing it backwards yields the
-/// identical sequence — CSS included — so there is nothing here to reverse.
-/// What actually holds the layers apart is the offset, and it is a real half
-/// period: see [`FRONT_OFFSET_S`].
-pub(super) fn drift_progress(elapsed_s: f64, period_s: f64, offset_s: f64) -> f64 {
-    if period_s <= 0.0 || period_s.is_nan() {
-        return 0.0;
-    }
-    // Wrapped before it is scaled, so a session running for days cannot lose
-    // the fraction into a stutter.
-    let turn = ((elapsed_s + offset_s) / period_s).rem_euclid(1.0);
-    let leg = if turn < 0.5 {
-        turn * 2.0
-    } else {
-        (1.0 - turn) * 2.0
-    };
-    leg * leg * (3.0 - 2.0 * leg)
+/// One continuous wave, wrapped in turns before scaling so a long session does
+/// not lose its fraction into a stutter.
+fn wave(elapsed_s: f64, period_s: f64, phase: f64) -> f64 {
+    let turn = (elapsed_s / period_s + phase).rem_euclid(1.0);
+    (std::f64::consts::TAU * turn).sin()
 }
 
-/// The pose at `elapsed_s`, interpolated along the path.
-pub(super) fn drift_at(elapsed_s: f64, period_s: f64, offset_s: f64) -> Drift {
-    let p = drift_progress(elapsed_s, period_s, offset_s);
+/// Two incommensurable waves whose weighted sum remains inside `-1.0..=1.0`.
+fn drift_axis(elapsed_s: f64, axis: DriftAxis) -> f64 {
+    SLOW_WAVE_WEIGHT * wave(elapsed_s, axis.slow_s, axis.slow_phase)
+        + FAST_WAVE_WEIGHT * wave(elapsed_s, axis.fast_s, axis.fast_phase)
+}
+
+/// The pose at `elapsed_s`, with no parameter sharing another's motion.
+pub(super) fn drift_at(elapsed_s: f64, profile: DriftProfile) -> Drift {
     Drift {
-        x: lerp(DRIFT_X, p),
-        y: lerp(DRIFT_Y, p),
-        scale: lerp(DRIFT_SCALE, p),
-        rotation_deg: lerp(DRIFT_ROTATION_DEG, p),
+        x: map_axis(DRIFT_X, drift_axis(elapsed_s, profile.x)),
+        y: map_axis(DRIFT_Y, drift_axis(elapsed_s, profile.y)),
+        scale: map_axis(DRIFT_SCALE, drift_axis(elapsed_s, profile.scale)),
+        rotation_deg: map_axis(DRIFT_ROTATION_DEG, drift_axis(elapsed_s, profile.rotation)),
     }
 }
 
-fn lerp((from, to): (f64, f64), p: f64) -> f64 {
-    from + (to - from) * p
+fn map_axis((from, to): (f64, f64), value: f64) -> f64 {
+    let centre = (from + to) / 2.0;
+    let half_range = (to - from) / 2.0;
+    centre + half_range * value
 }
 
 /// How far the incoming cover has arrived, `since_s` after the change.
@@ -531,8 +590,8 @@ fn paint_layers_only(cr: &cairo::Context, width: f64, inner: &Inner, dark: bool)
     let clock = inner.drift_clock.get();
     let elapsed_s = clock.elapsed_s();
     let operator = blend_operator(dark);
-    let back_drift = drift_at(elapsed_s, BACK_PERIOD_S, 0.0);
-    let front_drift = drift_at(elapsed_s, FRONT_PERIOD_S, FRONT_OFFSET_S);
+    let back_drift = drift_at(elapsed_s, BACK_DRIFT);
+    let front_drift = drift_at(elapsed_s, FRONT_DRIFT);
     inner.last_drawn_pose.set(Some((back_drift, front_drift)));
 
     // With the clock standing still — paused, or animation switched off — no

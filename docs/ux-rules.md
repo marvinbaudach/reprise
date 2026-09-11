@@ -4308,14 +4308,17 @@ STYLE-1).
   pointer aims at and, once the running track scrolls out of the list,
   the only place the playback state is read from — a control that
   answers the music moves under the cursor and competes with the state
-  it reports. The cover itself never changes brightness either: the
+  it reports. The player-bar cover itself never changes brightness either: the
   eye reads luminance change in peripheral vision, so a brightening
   cover pulls attention off the list; it lifts on its shadow, carries a
-  one-pixel light seam along its edge, and has two soft clouds of the blurred
-  artwork drifting behind it — the back one over 16 seconds, the front one
-  over 20 and offset by half its own period, so the pair has an 80-second
-  period. Neither may run under 16 seconds.
-  The seam sits
+  one-pixel light seam along its edge. The panel cover instead keeps one static
+  shadow and no seam. Behind it, two soft clouds of the blurred artwork drift
+  on long, mutually incommensurable waves whose sums do not visibly repeat;
+  every pose parameter has its own periods and phases, so the clouds deform
+  rather than travel along a traceable path. Peak translation speed is the
+  binding motion constraint and may not exceed **0.010 field-fractions per
+  second** on either axis.
+  The player-bar seam sits
   one pixel outside the artwork, so the cover's footprint grows by exactly
   one pixel on each side; nothing crosses the picture itself. The seam
   uses the effective app or system accent (`@accent_color`), exactly like
@@ -4338,7 +4341,7 @@ STYLE-1).
   clouds: their movement comes from the clock alone, so no kick can reach a
   coordinate. On greyscale and near-black artwork the clouds stay faint,
   accepted for the same measured reason the palette sweep was rejected in the
-  first place. The lift is
+  first place. The player-bar lift is
   two cached shadow layers
   whose opacities cross-fade with the composite coverage held constant —
   a linear `1 - swell` pair sums to one and still dips 14 %, which reads

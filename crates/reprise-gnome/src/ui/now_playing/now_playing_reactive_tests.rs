@@ -130,7 +130,7 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
         .drawn_pose_for_test()
         .expect("cloud pose in light appearance");
 
-    let expected_back = super::cover_cloud::drift_at(10.0, super::cover_cloud::BACK_PERIOD_S, 0.0);
+    let expected_back = super::cover_cloud::drift_at(10.0, super::cover_cloud::BACK_DRIFT);
 
     crate::ui::style::set_color_scheme("default");
     settings.set_gtk_enable_animations(animations_were_enabled);

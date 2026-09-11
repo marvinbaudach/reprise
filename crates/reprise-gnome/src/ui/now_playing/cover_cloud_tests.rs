@@ -5,111 +5,210 @@ use super::*;
 const SPEC_COVER: f64 = 240.0;
 
 #[test]
-fn npc_1_a_period_is_the_whole_round_trip_not_one_leg() {
-    // "16 s, ease-in-out, endlos, hin und zurück" — the layer leaves, arrives
-    // and is home again inside one period. Driving this off a reversing tween
-    // of the same length would take twice as long, which is the mistake this
-    // test exists to catch.
-    assert!((drift_progress(0.0, 16.0, 0.0) - 0.0).abs() < 1e-9);
-    assert!((drift_progress(8.0, 16.0, 0.0) - 1.0).abs() < 1e-9);
-    assert!((drift_progress(16.0, 16.0, 0.0) - 0.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_2_the_drift_never_jumps_at_the_wrap() {
-    // A step across the seam must be no larger than a step anywhere else.
-    let just_before = drift_progress(15.999, 16.0, 0.0);
-    let just_after = drift_progress(16.001, 16.0, 0.0);
-    assert!(
-        (just_before - just_after).abs() < 1e-3,
-        "seam jumps from {just_before} to {just_after}"
-    );
-}
-
-#[test]
-fn npc_3_a_long_session_does_not_lose_the_drift_into_a_stutter() {
-    // A day in, the fraction has to be as exact as it was at the start.
-    assert!((drift_progress(86_400.0, 16.0, 0.0) - drift_progress(0.0, 16.0, 0.0)).abs() < 1e-9);
-    assert!((drift_progress(86_408.0, 16.0, 0.0) - drift_progress(8.0, 16.0, 0.0)).abs() < 1e-9);
-}
-
-#[test]
-fn npc_4_the_drift_eases_in_and_out_rather_than_running_flat() {
-    // A quarter of the way through a leg a linear ramp would stand at 0.5.
-    // ease-in-out is still gathering itself there, and symmetric about the
-    // midpoint of the leg.
-    let quarter = drift_progress(2.0, 16.0, 0.0);
-    let three_quarters = drift_progress(6.0, 16.0, 0.0);
-    assert!(quarter < 0.4, "eased start reached {quarter}");
-    assert!((quarter + three_quarters - 1.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_5_no_cycle_runs_faster_than_sixteen_seconds() {
-    // "kein Zyklus unter 16 s" — the one rule with a number attached.
-    const { assert!(BACK_PERIOD_S >= 16.0) };
-    const { assert!(FRONT_PERIOD_S >= 16.0) };
-}
-
-#[test]
-fn npc_6_the_two_layers_start_at_opposite_ends_of_the_path() {
-    // The offset is a real half period, which is what sets the layers against
-    // each other. The mockup asks for `reverse` as well, but a keyframe list
-    // whose first and last poses are identical plays the same backwards, so
-    // the offset is doing all of the work and has to be exact.
-    assert!((FRONT_OFFSET_S - FRONT_PERIOD_S / 2.0).abs() < 1e-9);
-    let back = drift_progress(0.0, BACK_PERIOD_S, 0.0);
-    let front = drift_progress(0.0, FRONT_PERIOD_S, FRONT_OFFSET_S);
-    assert!((back - 0.0).abs() < 1e-9);
-    assert!((front - 1.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_7_the_pair_of_layers_repeats_only_after_eighty_seconds() {
-    // 16 and 20 share a least common multiple of 80: before that the two
-    // layers never hold the same pair of poses again, so the head of the panel
-    // does not visibly loop.
-    let pose_at = |t: f64| {
-        (
-            drift_progress(t, BACK_PERIOD_S, 0.0),
-            drift_progress(t, FRONT_PERIOD_S, FRONT_OFFSET_S),
-        )
-    };
-    let (back0, front0) = pose_at(0.0);
-    // Stepped by index rather than by adding to a float: an accumulated 0.05
-    // lands at 79.999999 and would report the 80 s return as an early repeat.
-    let mut earliest_repeat = None;
-    for step in 1..1_599 {
-        let t = f64::from(step) * 0.05;
-        let (back, front) = pose_at(t);
-        if (back - back0).abs() < 1e-4 && (front - front0).abs() < 1e-4 {
-            earliest_repeat = Some(t);
-            break;
+fn npc_1_every_oil_lamp_parameter_stays_inside_its_declared_range() {
+    for profile in [BACK_DRIFT, FRONT_DRIFT] {
+        for step in 0..=12_000 {
+            let drift = drift_at(f64::from(step) * 0.05, profile);
+            for (value, range) in drift_components(drift).into_iter().zip(DRIFT_RANGES) {
+                assert!(
+                    value >= range.0 - 1e-12 && value <= range.1 + 1e-12,
+                    "{value} left {range:?} at step {step}"
+                );
+            }
         }
     }
-    assert!(
-        earliest_repeat.is_none(),
-        "the pair repeats after {earliest_repeat:?} s, before the 80 s it should"
-    );
-    let (back80, front80) = pose_at(80.0);
-    assert!((back80 - back0).abs() < 1e-9);
-    assert!((front80 - front0).abs() < 1e-9);
 }
 
 #[test]
-fn npc_8_the_path_runs_between_the_two_poses_the_mockup_names() {
-    // translate(-20%,-12%) scale(1.4) rotate(0deg) → translate(16%,12%) scale(1.55) rotate(10deg)
-    let start = drift_at(0.0, 16.0, 0.0);
-    assert!((start.x - -0.20).abs() < 1e-9);
-    assert!((start.y - -0.12).abs() < 1e-9);
-    assert!((start.scale - 1.40).abs() < 1e-9);
-    assert!((start.rotation_deg - 0.0).abs() < 1e-9);
+fn npc_2_the_oil_lamp_translation_stays_below_the_speed_limit() {
+    for profile in [BACK_DRIFT, FRONT_DRIFT] {
+        let (peak_x, peak_y) = peak_translation_speed(profile, 0.01, 600.0);
+        assert!(
+            peak_x <= DRIFT_SPEED_LIMIT + 1e-9,
+            "x peaks at {peak_x:.6} field-fractions/s"
+        );
+        assert!(
+            peak_y <= DRIFT_SPEED_LIMIT + 1e-9,
+            "y peaks at {peak_y:.6} field-fractions/s"
+        );
+    }
+}
 
-    let end = drift_at(8.0, 16.0, 0.0);
-    assert!((end.x - 0.16).abs() < 1e-9);
-    assert!((end.y - 0.12).abs() < 1e-9);
-    assert!((end.scale - 1.55).abs() < 1e-9);
-    assert!((end.rotation_deg - 10.0).abs() < 1e-9);
+#[test]
+fn npc_3_the_oil_lamp_drift_is_continuous() {
+    const STEP_S: f64 = 0.01;
+    for profile in [BACK_DRIFT, FRONT_DRIFT] {
+        let mut previous = normalized_drift(drift_at(0.0, profile));
+        let mut total_step = 0.0;
+        let mut largest_step: f64 = 0.0;
+        let sample_count = 60_000;
+        for step in 1..=sample_count {
+            let current = normalized_drift(drift_at(f64::from(step) * STEP_S, profile));
+            let distance = current
+                .into_iter()
+                .zip(previous)
+                .map(|(current, previous)| (current - previous).abs())
+                .fold(0.0, f64::max);
+            total_step += distance;
+            largest_step = largest_step.max(distance);
+            previous = current;
+        }
+        let mean_step = total_step / f64::from(sample_count);
+        assert!(
+            largest_step <= mean_step * 3.0,
+            "one normalized step ({largest_step:.6}) dwarfs its neighbours ({mean_step:.6} mean)"
+        );
+    }
+}
+
+#[test]
+fn npc_4_the_old_eighty_second_pair_period_is_gone() {
+    for profile in [BACK_DRIFT, FRONT_DRIFT] {
+        for elapsed_s in [0.0, 17.0, 43.0, 91.0, 157.0, 239.0] {
+            let now = normalized_drift(drift_at(elapsed_s, profile));
+            let later = normalized_drift(drift_at(elapsed_s + 80.0, profile));
+            let distance = now
+                .into_iter()
+                .zip(later)
+                .map(|(now, later)| (now - later).abs())
+                .fold(0.0, f64::max);
+            assert!(
+                distance >= 0.05,
+                "the pose nearly repeated after 80 s at {elapsed_s}: {distance:.6}"
+            );
+        }
+    }
+}
+
+#[test]
+fn npc_5_each_pose_parameter_reaches_its_extreme_at_a_different_time() {
+    for profile in [BACK_DRIFT, FRONT_DRIFT] {
+        let extremes = extreme_times(profile, 240.0, 0.05);
+        for (index, first) in extremes.iter().enumerate() {
+            for second in &extremes[index + 1..] {
+                assert!(
+                    (first - second).abs() >= 2.0,
+                    "two parameters turn together at {first:.2} s and {second:.2} s"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn npc_6_the_two_layers_never_fall_into_the_same_pose() {
+    for step in 0..=6_000 {
+        let elapsed_s = f64::from(step) * 0.1;
+        let back = normalized_drift(drift_at(elapsed_s, BACK_DRIFT));
+        let front = normalized_drift(drift_at(elapsed_s, FRONT_DRIFT));
+        let distance = back
+            .into_iter()
+            .zip(front)
+            .map(|(back, front)| (back - front).abs())
+            .fold(0.0, f64::max);
+        assert!(
+            distance >= 0.02,
+            "the two layers coincide at {elapsed_s:.1} s: {distance:.6}"
+        );
+    }
+}
+
+#[test]
+fn npc_7_every_parameter_and_layer_has_its_own_periods_and_phases() {
+    let waves = [
+        BACK_DRIFT.x,
+        BACK_DRIFT.y,
+        BACK_DRIFT.scale,
+        BACK_DRIFT.rotation,
+        FRONT_DRIFT.x,
+        FRONT_DRIFT.y,
+        FRONT_DRIFT.scale,
+        FRONT_DRIFT.rotation,
+    ];
+    let periods: Vec<_> = waves
+        .iter()
+        .flat_map(|axis| [axis.slow_s, axis.fast_s])
+        .collect();
+    let phases: Vec<_> = waves
+        .iter()
+        .flat_map(|axis| [axis.slow_phase, axis.fast_phase])
+        .collect();
+    assert_all_unique(&periods, "period");
+    assert_all_unique(&phases, "phase");
+    let periods: Vec<_> = periods.into_iter().map(|period| period as u64).collect();
+    for (index, first) in periods.iter().enumerate() {
+        for second in &periods[index + 1..] {
+            assert_eq!(greatest_common_divisor(*first, *second), 1);
+        }
+    }
+}
+
+#[test]
+fn npc_8_the_declared_drift_ranges_stay_at_the_mockup_amplitude() {
+    assert_eq!(DRIFT_X, (-0.20, 0.16));
+    assert_eq!(DRIFT_Y, (-0.12, 0.12));
+    assert_eq!(DRIFT_SCALE, (1.40, 1.55));
+    assert_eq!(DRIFT_ROTATION_DEG, (0.0, 10.0));
+}
+
+const DRIFT_RANGES: [(f64, f64); 4] = [DRIFT_X, DRIFT_Y, DRIFT_SCALE, DRIFT_ROTATION_DEG];
+
+fn drift_components(drift: Drift) -> [f64; 4] {
+    [drift.x, drift.y, drift.scale, drift.rotation_deg]
+}
+
+fn normalized_drift(drift: Drift) -> [f64; 4] {
+    let components = drift_components(drift);
+    std::array::from_fn(|index| {
+        let range = DRIFT_RANGES[index];
+        (components[index] - range.0) / (range.1 - range.0)
+    })
+}
+
+fn peak_translation_speed(profile: DriftProfile, step_s: f64, duration_s: f64) -> (f64, f64) {
+    let mut previous = drift_at(0.0, profile);
+    let mut peak_x: f64 = 0.0;
+    let mut peak_y: f64 = 0.0;
+    for step in 1..=(duration_s / step_s) as u32 {
+        let current = drift_at(f64::from(step) * step_s, profile);
+        peak_x = peak_x.max((current.x - previous.x).abs() / step_s);
+        peak_y = peak_y.max((current.y - previous.y).abs() / step_s);
+        previous = current;
+    }
+    (peak_x, peak_y)
+}
+
+fn extreme_times(profile: DriftProfile, duration_s: f64, step_s: f64) -> [f64; 4] {
+    let mut extremes = [f64::NEG_INFINITY; 4];
+    let mut times = [0.0; 4];
+    for step in 0..=(duration_s / step_s) as u32 {
+        let elapsed_s = f64::from(step) * step_s;
+        for (index, value) in normalized_drift(drift_at(elapsed_s, profile))
+            .into_iter()
+            .enumerate()
+        {
+            if value > extremes[index] {
+                extremes[index] = value;
+                times[index] = elapsed_s;
+            }
+        }
+    }
+    times
+}
+
+fn assert_all_unique(values: &[f64], name: &str) {
+    for (index, first) in values.iter().enumerate() {
+        for second in &values[index + 1..] {
+            assert!((first - second).abs() > 1e-9, "shared {name}: {first}");
+        }
+    }
+}
+
+fn greatest_common_divisor(mut first: u64, mut second: u64) -> u64 {
+    while second != 0 {
+        (first, second) = (second, first % second);
+    }
+    first
 }
 
 #[test]
@@ -224,13 +323,6 @@ fn npc_19_the_cover_is_out_of_reach_of_anything_that_moves() {
     assert!(!source.contains(&cover_widget));
     assert!(!source.contains("CoverLift"));
     assert!(!source.contains("cover_loader"));
-}
-
-#[test]
-fn npc_20_a_field_with_no_room_is_drawn_as_nothing_rather_than_upside_down() {
-    // A degenerate period must not divide by zero or run backwards.
-    assert!((drift_progress(3.0, 0.0, 0.0) - 0.0).abs() < 1e-9);
-    assert!((drift_progress(3.0, -8.0, 0.0) - 0.0).abs() < 1e-9);
 }
 
 #[test]
@@ -503,7 +595,7 @@ fn render_cover_cloud_gallery_ppm() {
 
     let width = 300i32;
     let band = tokens::NOW_PLAYING_ARTWORK_BAND;
-    let moments = [0.0f64, 4.0, 8.0];
+    let moments = [0.0f64, 40.0, 80.0];
     let covers = [swatch_cover(false), swatch_cover(true)];
 
     let sheet = cairo::ImageSurface::create(
@@ -539,7 +631,7 @@ fn render_cover_cloud_gallery_ppm() {
             paint_layer(
                 &cr,
                 &back,
-                drift_at(*seconds, BACK_PERIOD_S, 0.0),
+                drift_at(*seconds, BACK_DRIFT),
                 bounds,
                 1.0,
                 operator,
@@ -547,7 +639,7 @@ fn render_cover_cloud_gallery_ppm() {
             paint_layer(
                 &cr,
                 &front,
-                drift_at(*seconds, FRONT_PERIOD_S, FRONT_OFFSET_S),
+                drift_at(*seconds, FRONT_DRIFT),
                 bounds,
                 1.0,
                 operator,
