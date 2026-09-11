@@ -81,6 +81,32 @@ pub(in crate::ui) fn window_background_rgb() -> [u8; 3] {
     parse_hex_rgb(palette.window_bg).unwrap_or_else(default_window_background_rgb)
 }
 
+/// The panel ground, for anything painting its own fade back to it.
+///
+/// The now-playing panel is `@sidebar_bg_color`, not the window's, so a scrim
+/// mixed from [`window_background_rgb`] would sit a shade off the surface it is
+/// supposed to disappear into.
+pub(in crate::ui) fn sidebar_background_rgb() -> [u8; 3] {
+    use super::color_math::parse_hex_rgb;
+
+    if !gtk4::is_initialized_main_thread() {
+        return default_sidebar_background_rgb();
+    }
+
+    let theme = super::CURRENT_THEME.with(Cell::get);
+    let palette = if is_dark() {
+        theme.palette()
+    } else {
+        theme.light_palette()
+    };
+    parse_hex_rgb(palette.sidebar_bg).unwrap_or_else(default_sidebar_background_rgb)
+}
+
+fn default_sidebar_background_rgb() -> [u8; 3] {
+    super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().sidebar_bg)
+        .unwrap_or_default()
+}
+
 fn default_window_background_rgb() -> [u8; 3] {
     super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().window_bg)
         .unwrap_or_default()

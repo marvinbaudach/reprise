@@ -281,10 +281,10 @@ pub(in crate::ui) const DIALOG_CARD_ALPHA: &str = "0.07";
 // --- Now Playing panel (design 21a) ---
 
 pub(in crate::ui) const NOW_PLAYING_COVER_SIZE: i32 = 168;
-/// Height of the artwork band: the cover, the bloom and the shimmer live in it
-/// and the title block begins below it. 280 because the shimmer's own mask
-/// reaches zero at y = 277 (SHIMMER_CENTRE_Y + 0.68 × disc radius), so the band
-/// contains that falloff completely.
+/// Height of the artwork band: the cover, the bloom and the clouds live in it
+/// and the title block begins below it. 280 is the bloom's height, and it is
+/// the taller claim — the clouds' scrim has closed over them by y = 127, so
+/// whatever they are doing is already gone well before the title starts.
 pub(in crate::ui) const NOW_PLAYING_ARTWORK_BAND: i32 = 280;
 /// Peak alpha of the accent glow. At 0.15 the subtitle clears 4.5:1 over the
 /// panel surface plus glow for both pure-white and pure-black accents, making

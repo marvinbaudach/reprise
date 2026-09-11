@@ -7,8 +7,8 @@ use reprise_core::db::Db;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 
 use super::cover_bloom;
+use super::cover_cloud;
 use super::cover_loader::CoverLoader;
-use super::cover_shimmer;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
 #[cfg(test)]
@@ -51,7 +51,7 @@ pub(super) struct PanelWidgets {
     up_next: Rc<UpNextPanel>,
     pub(super) visualizer: SongVisualizer,
     pub(super) bloom: cover_bloom::CoverBloom,
-    pub(super) shimmer: cover_shimmer::CoverShimmer,
+    pub(super) cloud: cover_cloud::CoverCloud,
     lyrics_page: adw::ViewStackPage,
     pub(super) visual_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
@@ -172,12 +172,14 @@ fn build_widgets_for_session(
     let artwork_overlay = gtk4::Overlay::new();
     artwork_overlay.set_child(Some(&artwork_band));
     let bloom = cover_bloom::CoverBloom::new();
-    let shimmer = cover_shimmer::CoverShimmer::new();
+    let cloud = cover_cloud::CoverCloud::new();
     // Within the artwork band, bottom to top: the transparent geometry band,
-    // the blurred cover, the cover-palette sweep, then the cover. Metadata is a sibling
-    // below this overlay, so no cover-derived pixel can paint behind it.
+    // the drifting clouds, the blurred cover, then the cover. Metadata is a
+    // sibling below this overlay, so no cover-derived pixel can paint behind
+    // it — and the cover is above both moving layers, which is what keeps it
+    // from ever turning or growing with them.
+    artwork_overlay.add_overlay(cloud.widget());
     artwork_overlay.add_overlay(bloom.widget());
-    artwork_overlay.add_overlay(shimmer.widget());
     artwork_overlay.add_overlay(&head);
     let head_column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     head_column.append(&artwork_overlay);
@@ -315,7 +317,7 @@ fn build_widgets_for_session(
         up_next,
         visualizer,
         bloom,
-        shimmer,
+        cloud,
         lyrics_page,
         visual_page,
         cover_stack,

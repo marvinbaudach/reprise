@@ -339,11 +339,12 @@ fn npp_18_head_band_keeps_body_text_outside_every_artwork_layer() {
         artwork_children,
         [
             widgets.artwork_band.clone().upcast::<gtk4::Widget>(),
+            widgets.cloud.widget().clone().upcast::<gtk4::Widget>(),
             widgets.bloom.widget().clone().upcast::<gtk4::Widget>(),
-            widgets.shimmer.widget().clone().upcast::<gtk4::Widget>(),
             widgets.head.clone().upcast::<gtk4::Widget>(),
         ],
-        "the artwork overlay must contain only its geometry, bloom, shimmer, and cover head"
+        "the artwork overlay must hold its geometry, the clouds, the bloom and the \
+         cover head, in that order: the cover is last so no moving layer can carry it"
     );
     assert!(!artwork_children.contains(&widgets.metadata.clone().upcast::<gtk4::Widget>()));
     assert_eq!(

@@ -48,35 +48,34 @@ fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
         return;
     }
     let (_window, panel) =
-        super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingShimmerPinTest");
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingCloudPinTest");
     panel.set_transient_visibility(true);
     panel.set_song_visuals_enabled(true);
-    panel.widgets.shimmer.set_light(0.8, 0.7);
-    panel.widgets.shimmer.set_frame_time(15_000_000);
-    assert!(shimmer_unpinned(&panel));
+    panel.widgets.cloud.set_frame_time(15_000_000);
+    assert!(cloud_unpinned(&panel));
 
-    // The Visual tab used to pin the backdrop and hide the disc, on the theory
+    // The Visual tab used to pin the backdrop and hide the clouds, on the theory
     // that two light languages in one panel fight each other. In use the plain
     // treatment was better there too, so switching tabs must change nothing
     // about the head.
     panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
-    assert!(shimmer_unpinned(&panel));
+    assert!(cloud_unpinned(&panel));
 
     // Closing the panel still rests both: a pinned backdrop runs no tick, and
     // without that the paused breath would redraw a widget nobody can see.
     panel.set_transient_visibility(false);
-    assert!(!shimmer_unpinned(&panel));
+    assert!(!cloud_unpinned(&panel));
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npp_18_the_turning_disc_survives_a_theme_switch() {
+fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
     }
-    let (_window, panel) = super::tests::test_panel(
-        "io.github.marvinbaudach.Reprise.NowPlayingShimmerThemeSwitchTest",
-    );
+    let (window, panel) =
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.NowPlayingCloudThemeSwitch");
     let settings = gtk4::Settings::default().unwrap();
     let animations_were_enabled = settings.is_gtk_enable_animations();
     settings.set_gtk_enable_animations(true);
@@ -84,32 +83,65 @@ fn npp_18_the_turning_disc_survives_a_theme_switch() {
 
     panel.set_transient_visibility(true);
     panel.set_song_visuals_enabled(true);
-    assert!(shimmer_unpinned(&panel));
+    panel.set_playback_state(PlaybackState::Playing);
+    assert!(cloud_unpinned(&panel));
 
-    let bytes = gtk4::glib::Bytes::from_owned(vec![0x80_u8; 4 * 4 * 4]);
-    let cover =
-        gtk4::gdk::MemoryTexture::new(4, 4, gtk4::gdk::MemoryFormat::R8g8b8a8, &bytes, 4 * 4);
-    panel.widgets.shimmer.set_cover(Some(cover.upcast_ref()), 1);
+    let texture: gtk4::gdk::Texture = gtk4::gdk::MemoryTexture::new(
+        1,
+        1,
+        gtk4::gdk::MemoryFormat::B8g8r8a8Premultiplied,
+        &gtk4::glib::Bytes::from_static(&[0x40, 0x60, 0x80, 0xff]),
+        4,
+    )
+    .upcast();
+    panel.widgets.cloud.set_cover(Some(&texture), 1);
+    panel.widgets.cloud.set_frame_time(1_000_000);
+    panel.widgets.cloud.set_frame_time(11_000_000);
     assert!(
-        panel.widgets.shimmer.drawn_angle_for_test().is_some(),
-        "the shimmer must have a cover or the disc draws nothing"
+        panel.widgets.cloud.drawn_pose_for_test().is_none(),
+        "setting the clock must not masquerade as a draw"
     );
 
-    panel.widgets.shimmer.set_frame_time(1_000_000);
-    panel.widgets.shimmer.set_frame_time(6_000_000);
-    panel.widgets.shimmer.set_frame_time(11_000_000);
-    let before = panel.widgets.shimmer.drawn_angle_for_test().unwrap();
-    assert!(before > 0.0, "the disc must be turning before the switch");
+    panel.retain_for_window(&window);
+    window.set_default_size(1_200, 800);
+    window.present();
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || panel.widgets.cloud.drawn_pose_for_test().is_some()
+    ));
+    let dark = panel
+        .widgets
+        .cloud
+        .drawn_pose_for_test()
+        .expect("cloud pose in dark appearance");
 
+    // The disc this replaced turned at one rate in the dark and another in the
+    // light, so a theme switch could jump its angle — that is what the test
+    // standing here guarded. The clouds answer it by construction instead: the
+    // theme reaches only the blend operator, never the clock, so the drift
+    // cannot move at a switch. Asserted rather than assumed, because a later
+    // theme-dependent period would reintroduce exactly the old bug.
     crate::ui::style::set_color_scheme("light");
-    panel.widgets.shimmer.set_frame_time(11_000_001);
-    let after = panel.widgets.shimmer.drawn_angle_for_test().unwrap();
+    panel.widgets.cloud.widget().queue_draw();
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(20));
+    let light = panel
+        .widgets
+        .cloud
+        .drawn_pose_for_test()
+        .expect("cloud pose in light appearance");
+
+    let expected_back = super::cover_cloud::drift_at(10.0, super::cover_cloud::BACK_PERIOD_S, 0.0);
 
     crate::ui::style::set_color_scheme("default");
     settings.set_gtk_enable_animations(animations_were_enabled);
-    assert!(
-        (after - before).abs() < 1e-6,
-        "the disc snapped from {before} to {after} radians across the theme switch"
+    window.close();
+    assert_eq!(
+        dark.0, expected_back,
+        "the test must observe an advanced pose"
+    );
+    assert_eq!(
+        dark, light,
+        "the drift must not depend on the theme, or a switch snaps it"
     );
 }
 
@@ -125,10 +157,10 @@ fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
     panel.set_song_visuals_enabled(true);
     panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
     assert!(panel.widgets.visual_page.is_visible());
-    // The shimmer's own `visible` flag, not `is_visible()`: the latter also
+    // The clouds' own `visible` flag, not `is_visible()`: the latter also
     // asks whether every ancestor is mapped, which an unpresented test window
     // is not — it would answer "hidden" whatever the pin says.
-    assert!(shimmer_unpinned(&panel));
+    assert!(cloud_unpinned(&panel));
 
     // The panel receives the module switch and the typed session separately;
     // the snapshot's one music predicate decides the effective treatment.
@@ -144,7 +176,7 @@ fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
         "the user standing on the Visual tab lands on Up Next"
     );
     assert!(
-        !shimmer_unpinned(&panel),
+        !cloud_unpinned(&panel),
         "the reactive light rests for speech"
     );
 
@@ -157,13 +189,10 @@ fn ac_26_song_visuals_follow_music_instead_of_the_external_source() {
             panel.widgets.visual_page.is_visible(),
             "YouTube and radio keep the visuals a podcast took away"
         );
-        assert!(
-            shimmer_unpinned(&panel),
-            "music gets the reactive light back"
-        );
+        assert!(cloud_unpinned(&panel), "music gets the reactive light back");
     }
 }
 
-fn shimmer_unpinned(panel: &NowPlayingPanel) -> bool {
-    panel.widgets.shimmer.widget().property::<bool>("visible")
+fn cloud_unpinned(panel: &NowPlayingPanel) -> bool {
+    panel.widgets.cloud.widget().property::<bool>("visible")
 }
