@@ -452,11 +452,17 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
         .filter(|row| {
             matches!(
                 row.selector,
-                ".reprise-now-playing-title" | ".reprise-now-playing-artist"
+                ".reprise-now-playing-title"
+                    | ".reprise-now-playing-artist"
+                    | ".reprise-now-playing-album"
             )
         })
         .collect::<Vec<_>>();
-    assert_eq!(roles.len(), 2, "the head band has title and artist roles");
+    assert_eq!(
+        roles.len(),
+        3,
+        "the head band has title, artist and album roles"
+    );
     for theme in Theme::all() {
         for (appearance, is_dark, palette, glow_alpha) in [
             (

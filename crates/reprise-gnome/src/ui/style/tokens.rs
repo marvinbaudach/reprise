@@ -310,8 +310,10 @@ pub(in crate::ui) const NOW_PLAYING_LIST_RULE_ABOVE: i32 = 20;
 pub(in crate::ui) const NOW_PLAYING_LIST_RULE_BELOW: i32 = 8;
 /// Share of the settled panel width occupied by its left artwork fade.
 pub(in crate::ui) const NOW_PLAYING_LEFT_FADE_SHARE: f64 = 0.22;
-/// Tertiary album tone from the settled panel specification in dark mode.
-pub(in crate::ui) const TERTIARY_TEXT_ALPHA_DARK: f64 = 0.55;
+/// Dark album tone equals the secondary alpha because the head-band glow
+/// extreme leaves no tonal headroom under NPP-17's 4.5:1 floor. Weight 400
+/// and the separator carry the album's quieter role instead.
+pub(in crate::ui) const TERTIARY_TEXT_ALPHA_DARK: f64 = 0.70;
 /// Stronger light-mode album tone needed to retain the specification's 4.5:1.
 pub(in crate::ui) const TERTIARY_TEXT_ALPHA_LIGHT: f64 = 0.65;
 pub(in crate::ui) const NOW_PLAYING_PILL_BG_ALPHA: &str = "0.06";
@@ -432,6 +434,8 @@ mod tests {
         assert_eq!(NOW_PLAYING_LIST_RULE_ABOVE, 20);
         assert_eq!(NOW_PLAYING_LIST_RULE_BELOW, 8);
         assert!((NOW_PLAYING_LEFT_FADE_SHARE - 0.22).abs() < f64::EPSILON);
+        assert!((TERTIARY_TEXT_ALPHA_DARK - 0.70).abs() < f64::EPSILON);
+        assert!((TERTIARY_TEXT_ALPHA_LIGHT - 0.65).abs() < f64::EPSILON);
     }
 
     /// Every accent tint the app may paint, resting states included. The

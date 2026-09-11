@@ -56,9 +56,11 @@ the bloom hides the clouds, and the band reads as one still blur.
   translucent "readout" ground behind the three lines today is removed.
 - Title: today's token (15 px bold), ellipsized end, wrapping off. Two lines
   become one: **"Artist · Album"** at the subtitle token (12 px), artist at
-  the primary-secondary tone (70 % of fg, weight 500), the separator and album
-  at 55 % of fg (weight 400). The line ellipsizes at the end; the artist keeps
-  priority (album is what gets cut first).
+  the primary-secondary tone (70 % of fg, weight 500). In dark, the separator
+  and album use the same 70 % alpha because the glow leaves no lower tone above
+  the 4.5:1 floor; weight 400 and the separator carry their quieter role. In
+  light they retain a 65 % tonal step. The line ellipsizes at the end; the
+  artist keeps priority (album is what gets cut first).
 - Side padding **18 px** (unchanged), centred.
 
 ### Segment control (queue / lyrics / visualizer)
