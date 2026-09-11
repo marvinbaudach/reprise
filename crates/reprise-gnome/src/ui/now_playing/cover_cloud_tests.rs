@@ -336,6 +336,29 @@ fn npc_25_nothing_arriving_over_nothing_starts_no_fade() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npc_23_the_public_cover_change_keeps_then_drops_the_outgoing_pair() {
+    gtk4::init().expect("gtk");
+    let settings = gtk4::Settings::default().expect("settings");
+    let animations_were_enabled = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+    let cloud = CoverCloud::new();
+    cloud.set_pinned(false);
+    let texture = swatch_cover(false);
+    cloud.set_cover(Some(&texture), 1);
+    cloud.set_frame_time(1_000_000);
+    cloud.set_frame_time(2_000_000);
+
+    cloud.set_cover(None, 2);
+    cloud.set_cover(Some(&texture), 2);
+    assert!(cloud.has_leaving_pair_for_test());
+
+    cloud.set_frame_time(3_000_001);
+    assert!(!cloud.has_leaving_pair_for_test());
+    settings.set_gtk_enable_animations(animations_were_enabled);
+}
+
+#[test]
 fn npp_18_the_clouds_keep_their_pose_across_a_hold_and_resume() {
     let mut clock = DriftClock::default();
     clock.advance(1_000_000);

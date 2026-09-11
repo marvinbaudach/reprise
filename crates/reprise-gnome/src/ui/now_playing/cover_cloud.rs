@@ -361,6 +361,13 @@ impl CoverCloud {
         self.inner.last_drawn_pose.get()
     }
 
+    #[cfg(test)]
+    pub(super) fn has_leaving_pair_for_test(&self) -> bool {
+        let has_back = self.inner.leaving_back.borrow().is_some();
+        let has_front = self.inner.leaving_front.borrow().is_some();
+        has_back && has_front
+    }
+
     /// The cover both fields are cut from, or `None` for external media, a
     /// placeholder, or no track. Without artwork the clouds stay dark: a light
     /// whose colour is not in the record is the dishonesty this layer exists to
