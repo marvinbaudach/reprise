@@ -695,7 +695,6 @@ mod tests {
             wait_until(|| !view.widget().reveals_child()),
             "scan card did not collapse after its minimum-visible hold within the 5 s deadline"
         );
-        assert!(!view.inner.revealer.reveals_child());
     }
 
     #[test]

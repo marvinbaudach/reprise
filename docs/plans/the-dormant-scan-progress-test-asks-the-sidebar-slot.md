@@ -2,7 +2,7 @@
 slug: the-dormant-scan-progress-test-asks-the-sidebar-slot
 worktree: /home/marvin/Projects/reprise-the-dormant-scan-progress-test-asks-the-sidebar-slot
 branch: feature/the-dormant-scan-progress-test-asks-the-sidebar-slot
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-09-11
 ---
@@ -163,6 +163,11 @@ sequence #923 could only verify by hand.
 `set_5_dormant_scan_progress_reserves_no_preferences_space` into
 `finish_holds_the_card_for_the_minimum_visible_time_then_collapses_it`:
 
+The name says "minimum visible time", but the display test proves only that a
+non-zero hold exists before collapse; the 700 ms arithmetic is covered by the
+`remaining_visible_time` unit cases in the same module, and a timing probe is a
+non-goal.
+
 - Remove the two `is_visible()` assertions on the revealer (claims 1 and 6,
   including the message "a dormant toolbar progress view must not reserve
   vertical space"). Keep claims 2 (`reveals_child()` after `show()`), 3, 4
@@ -243,11 +248,14 @@ sequence #923 could only verify by hand.
   (through `heavy-run heavy --`), reading the `test result:` line — the
   filtered pass is not evidence for thread-affine tests.
 - **Mutation proof, on a committed tree** (`git checkout --` restores HEAD, so
-  commit first): remove the `child.set_visible(...)` branch from
-  `sync_revealer_visibility` (`sidebar_activity_slot.rs:108-112`) and run test
-  A — it must go red on step 7 (the collapsed crossfade revealer keeps
-  requesting the child's 85 px plus margin). Restore. That is the exact
-  mechanism #923 fixed, so a test that stays green under it measures nothing.
+  commit first): remove the `revealer.set_visible(should_be_visible)` branch
+  from `sync_revealer_visibility` (`sidebar_activity_slot.rs:108-112`) and run
+  test A — it must go red at the dormant-again
+  `!view.widget().is_visible()` assertion. The `child.set_visible(...)` branch
+  cannot be the mutation target because once the revealer itself is hidden,
+  `child.is_visible()` reports false and the enclosing box skips the hidden
+  revealer during measurement. Restore. That is the exact mechanism #923
+  fixed, so a test that stays green under it measures nothing.
 - Control arm for B: on `origin/dev` the old test is red at line 691; the
   reworked test is green on the same code — the difference is the removed
   slot-owned assertion, nothing else.
