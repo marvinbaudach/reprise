@@ -2,6 +2,7 @@ pub(in crate::ui) mod artist_portrait_worker;
 mod cover_bloom;
 mod cover_bloom_area;
 mod cover_cloud;
+mod cover_scrim;
 pub(in crate::ui) mod now_playing_column;
 mod now_playing_head;
 mod now_playing_light;

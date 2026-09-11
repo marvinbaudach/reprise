@@ -25,6 +25,9 @@ use std::rc::Rc;
 use gtk4::cairo;
 use gtk4::prelude::*;
 
+#[cfg(test)]
+use super::cover_scrim::build_scrim;
+use super::cover_scrim::{cached_scrim, paint_scrim, ScrimCache};
 use crate::ui::cover_glow;
 use crate::ui::style::tokens;
 
@@ -71,16 +74,6 @@ const COVER_FADE_S: f64 = 1.0;
 /// Edge of a cached field raster. The masks are baked into it at this size, so
 /// their falloff stays smooth however far the drift stretches it.
 const FIELD_RASTER_EDGE: i32 = 320;
-
-/// The vertical fade that hands the panel back to the text.
-///
-/// Fully opaque from 55 % of the field down, so the title, the artist, the
-/// lyrics and the segment control all sit on quiet ground. Dark and light run
-/// the same numbers and differ only in the colour, which is what turns the
-/// glow into a wash of colour on a light panel without a second set of values.
-const SCRIM_MID_Y: f64 = 0.40;
-const SCRIM_MID_ALPHA: f64 = 0.15;
-const SCRIM_FULL_Y: f64 = 0.55;
 
 /// One gradient stop of the mockup: where a cloud sits in the field, how far it
 /// reaches, and how much of the cover it lets through at its centre.
@@ -171,21 +164,6 @@ pub(super) fn drift_at(elapsed_s: f64, period_s: f64, offset_s: f64) -> Drift {
 
 fn lerp((from, to): (f64, f64), p: f64) -> f64 {
     from + (to - from) * p
-}
-
-/// Scrim opacity at `y` ∈ [0, 1] of the field.
-pub(super) fn scrim_alpha(y: f64) -> f64 {
-    if y <= 0.0 {
-        return 0.0;
-    }
-    if y >= SCRIM_FULL_Y {
-        return 1.0;
-    }
-    if y <= SCRIM_MID_Y {
-        return SCRIM_MID_ALPHA * (y / SCRIM_MID_Y);
-    }
-    let across = (y - SCRIM_MID_Y) / (SCRIM_FULL_Y - SCRIM_MID_Y);
-    SCRIM_MID_ALPHA + (1.0 - SCRIM_MID_ALPHA) * across
 }
 
 /// How far the incoming cover has arrived, `since_s` after the change.
@@ -284,23 +262,6 @@ impl DriftClock {
     fn elapsed_s(self) -> f64 {
         self.elapsed_us as f64 / 1_000_000.0
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct ScrimCacheKey {
-    theme: crate::ui::style::theme::Theme,
-    dark: bool,
-    field_top: f64,
-    field_height: f64,
-}
-
-struct ScrimCache {
-    key: ScrimCacheKey,
-    gradient: cairo::LinearGradient,
-}
-
-fn scrim_cache_needs_rebuild(cached: Option<ScrimCacheKey>, current: ScrimCacheKey) -> bool {
-    cached != Some(current)
 }
 
 struct Inner {
@@ -583,7 +544,7 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
         operator,
     );
     if painted {
-        let scrim = cached_scrim(inner, dark, field_top, field_height);
+        let scrim = cached_scrim(&inner.scrim, dark, field_top, field_height);
         paint_scrim(cr, width, band, &scrim);
     }
     cr.restore().ok();
@@ -669,57 +630,6 @@ fn paint_layer(
     }
     cr.restore().ok();
 }
-
-fn cached_scrim(
-    inner: &Inner,
-    dark: bool,
-    field_top: f64,
-    field_height: f64,
-) -> cairo::LinearGradient {
-    let key = ScrimCacheKey {
-        theme: crate::ui::style::current_theme(),
-        dark,
-        field_top,
-        field_height,
-    };
-    let mut cache = inner.scrim.borrow_mut();
-    if scrim_cache_needs_rebuild(cache.as_ref().map(|cached| cached.key), key) {
-        *cache = Some(ScrimCache {
-            key,
-            gradient: build_scrim(field_top, field_height),
-        });
-    }
-    cache
-        .as_ref()
-        .expect("scrim cache was populated")
-        .gradient
-        .clone()
-}
-
-/// Builds the fade back to the panel in the current panel colour.
-fn build_scrim(field_top: f64, field_height: f64) -> cairo::LinearGradient {
-    let [r, g, b] = crate::ui::style::accent::sidebar_background_rgb();
-    let (r, g, b) = (
-        f64::from(r) / 255.0,
-        f64::from(g) / 255.0,
-        f64::from(b) / 255.0,
-    );
-    let fade = cairo::LinearGradient::new(0.0, field_top, 0.0, field_top + field_height);
-    for step in 0..=STOPS {
-        let y = f64::from(step) / f64::from(STOPS);
-        fade.add_color_stop_rgba(y, r, g, b, scrim_alpha(y));
-    }
-    fade
-}
-
-fn paint_scrim(cr: &cairo::Context, width: f64, band: f64, fade: &cairo::LinearGradient) {
-    cr.set_source(fade).ok();
-    cr.rectangle(0.0, 0.0, width, band);
-    cr.fill().ok();
-}
-
-/// The scrim is a bend, not a line, so it is handed to Cairo as stops along it.
-const STOPS: i32 = 24;
 
 #[cfg(test)]
 #[path = "cover_cloud_tests.rs"]
