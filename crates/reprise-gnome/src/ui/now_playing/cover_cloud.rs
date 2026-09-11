@@ -48,10 +48,10 @@ const FRONT_PERIOD_S: f64 = 20.0;
 const FRONT_OFFSET_S: f64 = 10.0;
 
 /// The path both layers walk, from one end to the other.
-const DRIFT_X: (f64, f64) = (-0.10, 0.08);
-const DRIFT_Y: (f64, f64) = (-0.06, 0.06);
-const DRIFT_SCALE: (f64, f64) = (1.30, 1.45);
-const DRIFT_ROTATION_DEG: (f64, f64) = (0.0, 6.0);
+const DRIFT_X: (f64, f64) = (-0.20, 0.16);
+const DRIFT_Y: (f64, f64) = (-0.12, 0.12);
+const DRIFT_SCALE: (f64, f64) = (1.40, 1.55);
+const DRIFT_ROTATION_DEG: (f64, f64) = (0.0, 10.0);
 
 /// The house blur: the cover arrives as a 32 px raster and painting it across
 /// the field is what blurs it — there is no blur node anywhere in this path.
@@ -96,13 +96,13 @@ pub(super) const BACK_BLOBS: [Blob; 2] = [
     Blob {
         x: 0.40,
         y: 0.35,
-        alpha: 0.60,
+        alpha: 0.85,
         radius: 0.50,
     },
     Blob {
         x: 0.82,
         y: 0.55,
-        alpha: 0.55,
+        alpha: 0.80,
         radius: 0.50,
     },
 ];
@@ -111,13 +111,13 @@ pub(super) const FRONT_BLOBS: [Blob; 2] = [
     Blob {
         x: 0.75,
         y: 0.25,
-        alpha: 0.45,
+        alpha: 0.70,
         radius: 0.45,
     },
     Blob {
         x: 0.30,
         y: 0.80,
-        alpha: 0.40,
+        alpha: 0.60,
         radius: 0.45,
     },
 ];
