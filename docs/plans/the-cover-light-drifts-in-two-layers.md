@@ -1,3 +1,11 @@
+---
+slug: the-cover-light-drifts-in-two-layers
+worktree: /home/marvin/Projects/reprise-cloud
+branch: feature/the-cover-light-drifts-in-two-layers
+phase: reviewed
+codex_session:
+created: 2026-09-11
+---
 # Die Farbwolke driftet in zwei Schichten
 
 Ersetzt den `CoverShimmer` im rechten Now-Playing-Panel durch eine driftende
