@@ -151,7 +151,10 @@ fn replace_child(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use gtk4::prelude::*;
+    use reprise_core::library::scanner::ScanProgress;
 
     use super::SidebarActivitySlot;
     use crate::ui::scan::scan_progress::ScanProgressView;
@@ -218,6 +221,27 @@ mod tests {
 
     fn pump() {
         while gtk4::glib::MainContext::default().iteration(false) {}
+    }
+
+    fn wait_ms(ms: u64) {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(Duration::from_millis(ms), move || quit.quit());
+        main_loop.run();
+    }
+
+    fn wait_until(condition: impl Fn() -> bool) -> bool {
+        const SLICE_MS: u64 = 25;
+        const DEADLINE_MS: u64 = 5_000;
+        let mut waited = 0;
+        while waited < DEADLINE_MS {
+            if condition() {
+                return true;
+            }
+            wait_ms(SLICE_MS);
+            waited += SLICE_MS;
+        }
+        condition()
     }
 
     fn measured_job_card(kind: JobCardKind, card: &gtk4::Revealer) -> JobCardMeasurement {
@@ -376,5 +400,84 @@ mod tests {
         assert!(scan.is_visible());
         assert!(relink.is_visible());
         assert!(doctor.is_visible());
+    }
+
+    /// FB-8: fully inactive progress cards occupy no space, including the
+    /// state every completed scan leaves behind.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fb_8_a_finished_scan_card_occupies_no_space_again() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        crate::ui::style::install_css_string_for_test(&crate::ui::scan_card_css::css());
+
+        let slot = SidebarActivitySlot::new();
+        let view = ScanProgressView::new();
+        slot.set_scan_card(view.widget());
+
+        let wrapper = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        wrapper.set_vexpand(false);
+        wrapper.set_valign(gtk4::Align::End);
+        wrapper.append(slot.progress_widget());
+        let region = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        region.set_size_request(240, 470);
+        region.append(&wrapper);
+        let window = gtk4::Window::builder()
+            .default_width(240)
+            .default_height(470)
+            .child(&region)
+            .build();
+        window.present();
+        pump();
+
+        let child = view.widget().child().expect("scan card must have a body");
+        assert!(!view.widget().is_visible());
+        assert!(!child.is_visible());
+        let (minimum, natural, _, _) = slot
+            .progress_widget()
+            .measure(gtk4::Orientation::Vertical, 240);
+        assert_eq!((minimum, natural), (0, 0));
+        assert_eq!(wrapper.height(), 0);
+
+        view.show(&ScanProgress::Scanning {
+            processed: 2,
+            total: Some(4),
+            current_path: "/music/song.flac".into(),
+        });
+        pump();
+
+        assert!(view.widget().reveals_child());
+        assert!(child.is_visible());
+        assert!(view.widget().is_visible());
+        assert!(
+            wait_until(|| view.widget().is_child_revealed()),
+            "scan card did not finish revealing within the 5 s deadline"
+        );
+        let (_, natural, _, _) = slot
+            .progress_widget()
+            .measure(gtk4::Orientation::Vertical, 240);
+        assert!(natural >= crate::ui::scan_card_css::JOB_CARD_HEIGHT_PX);
+        assert!(wrapper.height() > 0);
+
+        view.finish();
+        assert!(view.widget().reveals_child());
+        assert!(
+            wait_until(|| !view.widget().is_child_revealed()),
+            "scan card did not finish collapsing within the 5 s deadline"
+        );
+        pump();
+
+        assert!(!view.widget().reveals_child());
+        assert!(!view.widget().is_child_revealed());
+        assert!(!child.is_visible());
+        assert!(!view.widget().is_visible());
+        let (minimum, natural, _, _) = slot
+            .progress_widget()
+            .measure(gtk4::Orientation::Vertical, 240);
+        assert_eq!((minimum, natural), (0, 0));
+        assert_eq!(wrapper.height(), 0);
+
+        window.close();
     }
 }

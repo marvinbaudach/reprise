@@ -578,8 +578,28 @@ mod tests {
 
     use super::{
         remaining_visible_time, unavailable_state, view_state, ProgressMode, ScanProgressView,
-        MIN_VISIBLE_TIME,
     };
+
+    fn wait_ms(ms: u64) {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(Duration::from_millis(ms), move || quit.quit());
+        main_loop.run();
+    }
+
+    fn wait_until(condition: impl Fn() -> bool) -> bool {
+        const SLICE_MS: u64 = 25;
+        const DEADLINE_MS: u64 = 5_000;
+        let mut waited = 0;
+        while waited < DEADLINE_MS {
+            if condition() {
+                return true;
+            }
+            wait_ms(SLICE_MS);
+            waited += SLICE_MS;
+        }
+        condition()
+    }
 
     #[test]
     fn unavailable_root_replaces_progress_with_an_honest_mount_status() {
@@ -647,15 +667,11 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn set_5_dormant_scan_progress_reserves_no_preferences_space() {
+    fn finish_holds_the_card_for_the_minimum_visible_time_then_collapses_it() {
         if gtk4::init().is_err() {
             return;
         }
         let view = ScanProgressView::new();
-        assert!(
-            !view.widget().is_visible(),
-            "a dormant toolbar progress view must not reserve vertical space"
-        );
         view.show(&ScanProgress::Scanning {
             processed: 2,
             total: Some(4),
@@ -675,20 +691,10 @@ mod tests {
         assert!(view.inner.revealer.reveals_child());
         assert!(!view.inner.spinner.is_spinning());
         assert!(!view.inner.cancel.is_visible());
-        let main_loop = gtk4::glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        // Wait out the minimum-visible hold AND the revealer's collapse
-        // transition (STANDARD_MS): finish() schedules set_reveal_child(false)
-        // after MIN_VISIBLE_TIME, and reveals_child() only clears once the
-        // animation completes.
-        gtk4::glib::timeout_add_local_once(
-            MIN_VISIBLE_TIME
-                + Duration::from_millis(u64::from(crate::ui::motion::STANDARD_MS) + 50),
-            move || quit.quit(),
+        assert!(
+            wait_until(|| !view.widget().reveals_child()),
+            "scan card did not collapse after its minimum-visible hold within the 5 s deadline"
         );
-        main_loop.run();
-        assert!(!view.inner.revealer.reveals_child());
-        assert!(!view.widget().is_visible());
     }
 
     #[test]
