@@ -2,7 +2,7 @@
 slug: the-cover-light-drifts-in-two-layers
 worktree: /home/marvin/Projects/reprise-cloud
 branch: feature/the-cover-light-drifts-in-two-layers
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-11
 ---
