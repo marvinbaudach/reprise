@@ -98,25 +98,27 @@ fn npc_7_the_pair_of_layers_repeats_only_after_eighty_seconds() {
 
 #[test]
 fn npc_8_the_path_runs_between_the_two_poses_the_mockup_names() {
-    // translate(-10%,-6%) scale(1.3) rotate(0deg) → translate(8%,6%) scale(1.45) rotate(6deg)
+    // translate(-20%,-12%) scale(1.4) rotate(0deg) → translate(16%,12%) scale(1.55) rotate(10deg)
     let start = drift_at(0.0, 16.0, 0.0);
-    assert!((start.x - -0.10).abs() < 1e-9);
-    assert!((start.y - -0.06).abs() < 1e-9);
-    assert!((start.scale - 1.30).abs() < 1e-9);
+    assert!((start.x - -0.20).abs() < 1e-9);
+    assert!((start.y - -0.12).abs() < 1e-9);
+    assert!((start.scale - 1.40).abs() < 1e-9);
     assert!((start.rotation_deg - 0.0).abs() < 1e-9);
 
     let end = drift_at(8.0, 16.0, 0.0);
-    assert!((end.x - 0.08).abs() < 1e-9);
-    assert!((end.y - 0.06).abs() < 1e-9);
-    assert!((end.scale - 1.45).abs() < 1e-9);
-    assert!((end.rotation_deg - 6.0).abs() < 1e-9);
+    assert!((end.x - 0.16).abs() < 1e-9);
+    assert!((end.y - 0.12).abs() < 1e-9);
+    assert!((end.scale - 1.55).abs() < 1e-9);
+    assert!((end.rotation_deg - 10.0).abs() < 1e-9);
 }
 
 #[test]
 fn npc_9_the_layer_always_covers_the_field_it_drifts_across() {
     // The smallest scale on the path still has to hide its own edges after the
-    // largest translation, or a hard edge walks into view.
-    let travel = 0.10_f64.max(0.08);
+    // largest translation, or a hard edge walks into view. Derived from the
+    // path's own constants rather than pinned, so a future change of either
+    // cannot silently stale this guard.
+    let travel = DRIFT_X.0.abs().max(DRIFT_X.1);
     assert!(
         DRIFT_SCALE.0 >= 1.0 + 2.0 * travel,
         "scale {} leaves an edge at {travel} of travel",
@@ -209,24 +211,24 @@ fn npc_15_the_front_layer_is_the_softer_of_the_two() {
 
 #[test]
 fn npc_16_every_cloud_sits_where_the_mockup_put_it() {
-    // Layer 1: 40%/35% at 0.60 and 82%/55% at 0.55, both reaching 50%.
+    // Layer 1: 40%/35% at 0.85 and 82%/55% at 0.80, both reaching 50%.
     assert_eq!(BACK_BLOBS.len(), 2);
     assert!((BACK_BLOBS[0].x - 0.40).abs() < 1e-9);
     assert!((BACK_BLOBS[0].y - 0.35).abs() < 1e-9);
-    assert!((BACK_BLOBS[0].alpha - 0.60).abs() < 1e-9);
+    assert!((BACK_BLOBS[0].alpha - 0.85).abs() < 1e-9);
     assert!((BACK_BLOBS[1].x - 0.82).abs() < 1e-9);
     assert!((BACK_BLOBS[1].y - 0.55).abs() < 1e-9);
-    assert!((BACK_BLOBS[1].alpha - 0.55).abs() < 1e-9);
+    assert!((BACK_BLOBS[1].alpha - 0.80).abs() < 1e-9);
     assert!(BACK_BLOBS.iter().all(|b| (b.radius - 0.50).abs() < 1e-9));
 
-    // Layer 2: 75%/25% at 0.45 and 30%/80% at 0.40, reaching 45%.
+    // Layer 2: 75%/25% at 0.70 and 30%/80% at 0.60, reaching 45%.
     assert_eq!(FRONT_BLOBS.len(), 2);
     assert!((FRONT_BLOBS[0].x - 0.75).abs() < 1e-9);
     assert!((FRONT_BLOBS[0].y - 0.25).abs() < 1e-9);
-    assert!((FRONT_BLOBS[0].alpha - 0.45).abs() < 1e-9);
+    assert!((FRONT_BLOBS[0].alpha - 0.70).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].x - 0.30).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].y - 0.80).abs() < 1e-9);
-    assert!((FRONT_BLOBS[1].alpha - 0.40).abs() < 1e-9);
+    assert!((FRONT_BLOBS[1].alpha - 0.60).abs() < 1e-9);
     assert!(FRONT_BLOBS
         .iter()
         .all(|blob| (blob.radius - 0.45).abs() < 1e-9));
