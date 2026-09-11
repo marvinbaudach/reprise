@@ -487,29 +487,48 @@ fn npc_28_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
 }
 
 #[test]
-fn npc_29_the_scrim_cache_changes_only_with_the_theme_or_appearance() {
+#[ignore = "requires a display; run via xvfb-run"]
+fn npc_29_the_scrim_cache_reuses_only_the_same_theme_appearance_and_geometry() {
     use crate::ui::style::theme::Theme;
 
-    let current = ScrimCacheKey {
-        theme: Theme::PerpetualRain,
-        dark: true,
+    gtk4::init().expect("gtk");
+    let previous_theme = crate::ui::style::current_theme();
+    crate::ui::style::set_theme(Theme::PerpetualRain);
+    let inner = Inner {
+        back: RefCell::new(None),
+        front: RefCell::new(None),
+        leaving_back: RefCell::new(None),
+        leaving_front: RefCell::new(None),
+        arrived_at_us: Cell::new(0),
+        generation: Cell::new(None),
+        drift_clock: Cell::new(DriftClock::default()),
+        last_drawn_pose: Cell::new(None),
+        scrim: RefCell::new(None),
+        pinned: Cell::new(true),
     };
-    assert!(scrim_cache_needs_rebuild(None, current));
-    assert!(!scrim_cache_needs_rebuild(Some(current), current));
-    assert!(scrim_cache_needs_rebuild(
-        Some(current),
-        ScrimCacheKey {
-            theme: Theme::PerpetualRain,
-            dark: false,
-        }
-    ));
-    assert!(scrim_cache_needs_rebuild(
-        Some(current),
-        ScrimCacheKey {
-            theme: Theme::NightTerrain,
-            dark: true,
-        }
-    ));
+
+    let first = cached_scrim(&inner, true, -42.0, 308.0);
+    let same = cached_scrim(&inner, true, -42.0, 308.0);
+    assert_eq!(pattern_identity(&first), pattern_identity(&same));
+
+    let light = cached_scrim(&inner, false, -42.0, 308.0);
+    assert_ne!(pattern_identity(&same), pattern_identity(&light));
+
+    crate::ui::style::set_theme(Theme::NightTerrain);
+    let themed = cached_scrim(&inner, false, -42.0, 308.0);
+    assert_ne!(pattern_identity(&light), pattern_identity(&themed));
+
+    let moved = cached_scrim(&inner, false, -41.0, 308.0);
+    assert_ne!(pattern_identity(&themed), pattern_identity(&moved));
+
+    let resized = cached_scrim(&inner, false, -41.0, 309.0);
+    assert_ne!(pattern_identity(&moved), pattern_identity(&resized));
+    crate::ui::style::set_theme(previous_theme);
+}
+
+fn pattern_identity(gradient: &cairo::LinearGradient) -> usize {
+    let pattern: &cairo::Pattern = gradient.as_ref();
+    pattern.to_raw_none() as usize
 }
 
 fn solid_field(red: u8, green: u8, blue: u8) -> cairo::ImageSurface {

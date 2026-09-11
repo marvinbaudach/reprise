@@ -286,10 +286,12 @@ impl DriftClock {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct ScrimCacheKey {
     theme: crate::ui::style::theme::Theme,
     dark: bool,
+    field_top: f64,
+    field_height: f64,
 }
 
 struct ScrimCache {
@@ -670,6 +672,8 @@ fn cached_scrim(
     let key = ScrimCacheKey {
         theme: crate::ui::style::current_theme(),
         dark,
+        field_top,
+        field_height,
     };
     let mut cache = inner.scrim.borrow_mut();
     if scrim_cache_needs_rebuild(cache.as_ref().map(|cached| cached.key), key) {
