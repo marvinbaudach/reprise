@@ -82,21 +82,21 @@ impl super::NowPlayingPanel {
             )
             .unwrap_or(false);
             self.widgets.bloom.set_cover(None, generation);
-            self.widgets.shimmer.set_cover(None, generation);
-            // The bloom and the shimmer want the very texture the cover shows,
+            self.widgets.cloud.set_cover(None, generation);
+            // The bloom and the clouds want the very texture the cover shows,
             // so they observe that one load instead of starting a second one
             // for the same URL — see `SourceImage::new_observed`. A podcast
             // observes nothing: it keeps the cleared bloom above.
             let observer = external.carries_music().then(|| {
                 let bloom = self.widgets.bloom.clone();
-                let shimmer = self.widgets.shimmer.clone();
+                let cloud = self.widgets.cloud.clone();
                 let cover_generation = self.cover_generation.clone();
                 move |texture: &gtk4::gdk::Texture| {
                     if cover_generation.get() != generation {
                         return;
                     }
                     bloom.set_cover(Some(texture), generation);
-                    shimmer.set_cover(Some(texture), generation);
+                    cloud.set_cover(Some(texture), generation);
                 }
             });
             let source_image = crate::ui::podcasts::source_image::SourceImage::new_observed(
@@ -132,10 +132,10 @@ impl super::NowPlayingPanel {
         self.widgets.cover_stack.set_visible_child_name("track");
         CoverLoader::set_placeholder(&self.widgets.cover);
         self.widgets.bloom.set_cover(None, generation);
-        self.widgets.shimmer.set_cover(None, generation);
+        self.widgets.cloud.set_cover(None, generation);
         if let Some(track) = track {
             let bloom = self.widgets.bloom.clone();
-            let shimmer = self.widgets.shimmer.clone();
+            let cloud = self.widgets.cloud.clone();
             let cover_widget = self.widgets.cover.clone();
             self.cover_loader.load_into_now_playing(
                 &self.widgets.cover,
@@ -156,10 +156,10 @@ impl super::NowPlayingPanel {
                             .and_downcast::<gtk4::gdk::Texture>()
                             .or_else(|| gtk4::gdk::Texture::from_filename(resolved_path).ok());
                         bloom.set_cover(texture.as_ref(), generation);
-                        // Same texture, same generation: the shimmer's disc is
-                        // the same blur the bloom lies on, only masked round
-                        // and turning. Nothing is decoded twice.
-                        shimmer.set_cover(texture.as_ref(), generation);
+                        // Same texture, same generation: the clouds are cut
+                        // from the same blur the bloom lies on, only masked
+                        // into two fields. Nothing is decoded twice.
+                        cloud.set_cover(texture.as_ref(), generation);
                     }
                     on_cover_resolved(resolved_path);
                 },

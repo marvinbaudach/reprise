@@ -2,7 +2,7 @@
 //!
 //! Split from `now_playing.rs` to keep both under the file cap. This is the
 //! single place that turns a spectrum frame into `pressure` and `swell` and
-//! hands them to the cover lift, the backdrop, the shimmer and the readout —
+//! hands them to the cover lift, the backdrop, the clouds and the readout —
 //! having two such places is how a duplicated predicate drifts.
 
 use super::panel_state::{page_after_tab_hidden, PanelTab};
@@ -47,8 +47,7 @@ impl NowPlayingPanel {
             self.swell_last_frame_us.set(0);
             self.widgets.cover_lift.feed(0.0, 0.0);
             self.widgets.bloom.set_light(0.0, 0.0);
-            self.widgets.shimmer.set_light(0.0, 0.0);
-            self.widgets.shimmer.set_frame_time(0);
+            self.widgets.cloud.set_frame_time(0);
             self.widgets.visualizer.set_swell(0.0);
             return;
         }
@@ -71,8 +70,9 @@ impl NowPlayingPanel {
         };
         self.widgets.cover_lift.feed(value, pressure);
         self.widgets.bloom.set_light(pressure, value);
-        self.widgets.shimmer.set_light(pressure, value);
-        self.widgets.shimmer.set_frame_time(frame_time_us);
+        // The clouds take the clock and nothing else: their drift is closed
+        // to the spectrum, so a kick cannot reach a coordinate.
+        self.widgets.cloud.set_frame_time(frame_time_us);
         // The readout names every value the reactive light runs on.
         self.widgets.visualizer.set_swell(value);
     }
@@ -86,7 +86,7 @@ impl NowPlayingPanel {
     }
 
     /// Recomputes the combined pin rather than letting the reasons race each
-    /// other. Either reason holds the bloom at rest and hides the shimmer;
+    /// other. Either reason holds the bloom at rest and hides the clouds;
     /// only when both clear may the current playback state take over.
     ///
     /// Panel visibility is one of them, for the same reason
@@ -104,7 +104,7 @@ impl NowPlayingPanel {
     pub(super) fn sync_bloom_activity(&self) {
         let pinned = !self.song_visuals_active_for_media() || !self.widgets.column.is_visible();
         self.widgets.bloom.set_pinned(pinned);
-        self.widgets.shimmer.set_pinned(pinned);
+        self.widgets.cloud.set_pinned(pinned);
         if !pinned {
             self.widgets
                 .bloom
