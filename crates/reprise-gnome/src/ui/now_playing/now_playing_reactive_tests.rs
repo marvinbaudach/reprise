@@ -84,6 +84,23 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
     panel.set_song_visuals_enabled(true);
     assert!(cloud_unpinned(&panel));
 
+    let texture: gtk4::gdk::Texture = gtk4::gdk::MemoryTexture::new(
+        1,
+        1,
+        gtk4::gdk::MemoryFormat::B8g8r8a8Premultiplied,
+        &gtk4::glib::Bytes::from_static(&[0x40, 0x60, 0x80, 0xff]),
+        4,
+    )
+    .upcast();
+    panel.widgets.cloud.set_cover(Some(&texture), 1);
+    panel.widgets.cloud.set_frame_time(1_000_000);
+    panel.widgets.cloud.set_frame_time(11_000_000);
+    let dark = panel
+        .widgets
+        .cloud
+        .drawn_pose_for_test()
+        .expect("cloud pose in dark appearance");
+
     // The disc this replaced turned at one rate in the dark and another in the
     // light, so a theme switch could jump its angle — that is what the test
     // standing here guarded. The clouds answer it by construction instead: the
@@ -91,11 +108,20 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
     // cannot move at a switch. Asserted rather than assumed, because a later
     // theme-dependent period would reintroduce exactly the old bug.
     crate::ui::style::set_color_scheme("light");
-    let dark = super::cover_cloud::drift_at(11.0, 16.0, 0.0);
-    let light = super::cover_cloud::drift_at(11.0, 16.0, 0.0);
+    let light = panel
+        .widgets
+        .cloud
+        .drawn_pose_for_test()
+        .expect("cloud pose in light appearance");
+
+    let expected_back = super::cover_cloud::drift_at(10.0, super::cover_cloud::BACK_PERIOD_S, 0.0);
 
     crate::ui::style::set_color_scheme("default");
     settings.set_gtk_enable_animations(animations_were_enabled);
+    assert_eq!(
+        dark.0, expected_back,
+        "the test must observe an advanced pose"
+    );
     assert_eq!(
         dark, light,
         "the drift must not depend on the theme, or a switch snaps it"

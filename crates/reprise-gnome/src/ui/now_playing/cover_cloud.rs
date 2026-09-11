@@ -41,7 +41,7 @@ const OVERHANG_LEFT_PER_COVER: f64 = 40.0 / 240.0;
 const OVERHANG_RIGHT_PER_COVER: f64 = 90.0 / 240.0;
 
 /// One turn of the drift, front and back. Neither may fall under 16 s.
-const BACK_PERIOD_S: f64 = 16.0;
+pub(super) const BACK_PERIOD_S: f64 = 16.0;
 const FRONT_PERIOD_S: f64 = 20.0;
 /// Half of the front layer's period, which is what sets the two against each
 /// other: at rest one lies at the start of the path and the other at its end.
@@ -118,7 +118,7 @@ pub(super) const FRONT_BLOBS: [Blob; 2] = [
         x: 0.30,
         y: 0.80,
         alpha: 0.40,
-        radius: 0.40,
+        radius: 0.45,
     },
 ];
 
@@ -243,6 +243,63 @@ pub(super) fn field(width: f64, cover: f64) -> (f64, f64, f64, f64) {
     (left, top, field_width, field_height)
 }
 
+#[derive(Clone, Copy, Default)]
+struct DriftClock {
+    started_at_us: i64,
+    carried_us: i64,
+    elapsed_us: i64,
+}
+
+impl DriftClock {
+    /// Advances the active segment, returning whether the drawn pose changed.
+    fn advance(&mut self, frame_time_us: i64) -> bool {
+        if self.started_at_us == 0 {
+            self.started_at_us = frame_time_us;
+        }
+        let elapsed_us = self
+            .carried_us
+            .saturating_add(frame_time_us.saturating_sub(self.started_at_us));
+        if elapsed_us == self.elapsed_us {
+            return false;
+        }
+        self.elapsed_us = elapsed_us;
+        true
+    }
+
+    /// Folds the active segment into the pose carried across a pause.
+    fn hold(&mut self) -> bool {
+        if self.started_at_us == 0 {
+            return false;
+        }
+        self.started_at_us = 0;
+        self.carried_us = self.elapsed_us;
+        true
+    }
+
+    fn elapsed_us(self) -> i64 {
+        self.elapsed_us
+    }
+
+    fn elapsed_s(self) -> f64 {
+        self.elapsed_us as f64 / 1_000_000.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ScrimCacheKey {
+    theme: crate::ui::style::theme::Theme,
+    dark: bool,
+}
+
+struct ScrimCache {
+    key: ScrimCacheKey,
+    gradient: cairo::LinearGradient,
+}
+
+fn scrim_cache_needs_rebuild(cached: Option<ScrimCacheKey>, current: ScrimCacheKey) -> bool {
+    cached != Some(current)
+}
+
 struct Inner {
     back: RefCell<Option<cairo::ImageSurface>>,
     front: RefCell<Option<cairo::ImageSurface>>,
@@ -254,8 +311,8 @@ struct Inner {
     /// Cover generation the cached fields were built from; the panel bumps it
     /// once per rendered track, exactly as `cover_bloom` keys its own cache.
     generation: Cell<Option<u64>>,
-    started_at_us: Cell<i64>,
-    frame_time_us: Cell<i64>,
+    drift_clock: Cell<DriftClock>,
+    scrim: RefCell<Option<ScrimCache>>,
     pinned: Cell<bool>,
 }
 
@@ -279,8 +336,8 @@ impl CoverCloud {
             leaving_front: RefCell::new(None),
             arrived_at_us: Cell::new(0),
             generation: Cell::new(None),
-            started_at_us: Cell::new(0),
-            frame_time_us: Cell::new(0),
+            drift_clock: Cell::new(DriftClock::default()),
+            scrim: RefCell::new(None),
             pinned: Cell::new(true),
         });
         area.set_draw_func({
@@ -292,6 +349,17 @@ impl CoverCloud {
 
     pub(super) fn widget(&self) -> &gtk4::DrawingArea {
         &self.area
+    }
+
+    #[cfg(test)]
+    pub(super) fn drawn_pose_for_test(&self) -> Option<(Drift, Drift)> {
+        self.inner.back.borrow().as_ref()?;
+        self.inner.front.borrow().as_ref()?;
+        let elapsed_s = self.inner.drift_clock.get().elapsed_s();
+        Some((
+            drift_at(elapsed_s, BACK_PERIOD_S, 0.0),
+            drift_at(elapsed_s, FRONT_PERIOD_S, FRONT_OFFSET_S),
+        ))
     }
 
     /// The cover both fields are cut from, or `None` for external media, a
@@ -339,9 +407,14 @@ impl CoverCloud {
             FadeStep::Handover => {
                 *self.inner.leaving_back.borrow_mut() = outgoing_back;
                 *self.inner.leaving_front.borrow_mut() = outgoing_front;
-                self.inner.arrived_at_us.set(self.inner.frame_time_us.get());
+                self.inner
+                    .arrived_at_us
+                    .set(self.inner.drift_clock.get().elapsed_us());
             }
-            FadeStep::Restart => self.inner.arrived_at_us.set(self.inner.frame_time_us.get()),
+            FadeStep::Restart => self
+                .inner
+                .arrived_at_us
+                .set(self.inner.drift_clock.get().elapsed_us()),
             FadeStep::Idle => {}
         }
     }
@@ -352,23 +425,18 @@ impl CoverCloud {
         }
         // A setting that has switched animation off freezes the clock rather
         // than the clouds: the composition stays, the motion stops.
+        let mut clock = self.inner.drift_clock.get();
         if frame_time_us <= 0 || !crate::ui::motion::animations_enabled() {
-            self.inner.started_at_us.set(0);
-            if self.inner.frame_time_us.replace(0) != 0 {
+            if clock.hold() {
+                self.inner.drift_clock.set(clock);
                 self.area.queue_draw();
             }
             return;
         }
-        let started_at_us = self.inner.started_at_us.get();
-        let started_at_us = if started_at_us == 0 {
-            self.inner.started_at_us.set(frame_time_us);
-            frame_time_us
-        } else {
-            started_at_us
-        };
-        let elapsed_us = frame_time_us.saturating_sub(started_at_us);
-        if self.inner.frame_time_us.replace(elapsed_us) != elapsed_us {
-            self.drop_faded_cover(elapsed_us);
+        let changed = clock.advance(frame_time_us);
+        self.inner.drift_clock.set(clock);
+        if changed {
+            self.drop_faded_cover(clock.elapsed_us());
             self.area.queue_draw();
         }
     }
@@ -392,8 +460,7 @@ impl CoverCloud {
         self.inner.pinned.set(pinned);
         self.area.set_visible(!pinned);
         if pinned {
-            self.inner.started_at_us.set(0);
-            self.inner.frame_time_us.set(0);
+            self.inner.drift_clock.set(DriftClock::default());
             self.inner.arrived_at_us.set(0);
             *self.inner.leaving_back.borrow_mut() = None;
             *self.inner.leaving_front.borrow_mut() = None;
@@ -409,7 +476,7 @@ fn build_field(
     blur_edge: i32,
     blobs: &[Blob],
 ) -> Option<cairo::ImageSurface> {
-    let blurred = cover_glow::blurred_surface(texture)?;
+    let blurred = cover_glow::blurred_surface(texture, blur_edge)?;
     let surface =
         cairo::ImageSurface::create(cairo::Format::ARgb32, FIELD_RASTER_EDGE, FIELD_RASTER_EDGE)
             .ok()?;
@@ -418,7 +485,7 @@ fn build_field(
 
     // Bilinear over a large upscale is what makes this a blur at all, exactly
     // as in `cover_bloom`. The smaller the source edge, the softer the result.
-    let scale = edge / f64::from(blur_edge);
+    let scale = edge / f64::from(blurred.width());
     cr.save().ok();
     cr.scale(scale, scale);
     if cr.set_source_surface(&blurred, 0.0, 0.0).is_ok() {
@@ -460,7 +527,8 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     }
     let cover = f64::from(tokens::NOW_PLAYING_COVER_SIZE);
     let (field_left, field_top, field_width, field_height) = field(width, cover);
-    let elapsed_s = inner.frame_time_us.get() as f64 / 1_000_000.0;
+    let clock = inner.drift_clock.get();
+    let elapsed_s = clock.elapsed_s();
 
     cr.save().ok();
     cr.rectangle(0.0, 0.0, width, band);
@@ -470,20 +538,16 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     // Read once per frame rather than once per layer: both the operator and the
     // scrim colour come from the same answer.
     let dark = crate::ui::style::accent::is_dark();
-    let operator = if dark {
-        cairo::Operator::Screen
-    } else {
-        cairo::Operator::Multiply
-    };
+    let operator = blend_operator(dark);
     let back_drift = drift_at(elapsed_s, BACK_PERIOD_S, 0.0);
     let front_drift = drift_at(elapsed_s, FRONT_PERIOD_S, FRONT_OFFSET_S);
 
     // With the clock standing still — paused, or animation switched off — no
     // frame will ever advance a fade, so the change counts as already done
     // rather than leaving the incoming cover stuck at nothing.
-    let clock = inner.frame_time_us.get();
-    let arrived = if clock > 0 {
-        cover_fade((clock.saturating_sub(inner.arrived_at_us.get())) as f64 / 1_000_000.0)
+    let elapsed_us = clock.elapsed_us();
+    let arrived = if elapsed_us > 0 {
+        cover_fade((elapsed_us.saturating_sub(inner.arrived_at_us.get())) as f64 / 1_000_000.0)
     } else {
         1.0
     };
@@ -497,28 +561,58 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     let leaving = leaving_back.is_some() || leaving_front.is_some();
     let incoming_alpha = if leaving { arrived } else { 1.0 };
 
-    let mut painted = false;
     // The outgoing cover first and underneath: both pairs drift on the same
     // clock, so what crosses over is the colour and not the movement.
-    for (surface, drift) in [
-        (leaving_back.as_ref(), back_drift),
-        (leaving_front.as_ref(), front_drift),
-    ] {
-        if let Some(surface) = surface {
-            paint_layer(cr, surface, drift, bounds, 1.0 - arrived, operator);
-            painted = true;
-        }
-    }
-    for (surface, drift) in [(back.as_ref(), back_drift), (front.as_ref(), front_drift)] {
-        if let Some(surface) = surface {
-            paint_layer(cr, surface, drift, bounds, incoming_alpha, operator);
-            painted = true;
-        }
-    }
+    let painted = paint_crossfade_layers(
+        cr,
+        &[
+            (leaving_back.as_ref(), back_drift),
+            (leaving_front.as_ref(), front_drift),
+        ],
+        &[(back.as_ref(), back_drift), (front.as_ref(), front_drift)],
+        bounds,
+        arrived,
+        incoming_alpha,
+        operator,
+    );
     if painted {
-        paint_scrim(cr, width, band, field_top, field_height);
+        let scrim = cached_scrim(inner, dark, field_top, field_height);
+        paint_scrim(cr, width, band, &scrim);
     }
     cr.restore().ok();
+}
+
+fn blend_operator(dark: bool) -> cairo::Operator {
+    if dark {
+        cairo::Operator::Screen
+    } else {
+        cairo::Operator::Multiply
+    }
+}
+
+fn paint_crossfade_layers(
+    cr: &cairo::Context,
+    outgoing: &[(Option<&cairo::ImageSurface>, Drift)],
+    incoming: &[(Option<&cairo::ImageSurface>, Drift)],
+    bounds: (f64, f64, f64, f64),
+    arrived: f64,
+    incoming_alpha: f64,
+    operator: cairo::Operator,
+) -> bool {
+    let mut painted = false;
+    for (surface, drift) in outgoing {
+        if let Some(surface) = surface {
+            paint_layer(cr, surface, *drift, bounds, 1.0 - arrived, operator);
+            painted = true;
+        }
+    }
+    for (surface, drift) in incoming {
+        if let Some(surface) = surface {
+            paint_layer(cr, surface, *drift, bounds, incoming_alpha, operator);
+            painted = true;
+        }
+    }
+    painted
 }
 
 /// One layer, moved to where the clock says it is.
@@ -569,8 +663,32 @@ fn paint_layer(
     cr.restore().ok();
 }
 
-/// The fade back to the panel, in the panel's own colour.
-fn paint_scrim(cr: &cairo::Context, width: f64, band: f64, field_top: f64, field_height: f64) {
+fn cached_scrim(
+    inner: &Inner,
+    dark: bool,
+    field_top: f64,
+    field_height: f64,
+) -> cairo::LinearGradient {
+    let key = ScrimCacheKey {
+        theme: crate::ui::style::current_theme(),
+        dark,
+    };
+    let mut cache = inner.scrim.borrow_mut();
+    if scrim_cache_needs_rebuild(cache.as_ref().map(|cached| cached.key), key) {
+        *cache = Some(ScrimCache {
+            key,
+            gradient: build_scrim(field_top, field_height),
+        });
+    }
+    cache
+        .as_ref()
+        .expect("scrim cache was populated")
+        .gradient
+        .clone()
+}
+
+/// Builds the fade back to the panel in the current panel colour.
+fn build_scrim(field_top: f64, field_height: f64) -> cairo::LinearGradient {
     let [r, g, b] = crate::ui::style::accent::sidebar_background_rgb();
     let (r, g, b) = (
         f64::from(r) / 255.0,
@@ -582,7 +700,11 @@ fn paint_scrim(cr: &cairo::Context, width: f64, band: f64, field_top: f64, field
         let y = f64::from(step) / f64::from(STOPS);
         fade.add_color_stop_rgba(y, r, g, b, scrim_alpha(y));
     }
-    cr.set_source(&fade).ok();
+    fade
+}
+
+fn paint_scrim(cr: &cairo::Context, width: f64, band: f64, fade: &cairo::LinearGradient) {
+    cr.set_source(fade).ok();
     cr.rectangle(0.0, 0.0, width, band);
     cr.fill().ok();
 }

@@ -227,6 +227,9 @@ fn npc_16_every_cloud_sits_where_the_mockup_put_it() {
     assert!((FRONT_BLOBS[1].x - 0.30).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].y - 0.80).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].alpha - 0.40).abs() < 1e-9);
+    assert!(FRONT_BLOBS
+        .iter()
+        .all(|blob| (blob.radius - 0.45).abs() < 1e-9));
 }
 
 #[test]
@@ -332,6 +335,200 @@ fn npc_25_nothing_arriving_over_nothing_starts_no_fade() {
     assert_eq!(fade_step(true, false, true, true), FadeStep::Handover);
 }
 
+#[test]
+fn npp_18_the_clouds_keep_their_pose_across_a_hold_and_resume() {
+    let mut clock = DriftClock::default();
+    clock.advance(1_000_000);
+    clock.advance(11_000_000);
+    let before = clock.elapsed_s();
+    assert!(before > 0.0, "the clouds did not start drifting");
+    assert!(clock.hold());
+    assert!(!clock.advance(12_000_000));
+    clock.advance(14_000_000);
+    assert!((clock.elapsed_s() - (before + 2.0)).abs() < 1e-6);
+}
+
+#[test]
+fn npp_18_a_double_hold_does_not_fold_the_cloud_clock_twice() {
+    let mut clock = DriftClock::default();
+    clock.advance(1_000_000);
+    clock.advance(11_000_000);
+
+    assert!(clock.hold());
+    let held = clock.elapsed_s();
+    assert!(!clock.hold());
+    assert!((clock.elapsed_s() - held).abs() < 1e-9);
+}
+
+#[test]
+fn npp_18_resuming_the_clouds_after_a_huge_gap_does_not_jump() {
+    let mut clock = DriftClock::default();
+    clock.advance(1_000_000);
+    clock.advance(11_000_000);
+    clock.hold();
+    let before = clock.elapsed_s();
+
+    assert!(!clock.advance(500_000_000));
+    assert!((clock.elapsed_s() - before).abs() < 1e-9);
+}
+
+#[test]
+fn npp_18_the_cloud_clock_reports_no_change_when_elapsed_does_not_move() {
+    let mut clock = DriftClock::default();
+
+    assert!(!clock.advance(1_000_000));
+    assert!(!clock.advance(1_000_000));
+    assert_eq!(clock.elapsed_s(), 0.0);
+}
+
+#[test]
+fn npc_26_the_incoming_field_grows_while_the_outgoing_field_shrinks() {
+    let render = |arrived| {
+        let target = cairo::ImageSurface::create(cairo::Format::ARgb32, 32, 32).unwrap();
+        let cr = cairo::Context::new(&target).unwrap();
+        let outgoing = solid_field(255, 0, 0);
+        let incoming = solid_field(0, 0, 255);
+        paint_crossfade_layers(
+            &cr,
+            &[(
+                Some(&outgoing),
+                Drift {
+                    x: 0.0,
+                    y: 0.0,
+                    scale: 1.0,
+                    rotation_deg: 0.0,
+                },
+            )],
+            &[(
+                Some(&incoming),
+                Drift {
+                    x: 0.0,
+                    y: 0.0,
+                    scale: 1.0,
+                    rotation_deg: 0.0,
+                },
+            )],
+            (0.0, 0.0, 32.0, 32.0),
+            arrived,
+            arrived,
+            cairo::Operator::Over,
+        );
+        drop(cr);
+        pixel(target, 16, 16)
+    };
+
+    let early = render(0.25);
+    let late = render(0.75);
+    assert!(late[2] > early[2], "the incoming blue cover did not grow");
+    assert!(late[0] < early[0], "the outgoing red cover did not shrink");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npc_27_a_masked_field_contains_real_non_flat_alpha() {
+    gtk4::init().expect("gtk");
+    let mut field = build_field(&swatch_cover(false), BACK_BLUR_EDGE, &BACK_BLOBS).unwrap();
+    field.flush();
+    let stride = usize::try_from(field.stride()).unwrap();
+    let data = field.data().unwrap();
+    let alphas = (0..usize::try_from(FIELD_RASTER_EDGE).unwrap()).flat_map(|y| {
+        let data = &data;
+        (0..usize::try_from(FIELD_RASTER_EDGE).unwrap()).map(move |x| data[y * stride + x * 4 + 3])
+    });
+    let (minimum, maximum) = alphas.fold((u8::MAX, u8::MIN), |(minimum, maximum), alpha| {
+        (minimum.min(alpha), maximum.max(alpha))
+    });
+
+    assert!(maximum > 0, "the field was uniformly transparent");
+    assert!(minimum < 255, "the field was uniformly opaque");
+    assert!(minimum < maximum, "the field alpha was flat");
+}
+
+#[test]
+fn npc_28_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
+    let render = |dark| {
+        let target = cairo::ImageSurface::create(cairo::Format::ARgb32, 32, 32).unwrap();
+        let cr = cairo::Context::new(&target).unwrap();
+        cr.set_source_rgb(0.5, 0.5, 0.5);
+        cr.paint().unwrap();
+        let field = solid_field(192, 64, 128);
+        paint_layer(
+            &cr,
+            &field,
+            Drift {
+                x: 0.0,
+                y: 0.0,
+                scale: 1.0,
+                rotation_deg: 0.0,
+            },
+            (0.0, 0.0, 32.0, 32.0),
+            1.0,
+            blend_operator(dark),
+        );
+        drop(cr);
+        pixel(target, 16, 16)
+    };
+
+    let dark = render(true);
+    let light = render(false);
+    assert!(dark[0] > 128, "Screen did not brighten the dark ground");
+    assert!(light[0] < 128, "Multiply did not tint the light ground");
+}
+
+#[test]
+fn npc_29_the_scrim_cache_changes_only_with_the_theme_or_appearance() {
+    use crate::ui::style::theme::Theme;
+
+    let current = ScrimCacheKey {
+        theme: Theme::PerpetualRain,
+        dark: true,
+    };
+    assert!(scrim_cache_needs_rebuild(None, current));
+    assert!(!scrim_cache_needs_rebuild(Some(current), current));
+    assert!(scrim_cache_needs_rebuild(
+        Some(current),
+        ScrimCacheKey {
+            theme: Theme::PerpetualRain,
+            dark: false,
+        }
+    ));
+    assert!(scrim_cache_needs_rebuild(
+        Some(current),
+        ScrimCacheKey {
+            theme: Theme::NightTerrain,
+            dark: true,
+        }
+    ));
+}
+
+fn solid_field(red: u8, green: u8, blue: u8) -> cairo::ImageSurface {
+    let surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, FIELD_RASTER_EDGE, FIELD_RASTER_EDGE)
+            .unwrap();
+    let cr = cairo::Context::new(&surface).unwrap();
+    cr.set_source_rgb(
+        f64::from(red) / 255.0,
+        f64::from(green) / 255.0,
+        f64::from(blue) / 255.0,
+    );
+    cr.paint().unwrap();
+    drop(cr);
+    surface
+}
+
+fn pixel(mut surface: cairo::ImageSurface, x: usize, y: usize) -> [u8; 4] {
+    surface.flush();
+    let stride = usize::try_from(surface.stride()).unwrap();
+    let data = surface.data().unwrap();
+    let offset = y * stride + x * 4;
+    [
+        data[offset + 2],
+        data[offset + 1],
+        data[offset],
+        data[offset + 3],
+    ]
+}
+
 /// Renders the head of the panel to a PPM so the light can be looked at.
 ///
 /// Every other test here is arithmetic or structure. None of them can say
@@ -341,7 +538,7 @@ fn npc_25_nothing_arriving_over_nothing_starts_no_fade() {
 /// A greyscale cover is rendered beside a colourful one for exactly that
 /// reason.
 #[test]
-#[ignore = "requires a display; run via xvfb-run"]
+#[ignore = "measurement: render manually via xvfb-run"]
 fn render_cover_cloud_gallery_ppm() {
     gtk4::init().expect("gtk");
 
@@ -397,13 +594,8 @@ fn render_cover_cloud_gallery_ppm() {
                 operator,
             );
             let (_, field_top, _, field_height) = bounds;
-            paint_scrim(
-                &cr,
-                f64::from(width),
-                f64::from(band),
-                field_top,
-                field_height,
-            );
+            let scrim = build_scrim(field_top, field_height);
+            paint_scrim(&cr, f64::from(width), f64::from(band), &scrim);
             drop(cr);
 
             sheet_cr

@@ -224,7 +224,7 @@ impl CoverBloom {
                 if !needs_rebuild(self.inner.generation.get(), generation) {
                     return;
                 }
-                let blurred = cover_glow::blurred_surface(texture)
+                let blurred = cover_glow::blurred_surface(texture, cover_glow::BLUR_EDGE)
                     .as_mut()
                     .and_then(texture_from_surface);
                 self.area
