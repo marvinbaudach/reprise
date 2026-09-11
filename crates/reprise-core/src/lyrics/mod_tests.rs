@@ -1,9 +1,6 @@
 use std::cell::Cell;
 use std::path::Path;
 
-use lofty::config::WriteOptions;
-use lofty::prelude::TagExt;
-use lofty::tag::{ItemKey, Tag, TagType};
 use tempfile::TempDir;
 
 use super::*;
@@ -539,48 +536,6 @@ fn a_network_lookup_reads_every_local_provider_exactly_once() {
         1,
         "a sidecar read and a tag parse per track are too expensive to repeat"
     );
-}
-
-#[test]
-fn tag_lyrics_are_not_obscured_by_a_downloaded_synced_sidecar() {
-    let temp = TempDir::new().unwrap();
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
-    let track = temp.path().join("tagged.flac");
-    std::fs::copy(fixture, &track).unwrap();
-    let mut tag = Tag::new(TagType::VorbisComments);
-    tag.insert_text(ItemKey::Lyrics, "curated tag lyrics".into());
-    tag.save_to_path(&track, WriteOptions::default()).unwrap();
-    let local = LocalProvider {
-        source: &UnixLibrarySource,
-    };
-    let network = FixedProvider::new(
-        LyricsSource::Lrclib,
-        hit(
-            LyricsSource::Lrclib,
-            LyricsBody::Synced(vec![TimedLine::new(1_000, "different recording")]),
-        ),
-    );
-
-    let result = load_or_fetch_at(
-        temp.path(),
-        100,
-        &query(),
-        Some(&track),
-        options(false),
-        &[&local],
-        &[&network],
-    )
-    .unwrap();
-
-    assert_eq!(
-        result,
-        LyricsHit {
-            body: LyricsBody::Plain("curated tag lyrics".into()),
-            source: LyricsSource::Tag,
-        }
-    );
-    assert_eq!(network.calls.get(), 0);
-    assert!(!track.with_extension("lrc").exists());
 }
 
 #[test]

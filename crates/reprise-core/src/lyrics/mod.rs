@@ -191,7 +191,7 @@ fn load_or_fetch_with_cache_context_at_from(
     cache_decision: Option<&cache::CacheDecision>,
     providers: LookupProviders<'_>,
 ) -> Result<LyricsHit, LyricsError> {
-    let local_plain = match best_local(query, track_path, providers.local) {
+    let local_plain = match best_local(query, track_path, providers.local, options.force) {
         LocalLookup::Final(hit) => return Ok(hit),
         LocalLookup::Plain(hit) => hit,
     };
@@ -270,6 +270,7 @@ fn best_local(
     query: &LyricsQuery,
     track_path: Option<&Path>,
     providers: &[&dyn LyricsProvider],
+    force: bool,
 ) -> LocalLookup {
     let mut plain = None;
     for provider in providers {
@@ -280,7 +281,7 @@ fn best_local(
             LyricsBody::Synced(_) | LyricsBody::Instrumental => {
                 return LocalLookup::Final(hit);
             }
-            LyricsBody::Plain(_) if hit.source == LyricsSource::Tag => {
+            LyricsBody::Plain(_) if hit.source == LyricsSource::Tag && !force => {
                 return LocalLookup::Final(hit);
             }
             LyricsBody::Plain(_) if plain.is_none() => plain = Some(hit),
@@ -332,3 +333,7 @@ fn unix_timestamp() -> i64 {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tag_force_tests.rs"]
+mod tag_force_tests;
