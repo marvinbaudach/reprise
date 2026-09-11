@@ -95,7 +95,7 @@ impl NowPlayingPanel {
     /// redrawing a widget nobody can see, on most installs, forever.
     ///
     /// **The Visual tab is deliberately not a reason.** It used to be: the tab
-    /// held the backdrop at rest, hid the turning disc and switched the cover's
+    /// held the backdrop at rest, hid the drifting clouds and switched the cover's
     /// shadow to the beat, on the theory that two light languages in one panel
     /// fight each other. Looked at in use, the plain treatment — blurred cover,
     /// moving — was simply nicer there too, and the beat-driven shadow read as

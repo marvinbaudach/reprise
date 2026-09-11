@@ -4307,8 +4307,8 @@ STYLE-1).
   cover pulls attention off the list; it lifts on its shadow, carries a
   one-pixel light seam along its edge, and has two soft clouds of the blurred
   artwork drifting behind it — the back one over 16 seconds, the front one
-  over 20 and offset by half its own period, so the pair holds no repeated
-  pose before 80 seconds. Neither may run under 16 seconds.
+  over 20 and offset by half its own period, so the pair has an 80-second
+  period. Neither may run under 16 seconds.
   The seam sits
   one pixel outside the artwork, so the cover's footprint grows by exactly
   one pixel on each side; nothing crosses the picture itself. The seam
@@ -4345,7 +4345,7 @@ STYLE-1).
   panel looks the same whichever tab is open.** The Visual tab used to hold
   the backdrop at rest and darken the drifting clouds, on the theory that two
   light languages in one panel fight each other; in use the plain treatment
-  was simply better there too. The backdrop and the disc rest when the
+  was simply better there too. The backdrop and the clouds rest when the
   "Song Visuals" plugin is off, when the panel is closed, or when what plays
   is not music (AC-26) — the second because a pinned backdrop runs no tick,
   and without it the paused breath would keep redrawing a widget nobody can
@@ -4355,7 +4355,7 @@ STYLE-1).
 - **AC-26** [active] [core] [gtk] — **Song Visuals follow the music, not the source.**
   A radio station gets the same treatment as a local track: the Visual tab
   with its audio-reactive bars, and the cover
-  bloom and shimmer driven by the session's own artwork — one load, shared
+  bloom and drifting clouds driven by the session's own artwork — one load, shared
   with the cover it already shows, never a second request for the same image.
   A YouTube episode follows YouTube's own stored category: `Music` receives
   that same treatment, while `News & Politics`, `Education` and the other

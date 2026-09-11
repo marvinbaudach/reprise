@@ -19,8 +19,10 @@ Variante 2c, in der zweiten, auf das Desktop-Panel gemünzten Fassung.
   gemessen und verworfen (`cover_shimmer.rs:1-10`): die Hälfte der Cover ist
   grau oder nahezu schwarz und liefert keine Palette, der Rest ist meist
   monochrom — der Sweep wurde unsichtbar. Die Wolke erbt deshalb die honesty
-  rule: die beiden Schichten malen den 32-px-Blur des Covers durch die radialen
-  Masken der Spec. Form, Drift, Radien, Ausblendung und die 1-s-Überblendung
+  rule: die hintere Schicht malt ein 32-px-Raster des Covers durch die radialen
+  Masken der Spec, die weichere vordere ein echtes 28-px-Raster. Das
+  48:54-Verhältnis der Spec bestimmt diese beiden Rastergrößen. Form, Drift,
+  Radien, Ausblendung und die 1-s-Überblendung
   bleiben wörtlich wie spezifiziert; nur die Füllung ist ehrlich.
 - **Die Wolke ersetzt den Shimmer.** Der Shimmer ist der "cover-palette sweep" —
   dieselbe Rolle. Der Bloom bleibt und trägt die Audio-Kopplung weiter.
@@ -40,20 +42,18 @@ Alle Spec-Werte durch 240 geteilt, damit das Layout sie tragen kann:
 | Überstand oben 60 px | 60/240 | 42 px |
 | Überstand links 40 px | 40/240 | 28 px |
 | Überstand rechts 90 px | 90/240 | 63 px |
-| Unschärfe Schicht 1: 48 px | 48/240 | 34 px |
-| Unschärfe Schicht 2: 54 px | 54/240 | 38 px |
 
 Der Überstand ist rechts am größten: der Schwerpunkt liegt nach außen, weg von
 der Trackliste.
 
 ## Die beiden Schichten
 
-Schicht 1 (hinten), Unschärfe 48 px:
+Schicht 1 (hinten), Spec-Unschärfe 48 px, Raster 32 px:
 - Farbe 1 @ 40 %/35 %, Deckkraft 0.60, Radius 50 % auf transparent
 - Farbe 2 @ 82 %/55 %, Deckkraft 0.55, Radius 50 % auf transparent
 - Drift 16 s
 
-Schicht 2 (davor), Unschärfe 54 px:
+Schicht 2 (davor), Spec-Unschärfe 54 px, Raster 28 px (32 × 48/54, gerundet):
 - Farbe 3 @ 75 %/25 %, Deckkraft 0.45, Radius 45 %
 - Farbe 2 @ 30 %/80 %, Deckkraft 0.40, Radius 45 %
 - Drift 20 s, rückwärts, um 10 s versetzt
@@ -76,7 +76,7 @@ Eine Periode ist ein voller Hin-und-Zurück-Weg, nicht ein Weg. 16 s heißt also
 zu `cubic-bezier(.42,0,.58,1)` liegt unter einem Pixel Weg.
 
 16 s und 20 s haben das kleinste gemeinsame Vielfache 80 s — das Gesamtbild
-wiederholt sich also alle 80 s, nicht früher. Der 10-s-Versatz auf Schicht 2 ist
+hat damit eine Periode von 80 s. Der 10-s-Versatz auf Schicht 2 ist
 eine halbe Periode und hält die Schichten dauerhaft gegenläufig.
 
 ## Ausblendung
