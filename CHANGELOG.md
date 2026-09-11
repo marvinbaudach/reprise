@@ -4,7 +4,7 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
-## [0.1.183] - 2026-09-11
+## [0.1.185] - 2026-09-11
 
 ### Playback and presentation
 
@@ -16,7 +16,8 @@ messages.
   veil. Both layers share one clock half a period apart, a track change
   crossfades the old cover's light into the new one's, and GNOME's
   reduce-animation setting holds the clouds still without snapping them to a
-  rest pose.
+  rest pose. The path they walk is wide enough to be seen: twice the travel of
+  the first cut, a ten-degree turn, and stronger light in both layers.
 - Lyrics that already sit on disk appear at once. Measured against a real
   library, a third of all tracks went to the network on every play, and more
   than half of those had a plain-text sidecar the app had already read — the
