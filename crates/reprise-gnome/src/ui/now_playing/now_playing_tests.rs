@@ -399,7 +399,10 @@ fn npp_14_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
         .parent()
         .is_some_and(|parent| parent.is::<gtk4::Box>()));
     assert_eq!(widgets.tab_switcher.width_request(), 1);
-    assert_eq!(widgets.tab_switcher.height_request(), 50);
+    assert_eq!(
+        widgets.tab_switcher.height_request(),
+        tokens::NOW_PLAYING_SEGMENT_HEIGHT
+    );
 
     let buttons = widget_tree(widgets.tab_switcher.upcast_ref())
         .into_iter()
