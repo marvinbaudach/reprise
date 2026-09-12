@@ -77,10 +77,12 @@ standing in for the session save — and closes the first window.
 So only a **never-realized** `GtkApplicationWindow` kills GTK 4.22.4 on Wayland
 when it is removed from the application.
 
-Reverse direction, measured separately: entering compact mode leaves the
-library window `realized=1 visible=0`, so the mini player's
-`library_window.close()` reaches the session save normally. That path was never
-broken.
+Reverse direction, measured separately after toggling from Library mode:
+entering Compact leaves the Library window `realized=1 visible=0`, so the mini
+player's `library_window.close()` reaches the session save normally. That
+toggle case was never broken. Direct startup in persisted Compact mode was not
+part of that measurement; there the Library window has never been presented,
+has no surface, and needs the symmetric guard before its close chain begins.
 
 ## The reproducer
 
@@ -97,10 +99,14 @@ message shows whether the second handler survived.
  *
  * VAR:
  *   repro        - like origin/dev: destroy() inside close-request
- *   realized     - second window presented first (control)
+ *   hidden       - second window presented, then hidden (control)
+ *   visible      - second window remains visible (control)
  *   unset_app    - set_application(NULL) instead of destroy()
  *   idle_destroy - destroy() deferred to the next idle
+ *   alone        - leave the second window alone (app remains open)
  *   lazy         - second window never created (control)
+ *   realize_build - realize at build time without presenting (control)
+ *   realize_close - realize in close-request, then destroy (chosen fix)
  */
 #include <adwaita.h>
 
@@ -125,11 +131,14 @@ static gboolean idle_destroy_cb(gpointer data) {
 static gboolean on_close_minimal(GtkWindow *w, gpointer u) {
   g_message("handler 1 (MinimalView) ran");
   if (!ghost) return FALSE;
-  if (g_str_equal(var, "unset_app")) {
+  if (g_str_equal(var, "alone")) {
+    return FALSE;
+  } else if (g_str_equal(var, "unset_app")) {
     gtk_window_set_application(GTK_WINDOW(ghost), NULL);
   } else if (g_str_equal(var, "idle_destroy")) {
     g_idle_add(idle_destroy_cb, ghost);
   } else {
+    if (g_str_equal(var, "realize_close")) gtk_widget_realize(ghost);
     gtk_window_destroy(GTK_WINDOW(ghost));
   }
   return FALSE;
@@ -153,7 +162,11 @@ static void activate(GtkApplication *app, gpointer u) {
     gtk_window_set_decorated(GTK_WINDOW(ghost), TRUE);
     adw_application_window_set_content(ADW_APPLICATION_WINDOW(ghost),
                                        gtk_label_new("compact window"));
-    if (g_str_equal(var, "realized")) gtk_window_present(GTK_WINDOW(ghost));
+    if (g_str_equal(var, "hidden") || g_str_equal(var, "visible")) {
+      gtk_window_present(GTK_WINDOW(ghost));
+    }
+    if (g_str_equal(var, "hidden")) gtk_widget_set_visible(ghost, FALSE);
+    if (g_str_equal(var, "realize_build")) gtk_widget_realize(ghost);
   }
 
   g_signal_connect(win, "close-request", G_CALLBACK(on_close_minimal), NULL);
@@ -175,8 +188,8 @@ int main(int argc, char **argv) {
 }
 ```
 
-The chosen fix, expressed in the same file, replaces the `destroy()` call in
-`on_close_minimal` with:
+The chosen fix is the printed source's `VAR=realize_close` branch, equivalent
+to:
 
 ```c
 if (!gtk_widget_get_realized(ghost)) gtk_widget_realize(ghost);
@@ -190,7 +203,14 @@ handler 2 run.
 
 ```bash
 # launch detached under Wayland, wait for startup, then close over D-Bus
-REPRISE_LOG=info setsid nohup ~/.local/bin/reprise > run.log 2>&1 &
+binary=$(readlink -f ~/.local/bin/reprise)
+REPRISE_LOG=info setsid nohup "$binary" > run.log 2>&1 &
+for _ in {1..150}; do
+  PID=$(pgrep -n -f -x -- "$binary" || true)
+  [[ -n $PID ]] && break
+  sleep 0.1
+done
+[[ -n ${PID:-} ]] || { echo "Reprise process not found" >&2; exit 1; }
 sleep 15
 T0=$(date +%s.%N)
 gdbus call --session --dest io.github.marvinbaudach.Reprise \
