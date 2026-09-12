@@ -4,9 +4,21 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
-## [0.1.187] - 2026-09-12
+## [0.1.189] - 2026-09-12
 
 ### Playback and presentation
+
+- Closing the window saves the session again. Every exit under Wayland crashed
+  within about 4 ms, and the slow close that followed was `systemd-coredump`
+  writing a dump of tens to hundreds of megabytes; because the crash hit the
+  very first close handler, the handler that saves geometry, queue, scroll
+  anchor and the clean-exit marker never ran, so every exit looked like a crash
+  and the next launch rescanned the whole library. The cause was the
+  mini-player window, which is built ahead of time but never shown until
+  compact mode is entered: GTK reads that window's surface while tearing it
+  down, and a window that was never shown has none. The window being destroyed
+  is now realised first, in both directions, and Ctrl+Q closes the window
+  through that same chain instead of quitting around it.
 
 - Six soft drops of the blurred artwork drift behind the cover, where two rigid
   clouds used to move. Each layer baked its shapes into a single picture before,
