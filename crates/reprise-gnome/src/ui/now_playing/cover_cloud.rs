@@ -36,8 +36,6 @@ use super::cover_cloud_blob::{
 #[cfg(test)]
 use super::cover_cloud_blob::{MAX_ANCHOR_COVERAGE_DISTANCE, MIN_ANCHOR_SEPARATION};
 use super::cover_scrim::{self, ScrimCache};
-#[cfg(test)]
-use super::cover_scrim::{build_scrim, paint_scrim};
 use crate::ui::style::tokens;
 
 /// The field, and how far it hangs off each edge, as multiples of the cover.

@@ -309,7 +309,7 @@ pub(in crate::ui) const NOW_PLAYING_LIST_RULE_ABOVE: i32 = 20;
 /// Gap below the settled panel's list rule.
 pub(in crate::ui) const NOW_PLAYING_LIST_RULE_BELOW: i32 = 8;
 /// Share of the settled panel width occupied by its left artwork fade.
-pub(in crate::ui) const NOW_PLAYING_LEFT_FADE_SHARE: f64 = 0.22;
+pub(in crate::ui) const NOW_PLAYING_LEFT_FADE_SHARE: f64 = 0.08;
 /// Dark album tone equals the secondary alpha because the head-band glow
 /// extreme leaves no tonal headroom under NPP-17's 4.5:1 floor. Weight 400
 /// and the separator carry the album's quieter role instead.
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(NOW_PLAYING_LIST_RULE_RUN_OUT, 34);
         assert_eq!(NOW_PLAYING_LIST_RULE_ABOVE, 20);
         assert_eq!(NOW_PLAYING_LIST_RULE_BELOW, 8);
-        assert!((NOW_PLAYING_LEFT_FADE_SHARE - 0.22).abs() < f64::EPSILON);
+        assert!((NOW_PLAYING_LEFT_FADE_SHARE - 0.08).abs() < f64::EPSILON);
         assert!((TERTIARY_TEXT_ALPHA_DARK - 0.70).abs() < f64::EPSILON);
         assert!((TERTIARY_TEXT_ALPHA_LIGHT - 0.65).abs() < f64::EPSILON);
     }

@@ -43,13 +43,13 @@ fn ac_24_the_text_never_sits_on_a_moving_ground() {
 }
 
 #[test]
-fn ac_24_the_left_fade_reaches_the_list_edge_at_a_fifth_of_the_panel() {
+fn ac_24_the_left_fade_reaches_the_list_edge_over_eight_percent_of_the_panel() {
     assert_eq!(left_fade_alpha(0.0, 300.0), 1.0);
-    assert_eq!(left_fade_alpha(33.0, 300.0), 0.5);
-    assert_eq!(left_fade_alpha(66.0, 300.0), 0.0);
+    assert_eq!(left_fade_alpha(12.0, 300.0), 0.5);
+    assert_eq!(left_fade_alpha(24.0, 300.0), 0.0);
     assert_eq!(left_fade_alpha(100.0, 300.0), 0.0);
-    assert_eq!(left_fade_alpha(44.0, 400.0), 0.5);
-    assert_eq!(left_fade_alpha(88.0, 400.0), 0.0);
+    assert_eq!(left_fade_alpha(16.0, 400.0), 0.5);
+    assert_eq!(left_fade_alpha(32.0, 400.0), 0.0);
 }
 
 #[test]
