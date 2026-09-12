@@ -110,19 +110,20 @@ pub(super) const FRONT_BLOBS: [Blob; BLOBS_PER_LAYER] = [
     },
 ];
 
-pub(super) type BlobRasters = Vec<cairo::ImageSurface>;
+pub(super) type BlobRasters = [cairo::ImageSurface; BLOBS_PER_LAYER];
 
 /// Bakes one raster per drop while sharing the layer's blurred source.
 pub(super) fn build_blob_rasters(
     texture: &gtk4::gdk::Texture,
     blur_edge: i32,
-    blobs: &[Blob],
+    blobs: &[Blob; BLOBS_PER_LAYER],
 ) -> Option<BlobRasters> {
     let blurred = cover_glow::blurred_surface(texture, blur_edge)?;
-    blobs
+    let rasters: Vec<_> = blobs
         .iter()
         .map(|blob| build_blob_raster(&blurred, *blob))
-        .collect()
+        .collect::<Option<_>>()?;
+    rasters.try_into().ok()
 }
 
 fn build_blob_raster(blurred: &cairo::ImageSurface, blob: Blob) -> Option<cairo::ImageSurface> {

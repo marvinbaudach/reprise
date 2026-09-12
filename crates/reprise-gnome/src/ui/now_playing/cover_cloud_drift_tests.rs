@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn npc_1_every_oil_lamp_parameter_stays_inside_its_declared_range() {
+fn ac_24_every_oil_lamp_parameter_stays_inside_its_declared_range() {
     for blob in all_blobs() {
         for step in 0..=12_000 {
             let drift = drift_at(f64::from(step) * 0.05, blob.drift);
@@ -16,9 +16,10 @@ fn npc_1_every_oil_lamp_parameter_stays_inside_its_declared_range() {
 }
 
 #[test]
-fn npc_2_the_oil_lamp_translation_stays_below_the_speed_limit() {
+fn ac_24_the_oil_lamp_translation_stays_below_the_speed_limit() {
     for blob in all_blobs() {
-        let (peak_x, peak_y) = peak_translation_speed(blob.drift, 0.01, 600.0);
+        let peak_x = analytic_translation_speed_bound(blob.drift.x, DRIFT_X);
+        let peak_y = analytic_translation_speed_bound(blob.drift.y, DRIFT_Y);
         assert!(
             peak_x <= DRIFT_SPEED_LIMIT + 1e-9,
             "x peaks at {peak_x:.6} field-fractions/s"
@@ -31,7 +32,7 @@ fn npc_2_the_oil_lamp_translation_stays_below_the_speed_limit() {
 }
 
 #[test]
-fn npc_3_the_oil_lamp_drift_is_continuous() {
+fn ac_24_the_oil_lamp_drift_is_continuous() {
     const STEP_S: f64 = 0.01;
     for blob in all_blobs() {
         let mut previous = normalized_drift(drift_at(0.0, blob.drift));
@@ -58,7 +59,7 @@ fn npc_3_the_oil_lamp_drift_is_continuous() {
 }
 
 #[test]
-fn npc_4_the_old_eighty_second_pair_period_is_gone() {
+fn ac_24_the_old_eighty_second_pair_period_is_gone() {
     for blob in all_blobs() {
         for elapsed_s in [0.0, 17.0, 43.0, 91.0, 157.0, 239.0] {
             let now = normalized_drift(drift_at(elapsed_s, blob.drift));
@@ -77,7 +78,7 @@ fn npc_4_the_old_eighty_second_pair_period_is_gone() {
 }
 
 #[test]
-fn npc_5_each_pose_parameter_reaches_its_extreme_at_a_different_time() {
+fn ac_24_each_pose_parameter_reaches_its_extreme_at_a_different_time() {
     for blob in all_blobs() {
         let extremes = extreme_times(blob.drift, 240.0, 0.05);
         for (index, first) in extremes.iter().enumerate() {
@@ -92,7 +93,7 @@ fn npc_5_each_pose_parameter_reaches_its_extreme_at_a_different_time() {
 }
 
 #[test]
-fn npc_6_no_two_drops_hold_the_same_pose_over_a_long_window() {
+fn ac_24_no_two_clouds_hold_the_same_pose_over_a_long_window() {
     let blobs: Vec<_> = all_blobs().collect();
     for step in 0..=6_000 {
         let elapsed_s = f64::from(step) * 0.1;
@@ -115,7 +116,7 @@ fn npc_6_no_two_drops_hold_the_same_pose_over_a_long_window() {
 }
 
 #[test]
-fn npc_6a_two_drops_both_approach_and_part_over_a_long_window() {
+fn ac_24_two_clouds_both_approach_and_part_over_a_long_window() {
     let first = &BACK_BLOBS[0];
     let second = &BACK_BLOBS[1];
     let mut previous = drop_distance(0.0, first, second);
@@ -132,7 +133,7 @@ fn npc_6a_two_drops_both_approach_and_part_over_a_long_window() {
 }
 
 #[test]
-fn npc_6b_every_drop_centre_stays_inside_the_field_at_its_extremes() {
+fn ac_24_every_cloud_centre_stays_inside_the_field_at_its_extremes() {
     for blob in all_blobs() {
         assert!(blob.x + DRIFT_X.0 >= 0.0);
         assert!(blob.x + DRIFT_X.1 <= 1.0);
@@ -142,7 +143,7 @@ fn npc_6b_every_drop_centre_stays_inside_the_field_at_its_extremes() {
 }
 
 #[test]
-fn npc_7_every_parameter_and_drop_has_its_own_periods_and_phases() {
+fn ac_24_every_parameter_and_cloud_has_its_own_periods_and_phases() {
     let waves: Vec<_> = all_blobs()
         .flat_map(|blob| [blob.drift.x, blob.drift.y, blob.drift.scale])
         .collect();
@@ -174,20 +175,27 @@ fn npc_7_every_parameter_and_drop_has_its_own_periods_and_phases() {
 }
 
 #[test]
-fn npc_8_the_declared_drift_ranges_stay_at_the_mockup_amplitude() {
+fn ac_24_the_declared_drift_ranges_stay_at_the_mockup_amplitude() {
     assert_eq!(DRIFT_X, (-0.20, 0.16));
     assert_eq!(DRIFT_Y, (-0.12, 0.12));
     assert_eq!(DRIFT_SCALE, (1.40, 1.55));
 }
 
 #[test]
-fn npc_9_each_drop_raster_covers_the_field_it_drifts_across() {
-    let travel = DRIFT_X.0.abs().max(DRIFT_X.1);
-    assert!(
-        DRIFT_SCALE.0 >= 1.0 + 2.0 * travel,
-        "scale {} leaves an edge at {travel} of travel",
-        DRIFT_SCALE.0
-    );
+fn ac_24_each_cloud_raster_covers_the_visible_band_with_a_safe_margin() {
+    let clip = (0.0, 0.0, 300.0, f64::from(tokens::NOW_PLAYING_ARTWORK_BAND));
+    let field = field(clip.2, f64::from(tokens::NOW_PLAYING_COVER_SIZE));
+
+    for (index, blob) in all_blobs().enumerate() {
+        let margins = worst_case_raster_margins(*blob, field, clip);
+        println!("cloud {} raster margins L/R/T/B: {margins:?}", index + 1);
+        assert!(
+            margins
+                .into_iter()
+                .all(|margin| margin >= MIN_VISIBLE_RASTER_MARGIN_PX),
+            "cloud {index} leaves only {margins:?} px around the visible band"
+        );
+    }
 }
 
 const DRIFT_RANGES: [(f64, f64); 3] = [DRIFT_X, DRIFT_Y, DRIFT_SCALE];
@@ -208,21 +216,19 @@ fn normalized_drift(drift: Drift) -> [f64; 3] {
     })
 }
 
-pub(super) fn peak_translation_speed(
-    profile: DriftProfile,
-    step_s: f64,
-    duration_s: f64,
-) -> (f64, f64) {
-    let mut previous = drift_at(0.0, profile);
-    let mut peak_x: f64 = 0.0;
-    let mut peak_y: f64 = 0.0;
-    for step in 1..=(duration_s / step_s) as u32 {
-        let current = drift_at(f64::from(step) * step_s, profile);
-        peak_x = peak_x.max((current.x - previous.x).abs() / step_s);
-        peak_y = peak_y.max((current.y - previous.y).abs() / step_s);
-        previous = current;
-    }
-    (peak_x, peak_y)
+pub(super) fn analytic_translation_speed_bound(axis: DriftAxis, range: (f64, f64)) -> f64 {
+    let half_range = (range.1 - range.0) / 2.0;
+    half_range
+        * (SLOW_WAVE_WEIGHT * std::f64::consts::TAU / axis.slow_s
+            + FAST_WAVE_WEIGHT * std::f64::consts::TAU / axis.fast_s)
+}
+
+fn worst_case_raster_margins(
+    blob: Blob,
+    field: (f64, f64, f64, f64),
+    clip: (f64, f64, f64, f64),
+) -> [f64; 4] {
+    raster_margins_at_extremes(blob, field, clip)
 }
 
 fn extreme_times(profile: DriftProfile, duration_s: f64, step_s: f64) -> [f64; 3] {

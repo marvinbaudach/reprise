@@ -34,26 +34,20 @@ fn render_cover_cloud_gallery_ppm() {
             cr.paint().expect("ground");
             let bounds = field(f64::from(width), f64::from(tokens::NOW_PLAYING_COVER_SIZE));
             let operator = blend_operator(crate::ui::style::accent::is_dark());
-            for (surface, blob) in back.iter().zip(BACK_BLOBS) {
-                paint_layer(
+            let scratch = LayerScratch::new().expect("scratch");
+            for (surfaces, blobs) in [(&back, &BACK_BLOBS), (&front, &FRONT_BLOBS)] {
+                let poses = blobs.map(|blob| drift_at(*seconds, blob.drift));
+                paint_cloud_layer(
                     &cr,
-                    surface,
-                    (blob.x, blob.y),
-                    drift_at(*seconds, blob.drift),
-                    bounds,
+                    surfaces,
+                    blobs,
+                    &poses,
                     1.0,
-                    operator,
-                );
-            }
-            for (surface, blob) in front.iter().zip(FRONT_BLOBS) {
-                paint_layer(
-                    &cr,
-                    surface,
-                    (blob.x, blob.y),
-                    drift_at(*seconds, blob.drift),
-                    bounds,
-                    1.0,
-                    operator,
+                    LayerComposite {
+                        bounds,
+                        operator,
+                        scratch: Some(&scratch),
+                    },
                 );
             }
             let scrim = build_scrim(f64::from(band));
@@ -101,8 +95,10 @@ fn measure_cover_cloud_raster_build_cost() {
                 .zip(FRONT_BLOBS),
         )
     {
-        let (peak_x, peak_y) =
-            super::super::drift_tests::peak_translation_speed(blob.drift, 0.01, 600.0);
+        let peak_x =
+            super::super::drift_tests::analytic_translation_speed_bound(blob.drift.x, DRIFT_X);
+        let peak_y =
+            super::super::drift_tests::analytic_translation_speed_bound(blob.drift.y, DRIFT_Y);
         println!("{name}: peak x={peak_x:.9}, y={peak_y:.9}");
     }
 }

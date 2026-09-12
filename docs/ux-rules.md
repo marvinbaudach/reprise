@@ -4310,20 +4310,15 @@ STYLE-1).
   answers the music moves under the cursor and competes with the state
   it reports. The player-bar cover itself never changes brightness either: the
   eye reads luminance change in peripheral vision, so a brightening
-  cover pulls attention off the list; it lifts on its shadow, carries a
-  one-pixel light seam along its edge. The panel cover instead keeps one static
-  shadow and no seam. Behind it, six independent soft drops of the blurred
-  artwork — three per depth layer — move on their own long, mutually
+  cover pulls attention off the list; it lifts on its shadow. The panel cover
+  instead keeps one static shadow and no seam. Behind it, six independent soft
+  clouds of the blurred artwork — three per depth layer — move on their own long,
+  mutually
   incommensurable position waves and breathe on separate scale waves, meeting
   and parting without a visible repeat. Peak translation speed is the binding
   motion constraint and may not exceed **0.016 field-fractions per second** on
   either axis.
-  The player-bar seam sits
-  one pixel outside the artwork, so the cover's footprint grows by exactly
-  one pixel on each side; nothing crosses the picture itself. The seam
-  uses the effective app or system accent (`@accent_color`), exactly like
-  the other accent-bearing UI; it never extracts a separate color from the
-  cover. **The drifting clouds are
+  **The drifting clouds are
   the artwork itself, not colours extracted from it.** A palette sweep was
   built first and measured against a real library: half the covers are
   greyscale or near-black and yield no usable colour at all, and most of

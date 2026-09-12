@@ -11,9 +11,14 @@
 //! what shines through them is the blurred cover. Same honesty rule as the
 //! bloom, and it works on every record instead of two in five.
 //!
-//! Cost is the bloom's bargain: the six masked drops are rasterized once per
-//! cover; per frame each gets one translate/scale and one `paint_with_alpha`,
-//! then the scrim. Nothing is re-rasterized when the clock moves.
+//! Cost is the bloom's bargain: the six masked clouds are rasterized once per
+//! cover; a reusable 320 px scratch unions each light-appearance layer before
+//! its one Multiply pass, while dark appearance keeps six independent Screen
+//! passes. That is eight colour paints plus two scratch clears in light and six
+//! paints in dark per frame, doubled during a cover cross-fade, then the scrim.
+//! The cloud rasters and scratch occupy 2.73 MiB normally and 5.08 MiB
+//! mid-cross-fade. Nothing is allocated or re-rasterized when the clock moves,
+//! and faded cover rasters are released.
 //!
 //! The clock is the only thing that moves the clouds. No spectrum reading
 //! reaches them — the bloom next door is where the music is allowed in.
@@ -56,6 +61,12 @@ pub(super) const DRIFT_SPEED_LIMIT: f64 = 0.016;
 
 const SLOW_WAVE_WEIGHT: f64 = 0.65;
 const FAST_WAVE_WEIGHT: f64 = 0.35;
+
+/// Minimum spare canvas around the clipped artwork band at every drift extreme.
+/// A future panel-width or cloud-anchor change must preserve at least this much
+/// room before a hard raster edge can become visible.
+#[cfg(test)]
+const MIN_VISIBLE_RASTER_MARGIN_PX: f64 = 5.0;
 
 /// Two long waves for one pose parameter, with phase measured in turns.
 #[derive(Clone, Copy)]
@@ -115,6 +126,27 @@ fn map_axis((from, to): (f64, f64), value: f64) -> f64 {
     let centre = (from + to) / 2.0;
     let half_range = (to - from) / 2.0;
     centre + half_range * value
+}
+
+#[cfg(test)]
+fn raster_margins_at_extremes(
+    blob: Blob,
+    (left, top, field_width, field_height): (f64, f64, f64, f64),
+    (clip_left, clip_top, clip_width, clip_height): (f64, f64, f64, f64),
+) -> [f64; 4] {
+    // Each edge is tightest when translation moves the canvas inward and the
+    // independently bounded scale is smallest.
+    let scale = DRIFT_SCALE.0;
+    let raster_left = left + field_width * (blob.x + DRIFT_X.1 - scale * blob.x);
+    let raster_right = left + field_width * (blob.x + DRIFT_X.0 + scale * (1.0 - blob.x));
+    let raster_top = top + field_height * (blob.y + DRIFT_Y.1 - scale * blob.y);
+    let raster_bottom = top + field_height * (blob.y + DRIFT_Y.0 + scale * (1.0 - blob.y));
+    [
+        clip_left - raster_left,
+        raster_right - (clip_left + clip_width),
+        clip_top - raster_top,
+        raster_bottom - (clip_top + clip_height),
+    ]
 }
 
 /// How far the incoming cover has arrived, `since_s` after the change.
@@ -215,12 +247,33 @@ impl DriftClock {
     }
 }
 
+struct LayerScratch {
+    surface: cairo::ImageSurface,
+    context: cairo::Context,
+}
+
+impl LayerScratch {
+    fn new() -> Option<Self> {
+        let surface = cairo::ImageSurface::create(
+            cairo::Format::ARgb32,
+            FIELD_RASTER_EDGE,
+            FIELD_RASTER_EDGE,
+        )
+        .ok()?;
+        let context = cairo::Context::new(&surface).ok()?;
+        Some(Self { surface, context })
+    }
+}
+
 struct Inner {
     back: RefCell<Option<BlobRasters>>,
     front: RefCell<Option<BlobRasters>>,
     /// The two raster sets the last cover left behind, still fading out.
     leaving_back: RefCell<Option<BlobRasters>>,
     leaving_front: RefCell<Option<BlobRasters>>,
+    /// Reused per layer so light appearance reaches the panel with at most two
+    /// Multiply passes, while retaining each cloud's independently posed mask.
+    layer_scratch: Option<LayerScratch>,
     /// Reading of the drift clock when the current cover arrived.
     arrived_at_us: Cell<i64>,
     /// Cover generation the cached fields were built from; the panel bumps it
@@ -250,6 +303,7 @@ impl CoverCloud {
             front: RefCell::new(None),
             leaving_back: RefCell::new(None),
             leaving_front: RefCell::new(None),
+            layer_scratch: LayerScratch::new(),
             arrived_at_us: Cell::new(0),
             generation: Cell::new(None),
             drift_clock: Cell::new(DriftClock::default()),
@@ -294,8 +348,10 @@ impl CoverCloud {
                 }
                 let back = build_blob_rasters(texture, BACK_BLUR_EDGE, &BACK_BLOBS);
                 let front = build_blob_rasters(texture, FRONT_BLUR_EDGE, &FRONT_BLOBS);
-                self.begin_fade(back, front);
-                self.inner.generation.set(Some(generation));
+                if let Some((back, front)) = complete_raster_pair(back, front) {
+                    self.begin_fade(Some(back), Some(front));
+                    self.inner.generation.set(Some(generation));
+                }
             }
             None => {
                 self.begin_fade(None, None);
@@ -408,6 +464,13 @@ impl CoverCloud {
     }
 }
 
+fn complete_raster_pair(
+    back: Option<BlobRasters>,
+    front: Option<BlobRasters>,
+) -> Option<(BlobRasters, BlobRasters)> {
+    Some((back?, front?))
+}
+
 fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     let band = f64::from(tokens::NOW_PLAYING_ARTWORK_BAND).min(f64::from(height));
     let width = f64::from(width);
@@ -451,6 +514,7 @@ fn paint_layers_only(cr: &cairo::Context, width: f64, inner: &Inner, dark: bool)
     let front = inner.front.borrow();
     let leaving_back = inner.leaving_back.borrow();
     let leaving_front = inner.leaving_front.borrow();
+    let layer_scratch = inner.layer_scratch.as_ref();
 
     // A cover that arrived with nothing to replace is simply up; only a cover
     // that displaced one has to fade in over it.
@@ -462,17 +526,20 @@ fn paint_layers_only(cr: &cairo::Context, width: f64, inner: &Inner, dark: bool)
     paint_crossfade_layers(
         cr,
         &[
-            (leaving_back.as_deref(), &BACK_BLOBS, &back_poses),
-            (leaving_front.as_deref(), &FRONT_BLOBS, &front_poses),
+            (leaving_back.as_ref(), &BACK_BLOBS, &back_poses),
+            (leaving_front.as_ref(), &FRONT_BLOBS, &front_poses),
         ],
         &[
-            (back.as_deref(), &BACK_BLOBS, &back_poses),
-            (front.as_deref(), &FRONT_BLOBS, &front_poses),
+            (back.as_ref(), &BACK_BLOBS, &back_poses),
+            (front.as_ref(), &FRONT_BLOBS, &front_poses),
         ],
-        bounds,
         arrived,
         incoming_alpha,
-        operator,
+        LayerComposite {
+            bounds,
+            operator,
+            scratch: layer_scratch,
+        },
     )
 }
 
@@ -484,51 +551,118 @@ fn blend_operator(dark: bool) -> cairo::Operator {
     }
 }
 
-type LayerPaint<'a> = (Option<&'a [cairo::ImageSurface]>, &'a [Blob], &'a [Drift]);
+type LayerPaint<'a> = (
+    Option<&'a BlobRasters>,
+    &'a [Blob; BLOBS_PER_LAYER],
+    &'a [Drift; BLOBS_PER_LAYER],
+);
+
+#[derive(Clone, Copy)]
+struct LayerComposite<'a> {
+    bounds: (f64, f64, f64, f64),
+    operator: cairo::Operator,
+    scratch: Option<&'a LayerScratch>,
+}
 
 fn paint_crossfade_layers(
     cr: &cairo::Context,
     outgoing: &[LayerPaint<'_>],
     incoming: &[LayerPaint<'_>],
-    bounds: (f64, f64, f64, f64),
     arrived: f64,
     incoming_alpha: f64,
-    operator: cairo::Operator,
+    composite: LayerComposite<'_>,
 ) -> bool {
     let mut painted = false;
     for (surfaces, blobs, poses) in outgoing {
         if let Some(surfaces) = surfaces {
-            for ((surface, blob), drift) in surfaces.iter().zip(*blobs).zip(*poses) {
-                paint_layer(
-                    cr,
-                    surface,
-                    (blob.x, blob.y),
-                    *drift,
-                    bounds,
-                    1.0 - arrived,
-                    operator,
-                );
-                painted = true;
-            }
+            painted |= paint_cloud_layer(cr, surfaces, blobs, poses, 1.0 - arrived, composite);
         }
     }
     for (surfaces, blobs, poses) in incoming {
         if let Some(surfaces) = surfaces {
-            for ((surface, blob), drift) in surfaces.iter().zip(*blobs).zip(*poses) {
-                paint_layer(
-                    cr,
-                    surface,
-                    (blob.x, blob.y),
-                    *drift,
-                    bounds,
-                    incoming_alpha,
-                    operator,
-                );
-                painted = true;
-            }
+            painted |= paint_cloud_layer(cr, surfaces, blobs, poses, incoming_alpha, composite);
         }
     }
     painted
+}
+
+fn paint_cloud_layer(
+    cr: &cairo::Context,
+    surfaces: &BlobRasters,
+    blobs: &[Blob; BLOBS_PER_LAYER],
+    poses: &[Drift; BLOBS_PER_LAYER],
+    alpha: f64,
+    composite: LayerComposite<'_>,
+) -> bool {
+    if alpha <= 0.0 {
+        return false;
+    }
+    if composite.operator != cairo::Operator::Multiply {
+        for index in 0..BLOBS_PER_LAYER {
+            paint_layer(
+                cr,
+                &surfaces[index],
+                (blobs[index].x, blobs[index].y),
+                poses[index],
+                composite.bounds,
+                alpha,
+                composite.operator,
+            );
+        }
+        return true;
+    }
+
+    let Some(scratch) = composite.scratch else {
+        return false;
+    };
+    let scratch_cr = &scratch.context;
+    scratch_cr.set_operator(cairo::Operator::Clear);
+    scratch_cr.paint().ok();
+    scratch_cr.set_operator(cairo::Operator::Over);
+    let edge = f64::from(FIELD_RASTER_EDGE);
+    for index in 0..BLOBS_PER_LAYER {
+        paint_layer(
+            scratch_cr,
+            &surfaces[index],
+            (blobs[index].x, blobs[index].y),
+            poses[index],
+            (0.0, 0.0, edge, edge),
+            1.0,
+            cairo::Operator::Over,
+        );
+    }
+    // A persistent context otherwise retains the last raster as its source and
+    // could keep a faded cover alive after its cache entry has been dropped.
+    scratch_cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+    paint_surface_across_field(
+        cr,
+        &scratch.surface,
+        composite.bounds,
+        alpha,
+        composite.operator,
+    );
+    true
+}
+
+fn paint_surface_across_field(
+    cr: &cairo::Context,
+    surface: &cairo::ImageSurface,
+    (left, top, width, height): (f64, f64, f64, f64),
+    alpha: f64,
+    operator: cairo::Operator,
+) {
+    cr.save().ok();
+    cr.translate(left, top);
+    cr.scale(
+        width / f64::from(FIELD_RASTER_EDGE),
+        height / f64::from(FIELD_RASTER_EDGE),
+    );
+    cr.set_operator(operator);
+    if cr.set_source_surface(surface, 0.0, 0.0).is_ok() {
+        cr.source().set_filter(cairo::Filter::Bilinear);
+        cr.paint_with_alpha(alpha.clamp(0.0, 1.0)).ok();
+    }
+    cr.restore().ok();
 }
 
 /// One drop, moved to where the clock says it is.

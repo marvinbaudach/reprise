@@ -2,7 +2,7 @@ use super::*;
 use crate::ui::style::tokens;
 
 #[test]
-fn npc_10_the_scrim_hits_the_three_stops_the_mockup_names() {
+fn ac_24_the_scrim_hits_the_three_stops_the_mockup_names() {
     let title_top = 268.0;
     assert!((scrim_alpha(0.0, title_top) - 0.0).abs() < 1e-9);
     assert!((scrim_alpha(2.0 * title_top / 3.0, title_top) - 0.15).abs() < 1e-9);
@@ -13,7 +13,7 @@ fn npc_10_the_scrim_hits_the_three_stops_the_mockup_names() {
 }
 
 #[test]
-fn npc_11_the_scrim_only_ever_darkens_on_the_way_down() {
+fn ac_24_the_scrim_only_ever_darkens_on_the_way_down() {
     // No hard edge means no step and no dip: the fade rises the whole way.
     let title_top = 268.0;
     let mut previous = scrim_alpha(0.0, title_top);
@@ -29,7 +29,7 @@ fn npc_11_the_scrim_only_ever_darkens_on_the_way_down() {
 }
 
 #[test]
-fn npc_12_the_text_never_sits_on_a_moving_ground() {
+fn ac_24_the_text_never_sits_on_a_moving_ground() {
     let title_top = f64::from(
         tokens::NOW_PLAYING_HEAD_TOP
             + tokens::NOW_PLAYING_COVER_SIZE
@@ -43,7 +43,7 @@ fn npc_12_the_text_never_sits_on_a_moving_ground() {
 }
 
 #[test]
-fn npc_14_the_left_fade_reaches_the_list_edge_at_a_fifth_of_the_panel() {
+fn ac_24_the_left_fade_reaches_the_list_edge_at_a_fifth_of_the_panel() {
     assert_eq!(left_fade_alpha(0.0, 300.0), 1.0);
     assert_eq!(left_fade_alpha(33.0, 300.0), 0.5);
     assert_eq!(left_fade_alpha(66.0, 300.0), 0.0);
@@ -53,14 +53,14 @@ fn npc_14_the_left_fade_reaches_the_list_edge_at_a_fifth_of_the_panel() {
 }
 
 #[test]
-fn npc_15_degenerate_fades_are_transparent() {
+fn ac_24_degenerate_fades_are_transparent() {
     assert_eq!(scrim_alpha(10.0, 0.0), 0.0);
     assert_eq!(left_fade_alpha(10.0, 0.0), 0.0);
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npc_29_the_scrim_cache_reuses_only_the_same_theme_appearance_and_width() {
+fn ac_24_the_scrim_cache_reuses_only_the_same_theme_appearance_and_width() {
     use crate::ui::style::theme::Theme;
 
     gtk4::init().expect("gtk");
