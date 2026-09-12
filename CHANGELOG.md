@@ -4,6 +4,44 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.187] - 2026-09-12
+
+### Playback and presentation
+
+- Six soft drops of the blurred artwork drift behind the cover, where two rigid
+  clouds used to move. Each layer baked its shapes into a single picture before,
+  so nothing inside a layer could move against anything else; whatever drove
+  them, they travelled as one form. Each drop now carries its own picture and
+  its own long, slow waves for position and size, and because no two of those
+  waves share a period they meet, merge and part without ever repeating. In
+  light appearance a layer is composited in one pass instead of one pass per
+  drop, so overlapping drops no longer multiply each other down into a dark
+  blotch.
+
+### Appearance
+
+- The Now Playing panel settles into its final proportions. The cover grows to
+  184 px, the head band follows one specification from the cover's top edge down
+  to the footer, and the segment control is rebuilt against libadwaita's own
+  nodes instead of selectors it never had. The list rule fades out at both ends.
+  The panel cover keeps one static shadow, and the reactive lift that follows
+  the music stays where it belongs, on the player bar.
+- The album name in the head band gets a tone of its own, and title, artist and
+  album are each held to a 4.5:1 contrast floor across all three themes and both
+  appearances, including the extreme where the accent colour composites onto the
+  sidebar behind them.
+
+### Podcasts and online sources
+
+- Online sources are asked about in one place now: the first-run wizard. A
+  discovery banner used to ask the same question a second time on every fresh
+  install, tucked behind the welcome dialog even though the wizard had just
+  asked it; it also stayed on screen after being answered and drew as two
+  overlapping surfaces with its `Not now` button clipped against the window
+  edge. The banner is gone outright, so the wizard's answer is the only one
+  asked, and Preferences / Plugins remains the one lasting place to change
+  sources afterwards.
+
 ## [0.1.185] - 2026-09-11
 
 ### Playback and presentation

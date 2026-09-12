@@ -139,6 +139,18 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.187" date="2026-09-12" type="stable">
+      <description>
+        <p>Lets six soft drops of the blurred artwork drift behind the cover in place of two rigid clouds, each on its own long waves for position and size, so they meet, merge and part without ever repeating; in light appearance a layer is composited in one pass so overlapping drops no longer darken each other into a blotch.</p>
+        <p xml:lang="de">Lässt sechs weiche Tropfen des unscharfen Covers hinter dem Cover treiben statt zweier starrer Wolken, jeden auf eigenen langen Wellen für Ort und Größe, sodass sie sich begegnen, verschmelzen und wieder trennen, ohne sich je zu wiederholen; in heller Darstellung wird eine Schicht in einem Durchgang zusammengesetzt, damit überlappende Tropfen einander nicht mehr zu einem dunklen Fleck verdunkeln.</p>
+        <p>Settles the Now Playing panel into its final proportions: a 184 px cover, one specification for the whole head band, a segment control rebuilt against libadwaita's own nodes, and a list rule that fades out at both ends.</p>
+        <p xml:lang="de">Bringt das Wiedergabe-Panel in seine endgültigen Proportionen: ein 184 px großes Cover, eine durchgehende Spezifikation für das gesamte Kopfband, ein Segmentschalter auf den eigenen Knoten von libadwaita und eine Trennlinie, die an beiden Enden ausläuft.</p>
+        <p>Gives the album name its own tone in the head band and holds title, artist and album to a 4.5:1 contrast floor across every theme and both appearances.</p>
+        <p xml:lang="de">Gibt dem Albumnamen im Kopfband einen eigenen Ton und hält Titel, Künstler und Album in jedem Theme und in beiden Darstellungen bei einem Kontrast von mindestens 4,5:1.</p>
+        <p>Asks about online sources in one place only, the first-run wizard, and drops the discovery banner that used to repeat the same question behind the welcome dialog on every fresh install, stayed on screen once answered, and drew as two overlapping surfaces with a clipped button.</p>
+        <p xml:lang="de">Fragt nur noch an einer Stelle nach Online-Quellen, im Einrichtungsassistenten, und lässt das Hinweisband entfallen, das die gleiche Frage bei jeder Neuinstallation hinter dem Willkommensdialog wiederholte, nach der Beantwortung stehen blieb und als zwei überlappende Flächen mit einem abgeschnittenen Knopf erschien.</p>
+      </description>
+    </release>
     <release version="0.1.185" date="2026-09-11" type="stable">
       <description>
         <p>Lets two soft clouds of light drift behind the cover in place of the turning shimmer disc. Their colour comes from the blurred artwork itself, so a cover lights the panel in its own hue and a grey cover stays quiet; a track change crossfades one cover's light into the next, the reduce-animation setting holds the clouds still, and the path they walk is wide enough to be seen.</p>
