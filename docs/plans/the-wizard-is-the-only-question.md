@@ -2,7 +2,7 @@
 slug: the-wizard-is-the-only-question
 worktree: /home/marvin/Projects/reprise-the-wizard-is-the-only-question
 branch: feature/the-wizard-is-the-only-question
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-12
 ---
