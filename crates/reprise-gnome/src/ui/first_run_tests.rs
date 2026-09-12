@@ -20,6 +20,15 @@ fn existing_library_is_a_silent_upgrade() {
 }
 
 #[test]
+fn existing_library_initial_decision_completes_onboarding() {
+    let db = Db::open_in_memory().unwrap();
+    settings::set_library_root(&db, "/music").unwrap();
+
+    assert_eq!(initial_decision(&db), FirstRunDecision::ExistingLibrary);
+    assert!(settings::get_onboarding_completed(&db).unwrap());
+}
+
+#[test]
 fn completed_onboarding_never_reopens_the_wizard() {
     assert_eq!(decide(true, None), FirstRunDecision::AlreadyCompleted);
 }

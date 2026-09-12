@@ -3023,8 +3023,9 @@ property is set and yet nothing happens.
   source selection. No source chosen on a fresh database leaves the gate shut
   and writes no module; clearing every source behind an open gate closes it and
   writes those three modules off. An existing library never sees the wizard,
-  is never asked, starts with the gate shut, and reaches the sources only
-  through Preferences → Plugins.
+  is never asked, and reaches the sources only through Preferences → Plugins.
+  Its initial gate value follows the grandfathering in `NET-2a`; without that
+  prior-use evidence, the gate starts shut.
 - **NET-4b** [active] [android] — On Android the artist-photo question is asked
   by exactly one dismissible banner in the Library, shown whenever the global
   gate is off, the question has not been settled, and the library holds at
