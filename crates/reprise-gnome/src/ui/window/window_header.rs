@@ -32,8 +32,8 @@ pub(super) fn build() -> WindowHeader {
         strings::SEARCH_PLACEHOLDER,
     ))]);
 
-    // Starts hidden until `wire_sidebar_toggle` has applied both the persisted
-    // Sidebar preference and the current split-view state.
+    // Like the right info-panel toggle, this button is always available. Its
+    // active state alone mirrors whether the sidebar is currently shown.
     let sidebar_toggle = gtk4::ToggleButton::builder()
         .icon_name("sidebar-show-symbolic")
         .tooltip_text(strings::text(strings::SIDEBAR_TOGGLE))
@@ -42,7 +42,6 @@ pub(super) fn build() -> WindowHeader {
             "reprise-panel-toggle",
             crate::ui::style::buttons::COLLAPSE_TOGGLE_CSS_CLASS,
         ])
-        .visible(false)
         .build();
 
     let header = adw::HeaderBar::new();
@@ -75,6 +74,10 @@ mod tests {
 
         let header = super::build();
 
+        assert!(
+            header.sidebar_toggle.get_visible(),
+            "the sidebar toggle must be visible by default"
+        );
         assert!(header
             .sidebar_toggle
             .has_css_class(crate::ui::style::buttons::COLLAPSE_TOGGLE_CSS_CLASS));

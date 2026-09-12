@@ -36,10 +36,6 @@ fn clear_sidebar_focus(split_view: &adw::OverlaySplitView, sidebar_page: &adw::N
     }
 }
 
-fn sidebar_toggle_is_visible(has_sidebar: bool) -> bool {
-    has_sidebar
-}
-
 fn sidebar_toggle_focus_on_click() -> bool {
     false
 }
@@ -51,8 +47,7 @@ fn sync_sidebar_toggle(
     updating: &std::cell::Cell<bool>,
 ) {
     updating.set(true);
-    let has_sidebar = sidebar_page.is_visible();
-    sidebar_toggle.set_visible(sidebar_toggle_is_visible(has_sidebar));
+    let has_sidebar = sidebar_page.get_visible();
     sidebar_toggle.set_active(has_sidebar && split_view.shows_sidebar());
     updating.set(false);
 }
@@ -178,7 +173,7 @@ pub(in crate::ui) fn wire_sidebar_toggle(
     let manually_hidden = Rc::new(std::cell::Cell::new(false));
     // Restore last session's manual collapse before the initial toggle sync,
     // so the button starts in the matching state.
-    if reprise_core::library::settings::get_sidebar_collapsed(conn) && sidebar_page.is_visible() {
+    if reprise_core::library::settings::get_sidebar_collapsed(conn) && sidebar_page.get_visible() {
         hide_sidebar(split_view, &manually_hidden);
     }
     sync_sidebar_toggle(sidebar_toggle, split_view, sidebar_page, &updating);
@@ -189,24 +184,38 @@ pub(in crate::ui) fn wire_sidebar_toggle(
         let updating = updating.clone();
         let conn = conn.clone();
         sidebar_toggle.connect_toggled(move |button| {
-            if !updating.get() && sidebar_page.is_visible() {
-                if button.is_active() {
-                    show_sidebar(&split_view, &manually_hidden);
-                } else {
-                    hide_sidebar(&split_view, &manually_hidden);
-                }
-                // Persist only real user toggles — never the responsive
-                // (width-driven) collapse, which does not go through here.
+            if updating.get() {
+                return;
+            }
+            let has_sidebar = sidebar_page.get_visible();
+            if !has_sidebar && !button.is_active() {
+                return;
+            }
+            if !has_sidebar {
                 let saved = {
                     let conn = &conn;
-                    reprise_core::library::settings::set_sidebar_collapsed(
-                        conn,
-                        !button.is_active(),
-                    )
+                    reprise_core::library::settings::set_sidebar_visible(conn, true)
                 };
                 if let Err(error) = saved {
-                    tracing::warn!(%error, "could not save sidebar collapse state");
+                    tracing::warn!(%error, "could not save sidebar visibility");
+                    sync_sidebar_toggle(button, &split_view, &sidebar_page, &updating);
+                    return;
                 }
+                apply_sidebar_visibility(&split_view, &sidebar_page, true);
+            }
+            if button.is_active() {
+                show_sidebar(&split_view, &manually_hidden);
+            } else {
+                hide_sidebar(&split_view, &manually_hidden);
+            }
+            // Persist only real user toggles — never the responsive
+            // (width-driven) collapse, which does not go through here.
+            let saved = {
+                let conn = &conn;
+                reprise_core::library::settings::set_sidebar_collapsed(conn, !button.is_active())
+            };
+            if let Err(error) = saved {
+                tracing::warn!(%error, "could not save sidebar collapse state");
             }
         });
     }
@@ -236,7 +245,7 @@ pub(in crate::ui) fn wire_sidebar_toggle(
         let manually_hidden = manually_hidden.clone();
         let updating = updating.clone();
         sidebar_page.connect_visible_notify(move |sidebar_page| {
-            if !sidebar_page.is_visible() {
+            if !sidebar_page.get_visible() {
                 manually_hidden.set(false);
                 split_view.set_show_sidebar(false);
             } else if !manually_hidden.get() {
@@ -256,14 +265,189 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_toggle_remains_available_whenever_the_sidebar_slot_exists() {
-        assert!(sidebar_toggle_is_visible(true));
-        assert!(!sidebar_toggle_is_visible(false));
+    fn sidebar_pointer_activation_preserves_content_focus() {
+        assert!(!sidebar_toggle_focus_on_click());
+    }
+
+    /// Reproduces the reported bug: the left sidebar toggle is missing after a
+    /// normal start and only appears once the Layout preference is touched.
+    ///
+    /// `window.rs` runs `PreferencesContext::new` (which applies the persisted
+    /// sidebar visibility), then `wire_sidebar_toggle`, and only then
+    /// `window.present()`. `sync_sidebar_toggle` reads `sidebar_page.is_visible()`
+    /// — that is `gtk_widget_is_visible`, true only when the widget *and every
+    /// ancestor* are visible. Before `present()` the window is not, so the sync
+    /// hides the toggle, and nothing resyncs it afterwards because the `visible`
+    /// property of `sidebar_page` never changes again.
+    ///
+    /// The window here is deliberately never presented, exactly as at the moment
+    /// `wire_sidebar_toggle` runs during startup.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sidebar_toggle_survives_being_wired_before_the_window_is_presented() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        // The real toggle is constructed visible (`window_header.rs`).
+        let toggle = gtk4::ToggleButton::new();
+        let window = gtk4::Window::builder().child(&split).build();
+
+        // Guard the premise: the page must really be parented into the window,
+        // otherwise `is_visible()` has no unseen ancestor and this test would
+        // pass for the wrong reason.
+        assert!(
+            sidebar.ancestor(gtk4::Window::static_type()).is_some(),
+            "premise broken: the sidebar page is not parented into the window"
+        );
+        assert!(
+            !window.is_visible(),
+            "premise broken: the window is presented"
+        );
+
+        // Startup order: persisted visibility first, then the toggle wiring.
+        apply_sidebar_visibility(&split, &sidebar, true);
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &test_conn());
+
+        assert!(
+            sidebar.get_visible(),
+            "the sidebar slot is enabled, so the page's own visible flag is set"
+        );
+        assert!(
+            toggle.get_visible(),
+            "the sidebar toggle must be present after startup wiring, not only \
+             once the Layout preference is touched"
+        );
+        assert!(
+            toggle.is_active(),
+            "an expanded sidebar must leave the toggle switched on, otherwise a \
+             toggle that is merely always visible would satisfy this test while \
+             showing the wrong state"
+        );
+    }
+
+    /// The same wrong getter costs a second, quieter feature: `wire_sidebar_toggle`
+    /// guards the restore of last session's manual collapse with
+    /// `sidebar_page.is_visible()`. Before `present()` that is false, so the
+    /// guard never passes and a persisted collapse is silently dropped — the
+    /// sidebar comes back expanded however the user left it.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_persisted_sidebar_collapse_survives_a_restart() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = test_conn();
+        reprise_core::library::settings::set_sidebar_collapsed(&conn, true).unwrap();
+
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        let toggle = gtk4::ToggleButton::new();
+        let _window = gtk4::Window::builder().child(&split).build();
+
+        apply_sidebar_visibility(&split, &sidebar, true);
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &conn);
+
+        assert!(
+            !split.shows_sidebar(),
+            "the sidebar was collapsed when the session ended, so startup must \
+             restore it collapsed"
+        );
+        assert!(
+            !toggle.is_active(),
+            "a restored collapse must leave the toggle switched off"
+        );
     }
 
     #[test]
-    fn sidebar_pointer_activation_preserves_content_focus() {
-        assert!(!sidebar_toggle_focus_on_click());
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn activating_the_sidebar_toggle_restores_a_disabled_sidebar_slot() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = test_conn();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        let toggle = gtk4::ToggleButton::new();
+        let _window = gtk4::Window::builder().child(&split).build();
+
+        reprise_core::library::settings::set_sidebar_visible(&conn, false).unwrap();
+        apply_sidebar_visibility(&split, &sidebar, false);
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &conn);
+
+        assert!(
+            toggle.get_visible(),
+            "the sidebar toggle remains available while the sidebar slot is disabled"
+        );
+        assert!(!toggle.is_active());
+
+        toggle.set_active(true);
+
+        assert!(sidebar.get_visible());
+        assert!(split.shows_sidebar());
+        assert!(reprise_core::library::settings::get_sidebar_visible(&conn));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_rejected_sidebar_enable_keeps_the_slot_and_toggle_off() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = test_conn();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        let toggle = gtk4::ToggleButton::new();
+        let _window = gtk4::Window::builder().child(&split).build();
+
+        reprise_core::library::settings::set_sidebar_visible(&conn, false).unwrap();
+        apply_sidebar_visibility(&split, &sidebar, false);
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &conn);
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "CREATE TRIGGER reject_setting_updates
+                 BEFORE UPDATE ON settings
+                 BEGIN
+                   SELECT RAISE(FAIL, 'settings are read-only');
+                 END;",
+            )
+            .unwrap();
+
+        toggle.set_active(true);
+
+        assert!(!sidebar.get_visible());
+        assert!(!split.shows_sidebar());
+        assert!(!toggle.is_active());
+        assert!(!reprise_core::library::settings::get_sidebar_visible(&conn));
     }
 
     #[test]
