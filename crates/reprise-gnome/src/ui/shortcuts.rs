@@ -49,6 +49,10 @@ use std::rc::Rc;
 use super::player_controller::PlayerController;
 use super::window::search_popover::{SearchPopover, WeakSearchPopover};
 
+#[cfg(test)]
+#[path = "shortcuts_lifecycle_tests.rs"]
+mod lifecycle_tests;
+
 /// Bare `gio::SimpleAction` names in the window's `"win"` action group —
 /// internal identifiers, not user-facing text.
 const ACTION_TOGGLE_PLAY_PAUSE: &str = "toggle-play-pause";
@@ -268,10 +272,10 @@ fn wire_window_lifecycle(app: &adw::Application, window: &adw::ApplicationWindow
     app.set_accels_for_action("win.close", &["<Control>w"]);
 
     let quit = gio::SimpleAction::new("quit", None);
-    let app_weak = app.downgrade();
+    let window_weak = window.downgrade();
     quit.connect_activate(move |_, _| {
-        if let Some(app) = app_weak.upgrade() {
-            app.quit();
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
         }
     });
     app.add_action(&quit);
