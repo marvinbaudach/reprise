@@ -195,6 +195,12 @@ impl MinimalView {
             compact_window.connect_close_request(move |_| {
                 if !closing_from_compact.replace(true) {
                     if let Some(library_window) = library_window.upgrade() {
+                        // Mirror the compact-window guard below: direct Compact startup
+                        // never presents the Library window, but GTK 4.22 reads its
+                        // GdkSurface while removing it from the application.
+                        if !library_window.is_realized() {
+                            gtk4::prelude::WidgetExt::realize(&library_window);
+                        }
                         library_window.close();
                     }
                 }
@@ -204,6 +210,13 @@ impl MinimalView {
             window.connect_close_request(move |_| {
                 if !closing.replace(true) {
                     if let Some(compact_window) = compact_window_weak.upgrade() {
+                        // GTK 4.22 reads this window's GdkSurface while it emits
+                        // ::window-removed. A window that was never presented has none, so
+                        // realize it first — destroying it unrealized segfaults under Wayland
+                        // (X11 survives it). See the EVIDENCE file next to this plan.
+                        if !compact_window.is_realized() {
+                            gtk4::prelude::WidgetExt::realize(&compact_window);
+                        }
                         compact_window.destroy();
                     }
                 }
