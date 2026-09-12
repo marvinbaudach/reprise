@@ -401,6 +401,9 @@ pub fn build(
         super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
     let content_host = decorations.content_host();
     content_host.set_content(&library_chrome.root);
+    // `build_mode` connects compact-window teardown before the session save,
+    // which is the last `close-request` handler wired below. Every earlier
+    // close handler must survive for that save to run.
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
         player.as_ref().map(|player| &player.compact_player),
@@ -462,6 +465,8 @@ pub fn build(
             }
         });
     }
+    // This wiring connects the session save as the last `close-request`
+    // handler. Anything connected before it takes the save down when it dies.
     super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
         app,
         window: &window,

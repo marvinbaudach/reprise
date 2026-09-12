@@ -567,6 +567,51 @@ mod tests {
         assert!(!persisted.maximized);
     }
 
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn closing_from_library_realizes_the_compact_window_before_destroying_it() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.CompactCloseTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::builder().application(&app).build();
+        let compact = CompactPlayer::new();
+        let mode = MinimalView::new(
+            &window,
+            Some(&compact),
+            Rc::new(crate::test_db::open().unwrap()),
+            ViewTransition {
+                mode: WindowViewMode::Library,
+                layout: CompactLayout::Card,
+            },
+            Rc::new(|_| {}),
+        );
+        let saved = Rc::new(Cell::new(false));
+        let saved_from_close = saved.clone();
+        window.connect_close_request(move |_| {
+            saved_from_close.set(true);
+            glib::Propagation::Proceed
+        });
+        mode.apply_initial();
+
+        let compact_window = mode.compact_window().unwrap();
+        assert!(!compact_window.is_realized());
+        let realized = Rc::new(Cell::new(false));
+        compact_window.connect_realize({
+            let realized = realized.clone();
+            move |_| realized.set(true)
+        });
+        window.close();
+        wait_for_window_state("session saved", || saved.get());
+        assert!(
+            realized.get(),
+            "the compact window was destroyed without a surface"
+        );
+    }
+
     fn test_split_view() -> adw::NavigationSplitView {
         let sidebar = adw::NavigationPage::builder()
             .title("Sidebar")
