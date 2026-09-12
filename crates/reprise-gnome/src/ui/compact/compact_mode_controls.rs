@@ -567,6 +567,35 @@ mod tests {
         assert!(!persisted.maximized);
     }
 
+    fn save_session_on_close(
+        window: &adw::ApplicationWindow,
+        conn: &Rc<Db>,
+        marker: &'static str,
+    ) -> Rc<Cell<bool>> {
+        let saved = Rc::new(Cell::new(false));
+        let saved_from_close = saved.clone();
+        let conn = conn.clone();
+        window.connect_close_request(move |_| {
+            let state = reprise_core::library::session::SessionState {
+                search: marker.to_owned(),
+                ..Default::default()
+            };
+            reprise_core::library::session::save(&conn, &state).unwrap();
+            saved_from_close.set(true);
+            glib::Propagation::Proceed
+        });
+        saved
+    }
+
+    fn surface_at_unrealize(window: &adw::ApplicationWindow) -> Rc<Cell<Option<bool>>> {
+        let surface_at_unrealize = Rc::new(Cell::new(None));
+        window.connect_unrealize({
+            let surface_at_unrealize = surface_at_unrealize.clone();
+            move |window| surface_at_unrealize.set(Some(window.surface().is_some()))
+        });
+        surface_at_unrealize
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn closing_from_library_realizes_the_compact_window_before_destroying_it() {
@@ -579,36 +608,87 @@ mod tests {
         app.register(None::<&gio::Cancellable>).unwrap();
         let window = adw::ApplicationWindow::builder().application(&app).build();
         let compact = CompactPlayer::new();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let mode = MinimalView::new(
             &window,
             Some(&compact),
-            Rc::new(crate::test_db::open().unwrap()),
+            conn.clone(),
             ViewTransition {
                 mode: WindowViewMode::Library,
                 layout: CompactLayout::Card,
             },
             Rc::new(|_| {}),
         );
-        let saved = Rc::new(Cell::new(false));
-        let saved_from_close = saved.clone();
-        window.connect_close_request(move |_| {
-            saved_from_close.set(true);
-            glib::Propagation::Proceed
-        });
+        let saved = save_session_on_close(&window, &conn, "library close survived");
         mode.apply_initial();
 
         let compact_window = mode.compact_window().unwrap();
         assert!(!compact_window.is_realized());
-        let realized = Rc::new(Cell::new(false));
-        compact_window.connect_realize({
-            let realized = realized.clone();
-            move |_| realized.set(true)
-        });
+        let surface_at_unrealize = surface_at_unrealize(&compact_window);
         window.close();
+        while glib::MainContext::default().iteration(false) {}
+        assert_eq!(
+            surface_at_unrealize.get(),
+            Some(true),
+            "the compact window had no surface when it was destroyed"
+        );
         wait_for_window_state("session saved", || saved.get());
-        assert!(
-            realized.get(),
-            "the compact window was destroyed without a surface"
+        assert_eq!(
+            reprise_core::library::session::load(&conn).search,
+            "library close survived"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn closing_from_compact_startup_realizes_the_library_window_before_destroying_it() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.LibraryCloseTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::builder().application(&app).build();
+        let compact = CompactPlayer::new();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let mode = MinimalView::new(
+            &window,
+            Some(&compact),
+            conn.clone(),
+            ViewTransition {
+                mode: WindowViewMode::Compact,
+                layout: CompactLayout::Card,
+            },
+            Rc::new(|_| {}),
+        );
+        let saved = save_session_on_close(&window, &conn, "compact close survived");
+        mode.apply_initial();
+
+        let compact_window = mode.compact_window().unwrap();
+        wait_for_window_state("compact startup window mapped", || {
+            compact_window.is_mapped()
+        });
+        assert!(!window.is_realized());
+        let surface_before_destroy = Rc::new(Cell::new(None));
+        window.connect_close_request({
+            let surface_before_destroy = surface_before_destroy.clone();
+            move |window| {
+                surface_before_destroy.set(Some(window.surface().is_some()));
+                glib::Propagation::Proceed
+            }
+        });
+        compact_window.close();
+        while glib::MainContext::default().iteration(false) {}
+        assert_eq!(
+            surface_before_destroy.get(),
+            Some(true),
+            "the library window had no surface when its close chain began"
+        );
+        wait_for_window_state("session saved", || saved.get());
+        assert_eq!(
+            reprise_core::library::session::load(&conn).search,
+            "compact close survived"
         );
     }
 

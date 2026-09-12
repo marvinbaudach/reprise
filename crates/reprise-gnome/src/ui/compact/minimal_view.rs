@@ -195,6 +195,12 @@ impl MinimalView {
             compact_window.connect_close_request(move |_| {
                 if !closing_from_compact.replace(true) {
                     if let Some(library_window) = library_window.upgrade() {
+                        // Mirror the compact-window guard below: direct Compact startup
+                        // never presents the Library window, but GTK 4.22 reads its
+                        // GdkSurface while removing it from the application.
+                        if !library_window.is_realized() {
+                            gtk4::prelude::WidgetExt::realize(&library_window);
+                        }
                         library_window.close();
                     }
                 }
