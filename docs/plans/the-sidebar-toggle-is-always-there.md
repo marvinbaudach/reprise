@@ -2,7 +2,7 @@
 slug: the-sidebar-toggle-is-always-there
 worktree: /home/marvin/Projects/reprise-the-sidebar-toggle-is-always-there
 branch: feature/the-sidebar-toggle-is-always-there
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-12
 ---
