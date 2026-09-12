@@ -2,7 +2,7 @@
 //!
 //! Split from `now_playing.rs` to keep both under the file cap. This is the
 //! single place that turns a spectrum frame into `pressure` and `swell` and
-//! hands them to the cover lift, the backdrop, the clouds and the readout —
+//! hands them to the backdrop, the clouds and the readout —
 //! having two such places is how a duplicated predicate drifts.
 
 use super::panel_state::{page_after_tab_hidden, PanelTab};
@@ -45,7 +45,6 @@ impl NowPlayingPanel {
             *self.swell.borrow_mut() = Swell::default();
             self.swell_pressure.set(0.0);
             self.swell_last_frame_us.set(0);
-            self.widgets.cover_lift.feed(0.0, 0.0);
             self.widgets.bloom.set_light(0.0, 0.0);
             self.widgets.cloud.set_frame_time(0);
             self.widgets.visualizer.set_swell(0.0);
@@ -68,7 +67,6 @@ impl NowPlayingPanel {
                 swell.value_without_motion()
             }
         };
-        self.widgets.cover_lift.feed(value, pressure);
         self.widgets.bloom.set_light(pressure, value);
         // The clouds take the clock and nothing else: their drift is closed
         // to the spectrum, so a kick cannot reach a coordinate.

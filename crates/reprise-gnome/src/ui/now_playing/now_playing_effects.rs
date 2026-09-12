@@ -43,7 +43,9 @@ impl super::NowPlayingPanel {
             |_| (presentation.subtitle.as_str(), ""),
         );
         self.widgets.artist.set_label(artist);
-        self.widgets.album.set_label(album);
+        self.widgets
+            .album
+            .set_label(&album_label_text(artist, album));
         self.widgets.artist.set_visible(!artist.trim().is_empty());
         self.widgets.album.set_visible(!album.trim().is_empty());
         if presentation.idle {

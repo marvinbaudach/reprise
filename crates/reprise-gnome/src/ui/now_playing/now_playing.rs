@@ -13,12 +13,12 @@ use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
 #[cfg(test)]
 use super::now_playing_column::PANEL_WIDTH;
+use super::now_playing_head;
 use super::panel_state::*;
 use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::cover_lift::CoverLift;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
@@ -27,14 +27,13 @@ use crate::ui::style::tokens;
 use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
-const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
 
 pub(super) struct PanelWidgets {
     pub(super) column: NowPlayingColumn,
-    stage: gtk4::Box,
+    pub(super) stage: gtk4::Box,
     #[cfg(test)]
     track_content: gtk4::Box,
     #[cfg(test)]
@@ -42,11 +41,11 @@ pub(super) struct PanelWidgets {
     #[cfg(test)]
     artwork_overlay: gtk4::Overlay,
     #[cfg(test)]
-    artwork_band: gtk4::Box,
+    pub(super) artwork_band: gtk4::Box,
     #[cfg(test)]
     head: gtk4::Box,
     #[cfg(test)]
-    metadata: gtk4::Box,
+    pub(super) metadata: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     pub(super) visualizer: SongVisualizer,
@@ -55,18 +54,19 @@ pub(super) struct PanelWidgets {
     lyrics_page: adw::ViewStackPage,
     pub(super) visual_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
-    pub(super) cover_lift: CoverLift,
     external_cover: gtk4::Box,
-    cover: gtk4::Image,
+    pub(super) cover: gtk4::Image,
     outgoing_cover: gtk4::Image,
-    title: gtk4::Label,
-    artist: gtk4::Label,
-    album: gtk4::Label,
+    pub(super) title: gtk4::Label,
+    pub(super) artist: gtk4::Label,
+    pub(super) album: gtk4::Label,
     // Retained for the tab session and NPP-13 acceptance test, which prove
     // the active tab stays outside the cover transition.
     pub(super) tab_stack: adw::ViewStack,
     #[cfg(test)]
-    tab_switcher: adw::InlineViewSwitcher,
+    pub(super) tab_switcher: adw::InlineViewSwitcher,
+    #[cfg(test)]
+    pub(super) list_rule: gtk4::Box,
     footer: gtk4::Label,
     footers: Rc<RefCell<TabFooters>>,
     pub(super) session: Rc<TabSession>,
@@ -89,105 +89,28 @@ fn build_widgets_for_session(
     conn: &Rc<Db>,
     cover_loader: &Rc<CoverLoader>,
 ) -> PanelWidgets {
-    let cover = gtk4::Image::builder()
-        .pixel_size(tokens::NOW_PLAYING_COVER_SIZE)
-        .width_request(tokens::NOW_PLAYING_COVER_SIZE)
-        .height_request(tokens::NOW_PLAYING_COVER_SIZE)
-        .build();
-    cover.set_accessible_role(gtk4::AccessibleRole::Link);
-    cover.add_css_class("reprise-now-playing-cover");
-    CoverLoader::set_placeholder(&cover);
-    let outgoing_cover = gtk4::Image::builder()
-        .pixel_size(tokens::NOW_PLAYING_COVER_SIZE)
-        .width_request(tokens::NOW_PLAYING_COVER_SIZE)
-        .height_request(tokens::NOW_PLAYING_COVER_SIZE)
-        .can_target(false)
-        .opacity(0.0)
-        .visible(false)
-        .build();
-    outgoing_cover.add_css_class("reprise-now-playing-cover");
-    outgoing_cover.set_accessible_role(gtk4::AccessibleRole::Presentation);
-    let cover_transition = gtk4::Overlay::new();
-    cover_transition.set_child(Some(&cover));
-    cover_transition.add_overlay(&outgoing_cover);
-    let cover_lift = CoverLift::new(&cover_transition, tokens::NOW_PLAYING_COVER_SIZE);
-    let external_cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    external_cover.set_size_request(
-        tokens::NOW_PLAYING_COVER_SIZE,
-        tokens::NOW_PLAYING_COVER_SIZE,
-    );
-    external_cover.set_halign(gtk4::Align::Center);
-    external_cover.set_valign(gtk4::Align::Center);
-    let cover_stack = gtk4::Stack::new();
-    cover_stack.add_named(cover_lift.widget(), Some("track"));
-    cover_stack.add_named(&external_cover, Some("external"));
-    cover_stack.set_visible_child_name("track");
-
-    let title = gtk4::Label::builder()
-        .xalign(0.5)
-        .justify(gtk4::Justification::Center)
-        .wrap(true)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
-        .build();
-    title.set_accessible_role(gtk4::AccessibleRole::Link);
-    title.add_css_class("reprise-now-playing-title");
-    let artist = gtk4::Label::builder()
-        .xalign(0.5)
-        .justify(gtk4::Justification::Center)
-        .wrap(true)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
-        .build();
-    artist.set_accessible_role(gtk4::AccessibleRole::Link);
-    artist.add_css_class("reprise-now-playing-subtitle");
-    let album = gtk4::Label::builder()
-        .xalign(0.5)
-        .justify(gtk4::Justification::Center)
-        .wrap(true)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
-        .build();
-    album.set_accessible_role(gtk4::AccessibleRole::Link);
-    album.add_css_class("reprise-now-playing-subtitle");
-
-    let metadata = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    metadata.add_css_class("reprise-now-playing-metadata");
-    metadata.set_halign(gtk4::Align::Fill);
-    metadata.append(&title);
-    metadata.append(&artist);
-    metadata.append(&album);
-    let head = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-    head.add_css_class("reprise-now-playing-head");
-    head.set_halign(gtk4::Align::Center);
-    // The artwork band has a fixed 280 px allocation. Start alignment keeps
-    // the cover's top edge at the established 22 px inset instead of
-    // re-centering it when the title block leaves this box.
-    head.set_valign(gtk4::Align::Start);
-    head.append(&cover_stack);
-
-    let glow = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    glow.add_css_class("reprise-now-playing-glow");
-    glow.set_can_target(false);
-    let artwork_band = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    artwork_band.set_height_request(tokens::NOW_PLAYING_ARTWORK_BAND);
-    artwork_band.set_can_target(false);
-    let artwork_overlay = gtk4::Overlay::new();
-    artwork_overlay.set_child(Some(&artwork_band));
-    let bloom = cover_bloom::CoverBloom::new();
-    let cloud = cover_cloud::CoverCloud::new();
-    // Within the artwork band, bottom to top: the transparent geometry band,
-    // the drifting clouds, the blurred cover, then the cover. Metadata is a
-    // sibling below this overlay, so no cover-derived pixel can paint behind
-    // it — and the cover is above both moving layers, which is what keeps it
-    // from ever turning or growing with them.
-    artwork_overlay.add_overlay(cloud.widget());
-    artwork_overlay.add_overlay(bloom.widget());
-    artwork_overlay.add_overlay(&head);
-    let head_column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    head_column.append(&artwork_overlay);
-    head_column.append(&metadata);
-    let head_group = gtk4::Overlay::new();
-    head_group.set_child(Some(&glow));
-    head_group.add_overlay(&head_column);
-    head_group.set_measure_overlay(&head_column, true);
+    let now_playing_head::HeadWidgets {
+        head_group,
+        #[cfg(test)]
+        head_column,
+        #[cfg(test)]
+        artwork_overlay,
+        #[cfg(test)]
+        artwork_band,
+        #[cfg(test)]
+        head,
+        #[cfg(test)]
+        metadata,
+        bloom,
+        cloud,
+        cover_stack,
+        external_cover,
+        cover,
+        outgoing_cover,
+        title,
+        artist,
+        album,
+    } = now_playing_head::build_head();
 
     let lyrics = LyricsView::new();
     let up_next = UpNextPanel::new(conn.clone(), cover_loader);
@@ -226,7 +149,12 @@ fn build_widgets_for_session(
         .homogeneous(true)
         .build();
     tab_switcher.add_css_class("reprise-now-playing-tabs");
-    tab_switcher.set_size_request(1, TAB_SWITCHER_MIN_HEIGHT);
+    tab_switcher.set_size_request(1, tokens::NOW_PLAYING_SEGMENT_HEIGHT);
+
+    let list_rule = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    list_rule.add_css_class("reprise-now-playing-list-rule");
+    list_rule.set_can_target(false);
+    list_rule.set_height_request(1);
 
     let footer = gtk4::Label::new(None);
     footer.add_css_class("reprise-now-playing-footer");
@@ -292,6 +220,7 @@ fn build_widgets_for_session(
     track_content.append(&head_group);
     stage.append(&track_content);
     stage.append(&tab_switcher);
+    stage.append(&list_rule);
     stage.append(&tab_stack);
     stage.append(&footer);
 
@@ -321,7 +250,6 @@ fn build_widgets_for_session(
         lyrics_page,
         visual_page,
         cover_stack,
-        cover_lift,
         external_cover,
         cover,
         outgoing_cover,
@@ -331,6 +259,8 @@ fn build_widgets_for_session(
         tab_stack,
         #[cfg(test)]
         tab_switcher,
+        #[cfg(test)]
+        list_rule,
         footer,
         footers,
         session: session.clone(),
@@ -736,7 +666,7 @@ mod reactive_tests;
 mod tab_tests;
 #[cfg(test)]
 #[path = "now_playing_tests.rs"]
-mod tests;
+pub(super) mod tests;
 
 #[cfg(test)]
 mod collapse_toggle_tests {

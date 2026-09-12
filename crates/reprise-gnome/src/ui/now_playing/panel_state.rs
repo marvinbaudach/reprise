@@ -47,6 +47,16 @@ pub(super) fn should_render_up_next(panel_visible: bool, selected_tab: PanelTab)
     panel_visible && selected_tab == PanelTab::UpNext
 }
 
+pub(super) fn album_label_text(artist: &str, album: &str) -> String {
+    if album.is_empty() {
+        return String::new();
+    }
+    if artist.is_empty() {
+        return album.to_owned();
+    }
+    format!(" ·\u{00a0}{album}")
+}
+
 /// The page the stack has to show after `tab` became unavailable (`NPP-15`).
 ///
 /// `None` means "leave the selection alone". Both callers — the Lyrics tab
@@ -75,7 +85,16 @@ pub(super) struct TabFooters {
 
 #[cfg(test)]
 mod tests {
-    use super::{page_after_tab_hidden, PanelTab, PANEL_TABS, UP_NEXT_PAGE};
+    use super::{album_label_text, page_after_tab_hidden, PanelTab, PANEL_TABS, UP_NEXT_PAGE};
+
+    #[test]
+    fn album_label_text_joins_only_the_present_artist_and_album() {
+        assert_eq!(album_label_text("Artist", "Album"), " ·\u{00a0}Album");
+        assert_eq!(album_label_text("", "Album"), "Album");
+        assert_eq!(album_label_text("Artist", ""), "");
+        assert_eq!(album_label_text("", ""), "");
+        assert_eq!(album_label_text("Artist", "A & B"), " ·\u{00a0}A & B");
+    }
 
     #[test]
     fn npp_14_has_the_three_built_in_tabs_in_order() {

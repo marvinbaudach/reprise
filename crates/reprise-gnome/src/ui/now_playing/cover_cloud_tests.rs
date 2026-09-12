@@ -1,184 +1,12 @@
 use super::*;
 
-/// The mockup's own numbers, kept here so a change to the module has to argue
-/// with the design rather than quietly redefine it.
+/// The mockup's own size, kept here so field geometry has to argue with the
+/// design rather than quietly redefine it.
 const SPEC_COVER: f64 = 240.0;
+const COVERAGE_GRID_STEPS: u32 = 20;
 
 #[test]
-fn npc_1_a_period_is_the_whole_round_trip_not_one_leg() {
-    // "16 s, ease-in-out, endlos, hin und zurück" — the layer leaves, arrives
-    // and is home again inside one period. Driving this off a reversing tween
-    // of the same length would take twice as long, which is the mistake this
-    // test exists to catch.
-    assert!((drift_progress(0.0, 16.0, 0.0) - 0.0).abs() < 1e-9);
-    assert!((drift_progress(8.0, 16.0, 0.0) - 1.0).abs() < 1e-9);
-    assert!((drift_progress(16.0, 16.0, 0.0) - 0.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_2_the_drift_never_jumps_at_the_wrap() {
-    // A step across the seam must be no larger than a step anywhere else.
-    let just_before = drift_progress(15.999, 16.0, 0.0);
-    let just_after = drift_progress(16.001, 16.0, 0.0);
-    assert!(
-        (just_before - just_after).abs() < 1e-3,
-        "seam jumps from {just_before} to {just_after}"
-    );
-}
-
-#[test]
-fn npc_3_a_long_session_does_not_lose_the_drift_into_a_stutter() {
-    // A day in, the fraction has to be as exact as it was at the start.
-    assert!((drift_progress(86_400.0, 16.0, 0.0) - drift_progress(0.0, 16.0, 0.0)).abs() < 1e-9);
-    assert!((drift_progress(86_408.0, 16.0, 0.0) - drift_progress(8.0, 16.0, 0.0)).abs() < 1e-9);
-}
-
-#[test]
-fn npc_4_the_drift_eases_in_and_out_rather_than_running_flat() {
-    // A quarter of the way through a leg a linear ramp would stand at 0.5.
-    // ease-in-out is still gathering itself there, and symmetric about the
-    // midpoint of the leg.
-    let quarter = drift_progress(2.0, 16.0, 0.0);
-    let three_quarters = drift_progress(6.0, 16.0, 0.0);
-    assert!(quarter < 0.4, "eased start reached {quarter}");
-    assert!((quarter + three_quarters - 1.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_5_no_cycle_runs_faster_than_sixteen_seconds() {
-    // "kein Zyklus unter 16 s" — the one rule with a number attached.
-    const { assert!(BACK_PERIOD_S >= 16.0) };
-    const { assert!(FRONT_PERIOD_S >= 16.0) };
-}
-
-#[test]
-fn npc_6_the_two_layers_start_at_opposite_ends_of_the_path() {
-    // The offset is a real half period, which is what sets the layers against
-    // each other. The mockup asks for `reverse` as well, but a keyframe list
-    // whose first and last poses are identical plays the same backwards, so
-    // the offset is doing all of the work and has to be exact.
-    assert!((FRONT_OFFSET_S - FRONT_PERIOD_S / 2.0).abs() < 1e-9);
-    let back = drift_progress(0.0, BACK_PERIOD_S, 0.0);
-    let front = drift_progress(0.0, FRONT_PERIOD_S, FRONT_OFFSET_S);
-    assert!((back - 0.0).abs() < 1e-9);
-    assert!((front - 1.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_7_the_pair_of_layers_repeats_only_after_eighty_seconds() {
-    // 16 and 20 share a least common multiple of 80: before that the two
-    // layers never hold the same pair of poses again, so the head of the panel
-    // does not visibly loop.
-    let pose_at = |t: f64| {
-        (
-            drift_progress(t, BACK_PERIOD_S, 0.0),
-            drift_progress(t, FRONT_PERIOD_S, FRONT_OFFSET_S),
-        )
-    };
-    let (back0, front0) = pose_at(0.0);
-    // Stepped by index rather than by adding to a float: an accumulated 0.05
-    // lands at 79.999999 and would report the 80 s return as an early repeat.
-    let mut earliest_repeat = None;
-    for step in 1..1_599 {
-        let t = f64::from(step) * 0.05;
-        let (back, front) = pose_at(t);
-        if (back - back0).abs() < 1e-4 && (front - front0).abs() < 1e-4 {
-            earliest_repeat = Some(t);
-            break;
-        }
-    }
-    assert!(
-        earliest_repeat.is_none(),
-        "the pair repeats after {earliest_repeat:?} s, before the 80 s it should"
-    );
-    let (back80, front80) = pose_at(80.0);
-    assert!((back80 - back0).abs() < 1e-9);
-    assert!((front80 - front0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_8_the_path_runs_between_the_two_poses_the_mockup_names() {
-    // translate(-20%,-12%) scale(1.4) rotate(0deg) → translate(16%,12%) scale(1.55) rotate(10deg)
-    let start = drift_at(0.0, 16.0, 0.0);
-    assert!((start.x - -0.20).abs() < 1e-9);
-    assert!((start.y - -0.12).abs() < 1e-9);
-    assert!((start.scale - 1.40).abs() < 1e-9);
-    assert!((start.rotation_deg - 0.0).abs() < 1e-9);
-
-    let end = drift_at(8.0, 16.0, 0.0);
-    assert!((end.x - 0.16).abs() < 1e-9);
-    assert!((end.y - 0.12).abs() < 1e-9);
-    assert!((end.scale - 1.55).abs() < 1e-9);
-    assert!((end.rotation_deg - 10.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_9_the_layer_always_covers_the_field_it_drifts_across() {
-    // The smallest scale on the path still has to hide its own edges after the
-    // largest translation, or a hard edge walks into view. Derived from the
-    // path's own constants rather than pinned, so a future change of either
-    // cannot silently stale this guard.
-    let travel = DRIFT_X.0.abs().max(DRIFT_X.1);
-    assert!(
-        DRIFT_SCALE.0 >= 1.0 + 2.0 * travel,
-        "scale {} leaves an edge at {travel} of travel",
-        DRIFT_SCALE.0
-    );
-}
-
-#[test]
-fn npc_10_the_scrim_hits_the_three_stops_the_mockup_names() {
-    // 0 % at the top, 15 % at 40 % of the field, fully opaque from 55 % down.
-    assert!((scrim_alpha(0.0) - 0.0).abs() < 1e-9);
-    assert!((scrim_alpha(0.40) - 0.15).abs() < 1e-9);
-    assert!((scrim_alpha(0.55) - 1.0).abs() < 1e-9);
-    assert!((scrim_alpha(1.0) - 1.0).abs() < 1e-9);
-    // Clamped rather than extrapolated on either side.
-    assert!((scrim_alpha(-0.5) - 0.0).abs() < 1e-9);
-    assert!((scrim_alpha(4.0) - 1.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_11_the_scrim_only_ever_darkens_on_the_way_down() {
-    // No hard edge means no step and no dip: the fade rises the whole way.
-    let mut previous = scrim_alpha(0.0);
-    for step in 0..=200 {
-        let y = f64::from(step) / 200.0;
-        let alpha = scrim_alpha(y);
-        assert!(
-            alpha >= previous - 1e-12,
-            "the scrim lightens again at y={y}"
-        );
-        previous = alpha;
-    }
-}
-
-#[test]
-fn npc_12_the_text_never_sits_on_a_moving_ground() {
-    // The title block begins where the artwork band ends. Whatever the field's
-    // height, the scrim has to be fully opaque long before that.
-    let cover = f64::from(tokens::NOW_PLAYING_COVER_SIZE);
-    let (_, top, _, height) = field(300.0, cover);
-    let opaque_at = top + SCRIM_FULL_Y * height;
-
-    // The band's own end is the weak claim — anything under 280 would pass it,
-    // including a scrim that closed at 279 and put a moving edge right beneath
-    // the title. The claim worth making is that the light is already gone by
-    // the time the cover ends: below that edge there is nothing left to move.
-    let cover_bottom = 22.0 + cover;
-    assert!(
-        opaque_at < cover_bottom,
-        "the scrim closes at y={opaque_at:.1}, below the cover's own edge at {cover_bottom:.1}"
-    );
-    let band = f64::from(tokens::NOW_PLAYING_ARTWORK_BAND);
-    assert!(
-        opaque_at < band,
-        "and it must close inside the {band:.1}px band"
-    );
-}
-
-#[test]
-fn npc_13_the_field_carries_the_mockups_proportions_not_its_pixels() {
+fn ac_24_the_field_carries_the_mockups_proportions_not_its_pixels() {
     // Every length is a ratio of the cover, so the panel keeps its own size.
     // Checked by feeding the mockup's own cover back in: the pixels have to
     // come out as the mockup drew them.
@@ -190,14 +18,14 @@ fn npc_13_the_field_carries_the_mockups_proportions_not_its_pixels() {
 }
 
 #[test]
-fn npc_14_the_weight_leans_away_from_the_track_list() {
+fn ac_24_the_weight_leans_away_from_the_track_list() {
     // "Schwerpunkt nach außen, weg von der Trackliste" — the panel sits on the
     // right of the window, so the wider overhang has to be the right one.
     const { assert!(OVERHANG_RIGHT_PER_COVER > OVERHANG_LEFT_PER_COVER) };
 }
 
 #[test]
-fn npc_15_the_front_layer_is_the_softer_of_the_two() {
+fn ac_24_the_front_layer_is_the_softer_of_the_two() {
     // The mockup's 48 px and 54 px survive as a ratio: a smaller source raster
     // painted across the same field is a wider blur.
     const { assert!(FRONT_BLUR_EDGE < BACK_BLUR_EDGE) };
@@ -210,32 +38,93 @@ fn npc_15_the_front_layer_is_the_softer_of_the_two() {
 }
 
 #[test]
-fn npc_16_every_cloud_sits_where_the_mockup_put_it() {
-    // Layer 1: 40%/35% at 0.85 and 82%/55% at 0.80, both reaching 50%.
-    assert_eq!(BACK_BLOBS.len(), 2);
-    assert!((BACK_BLOBS[0].x - 0.40).abs() < 1e-9);
-    assert!((BACK_BLOBS[0].y - 0.35).abs() < 1e-9);
+fn ac_24_the_cloud_anchors_form_an_interleaved_lattice() {
+    // Alternating layers across three rows keeps either depth from stacking
+    // on the other while giving the full field the same rhythm.
+    assert_eq!(BACK_BLOBS.len(), 3);
+    assert!((BACK_BLOBS[0].x - 0.24).abs() < 1e-9);
+    assert!((BACK_BLOBS[0].y - 0.20).abs() < 1e-9);
     assert!((BACK_BLOBS[0].alpha - 0.85).abs() < 1e-9);
-    assert!((BACK_BLOBS[1].x - 0.82).abs() < 1e-9);
-    assert!((BACK_BLOBS[1].y - 0.55).abs() < 1e-9);
+    assert!((BACK_BLOBS[1].x - 0.66).abs() < 1e-9);
+    assert!((BACK_BLOBS[1].y - 0.50).abs() < 1e-9);
     assert!((BACK_BLOBS[1].alpha - 0.80).abs() < 1e-9);
+    assert!((BACK_BLOBS[2].x - 0.24).abs() < 1e-9);
+    assert!((BACK_BLOBS[2].y - 0.80).abs() < 1e-9);
+    assert!((BACK_BLOBS[2].alpha - 0.78).abs() < 1e-9);
     assert!(BACK_BLOBS.iter().all(|b| (b.radius - 0.50).abs() < 1e-9));
 
-    // Layer 2: 75%/25% at 0.70 and 30%/80% at 0.60, reaching 45%.
-    assert_eq!(FRONT_BLOBS.len(), 2);
-    assert!((FRONT_BLOBS[0].x - 0.75).abs() < 1e-9);
-    assert!((FRONT_BLOBS[0].y - 0.25).abs() < 1e-9);
+    assert_eq!(FRONT_BLOBS.len(), 3);
+    assert!((FRONT_BLOBS[0].x - 0.66).abs() < 1e-9);
+    assert!((FRONT_BLOBS[0].y - 0.20).abs() < 1e-9);
     assert!((FRONT_BLOBS[0].alpha - 0.70).abs() < 1e-9);
-    assert!((FRONT_BLOBS[1].x - 0.30).abs() < 1e-9);
-    assert!((FRONT_BLOBS[1].y - 0.80).abs() < 1e-9);
+    assert!((FRONT_BLOBS[1].x - 0.24).abs() < 1e-9);
+    assert!((FRONT_BLOBS[1].y - 0.50).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].alpha - 0.60).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].x - 0.66).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].y - 0.80).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].alpha - 0.65).abs() < 1e-9);
     assert!(FRONT_BLOBS
         .iter()
         .all(|blob| (blob.radius - 0.45).abs() < 1e-9));
 }
 
 #[test]
-fn npc_17_the_front_layer_never_shouts_over_the_back_one() {
+fn ac_24_no_two_cloud_anchors_stack_across_layers() {
+    let anchors = all_anchor_points();
+    let minimum = anchors
+        .iter()
+        .enumerate()
+        .flat_map(|(index, first)| {
+            anchors[index + 1..]
+                .iter()
+                .map(move |second| (first.0 - second.0).hypot(first.1 - second.1))
+        })
+        .fold(f64::INFINITY, f64::min);
+    eprintln!("MEASURE cloud anchor minimum separation: {minimum:.6}");
+
+    assert!(
+        minimum >= MIN_ANCHOR_SEPARATION - 1e-9,
+        "nearest anchors are {minimum:.3} apart; minimum is {MIN_ANCHOR_SEPARATION:.2}"
+    );
+}
+
+#[test]
+fn ac_24_every_field_region_is_within_reach_of_a_cloud() {
+    let anchors = all_anchor_points();
+    let mut worst: f64 = 0.0;
+    let mut worst_point = (0.0, 0.0);
+    for y_step in 0..=COVERAGE_GRID_STEPS {
+        for x_step in 0..=COVERAGE_GRID_STEPS {
+            let point = (
+                f64::from(x_step) / f64::from(COVERAGE_GRID_STEPS),
+                f64::from(y_step) / f64::from(COVERAGE_GRID_STEPS),
+            );
+            let nearest = anchors
+                .iter()
+                .map(|anchor| (point.0 - anchor.0).hypot(point.1 - anchor.1))
+                .fold(f64::INFINITY, f64::min);
+            if nearest > worst {
+                worst = nearest;
+                worst_point = point;
+            }
+        }
+    }
+    eprintln!("MEASURE cloud anchor worst coverage: point={worst_point:?} distance={worst:.6}");
+
+    assert!(
+        worst <= MAX_ANCHOR_COVERAGE_DISTANCE + 1e-9,
+        "field point {worst_point:?} is {worst:.3} from its nearest anchor; maximum is {MAX_ANCHOR_COVERAGE_DISTANCE:.2}"
+    );
+}
+
+fn all_anchor_points() -> [(f64, f64); BLOBS_PER_LAYER * 2] {
+    let blobs = BACK_BLOBS.into_iter().chain(FRONT_BLOBS);
+    let points = blobs.map(|blob| (blob.x, blob.y)).collect::<Vec<_>>();
+    points.try_into().expect("six cloud anchors")
+}
+
+#[test]
+fn ac_24_the_front_layer_never_shouts_over_the_back_one() {
     // Depth only reads if the near layer is the fainter one.
     let strongest_back = BACK_BLOBS.iter().map(|b| b.alpha).fold(0.0, f64::max);
     let strongest_front = FRONT_BLOBS.iter().map(|b| b.alpha).fold(0.0, f64::max);
@@ -243,7 +132,7 @@ fn npc_17_the_front_layer_never_shouts_over_the_back_one() {
 }
 
 #[test]
-fn npc_18_the_clouds_are_cut_from_the_artwork_not_from_extracted_colours() {
+fn ac_24_the_clouds_are_cut_from_the_artwork_not_from_extracted_colours() {
     // The mockup fills these layers with the cover's three dominant colours.
     // Measured against a real library that failed once already, and the module
     // this one replaces was the record of it: half the covers are greyscale or
@@ -256,7 +145,10 @@ fn npc_18_the_clouds_are_cut_from_the_artwork_not_from_extracted_colours() {
     // free to explain what was tried and why it lost. The needles are split
     // because `include_str!` reads this test too — a literal naming the
     // forbidden symbol would always find itself.
-    let source = include_str!("cover_cloud.rs");
+    let source = concat!(
+        include_str!("cover_cloud.rs"),
+        include_str!("cover_cloud_blob.rs")
+    );
     assert!(source.contains("cover_glow::blurred_surface"));
     let extractor = ["dominant", "_colours("].concat();
     assert!(!source.contains(&extractor));
@@ -265,7 +157,7 @@ fn npc_18_the_clouds_are_cut_from_the_artwork_not_from_extracted_colours() {
 }
 
 #[test]
-fn npc_19_the_cover_is_out_of_reach_of_anything_that_moves() {
+fn ac_24_the_cover_is_out_of_reach_of_anything_that_moves() {
     // "Cover nie bewegen." The guarantee is structural rather than numeric:
     // the cover is a sibling above this widget, so nothing in this file can
     // scale or turn it. If a cover widget ever arrives here, that guarantee is
@@ -278,14 +170,7 @@ fn npc_19_the_cover_is_out_of_reach_of_anything_that_moves() {
 }
 
 #[test]
-fn npc_20_a_field_with_no_room_is_drawn_as_nothing_rather_than_upside_down() {
-    // A degenerate period must not divide by zero or run backwards.
-    assert!((drift_progress(3.0, 0.0, 0.0) - 0.0).abs() < 1e-9);
-    assert!((drift_progress(3.0, -8.0, 0.0) - 0.0).abs() < 1e-9);
-}
-
-#[test]
-fn npc_21_a_new_track_arrives_over_about_a_second() {
+fn ac_24_a_new_track_arrives_over_about_a_second() {
     // "Bei Titelwechsel Farben in ca. 1 s überblenden."
     assert!((cover_fade(0.0) - 0.0).abs() < 1e-9);
     assert!((cover_fade(0.5) - 0.5).abs() < 1e-9);
@@ -297,7 +182,7 @@ fn npc_21_a_new_track_arrives_over_about_a_second() {
 }
 
 #[test]
-fn npc_22_the_two_covers_always_sum_to_one_across_the_change() {
+fn ac_24_the_two_covers_always_sum_to_one_across_the_change() {
     // The pairs are painted one over the other. If the halves eased, both
     // would be part-way out at the midpoint and the light would dip there.
     for step in 0..=100 {
@@ -312,7 +197,7 @@ fn npc_22_the_two_covers_always_sum_to_one_across_the_change() {
 }
 
 #[test]
-fn npc_23_a_track_change_keeps_the_outgoing_pair_to_fade_from() {
+fn ac_24_a_track_change_keeps_the_outgoing_pair_to_fade_from() {
     // A change arrives in two calls — the panel clears the cover, then the
     // loader delivers the texture. Handing the cleared pair on as the second
     // call's outgoing one threw the real one away and left a hard cut, which
@@ -323,7 +208,7 @@ fn npc_23_a_track_change_keeps_the_outgoing_pair_to_fade_from() {
 }
 
 #[test]
-fn npc_24_a_stopped_clock_takes_the_change_at_once() {
+fn ac_24_a_stopped_clock_takes_the_change_at_once() {
     // Pinned, or animation switched off: no frame will ever advance a fade, so
     // leaving one half-finished would strand the incoming cover at nothing.
     assert_eq!(fade_step(false, true, true, true), FadeStep::Cut);
@@ -331,15 +216,25 @@ fn npc_24_a_stopped_clock_takes_the_change_at_once() {
 }
 
 #[test]
-fn npc_25_nothing_arriving_over_nothing_starts_no_fade() {
+fn ac_24_nothing_arriving_over_nothing_starts_no_fade() {
     assert_eq!(fade_step(true, false, false, false), FadeStep::Idle);
     // A cover clearing to nothing still hands its pair over to fade out.
     assert_eq!(fade_step(true, false, true, true), FadeStep::Handover);
 }
 
 #[test]
+fn ac_24_a_partial_raster_build_is_not_accepted_as_the_current_cover() {
+    let back = std::array::from_fn(|_| solid_field(64, 96, 128));
+    assert!(complete_raster_pair(Some(back), None).is_none());
+
+    let back = std::array::from_fn(|_| solid_field(64, 96, 128));
+    let front = std::array::from_fn(|_| solid_field(128, 96, 64));
+    assert!(complete_raster_pair(Some(back), Some(front)).is_some());
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npc_23_the_public_cover_change_keeps_then_drops_the_outgoing_pair() {
+fn ac_24_the_public_cover_change_keeps_then_drops_the_outgoing_pair() {
     gtk4::init().expect("gtk");
     let settings = gtk4::Settings::default().expect("settings");
     let animations_were_enabled = settings.is_gtk_enable_animations();
@@ -418,36 +313,31 @@ fn npp_18_an_earlier_frame_time_does_not_move_the_clouds_backwards() {
 }
 
 #[test]
-fn npc_26_the_incoming_field_grows_while_the_outgoing_field_shrinks() {
+fn ac_24_the_incoming_field_grows_while_the_outgoing_field_shrinks() {
     let render = |arrived| {
         let target = cairo::ImageSurface::create(cairo::Format::ARgb32, 32, 32).unwrap();
         let cr = cairo::Context::new(&target).unwrap();
         let outgoing = solid_field(255, 0, 0);
         let incoming = solid_field(0, 0, 255);
+        let outgoing_rasters = [outgoing.clone(), outgoing.clone(), outgoing];
+        let incoming_rasters = [incoming.clone(), incoming.clone(), incoming];
+        let blobs = BACK_BLOBS;
+        let pose = [Drift {
+            x: 0.0,
+            y: 0.0,
+            scale: 1.0,
+        }; BLOBS_PER_LAYER];
         paint_crossfade_layers(
             &cr,
-            &[(
-                Some(&outgoing),
-                Drift {
-                    x: 0.0,
-                    y: 0.0,
-                    scale: 1.0,
-                    rotation_deg: 0.0,
-                },
-            )],
-            &[(
-                Some(&incoming),
-                Drift {
-                    x: 0.0,
-                    y: 0.0,
-                    scale: 1.0,
-                    rotation_deg: 0.0,
-                },
-            )],
-            (0.0, 0.0, 32.0, 32.0),
+            &[(Some(&outgoing_rasters), &blobs, &pose)],
+            &[(Some(&incoming_rasters), &blobs, &pose)],
             arrived,
             arrived,
-            cairo::Operator::Over,
+            LayerComposite {
+                bounds: (0.0, 0.0, 32.0, 32.0),
+                operator: cairo::Operator::Over,
+                scratch: None,
+            },
         );
         drop(cr);
         pixel(target, 16, 16)
@@ -461,9 +351,11 @@ fn npc_26_the_incoming_field_grows_while_the_outgoing_field_shrinks() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npc_27_a_masked_field_contains_real_non_flat_alpha() {
+fn ac_24_a_masked_field_contains_real_non_flat_alpha() {
     gtk4::init().expect("gtk");
-    let mut field = build_field(&swatch_cover(false), BACK_BLUR_EDGE, &BACK_BLOBS).unwrap();
+    let fields = build_blob_rasters(&swatch_cover(false), BACK_BLUR_EDGE, &BACK_BLOBS).unwrap();
+    assert_eq!(fields.len(), BLOBS_PER_LAYER);
+    let mut field = fields.into_iter().next().unwrap();
     field.flush();
     let stride = usize::try_from(field.stride()).unwrap();
     let data = field.data().unwrap();
@@ -481,7 +373,7 @@ fn npc_27_a_masked_field_contains_real_non_flat_alpha() {
 }
 
 #[test]
-fn npc_28_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
+fn ac_24_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
     let render = |dark| {
         let target = cairo::ImageSurface::create(cairo::Format::ARgb32, 32, 32).unwrap();
         let cr = cairo::Context::new(&target).unwrap();
@@ -491,11 +383,11 @@ fn npc_28_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
         paint_layer(
             &cr,
             &field,
+            (0.5, 0.5),
             Drift {
                 x: 0.0,
                 y: 0.0,
                 scale: 1.0,
-                rotation_deg: 0.0,
             },
             (0.0, 0.0, 32.0, 32.0),
             1.0,
@@ -512,48 +404,186 @@ fn npc_28_dark_screen_adds_light_while_light_multiply_lays_down_a_wash() {
 }
 
 #[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn npc_29_the_scrim_cache_reuses_only_the_same_theme_appearance_and_geometry() {
-    use crate::ui::style::theme::Theme;
-
-    gtk4::init().expect("gtk");
-    let previous_theme = crate::ui::style::current_theme();
-    crate::ui::style::set_theme(Theme::PerpetualRain);
-    let inner = Inner {
-        back: RefCell::new(None),
-        front: RefCell::new(None),
-        leaving_back: RefCell::new(None),
-        leaving_front: RefCell::new(None),
-        arrived_at_us: Cell::new(0),
-        generation: Cell::new(None),
-        drift_clock: Cell::new(DriftClock::default()),
-        last_drawn_pose: Cell::new(None),
-        scrim: RefCell::new(None),
-        pinned: Cell::new(true),
-    };
-
-    let first = cached_scrim(&inner, true, -42.0, 308.0);
-    let same = cached_scrim(&inner, true, -42.0, 308.0);
-    assert_eq!(pattern_identity(&first), pattern_identity(&same));
-
-    let light = cached_scrim(&inner, false, -42.0, 308.0);
-    assert_ne!(pattern_identity(&same), pattern_identity(&light));
-
-    crate::ui::style::set_theme(Theme::NightTerrain);
-    let themed = cached_scrim(&inner, false, -42.0, 308.0);
-    assert_ne!(pattern_identity(&light), pattern_identity(&themed));
-
-    let moved = cached_scrim(&inner, false, -41.0, 308.0);
-    assert_ne!(pattern_identity(&themed), pattern_identity(&moved));
-
-    let resized = cached_scrim(&inner, false, -41.0, 309.0);
-    assert_ne!(pattern_identity(&moved), pattern_identity(&resized));
-    crate::ui::style::set_theme(previous_theme);
+fn ac_24_dark_screen_keeps_each_cloud_as_an_independent_pass() {
+    let target = cairo::ImageSurface::create(cairo::Format::ARgb32, 64, 64).unwrap();
+    let control = cairo::ImageSurface::create(cairo::Format::ARgb32, 64, 64).unwrap();
+    for surface in [&target, &control] {
+        let cr = cairo::Context::new(surface).unwrap();
+        cr.set_source_rgb(0.25, 0.25, 0.25);
+        cr.paint().unwrap();
+    }
+    let surfaces = BACK_BLOBS.map(|blob| masked_solid_field(blob, [230, 62, 114]));
+    let poses = BACK_BLOBS.map(|blob| drift_at(62_390.0, blob.drift));
+    let target_cr = cairo::Context::new(&target).unwrap();
+    paint_cloud_layer(
+        &target_cr,
+        &surfaces,
+        &BACK_BLOBS,
+        &poses,
+        1.0,
+        LayerComposite {
+            bounds: (0.0, 0.0, 64.0, 64.0),
+            operator: cairo::Operator::Screen,
+            scratch: None,
+        },
+    );
+    let control_cr = cairo::Context::new(&control).unwrap();
+    for index in 0..BLOBS_PER_LAYER {
+        paint_layer(
+            &control_cr,
+            &surfaces[index],
+            (BACK_BLOBS[index].x, BACK_BLOBS[index].y),
+            poses[index],
+            (0.0, 0.0, 64.0, 64.0),
+            1.0,
+            cairo::Operator::Screen,
+        );
+    }
+    drop(target_cr);
+    drop(control_cr);
+    assert_eq!(pixel(target, 32, 32), pixel(control, 32, 32));
 }
 
-fn pattern_identity(gradient: &cairo::LinearGradient) -> usize {
-    let pattern: &cairo::Pattern = gradient.as_ref();
-    pattern.to_raw_none() as usize
+#[test]
+fn ac_24_light_overlap_keeps_a_coloured_wash_with_the_shipped_clouds() {
+    const PANEL: (i32, i32) = (300, 268);
+    // This saturated artwork swatch reproduces the review's measured
+    // (175, 11, 31) legacy result at (244, 99), so the control and repair are
+    // compared on the same perceptual case rather than an invented alpha.
+    const ARTWORK_RGB: [u8; 3] = [230, 62, 114];
+    const LIGHT_CHANNEL_FLOOR: u8 = 24;
+    let (elapsed_s, point) = worst_visible_overlap(120_000.0, PANEL);
+
+    let render = |grouped: bool, elapsed_s: f64, point: (usize, usize)| {
+        let target = cairo::ImageSurface::create(cairo::Format::ARgb32, PANEL.0, PANEL.1).unwrap();
+        let cr = cairo::Context::new(&target).unwrap();
+        cr.set_source_rgb(0.94, 0.94, 0.94);
+        cr.paint().unwrap();
+        let bounds = field(
+            f64::from(PANEL.0),
+            f64::from(tokens::NOW_PLAYING_COVER_SIZE),
+        );
+        let scratch = LayerScratch::new().unwrap();
+        for blobs in [&BACK_BLOBS, &FRONT_BLOBS] {
+            let surfaces = blobs.map(|blob| masked_solid_field(blob, ARTWORK_RGB));
+            let poses = blobs.map(|blob| drift_at(elapsed_s, blob.drift));
+            if grouped {
+                paint_cloud_layer(
+                    &cr,
+                    &surfaces,
+                    blobs,
+                    &poses,
+                    1.0,
+                    LayerComposite {
+                        bounds,
+                        operator: cairo::Operator::Multiply,
+                        scratch: Some(&scratch),
+                    },
+                );
+            } else {
+                for index in 0..BLOBS_PER_LAYER {
+                    paint_layer(
+                        &cr,
+                        &surfaces[index],
+                        (blobs[index].x, blobs[index].y),
+                        poses[index],
+                        bounds,
+                        1.0,
+                        cairo::Operator::Multiply,
+                    );
+                }
+            }
+        }
+        drop(cr);
+        pixel(target, point.0, point.1)
+    };
+
+    let legacy = render(false, elapsed_s, point);
+    let grouped = render(true, elapsed_s, point);
+    let review_point = (244, 99);
+    let review_legacy = render(false, 62_390.0, review_point);
+    let review_grouped = render(true, 62_390.0, review_point);
+    println!(
+        "light overlap: review point {review_point:?} at 62390 s {review_legacy:?} -> {review_grouped:?}; searched {point:?} at {elapsed_s:.0} s {legacy:?} -> {grouped:?}"
+    );
+    assert!(
+        *legacy[..3].iter().min().unwrap() < LIGHT_CHANNEL_FLOOR,
+        "the control no longer reproduces the crushed overlap: {legacy:?}"
+    );
+    assert!(
+        *grouped[..3].iter().min().unwrap() >= LIGHT_CHANNEL_FLOOR,
+        "layer grouping fell below the 10% channel floor at t={elapsed_s}, {point:?}: {grouped:?}"
+    );
+}
+
+fn worst_visible_overlap(duration_s: f64, panel: (i32, i32)) -> (f64, (usize, usize)) {
+    let bounds = field(
+        f64::from(panel.0),
+        f64::from(tokens::NOW_PLAYING_COVER_SIZE),
+    );
+    let cover_left = (panel.0 - tokens::NOW_PLAYING_COVER_SIZE) / 2;
+    let cover_top = tokens::NOW_PLAYING_HEAD_TOP;
+    let cover_right = cover_left + tokens::NOW_PLAYING_COVER_SIZE;
+    let cover_bottom = cover_top + tokens::NOW_PLAYING_COVER_SIZE;
+    let mut worst = (f64::INFINITY, 0.0, (0, 0));
+    for step in 0..=(duration_s / 30.0) as u32 {
+        let elapsed_s = f64::from(step) * 30.0;
+        for y in (0..panel.1).step_by(8) {
+            for x in (0..panel.0).step_by(8) {
+                if x >= cover_left && x < cover_right && y >= cover_top && y < cover_bottom {
+                    continue;
+                }
+                let attenuation = grouped_green_at(elapsed_s, x, y, bounds);
+                if attenuation < worst.0 {
+                    worst = (attenuation, elapsed_s, (x as usize, y as usize));
+                }
+            }
+        }
+    }
+    (worst.1, worst.2)
+}
+
+fn grouped_green_at(
+    elapsed_s: f64,
+    x: i32,
+    y: i32,
+    (left, top, width, height): (f64, f64, f64, f64),
+) -> f64 {
+    let point = ((f64::from(x) - left) / width, (f64::from(y) - top) / height);
+    let mut result = 0.94;
+    for blobs in [&BACK_BLOBS, &FRONT_BLOBS] {
+        let uncovered = blobs.iter().fold(1.0, |uncovered, blob| {
+            let drift = drift_at(elapsed_s, blob.drift);
+            let distance = ((point.0 - blob.x - drift.x) / drift.scale)
+                .hypot((point.1 - blob.y - drift.y) / drift.scale);
+            let alpha = blob.alpha * (1.0 - distance / blob.radius).clamp(0.0, 1.0);
+            uncovered * (1.0 - alpha)
+        });
+        let alpha = 1.0 - uncovered;
+        result *= 1.0 - alpha + alpha * (62.0 / 255.0);
+    }
+    result
+}
+
+fn masked_solid_field(blob: Blob, [red, green, blue]: [u8; 3]) -> cairo::ImageSurface {
+    let surface = solid_field(red, green, blue);
+    let cr = cairo::Context::new(&surface).unwrap();
+    let edge = f64::from(FIELD_RASTER_EDGE);
+    let mask = cairo::RadialGradient::new(
+        blob.x * edge,
+        blob.y * edge,
+        0.0,
+        blob.x * edge,
+        blob.y * edge,
+        blob.radius * edge,
+    );
+    mask.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, blob.alpha);
+    mask.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, 0.0);
+    cr.set_operator(cairo::Operator::DestIn);
+    cr.set_source(&mask).unwrap();
+    cr.paint().unwrap();
+    drop(cr);
+    surface
 }
 
 fn solid_field(red: u8, green: u8, blue: u8) -> cairo::ImageSurface {
@@ -582,93 +612,6 @@ fn pixel(mut surface: cairo::ImageSurface, x: usize, y: usize) -> [u8; 4] {
         data[offset],
         data[offset + 3],
     ]
-}
-
-/// Renders the head of the panel to a PPM so the light can be looked at.
-///
-/// Every other test here is arithmetic or structure. None of them can say
-/// whether the blurred cover, masked twice, actually reads as two clouds — and
-/// that is this design's own risk: it trades three extracted colours for one
-/// raster, which is a different door into the failure the turning disc recorded.
-/// A greyscale cover is rendered beside a colourful one for exactly that
-/// reason.
-#[test]
-#[ignore = "measurement: render manually via xvfb-run"]
-fn render_cover_cloud_gallery_ppm() {
-    gtk4::init().expect("gtk");
-
-    let width = 300i32;
-    let band = tokens::NOW_PLAYING_ARTWORK_BAND;
-    let moments = [0.0f64, 4.0, 8.0];
-    let covers = [swatch_cover(false), swatch_cover(true)];
-
-    let sheet = cairo::ImageSurface::create(
-        cairo::Format::ARgb32,
-        width * moments.len() as i32,
-        band * covers.len() as i32,
-    )
-    .expect("sheet");
-    let sheet_cr = cairo::Context::new(&sheet).expect("sheet cr");
-
-    for (row, texture) in covers.iter().enumerate() {
-        let back = build_field(texture, BACK_BLUR_EDGE, &BACK_BLOBS).expect("back field");
-        let front = build_field(texture, FRONT_BLUR_EDGE, &FRONT_BLOBS).expect("front field");
-        for (col, seconds) in moments.iter().enumerate() {
-            let tile =
-                cairo::ImageSurface::create(cairo::Format::ARgb32, width, band).expect("tile");
-            let cr = cairo::Context::new(&tile).expect("tile cr");
-            let [r, g, b] = crate::ui::style::accent::sidebar_background_rgb();
-            cr.set_source_rgb(
-                f64::from(r) / 255.0,
-                f64::from(g) / 255.0,
-                f64::from(b) / 255.0,
-            );
-            cr.paint().expect("ground");
-
-            let cover = f64::from(tokens::NOW_PLAYING_COVER_SIZE);
-            let bounds = field(f64::from(width), cover);
-            let operator = if crate::ui::style::accent::is_dark() {
-                cairo::Operator::Screen
-            } else {
-                cairo::Operator::Multiply
-            };
-            paint_layer(
-                &cr,
-                &back,
-                drift_at(*seconds, BACK_PERIOD_S, 0.0),
-                bounds,
-                1.0,
-                operator,
-            );
-            paint_layer(
-                &cr,
-                &front,
-                drift_at(*seconds, FRONT_PERIOD_S, FRONT_OFFSET_S),
-                bounds,
-                1.0,
-                operator,
-            );
-            let (_, field_top, _, field_height) = bounds;
-            let scrim = build_scrim(field_top, field_height);
-            paint_scrim(&cr, f64::from(width), f64::from(band), &scrim);
-            drop(cr);
-
-            sheet_cr
-                .set_source_surface(
-                    &tile,
-                    f64::from(width) * col as f64,
-                    f64::from(band) * row as f64,
-                )
-                .expect("place tile");
-            sheet_cr.paint().expect("paint tile");
-        }
-    }
-    drop(sheet_cr);
-
-    let path = std::env::var("COVER_CLOUD_PPM")
-        .unwrap_or_else(|_| "/tmp/cover-cloud-gallery.ppm".to_string());
-    write_ppm(sheet, &path);
-    println!("wrote {path}");
 }
 
 /// A stand-in cover: the mockup's own three colours, or the greyscale artwork
@@ -765,3 +708,6 @@ fn write_ppm(mut surface: cairo::ImageSurface, path: &str) {
         .write_all(&out)
         .expect("write ppm");
 }
+
+#[path = "cover_cloud_gallery_tests.rs"]
+mod gallery_tests;

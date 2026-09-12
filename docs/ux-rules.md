@@ -2232,10 +2232,14 @@ the panel).
   `sp`, and a child without `ellipsize` forces a minimum width via its
   text width that `max-sidebar-width` cannot go below — a status
   element in the sidebar must never dictate its width.
-- **NPP-2** [active] [gtk] — Layout from top: cover 168 px (radius 12,
-  shadow + 1 px inset hairline) → title 15 px bold → „Artist · Album"
-  12 px white 55% → **pill toggle** (segments, no tab-bar widget) →
-  tab content → footer 10.5 px white 35%, whose content is provided by
+- **NPP-2** [active] [gtk] — Layout from top: cover 184 px (radius 12,
+  shadow, no hairline) 50 px from the top → 34 px → title 15 px bold →
+  „Artist · Album" on one line, 12 px, the artist at the secondary tone
+  (weight 500), separator and album at the tertiary tone → **segment control**
+  30 px, radius 7 px / 5 px inside, the stage's content width less the 18 px
+  margins on both sides (segments, no tab-bar widget)
+  → 20 px → a 1 px rule in the border tone running out over 34 px at both ends
+  → 8 px → tab content → footer 10.5 px 35%, whose content is provided by
   the active tab. No panel header: closing runs via the app-header
   toggle, a retry belongs in the tab's error state. **No volume
   control** (P-1). The colour named here follows the appearance per
@@ -3690,7 +3694,7 @@ property is set and yet nothing happens.
   footer, tab labels at rest and unsynchronized lyrics. Every one of those
   roles reaches at least 4.5:1 against `@sidebar_bg_color` in **both**
   appearances and in every theme. Surface washes (the pill fill, the canvas
-  tint, the cover's inset hairline) take the same foreground so that they
+  tint) take the same foreground so that they
   lighten on a dark panel and darken on a light one. `@reprise_hint_fg_color`
   is not available here: on the sidebar surface it reaches only 3.2:1 light /
   4.3:1 dark.
@@ -4247,16 +4251,18 @@ STYLE-1).
   color. Changing the app/system source or the live system accent updates the
   canvas without reading or sampling the cover.
 
-- **AC-24** [active] [gtk] — The reactive light lives on the cover and the
-  playhead, nowhere else. The now-playing backdrop, the cover in the panel
-  and the cover in the player bar read the `BassPressure.pressure` that
-  already reaches the UI and its UI-side slow envelope, `swell` — never
+- **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
+  cover bloom, the cover in the player bar and the playhead, nowhere else; the
+  panel cover itself deliberately keeps variant 4b's static shadow. The bloom
+  reads the `BassPressure.pressure` that already reaches the UI and its UI-side
+  slow envelope, `swell`, while the player-bar cover reads that slow envelope
+  and the playhead keeps its own playback light — never
   the CAVA bars, whose auto-sensitivity
   makes a quiet vocal reach the same value as a drop, and never
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
-  `pressure` carries the backdrop's base brightness and `swell` the slow
-  movement of every large surface. **Outside the Visualizer's own canvas,
+  `pressure` carries the bloom's base brightness and `swell` the slow movement
+  of the bloom and player-bar cover. **Outside the Visualizer's own canvas,
   nothing reads `kick` at all.** The panel cover used to take the beat
   while that tab was open — round 5's one exception — and it read as the
   cover twitching under its own shadow.
@@ -4302,19 +4308,19 @@ STYLE-1).
   pointer aims at and, once the running track scrolls out of the list,
   the only place the playback state is read from — a control that
   answers the music moves under the cursor and competes with the state
-  it reports. The cover itself never changes brightness either: the
+  it reports. The player-bar cover itself never changes brightness either: the
   eye reads luminance change in peripheral vision, so a brightening
-  cover pulls attention off the list; it lifts on its shadow, carries a
-  one-pixel light seam along its edge, and has two soft clouds of the blurred
-  artwork drifting behind it — the back one over 16 seconds, the front one
-  over 20 and offset by half its own period, so the pair has an 80-second
-  period. Neither may run under 16 seconds.
-  The seam sits
-  one pixel outside the artwork, so the cover's footprint grows by exactly
-  one pixel on each side; nothing crosses the picture itself. The seam
-  uses the effective app or system accent (`@accent_color`), exactly like
-  the other accent-bearing UI; it never extracts a separate color from the
-  cover. **The drifting clouds are
+  cover pulls attention off the list; it lifts on its shadow. The panel cover
+  instead keeps one static shadow and no seam. Behind it, six independent soft
+  clouds of the blurred artwork — three per depth layer — move on their own long,
+  mutually
+  incommensurable position waves and breathe on separate scale waves, meeting
+  and parting without a visible repeat. Their anchors alternate between depth
+  layers across the full field, so no edge or corner falls outside their reach.
+  Peak translation speed is the binding
+  motion constraint and may not exceed **0.016 field-fractions per second** on
+  either axis.
+  **The drifting clouds are
   the artwork itself, not colours extracted from it.** A palette sweep was
   built first and measured against a real library: half the covers are
   greyscale or near-black and yield no usable colour at all, and most of
@@ -4332,7 +4338,7 @@ STYLE-1).
   clouds: their movement comes from the clock alone, so no kick can reach a
   coordinate. On greyscale and near-black artwork the clouds stay faint,
   accepted for the same measured reason the palette sweep was rejected in the
-  first place. The lift is
+  first place. The player-bar lift is
   two cached shadow layers
   whose opacities cross-fade with the composite coverage held constant —
   a linear `1 - swell` pair sums to one and still dips 14 %, which reads
