@@ -188,6 +188,8 @@ internal fun BrowseScreen(
     }
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
+    var pendingAlbum by remember(state) { mutableStateOf<LibraryAlbum?>(null) }
+    var pendingArtist by remember(state) { mutableStateOf<LibraryArtist?>(null) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var browseErrorOrigin by remember(state) { mutableStateOf<BrowseErrorOrigin?>(null) }
     var visibleLoadRetryRevision by remember(state, searchText, selectedTab) {
@@ -238,6 +240,8 @@ internal fun BrowseScreen(
         if (tab != selectedTab) {
             readJobs.latestAlbumOpen++
             readJobs.latestArtistOpen++
+            pendingAlbum = null
+            pendingArtist = null
             selectedAlbum = null
             selectedArtist = null
         }
@@ -304,11 +308,26 @@ internal fun BrowseScreen(
     }
 
     fun tabSurfaceIsCurrent(tab: BrowseTab): Boolean =
+        surfaceState.selectedTab == tab && pendingAlbum == null && pendingArtist == null &&
+            selectedAlbum == null && selectedArtist == null
+
+    fun tabQueryResultIsCurrent(tab: BrowseTab): Boolean =
         surfaceState.selectedTab == tab && selectedAlbum == null && selectedArtist == null
 
     fun artistSurfaceIsCurrent(artist: LibraryArtist?): Boolean =
         surfaceState.selectedTab == BrowseTab.ARTISTS &&
+            pendingAlbum == null && pendingArtist == null &&
             selectedArtist?.artist == artist && selectedAlbum == null
+
+    fun albumOpenIsCurrent(album: LibraryAlbum, parentArtist: LibraryArtist?): Boolean =
+        surfaceState.selectedTab == BrowseTab.ARTISTS && pendingAlbum == album &&
+            pendingArtist == null && selectedArtist?.artist == parentArtist
+
+    fun artistOpenIsCurrent(artist: LibraryArtist): Boolean =
+        surfaceState.selectedTab == BrowseTab.ARTISTS && pendingAlbum == null &&
+            selectedAlbum == null &&
+            ((pendingArtist == artist && selectedArtist == null) ||
+                (pendingArtist == null && selectedArtist?.artist == artist))
 
     fun albumSurfaceIsCurrent(album: LibraryAlbum): Boolean =
         surfaceState.selectedTab == BrowseTab.ARTISTS && selectedAlbum?.album == album
@@ -334,13 +353,15 @@ internal fun BrowseScreen(
     fun openAlbumDetail(album: LibraryAlbum) {
         val request = ++readJobs.latestAlbumOpen
         val parentArtist = selectedArtist?.artist
+        pendingAlbum = album
         libraryQueryScope.launch {
             runCatching { openAlbum(album) }
                 .onSuccess { detail ->
                     if (
                         request != readJobs.latestAlbumOpen ||
-                        !artistSurfaceIsCurrent(parentArtist)
+                        !albumOpenIsCurrent(album, parentArtist)
                     ) return@onSuccess
+                    pendingAlbum = null
                     selectedAlbum = detail
                     albumRequestedOffset = null
                     clearBrowseError(BrowseErrorOrigin.Artist(parentArtist))
@@ -349,8 +370,9 @@ internal fun BrowseScreen(
                     if (error is CancellationException) throw error
                     if (
                         request == readJobs.latestAlbumOpen &&
-                        artistSurfaceIsCurrent(parentArtist)
+                        albumOpenIsCurrent(album, parentArtist)
                     ) {
+                        pendingAlbum = null
                         setBrowseError(
                             error.browseDetail("open the album"),
                             BrowseErrorOrigin.Artist(parentArtist),
@@ -378,6 +400,8 @@ internal fun BrowseScreen(
         if (text.isNotBlank()) {
             readJobs.latestAlbumOpen++
             readJobs.latestArtistOpen++
+            pendingAlbum = null
+            pendingArtist = null
             selectedAlbum = null
             selectedArtist = null
         }
@@ -405,7 +429,7 @@ internal fun BrowseScreen(
         if (
             request != readJobs.latestSearch ||
             text != surfaceState.searchText ||
-            !tabSurfaceIsCurrent(tab)
+            !tabQueryResultIsCurrent(tab)
         ) return
         result.onSuccess { loaded ->
             loaded.titles?.let {
@@ -620,10 +644,15 @@ internal fun BrowseScreen(
 
     suspend fun loadMoreArtistTracks(request: LibraryWindowRange) {
         val detail = selectedArtist ?: return
+        val artistOpenRequest = readJobs.latestArtistOpen
         if (detail.untaggedTracks.nextRequest(artistRequestedOffset) != request) return
         guardedAgainstDuplicateLoad("artist-tracks:${request.offset}") {
             runCatching { listArtistUntaggedTracks(detail.artist, request) }
                 .onSuccess { continuation ->
+                    if (
+                        artistOpenRequest != readJobs.latestArtistOpen ||
+                        !artistOpenIsCurrent(detail.artist)
+                    ) return@onSuccess
                     artistRequestedOffset = request.offset
                     selectedArtist = detail.copy(
                         untaggedTracks = detail.untaggedTracks.append(continuation),
@@ -646,10 +675,15 @@ internal fun BrowseScreen(
 
     suspend fun loadMoreArtistAlbums(request: LibraryWindowRange) {
         val detail = selectedArtist ?: return
+        val artistOpenRequest = readJobs.latestArtistOpen
         if (detail.albums.nextRequest(artistAlbumsRequestedOffset) != request) return
         guardedAgainstDuplicateLoad("artist-albums:${request.offset}") {
             runCatching { listArtistAlbums(detail.artist, request) }
                 .onSuccess { continuation ->
+                    if (
+                        artistOpenRequest != readJobs.latestArtistOpen ||
+                        !artistOpenIsCurrent(detail.artist)
+                    ) return@onSuccess
                     artistAlbumsRequestedOffset = request.offset
                     selectedArtist = detail.copy(albums = detail.albums.append(continuation))
                     if (artistSurfaceIsCurrent(detail.artist)) {
@@ -670,12 +704,24 @@ internal fun BrowseScreen(
 
     BackHandler(
         enabled = !nowPlayingExpanded && !settingsVisible &&
-            (selectedAlbum != null || selectedArtist != null),
+            (pendingAlbum != null || selectedAlbum != null || pendingArtist != null ||
+                selectedArtist != null),
     ) {
         when {
+            pendingAlbum != null -> {
+                readJobs.latestAlbumOpen++
+                pendingAlbum = null
+                selectedAlbum = null
+            }
             selectedAlbum != null -> {
                 readJobs.latestAlbumOpen++
                 selectedAlbum = null
+            }
+            pendingArtist != null -> {
+                readJobs.latestAlbumOpen++
+                readJobs.latestArtistOpen++
+                pendingArtist = null
+                selectedArtist = null
             }
             selectedArtist != null -> {
                 readJobs.latestAlbumOpen++
@@ -857,16 +903,20 @@ internal fun BrowseScreen(
                                     searchText = searchText,
                                     selectedArtist = selectedArtist,
                                     selectedAlbum = selectedAlbum,
+                                    pendingAlbum = pendingAlbum,
+                                    pendingArtist = pendingArtist,
                                     playback = playback,
                                     openArtist = { artist ->
                                         val request = ++readJobs.latestArtistOpen
+                                        pendingArtist = artist
                                         libraryQueryScope.launch {
                                             runCatching { openArtist(artist) }
                                                 .onSuccess { detail ->
                                                     if (
                                                         request != readJobs.latestArtistOpen ||
-                                                        !tabSurfaceIsCurrent(BrowseTab.ARTISTS)
+                                                        !artistOpenIsCurrent(artist)
                                                     ) return@onSuccess
+                                                    pendingArtist = null
                                                     selectedArtist = detail
                                                     artistRequestedOffset = null
                                                     artistAlbumsRequestedOffset = null
@@ -883,8 +933,9 @@ internal fun BrowseScreen(
                                                     if (error is CancellationException) throw error
                                                     if (
                                                         request == readJobs.latestArtistOpen &&
-                                                        tabSurfaceIsCurrent(BrowseTab.ARTISTS)
+                                                        artistOpenIsCurrent(artist)
                                                     ) {
+                                                        pendingArtist = null
                                                         setBrowseError(
                                                             error.browseDetail("open the artist"),
                                                             BrowseErrorOrigin.Tab(BrowseTab.ARTISTS),
@@ -897,11 +948,14 @@ internal fun BrowseScreen(
                                     closeArtist = {
                                         readJobs.latestAlbumOpen++
                                         readJobs.latestArtistOpen++
+                                        pendingAlbum = null
+                                        pendingArtist = null
                                         selectedAlbum = null
                                         selectedArtist = null
                                     },
                                     closeAlbum = {
                                         readJobs.latestAlbumOpen++
+                                        pendingAlbum = null
                                         selectedAlbum = null
                                     },
                                     play = { index ->

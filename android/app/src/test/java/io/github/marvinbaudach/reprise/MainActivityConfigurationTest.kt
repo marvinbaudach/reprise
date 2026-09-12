@@ -29,7 +29,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
@@ -163,6 +162,7 @@ class MainActivityConfigurationTest {
         application.blockArtistOneOpen()
         compose.onAllNodesWithText("Artist 1")[0].performClick()
         compose.waitUntil(timeoutMillis = 5_000) { application.artistOneOpenHasStarted() }
+        compose.onNodeWithContentDescription("Back to artists").performClick()
         compose.onNodeWithText("Artist 2").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithContentDescription("Play Artist 2")
@@ -479,17 +479,6 @@ class MainActivityConfigurationTest {
         compose.waitForIdle()
     }
 
-    /**
-     * Scrolls to [index], retrying until the row exists. A library window now grows
-     * through an off-main-thread read, so the row an index names can arrive a moment
-     * after the scroll that asked for it.
-     */
-    private fun scrollLibraryListTo(tag: String, index: Int) {
-        compose.waitUntil(timeoutMillis = 5_000) {
-            runCatching { compose.onNodeWithTag(tag).performScrollToIndex(index) }.isSuccess
-        }
-    }
-
     private fun openDeepAlbum() {
         compose.onNodeWithText("Artists").performClick()
         scrollLibraryListTo("library-artists-list", 0)
@@ -502,6 +491,9 @@ class MainActivityConfigurationTest {
             compose.onAllNodesWithTag("library-album-tracks-list").fetchSemanticsNodes().isNotEmpty()
         }
     }
+
+    private fun scrollLibraryListTo(tag: String, index: Int) =
+        compose.scrollLibraryListTo(tag, index)
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config
@@ -550,6 +542,11 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     private var broadArtistSearchGate: CompletableDeferred<Unit>? = null
     private var broadArtistSearchFinished: CountDownLatch? = null
     private val broadArtistSearchCalls = AtomicInteger()
+    private var artist45SearchStarted: CountDownLatch? = null
+    private var artist45SearchGate: CompletableDeferred<Unit>? = null
+    private var artist45SearchFinished: CountDownLatch? = null
+    private var artist45SearchCatchUpGate: CompletableDeferred<Unit>? = null
+    private val artist45SearchCalls = AtomicInteger()
     private var artistOneOpenStarted: CountDownLatch? = null
     private var artistOneOpenGate: CompletableDeferred<Unit>? = null
     private var artistOneOpenFinished: CountDownLatch? = null
@@ -558,11 +555,8 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     private var firstAlbumOpenGate: CompletableDeferred<Unit>? = null
     private var firstAlbumOpenFinished: CountDownLatch? = null
     private val firstAlbumOpenCalls = AtomicInteger()
-    private var failingTitleContinuationStarted: CountDownLatch? = null
-    private var failingTitleContinuationGate: CompletableDeferred<Unit>? = null
-    private var failingTitleContinuationFinished: CountDownLatch? = null
-    private val failingTitleContinuationCalls = AtomicInteger()
-    val trackRatings = mutableMapOf<Long, Int>()
+    private val failingTitleContinuation = BlockingReadTestGate(BlockingReadMode.FIRST_CALL)
+    val trackRatings = Collections.synchronizedMap(mutableMapOf<Long, Int>())
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
         private set
@@ -571,6 +565,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     // device did: it makes the second window — the part `onCreate` never
     // reloads — unreachable, and every test written on it green by omission.
     /** What a scan would change: the test moves it to act as one. */
+    @Volatile
     var catalogSize = CATALOG_SIZE
     private val tracks: List<LibraryTrack>
         get() = (1..catalogSize).map { index ->
@@ -661,7 +656,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
         }
     var rememberedDestination = BrowseTab.TITLES
     val rememberedDestinationWrites = mutableListOf<BrowseTab>()
-    val artistWindowRequests = mutableListOf<LibraryWindowRange>()
+    val artistWindowRequests = Collections.synchronizedList(mutableListOf<LibraryWindowRange>())
     var currentQueue: List<LibraryTrack> = emptyList()
         private set
     var currentQueueIndex: Int? = null
@@ -761,6 +756,26 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     fun broadArtistSearchHasFinished(): Boolean =
         checkNotNull(broadArtistSearchFinished).count == 0L
 
+    fun blockArtist45SearchAndCatchUp() {
+        artist45SearchCalls.set(0)
+        artist45SearchStarted = CountDownLatch(1)
+        artist45SearchGate = CompletableDeferred()
+        artist45SearchFinished = CountDownLatch(1)
+        artist45SearchCatchUpGate = CompletableDeferred()
+    }
+
+    fun artist45SearchHasStarted(): Boolean = checkNotNull(artist45SearchStarted).count == 0L
+
+    fun releaseArtist45Search() {
+        checkNotNull(artist45SearchGate).complete(Unit)
+    }
+
+    fun artist45SearchHasFinished(): Boolean = checkNotNull(artist45SearchFinished).count == 0L
+
+    fun releaseArtist45SearchCatchUp() {
+        checkNotNull(artist45SearchCatchUpGate).complete(Unit)
+    }
+
     fun blockArtistOneOpen() {
         artistOneOpenCalls.set(0)
         artistOneOpenStarted = CountDownLatch(1)
@@ -792,21 +807,16 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     fun firstAlbumOpenHasFinished(): Boolean = checkNotNull(firstAlbumOpenFinished).count == 0L
 
     fun blockFailingTitleContinuation() {
-        failingTitleContinuationCalls.set(0)
-        failingTitleContinuationStarted = CountDownLatch(1)
-        failingTitleContinuationGate = CompletableDeferred()
-        failingTitleContinuationFinished = CountDownLatch(1)
+        failingTitleContinuation.arm(resetCallCount = true)
     }
 
-    fun failingTitleContinuationHasStarted(): Boolean =
-        checkNotNull(failingTitleContinuationStarted).count == 0L
+    fun failingTitleContinuationHasStarted(): Boolean = failingTitleContinuation.hasStarted()
 
     fun releaseFailingTitleContinuation() {
-        checkNotNull(failingTitleContinuationGate).complete(Unit)
+        failingTitleContinuation.release()
     }
 
-    fun failingTitleContinuationHasFinished(): Boolean =
-        checkNotNull(failingTitleContinuationFinished).count == 0L
+    fun failingTitleContinuationHasFinished(): Boolean = failingTitleContinuation.hasFinished()
 
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
@@ -837,14 +847,7 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
             chooseFolder = { _, _ -> },
             rescan = {},
             searchTitles = { query, range ->
-                if (
-                    range.offset > 0 &&
-                    failingTitleContinuationStarted != null &&
-                    failingTitleContinuationCalls.getAndIncrement() == 0
-                ) {
-                    failingTitleContinuationStarted?.countDown()
-                    withContext(NonCancellable) { failingTitleContinuationGate?.await() }
-                    failingTitleContinuationFinished?.countDown()
+                if (range.offset > 0 && failingTitleContinuation.blockCall()) {
                     error("title continuation unavailable")
                 }
                 tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
@@ -860,6 +863,16 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 artists.window(range)
             },
             searchArtists = { query, range ->
+                if (query == "Artist 45") {
+                    when (artist45SearchCalls.getAndIncrement()) {
+                        0 -> {
+                            artist45SearchStarted?.countDown()
+                            withContext(NonCancellable) { artist45SearchGate?.await() }
+                            artist45SearchFinished?.countDown()
+                        }
+                        1 -> withContext(NonCancellable) { artist45SearchCatchUpGate?.await() }
+                    }
+                }
                 if (query == "Artist" && broadArtistSearchCalls.getAndIncrement() == 0) {
                     broadArtistSearchStarted?.countDown()
                     withContext(NonCancellable) { broadArtistSearchGate?.await() }
