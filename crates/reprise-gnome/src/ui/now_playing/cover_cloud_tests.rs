@@ -1,8 +1,9 @@
 use super::*;
 
-/// The mockup's own numbers, kept here so a change to the module has to argue
-/// with the design rather than quietly redefine it.
+/// The mockup's own size, kept here so field geometry has to argue with the
+/// design rather than quietly redefine it.
 const SPEC_COVER: f64 = 240.0;
+const COVERAGE_GRID_STEPS: u32 = 20;
 
 #[test]
 fn ac_24_the_field_carries_the_mockups_proportions_not_its_pixels() {
@@ -37,34 +38,89 @@ fn ac_24_the_front_layer_is_the_softer_of_the_two() {
 }
 
 #[test]
-fn ac_24_every_cloud_sits_where_the_mockup_put_it() {
-    // The original stops stay put and a third rounds out each layer.
+fn ac_24_the_cloud_anchors_form_an_interleaved_lattice() {
+    // Alternating layers across three rows keeps either depth from stacking
+    // on the other while giving the full field the same rhythm.
     assert_eq!(BACK_BLOBS.len(), 3);
-    assert!((BACK_BLOBS[0].x - 0.40).abs() < 1e-9);
-    assert!((BACK_BLOBS[0].y - 0.35).abs() < 1e-9);
+    assert!((BACK_BLOBS[0].x - 0.24).abs() < 1e-9);
+    assert!((BACK_BLOBS[0].y - 0.20).abs() < 1e-9);
     assert!((BACK_BLOBS[0].alpha - 0.85).abs() < 1e-9);
-    assert!((BACK_BLOBS[1].x - 0.82).abs() < 1e-9);
-    assert!((BACK_BLOBS[1].y - 0.55).abs() < 1e-9);
+    assert!((BACK_BLOBS[1].x - 0.66).abs() < 1e-9);
+    assert!((BACK_BLOBS[1].y - 0.50).abs() < 1e-9);
     assert!((BACK_BLOBS[1].alpha - 0.80).abs() < 1e-9);
     assert!((BACK_BLOBS[2].x - 0.24).abs() < 1e-9);
-    assert!((BACK_BLOBS[2].y - 0.76).abs() < 1e-9);
+    assert!((BACK_BLOBS[2].y - 0.80).abs() < 1e-9);
     assert!((BACK_BLOBS[2].alpha - 0.78).abs() < 1e-9);
     assert!(BACK_BLOBS.iter().all(|b| (b.radius - 0.50).abs() < 1e-9));
 
-    // Layer 2: 75%/25% at 0.70 and 30%/80% at 0.60, reaching 45%.
     assert_eq!(FRONT_BLOBS.len(), 3);
-    assert!((FRONT_BLOBS[0].x - 0.75).abs() < 1e-9);
-    assert!((FRONT_BLOBS[0].y - 0.25).abs() < 1e-9);
+    assert!((FRONT_BLOBS[0].x - 0.66).abs() < 1e-9);
+    assert!((FRONT_BLOBS[0].y - 0.20).abs() < 1e-9);
     assert!((FRONT_BLOBS[0].alpha - 0.70).abs() < 1e-9);
-    assert!((FRONT_BLOBS[1].x - 0.30).abs() < 1e-9);
-    assert!((FRONT_BLOBS[1].y - 0.80).abs() < 1e-9);
+    assert!((FRONT_BLOBS[1].x - 0.24).abs() < 1e-9);
+    assert!((FRONT_BLOBS[1].y - 0.50).abs() < 1e-9);
     assert!((FRONT_BLOBS[1].alpha - 0.60).abs() < 1e-9);
-    assert!((FRONT_BLOBS[2].x - 0.52).abs() < 1e-9);
-    assert!((FRONT_BLOBS[2].y - 0.48).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].x - 0.66).abs() < 1e-9);
+    assert!((FRONT_BLOBS[2].y - 0.80).abs() < 1e-9);
     assert!((FRONT_BLOBS[2].alpha - 0.65).abs() < 1e-9);
     assert!(FRONT_BLOBS
         .iter()
         .all(|blob| (blob.radius - 0.45).abs() < 1e-9));
+}
+
+#[test]
+fn ac_24_no_two_cloud_anchors_stack_across_layers() {
+    let anchors = all_anchor_points();
+    let minimum = anchors
+        .iter()
+        .enumerate()
+        .flat_map(|(index, first)| {
+            anchors[index + 1..]
+                .iter()
+                .map(move |second| (first.0 - second.0).hypot(first.1 - second.1))
+        })
+        .fold(f64::INFINITY, f64::min);
+    eprintln!("MEASURE cloud anchor minimum separation: {minimum:.6}");
+
+    assert!(
+        minimum >= MIN_ANCHOR_SEPARATION - 1e-9,
+        "nearest anchors are {minimum:.3} apart; minimum is {MIN_ANCHOR_SEPARATION:.2}"
+    );
+}
+
+#[test]
+fn ac_24_every_field_region_is_within_reach_of_a_cloud() {
+    let anchors = all_anchor_points();
+    let mut worst: f64 = 0.0;
+    let mut worst_point = (0.0, 0.0);
+    for y_step in 0..=COVERAGE_GRID_STEPS {
+        for x_step in 0..=COVERAGE_GRID_STEPS {
+            let point = (
+                f64::from(x_step) / f64::from(COVERAGE_GRID_STEPS),
+                f64::from(y_step) / f64::from(COVERAGE_GRID_STEPS),
+            );
+            let nearest = anchors
+                .iter()
+                .map(|anchor| (point.0 - anchor.0).hypot(point.1 - anchor.1))
+                .fold(f64::INFINITY, f64::min);
+            if nearest > worst {
+                worst = nearest;
+                worst_point = point;
+            }
+        }
+    }
+    eprintln!("MEASURE cloud anchor worst coverage: point={worst_point:?} distance={worst:.6}");
+
+    assert!(
+        worst <= MAX_ANCHOR_COVERAGE_DISTANCE + 1e-9,
+        "field point {worst_point:?} is {worst:.3} from its nearest anchor; maximum is {MAX_ANCHOR_COVERAGE_DISTANCE:.2}"
+    );
+}
+
+fn all_anchor_points() -> [(f64, f64); BLOBS_PER_LAYER * 2] {
+    let blobs = BACK_BLOBS.into_iter().chain(FRONT_BLOBS);
+    let points = blobs.map(|blob| (blob.x, blob.y)).collect::<Vec<_>>();
+    points.try_into().expect("six cloud anchors")
 }
 
 #[test]

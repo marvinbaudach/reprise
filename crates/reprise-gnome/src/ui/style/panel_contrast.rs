@@ -463,8 +463,9 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
         3,
         "the head band has title, artist and album roles"
     );
+    let mut minima = [[f64::INFINITY; 3]; 2];
     for theme in Theme::all() {
-        for (appearance, is_dark, palette, glow_alpha) in [
+        for (appearance_index, (appearance, is_dark, palette, glow_alpha)) in [
             (
                 "dark",
                 true,
@@ -477,17 +478,22 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
                 theme.light_palette(),
                 super::tokens::NOW_PLAYING_GLOW_LIGHT_ALPHA,
             ),
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let glow_alpha = glow_alpha.parse::<f64>().expect("glow alpha is numeric");
             let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
             let surface = parse_hex_rgb(palette.sidebar_bg).expect("palette sidebar is valid hex");
             for (accent_name, accent) in [("black", [0, 0, 0]), ("white", [255, 255, 255])] {
                 let head_surface = composite(accent, surface, glow_alpha);
-                for row in &roles {
+                for (role_index, row) in roles.iter().enumerate() {
                     let css = (row.css)();
                     let color = color_declaration(&css, row.selector);
                     let rendered = rendered_foreground(color, foreground, head_surface, is_dark);
                     let ratio = contrast_ratio(rendered, head_surface);
+                    minima[appearance_index][role_index] =
+                        minima[appearance_index][role_index].min(ratio);
                     assert!(
                         ratio >= row.minimum,
                         "{theme:?} {appearance}, {accent_name} accent: {} reaches only \
@@ -497,6 +503,11 @@ fn contrast_3_now_playing_head_band_roles_clear_aa_over_every_glow_extreme() {
                     );
                 }
             }
+        }
+    }
+    for (appearance, values) in ["dark", "light"].into_iter().zip(minima) {
+        for (role, ratio) in ["title", "artist", "album"].into_iter().zip(values) {
+            eprintln!("MEASURE now-playing {appearance} {role} contrast: {ratio:.3}:1");
         }
     }
 }

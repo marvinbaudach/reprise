@@ -7,6 +7,13 @@ use crate::ui::cover_glow;
 
 pub(super) const BLOBS_PER_LAYER: usize = 3;
 
+/// The three-row lattice has a 0.30 vertical pitch within each column.
+#[cfg(test)]
+pub(super) const MIN_ANCHOR_SEPARATION: f64 = 0.30;
+/// Its farthest field corner is under 0.40 field-fractions from a drop.
+#[cfg(test)]
+pub(super) const MAX_ANCHOR_COVERAGE_DISTANCE: f64 = 0.40;
+
 /// Edge of each cached drop raster. Its falloff stays smooth however far the
 /// drift stretches it.
 pub(super) const FIELD_RASTER_EDGE: i32 = 320;
@@ -40,8 +47,8 @@ const fn profile(x: DriftAxis, y: DriftAxis, scale: DriftAxis) -> DriftProfile {
 
 pub(super) const BACK_BLOBS: [Blob; BLOBS_PER_LAYER] = [
     Blob {
-        x: 0.40,
-        y: 0.35,
+        x: 0.24,
+        y: 0.20,
         alpha: 0.85,
         radius: 0.50,
         drift: profile(
@@ -51,8 +58,8 @@ pub(super) const BACK_BLOBS: [Blob; BLOBS_PER_LAYER] = [
         ),
     },
     Blob {
-        x: 0.82,
-        y: 0.55,
+        x: 0.66,
+        y: 0.50,
         alpha: 0.80,
         radius: 0.50,
         drift: profile(
@@ -63,7 +70,7 @@ pub(super) const BACK_BLOBS: [Blob; BLOBS_PER_LAYER] = [
     },
     Blob {
         x: 0.24,
-        y: 0.76,
+        y: 0.80,
         alpha: 0.78,
         radius: 0.50,
         drift: profile(
@@ -76,8 +83,8 @@ pub(super) const BACK_BLOBS: [Blob; BLOBS_PER_LAYER] = [
 
 pub(super) const FRONT_BLOBS: [Blob; BLOBS_PER_LAYER] = [
     Blob {
-        x: 0.75,
-        y: 0.25,
+        x: 0.66,
+        y: 0.20,
         alpha: 0.70,
         radius: 0.45,
         drift: profile(
@@ -87,8 +94,8 @@ pub(super) const FRONT_BLOBS: [Blob; BLOBS_PER_LAYER] = [
         ),
     },
     Blob {
-        x: 0.30,
-        y: 0.80,
+        x: 0.24,
+        y: 0.50,
         alpha: 0.60,
         radius: 0.45,
         drift: profile(
@@ -98,8 +105,8 @@ pub(super) const FRONT_BLOBS: [Blob; BLOBS_PER_LAYER] = [
         ),
     },
     Blob {
-        x: 0.52,
-        y: 0.48,
+        x: 0.66,
+        y: 0.80,
         alpha: 0.65,
         radius: 0.45,
         drift: profile(

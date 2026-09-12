@@ -37,12 +37,12 @@ pub(super) const BLOOM_FULL_STRENGTH_Y: f64 =
 pub(super) const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
 const REST_OPACITY: f64 = 0.06;
-const OPACITY_PER_PRESSURE: f64 = 0.15;
-const OPACITY_PER_SWELL: f64 = 0.16;
+const OPACITY_PER_PRESSURE: f64 = 0.20;
+const OPACITY_PER_SWELL: f64 = 0.22;
 const LIGHT_REST_OPACITY: f64 = 0.14;
 const LIGHT_OPACITY_PER_PRESSURE: f64 = 0.26;
 const LIGHT_OPACITY_PER_SWELL: f64 = 0.24;
-const DARK_OPACITY_CAP: f64 = 0.35;
+const DARK_OPACITY_CAP: f64 = 0.46;
 const LIGHT_OPACITY_CAP: f64 = 0.60;
 const REST_SCALE: f64 = 1.0;
 const SCALE_PER_SWELL: f64 = 0.025;
@@ -366,14 +366,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn light_bloom_is_stronger_while_dark_keeps_its_original_opacity_model() {
+    fn light_bloom_stays_stronger_while_dark_regains_presence() {
         let dark = bloom_opacity_model(true);
         let light = bloom_opacity_model(false);
 
         assert_eq!(dark.rest, 0.06);
-        assert_eq!(dark.per_pressure, 0.15);
-        assert_eq!(dark.per_swell, 0.16);
-        assert_eq!(dark.cap, 0.35);
+        assert_eq!(dark.per_pressure, 0.20);
+        assert_eq!(dark.per_swell, 0.22);
+        assert_eq!(dark.cap, 0.46);
         assert_eq!(light.rest, 0.14);
         assert_eq!(light.per_pressure, 0.26);
         assert_eq!(light.per_swell, 0.24);
@@ -441,13 +441,13 @@ mod tests {
         // Silence: the rest value, and nothing else.
         assert!((bloom_opacity(0.0, 0.0, true) - 0.06).abs() < 1e-9);
         // A held breakdown: no attack left, but the light stays up.
-        assert!((bloom_opacity(0.9, 0.0, true) - 0.195).abs() < 1e-9);
+        assert!((bloom_opacity(0.9, 0.0, true) - 0.24).abs() < 1e-9);
         // A broad swell on a lit bed.
-        assert!((bloom_opacity(0.85, 0.8, true) - 0.3155).abs() < 1e-9);
+        assert!((bloom_opacity(0.85, 0.8, true) - 0.406).abs() < 1e-9);
         // Both at full: the settled appearance caps.
-        assert!((bloom_opacity(1.0, 1.0, true) - 0.35).abs() < 1e-9);
+        assert!((bloom_opacity(1.0, 1.0, true) - 0.46).abs() < 1e-9);
         assert!((bloom_opacity(1.0, 1.0, false) - 0.60).abs() < 1e-9);
-        assert!((bloom_opacity(1.0, 0.0, true) - 0.21).abs() < 1e-9);
+        assert!((bloom_opacity(1.0, 0.0, true) - 0.26).abs() < 1e-9);
         // The bed alone must never out-shine bed plus hit.
         assert!(bloom_opacity(1.0, 0.0, true) < bloom_opacity(1.0, 1.0, true));
 
@@ -455,7 +455,7 @@ mod tests {
         assert!((bloom_scale(1.0) - 1.025).abs() < 1e-9);
 
         // Out-of-range readings clamp, never extrapolate.
-        assert!((bloom_opacity(4.0, 4.0, true) - 0.35).abs() < 1e-9);
+        assert!((bloom_opacity(4.0, 4.0, true) - 0.46).abs() < 1e-9);
         assert!((bloom_opacity(-1.0, -1.0, true) - 0.06).abs() < 1e-9);
     }
 

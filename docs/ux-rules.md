@@ -4315,7 +4315,9 @@ STYLE-1).
   clouds of the blurred artwork — three per depth layer — move on their own long,
   mutually
   incommensurable position waves and breathe on separate scale waves, meeting
-  and parting without a visible repeat. Peak translation speed is the binding
+  and parting without a visible repeat. Their anchors alternate between depth
+  layers across the full field, so no edge or corner falls outside their reach.
+  Peak translation speed is the binding
   motion constraint and may not exceed **0.016 field-fractions per second** on
   either axis.
   **The drifting clouds are

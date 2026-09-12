@@ -33,6 +33,8 @@ use super::cover_cloud_blob::{
     build_blob_rasters, Blob, BlobRasters, BACK_BLOBS, BACK_BLUR_EDGE, BLOBS_PER_LAYER,
     FIELD_RASTER_EDGE, FRONT_BLOBS, FRONT_BLUR_EDGE,
 };
+#[cfg(test)]
+use super::cover_cloud_blob::{MAX_ANCHOR_COVERAGE_DISTANCE, MIN_ANCHOR_SEPARATION};
 use super::cover_scrim::{self, ScrimCache};
 #[cfg(test)]
 use super::cover_scrim::{build_scrim, paint_scrim};
