@@ -20,6 +20,15 @@ fn existing_library_is_a_silent_upgrade() {
 }
 
 #[test]
+fn existing_library_initial_decision_completes_onboarding() {
+    let db = Db::open_in_memory().unwrap();
+    settings::set_library_root(&db, "/music").unwrap();
+
+    assert_eq!(initial_decision(&db), FirstRunDecision::ExistingLibrary);
+    assert!(settings::get_onboarding_completed(&db).unwrap());
+}
+
+#[test]
 fn completed_onboarding_never_reopens_the_wizard() {
     assert_eq!(decide(true, None), FirstRunDecision::AlreadyCompleted);
 }
@@ -91,13 +100,12 @@ fn detected_rhythmbox_group_lists_the_supported_import_choice() {
 }
 
 #[test]
-fn both_exits_close_onboarding_and_the_discovery_banner() {
+fn both_exits_complete_onboarding() {
     for response in [CompletionResponse::Skip, CompletionResponse::SetUp] {
         let db = Db::open_in_memory().unwrap();
         let options = completion_options(response, true, WizardSourceSelection::default());
         persist_completion(&db, options);
         assert!(settings::get_onboarding_completed(&db).unwrap());
-        assert!(settings::get_online_discovery_banner_completed(&db).unwrap());
         assert_eq!(options.sources, WizardSourceSelection::default());
     }
 }
@@ -153,15 +161,6 @@ fn skipping_the_wizard_leaves_the_network_gate_shut() {
     let db = Db::open_in_memory().unwrap();
     persist_completion(&db, CompletionOptions::default());
     assert!(!reprise_core::online_sources::is_enabled(&db).unwrap());
-}
-
-#[test]
-fn a_completed_wizard_leaves_no_banner_to_show() {
-    // `build` returns before it touches a widget when the banner is done, so
-    // this needs no display.
-    let db = Rc::new(Db::open_in_memory().unwrap());
-    persist_completion(&db, CompletionOptions::default());
-    assert!(crate::ui::online_discovery_banner::build(&db, || {}).is_none());
 }
 
 #[test]
@@ -518,22 +517,6 @@ fn rhythmbox_block_is_absent_when_no_import_is_found() {
     assert!(direct_preferences_groups(&widgets.root)
         .iter()
         .all(|group| group.title() != strings::text(strings::ONBOARDING_GROUP_IMPORT)));
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn existing_library_keeps_the_online_discovery_banner() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    if gtk4::init().is_err() {
-        return;
-    }
-
-    let db = Rc::new(Db::open_in_memory().unwrap());
-    settings::set_library_root(&db, "/music").unwrap();
-    assert_eq!(initial_decision(&db), FirstRunDecision::ExistingLibrary);
-    assert!(settings::get_onboarding_completed(&db).unwrap());
-    assert!(!settings::get_online_discovery_banner_completed(&db).unwrap());
-    assert!(crate::ui::online_discovery_banner::build(&db, || {}).is_some());
 }
 
 #[test]

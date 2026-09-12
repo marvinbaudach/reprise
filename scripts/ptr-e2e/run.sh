@@ -433,21 +433,6 @@ db_scalar_into() {
   printf -v "$target" '%s' "$out"
 }
 
-dismiss_onboarding_banner() {
-  local failures_before
-  failures_before="$(failure_count)"
-  log_step "dismissing the online-sources onboarding banner…"
-  click_at "$DISCOVERY_BANNER_NOT_NOW_X" "$DISCOVERY_BANNER_NOT_NOW_Y"
-  sleep 0.5
-  assert_db_value "online_sources.discovery_banner_completed" "1" \
-    "online-sources onboarding banner dismissal persisted"
-  if [ "$(failure_count)" -gt "$failures_before" ]; then
-    log_fail "onboarding banner dismissal was not persisted; refusing to run coordinate flows"
-    exit 1
-  fi
-  sleep 0.5
-}
-
 # --- Wait for the window, then maximize it -----------------------------------
 
 log_step "waiting for the Reprise window (WM_CLASS matching '$WINDOW_CLASS_MATCH')…"
@@ -481,7 +466,6 @@ sleep 1
 # if the column set, fonts, or resolution change. See README.md.
 # shellcheck source=geometry.sh
 source "$REPO_ROOT/scripts/ptr-e2e/geometry.sh"
-dismiss_onboarding_banner
 
 if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
   # --- Flow 0: opt-in Artist News in the contextual information panel -------

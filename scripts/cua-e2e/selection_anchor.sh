@@ -48,8 +48,7 @@ cua_pointer_window_point() {
   cua_snapshot "$pid" "$window_id" "$stem" >/dev/null || return 1
 }
 
-# Window-local geometry of the track list, measured on the 1440x900 CUA window
-# with the discovery banner dismissed (evidence: anchor-01b-banner-dismissed).
+# Window-local geometry of the track list, measured on the 1440x900 CUA window.
 # Row 1 sits at 175 and every further row is 45 px below it.
 ANCHOR_ROW_X=400
 anchor_row_y() { echo $((130 + $1 * 45)); }
@@ -82,14 +81,6 @@ assert_anchor_range() {
       || echo "(no selection anchor line at all)" >&2
     return 1
   fi
-}
-
-dismiss_discovery_banner() {
-  local stem=$1
-
-  # The banner pushes every row down by its own height; dismissing it first is
-  # what makes the measured row geometry hold.
-  cua_pointer_window_point click "$APP_PID" "$WINDOW_ID" 1376 71 "$stem"
 }
 
 # What the user actually sees. Two reasons this reads pixels: the track rows
@@ -130,7 +121,6 @@ run_selection_anchor_scenario() {
   assert_snapshot_contains "$initial" "anchor_05"
   echo "[cua-e2e] anchor row frames as AT-SPI reports them (flattened, hence pixels):"
   report_label_frames "$initial" anchor_01 anchor_03 anchor_05
-  dismiss_discovery_banner anchor-01b-banner-dismissed
 
   # Start a song in the middle of the artist.
   cua_pointer_window_point double_click "$APP_PID" "$WINDOW_ID" \
@@ -156,7 +146,6 @@ run_selection_anchor_scenario() {
   start_scenario_app selection-anchor-fresh "$fixture_dir" "" 90
   fresh=$(wait_for_label "$APP_PID" "$WINDOW_ID" "anchor_01" anchor-10-fresh)
   assert_snapshot_contains "$fresh" "anchor_05"
-  dismiss_discovery_banner anchor-10b-banner-dismissed
   cua_pointer_window_point click "$APP_PID" "$WINDOW_ID" \
     "$ANCHOR_ROW_X" "$(anchor_row_y 4)" anchor-11-shift-click shift
   # No range line to wait for here: with neither an anchor nor a playing row the
