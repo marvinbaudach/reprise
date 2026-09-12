@@ -139,7 +139,7 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
-    <release version="0.1.189" date="2026-09-12" type="stable">
+    <release version="0.1.190" date="2026-09-12" type="stable">
       <description>
         <p>Stops closing the window from crashing on every quit under Wayland, which used to discard the session before it could be saved and made the next launch rescan the whole library as though the last run had crashed. The window being torn down is now realised first, in both directions, and Ctrl+Q closes the window through that same path instead of skipping it.</p>
         <p xml:lang="de">Verhindert, dass das Schließen des Fensters unter Wayland bei jedem Beenden abstürzt und dabei die Sitzung verwirft, bevor sie gespeichert werden kann, sodass der nächste Start die gesamte Bibliothek neu durchsuchte, als wäre der letzte Lauf abgestürzt. Das jeweils zerstörte Fenster wird jetzt zuerst realisiert, in beiden Richtungen, und Strg+Q schließt das Fenster über denselben Pfad, statt ihn zu überspringen.</p>
