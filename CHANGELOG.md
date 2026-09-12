@@ -4,6 +4,22 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.191] - 2026-09-12
+
+### Appearance
+
+- The sidebar toggle is always in the header now. It used to be missing after
+  a normal start and only appear once the Layout preference was touched: the
+  one startup sync read `gtk_widget_is_visible`, which requires every ancestor
+  to be visible, before the window was presented, so it always read hidden and
+  hid the button, and nothing resynced it afterwards. The same wrong read
+  guarded the restore of a manually collapsed sidebar, so a collapse never
+  survived a restart. Only the toggle's pressed state now mirrors whether the
+  sidebar is shown, a collapsed sidebar comes back collapsed, and clicking the
+  toggle while the Layout option has the sidebar switched off turns it back on
+  by writing that setting first, leaving the button untouched if the write
+  fails.
+
 ## [0.1.190] - 2026-09-12
 
 ### Playback and presentation

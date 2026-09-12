@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.191" date="2026-09-12" type="stable">
+      <description>
+        <p>Keeps the sidebar toggle in the header always visible, instead of missing after a normal start until the Layout preference was touched, because the one startup sync checked visibility before the window was presented and always read it as hidden, which also dropped a manually collapsed sidebar on restart. Only the toggle's pressed state now mirrors the sidebar, and re-enabling it while Layout has the sidebar switched off writes that setting first, leaving the button untouched if the write fails.</p>
+        <p xml:lang="de">Hält den Umschalter für die Seitenleiste im Kopfbereich immer sichtbar, statt ihn nach einem normalen Start verschwinden zu lassen, bis die Layout-Einstellung berührt wurde, weil der einzige Start-Abgleich die Sichtbarkeit prüfte, bevor das Fenster angezeigt wurde, und sie stets als verborgen las, wodurch auch eine manuell eingeklappte Seitenleiste beim Neustart verloren ging. Nur noch der gedrückte Zustand des Umschalters spiegelt jetzt die Seitenleiste, und ein Wiedereinschalten bei per Layout deaktivierter Seitenleiste schreibt zuerst diese Einstellung und lässt den Knopf unangetastet, falls das Schreiben fehlschlägt.</p>
+      </description>
+    </release>
     <release version="0.1.190" date="2026-09-12" type="stable">
       <description>
         <p>Stops closing the window from crashing on every quit under Wayland, which used to discard the session before it could be saved and made the next launch rescan the whole library as though the last run had crashed. The window being torn down is now realised first, in both directions, and Ctrl+Q closes the window through that same path instead of skipping it.</p>
