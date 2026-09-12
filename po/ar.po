@@ -2950,20 +2950,6 @@ msgstr ""
 msgid "Use Radio"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:54
-msgid ""
-"Reprise can now follow podcasts, YouTube channels, radio and concerts — all "
-"off by default."
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:56
-msgid "Review in Preferences"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:57
-msgid "Not now"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:59
 msgid ""
 "Reprise merged the separate image modules into Artwork. It now loads album "

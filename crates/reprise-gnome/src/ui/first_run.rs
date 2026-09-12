@@ -75,18 +75,14 @@ fn completion_options(
     }
 }
 
-/// Everything the wizard persists, on both exits. `NET-4`: the wizard
-/// *replaces* the discovery banner's question for a fresh install, so it
-/// closes the banner too — otherwise the same question arrives twice.
+/// Everything the wizard persists on both exits: onboarding completion and
+/// the source selection.
 fn persist_completion(db: &Db, options: CompletionOptions) {
     if let Err(error) = settings::set_onboarding_completed(db, true) {
         tracing::warn!(%error, "could not persist onboarding completion");
     }
     if let Err(error) = online_sources::apply_wizard_selection(db, options.sources) {
         tracing::warn!(%error, "could not persist first-run source selection");
-    }
-    if let Err(error) = settings::set_online_discovery_banner_completed(db, true) {
-        tracing::warn!(%error, "could not close the discovery banner");
     }
 }
 

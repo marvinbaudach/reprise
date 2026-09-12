@@ -3003,10 +3003,10 @@ property is set and yet nothing happens.
   Negative cache markers do not count, and an explicitly stored gate value
   is never overwritten. The per-module grandfathering described by `NET-2`
   remains in force unchanged.
-- **NET-4** [active] [gtk] — Discovery without nagging: exactly one
+- **NET-4** [replaced by NET-4a] — Discovery without nagging: exactly one
   dismissible banner appears in the Library on the first launch after the
-  update: "Reprise can now follow podcasts, YouTube channels, radio and
-  concerts — all off by default." with "Review in Preferences" and "Not now".
+  update, announcing the new online sources with "Review in Preferences" and
+  "Not now" actions.
   Once dismissed or acted on it never appears again; it is never shown when
   the global gate is already on, and is never a modal or a toast. The
   permanent path is Preferences → Plugins. On the first enable the master
@@ -3020,20 +3020,19 @@ property is set and yet nothing happens.
   off, and with the gate already open they open on the stored module states
   instead, so a choice made in Preferences is displayed, never overwritten.
   Both exits — "Skip for Now" and "Set Up Library" — persist the visible
-  source selection and close the discovery banner of `NET-4`, so the question
-  is never asked twice. No source chosen on a fresh database leaves the gate
-  shut and writes no module; clearing every source behind an open gate closes
-  it and writes those three modules off. An existing library never sees the
-  wizard and keeps the banner.
+  source selection. No source chosen on a fresh database leaves the gate shut
+  and writes no module; clearing every source behind an open gate closes it and
+  writes those three modules off. An existing library never sees the wizard,
+  is never asked, starts with the gate shut, and reaches the sources only
+  through Preferences → Plugins.
 - **NET-4b** [active] [android] — On Android the artist-photo question is asked
   by exactly one dismissible banner in the Library, shown whenever the global
   gate is off, the question has not been settled, and the library holds at
   least one artist. It carries "Download artist photos" and "Not now"; either
   one settles the question for good, and the permanent path stays Settings →
   Online sources. It is never a modal or a toast, and never appears while the
-  gate is already on. Unlike the `NET-4` banner it enables directly instead of
-  pointing at the settings page, because Android has a single online switch
-  and the banner already names what is sent.
+  gate is already on. It enables directly because Android has a single online
+  switch and the banner already names what is sent.
 - **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
   gate is open and the device is online immediately starts exactly one fresh
   cover pass through the same Preferences transition used by Plugins and the

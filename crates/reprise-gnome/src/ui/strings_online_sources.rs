@@ -50,11 +50,6 @@ pub const ARTWORK_DESCRIPTION: &str = N_!(
 pub const ONLINE_SOURCES_USE_YOUTUBE: &str = N_!("Use YouTube");
 pub const ONLINE_SOURCES_USE_PODCASTS: &str = N_!("Use Podcasts");
 pub const ONLINE_SOURCES_USE_RADIO: &str = N_!("Use Radio");
-pub const ONLINE_DISCOVERY_BANNER_BODY: &str = N_!(
-    "Reprise can now follow podcasts, YouTube channels, radio and concerts — all off by default."
-);
-pub const ONLINE_DISCOVERY_REVIEW: &str = N_!("Review in Preferences");
-pub const ONLINE_DISCOVERY_NOT_NOW: &str = N_!("Not now");
 pub const ARTWORK_CONSENT_MERGE_NOTICE_BODY: &str = N_!(
     "Reprise merged the separate image modules into Artwork. It now loads album covers, artist portraits, and images for podcasts, YouTube, and radio."
 );
