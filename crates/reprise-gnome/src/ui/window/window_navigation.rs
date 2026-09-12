@@ -266,6 +266,62 @@ mod tests {
         assert!(!sidebar_toggle_focus_on_click());
     }
 
+    /// Reproduces the reported bug: the left sidebar toggle is missing after a
+    /// normal start and only appears once the Layout preference is touched.
+    ///
+    /// `window.rs` runs `PreferencesContext::new` (which applies the persisted
+    /// sidebar visibility), then `wire_sidebar_toggle`, and only then
+    /// `window.present()`. `sync_sidebar_toggle` reads `sidebar_page.is_visible()`
+    /// — that is `gtk_widget_is_visible`, true only when the widget *and every
+    /// ancestor* are visible. Before `present()` the window is not, so the sync
+    /// hides the toggle, and nothing resyncs it afterwards because the `visible`
+    /// property of `sidebar_page` never changes again.
+    ///
+    /// The window here is deliberately never presented, exactly as at the moment
+    /// `wire_sidebar_toggle` runs during startup.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sidebar_toggle_survives_being_wired_before_the_window_is_presented() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        // The real toggle starts hidden (`window_header.rs`).
+        let toggle = gtk4::ToggleButton::builder().visible(false).build();
+        let window = gtk4::Window::builder().child(&split).build();
+
+        // Guard the premise: the page must really be parented into the window,
+        // otherwise `is_visible()` has no unseen ancestor and this test would
+        // pass for the wrong reason.
+        assert!(
+            sidebar.ancestor(gtk4::Window::static_type()).is_some(),
+            "premise broken: the sidebar page is not parented into the window"
+        );
+        assert!(!window.is_visible(), "premise broken: the window is presented");
+
+        // Startup order: persisted visibility first, then the toggle wiring.
+        apply_sidebar_visibility(&split, &sidebar, true);
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &test_conn());
+
+        assert!(
+            sidebar.get_visible(),
+            "the sidebar slot is enabled, so the page's own visible flag is set"
+        );
+        assert!(
+            toggle.get_visible(),
+            "the sidebar toggle must be present after startup wiring, not only \
+             once the Layout preference is touched"
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn sidebar_toggle_is_marked_as_a_global_space_target() {
