@@ -71,8 +71,12 @@ echo "== Frontend thinness =="
 # Core. The remaining rusqlite count includes error types and domain names
 # containing `Connection`; direct access to the owned connection is a
 # separate zero-tolerance ban below.
+# The wizard becoming the only question (#930) deleted the online-discovery
+# banner, and with it the frontend's last `rusqlite::Error` return type: its
+# `initial_visibility` asked the Db whether to show the banner at all. The
+# wizard answers that now, so the count drops by one.
 declare -A budget=(
-  [rusqlite]=115
+  [rusqlite]=114
   [filesystem]=13
   [threads]=15
   [workers]=7
