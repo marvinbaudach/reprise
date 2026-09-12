@@ -74,6 +74,10 @@ mod tests {
 
         let header = super::build();
 
+        assert!(
+            header.sidebar_toggle.get_visible(),
+            "the sidebar toggle must be visible by default"
+        );
         assert!(header
             .sidebar_toggle
             .has_css_class(crate::ui::style::buttons::COLLAPSE_TOGGLE_CSS_CLASS));
