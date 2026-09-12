@@ -2,7 +2,7 @@
 slug: the-now-playing-panel-settles
 worktree: /home/marvin/Projects/reprise-the-now-playing-panel-settles
 branch: feature/the-now-playing-panel-settles
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-09-11
 ---
