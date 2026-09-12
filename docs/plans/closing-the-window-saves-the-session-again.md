@@ -2,7 +2,7 @@
 slug: closing-the-window-saves-the-session-again
 worktree: /home/marvin/Projects/reprise-closing-the-window-saves-the-session-again
 branch: feature/closing-the-window-saves-the-session-again
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-09-12
 ---
