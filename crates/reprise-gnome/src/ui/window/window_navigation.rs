@@ -198,6 +198,8 @@ pub(in crate::ui) fn wire_sidebar_toggle(
                 };
                 if let Err(error) = saved {
                     tracing::warn!(%error, "could not save sidebar visibility");
+                    sync_sidebar_toggle(button, &split_view, &sidebar_page, &updating);
+                    return;
                 }
                 apply_sidebar_visibility(&split_view, &sidebar_page, true);
             }
@@ -406,6 +408,46 @@ mod tests {
         assert!(sidebar.get_visible());
         assert!(split.shows_sidebar());
         assert!(reprise_core::library::settings::get_sidebar_visible(&conn));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_rejected_sidebar_enable_keeps_the_slot_and_toggle_off() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = test_conn();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        let toggle = gtk4::ToggleButton::new();
+        let _window = gtk4::Window::builder().child(&split).build();
+
+        reprise_core::library::settings::set_sidebar_visible(&conn, false).unwrap();
+        apply_sidebar_visibility(&split, &sidebar, false);
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &conn);
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "CREATE TRIGGER reject_setting_updates
+                 BEFORE UPDATE ON settings
+                 BEGIN
+                   SELECT RAISE(FAIL, 'settings are read-only');
+                 END;",
+            )
+            .unwrap();
+
+        toggle.set_active(true);
+
+        assert!(!sidebar.get_visible());
+        assert!(!split.shows_sidebar());
+        assert!(!toggle.is_active());
+        assert!(!reprise_core::library::settings::get_sidebar_visible(&conn));
     }
 
     #[test]
