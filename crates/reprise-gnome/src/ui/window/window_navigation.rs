@@ -320,6 +320,52 @@ mod tests {
             "the sidebar toggle must be present after startup wiring, not only \
              once the Layout preference is touched"
         );
+        assert!(
+            toggle.is_active(),
+            "an expanded sidebar must leave the toggle switched on, otherwise a \
+             toggle that is merely always visible would satisfy this test while \
+             showing the wrong state"
+        );
+    }
+
+    /// The same wrong getter costs a second, quieter feature: `wire_sidebar_toggle`
+    /// guards the restore of last session's manual collapse with
+    /// `sidebar_page.is_visible()`. Before `present()` that is false, so the
+    /// guard never passes and a persisted collapse is silently dropped — the
+    /// sidebar comes back expanded however the user left it.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn a_persisted_sidebar_collapse_survives_a_restart() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = test_conn();
+        reprise_core::library::settings::set_sidebar_collapsed(&conn, true).unwrap();
+
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&gtk4::Label::new(Some("Content")))
+            .collapsed(false)
+            .show_sidebar(true)
+            .build();
+        let toggle = gtk4::ToggleButton::builder().visible(false).build();
+        let _window = gtk4::Window::builder().child(&split).build();
+
+        apply_sidebar_visibility(&split, &sidebar, true);
+        wire_sidebar_toggle(&toggle, &split, &sidebar, &conn);
+
+        assert!(
+            !split.shows_sidebar(),
+            "the sidebar was collapsed when the session ended, so startup must \
+             restore it collapsed"
+        );
+        assert!(
+            !toggle.is_active(),
+            "a restored collapse must leave the toggle switched off"
+        );
     }
 
     #[test]
