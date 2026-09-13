@@ -223,6 +223,53 @@ fn parser_keeps_only_songs_and_decodes_file_uris() {
 }
 
 #[test]
+fn parser_decodes_named_and_numeric_references_in_entry_text() {
+    let rhythmdb_path = PathBuf::from("provider:/rhythmdb.xml");
+    let xml = br#"<?xml version="1.0"?>
+<rhythmdb version="2.0">
+  <entry type="song">
+    <title>AT&amp;T &#8211; Live</title>
+    <location>file:///music/AT&amp;T&#45;&#49;.ogg</location>
+    <rating>4</rating>
+  </entry>
+</rhythmdb>"#;
+    let source = MemoryRhythmboxSource::new([(rhythmdb_path.clone(), xml.to_vec())]);
+
+    assert_eq!(
+        parse_rhythmdb_with_source(&source, &rhythmdb_path).unwrap(),
+        vec![RhythmboxTrackStats {
+            path: PathBuf::from("/music/AT&T-1.ogg"),
+            rating: Some(4),
+            play_count: None,
+            added_at: None,
+            last_played_at: None,
+        }]
+    );
+}
+
+#[test]
+fn parser_transcodes_declared_iso_8859_1_input() {
+    let rhythmdb_path = PathBuf::from("provider:/rhythmdb.xml");
+    let mut xml = br#"<?xml version="1.0" encoding="ISO-8859-1"?>
+<rhythmdb version="2.0"><entry type="song"><location>file:///music/J"#
+        .to_vec();
+    xml.push(0xe4);
+    xml.extend_from_slice(br#"ger.ogg</location><rating>4</rating></entry></rhythmdb>"#);
+    let source = MemoryRhythmboxSource::new([(rhythmdb_path.clone(), xml)]);
+
+    assert_eq!(
+        parse_rhythmdb_with_source(&source, &rhythmdb_path).unwrap(),
+        vec![RhythmboxTrackStats {
+            path: PathBuf::from("/music/Jäger.ogg"),
+            rating: Some(4),
+            play_count: None,
+            added_at: None,
+            last_played_at: None,
+        }]
+    );
+}
+
+#[test]
 fn parser_skips_invalid_entries_but_rejects_broken_xml() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("rhythmdb.xml");

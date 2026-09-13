@@ -432,6 +432,20 @@ mod tests {
         assert_eq!(parsed.episodes[0].title, "Fish & Chips (After Dark)");
     }
 
+    #[test]
+    fn item_titles_decode_named_numeric_and_cdata_segments_together() {
+        let parsed = parse_feed(
+            r#"<rss><channel><title>Show</title><item>
+              <title>AT&amp;T &#8211; <![CDATA[Live & Loud]]></title>
+              <enclosure url="https://example.test/live.mp3" type="audio/mpeg"/>
+            </item></channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.episodes[0].title, "AT&T – Live & Loud");
+    }
+
     /// Real feeds carry undeclared HTML entities (`&nbsp;`, `&mdash;`, …) in
     /// fields this parser never reads, above all `<description>`. Refusing the
     /// whole document over one of them would fail the entire subscription
