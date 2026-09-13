@@ -181,6 +181,22 @@ pub fn is_safe_structured_field(key: &str) -> bool {
             | "count"
             | "attempt"
             | "retry_count"
+            // Counts of candidates, not identities — same category as
+            // `count`/`attempt` above.
+            | "consecutive_failures"
+            | "skipped"
+            // `SourceError::technical_cause()` as logged by New Releases
+            // (`artist_news_pipeline.rs::record_failed_attempt`): its values
+            // are the constant `FetchError` `Display` strings from
+            // `musicbrainz.rs` plus the fixed literal in
+            // `invalid_response_source_error`, never user-entered or fetched
+            // content. Named for MusicBrainz specifically, not the generic
+            // `fetch_error`: this list is global over both redaction paths
+            // (here and `EventFields::record_value` in
+            // `reprise-gnome/src/ui/diagnostics.rs`), and a source whose
+            // technical cause can carry a URL or a foreign library's own
+            // message (podcasts, concerts) must not reuse this key.
+            | "musicbrainz_error"
     )
 }
 

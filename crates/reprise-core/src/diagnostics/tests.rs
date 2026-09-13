@@ -183,6 +183,41 @@ fn rendered_events_redact_identifying_structured_fields() {
 }
 
 #[test]
+fn rendered_events_keep_the_new_releases_stop_early_cause_but_still_redact_the_artist() {
+    // `New Releases: check stopped early` (`artist_news_pipeline.rs`) is the
+    // one place `musicbrainz_error` — a multi-word `SourceError::technical_cause()`
+    // such as "MusicBrainz returned HTTP status 503" — reaches the debug
+    // report. Unlike the single-token fields in
+    // `rendered_events_redact_identifying_structured_fields`,
+    // `redact_sensitive_assignments` only ever inspects the token that holds
+    // the `key=` separator; the words after it have none, so they pass
+    // through untouched. `artist=Lorna Shore` in the same line proves the
+    // untouched words are not a general loophole: only its first word is on
+    // the safe list, so only `artist=Lorna` is replaced and `Shore` survives
+    // as plain, non-`key=value` text — exactly like `musicbrainz_error`'s
+    // trailing words.
+    let mut log = DiagnosticLog::default();
+    log.push(DiagnosticEvent::new(
+        11 * 3_600 + 2 * 60 + 9,
+        DiagnosticLevel::Warn,
+        "artist_news_pipeline",
+        "New Releases: check stopped early; consecutive_failures=3 skipped=22 musicbrainz_error=MusicBrainz returned HTTP status 503 artist=Lorna Shore",
+    ));
+
+    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
+
+    assert!(
+        report.contains(
+            "New Releases: check stopped early; consecutive_failures=3 skipped=22 \
+musicbrainz_error=MusicBrainz returned HTTP status 503"
+        ),
+        "the technical cause must survive redaction intact:\n{report}"
+    );
+    assert!(report.contains("artist=$REDACTED"));
+    assert!(!report.contains("Lorna"));
+}
+
+#[test]
 fn rendered_events_use_only_the_final_target_segment() {
     let mut log = DiagnosticLog::default();
     for (seconds, target, message) in [

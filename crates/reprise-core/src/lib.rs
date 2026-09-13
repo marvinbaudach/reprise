@@ -124,6 +124,8 @@ mod artist_news_deleted_memory_tests;
 #[cfg(test)]
 mod artist_news_parsing_tests;
 #[cfg(test)]
+mod artist_news_pipeline_stop_early_tests;
+#[cfg(test)]
 mod artist_news_pipeline_tests;
 #[cfg(test)]
 mod artist_news_progress_tests;
