@@ -248,7 +248,11 @@ fn parser_decodes_named_and_numeric_references_in_entry_text() {
 }
 
 #[test]
-fn parser_transcodes_declared_iso_8859_1_input() {
+fn parser_rejects_non_utf8_bytes_despite_a_declared_iso_8859_1_encoding() {
+    // Reprise reads Rhythmbox databases as UTF-8 only, same as before the
+    // quick-xml 0.42 migration: a declared non-UTF-8 encoding is not
+    // transcoded. A raw ISO-8859-1 byte is invalid UTF-8 and must surface as
+    // a clean error, not a panic.
     let rhythmdb_path = PathBuf::from("provider:/rhythmdb.xml");
     let mut xml = br#"<?xml version="1.0" encoding="ISO-8859-1"?>
 <rhythmdb version="2.0"><entry type="song"><location>file:///music/J"#
@@ -257,10 +261,38 @@ fn parser_transcodes_declared_iso_8859_1_input() {
     xml.extend_from_slice(br#"ger.ogg</location><rating>4</rating></entry></rhythmdb>"#);
     let source = MemoryRhythmboxSource::new([(rhythmdb_path.clone(), xml)]);
 
+    assert!(matches!(
+        parse_rhythmdb_with_source(&source, &rhythmdb_path),
+        Err(RhythmboxImportError::Encoding(_))
+    ));
+}
+
+#[test]
+fn parser_survives_a_declaration_longer_than_the_prefix_buffer() {
+    // Regression for a quick-xml 0.42 `encoding`-feature bug this parser no
+    // longer builds against: `DecodingReader::set_encoding()` buffered only
+    // the first 64 bytes of input to detect the declared encoding, and
+    // panicked if a longer `<?xml ... ?>` drained that buffer before the
+    // `Decl` event was even returned. Dropping the `encoding` feature (this
+    // parser is UTF-8-only, matching pre-migration `dev`) removed the
+    // `set_encoding()` call path entirely, so this guards against it coming
+    // back the same way.
+    let rhythmdb_path = PathBuf::from("provider:/rhythmdb.xml");
+    let padding = " ".repeat(96);
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="ISO-8859-1" standalone="yes"{padding}?>
+<rhythmdb version="2.0"><entry type="song"><location>file:///music/Song.ogg</location><rating>4</rating></entry></rhythmdb>"#
+    );
+    assert!(
+        xml.find("?>").unwrap() > 64,
+        "the declaration must exceed the 64-byte prefix buffer to exercise the bug"
+    );
+    let source = MemoryRhythmboxSource::new([(rhythmdb_path.clone(), xml.into_bytes())]);
+
     assert_eq!(
         parse_rhythmdb_with_source(&source, &rhythmdb_path).unwrap(),
         vec![RhythmboxTrackStats {
-            path: PathBuf::from("/music/Jäger.ogg"),
+            path: PathBuf::from("/music/Song.ogg"),
             rating: Some(4),
             play_count: None,
             added_at: None,

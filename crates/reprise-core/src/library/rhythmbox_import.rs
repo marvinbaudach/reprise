@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use quick_xml::encoding::DecodingReader;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use rusqlite::OptionalExtension;
@@ -199,7 +198,7 @@ pub fn parse_rhythmdb_with_source(
     path: &Path,
 ) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError> {
     let file = source.open_read(path)?;
-    let mut reader = Reader::from_reader(DecodingReader::new(BufReader::new(file)));
+    let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
     let mut buffer = Vec::new();
@@ -210,11 +209,6 @@ pub fn parse_rhythmdb_with_source(
 
     loop {
         match reader.read_event_into(&mut buffer).map_err(map_xml_error)? {
-            Event::Decl(declaration) => {
-                if let Some(encoding) = declaration.encoder() {
-                    reader.get_mut().set_encoding(encoding);
-                }
-            }
             Event::Start(element) => {
                 depth += 1;
                 if element.name().as_ref() == "entry" {
@@ -452,7 +446,7 @@ pub fn prescan_rhythmdb_with_source(
     };
 
     let file = source.open_read(rhythmdb_path)?;
-    let mut reader = Reader::from_reader(DecodingReader::new(BufReader::new(file)));
+    let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
     let mut buffer = Vec::new();
@@ -467,11 +461,6 @@ pub fn prescan_rhythmdb_with_source(
 
     loop {
         match reader.read_event_into(&mut buffer).map_err(map_xml_error)? {
-            Event::Decl(declaration) => {
-                if let Some(encoding) = declaration.encoder() {
-                    reader.get_mut().set_encoding(encoding);
-                }
-            }
             Event::Start(element) => {
                 depth += 1;
                 if element.name().as_ref() == "entry" {
@@ -600,7 +589,7 @@ pub fn parse_playlists_with_source(
     path: &Path,
 ) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
     let file = source.open_read(path)?;
-    let mut reader = Reader::from_reader(DecodingReader::new(BufReader::new(file)));
+    let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
     let mut buffer = Vec::new();
@@ -611,11 +600,6 @@ pub fn parse_playlists_with_source(
 
     loop {
         match reader.read_event_into(&mut buffer).map_err(map_xml_error)? {
-            Event::Decl(declaration) => {
-                if let Some(encoding) = declaration.encoder() {
-                    reader.get_mut().set_encoding(encoding);
-                }
-            }
             Event::Start(element) => {
                 depth += 1;
                 if element.name().as_ref() == "playlist" {
