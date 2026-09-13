@@ -49,6 +49,26 @@ mod tests {
         rendered_label_texts(group.upcast_ref(), 480, 180, settle, || {})
     }
 
+    // The control arm below expects the row's own title and subtitle to be
+    // *absent* from the rendered labels — but an empty result also comes from
+    // a harness that observed nothing at all (window never mapped, walk never
+    // ran). A bare "absent" assertion cannot tell those apart, so a sentinel
+    // label rides along in the same window: its presence proves the harness
+    // was watching, keeping the negative assertions honest.
+    const SENTINEL: &str = "rows harness sentinel";
+
+    fn rendered_row_with_sentinel(
+        row: &adw::ActionRow,
+        settle: LabelSettle,
+    ) -> (Vec<String>, Duration) {
+        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let group = adw::PreferencesGroup::new();
+        group.add(row);
+        container.append(&group);
+        container.append(&gtk4::Label::new(Some(SENTINEL)));
+        rendered_label_texts(container.upcast_ref(), 480, 220, settle, || {})
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn fb_13_row_plain_text_survives_markup_characters() {
@@ -74,7 +94,12 @@ mod tests {
             .subtitle(subtitle)
             .build();
         let absence_wait = positive_wait.max(Duration::from_millis(100));
-        let (markup_labels, _) = rendered_row(&markup_row, LabelSettle::ObserveFor(absence_wait));
+        let (markup_labels, _) =
+            rendered_row_with_sentinel(&markup_row, LabelSettle::ObserveFor(absence_wait));
+        assert!(
+            markup_labels.iter().any(|label| label == SENTINEL),
+            "the harness must still observe rendered labels while the markup arm swallows the title"
+        );
         assert!(!markup_labels.iter().any(|label| label == title));
         assert!(!markup_labels.iter().any(|label| label == subtitle));
     }
