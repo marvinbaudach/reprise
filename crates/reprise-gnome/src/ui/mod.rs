@@ -118,7 +118,6 @@ mod spectrogram;
 pub(crate) mod startup_quiet;
 pub(crate) mod startup_report;
 mod stats;
-pub mod status_bar;
 pub mod strings;
 mod style;
 mod swell;

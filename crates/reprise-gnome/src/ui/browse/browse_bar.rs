@@ -331,12 +331,31 @@ impl BrowseBar {
     }
 
     pub fn set_result_count(&self, filtered: usize, total: usize) {
-        self.result_count.set(Some((filtered, total)));
         let (markup, accented) = filter_strings::result_count_markup(filtered, total);
+        self.set_result_count_presentation(filtered, total, &markup, accented);
+    }
+
+    pub(in crate::ui) fn set_result_count_caption(
+        &self,
+        filtered: usize,
+        total: usize,
+        caption: &str,
+    ) {
+        self.set_result_count_presentation(filtered, total, caption, false);
+    }
+
+    fn set_result_count_presentation(
+        &self,
+        filtered: usize,
+        total: usize,
+        text: &str,
+        accented: bool,
+    ) {
+        self.result_count.set(Some((filtered, total)));
         let presentation = if accented {
-            CountPresentation::RestrictedMarkup(&markup)
+            CountPresentation::RestrictedMarkup(text)
         } else {
-            CountPresentation::Plain(&markup)
+            CountPresentation::Plain(text)
         };
         filter_bar_layout::present_count(&self.result_label, presentation);
         self.result_label.set_visible(true);

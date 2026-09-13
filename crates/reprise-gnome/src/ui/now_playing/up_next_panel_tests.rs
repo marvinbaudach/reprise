@@ -121,12 +121,15 @@ fn que_2_two_sections_headers_conditional() {
 }
 
 #[test]
-fn footer_formats_track_count_and_remaining_duration() {
-    assert_eq!(format_up_next_footer(&[]), "0 tracks · 0 minutes");
-    assert_eq!(format_up_next_footer(&[90_000]), "1 track · 1 minute");
+fn que_15_footer_names_its_scope() {
+    assert_eq!(format_up_next_footer(&[]), "Up next · 0 tracks · 0 minutes");
+    assert_eq!(
+        format_up_next_footer(&[90_000]),
+        "Up next · 1 track · 1 minute"
+    );
     assert_eq!(
         format_up_next_footer(&[90_000, 330_000]),
-        "2 tracks · 7 minutes"
+        "Up next · 2 tracks · 7 minutes"
     );
 }
 

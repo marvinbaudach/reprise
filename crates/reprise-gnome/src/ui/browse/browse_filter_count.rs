@@ -10,6 +10,19 @@ use reprise_core::view_source::ViewSource;
 
 use super::browse_bar::BrowseBar;
 
+const MILLIS_PER_HOUR: i64 = 60 * 60 * 1_000;
+const HOURS_PER_DAY: i64 = 24;
+
+fn idle_library_caption(count: usize, total_duration_ms: i64) -> String {
+    let (count_text, _) = crate::ui::filter_bar_strings::result_count_markup(count, count);
+    let total_hours = total_duration_ms.max(0) / MILLIS_PER_HOUR;
+    format!(
+        "{count_text} · {} d {} h",
+        total_hours / HOURS_PER_DAY,
+        total_hours % HOURS_PER_DAY
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn update(
     bar: &Rc<BrowseBar>,
@@ -30,6 +43,19 @@ pub(in crate::ui) fn update(
     let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai);
     let total = source_total(conn, source, restricted, count, queue_ids);
     match total {
+        Ok(total) if matches!(source, ViewSource::Library) && !restricted => {
+            match queries::query_library_stats_browsed(conn, "", &BrowseFilter::default()) {
+                Ok(stats) => bar.set_result_count_caption(
+                    count,
+                    total,
+                    &idle_library_caption(count, stats.total_duration_ms),
+                ),
+                Err(error) => {
+                    tracing::warn!(%error, "could not load library duration for filter row");
+                    bar.hide_result_count();
+                }
+            }
+        }
         Ok(total) => bar.set_result_count(count, total),
         Err(error) => {
             tracing::warn!(%error, "could not load total count for filter row");
@@ -132,5 +158,14 @@ mod tests {
             source_total(&conn, &ViewSource::Queue, true, 3, &[]).unwrap(),
             3
         );
+    }
+
+    #[test]
+    fn fil_10_idle_caption_carries_count_and_duration() {
+        assert_eq!(
+            idle_library_caption(1_881, ((4 * 24 + 6) * 60 + 28) * 60 * 1_000),
+            "1,881 tracks · 4 d 6 h"
+        );
+        assert_eq!(idle_library_caption(1, 3_600_000), "1 track · 0 d 1 h");
     }
 }

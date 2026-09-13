@@ -16,15 +16,13 @@ enum LibraryWindowControl {
     Sidebar,
     BrowseBar,
     InfoPanel,
-    StatusLine,
 }
 
-fn library_window_controls() -> [LibraryWindowControl; 4] {
+fn library_window_controls() -> [LibraryWindowControl; 3] {
     [
         LibraryWindowControl::Sidebar,
         LibraryWindowControl::BrowseBar,
         LibraryWindowControl::InfoPanel,
-        LibraryWindowControl::StatusLine,
     ]
 }
 
@@ -33,7 +31,6 @@ fn control_title(control: LibraryWindowControl) -> String {
         LibraryWindowControl::Sidebar => visual_strings::NAVIGATION_SIDEBAR,
         LibraryWindowControl::BrowseBar => visual_strings::FILTER_BAR,
         LibraryWindowControl::InfoPanel => visual_strings::DETAILS_SIDEBAR,
-        LibraryWindowControl::StatusLine => visual_strings::STATUS_BAR,
     };
     visual_strings::text(message)
 }
@@ -45,7 +42,6 @@ fn control_subtitle(control: LibraryWindowControl) -> String {
         LibraryWindowControl::Sidebar => visual_strings::NAVIGATION_SIDEBAR_EDGE,
         LibraryWindowControl::BrowseBar => visual_strings::FILTER_BAR_EDGE,
         LibraryWindowControl::InfoPanel => visual_strings::DETAILS_SIDEBAR_EDGE,
-        LibraryWindowControl::StatusLine => visual_strings::STATUS_BAR_EDGE,
     };
     visual_strings::text(message)
 }
@@ -55,7 +51,6 @@ fn control_save_failure(control: LibraryWindowControl) -> &'static str {
         LibraryWindowControl::Sidebar => visual_strings::SIDEBAR_VISIBILITY_SAVE_FAILED,
         LibraryWindowControl::BrowseBar => visual_strings::FILTER_VISIBILITY_SAVE_FAILED,
         LibraryWindowControl::InfoPanel => visual_strings::INFORMATION_VISIBILITY_SAVE_FAILED,
-        LibraryWindowControl::StatusLine => visual_strings::STATUS_VISIBILITY_SAVE_FAILED,
     }
 }
 
@@ -64,7 +59,6 @@ fn control_visible(state: LayoutPreviewState, control: LibraryWindowControl) -> 
         LibraryWindowControl::Sidebar => state.sidebar,
         LibraryWindowControl::BrowseBar => state.browse,
         LibraryWindowControl::InfoPanel => state.info,
-        LibraryWindowControl::StatusLine => state.status,
     }
 }
 
@@ -86,10 +80,6 @@ fn with_control(
             info: visible,
             ..state
         },
-        LibraryWindowControl::StatusLine => LayoutPreviewState {
-            status: visible,
-            ..state
-        },
     }
 }
 
@@ -107,7 +97,6 @@ fn apply_window_control(
             LibraryWindowControl::Sidebar => settings::set_sidebar_visible(conn, active),
             LibraryWindowControl::BrowseBar => settings::set_browse_visible(conn, active),
             LibraryWindowControl::InfoPanel => settings::set_info_panel_visible(conn, active),
-            LibraryWindowControl::StatusLine => settings::set_status_visible(conn, active),
         }
     }?;
     match control {
@@ -119,12 +108,6 @@ fn apply_window_control(
         LibraryWindowControl::BrowseBar => context.track_list.set_browse_visible(active),
         LibraryWindowControl::InfoPanel => {
             context.info_panel.apply_persisted_visibility(active);
-        }
-        LibraryWindowControl::StatusLine => {
-            context.status_bar.set_enabled(active);
-            if active {
-                context.track_list.reload();
-            }
         }
     }
     Ok(())
@@ -226,7 +209,6 @@ fn state_from_settings(context: &PreferencesContext) -> LayoutPreviewState {
         sidebar: settings::get_sidebar_visible(conn),
         browse: settings::get_browse_visible(conn),
         info: settings::get_info_panel_visible(conn),
-        status: settings::get_status_visible(conn),
     }
 }
 
@@ -473,7 +455,6 @@ mod tests {
             sidebar: true,
             browse: true,
             info: true,
-            status: true,
         }
     }
 
@@ -485,7 +466,6 @@ mod tests {
                 LibraryWindowControl::Sidebar,
                 LibraryWindowControl::BrowseBar,
                 LibraryWindowControl::InfoPanel,
-                LibraryWindowControl::StatusLine,
             ]
         );
     }
@@ -518,8 +498,8 @@ mod tests {
             "Navigation Sidebar"
         );
         assert_eq!(
-            control_subtitle(LibraryWindowControl::StatusLine),
-            "Below the track list"
+            control_subtitle(LibraryWindowControl::InfoPanel),
+            "Right edge"
         );
     }
 
@@ -527,7 +507,7 @@ mod tests {
     fn a_request_only_saves_what_actually_changed() {
         let requested = LayoutPreviewState {
             bar: PlayerBarPosition::Top,
-            status: false,
+            info: false,
             ..all_on()
         };
 
@@ -535,14 +515,14 @@ mod tests {
             pending_changes(all_on(), requested),
             vec![
                 LayoutChange::Bar(PlayerBarPosition::Top),
-                LayoutChange::Region(LibraryWindowControl::StatusLine, false),
+                LayoutChange::Region(LibraryWindowControl::InfoPanel, false),
             ]
         );
         assert!(pending_changes(all_on(), all_on()).is_empty());
     }
 
     #[test]
-    fn set_16_a_rejected_save_keeps_the_previous_state() {
+    fn set_16a_a_rejected_save_keeps_the_previous_state() {
         let requested = LayoutPreviewState {
             bar: PlayerBarPosition::Top,
             sidebar: false,

@@ -28,7 +28,6 @@ use crate::ui::scan_chrome::ScanChromeView;
 use crate::ui::scan_flow::ScanControls;
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::sidebar::Sidebar;
-use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 use crate::ui::window_decorations::WindowDecorations;
@@ -139,7 +138,6 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) sidebar: Rc<Sidebar>,
     pub(in crate::ui) split_view: adw::OverlaySplitView,
     pub(in crate::ui) sidebar_page: adw::NavigationPage,
-    pub(in crate::ui) status_bar: StatusBar,
     pub(in crate::ui) library_player_bar: LibraryPlayerBarShell,
     pub(in crate::ui) info_panel: Rc<NowPlayingPanel>,
     pub(in crate::ui) scan_button: gtk4::Button,
@@ -197,7 +195,6 @@ impl PreferencesContext {
         sidebar: &Rc<Sidebar>,
         split_view: &adw::OverlaySplitView,
         sidebar_page: &adw::NavigationPage,
-        status_bar: &StatusBar,
         library_player_bar: &LibraryPlayerBarShell,
         info_panel: &Rc<NowPlayingPanel>,
         scan_button: &gtk4::Button,
@@ -222,7 +219,6 @@ impl PreferencesContext {
             sidebar: sidebar.clone(),
             split_view: split_view.clone(),
             sidebar_page: sidebar_page.clone(),
-            status_bar: status_bar.clone(),
             library_player_bar: library_player_bar.clone(),
             info_panel: info_panel.clone(),
             scan_button: scan_button.clone(),
@@ -275,13 +271,12 @@ impl PreferencesContext {
     }
 
     fn apply_initial(&self) {
-        let (sidebar_visible, browse_visible, info_visible, status_visible, decorations) = {
+        let (sidebar_visible, browse_visible, info_visible, decorations) = {
             let conn = &self.conn;
             (
                 settings::get_sidebar_visible(conn),
                 settings::get_browse_visible(conn),
                 settings::get_info_panel_visible(conn),
-                settings::get_status_visible(conn),
                 settings::get_window_decoration_mode(conn),
             )
         };
@@ -292,13 +287,11 @@ impl PreferencesContext {
         );
         self.track_list.set_browse_visible(browse_visible);
         self.info_panel.apply_persisted_visibility(info_visible);
-        self.status_bar.set_enabled(status_visible);
         self.decorations.apply(decorations);
         tracing::info!(
             sidebar_visible,
             browse_visible,
             info_visible,
-            status_visible,
             "persisted library layout applied"
         );
     }
@@ -458,7 +451,6 @@ impl PreferencesContext {
         let _ = settings::set_sidebar_visible(conn, false);
         let _ = settings::set_browse_visible(conn, false);
         let _ = settings::set_info_panel_visible(conn, false);
-        let _ = settings::set_status_visible(conn, false);
         let _ = settings::set_window_decoration_mode(
             conn,
             reprise_core::library::settings::WindowDecorationMode::System,
@@ -477,7 +469,6 @@ impl PreferencesContext {
         );
         self.track_list.set_browse_visible(false);
         self.info_panel.apply_persisted_visibility(false);
-        self.status_bar.set_enabled(false);
         self.decorations
             .apply(reprise_core::library::settings::WindowDecorationMode::System);
         self.library_player_bar.set_position(PlayerBarPosition::Top);

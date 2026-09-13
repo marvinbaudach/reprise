@@ -26,7 +26,6 @@ use reprise_core::view_source::ViewSource;
 use super::file_open::{FileOpenHandler, StartupOpenIntent};
 use super::scan_progress::ScanProgressView;
 use super::sidebar::Sidebar;
-use super::status_bar::StatusBar;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
 
@@ -130,7 +129,6 @@ pub fn build(
         })
     };
 
-    let status_bar = StatusBar::new();
     // Stage 3 Task 3: the Queue source reads the current playback queue's
     // ids (in play order) from the controller rather than a SQL `WHERE`
     // clause (see `queries.rs`'s module doc). `player` already exists at
@@ -146,14 +144,12 @@ pub fn build(
     };
 
     let track_list = {
-        let status_bar = status_bar.clone();
-        let conn_for_status = conn.clone();
         let player_for_reload = player.clone();
         // This `on_reload` hook fires on *every* reload — initial load,
         // search-filter debounce, sort-header click, and plain source
-        // switch, besides the scan-completion one — so it is limited to two
-        // cheap reads: the status line and a SELECT EXISTS that keeps idle
-        // Play availability current after scans/library mutations. Stage 3
+        // switch, besides the scan-completion one — so it is limited to the
+        // SELECT EXISTS that keeps idle Play availability current after
+        // scans/library mutations. Stage 3
         // Task 4's review (finding #2) caught an earlier version of this
         // closure also calling `sidebar.refresh()` here, which meant a full
         // `ListBox` teardown/rebuild plus five DB queries on every debounced
@@ -182,11 +178,6 @@ pub fn build(
                     {
                         player.continue_library_after_filter_clear();
                     }
-                }
-                if matches!(source, ViewSource::Library) {
-                    status_bar.refresh(&conn_for_status);
-                } else {
-                    status_bar.hide();
                 }
             },
             queue_ids_provider,
@@ -235,7 +226,7 @@ pub fn build(
     // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = {
         let _measurement = super::startup_report::measure("view.library.construct");
-        track_content::build(track_list.widget(), status_bar.widget())
+        track_content::build(track_list.widget())
     };
     // NAV-2: one history for every scoped route through the canonical list.
     let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
@@ -437,7 +428,6 @@ pub fn build(
         &sidebar,
         &split_view,
         &sidebar_page,
-        &status_bar,
         &library_player_bar,
         &info_panel,
         &scan_button,

@@ -56,7 +56,11 @@ pub(super) fn format_up_next_footer(durations_ms: &[i64]) -> String {
 
 fn format_up_next_footer_total(count: usize, total_duration_ms: i64) -> String {
     let duration = reprise_core::format::format_total_duration(total_duration_ms);
-    super::strings::up_next_footer(count, &duration)
+    format!(
+        "{} · {}",
+        crate::i18n::gettext("Up next"),
+        super::strings::up_next_footer(count, &duration)
+    )
 }
 
 type OnJump = Rc<dyn Fn(QueueRow)>;

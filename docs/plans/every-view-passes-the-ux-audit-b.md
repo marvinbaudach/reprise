@@ -18,8 +18,9 @@ Writes only to:
   `crates/reprise-gnome/src/ui/window/**` that mount it — **exception to
   strand A's ownership limited to removing the status-bar mount; record the
   exact lines in the commit message**
-- the files that build the filter row's count label (locate them first;
-  write the paths into this section in the first commit)
+- the files that build the filter row's count label:
+  `ui/browse/browse_filter_count.rs`, `ui/browse/browse_bar.rs`,
+  `ui/browse/filter_bar_tests.rs`, and `ui/filter_bar_layout.rs`
 - the files the status bar reaches into, located 2026-09-13 before the code
   phase (a grep for `status_bar`/`StatusBar` under `crates/reprise-gnome/src/ui`):
   `ui/mod.rs` (the `pub mod status_bar;` line only), `ui/window/window.rs`
