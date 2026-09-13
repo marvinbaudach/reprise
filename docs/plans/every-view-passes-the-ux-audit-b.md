@@ -75,14 +75,16 @@ with two running.
 
 **B3 — Loading states (decision 6).** Podcasts, Queue and the ✦ popover
 paint empty, black, or the previous view for one to three seconds.
-1. Each of the three switches to a centred spinner row the moment the view
+The Queue is excluded: its model is built synchronously from in-memory state
+and never shows stale rows.
+1. Podcasts and the popover switch to a centred spinner row the moment the view
    is requested and shows rows only after the first model delivery; the
    popover reserves its resting height so it never paints black. 150 ms is
    design intent, not asserted.
 2. New **FB-14** [active] [gtk]: "A view waiting on data shows a loading row
    and never the previous view's rows; a popover reserves its resting
    height." Tests `fb_14_podcasts_show_a_loading_row_until_the_model_arrives`,
-   `fb_14_queue_…`, `fb_14_updates_popover_…`.
+   `fb_14_updates_popover_…`.
 
 **B4 — Up Next remove control (decision 10).** The permanent "—" per row
 collides with "—" meaning unrated in the table. It becomes a hover- and
