@@ -1229,7 +1229,9 @@ result.
   "Online content" leaves the card list and becomes the bracket above it: it
   stands free, with a larger title, a state badge that counts its children
   ("N of M plugins on", "all M plugins off"), its description over the full
-  width, and a switch visibly larger than a child's. The whole row is
+  width ("Turn off to keep Reprise offline: none of these plugins run, nothing
+  is requested, and their sidebar entries are hidden."), and a switch visibly
+  larger than a child's. The whole row is
   clickable. Its children sit in **one** card below, indented behind a slim
   vertical rail — the indent and the rail say who obeys whom — separated by
   hairlines, not by gaps. Off dims that card but keeps it readable and stops it

@@ -12,7 +12,7 @@ pub const PLUGIN_GROUP_LOCAL: &str = N_!("Local");
 pub const PLUGIN_GROUP_ONLINE_CONTENT: &str = N_!("Online content");
 pub const PLUGIN_GROUP_CONNECTED_SERVICES: &str = N_!("Connected services");
 pub const ONLINE_CONTENT_MASTER_DESCRIPTION: &str = N_!(
-    "Use online sources — off makes this a local player: nothing below runs, no requests, sidebar entries hidden."
+    "Turn off to keep Reprise offline: none of these plugins run, nothing is requested, and their sidebar entries are hidden."
 );
 pub const ONLINE_CONTENT_SHOW_SOURCES: &str = N_!("Show the {count} sources");
 pub const SCROBBLING_NEEDS_ONLINE_SOURCES: &str = N_!("Scrobbling · needs online sources");
@@ -148,6 +148,14 @@ pub fn background_job_cancel(job: &str) -> String {
 #[cfg(test)]
 mod background_activity_tests {
     use super::*;
+
+    #[test]
+    fn set_11a_master_description_names_the_offline_promise() {
+        assert_eq!(
+            ONLINE_CONTENT_MASTER_DESCRIPTION,
+            "Turn off to keep Reprise offline: none of these plugins run, nothing is requested, and their sidebar entries are hidden."
+        );
+    }
 
     #[test]
     fn a_name_list_reads_as_a_sentence_at_every_length() {
