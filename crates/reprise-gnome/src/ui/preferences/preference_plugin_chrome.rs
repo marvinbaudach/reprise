@@ -168,9 +168,11 @@ mod tests {
         style_manager.set_color_scheme(libadwaita::ColorScheme::ForceDark);
         crate::ui::style::install();
 
-        let plugin = adw::ExpanderRow::builder().title("New Releases").build();
+        let plugin = crate::ui::rows::expander_row()
+            .title("New Releases")
+            .build();
         mark_expander(&plugin);
-        let nested = adw::ActionRow::builder().title("Artists").build();
+        let nested = crate::ui::rows::action_row().title("Artists").build();
         add_nested_row(&plugin, &nested);
         plugin.set_expanded(true);
 

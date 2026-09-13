@@ -144,7 +144,7 @@ impl TagEditorForm {
         let session_ref = session.borrow();
         let current_id = session_ref.current_track_id();
 
-        let title_row = adw::EntryRow::builder()
+        let title_row = crate::ui::rows::entry_row()
             .title(strings::text(strings::TAG_TITLE))
             .build();
         apply_per_track_field(&title_row, is_multi);
@@ -226,7 +226,7 @@ impl TagEditorForm {
             current_id,
         );
 
-        let year_row = adw::EntryRow::builder()
+        let year_row = crate::ui::rows::entry_row()
             .title(strings::text(strings::TAG_YEAR))
             .input_purpose(gtk4::InputPurpose::Digits)
             .build();
@@ -244,7 +244,7 @@ impl TagEditorForm {
             mixed_field_presentation(&session_ref, TagField::Year).as_ref(),
         );
 
-        let track_no_row = adw::EntryRow::builder()
+        let track_no_row = crate::ui::rows::entry_row()
             .title(strings::text(strings::TAG_TRACK_NUMBER))
             .input_purpose(gtk4::InputPurpose::Digits)
             .build();

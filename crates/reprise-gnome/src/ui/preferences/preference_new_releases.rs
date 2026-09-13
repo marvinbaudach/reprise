@@ -61,7 +61,7 @@ pub(in crate::ui) fn scope_row(conn: &Rc<Db>, enabled: bool) -> adw::ComboRow {
         &strings::text(strings::TOP_ARTISTS_ONLY),
         &strings::text(strings::ALL_ARTISTS),
     ]);
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title(strings::text(strings::NEW_RELEASES_ARTISTS))
         .model(&model)
         .selected(selected)
@@ -86,7 +86,7 @@ fn notification_row(conn: &Rc<Db>, enabled: bool) -> adw::ComboRow {
         &strings::text(strings::NOTIFY_RELEASES_ONLY),
         &strings::text(strings::NOTIFY_ALL_UPDATES),
     ]);
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title(strings::text(strings::NOTIFY_ABOUT_UPDATES))
         .subtitle(strings::text(strings::NOTIFY_ALL_UPDATES_DESCRIPTION))
         .model(&model)

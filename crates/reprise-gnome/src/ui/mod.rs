@@ -93,6 +93,7 @@ pub mod primary_menu;
 pub(in crate::ui) mod progress_subscribers;
 pub(crate) mod radio;
 mod releases;
+mod rows;
 mod runtime_performance;
 mod scan;
 mod scrobbling;

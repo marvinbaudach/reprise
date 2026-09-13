@@ -74,7 +74,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
     });
 
     let (imports_all, visible_import_count) = import_count_control_values(config.import_count);
-    let import_all = adw::SwitchRow::builder()
+    let import_all = crate::ui::rows::switch_row()
         .title(strings::text(IMPORT_ALL_EPISODES))
         .active(imports_all)
         .build();
@@ -111,7 +111,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
         });
     }
 
-    let auto_download = adw::SwitchRow::builder()
+    let auto_download = crate::ui::rows::switch_row()
         .title(strings::text(strings::PODCAST_PREFERENCES_AUTO_DOWNLOAD))
         .active(config.auto_download_default)
         .build();
@@ -127,7 +127,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
         &strings::text(strings::PODCAST_CLEANUP_DELETE_PLAYED),
         &strings::text(strings::PODCAST_CLEANUP_KEEP_LAST),
     ]);
-    let cleanup = adw::ComboRow::builder()
+    let cleanup = crate::ui::rows::combo_row()
         .title(strings::text(strings::PODCAST_PREFERENCES_CLEANUP))
         .model(&cleanup_model)
         .selected(cleanup_index(config.cleanup_policy))

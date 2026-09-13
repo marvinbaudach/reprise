@@ -68,10 +68,9 @@ pub(super) fn build_source_group(selection: WizardSourceSelection) -> SourceWidg
 }
 
 fn source_row(title: &str, subtitle: &str, active: bool) -> adw::SwitchRow {
-    adw::SwitchRow::builder()
+    crate::ui::rows::switch_row()
         .title(strings::text(title))
         .subtitle(strings::text(subtitle))
-        .use_markup(false)
         .active(active)
         .build()
 }

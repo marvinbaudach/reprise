@@ -272,7 +272,7 @@ fn toggle_group(labels: &[(&str, Option<&str>)], active: u32) -> adw::ToggleGrou
 }
 
 fn toggle_row(title: &str, group: &adw::ToggleGroup) -> adw::ActionRow {
-    let row = adw::ActionRow::builder().title(title).build();
+    let row = crate::ui::rows::action_row().title(title).build();
     row.add_suffix(group);
     row
 }
@@ -359,7 +359,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
     let rows = library_window_controls()
         .into_iter()
         .map(|control| {
-            let row = adw::SwitchRow::builder()
+            let row = crate::ui::rows::switch_row()
                 .title(control_title(control))
                 .subtitle(control_subtitle(control))
                 .active(control_visible(state.get(), control))

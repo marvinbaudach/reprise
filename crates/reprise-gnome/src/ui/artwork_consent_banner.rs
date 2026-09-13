@@ -79,8 +79,7 @@ pub(in crate::ui) fn build(
     let body = strings::text(strings::ARTWORK_CONSENT_MERGE_NOTICE_BODY);
     let review = strings::text(strings::ARTWORK_CONSENT_MERGE_NOTICE_REVIEW);
     let dismiss_label = strings::text(strings::ARTWORK_CONSENT_MERGE_NOTICE_DISMISS);
-    let banner = adw::Banner::new(&body);
-    banner.set_use_markup(false);
+    let banner = crate::ui::rows::banner(&body);
     banner.set_button_label(Some(&review));
     banner.set_hexpand(true);
     let dismiss = gtk4::Button::with_label(&dismiss_label);

@@ -14,15 +14,15 @@ pub(super) fn present(
     station: &StationRow,
     on_saved: impl Fn() + 'static,
 ) {
-    let name = adw::EntryRow::builder()
+    let name = crate::ui::rows::entry_row()
         .title(strings::text(strings::RADIO_STATION))
         .text(&station.name)
         .build();
-    let genre = adw::EntryRow::builder()
+    let genre = crate::ui::rows::entry_row()
         .title(strings::text(strings::RADIO_GENRE))
         .text(station.genre.as_deref().unwrap_or_default())
         .build();
-    let stream = adw::EntryRow::builder()
+    let stream = crate::ui::rows::entry_row()
         .title(strings::text(strings::RADIO_DIALOG_HINT))
         .text(&station.stream_url)
         .build();

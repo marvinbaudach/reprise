@@ -200,7 +200,7 @@ fn build_surface(
 
 fn city_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ActionRow {
     let stored = reprise_core::location::app_location(conn).ok().flatten();
-    let city = adw::ActionRow::builder()
+    let city = crate::ui::rows::action_row()
         .title(strings::text(strings::LOCATION_CITY))
         .subtitle(
             stored
@@ -423,7 +423,7 @@ fn radius_row(conn: &Rc<Db>, broadcast: &Rc<LocationBroadcast>) -> adw::ComboRow
         .iter()
         .position(|radius| *radius == stored)
         .unwrap_or(radii.len() - 1) as u32;
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title(strings::text(strings::LOCATION_DEFAULT_RADIUS))
         .model(&model)
         .selected(selected)
@@ -448,7 +448,7 @@ fn used_by_row(
     source: ViewSource,
     on_open: &OnOpen,
 ) -> adw::ActionRow {
-    let row = adw::ActionRow::builder()
+    let row = crate::ui::rows::action_row()
         .title(title)
         .subtitle(subtitle)
         .activatable(true)

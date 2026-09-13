@@ -43,10 +43,9 @@ pub(in crate::ui) fn remote_suggestions_row_for(
             consent_required: true,
         },
     );
-    let row = adw::SwitchRow::builder()
+    let row = crate::ui::rows::switch_row()
         .title(strings::text(strings::LIBRARY_DOCTOR_REMOTE))
         .subtitle(strings::text(strings::LIBRARY_DOCTOR_REMOTE_DESCRIPTION))
-        .use_markup(false)
         .active(preference.enabled)
         .build();
     let syncing = Rc::new(Cell::new(false));

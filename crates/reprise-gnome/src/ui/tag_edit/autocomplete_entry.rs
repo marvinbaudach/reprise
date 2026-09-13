@@ -168,7 +168,7 @@ pub struct AutocompleteEntry {
 
 impl AutocompleteEntry {
     pub fn new(title: &str, column: AutocompleteColumn, conn: Rc<Db>) -> Self {
-        let row = adw::EntryRow::builder().title(title).build();
+        let row = crate::ui::rows::entry_row().title(title).build();
         let listbox = gtk4::ListBox::builder()
             .selection_mode(gtk4::SelectionMode::Single)
             .build();

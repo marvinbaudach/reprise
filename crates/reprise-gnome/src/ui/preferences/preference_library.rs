@@ -50,7 +50,7 @@ fn sync_rescan_row(context: &PreferencesContext, row: &adw::ActionRow) {
 
 fn build_rescan_row(callback: Rc<dyn Fn()>) -> adw::ActionRow {
     let idle_subtitle = strings::text(strings::LIBRARY_UP_TO_DATE);
-    let row = adw::ActionRow::builder()
+    let row = crate::ui::rows::action_row()
         .title(strings::text(strings::CONTEXT_MENU_RESCAN_LIBRARY))
         .subtitle(&idle_subtitle)
         .subtitle_lines(1)
@@ -124,7 +124,7 @@ impl PreferencesContext {
             .icon_name("folder-music-symbolic")
             .build();
         let group = adw::PreferencesGroup::new();
-        let folder = adw::ActionRow::builder()
+        let folder = crate::ui::rows::action_row()
             .title(strings::text(strings::LIBRARY_FOLDER))
             .subtitle(library_root_text(self))
             .build();
@@ -145,7 +145,7 @@ impl PreferencesContext {
                 0
             }) as usize
         };
-        let excluded = adw::ActionRow::builder()
+        let excluded = crate::ui::rows::action_row()
             .title(strings::text(strings::EXCLUDED_FILES))
             .subtitle(strings::excluded_files_subtitle(excluded_count))
             .build();

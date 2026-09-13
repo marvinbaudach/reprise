@@ -101,17 +101,17 @@ fn build_lastfm_expander(
     } else {
         description.clone()
     };
-    let expander = adw::ExpanderRow::builder()
+    let expander = crate::ui::rows::expander_row()
         .title(strings::text(strings::LASTFM))
         .subtitle(&subtitle)
         .show_enable_switch(true)
         .enable_expansion(is_enabled)
         .build();
 
-    let api_key = adw::PasswordEntryRow::builder()
+    let api_key = crate::ui::rows::password_entry_row()
         .title(strings::text(strings::LASTFM_API_KEY))
         .build();
-    let shared_secret = adw::PasswordEntryRow::builder()
+    let shared_secret = crate::ui::rows::password_entry_row()
         .title(strings::text(strings::LASTFM_SHARED_SECRET))
         .build();
     let open_browser = gtk4::Button::builder()
@@ -120,7 +120,7 @@ fn build_lastfm_expander(
         .build();
     open_browser.add_css_class("suggested-action");
     open_browser.set_sensitive(false);
-    let browser_row = adw::ActionRow::builder()
+    let browser_row = crate::ui::rows::action_row()
         .title(strings::text(strings::OPEN_BROWSER))
         .subtitle(strings::text(strings::BROWSER_REQUIRES_CREDENTIALS))
         .activatable_widget(&open_browser)
@@ -139,7 +139,7 @@ fn build_lastfm_expander(
             true,
         )
     };
-    let credentials_section = adw::ExpanderRow::builder()
+    let credentials_section = crate::ui::rows::expander_row()
         .title(credentials_title)
         .subtitle(credentials_description)
         .show_enable_switch(false)
@@ -147,7 +147,7 @@ fn build_lastfm_expander(
         .build();
     credentials_section.add_row(&api_key);
     credentials_section.add_row(&shared_secret);
-    let hint = adw::ActionRow::builder()
+    let hint = crate::ui::rows::action_row()
         .subtitle(strings::text(strings::LASTFM_DIALOG_BODY))
         .build();
     hint.add_css_class("property");
@@ -158,7 +158,7 @@ fn build_lastfm_expander(
     let mut sens: Vec<gtk4::glib::WeakRef<gtk4::Widget>> = Vec::new();
 
     if let Some((api_key, shared_secret)) = bundled {
-        let hint = adw::ActionRow::builder()
+        let hint = crate::ui::rows::action_row()
             .subtitle(strings::text(strings::LASTFM_BUNDLED_HINT))
             .build();
         hint.add_css_class("property");
@@ -170,7 +170,7 @@ fn build_lastfm_expander(
             .valign(gtk4::Align::Center)
             .build();
         btn.add_css_class("suggested-action");
-        let sign_in_row = adw::ActionRow::builder()
+        let sign_in_row = crate::ui::rows::action_row()
             .title(strings::text(strings::LASTFM_SIGN_IN))
             .activatable_widget(&btn)
             .build();
@@ -199,7 +199,7 @@ fn build_lastfm_expander(
         .valign(gtk4::Align::Center)
         .build();
     disconnect.add_css_class("destructive-action");
-    let disconnect_row = adw::ActionRow::builder()
+    let disconnect_row = crate::ui::rows::action_row()
         .title(strings::text(strings::LISTENBRAINZ_DISCONNECT))
         .activatable_widget(&disconnect)
         .build();
