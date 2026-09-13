@@ -167,11 +167,7 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
 fn fb_8_bottom_region_keeps_issues_above_the_progress_cards() {
     assert_eq!(
         sidebar_root_order(),
-        [
-            SidebarRootChild::Navigation,
-            SidebarRootChild::Activity,
-            SidebarRootChild::Issues,
-        ]
+        [SidebarRootChild::Navigation, SidebarRootChild::Issues]
     );
     let placement = bottom_region_placement();
     assert!(
@@ -268,8 +264,8 @@ fn acc_3_sidebar_uses_the_available_page_height_before_scrolling() {
     ] {
         list.append(&gtk4::Label::new(Some(label)));
     }
-    let scrolled = build_navigation_scroller(&list);
     let activity = SidebarActivitySlot::new();
+    let scrolled = build_navigation_scroller(&list, activity.widget());
     let issues = gtk4::ListBox::new();
     issues.set_visible(false);
     let root = build_root(&scrolled, &activity, &issues);
@@ -318,8 +314,8 @@ fn acc_3_short_sidebar_keeps_navigation_rows_scrollable() {
     for index in 0..24 {
         list.append(&gtk4::Label::new(Some(&format!("Playlist {index}"))));
     }
-    let scrolled = build_navigation_scroller(&list);
     let activity = SidebarActivitySlot::new();
+    let scrolled = build_navigation_scroller(&list, activity.widget());
     let issues = gtk4::ListBox::new();
     issues.set_visible(false);
     let root = build_root(&scrolled, &activity, &issues);

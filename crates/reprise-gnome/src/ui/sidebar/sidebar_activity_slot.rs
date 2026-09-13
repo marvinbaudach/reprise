@@ -28,7 +28,9 @@ impl SidebarActivitySlot {
     pub(super) fn new() -> Self {
         let progress_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         let progress_spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        progress_spacer.set_vexpand(true);
+        // This is an ordering anchor only. It must never absorb height that a
+        // running card does not paint (FB-8).
+        progress_spacer.set_vexpand(false);
         progress_root.append(&progress_spacer);
         Self {
             root: gtk4::Box::new(gtk4::Orientation::Vertical, 0),

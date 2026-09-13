@@ -284,9 +284,8 @@ impl Sidebar {
         // issues to show.
         issues_listbox.set_visible(false);
 
-        let scrolled = build_navigation_scroller(&listbox);
-
         let activity_slot = SidebarActivitySlot::new();
+        let scrolled = build_navigation_scroller(&listbox, activity_slot.widget());
         let root = build_root(&scrolled, &activity_slot, &issues_listbox);
 
         let shared = Rc::new(Shared {

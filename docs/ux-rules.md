@@ -284,6 +284,9 @@ result.
   visible, activating **any** source entry routes into it — including the
   source that was last visible (BROWSE-3); activating the entry of the already
   visible placeless view does nothing.
+- **NAV-20** [active] [gtk] — The navigation list never yields below its
+  LIBRARY block. DEVICES scrolls with the places. ISSUES and running cards stay
+  pinned and hold exactly the height they paint.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -1408,8 +1411,8 @@ result.
   occupy no space; only active or still-fading-out cards take part in
   the layout. The bottom edge of the visible card block sits directly
   above the player bar, while all free sidebar height stays above the
-  block. Persistent device status remains visible independently of
-  this.
+  block. Resting device status scrolls with the places; a running sync card
+  stays pinned.
   *Amended 2026-08-07.* Until then a visible card **replaced** the whole
   Issues block. That made starting any scan take the `ISSUES` section away,
   including the Library Doctor's own result row — so the entry that says
