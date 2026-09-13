@@ -369,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn status_pills_describe_discography_gaps() {
+    fn gp_21_labels_use_header_case() {
         assert_eq!(
             release_status_label(&entry("2027", LibraryPresence::Complete, false), today()),
             "In library"

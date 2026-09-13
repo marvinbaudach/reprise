@@ -147,11 +147,4 @@ mod tests {
         assert_eq!(release_count_line(8, 19), "8 of 19 gaps");
         assert_eq!(release_total_line(19), "19 gaps");
     }
-
-    #[test]
-    fn release_status_badges_use_header_case() {
-        assert_eq!(RELEASES_UPCOMING, "Upcoming");
-        assert_eq!(RELEASES_INCOMPLETE, "Incomplete");
-        assert_eq!(RELEASES_MISSING, "Missing");
-    }
 }

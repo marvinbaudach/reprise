@@ -7035,6 +7035,11 @@ committee published on 2026-05-29.
   comments.
 - **GP-20** [active] [core] — No dead code: no unused items, and no
   `#[allow(dead_code)]` without a stated reason on the same or preceding line.
+- **GP-21** [active] [gtk] — Labels, titles, menu items and status badges use
+  HIG header capitalisation; descriptions and status lines use sentence case.
+  The Plugins count badge keeps its uppercase rendering. The Releases badges
+  are `Upcoming`, `Missing` and `Incomplete`; sidebar row labels follow in a
+  later change.
 
 ## AJ. Showroom (public site)
 
