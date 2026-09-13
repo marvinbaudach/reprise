@@ -265,6 +265,38 @@ fn present(view: &Rc<PodcastsView>) -> gtk4::Window {
     window
 }
 
+/// `FB-13`: requesting fresh podcast data replaces the previously rendered
+/// rows immediately. The loading row owns the stack until `refresh()` delivers
+/// the first replacement model, and its allocation is centred in that stack.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_13_podcasts_show_a_loading_row_until_the_model_arrives() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    subscribe_with_one_episode(&conn);
+    let view = view(conn, PodcastKind::Rss);
+    let window = present(&view);
+
+    view.begin_model_wait();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(view.stack.visible_child_name().as_deref(), Some("loading"));
+    let bounds = view
+        .loading_row
+        .compute_bounds(&view.stack)
+        .expect("loading row is allocated inside the podcasts stack");
+    let stack_width = view.stack.width() as f32;
+    assert!(
+        (bounds.center().x() - stack_width / 2.0).abs() <= 1.0,
+        "loading row must be horizontally centred in the stack"
+    );
+
+    view.refresh();
+    assert_eq!(view.stack.visible_child_name().as_deref(), Some("list"));
+    window.close();
+}
+
 /// The row's three-dot menu button inside the shared source-row skeleton.
 fn row_menu_button(view: &Rc<PodcastsView>, episode_id: i64) -> gtk4::MenuButton {
     let widgets = view.selection_widgets.borrow();

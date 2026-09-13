@@ -66,8 +66,10 @@ impl NewReleasesPopover {
         if run.is_complete() {
             self.run.replace(run);
             self.render(false, false);
+            self.show_content();
             return;
         }
+        self.show_loading();
         self.fetching.set(true);
         self.run.replace(run);
         self.render(false, false);
@@ -199,5 +201,6 @@ impl NewReleasesPopover {
         self.fetching.set(false);
         self.progress.replace(FeedProgress::default());
         self.render(false, news_failed);
+        self.show_content();
     }
 }

@@ -90,6 +90,7 @@ const EMPTY_PAGE: &str = "empty";
 /// same geometry, "Enable in Preferences" instead of Add.
 const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
+const LOADING_PAGE: &str = "loading";
 static RENDER_PASSES: AtomicU64 = AtomicU64::new(0);
 
 pub(in crate::ui) struct PodcastsView {
@@ -102,6 +103,8 @@ pub(in crate::ui) struct PodcastsView {
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
+    loading_row: gtk4::Box,
+    waiting_for_model: Cell<bool>,
     youtube_detail: Rc<YoutubeChannelDetail>,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -186,6 +189,13 @@ impl PodcastsView {
         stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
         stack.add_named(module_off_state.widget(), Some(MODULE_OFF_PAGE));
         stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
+        let loading_spinner = gtk4::Spinner::new();
+        loading_spinner.start();
+        let loading_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        loading_row.set_halign(gtk4::Align::Center);
+        loading_row.set_valign(gtk4::Align::Center);
+        loading_row.append(&loading_spinner);
+        stack.add_named(&loading_row, Some(LOADING_PAGE));
         let default_hide_shorts =
             podcasts::config::load(&conn).map_or(true, |config| config.youtube_hide_shorts_default);
         let youtube_detail = YoutubeChannelDetail::new(&stack, default_hide_shorts);
@@ -224,6 +234,8 @@ impl PodcastsView {
             end_of_results,
             group_container,
             stack,
+            loading_row,
+            waiting_for_model: Cell::new(false),
             youtube_detail,
             status,
             status_button,
@@ -358,6 +370,7 @@ impl PodcastsView {
                 self.rows.replace(rows);
                 let last_updated = last_updated_text(&self.conn);
                 self.footer_status.set_text(&last_updated);
+                self.waiting_for_model.set(false);
                 self.render();
             }
             // `POD-17`: the detail belongs in the log, not in the footer.
@@ -402,6 +415,12 @@ impl PodcastsView {
     }
 
     pub(super) fn render(&self) {
+        if self.waiting_for_model.get() {
+            self.filter_bar.widget().set_visible(false);
+            self.footer.set_visible(false);
+            self.stack.set_visible_child_name(LOADING_PAGE);
+            return;
+        }
         let rows = self.rows.borrow().clone();
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
@@ -523,6 +542,17 @@ impl PodcastsView {
         }
         if self.youtube_detail.is_active() {
             self.stack.set_visible_child_name("youtube-channel");
+        }
+    }
+
+    pub(super) fn begin_model_wait(&self) {
+        self.waiting_for_model.set(true);
+        self.render();
+    }
+
+    pub(super) fn end_model_wait(&self) {
+        if self.waiting_for_model.replace(false) {
+            self.render();
         }
     }
 }

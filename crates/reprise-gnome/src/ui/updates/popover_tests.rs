@@ -36,6 +36,47 @@ fn opening_the_popover_never_requests_navigation() {
     assert!(!effect.navigates);
 }
 
+/// `FB-13`: the Updates popover swaps its rows for a centred loading row and
+/// retains the resting content height while the first model is pending.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_13_updates_popover_reserves_its_resting_height_while_loading() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let state = test_popover(conn, PathBuf::from("unused.db"));
+    let window = gtk4::Window::new();
+    window.set_child(Some(&state.button));
+    window.present();
+    state.popover.popup();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    let resting = state
+        .content_stack
+        .compute_bounds(&state.popover)
+        .expect("resting content is allocated inside the popover");
+
+    state.show_loading();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    let loading = state
+        .content_stack
+        .compute_bounds(&state.popover)
+        .expect("loading content is allocated inside the popover");
+    let row = state
+        .loading_row
+        .compute_bounds(&state.content_stack)
+        .expect("loading row is allocated inside the content stack");
+
+    assert_eq!(
+        state.content_stack.visible_child_name().as_deref(),
+        Some("loading")
+    );
+    assert_eq!(loading.height(), resting.height());
+    assert!((row.center().x() - loading.width() / 2.0).abs() <= 1.0);
+    assert!((row.center().y() - loading.height() / 2.0).abs() <= 1.0);
+    state.popover.popdown();
+    window.close();
+}
+
 #[test]
 fn nr_41_a_background_check_never_forces_and_the_reload_does() {
     assert_eq!(

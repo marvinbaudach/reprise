@@ -106,6 +106,8 @@ struct NewReleasesPopover {
     button: gtk4::MenuButton,
     badge: gtk4::Label,
     popover: gtk4::Popover,
+    content_stack: gtk4::Stack,
+    loading_row: gtk4::Box,
     news_section: gtk4::Box,
     concerts_section: ConcertsSection,
     list: gtk4::ListBox,
@@ -142,6 +144,8 @@ impl NewReleasesPopover {
             button,
             badge,
             popover,
+            content_stack,
+            loading_row,
             news_section,
             concerts_section,
             list,
@@ -158,6 +162,8 @@ impl NewReleasesPopover {
             button,
             badge,
             popover,
+            content_stack,
+            loading_row,
             news_section,
             concerts_section,
             list,
@@ -230,8 +236,12 @@ impl NewReleasesPopover {
         let weak = Rc::downgrade(self);
         self.popover.connect_show(move |_| {
             if let Some(state) = weak.upgrade() {
+                state.show_loading();
                 state.render(true, false);
                 state.maybe_background_refresh();
+                if !state.fetching.get() {
+                    state.show_content();
+                }
             }
         });
 
@@ -253,6 +263,28 @@ impl NewReleasesPopover {
     fn open_view(&self, target: reprise_core::browser::navigation::SidebarTarget) {
         self.popover.popdown();
         (self.on_open_view)(target);
+    }
+
+    fn show_loading(&self) {
+        if let Some(spinner) = self
+            .loading_row
+            .first_child()
+            .and_downcast::<gtk4::Spinner>()
+        {
+            spinner.start();
+        }
+        self.content_stack.set_visible_child_name("loading");
+    }
+
+    fn show_content(&self) {
+        if let Some(spinner) = self
+            .loading_row
+            .first_child()
+            .and_downcast::<gtk4::Spinner>()
+        {
+            spinner.stop();
+        }
+        self.content_stack.set_visible_child_name("content");
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
