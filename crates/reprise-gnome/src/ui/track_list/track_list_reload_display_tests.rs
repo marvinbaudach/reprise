@@ -4,6 +4,7 @@ use reprise_core::library::settings;
 
 const GEOMETRY_TRACK_COUNT: i64 = 200;
 const LARGE_GEOMETRY_TRACK_COUNT: i64 = 1_200;
+const FULL_REPLACEMENT_TRACK_COUNT: i64 = 20_000;
 const POISONED_ROW_HEIGHT: f64 = 30.0;
 
 fn geometry_fixture(rows: i64, seed: Option<f64>) -> (super::super::TrackList, gtk4::Window) {
@@ -75,6 +76,99 @@ fn has_row_intersecting_viewport(column_view: &gtk4::ColumnView) -> bool {
         }
     }
     false
+}
+
+fn diagnostic_payload_u64(line: &str, field: &str) -> Option<u64> {
+    line.split_whitespace()
+        .find_map(|part| part.strip_prefix(field)?.parse().ok())
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_10_full_replacement_fetches_only_the_viewport() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
+    let conn = crate::test_db::open().unwrap();
+    let fixture_conn = crate::test_db::connection(&conn);
+    let tx = fixture_conn.unchecked_transaction().unwrap();
+    for id in 1..=FULL_REPLACEMENT_TRACK_COUNT {
+        tx.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) \
+             VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+            (
+                id,
+                format!("/full-replacement/{id:05}.flac"),
+                format!("Track {id:05}"),
+            ),
+        )
+        .unwrap();
+    }
+    tx.commit().unwrap();
+    let track_list = super::super::TrackList::new(
+        Rc::new(conn),
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        super::super::queue_sections::QueueViewModel::default,
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .default_height(320)
+        .child(track_list.widget())
+        .build();
+    window.present();
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || has_row_intersecting_viewport(&track_list.shared.column_view)
+    ));
+
+    super::super::diagnostic_trail::arm_reload_recording();
+    let trail_start = track_list.shared.diagnostic_trail.snapshot().len();
+    let title_column = track_list
+        .shared
+        .column_view
+        .columns()
+        .iter::<gtk4::ColumnViewColumn>()
+        .filter_map(Result::ok)
+        .find(|column| column.id().as_deref() == Some("title"))
+        .expect("the built track list must have a title column");
+    super::super::track_list_sort::sort_by_column(
+        &track_list.shared.column_view,
+        &title_column,
+        gtk4::SortType::Descending,
+    );
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let trail = track_list.shared.diagnostic_trail.snapshot();
+    let entries: Vec<&String> = trail.iter().skip(trail_start).collect();
+    // Pin the reload_id to the *first* Reload recorded after trail_start,
+    // which is deterministically the sort's own (nothing else reloads
+    // between arming and the sort_by_column call above), then match its
+    // breakdown by that id — not just "the last ReloadBreakdown line"
+    // (track_list_smoke.rs's oracle_measurement follows the same
+    // id-matching convention). Taking the last of either line unconditionally
+    // would pass trivially if a second, cheap reload fired after the sort's.
+    let reload_id = entries
+        .iter()
+        .find(|line| line.contains(" Reload "))
+        .and_then(|line| diagnostic_payload_u64(line, "reload_id="))
+        .expect("the sort must trigger a reload");
+    let breakdown = entries
+        .iter()
+        .find(|line| {
+            line.contains(" ReloadBreakdown ")
+                && diagnostic_payload_u64(line, "reload_id=") == Some(reload_id)
+        })
+        .expect("the sort reload must record a breakdown for its own reload_id");
+    let item_calls = diagnostic_payload_u64(breakdown, "item_calls=")
+        .expect("the breakdown must record item calls");
+    eprintln!("FB-10 full-replacement item_calls={item_calls}");
+    assert!(
+        item_calls < 1_000,
+        "a full replacement fetched {item_calls} items instead of only the viewport: {breakdown}"
+    );
+    window.close();
 }
 
 #[test]

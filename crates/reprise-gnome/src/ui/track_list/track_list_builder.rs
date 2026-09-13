@@ -324,6 +324,10 @@ pub(in crate::ui) fn build(
     );
     end_of_results.set_recovery_action_name("win.clear-all-filters");
     {
+        // A full reload now emits two `items_changed` (remove-all, then
+        // add-all — see track_list_model.rs), so this idle recompute is
+        // scheduled twice per reload. Harmless only because the recompute
+        // below is cheap; don't hang anything expensive off this signal.
         let shared = Rc::downgrade(&shared);
         let end_of_results = end_of_results.clone();
         selection.connect_items_changed(move |_, _, _, _| {

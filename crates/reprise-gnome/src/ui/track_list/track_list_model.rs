@@ -45,6 +45,7 @@ use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 use super::track_list_model_change::{ModelChange, ModelChangeKind};
+use super::track_list_model_reload::{emit_span_change, query_section_change};
 use super::{diagnostic_trail, diagnostic_trail::ReloadStep};
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
@@ -211,17 +212,6 @@ glib::wrapper! {
 glib::wrapper! {
     pub struct TrackListModel(ObjectSubclass<imp::TrackListModel>)
         @implements gio::ListModel;
-}
-
-/// A narrowed query delta only makes GTK reconsider sections intersecting its
-/// item range. Every non-Queue query is one whole-model section, so a partial
-/// cardinality change must explicitly invalidate that surviving section's new
-/// end boundary. Full-range item invalidations already cover it.
-fn query_section_change(change: ModelChange) -> Option<(u32, u32)> {
-    let total_changed = change.before_total != change.after_total;
-    let covers_every_survivor = change.position == 0 && change.added >= change.after_total;
-    (total_changed && change.after_total > 0 && !covers_every_survivor)
-        .then_some((0, change.after_total))
 }
 
 impl TrackListModel {
@@ -540,21 +530,17 @@ impl TrackListModel {
             });
         self.imp().generation.set(generation.wrapping_add(1));
         let signal_started = diagnostic_trail::start_reload_step();
-        match change.kind {
+        let section_change = match change.kind {
             ModelChangeKind::Span => {
-                super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
-                    position: change.position,
-                    removed: change.removed,
-                    added: change.added,
-                });
-                self.items_changed(change.position, change.removed, change.added);
+                query_section_change(emit_span_change(self, change, old_total, new_total))
             }
             ModelChangeKind::BlockMove { from, to, len } => {
                 self.emit_block_move(from, to, len, new_total);
+                query_section_change(change)
             }
-        }
+        };
         #[cfg(not(test))]
-        if let Some((position, n_items)) = query_section_change(change) {
+        if let Some((position, n_items)) = section_change {
             use gtk4::prelude::SectionModelExt;
             super::diagnostic_trail::record(super::diagnostic_trail::Event::SectionsChanged {
                 position,
@@ -562,6 +548,8 @@ impl TrackListModel {
             });
             self.sections_changed(position, n_items);
         }
+        #[cfg(test)]
+        let _ = section_change;
         diagnostic_trail::finish_reload_step(ReloadStep::ItemsChanged, signal_started);
         Some(query_elapsed)
     }

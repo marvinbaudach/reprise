@@ -682,8 +682,19 @@ fn apply(
         target,
         attempt.intent,
     ) {
+        // Standing down hands the viewport back to the reveal, not to
+        // whatever the adjustment happens to read right now: a full-model
+        // reload's own emissions can still clear the adjustment's range to
+        // nothing before GTK re-lays it out (`TrackListModel`'s split
+        // `items_changed`, `track_list_model.rs`), and that replay does not
+        // know the reveal ever placed a value here. Re-arming the hold on the
+        // reveal's own destination — instead of releasing it — keeps that
+        // replay from being the last writer.
         if let Some(hold) = hold {
-            hold.release_now();
+            match shared.scroll_glide.deliberate_destination() {
+                Some(destination) => hold.set_target(destination),
+                None => hold.release_now(),
+            }
         }
         return ApplyResult::StoodDown;
     }

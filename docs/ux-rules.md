@@ -1467,14 +1467,22 @@ result.
   the browser triggers itself: typing into the search, clearing it, changing
   the sort, switching the source. Measured on 2026-08-22 (release build,
   loaded 8-CPU machine): on a 128-track profile every one of those reloads
-  finished under 23 ms, while on a 100,000-track profile a sort change
-  blocked the main thread for 437–671 ms and a cleared search expanding back
-  to the full list blocked it for 94–120 **seconds**. The counting SQL never
-  exceeded 2.4 ms in either profile, so the cost is the synchronous model and
-  list projection, not the query. Threshold: **250 ms** from the reload
+  finished under 23 ms. On a 100,000-track profile, the original 94–120
+  **seconds** figure for a cleared search was a test-build artefact (#640):
+  the release binary measured 458–465 ms for both a sort change and a
+  cleared search before #640's fix, 271 ms for both after it, and — after the
+  fix that splits a full replacement's single `items_changed` into a
+  remove-all/add-all pair — 35.6 ms for a sort change and 29.8 ms for a
+  cleared search. The cost was never the counting SQL, which stayed under a
+  few milliseconds throughout; it was GTK's own list item manager walking
+  every added row of the full replacement to find a removed tracked row by
+  identity, a walk the split avoids entirely. Threshold: **250 ms** from the
+  reload
   starting to the replacement list being ready to paint — the empty interval
-  between the slowest measured narrowing search (75 ms) and the fastest
-  measured full-result sort (437 ms), about fifteen frames at 60 Hz. Three
+  on the 100,000-track profile between the slowest reload this fix leaves
+  (35.6 ms, the sort change above) and the fastest full reload that profile
+  measured before it (271 ms, both transitions after #640's fix), about
+  fifteen frames at 60 Hz. Three
   obligations follow. (1) A reload that crosses the threshold shows one busy
   state, placed by FB-9's order — the filter bar's existing trailing slot or
   an overlay, never a new row and never a changed bar height. (2) It appears
