@@ -1479,8 +1479,10 @@ result.
   identity, a walk the split avoids entirely. Threshold: **250 ms** from the
   reload
   starting to the replacement list being ready to paint — the empty interval
-  between the slowest measured narrowing search (75 ms) and the fastest
-  measured full-result sort (437 ms), about fifteen frames at 60 Hz. Three
+  on the 100,000-track profile between the slowest reload this fix leaves
+  (35.6 ms, the sort change above) and the fastest full reload that profile
+  measured before it (271 ms, both transitions after #640's fix), about
+  fifteen frames at 60 Hz. Three
   obligations follow. (1) A reload that crosses the threshold shows one busy
   state, placed by FB-9's order — the filter bar's existing trailing slot or
   an overlay, never a new row and never a changed bar height. (2) It appears
