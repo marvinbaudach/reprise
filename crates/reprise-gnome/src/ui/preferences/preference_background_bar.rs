@@ -83,9 +83,6 @@ impl JobRowState {
 /// without a widget in sight, so the rules are testable on their own.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct BarState {
-    /// Whether online-job chrome has anything truthful to show. The scan slot
-    /// is independent and may still keep the widget visible.
-    pub(in crate::ui) visible: bool,
     pub(in crate::ui) rows: Vec<JobRowState>,
     /// `None` while nothing runs: the draft asks for no badge at all then,
     /// rather than a badge reading zero.
@@ -109,7 +106,6 @@ pub(in crate::ui) fn bar_state(
     let rows = jobs.iter().flatten().cloned().collect::<Vec<_>>();
     if rows.is_empty() && !scan_running {
         return BarState {
-            visible: true,
             rows,
             count_badge: None,
             empty_notice: Some(crate::i18n::gettext("No background activity")),
@@ -122,7 +118,6 @@ pub(in crate::ui) fn bar_state(
     if !online_enabled {
         if scan_running {
             return BarState {
-                visible: true,
                 rows: Vec::new(),
                 count_badge: Some("1".to_owned()),
                 empty_notice: None,
@@ -132,7 +127,6 @@ pub(in crate::ui) fn bar_state(
         // Only replace activity that would otherwise be visible. With no job,
         // the resting notice above is more useful than a gate warning.
         return BarState {
-            visible: true,
             rows: Vec::new(),
             count_badge: None,
             empty_notice: Some(strings::text(strings::BACKGROUND_NO_ONLINE_JOBS)),
@@ -141,7 +135,6 @@ pub(in crate::ui) fn bar_state(
     }
     let row_count = rows.len() + usize::from(scan_running);
     BarState {
-        visible: true,
         count_badge: (row_count > 0).then(|| row_count.to_string()),
         empty_notice: None,
         rows,
@@ -366,7 +359,8 @@ impl BackgroundBarInner {
         // The slot is only a container: it opens with the scan chrome inside
         // it and closes with it, so an idle scan leaves no spacing behind.
         self.scan_slot.set_visible(state.scan_running);
-        self.root.set_visible(state.visible);
+        // FB-9's reserved-space choice keeps the resting notice visible.
+        self.root.set_visible(true);
     }
 
     fn job_row(self: &Rc<Self>, state: &JobRowState) -> gtk4::Box {

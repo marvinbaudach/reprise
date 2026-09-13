@@ -31,7 +31,6 @@ fn fb_9_the_dialog_reports_every_running_task_once() {
     assert_eq!(running.empty_notice, None);
 
     let idle = bar_state(&[None, None], true, false);
-    assert!(idle.visible, "reserved feedback remains present at rest");
     assert_eq!(idle.row_count(), 0);
     assert_eq!(idle.count_badge, None);
     assert_eq!(idle.empty_notice.as_deref(), Some("No background activity"));
@@ -73,10 +72,8 @@ fn nothing_running_keeps_the_resting_notice() {
         state.empty_notice.as_deref(),
         Some("No background activity")
     );
-    assert!(state.visible);
 
     let disabled = bar_state(&[None, None], false, false);
-    assert!(disabled.visible);
     assert_eq!(
         disabled.empty_notice.as_deref(),
         Some("No background activity")
@@ -87,7 +84,6 @@ fn nothing_running_keeps_the_resting_notice() {
 fn the_gate_being_off_replaces_activity_with_one_reason() {
     let state = bar_state(&[Some(artwork(0.91)), Some(lyrics(0.12))], false, false);
 
-    assert!(state.visible);
     assert!(state.rows.is_empty());
     assert_eq!(state.count_badge, None);
     assert_eq!(
