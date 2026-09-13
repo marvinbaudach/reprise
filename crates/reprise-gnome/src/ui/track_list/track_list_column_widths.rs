@@ -28,15 +28,11 @@ fn width(id: &str) -> Option<i32> {
 pub(super) fn fit(columns: &[FittedColumn], viewport_width: i32) {
     for column in columns {
         column.column.set_visible(column.preferred_visible);
-        if let Some(width) = width(column.id) {
-            column.column.set_fixed_width(width);
-        }
-        column.column.set_expand(column.id == "album");
     }
     let mut used: i32 = columns
         .iter()
         .filter(|column| column.column.is_visible())
-        .filter_map(|column| width(column.id))
+        .map(collapse_width)
         .sum();
     for id in COLLAPSE_ORDER {
         if used <= viewport_width {
@@ -49,7 +45,16 @@ pub(super) fn fit(columns: &[FittedColumn], viewport_width: i32) {
             continue;
         };
         column.column.set_visible(false);
-        used -= width(id).unwrap_or_default();
+        used -= collapse_width(column);
+    }
+}
+
+fn collapse_width(column: &FittedColumn) -> i32 {
+    let live_width = column.column.fixed_width();
+    if live_width > 0 {
+        live_width
+    } else {
+        width(column.id).unwrap_or_default()
     }
 }
 

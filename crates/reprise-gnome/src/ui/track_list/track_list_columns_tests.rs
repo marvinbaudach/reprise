@@ -226,7 +226,35 @@ fn style_6_the_table_never_overflows_its_viewport() {
     for viewport_width in [700, 1_000, 1_600] {
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
         let columns = super::super::track_list_column_widths::test_columns(&view);
+        for (column, width) in columns.iter().zip([41, 161, 201, 221, 65, 73, 89]) {
+            column.column.set_fixed_width(width);
+            column.column.set_expand(column.id == "title");
+        }
+        let widths_before = columns
+            .iter()
+            .map(|column| column.column.fixed_width())
+            .collect::<Vec<_>>();
+        let expands_before = columns
+            .iter()
+            .map(|column| column.column.expands())
+            .collect::<Vec<_>>();
         super::super::track_list_column_widths::fit(&columns, viewport_width);
+        assert_eq!(
+            columns
+                .iter()
+                .map(|column| column.column.fixed_width())
+                .collect::<Vec<_>>(),
+            widths_before,
+            "responsive fitting must preserve registry-owned widths"
+        );
+        assert_eq!(
+            columns
+                .iter()
+                .map(|column| column.column.expands())
+                .collect::<Vec<_>>(),
+            expands_before,
+            "responsive fitting must preserve the registry-owned filler"
+        );
         let scrolled = gtk4::ScrolledWindow::builder()
             .width_request(viewport_width)
             .height_request(120)
