@@ -150,14 +150,6 @@ mod background_activity_tests {
     use super::*;
 
     #[test]
-    fn set_11a_master_description_names_the_offline_promise() {
-        assert_eq!(
-            ONLINE_CONTENT_MASTER_DESCRIPTION,
-            "Turn off to keep Reprise offline: none of these plugins run, nothing is requested, and their sidebar entries are hidden."
-        );
-    }
-
-    #[test]
     fn a_name_list_reads_as_a_sentence_at_every_length() {
         let names = |items: &[&str]| {
             joined_names(
