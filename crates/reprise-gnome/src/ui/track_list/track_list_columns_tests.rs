@@ -309,4 +309,38 @@ fn style_6_the_table_never_overflows_its_viewport() {
         }
         window.close();
     }
+
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    let registry = crate::ui::table_columns::registry::ColumnRegistry::new(
+        &view,
+        Rc::new(crate::test_db::open().unwrap()),
+        crate::ui::table_columns::registry::TableKeys {
+            layout: reprise_core::library::settings::COLUMN_LAYOUT_KEY,
+            widths: reprise_core::library::settings::COLUMN_WIDTHS_KEY,
+        },
+        columns
+            .iter()
+            .map(|column| {
+                let id = reprise_view::columns::ColumnId::from_sort_field(column.id)
+                    .or_else(|| reprise_view::columns::ColumnId::parse(column.id))
+                    .unwrap();
+                (id, column.column.clone())
+            })
+            .collect(),
+    );
+    super::super::track_list_column_widths::fit(&columns, 1_600);
+    let album = columns.iter().find(|column| column.id == "album").unwrap();
+    let hidden_album = reprise_view::columns::layout::set_visible(
+        &registry.layout(),
+        reprise_view::columns::ColumnId::Album,
+        false,
+    );
+    registry.apply(&hidden_album);
+    super::super::track_list_column_widths::fit(&columns, 700);
+    super::super::track_list_column_widths::fit(&columns, 1_600);
+    assert!(
+        !album.column.is_visible(),
+        "a registry-hidden column must stay hidden when the viewport changes"
+    );
 }

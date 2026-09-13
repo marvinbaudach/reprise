@@ -1,5 +1,6 @@
 //! Live, non-persistent width policy for the default music table.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -9,7 +10,8 @@ const COLLAPSE_ORDER: [&str; 4] = ["rating", "year", "duration_ms", "album"];
 pub(super) struct FittedColumn {
     pub(super) id: &'static str,
     pub(super) column: gtk4::ColumnViewColumn,
-    preferred_visible: bool,
+    preferred_visible: Cell<bool>,
+    collapsed: Cell<bool>,
 }
 
 fn width(id: &str) -> Option<i32> {
@@ -27,7 +29,12 @@ fn width(id: &str) -> Option<i32> {
 
 pub(super) fn fit(columns: &[FittedColumn], viewport_width: i32) {
     for column in columns {
-        column.column.set_visible(column.preferred_visible);
+        let expected_visible = column.preferred_visible.get() && !column.collapsed.get();
+        if column.column.is_visible() != expected_visible {
+            column.preferred_visible.set(column.column.is_visible());
+        }
+        column.collapsed.set(false);
+        column.column.set_visible(column.preferred_visible.get());
     }
     let mut used: i32 = columns
         .iter()
@@ -45,6 +52,7 @@ pub(super) fn fit(columns: &[FittedColumn], viewport_width: i32) {
             continue;
         };
         column.column.set_visible(false);
+        column.collapsed.set(true);
         used -= collapse_width(column);
     }
 }
@@ -86,7 +94,8 @@ fn fitted_columns(view: &gtk4::ColumnView) -> Vec<FittedColumn> {
             };
             Some(FittedColumn {
                 id,
-                preferred_visible: column.is_visible(),
+                preferred_visible: Cell::new(column.is_visible()),
+                collapsed: Cell::new(false),
                 column,
             })
         })
@@ -112,7 +121,8 @@ pub(super) fn test_columns(view: &gtk4::ColumnView) -> Vec<FittedColumn> {
         FittedColumn {
             id,
             column,
-            preferred_visible: true,
+            preferred_visible: Cell::new(true),
+            collapsed: Cell::new(false),
         }
     })
     .collect()
