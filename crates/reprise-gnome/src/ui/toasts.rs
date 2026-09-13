@@ -53,67 +53,10 @@ pub(super) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
+    use crate::ui::plain_text_display_tests::{rendered_label_texts, LabelSettle};
     use gtk4::prelude::*;
-
-    #[derive(Clone, Copy)]
-    enum LabelSettle {
-        UntilText,
-        ObserveFor(Duration),
-    }
-
-    fn rendered_label_texts(
-        toast: libadwaita::Toast,
-        settle: LabelSettle,
-    ) -> (Vec<String>, Duration) {
-        fn collect(widget: &gtk4::Widget, labels: &mut Vec<String>) {
-            if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
-                let text = label.text();
-                if !text.is_empty() {
-                    labels.push(text.to_string());
-                }
-            }
-            let mut child = widget.first_child();
-            while let Some(current) = child {
-                collect(&current, labels);
-                child = current.next_sibling();
-            }
-        }
-
-        let overlay = libadwaita::ToastOverlay::new();
-        overlay.set_child(Some(&gtk4::Box::new(gtk4::Orientation::Vertical, 0)));
-        let window = libadwaita::Window::builder()
-            .default_width(480)
-            .default_height(160)
-            .content(&overlay)
-            .build();
-        window.present();
-        overlay.add_toast(toast);
-
-        let started = Instant::now();
-        match settle {
-            LabelSettle::UntilText => {
-                crate::ui::test_settle::settle_until(
-                    crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
-                    || {
-                        let mut labels = Vec::new();
-                        collect(overlay.upcast_ref(), &mut labels);
-                        !labels.is_empty()
-                    },
-                );
-            }
-            LabelSettle::ObserveFor(duration) => {
-                crate::ui::test_settle::settle_for(duration);
-            }
-        }
-        let elapsed = started.elapsed();
-
-        let mut labels = Vec::new();
-        collect(overlay.upcast_ref(), &mut labels);
-        window.close();
-        (labels, elapsed)
-    }
 
     #[test]
     fn doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none() {
@@ -130,18 +73,33 @@ mod tests {
         libadwaita::init().expect("libadwaita must initialize under the display runner");
         let title = "Removed Library & Radio <Episode>";
 
-        let (plain_labels, positive_wait) =
-            rendered_label_texts(super::plain(title), LabelSettle::UntilText);
+        let overlay = libadwaita::ToastOverlay::new();
+        overlay.set_child(Some(&gtk4::Box::new(gtk4::Orientation::Vertical, 0)));
+        let plain_toast = super::plain(title);
+        let (plain_labels, positive_wait) = rendered_label_texts(
+            overlay.upcast_ref(),
+            480,
+            160,
+            LabelSettle::UntilText,
+            || overlay.add_toast(plain_toast),
+        );
         assert_eq!(plain_labels, [title]);
 
+        let overlay = libadwaita::ToastOverlay::new();
+        overlay.set_child(Some(&gtk4::Box::new(gtk4::Orientation::Vertical, 0)));
         let markup_toast = super::plain(title);
         markup_toast.set_use_markup(true);
         // Presence has a success condition; absence does not, so the control gets a real
         // observation window at least as long as the positive arm consumed instead of
         // "passing" when a condition wait times out.
         let absence_wait = positive_wait.max(Duration::from_millis(100));
-        let (markup_labels, _) =
-            rendered_label_texts(markup_toast, LabelSettle::ObserveFor(absence_wait));
+        let (markup_labels, _) = rendered_label_texts(
+            overlay.upcast_ref(),
+            480,
+            160,
+            LabelSettle::ObserveFor(absence_wait),
+            || overlay.add_toast(markup_toast),
+        );
         assert!(markup_labels.is_empty());
     }
 }
