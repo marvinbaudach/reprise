@@ -135,7 +135,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> YoutubePreferenceRow
         });
     }
 
-    let hide_shorts = adw::SwitchRow::builder()
+    let hide_shorts = crate::ui::rows::switch_row()
         .title(strings::text(strings::YOUTUBE_HIDE_SHORTS))
         .active(cfg.youtube_hide_shorts_default)
         .build();
@@ -161,7 +161,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> YoutubePreferenceRow
     ];
     let browser_label_refs: Vec<&str> = browser_labels.iter().map(String::as_str).collect();
     let browser_model = gtk4::StringList::new(&browser_label_refs);
-    let browser = adw::ComboRow::builder()
+    let browser = crate::ui::rows::combo_row()
         .title(strings::text(strings::YOUTUBE_BROWSER))
         .subtitle(strings::text(strings::YOUTUBE_BROWSER_DESCRIPTION))
         .model(&browser_model)
@@ -177,7 +177,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> YoutubePreferenceRow
         });
     }
 
-    let sign_in = adw::ActionRow::builder()
+    let sign_in = crate::ui::rows::action_row()
         .title(strings::text(strings::YOUTUBE_SIGN_IN))
         .subtitle(strings::text(strings::YOUTUBE_SIGN_IN_DESCRIPTION))
         .build();
@@ -214,7 +214,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> YoutubePreferenceRow
     }
     sign_in.add_suffix(&open_youtube);
 
-    let ytdlp = adw::ActionRow::builder()
+    let ytdlp = crate::ui::rows::action_row()
         .title(strings::text(strings::PODCAST_YTDLP))
         .subtitle(strings::text(strings::PODCAST_YTDLP_CHECKING))
         .build();

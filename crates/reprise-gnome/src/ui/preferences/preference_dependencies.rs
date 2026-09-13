@@ -60,7 +60,7 @@ impl TestConnectionRow {
             .label(strings::text(strings::TEST_CONNECTION))
             .valign(gtk4::Align::Center)
             .build();
-        let row = adw::ActionRow::builder()
+        let row = crate::ui::rows::action_row()
             .title(strings::text(strings::TEST_CONNECTION))
             .activatable_widget(&button)
             .build();

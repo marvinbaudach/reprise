@@ -36,7 +36,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> RadioPreferenceRows 
         &strings::text(strings::RADIO_ORDER_NAME),
         &strings::text(strings::RADIO_ORDER_CLICKS),
     ]);
-    let order = adw::ComboRow::builder()
+    let order = crate::ui::rows::combo_row()
         .title(strings::text(strings::RADIO_SEARCH_ORDER))
         .model(&model)
         .selected(order_index(config.search_order))
@@ -50,7 +50,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> RadioPreferenceRows 
         });
     }
 
-    let report_plays = adw::SwitchRow::builder()
+    let report_plays = crate::ui::rows::switch_row()
         .title(strings::text(strings::RADIO_REPORT_PLAYS))
         .active(config.report_plays)
         .build();

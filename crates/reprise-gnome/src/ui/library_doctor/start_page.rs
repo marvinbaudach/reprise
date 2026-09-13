@@ -95,12 +95,11 @@ impl DoctorStartPage {
         remote.add_css_class("doctor-start-remote");
         column.append(&remote);
 
-        let acoustid_unavailable = adw::ActionRow::builder()
+        let acoustid_unavailable = crate::ui::rows::action_row()
             .title(strings::text(strings::DOCTOR_ACOUSTID_UNAVAILABLE))
             .subtitle(strings::text(
                 strings::DOCTOR_ACOUSTID_UNAVAILABLE_DESCRIPTION,
             ))
-            .use_markup(false)
             .build();
         acoustid_unavailable.add_prefix(&gtk4::Image::from_icon_name("dialog-warning-symbolic"));
         acoustid_unavailable.add_css_class("card");

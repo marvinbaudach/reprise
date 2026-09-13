@@ -33,7 +33,7 @@ pub(super) fn build_equalizer_controls(
     let group = adw::PreferencesGroup::builder()
         .title(strings::text(strings::EQUALIZER))
         .build();
-    let enabled_row = adw::SwitchRow::builder()
+    let enabled_row = crate::ui::rows::switch_row()
         .title(strings::text(strings::ENABLE_EQUALIZER))
         .active(enabled)
         .build();
@@ -56,7 +56,7 @@ pub(super) fn build_equalizer_controls(
         .label(strings::text(selected_label))
         .menu_model(&preset_menu)
         .build();
-    let preset_row = adw::ActionRow::builder()
+    let preset_row = crate::ui::rows::action_row()
         .title(strings::text(strings::EQUALIZER_PRESET))
         .build();
     preset_row.add_suffix(&preset_button);
@@ -75,7 +75,7 @@ pub(super) fn build_equalizer_controls(
     });
     let surface = build_equalizer_surface(stored_bands, enabled, &on_band_changed);
     let scales = surface.scales.clone();
-    let bands = adw::ExpanderRow::builder()
+    let bands = crate::ui::rows::expander_row()
         .title(strings::text(strings::EQUALIZER_MANUAL))
         .expanded(false)
         .build();

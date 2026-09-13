@@ -122,7 +122,7 @@ impl OnDeviceSection {
         header.append(&check_button);
 
         let storage_bar = StorageBar::new();
-        let legacy_notice = libadwaita::Banner::new("");
+        let legacy_notice = crate::ui::rows::banner("");
         let legacy_notice_pending = Rc::new(Cell::new((actions.legacy_media_notice_pending)()));
         legacy_notice.set_button_label(Some(&device_sync_strings::text(
             device_sync_strings::DISMISS,

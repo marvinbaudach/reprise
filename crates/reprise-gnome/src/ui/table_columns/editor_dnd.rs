@@ -128,7 +128,6 @@ pub(in crate::ui) fn css() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libadwaita as adw;
     use libadwaita::prelude::*;
 
     #[test]
@@ -166,7 +165,7 @@ mod tests {
         if gtk4::init().is_err() {
             return;
         }
-        let row = adw::ActionRow::builder().title("Artist").build();
+        let row = crate::ui::rows::action_row().title("Artist").build();
         let toggle = gtk4::Switch::new();
         row.add_suffix(&toggle);
         row.set_activatable_widget(Some(&toggle));

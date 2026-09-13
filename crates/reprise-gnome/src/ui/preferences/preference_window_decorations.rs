@@ -30,7 +30,7 @@ pub(in crate::ui) fn row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
         let conn = &context.conn;
         mode_index(settings::get_window_decoration_mode(conn))
     };
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title(strings::text(strings::WINDOW_DECORATIONS))
         .subtitle(strings::text(strings::WINDOW_DECORATIONS_SUBTITLE))
         .model(&model)

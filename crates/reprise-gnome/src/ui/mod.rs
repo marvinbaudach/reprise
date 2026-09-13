@@ -81,6 +81,8 @@ pub(crate) mod nav_history;
 pub(crate) mod notifications;
 pub(crate) mod now_playing;
 mod one_shot_task;
+#[cfg(test)]
+mod plain_text_display_tests;
 mod playback;
 pub(crate) mod player_bar;
 pub(in crate::ui) mod playing_links;
@@ -93,6 +95,7 @@ pub mod primary_menu;
 pub(in crate::ui) mod progress_subscribers;
 pub(crate) mod radio;
 mod releases;
+mod rows;
 mod runtime_performance;
 mod scan;
 mod scrobbling;

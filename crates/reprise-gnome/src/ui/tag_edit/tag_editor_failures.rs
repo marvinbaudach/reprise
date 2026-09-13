@@ -57,7 +57,7 @@ pub(in crate::ui) fn present(
     list.add_css_class("boxed-list");
     list.set_selection_mode(gtk4::SelectionMode::None);
     for row in &rows {
-        let action_row = adw::ActionRow::builder()
+        let action_row = crate::ui::rows::action_row()
             .title(&row.file_name)
             .subtitle(row.reason)
             .build();

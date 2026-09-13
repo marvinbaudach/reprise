@@ -90,7 +90,7 @@ fn build_listenbrainz_expander(
         description.clone()
     };
 
-    let expander = adw::ExpanderRow::builder()
+    let expander = crate::ui::rows::expander_row()
         .title(strings::text(strings::LISTENBRAINZ))
         .subtitle(&subtitle)
         .show_enable_switch(true)
@@ -98,13 +98,13 @@ fn build_listenbrainz_expander(
         .build();
 
     // Token entry row
-    let token = adw::PasswordEntryRow::builder()
+    let token = crate::ui::rows::password_entry_row()
         .title(strings::text(strings::LISTENBRAINZ_TOKEN))
         .build();
     expander.add_row(&token);
 
     // Description hint
-    let hint = adw::ActionRow::builder()
+    let hint = crate::ui::rows::action_row()
         .subtitle(strings::text(strings::LISTENBRAINZ_DIALOG_BODY))
         .build();
     hint.add_css_class("property");
@@ -117,7 +117,7 @@ fn build_listenbrainz_expander(
         .build();
     connect.add_css_class("suggested-action");
     connect.set_sensitive(false);
-    let connect_row = adw::ActionRow::builder()
+    let connect_row = crate::ui::rows::action_row()
         .title(strings::text(strings::LISTENBRAINZ_CONNECT))
         .subtitle(strings::text(strings::CONNECT_REQUIRES_TOKEN))
         .activatable_widget(&connect)
@@ -136,7 +136,7 @@ fn build_listenbrainz_expander(
         .valign(gtk4::Align::Center)
         .build();
     disconnect.add_css_class("destructive-action");
-    let disconnect_row = adw::ActionRow::builder()
+    let disconnect_row = crate::ui::rows::action_row()
         .title(strings::text(strings::LISTENBRAINZ_DISCONNECT))
         .activatable_widget(&disconnect)
         .build();

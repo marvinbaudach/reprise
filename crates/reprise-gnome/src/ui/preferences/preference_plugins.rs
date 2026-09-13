@@ -235,10 +235,9 @@ fn switch_alignment_placeholder() -> gtk4::Image {
 }
 
 fn aligned_switch_row(title: &str, subtitle: &str, active: bool) -> adw::SwitchRow {
-    let row = adw::SwitchRow::builder()
+    let row = crate::ui::rows::switch_row()
         .title(title)
         .subtitle(subtitle)
-        .use_markup(false)
         .active(active)
         .build();
     row.add_suffix(&switch_alignment_placeholder());
@@ -330,7 +329,7 @@ fn settings_plugin_row(
 ) -> (adw::ExpanderRow, OnlineChild) {
     let active = reprise_core::modules::is_enabled(&context.conn, descriptor)
         .unwrap_or(descriptor.default_enabled);
-    let row = adw::ExpanderRow::builder()
+    let row = crate::ui::rows::expander_row()
         .title(plugin_title(descriptor))
         .subtitle(plugin_description(descriptor))
         .build();
@@ -624,7 +623,7 @@ impl PreferencesContext {
         let connected_group = adw::PreferencesGroup::builder()
             .title(strings::text(strings::PLUGIN_GROUP_CONNECTED_SERVICES))
             .build();
-        let connected_disclosure = adw::ActionRow::builder()
+        let connected_disclosure = crate::ui::rows::action_row()
             .title(strings::text(strings::SCROBBLING_NEEDS_ONLINE_SOURCES))
             .activatable(true)
             .build();

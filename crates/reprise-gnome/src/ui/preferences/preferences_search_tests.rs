@@ -334,8 +334,10 @@ fn renderable_count_pages(
             .build();
         let group = adw::PreferencesGroup::builder().title("Providers").build();
         if id == PageId::Plugins {
-            let live_row = adw::ActionRow::builder().title("Provider account").build();
-            let detached_row = adw::ActionRow::builder()
+            let live_row = crate::ui::rows::action_row()
+                .title("Provider account")
+                .build();
+            let detached_row = crate::ui::rows::action_row()
                 .title("Provider diagnostics")
                 .build();
             live.borrow_mut().set(Some(&live_row));
@@ -343,7 +345,7 @@ fn renderable_count_pages(
             group.add(&live_row);
             group.add(&detached_row);
         } else {
-            group.add(&adw::ActionRow::builder().title(id.title()).build());
+            group.add(&crate::ui::rows::action_row().title(id.title()).build());
         }
         page.add(&group);
         page
@@ -365,7 +367,7 @@ fn live_subtitle_pages(
         } else {
             id.title()
         };
-        let row = adw::ActionRow::builder()
+        let row = crate::ui::rows::action_row()
             .title(&title)
             .subtitle(if id == PageId::Plugins {
                 "Not connected"
@@ -405,7 +407,7 @@ fn path_pages(
         } else {
             id.title()
         };
-        let row = adw::ActionRow::builder()
+        let row = crate::ui::rows::action_row()
             .title(&title)
             .subtitle(if id == PageId::Plugins {
                 "coverartarchive.org"
@@ -415,7 +417,7 @@ fn path_pages(
             .build();
         if id == PageId::Plugins {
             target.borrow_mut().set(Some(&row));
-            let expander = adw::ExpanderRow::builder().title("Provider").build();
+            let expander = crate::ui::rows::expander_row().title("Provider").build();
             expander.add_row(&row);
             target_expander.borrow_mut().set(Some(&expander));
             group.add(&expander);
@@ -449,12 +451,12 @@ fn search_pages() -> Rc<dyn Fn(PageId) -> adw::PreferencesPage> {
         } else {
             "No matching subtitle"
         };
-        let row = adw::ActionRow::builder()
+        let row = crate::ui::rows::action_row()
             .title(&title)
             .subtitle(subtitle)
             .build();
         if id == PageId::Plugins {
-            let expander = adw::ExpanderRow::builder().title("Provider").build();
+            let expander = crate::ui::rows::expander_row().title("Provider").build();
             expander.add_row(&row);
             group.add(&expander);
         } else {
@@ -482,17 +484,17 @@ fn reparent_pages(
             })
             .build();
         if id == PageId::Plugins {
-            group.add(&adw::ActionRow::builder().title("Cover before").build());
-            let row = adw::ActionRow::builder()
+            group.add(&crate::ui::rows::action_row().title("Cover before").build());
+            let row = crate::ui::rows::action_row()
                 .title("Download cover art")
                 .subtitle("coverartarchive.org")
                 .visible(false)
                 .build();
             target.borrow_mut().set(Some(&row));
             group.add(&row);
-            group.add(&adw::ActionRow::builder().title("Cover after").build());
+            group.add(&crate::ui::rows::action_row().title("Cover after").build());
         } else {
-            group.add(&adw::ActionRow::builder().title(id.title()).build());
+            group.add(&crate::ui::rows::action_row().title(id.title()).build());
         }
         page.add(&group);
         page

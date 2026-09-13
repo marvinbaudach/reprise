@@ -499,7 +499,7 @@ mod tests {
                 .icon_name(id.icon_name())
                 .build();
             let group = adw::PreferencesGroup::new();
-            group.add(&adw::ActionRow::builder().title(id.title()).build());
+            group.add(&crate::ui::rows::action_row().title(id.title()).build());
             page.add(&group);
             page
         })

@@ -32,7 +32,7 @@ pub(in crate::ui) fn build_surface(
     lastfm: &adw::ExpanderRow,
     summary: &str,
 ) -> ScrobblingSurface {
-    let entry = adw::ActionRow::builder()
+    let entry = crate::ui::rows::action_row()
         .title(strings::text(strings::SCROBBLING))
         .subtitle(summary)
         .activatable(true)
@@ -132,12 +132,12 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn set_6b_scrobbling_detail_keeps_providers_independent() {
         gtk4::init().unwrap();
-        let listenbrainz = adw::ExpanderRow::builder()
+        let listenbrainz = crate::ui::rows::expander_row()
             .title("ListenBrainz")
             .show_enable_switch(true)
             .enable_expansion(true)
             .build();
-        let lastfm = adw::ExpanderRow::builder()
+        let lastfm = crate::ui::rows::expander_row()
             .title("Last.fm")
             .show_enable_switch(true)
             .enable_expansion(false)
@@ -162,8 +162,10 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn set_10_scrobbling_detail_stays_inside_preferences_navigation() {
         gtk4::init().unwrap();
-        let listenbrainz = adw::ExpanderRow::builder().title("ListenBrainz").build();
-        let lastfm = adw::ExpanderRow::builder().title("Last.fm").build();
+        let listenbrainz = crate::ui::rows::expander_row()
+            .title("ListenBrainz")
+            .build();
+        let lastfm = crate::ui::rows::expander_row().title("Last.fm").build();
         let surface = build_surface(&listenbrainz, &lastfm, "Not connected");
         let group = adw::PreferencesGroup::new();
         group.add(&surface.entry);

@@ -164,10 +164,9 @@ fn build_import_dialog() -> ImportDialogWidgets {
     let rows: Vec<adw::SwitchRow> = specs
         .into_iter()
         .map(|spec| {
-            let row = adw::SwitchRow::builder()
+            let row = crate::ui::rows::switch_row()
                 .title(option_title(spec.id))
                 .active(spec.selected)
-                .use_markup(false)
                 .build();
             row.add_css_class("reprise-rhythmbox-import-option");
             options_group.add(&row);
@@ -175,7 +174,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
         })
         .collect();
 
-    let warning_row = adw::ActionRow::builder().title("").build();
+    let warning_row = crate::ui::rows::action_row().title("").build();
     warning_row.add_prefix(&gtk4::Image::from_icon_name("dialog-warning-symbolic"));
     warning_row.set_visible(false);
 
@@ -227,41 +226,37 @@ fn build_import_dialog() -> ImportDialogWidgets {
     complete_subtitle.set_margin_bottom(18);
 
     let results_group = adw::PreferencesGroup::new();
-    let ratings_result = adw::ActionRow::builder()
+    let ratings_result = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_IMPORT_RATINGS))
-        .use_markup(false)
         .build();
-    let play_counts_result = adw::ActionRow::builder()
+    let play_counts_result = crate::ui::rows::action_row()
         .title(strings::text(
             strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED,
         ))
-        .use_markup(false)
         .build();
-    let dates_result = adw::ActionRow::builder()
+    let dates_result = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_IMPORT_DATE_ADDED))
-        .use_markup(false)
         .build();
-    let playlists_result = adw::ActionRow::builder()
+    let playlists_result = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_IMPORT_PLAYLISTS))
-        .use_markup(false)
         .build();
     results_group.add(&ratings_result);
     results_group.add(&play_counts_result);
     results_group.add(&dates_result);
     results_group.add(&playlists_result);
 
-    let skipped_expander = adw::ExpanderRow::builder()
+    let skipped_expander = crate::ui::rows::expander_row()
         .title("")
         .show_enable_switch(false)
         .build();
     skipped_expander.add_prefix(&gtk4::Image::from_icon_name("dialog-warning-symbolic"));
-    let skip_outside = adw::ActionRow::builder()
+    let skip_outside = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_SKIP_OUTSIDE_LIBRARY))
         .build();
-    let skip_missing = adw::ActionRow::builder()
+    let skip_missing = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_SKIP_MISSING_ON_DISK))
         .build();
-    let skip_non_song = adw::ActionRow::builder()
+    let skip_non_song = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_SKIP_NON_SONG))
         .build();
     skipped_expander.add_row(&skip_outside);
@@ -317,7 +312,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
         "",
     )));
 
-    let error_banner = adw::Banner::new("");
+    let error_banner = crate::ui::rows::banner("");
     error_banner.set_revealed(false);
 
     let toolbar = adw::ToolbarView::new();

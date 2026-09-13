@@ -1518,6 +1518,23 @@ result.
   this rule may be promoted to `[active]`, the conflict is settled explicitly —
   either NR-2a distinguishes its two states, or this exception is written into
   the promoted rule. No new surface may cite it.
+- **FB-13** [active] [gtk] — A row keeps its title. Titles and subtitles of
+  preference rows (`AdwPreferencesRow` and everything that extends it:
+  action, expander, switch, combo, entry and password rows) and banner titles
+  are plain text, never markup, and never pass through a markup parser.
+  libadwaita defaults `use-markup` to TRUE on all of them, so library data
+  and translations containing `&`, `<` or `>` would otherwise render an
+  empty label — the same defect class FB-11 closed for toasts. Rows and
+  banners are therefore built only through `ui/rows.rs`, which turns the
+  default off at the one construction point; `check-gnome-idioms.sh` rejects
+  direct construction. `AdwStatusPage` is exempt because its title is not
+  parsed as markup, and the count labels that deliberately use Pango markup
+  are plain `GtkLabel`s and stay outside this rule. Named exception:
+  `preferences/preferences_search_results.rs`'s `apply_highlight` (~line 189)
+  deliberately turns markup back on for an already-constructed
+  `PreferencesRow` to render search-highlight spans, escaping the title and
+  subtitle itself before handing them to Pango; it does not construct the
+  row and the guard does not flag it.
 
 ## H. File association & OS integration
 

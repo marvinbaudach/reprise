@@ -205,13 +205,12 @@ fn build_rhythmbox_import_group(active: bool) -> RhythmboxImportWidgets {
     let group = adw::PreferencesGroup::builder()
         .title(strings::text(strings::ONBOARDING_GROUP_IMPORT))
         .build();
-    let import_data = adw::SwitchRow::builder()
+    let import_data = crate::ui::rows::switch_row()
         .title(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
         .subtitle(strings::text(
             strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION,
         ))
         .active(active)
-        .use_markup(false)
         .build();
     group.add(&import_data);
     RhythmboxImportWidgets { group, import_data }
@@ -229,7 +228,7 @@ fn build_library_folder_group(
     let group = adw::PreferencesGroup::builder()
         .title(strings::text(strings::ONBOARDING_GROUP_LIBRARY_FOLDER))
         .build();
-    let row = adw::ActionRow::builder()
+    let row = crate::ui::rows::action_row()
         .title(strings::text(strings::NO_LIBRARY_FOLDER))
         .build();
     if let Some(music_dir) = music_dir {

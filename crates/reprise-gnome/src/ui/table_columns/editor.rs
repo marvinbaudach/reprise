@@ -76,7 +76,9 @@ impl EditorState {
 
 fn build_row(state: &Rc<EditorState>, descriptor: super::ColumnDescriptor) -> adw::ActionRow {
     let id = descriptor.id;
-    let row = adw::ActionRow::builder().title(descriptor.label).build();
+    let row = crate::ui::rows::action_row()
+        .title(descriptor.label)
+        .build();
     row.add_css_class(editor_dnd::row_class());
     let handle = gtk4::Image::from_icon_name("list-drag-handle-symbolic");
     handle.add_css_class(editor_dnd::handle_class());

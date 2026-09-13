@@ -291,7 +291,7 @@ fn set_14b_plugin_switches_share_the_same_right_edge_across_row_types() {
     gtk4::init().unwrap();
     let group = adw::PreferencesGroup::new();
     let switch_row = aligned_switch_row("Artwork", "Artwork services", false);
-    let expander = adw::ExpanderRow::builder().title("Podcasts").build();
+    let expander = crate::ui::rows::expander_row().title("Podcasts").build();
     let expander_toggle = gtk4::Switch::builder().valign(gtk4::Align::Center).build();
     expander.add_suffix(&expander_toggle);
     group.add(&switch_row);
@@ -350,12 +350,12 @@ fn set_11a_switching_a_plugin_on_never_opens_its_settings() {
 
     // Counterprobe: the retired wiring. Not a stand-in — the very libadwaita
     // call the page used to make.
-    let retired = adw::ExpanderRow::builder()
+    let retired = crate::ui::rows::expander_row()
         .title("Concerts")
         .show_enable_switch(true)
         .enable_expansion(false)
         .build();
-    retired.add_row(&adw::ActionRow::builder().title("Location").build());
+    retired.add_row(&crate::ui::rows::action_row().title("Location").build());
     assert!(!retired.is_expanded());
     retired.set_enable_expansion(true);
     assert!(
@@ -365,10 +365,10 @@ fn set_11a_switching_a_plugin_on_never_opens_its_settings() {
 
     // The wiring in production: the switch is a suffix, the expansion is the
     // chevron's and the title area's alone.
-    let row = adw::ExpanderRow::builder().title("Concerts").build();
+    let row = crate::ui::rows::expander_row().title("Concerts").build();
     let toggle = gtk4::Switch::builder().valign(gtk4::Align::Center).build();
     row.add_suffix(&toggle);
-    row.add_row(&adw::ActionRow::builder().title("Location").build());
+    row.add_row(&crate::ui::rows::action_row().title("Location").build());
     assert!(!row.is_expanded());
 
     toggle.set_active(true);

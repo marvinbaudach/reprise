@@ -50,7 +50,7 @@ fn location_reference_row(
     broadcast: &Rc<LocationBroadcast>,
     on_location: &OnLocation,
 ) -> adw::ActionRow {
-    let row = adw::ActionRow::builder().activatable(true).build();
+    let row = crate::ui::rows::action_row().activatable(true).build();
     row.set_sensitive(true);
     row.add_css_class(LOCATION_REFERENCE_CLASS);
     row.add_css_class("dim-label");
@@ -131,7 +131,7 @@ pub(in crate::ui) fn build(
             count: 10,
         },
     );
-    let similar_enabled = adw::SwitchRow::builder()
+    let similar_enabled = crate::ui::rows::switch_row()
         .title(strings::text(strings::CONCERTS_SIMILAR_ENABLED))
         .active(similar.enabled)
         .build();

@@ -619,7 +619,7 @@ impl PreferencesContext {
             let conn = &self.conn;
             replay_gain_index(settings::get_replay_gain_mode(conn))
         };
-        let mode = adw::ComboRow::builder()
+        let mode = crate::ui::rows::combo_row()
             .title(strings::text(strings::REPLAYGAIN_MODE))
             .model(&modes)
             .selected(selected_mode)
@@ -706,7 +706,7 @@ impl PreferencesContext {
             let conn = &self.conn;
             settings::get_gapless_enabled(conn)
         };
-        let gapless = adw::SwitchRow::builder()
+        let gapless = crate::ui::rows::switch_row()
             .title(strings::text(strings::GAPLESS_PLAYBACK))
             .active(gapless_enabled)
             .build();
@@ -769,7 +769,7 @@ impl PreferencesContext {
 }
 
 pub(in crate::ui) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow {
-    let row = adw::ActionRow::builder()
+    let row = crate::ui::rows::action_row()
         .title(strings::text(title))
         .activatable(true)
         .build();

@@ -89,7 +89,7 @@ fn theme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
     let themes = Theme::all();
     let names: Vec<&str> = themes.iter().map(|theme| theme.display_name()).collect();
     let model = gtk4::StringList::new(&names);
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title("Theme")
         .subtitle("Named dark palette used across the app")
         .model(&model)
@@ -142,7 +142,7 @@ fn accent_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
             .map(std::string::String::as_str)
             .collect::<Vec<_>>(),
     );
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title(strings::text(strings::ACCENT_COLOR))
         .subtitle(strings::text(strings::ACCENT_COLOR_SUBTITLE))
         .model(&model)
@@ -196,7 +196,7 @@ fn seek_coloring_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
             .map(std::string::String::as_str)
             .collect::<Vec<_>>(),
     );
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title(strings::text(strings::SEEK_COLORING))
         .subtitle(strings::text(strings::SEEK_COLORING_SUBTITLE))
         .model(&model)
@@ -242,7 +242,7 @@ fn color_scheme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
             .map(std::string::String::as_str)
             .collect::<Vec<_>>(),
     );
-    let row = adw::ComboRow::builder()
+    let row = crate::ui::rows::combo_row()
         .title(strings::text(strings::COLOR_SCHEME))
         .subtitle(strings::text(strings::COLOR_SCHEME_SUBTITLE))
         .model(&model)
