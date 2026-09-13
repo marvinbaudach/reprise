@@ -19,8 +19,32 @@ fn lyrics(fraction: f64) -> JobRowState {
 }
 
 #[test]
+fn fb_9_the_dialog_reports_every_running_task_once() {
+    let running = bar_state(&[Some(artwork(0.91)), Some(lyrics(0.12))], true, true);
+
+    assert_eq!(
+        running.row_count(),
+        3,
+        "scan, Artwork and Lyrics each own one row"
+    );
+    assert_eq!(running.count_badge.as_deref(), Some("3"));
+    assert_eq!(running.empty_notice, None);
+
+    let idle = bar_state(&[None, None], true, false);
+    assert!(idle.visible, "reserved feedback remains present at rest");
+    assert_eq!(idle.row_count(), 0);
+    assert_eq!(idle.count_badge, None);
+    assert_eq!(idle.empty_notice.as_deref(), Some("No background activity"));
+
+    let scan_with_online_off = bar_state(&[None, None], false, true);
+    assert_eq!(scan_with_online_off.row_count(), 1);
+    assert_eq!(scan_with_online_off.count_badge.as_deref(), Some("1"));
+    assert_eq!(scan_with_online_off.empty_notice, None);
+}
+
+#[test]
 fn two_running_jobs_stand_side_by_side_instead_of_sharing_one_slot() {
-    let state = bar_state(&[Some(artwork(0.91)), Some(lyrics(0.12))], true);
+    let state = bar_state(&[Some(artwork(0.91)), Some(lyrics(0.12))], true, false);
 
     assert_eq!(
         state.rows.iter().map(|row| row.owner).collect::<Vec<_>>(),
@@ -33,29 +57,35 @@ fn two_running_jobs_stand_side_by_side_instead_of_sharing_one_slot() {
 
 #[test]
 fn a_job_keeps_its_own_row_when_the_other_one_stops() {
-    let state = bar_state(&[None, Some(lyrics(0.12))], true);
+    let state = bar_state(&[None, Some(lyrics(0.12))], true, false);
 
     assert_eq!(state.rows, vec![lyrics(0.12)]);
     assert_eq!(state.count_badge.as_deref(), Some("1"));
 }
 
 #[test]
-fn nothing_running_hides_the_whole_footer() {
-    let state = bar_state(&[None, None], true);
+fn nothing_running_keeps_the_resting_notice() {
+    let state = bar_state(&[None, None], true, false);
 
     assert!(state.rows.is_empty());
     assert_eq!(state.count_badge, None);
-    assert_eq!(state.empty_notice, None);
-    assert!(!state.visible);
+    assert_eq!(
+        state.empty_notice.as_deref(),
+        Some("No background activity")
+    );
+    assert!(state.visible);
 
-    let disabled = bar_state(&[None, None], false);
-    assert!(!disabled.visible);
-    assert_eq!(disabled.empty_notice, None);
+    let disabled = bar_state(&[None, None], false, false);
+    assert!(disabled.visible);
+    assert_eq!(
+        disabled.empty_notice.as_deref(),
+        Some("No background activity")
+    );
 }
 
 #[test]
 fn the_gate_being_off_replaces_activity_with_one_reason() {
-    let state = bar_state(&[Some(artwork(0.91)), Some(lyrics(0.12))], false);
+    let state = bar_state(&[Some(artwork(0.91)), Some(lyrics(0.12))], false, false);
 
     assert!(state.visible);
     assert!(state.rows.is_empty());
@@ -163,15 +193,15 @@ fn a_cancel_button_only_cancels_its_own_job() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn the_idle_footer_widget_is_hidden_until_activity_arrives() {
+fn the_idle_footer_widget_keeps_its_resting_notice() {
     gtk4::init().unwrap();
     let bar = BackgroundBar::new();
 
-    assert!(!bar.widget().is_visible());
+    assert!(bar.widget().is_visible());
     bar.publish(JobOwner::Artwork, Some(artwork(0.25)));
     assert!(bar.widget().is_visible());
     bar.publish(JobOwner::Artwork, None);
-    assert!(!bar.widget().is_visible());
+    assert!(bar.widget().is_visible());
 }
 
 #[test]
@@ -189,8 +219,12 @@ fn set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open() {
     bar.adopt_scan_chrome(line.upcast_ref(), chip.upcast_ref());
 
     assert!(
-        !bar.widget().get_visible(),
-        "adopting the scan chrome must not pin the footer open under every page"
+        bar.widget().get_visible(),
+        "the footer keeps its resting notice under every page"
+    );
+    assert!(
+        !chip.has_css_class("scan-chip"),
+        "the floating chip surface is removed"
     );
 
     chip.set_visible(true);
@@ -201,8 +235,8 @@ fn set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open() {
 
     chip.set_visible(false);
     assert!(
-        !bar.widget().get_visible(),
-        "and the footer closes again once the scan chrome hides itself"
+        bar.widget().get_visible(),
+        "and the footer returns to its resting notice once scanning stops"
     );
 
     bar.publish(JobOwner::Artwork, Some(artwork(0.25)));
@@ -211,7 +245,7 @@ fn set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open() {
         "a plugin job opens the footer on its own"
     );
     bar.publish(JobOwner::Artwork, None);
-    assert!(!bar.widget().get_visible());
+    assert!(bar.widget().get_visible());
 }
 
 #[test]
