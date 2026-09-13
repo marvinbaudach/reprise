@@ -2,7 +2,7 @@
 slug: the-flatpak-sources-follow-the-lock
 worktree: /home/marvin/Projects/reprise-the-flatpak-sources-follow-the-lock
 branch: feature/the-flatpak-sources-follow-the-lock
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-09-13
 ---
