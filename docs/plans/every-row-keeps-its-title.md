@@ -2,7 +2,7 @@
 slug: every-row-keeps-its-title
 worktree: /home/marvin/Projects/reprise-every-row-keeps-its-title
 branch: feature/every-row-keeps-its-title
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-13
 ---
