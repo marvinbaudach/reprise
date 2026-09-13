@@ -119,6 +119,12 @@ $toast_construction"
 # construction silently keeps libadwaita's markup default and can discard
 # titles or subtitles containing &, < or >.
 row_type='(ActionRow|ExpanderRow|SwitchRow|ComboRow|EntryRow|PasswordEntryRow|ButtonRow|SpinRow|PreferencesRow|Banner)'
+# The bare-path alternative below excludes a leading `:` too, unlike FB-11's
+# equivalent class — `Banner` is also a variant name elsewhere in the tree
+# (`FailureSurface::Banner` in concerts_failure_ui.rs), and without the `:`
+# exclusion the char right before it (`:`) satisfies "non-word", so the enum
+# variant reads as a bare `Banner` type reference. FB-11's `Toast` has no such
+# collision, so its class stays narrower.
 row_construction_pattern="(^|[^[:alnum:]_])${row_type}::(new|builder)|(^|[^[:alnum:]_])${row_type}[[:space:]]+as[[:space:]]+[[:alnum:]_]+|(^|[^[:alnum:]_:])${row_type}(::)?[[:space:]]*$"
 row_construction=$({
   production_rust_lines "$ui" | grep -E "$row_construction_pattern" || true

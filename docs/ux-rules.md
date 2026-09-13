@@ -1529,7 +1529,12 @@ result.
   default off at the one construction point; `check-gnome-idioms.sh` rejects
   direct construction. `AdwStatusPage` is exempt because its title is not
   parsed as markup, and the count labels that deliberately use Pango markup
-  are plain `GtkLabel`s and stay outside this rule.
+  are plain `GtkLabel`s and stay outside this rule. Named exception:
+  `preferences/preferences_search_results.rs`'s `apply_highlight` (~line 189)
+  deliberately turns markup back on for an already-constructed
+  `PreferencesRow` to render search-highlight spans, escaping the title and
+  subtitle itself before handing them to Pango; it does not construct the
+  row and the guard does not flag it.
 
 ## H. File association & OS integration
 
