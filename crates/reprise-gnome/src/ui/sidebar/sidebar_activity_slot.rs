@@ -366,7 +366,10 @@ mod tests {
             .first_child()
             .expect("progress root must reserve flexible space above its cards");
         assert!(spacer.is_visible());
-        assert!(spacer.vexpands());
+        assert!(
+            !spacer.vexpands(),
+            "the spacer must not claim height that the running cards do not paint"
+        );
         assert_eq!(spacer.next_sibling().as_ref(), Some(scan.upcast_ref()));
         assert_eq!(
             slot.progress_widget().last_child().as_ref(),
