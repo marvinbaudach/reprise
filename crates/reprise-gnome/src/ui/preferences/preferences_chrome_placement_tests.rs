@@ -479,7 +479,7 @@ fn set_19_pages_scroll_inside_a_short_window() {
         .build();
     app.register(None::<&gio::Cancellable>).unwrap();
     let parent = adw::ApplicationWindow::new(&app);
-    parent.set_default_size(900, 720);
+    parent.set_size_request(900, 720);
     parent.present();
     crate::ui::style::install();
 
@@ -506,8 +506,6 @@ fn set_19_pages_scroll_inside_a_short_window() {
         .expect("the dialog is allocated in its parent window");
     assert!(dialog_bounds.y() >= 0.0);
     assert!(dialog_bounds.y() + dialog_bounds.height() <= parent.height() as f32);
-    assert!(shell.dialog.content_height() <= parent.height() - 24);
-
     for id in PAGE_ORDER {
         shell.stack.set_visible_child_name(id.name());
         settle_layout();

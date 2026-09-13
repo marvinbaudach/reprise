@@ -22,8 +22,8 @@ pub(in crate::ui) enum PageId {
 /// Without the addition the bar would take its place *out of* the pages: the
 /// Layout page's last two switch rows fell below the fold and stopped being
 /// clickable at all, which the pointer harness caught. A permanent bottom bar
-/// costs permanent height. SET-19 caps that request to a 720 px window minus
-/// its 24 px outer margin; the pages scroll within the remaining allocation.
+/// costs permanent height. `AdwDialog` confines that authored request to its
+/// parent window; under SET-19 the pages scroll within the remaining allocation.
 /// While jobs actually run the bar is taller still and the page does give up
 /// those rows — that is transient, and it is the state the reader is looking
 /// at the bar in anyway.
@@ -37,15 +37,7 @@ const PREFERENCES_CONTENT_WIDTH: i32 = 760;
 #[cfg(test)]
 const SIDEBAR_WIDTH_BUDGET_PX: i32 = 195;
 const BACKGROUND_BAR_RESTING_HEIGHT: i32 = 72;
-const SHORT_WINDOW_HEIGHT: i32 = 720;
-const SHORT_WINDOW_MARGIN: i32 = 24;
 const AUTHORED_CONTENT_HEIGHT: i32 = 680 + BACKGROUND_BAR_RESTING_HEIGHT;
-const SHORT_WINDOW_CONTENT_HEIGHT: i32 = SHORT_WINDOW_HEIGHT - SHORT_WINDOW_MARGIN;
-const PREFERENCES_CONTENT_HEIGHT: i32 = if AUTHORED_CONTENT_HEIGHT < SHORT_WINDOW_CONTENT_HEIGHT {
-    AUTHORED_CONTENT_HEIGHT
-} else {
-    SHORT_WINDOW_CONTENT_HEIGHT
-};
 
 pub(in crate::ui) const PAGE_ORDER: [PageId; 6] = [
     PageId::Playback,
@@ -313,7 +305,7 @@ pub(in crate::ui) fn build(
         .child(&root_overlay)
         .title(strings::text(strings::PREFERENCES))
         .content_width(PREFERENCES_CONTENT_WIDTH)
-        .content_height(PREFERENCES_CONTENT_HEIGHT)
+        .content_height(AUTHORED_CONTENT_HEIGHT)
         .build();
     search.bind_shortcuts(&root_overlay);
 
@@ -436,7 +428,7 @@ mod tests {
         let shell = build(pages, None);
 
         assert_eq!(shell.dialog.content_width(), PREFERENCES_CONTENT_WIDTH);
-        assert_eq!(shell.dialog.content_height(), PREFERENCES_CONTENT_HEIGHT);
+        assert_eq!(shell.dialog.content_height(), AUTHORED_CONTENT_HEIGHT);
         assert!(shell
             .sidebar
             .row_at_index(PAGE_ORDER.len() as i32 - 1)
