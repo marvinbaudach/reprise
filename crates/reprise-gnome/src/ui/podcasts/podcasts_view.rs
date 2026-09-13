@@ -68,6 +68,9 @@ mod downloads;
 mod end_of_results_tests;
 #[path = "podcasts_failure_ui.rs"]
 mod failure_ui;
+#[cfg(test)]
+#[path = "podcasts_loading_tests.rs"]
+mod loading_tests;
 #[path = "podcasts_view_marker.rs"]
 mod marker;
 #[cfg(test)]
