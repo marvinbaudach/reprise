@@ -229,3 +229,126 @@ fix, T4 `The two arms are measured on the release binary`, T5
 
 Not cut. Every task touches or measures `track_list_model.rs`; T3–T5 depend
 on T2.
+
+## Result
+
+### T3 — a real regression, not fixed here
+
+Every track-list display/ignored test under `ui::track_list::` (93 tests, one
+process per test, matching what `scripts/check-display-tests.sh` would select
+for this scope) was run against the fixed tree. 92 passed. One failed:
+
+- `ui::track_list::track_list_reload::reveal_track_display_tests::
+  nav_10b_reveal_intent_outranks_later_restore_writers` — `FAILED` on the
+  fixed arm, `ok` on the control arm (checked per the plan's T3 rule, same
+  test, pre-fix `track_list_model.rs` + `mod.rs`, `track_list_model_reload.rs`
+  removed). This is a real regression introduced by the two-emission split,
+  not a pre-existing flake.
+
+Failure: `the reveal must remain the final visible destination: [ViewportStep
+{ writer: "centered.reveal.seed", value: 6210.0 }, ViewportStep { writer:
+"centered.reveal.anchor", value: 0.0 }]`. The viewport that `write_centered`
+places at 6210.0 is pulled back to 0.0 after `anchor_view_on`'s `scroll_to`
+returns.
+
+Two things were tried at the `write_centered` seam and both had zero effect on
+the outcome (dropped, not committed):
+
+1. An `AdjustmentHold` wrapped around the seed/instant/anchor sequence
+   (inherited from the interrupted run, `centered_scroll_restore.rs`). No
+   effect: the scroll probe shows no later *value* write from any writer —
+   GTK re-resolves the position during its own allocation pass rather than
+   setting the adjustment directly, so a hold that only corrects value writes
+   has nothing to catch.
+2. Capturing the adjustment's live `upper`/`page_size` before `write_centered`
+   writes anything, to detect that the widget's item manager had not caught
+   up with the model (instrumented: `model.n_items()=200` while
+   `adjustment.upper()=243=page_size` at entry) and force `Centering::
+   Predicted` so the existing retry (`reveal_position`'s `add_tick_callback`,
+   `RESTORE_ATTEMPTS=8`) re-asserts the anchor a frame later. The retry *is*
+   scheduled and *does* fire, but self-aborts: `track_reveal.rs:242`,
+   `if shared.model.generation() != generation { return Break; }` — a second
+   reload has already bumped `TrackListModel`'s generation counter by the time
+   the tick runs, so the retry treats its own row index as stale and gives up
+   before re-establishing the anchor. Nothing then re-schedules a restore for
+   the new generation.
+
+The second reload's origin is in `route_to_place`/the `RevealTrack` navigation
+path this test drives (`reveal_track_display_tests.rs`'s
+`PlayerBarRevealStage`), not in `track_list_model_reload.rs`'s emission split
+itself — a different slice from T2's. **This regression is left open**, per
+the plan's own instruction not to re-merge the emissions to make the test
+green. The tree committed here is pure T1 + T2, with no seam fix.
+
+Acceptance bullet 2 ("all track-list display tests pass, or every red one is
+shown red on the control arm too") is **not met**: this one test is red only
+with the fix.
+
+### T4 — both arms, release binary, `REPRISE_SMOKE_RELOAD_ORACLE=rows:100000`
+
+Seed: a copy of the pristine 100,000-track fixture from #640
+(`~/.cache/reprise-search-oracle-pristine`, schema 78, `PRAGMA quick_check`
+ok), copied fresh into `target/oracle-run/<arm>-<n>/` for every sample — the
+oracle hook itself only checks the row count, it does not seed. Command per
+the plan, `target/release/reprise` built via `cargo build --release
+-p reprise-gnome --bin reprise`.
+
+Call counts (identical across all three samples of each arm, so shown once):
+
+| transition | arm | item_calls | window_calls |
+|---|---|---:|---:|
+| source-switch | fixed | 205 | 1 |
+| source-switch | control | 205 | 1 |
+| sort-change | fixed | 205 | 1 |
+| sort-change | control | 100205 | 201 |
+| cleared-search | fixed | 205 | 1 |
+| cleared-search | control | 100205 | 201 |
+
+Ready-to-paint (`next_frame_us`), milliseconds, three samples per cell,
+loadavg taken immediately before each sample (fixed: 1.16/1.06/0.98; control:
+3.10/3.01/2.93 — a concurrent build was running on this host during the
+control samples):
+
+| transition | arm | sample1 | sample2 | sample3 | median |
+|---|---|---:|---:|---:|---:|
+| source-switch | fixed | 30.2 | 30.3 | 31.0 | **30.3** |
+| source-switch | control | 29.7 | 30.0 | 29.1 | **29.7** |
+| sort-change | fixed | 41.2 | 32.4 | 35.6 | **35.6** |
+| sort-change | control | 250.4 | 248.0 | 241.5 | **248.0** |
+| cleared-search | fixed | 33.0 | 29.8 | 29.8 | **29.8** |
+| cleared-search | control | 243.3 | 244.0 | 246.0 | **244.0** |
+
+The call-count collapse is the primary evidence and is exact and reproducible
+across all three samples of each arm (Acceptance bullet 3, met). The timing
+medians corroborate it at roughly the same order of magnitude #640 measured
+(458/271 ms and 271/… ms before/after that change) even though the host was
+not quiet for the control samples; source-switch, which never walked, is
+unchanged between arms as expected.
+
+The fixed tree was rebuilt once more after the control-arm swap to prove the
+source was back (`git diff HEAD --stat` empty before the rebuild); the binary
+hash differs from the first fixed-arm build (rustc/linker embed
+build-path/timestamp metadata), which is expected and not evidence of a code
+difference — the source tree, not the binary bytes, is what git confirms.
+
+T1's red number, reconfirmed on this same control-arm tree: `fb_10_full_
+replacement_fetches_only_the_viewport` still fails with `item_calls=20205`
+(20,205 in the commit body; this run: 20205, i.e. no drift).
+
+### Acceptance
+
+- T1's test: red on the control arm (20,205 item_calls, reconfirmed), green
+  with T2. Met.
+- All track-list display tests pass, or every red one is shown red on the
+  control arm too: **not met** — one test
+  (`nav_10b_reveal_intent_outranks_later_restore_writers`) is red only with
+  the fix. See T3 above.
+- T4's table shows the call-count collapse on sort-change and cleared-search:
+  met, exactly (100205/201 → 205/1, both transitions, all three samples).
+- Fixed-arm medians: sort-change 35.6 ms, cleared-search 29.8 ms — **both well
+  under 250 ms**. On the profile #640 measured against, the wait FB-10 (and
+  #411) describe no longer exists in the fixed arm. Taken together with the
+  open T3 regression, this PR would close #411's *measured* complaint but
+  should not be shipped as-is while `nav_10b_reveal_intent_outranks_later_
+  restore_writers` is red only with the fix — that is a real anchoring
+  regression in the RevealTrack navigation path, not a flake.
