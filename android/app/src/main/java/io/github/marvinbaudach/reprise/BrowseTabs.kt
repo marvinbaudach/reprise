@@ -134,21 +134,7 @@ internal fun AlbumDetailPage(
     loadMoreAlbumTracks: suspend (LibraryWindowRange) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = closeAlbum)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MaterialSymbol("arrow_back", "Back")
-            Text(selectedAlbum.album.title, style = MaterialTheme.typography.titleLarge)
-        }
-        Text(
-            selectedAlbum.album.artist,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        AlbumDetailHeader(selectedAlbum.album, closeAlbum)
         if (selectedAlbum.tracks.rows.isEmpty()) {
             Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
         } else {
@@ -172,6 +158,55 @@ internal fun AlbumDetailPage(
 }
 
 @Composable
+private fun AlbumLoadingPage(album: LibraryAlbum, closeAlbum: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        AlbumDetailHeader(album, closeAlbum)
+        LoadingWindowRow()
+    }
+}
+
+@Composable
+private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = closeAlbum)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MaterialSymbol("arrow_back", "Back")
+        Text(album.title, style = MaterialTheme.typography.titleLarge)
+    }
+    Text(
+        album.artist,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp),
+    )
+}
+
+@Composable
+private fun ArtistLoadingPage(artist: LibraryArtist, closeArtist: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        ArtistDetailHeader(artist, closeArtist)
+        LoadingWindowRow()
+    }
+}
+
+@Composable
+private fun ArtistDetailHeader(artist: LibraryArtist, closeArtist: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = closeArtist)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MaterialSymbol("arrow_back", "Back to artists")
+        Text(artist.name, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+@Composable
 internal fun ArtistsTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
@@ -179,6 +214,8 @@ internal fun ArtistsTab(
     searchText: String,
     selectedArtist: ArtistTrackList?,
     selectedAlbum: AlbumTrackList? = null,
+    pendingAlbum: LibraryAlbum? = null,
+    pendingArtist: LibraryArtist? = null,
     playback: LibraryPlayback,
     openArtist: (LibraryArtist) -> Unit,
     openAlbum: (LibraryAlbum) -> Unit = {},
@@ -195,6 +232,10 @@ internal fun ArtistsTab(
     loadMoreArtistAlbums: suspend (LibraryWindowRange) -> Unit = {},
     loadMoreAlbumTracks: suspend (LibraryWindowRange) -> Unit = {},
 ) {
+    if (pendingAlbum != null) {
+        AlbumLoadingPage(pendingAlbum, closeAlbum)
+        return
+    }
     if (selectedAlbum != null) {
         AlbumDetailPage(
             surfaceLayout = surfaceLayout,
@@ -208,18 +249,13 @@ internal fun ArtistsTab(
         )
         return
     }
+    if (pendingArtist != null) {
+        ArtistLoadingPage(pendingArtist, closeArtist)
+        return
+    }
     if (selectedArtist != null) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = closeArtist)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MaterialSymbol("arrow_back", "Back to artists")
-                Text(selectedArtist.artist.name, style = MaterialTheme.typography.titleLarge)
-            }
+            ArtistDetailHeader(selectedArtist.artist, closeArtist)
             val hasAlbums = selectedArtist.albums.rows.isNotEmpty()
             val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
             if (!hasAlbums && !hasOtherTitles) {
