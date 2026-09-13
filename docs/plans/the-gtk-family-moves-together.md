@@ -2,7 +2,7 @@
 slug: the-gtk-family-moves-together
 worktree: /home/marvin/Projects/reprise-the-gtk-family-moves-together
 branch: feature/the-gtk-family-moves-together
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-09-13
 ---
