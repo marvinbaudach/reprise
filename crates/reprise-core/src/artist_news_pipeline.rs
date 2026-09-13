@@ -18,6 +18,14 @@ use crate::source_error::{SourceError, SourceErrorKind};
 
 const FETCH_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 
+/// A source that has failed three requests in a row is down or throttling,
+/// not having a bad moment: each further attempt would still cost a
+/// rate-limited request slot and a warning, and cannot succeed any more than
+/// the last three did. Stopping here trades a delayed check for the
+/// remaining candidates against burning the whole run on a source that
+/// cannot answer.
+const MAX_CONSECUTIVE_FAILURES: usize = 3;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RefreshReport {
     pub artists_queued: usize,
@@ -25,6 +33,12 @@ pub struct RefreshReport {
     pub releases_upserted: usize,
     pub unmatched: usize,
     pub failed: usize,
+    /// Candidates this run never reached because it stopped early (see
+    /// `MAX_CONSECUTIVE_FAILURES`). None of them received a ledger row from
+    /// this run, so whatever was due before this run stays due — some may
+    /// already hold a fresh row from an earlier run and would have been
+    /// skipped anyway.
+    pub artists_skipped: usize,
     pub failures: Vec<SourceError>,
 }
 
@@ -173,11 +187,18 @@ where
     let refresh_result = (|| -> Result<(), NewsError> {
         let local_track_counts =
             crate::artist_news_query::local_album_track_counts(conn).map_err(database_error)?;
+        // Requests in a row that ended in `MbidResolution::Failed` or a
+        // `fetch_release_discography` error. A cache-fresh skip makes no
+        // request and says nothing about the source, so it neither
+        // increments nor resets this; a success or `Unmatched` resets it,
+        // since both mean the source answered.
+        let mut consecutive_failures = 0usize;
         for (index, candidate) in candidates.into_iter().enumerate() {
             let completed = RefreshProgress {
                 checked: index + 1,
                 total,
             };
+            let mut stop_early = false;
             'candidate: {
                 // `normalize()` is the authoritative form of the ledger key: every
                 // runtime read and write (`record_attempt`, `last_attempt_at`,
@@ -207,21 +228,22 @@ where
                 let mbid = match resolve_artist_mbid(conn, &candidate, hooks.fetch, &mut report)? {
                     MbidResolution::Found(mbid) => mbid,
                     MbidResolution::Failed(error) => {
-                        tracing::warn!(
-                            artist = %candidate.name,
-                            %error,
-                            "New Releases: artist check failed"
-                        );
-                        record_failure(&mut report, error);
-                        crate::artist_news_ledger::record_attempt(
+                        let (rate_limited, technical_cause) = record_failed_attempt(
                             conn,
+                            &mut report,
+                            &candidate,
                             &artist_key,
                             None,
                             now,
-                            crate::artist_news_ledger::FetchOutcome::Failed,
-                            0,
-                        )
-                        .map_err(database_error)?;
+                            error,
+                        )?;
+                        stop_early = note_consecutive_failure(
+                            &mut report,
+                            &mut consecutive_failures,
+                            total - index - 1,
+                            rate_limited,
+                            &technical_cause,
+                        );
                         break 'candidate;
                     }
                     MbidResolution::Unmatched => {
@@ -234,27 +256,29 @@ where
                             0,
                         )
                         .map_err(database_error)?;
+                        consecutive_failures = 0;
                         break 'candidate;
                     }
                 };
                 let discography = match fetch_release_discography(&mbid, today, hooks.fetch) {
                     Ok(discography) => discography,
                     Err(error) => {
-                        tracing::warn!(
-                            artist = %candidate.name,
-                            %error,
-                            "New Releases: artist check failed"
-                        );
-                        record_failure(&mut report, error);
-                        crate::artist_news_ledger::record_attempt(
+                        let (rate_limited, technical_cause) = record_failed_attempt(
                             conn,
+                            &mut report,
+                            &candidate,
                             &artist_key,
                             Some(&mbid),
                             now,
-                            crate::artist_news_ledger::FetchOutcome::Failed,
-                            0,
-                        )
-                        .map_err(database_error)?;
+                            error,
+                        )?;
+                        stop_early = note_consecutive_failure(
+                            &mut report,
+                            &mut consecutive_failures,
+                            total - index - 1,
+                            rate_limited,
+                            &technical_cause,
+                        );
                         break 'candidate;
                     }
                 };
@@ -284,10 +308,14 @@ where
                     discography.items.len(),
                 )
                 .map_err(database_error)?;
+                consecutive_failures = 0;
                 report.artists_fetched += 1;
                 report.releases_upserted += discography.items.len();
             }
             (hooks.on_progress)(completed);
+            if stop_early {
+                break;
+            }
         }
         Ok(())
     })();
@@ -318,6 +346,7 @@ where
             fetched = report.artists_fetched,
             unmatched = report.unmatched,
             failed = report.failed,
+            skipped = report.artists_skipped,
             %error,
             "New Releases: check aborted"
         );
@@ -328,6 +357,7 @@ where
         fetched = report.artists_fetched,
         unmatched = report.unmatched,
         failed = report.failed,
+        skipped = report.artists_skipped,
         "New Releases: check finished"
     );
     Ok(report)
@@ -460,6 +490,75 @@ where
 fn record_failure(report: &mut RefreshReport, error: SourceError) {
     report.failed += 1;
     report.failures.push(error);
+}
+
+/// Logs and records one failed attempt (either MBID resolution or the
+/// discography fetch), then returns whether `error` was a rate limit and its
+/// technical cause — both needed by the caller to decide whether to stop the
+/// run early, after `error` itself has moved into the report.
+///
+/// `error`'s `Display` (`%error`) is the user-facing copy; `musicbrainz_error`
+/// is its `technical_cause()`, which every `SourceError` reaching this
+/// pipeline builds from constant text — `FetchError`'s `Display` strings in
+/// `musicbrainz.rs`, or the fixed string in `invalid_response_source_error`
+/// — so it never carries user data and is safe to keep unredacted in the
+/// debug report.
+fn record_failed_attempt(
+    conn: &Connection,
+    report: &mut RefreshReport,
+    candidate: &ArtistCandidate,
+    artist_key: &str,
+    mbid: Option<&str>,
+    now: i64,
+    error: SourceError,
+) -> Result<(bool, String), NewsError> {
+    let rate_limited = matches!(error.kind(), SourceErrorKind::RateLimited { .. });
+    let technical_cause = error.technical_cause().to_string();
+    tracing::warn!(
+        artist = %candidate.name,
+        %error,
+        musicbrainz_error = %technical_cause,
+        "New Releases: artist check failed"
+    );
+    record_failure(report, error);
+    crate::artist_news_ledger::record_attempt(
+        conn,
+        artist_key,
+        mbid,
+        now,
+        crate::artist_news_ledger::FetchOutcome::Failed,
+        0,
+    )
+    .map_err(database_error)?;
+    Ok((rate_limited, technical_cause))
+}
+
+/// Tracks consecutive failures and decides whether the run must stop.
+///
+/// Stopping on `MAX_CONSECUTIVE_FAILURES` protects against a source that is
+/// simply down; stopping on the first `RateLimited` failure protects against
+/// making a 429 worse by continuing to hammer the source. `remaining` is the
+/// number of candidates after the one that just failed — recorded as
+/// `RefreshReport::artists_skipped` only when the run actually stops.
+fn note_consecutive_failure(
+    report: &mut RefreshReport,
+    consecutive_failures: &mut usize,
+    remaining: usize,
+    rate_limited: bool,
+    technical_cause: &str,
+) -> bool {
+    *consecutive_failures += 1;
+    let stop = rate_limited || *consecutive_failures >= MAX_CONSECUTIVE_FAILURES;
+    if stop {
+        report.artists_skipped = remaining;
+        tracing::warn!(
+            consecutive_failures = *consecutive_failures,
+            skipped = remaining,
+            musicbrainz_error = %technical_cause,
+            "New Releases: check stopped early"
+        );
+    }
+    stop
 }
 
 fn source_error_for_fetch(error: &FetchError) -> SourceError {

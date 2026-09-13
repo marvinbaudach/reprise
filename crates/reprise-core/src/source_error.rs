@@ -193,6 +193,15 @@ impl SourceError {
         &self.kind
     }
 
+    /// The technical detail kept out of `Display`. Whether this is safe to
+    /// log unredacted depends on how the caller built it — see
+    /// `record_failed_attempt` in `artist_news_pipeline.rs` for the one case
+    /// this codebase currently verifies.
+    #[must_use]
+    pub fn technical_cause(&self) -> &str {
+        &self.technical_cause
+    }
+
     /// Returns the explicitly requested, copyable technical detail projection.
     ///
     /// `occurred_at` is supplied by the caller so this pure projection never
