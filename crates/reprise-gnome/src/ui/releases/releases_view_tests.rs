@@ -154,7 +154,7 @@ fn nr_39_the_column_editor_lists_status_and_link_and_hides_them() {
     let model = view.column_model();
     assert_eq!(
         super::super::releases_column_layout::column_contract()[0],
-        "Cover",
+        strings::text(strings::COLUMN_COVER),
         "the column metadata must keep naming the blank visual header"
     );
     let cover = view
