@@ -1311,17 +1311,6 @@ result.
   two can never disagree. "Restore defaults" at the foot of the page returns
   every layout value to its default.
 
-- **SET-16a** [active] [gtk] — The Layout page keeps SET-16's one interactive
-  preview and single save path for the regions that still exist: Player Bar,
-  Navigation Sidebar, Filter Bar and Details Sidebar. The removed Status Bar
-  has no preview region, switch or live control; its persisted visibility key
-  may remain unread. Tests: `set_16a_clicking_a_region_toggles_exactly_that_region`,
-  `set_16a_the_bar_sits_at_the_clicked_edge_and_the_body_keeps_its_order`,
-  `set_16a_a_hidden_region_renders_its_ghost_and_clicking_it_asks_for_the_region_back`,
-  and `set_16a_a_rejected_save_keeps_the_previous_state`
-  (`ui/preferences/preference_layout_preview.rs`,
-  `ui/preferences/preference_layout.rs`, `#[cfg(test)]`).
-
 - **SET-17** [active] [gtk] — The equalizer is operated through its profile.
   Below the enable switch, the profile row is an `AdwActionRow` whose menu
   lists exactly the profiles from
@@ -1332,8 +1321,6 @@ result.
 
 - **SET-19** [active] [gtk] — Preferences pages scroll inside a short window;
   the dialog stays within a 720 px window and every page reaches its last row.
-
-## G. Feedback vocabulary
 
 - **SET-18** [active] [gtk] — The Preferences dialog's head carries the page
   title and the search, and nothing else: no toast, banner or progress is ever
@@ -1355,6 +1342,20 @@ result.
   footer. The main window's own scan
   card stays where it is, in its own layer under the dialog, and is never
   reparented into it (`docs/plans/plugins-online-content-master-hierarchy.md`).
+
+- **SET-16a** [active] [gtk] — The Layout page keeps SET-16's one interactive
+  preview and single save path for the regions that still exist: Player Bar,
+  Navigation Sidebar, Filter Bar and Details Sidebar. The removed Status Bar
+  has no preview region, switch or live control; its persisted visibility key
+  may remain unread. Tests: `set_16a_clicking_a_region_toggles_exactly_that_region`,
+  `set_16a_the_bar_sits_at_the_clicked_edge_and_the_body_keeps_its_order`,
+  `set_16a_a_hidden_region_renders_its_ghost_and_clicking_it_asks_for_the_region_back`,
+  and `set_16a_a_rejected_save_keeps_the_previous_state`
+  (`ui/preferences/preference_layout_preview.rs`,
+  `ui/preferences/preference_layout.rs`, `#[cfg(test)]`).
+
+## G. Feedback vocabulary
+
 - **FB-1** [planned] [core] — Two-class toasts (pill, bottom-centered,
   one line, max 1 action button, 4 s / 10 s with Undo; only for
   completed actions or events): Actionless event toasts replace one
