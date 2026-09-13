@@ -474,7 +474,32 @@ fn card_and_snapshot_with(artists: i64) -> (StatsBandsCard, StatsSnapshot) {
 fn stats_24_card_titles_wrap_before_they_cut() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let (card, snapshot) = card_and_snapshot_with(5);
+    let conn = crate::test_db::open().unwrap();
+    for (id, artist) in [
+        (
+            1,
+            "The Exceptionally Long Symphonic Collective From Northern Skies And Distant Shores",
+        ),
+        (
+            2,
+            "An Impossibly Elaborate Ensemble Name That Must Use Its Second Line Before Cutting",
+        ),
+        (
+            3,
+            "The Orchestra With A Deliberately Long Name For Narrow Statistics Cards",
+        ),
+        (
+            4,
+            "Another Very Long Artist Name That Cannot Fit On One Short Tile Line",
+        ),
+        (
+            5,
+            "The Fifth Expansive Artist Name Used To Exercise Real Pango Layout",
+        ),
+    ] {
+        insert_artist(&conn, id, artist, 60_000, usize::try_from(6 - id).unwrap());
+    }
+    let (card, snapshot) = snapshot_card(&conn);
     card.set_data(&snapshot);
     let window = gtk4::Window::builder()
         .default_width(820)
@@ -488,14 +513,26 @@ fn stats_24_card_titles_wrap_before_they_cut() {
         .into_iter()
         .find_map(|widget| widget.downcast::<gtk4::ScrolledWindow>().ok())
         .expect("the top-artist card row scrolls below 900 px");
+    let row = descendants(scroller.upcast_ref())
+        .into_iter()
+        .find(|widget| widget.has_css_class("stats-bands-row"))
+        .expect("the scroller owns the card row");
+    assert!(
+        row.width() > scroller.width(),
+        "the allocated card row must keep its 900 px width inside the narrow viewport"
+    );
     assert!(scroller.hadjustment().upper() > scroller.hadjustment().page_size());
-    for title in descendants(card.widget().upcast_ref())
+    let titles = descendants(card.widget().upcast_ref())
         .into_iter()
         .filter_map(|widget| widget.downcast::<gtk4::Label>().ok())
         .filter(|label| {
             label.has_css_class("stats-band-name") || label.has_css_class("stats-band-tile-name")
         })
-    {
+        .collect::<Vec<_>>();
+    assert_eq!(titles.len(), 5);
+    for title in titles {
+        assert_eq!(title.layout().line_count(), 2);
+        assert!(title.layout().is_ellipsized());
         assert!(title.wraps());
         assert_eq!(title.lines(), 2);
         assert_eq!(title.ellipsize(), gtk4::pango::EllipsizeMode::End);
