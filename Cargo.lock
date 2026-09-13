@@ -2809,7 +2809,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reprise-android-ffi"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "reprise-core",
  "reprise-view",
@@ -2823,7 +2823,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-cli"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "chrono",
  "clap",
@@ -2839,7 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-core"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2868,7 +2868,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-gnome"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2894,7 +2894,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-mcp"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "chrono",
  "reprise-core",
@@ -2913,7 +2913,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-platform-linux"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "async-channel",
  "gio",
@@ -2931,7 +2931,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-runtime-protocol"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "serde",
  "serde_json",
@@ -2940,7 +2940,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-stems"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "dirs",
  "flacenc",
@@ -2956,7 +2956,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-view"
-version = "0.1.192"
+version = "0.1.193"
 dependencies = [
  "reprise-core",
 ]
@@ -2977,9 +2977,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "3.1.4"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a15bc53261a9dc37e105df006e4656c598379a8f9581f8950debb130f27a7cf"
+checksum = "42b6914fac0be956fe704a38239c3f44a9f841d1b06a5713d2f638065593f5b5"
 dependencies = [
  "chrono",
  "futures",
@@ -2999,9 +2999,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "3.1.4"
+version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a85d45508e9b4ba024fe996c2638799635d75b6dd0ba8f32ccf08f8026f0c780"
+checksum = "873b730df6f0a9b74b13eb514e0dca4c2db0d8b68b74af98a2e9bf3f9d436585"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -3911,9 +3911,9 @@ dependencies = [
 
 [[package]]
 name = "trash"
-version = "5.2.6"
+version = "5.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7602e0c7d66ec2d92a8c917219fbc7894039efa2063b9064260110828a356f46"
+checksum = "08676401d031c4a43b7022d90e1748ef4624fabb68ac2abf0cb5812f8c02d78e"
 dependencies = [
  "chrono",
  "libc",
@@ -4853,9 +4853,9 @@ dependencies = [
 
 [[package]]
 name = "zvariant"
-version = "5.14.0"
+version = "5.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5e28c25bd8bb8da5a1f3e7065d0c156b9ee9a7973adf78b0e35eaefdf3b1b5c"
+checksum = "c1d34c27cc6cdd1f458427519dd6b8612f7b7e3f7b9a0b2355d041dda9869147"
 dependencies = [
  "endi",
  "enumflags2",
