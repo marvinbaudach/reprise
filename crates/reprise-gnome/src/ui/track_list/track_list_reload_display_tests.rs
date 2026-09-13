@@ -140,16 +140,28 @@ fn fb_10_full_replacement_fetches_only_the_viewport() {
     );
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    let breakdown = track_list
-        .shared
-        .diagnostic_trail
-        .snapshot()
-        .into_iter()
-        .skip(trail_start)
-        .rev()
-        .find(|line| line.contains(" ReloadBreakdown "))
-        .expect("the sort reload must record a breakdown");
-    let item_calls = diagnostic_payload_u64(&breakdown, "item_calls=")
+    let trail = track_list.shared.diagnostic_trail.snapshot();
+    let entries: Vec<&String> = trail.iter().skip(trail_start).collect();
+    // Pin the reload_id to the *first* Reload recorded after trail_start,
+    // which is deterministically the sort's own (nothing else reloads
+    // between arming and the sort_by_column call above), then match its
+    // breakdown by that id — not just "the last ReloadBreakdown line"
+    // (track_list_smoke.rs's oracle_measurement follows the same
+    // id-matching convention). Taking the last of either line unconditionally
+    // would pass trivially if a second, cheap reload fired after the sort's.
+    let reload_id = entries
+        .iter()
+        .find(|line| line.contains(" Reload "))
+        .and_then(|line| diagnostic_payload_u64(line, "reload_id="))
+        .expect("the sort must trigger a reload");
+    let breakdown = entries
+        .iter()
+        .find(|line| {
+            line.contains(" ReloadBreakdown ")
+                && diagnostic_payload_u64(line, "reload_id=") == Some(reload_id)
+        })
+        .expect("the sort reload must record a breakdown for its own reload_id");
+    let item_calls = diagnostic_payload_u64(breakdown, "item_calls=")
         .expect("the breakdown must record item calls");
     eprintln!("FB-10 full-replacement item_calls={item_calls}");
     assert!(
