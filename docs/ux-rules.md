@@ -1316,6 +1316,9 @@ result.
   curve remains stored and labels the row “Custom”; it never becomes a menu
   entry. The profile list is not enumerated anywhere.
 
+- **SET-19** [active] [gtk] — Preferences pages scroll inside a short window;
+  the dialog stays within a 720 px window and every page reaches its last row.
+
 ## G. Feedback vocabulary
 
 - **SET-18** [active] [gtk] — The Preferences dialog's head carries the page

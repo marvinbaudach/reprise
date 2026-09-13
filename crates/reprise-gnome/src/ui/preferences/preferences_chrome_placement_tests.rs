@@ -468,6 +468,79 @@ fn set_18_visual_background_bar_fixture() {
     parent.close();
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_19_pages_scroll_inside_a_short_window() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("io.github.marvinbaudach.Reprise.PreferencesShortWindowTest")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gio::Cancellable>).unwrap();
+    let parent = adw::ApplicationWindow::new(&app);
+    parent.set_default_size(900, 720);
+    parent.present();
+    crate::ui::style::install();
+
+    let pages: std::rc::Rc<dyn Fn(PageId) -> adw::PreferencesPage> = std::rc::Rc::new(|id| {
+        let page = adw::PreferencesPage::new();
+        let group = adw::PreferencesGroup::new();
+        for index in 0..18 {
+            group.add(
+                &adw::ActionRow::builder()
+                    .title(format!("{} {index}", id.title()))
+                    .build(),
+            );
+        }
+        page.add(&group);
+        page
+    });
+    let shell = build(pages, None);
+    shell.dialog.present(Some(&parent));
+    settle_layout();
+
+    let dialog_bounds = shell
+        .root_overlay
+        .compute_bounds(&parent)
+        .expect("the dialog is allocated in its parent window");
+    assert!(dialog_bounds.y() >= 0.0);
+    assert!(dialog_bounds.y() + dialog_bounds.height() <= parent.height() as f32);
+    assert!(shell.dialog.content_height() <= parent.height() - 24);
+
+    for id in PAGE_ORDER {
+        shell.stack.set_visible_child_name(id.name());
+        settle_layout();
+        let holder = shell.stack.child_by_name(id.name()).unwrap();
+        let scroll = find_scrolled_window(&holder).expect("every Preferences page scrolls");
+        scroll
+            .vadjustment()
+            .set_value(scroll.vadjustment().upper() - scroll.vadjustment().page_size());
+        settle_layout();
+        let page = holder.first_child().expect("the page is materialized");
+        let last = deepest_last_child(&page);
+        let bounds = last
+            .compute_bounds(&scroll)
+            .expect("the last row is allocated in its scroller");
+        assert!(
+            bounds.y() < scroll.height() as f32,
+            "{} did not reach its last row",
+            id.name()
+        );
+    }
+
+    shell.dialog.force_close();
+    parent.close();
+}
+
+fn deepest_last_child(root: &gtk4::Widget) -> gtk4::Widget {
+    let mut current = root.clone();
+    while let Some(child) = current.last_child() {
+        current = child;
+    }
+    current
+}
+
 /// Prints the footer's width budget against the dialog it lives in. A
 /// tool, not a guard: the display-test runner drops it by its own
 /// `measurement:` reason. Run it when a column width is in question —

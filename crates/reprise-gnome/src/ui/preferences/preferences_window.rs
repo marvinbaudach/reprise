@@ -13,16 +13,17 @@ pub(in crate::ui) enum PageId {
     Plugins,
 }
 
-/// The dialog's authored size. The content height is the 680 px the pages were
-/// laid out against plus the tallest height the background-activity bar takes
-/// at rest (`SET-18`) — measured on 2026-08-24, 1600x900, Adwaita defaults:
+/// The dialog's authored size starts with the 680 px the pages were laid out
+/// against plus the tallest height the background-activity bar takes at rest
+/// (`SET-18`) — measured on 2026-08-24, 1600x900, Adwaita defaults:
 /// 46 px with the gate on and nothing running, 72 px with the gate off, where
 /// the bar also carries the line that says why it is empty.
 ///
 /// Without the addition the bar would take its place *out of* the pages: the
 /// Layout page's last two switch rows fell below the fold and stopped being
 /// clickable at all, which the pointer harness caught. A permanent bottom bar
-/// costs permanent height, so the dialog pays for it rather than the pages.
+/// costs permanent height. SET-19 caps that request to a 720 px window minus
+/// its 24 px outer margin; the pages scroll within the remaining allocation.
 /// While jobs actually run the bar is taller still and the page does give up
 /// those rows — that is transient, and it is the state the reader is looking
 /// at the bar in anyway.
@@ -36,7 +37,15 @@ const PREFERENCES_CONTENT_WIDTH: i32 = 760;
 #[cfg(test)]
 const SIDEBAR_WIDTH_BUDGET_PX: i32 = 195;
 const BACKGROUND_BAR_RESTING_HEIGHT: i32 = 72;
-const PREFERENCES_CONTENT_HEIGHT: i32 = 680 + BACKGROUND_BAR_RESTING_HEIGHT;
+const SHORT_WINDOW_HEIGHT: i32 = 720;
+const SHORT_WINDOW_MARGIN: i32 = 24;
+const AUTHORED_CONTENT_HEIGHT: i32 = 680 + BACKGROUND_BAR_RESTING_HEIGHT;
+const SHORT_WINDOW_CONTENT_HEIGHT: i32 = SHORT_WINDOW_HEIGHT - SHORT_WINDOW_MARGIN;
+const PREFERENCES_CONTENT_HEIGHT: i32 = if AUTHORED_CONTENT_HEIGHT < SHORT_WINDOW_CONTENT_HEIGHT {
+    AUTHORED_CONTENT_HEIGHT
+} else {
+    SHORT_WINDOW_CONTENT_HEIGHT
+};
 
 pub(in crate::ui) const PAGE_ORDER: [PageId; 6] = [
     PageId::Playback,
