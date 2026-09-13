@@ -16,11 +16,8 @@ pub(crate) fn rendered_label_texts(
     after_present: impl FnOnce(),
 ) -> (Vec<String>, Duration) {
     fn collect(widget: &gtk4::Widget, labels: &mut Vec<String>) {
-        if let Some(label) = widget
-            .downcast_ref::<gtk4::Label>()
-            .filter(|label| label.is_mapped())
-        {
-            let text = label.layout().text();
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            let text = label.text();
             if !text.is_empty() {
                 labels.push(text.to_string());
             }
