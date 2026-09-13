@@ -29,7 +29,7 @@ pub const RELEASES_WINDOW_FIVE_YEARS: &str = N_!("5 years");
 pub const RELEASES_WINDOW_TEN_YEARS: &str = N_!("10 years");
 pub const RELEASES_WINDOW_ALL: &str = N_!("All");
 pub const RELEASES_IN_LIBRARY: &str = N_!("In library");
-pub const RELEASES_UPCOMING: &str = N_!("upcoming");
+pub const RELEASES_UPCOMING: &str = N_!("Upcoming");
 pub const RELEASES_INCOMPLETE: &str = N_!("Incomplete");
 pub const RELEASES_MISSING: &str = N_!("Missing");
 pub const RELEASES_NO_DATA_TITLE: &str = N_!("No discography data yet");
@@ -146,5 +146,12 @@ mod tests {
     fn release_counts_name_discography_gaps() {
         assert_eq!(release_count_line(8, 19), "8 of 19 gaps");
         assert_eq!(release_total_line(19), "19 gaps");
+    }
+
+    #[test]
+    fn release_status_badges_use_header_case() {
+        assert_eq!(RELEASES_UPCOMING, "Upcoming");
+        assert_eq!(RELEASES_INCOMPLETE, "Incomplete");
+        assert_eq!(RELEASES_MISSING, "Missing");
     }
 }

@@ -376,7 +376,7 @@ mod tests {
         );
         assert_eq!(
             release_status_label(&entry("2026-08", LibraryPresence::Absent, false), today()),
-            "upcoming"
+            "Upcoming"
         );
         assert_eq!(
             release_status_label(&entry("unknown", LibraryPresence::Partial, false), today()),

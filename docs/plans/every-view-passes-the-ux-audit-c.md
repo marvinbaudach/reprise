@@ -20,10 +20,9 @@ Writes only to:
 - `crates/reprise-gnome/src/ui/preferences/preference_plugins*.rs`,
   `crates/reprise-gnome/src/ui/preferences/preference_online_master*.rs`
 - `crates/reprise-gnome/src/ui/releases/**` — the column header only
-- the file that maps smart-list entries to their sidebar icons (locate it;
-  write the path here in the first commit; it must not be one of strand A's
-  sidebar layout files — if it is `sidebar_presentation.rs`, which is in
-  flight elsewhere, the icon change waits and is noted as skipped)
+- `crates/reprise-gnome/src/ui/sidebar/sidebar_presentation.rs`, the file that
+  maps smart-list entries to their sidebar icons (in flight elsewhere, so the
+  icon change waits and is noted as skipped)
 - tests beside each of the above
 - `docs/ux-rules.md` sections AI (append GP-21 after GP-20), J (append QUE-2a, mark QUE-2 `[replaced by QUE-2a]`), R (the
   badge text), T network opt-in (SET-11a's quoted description)
