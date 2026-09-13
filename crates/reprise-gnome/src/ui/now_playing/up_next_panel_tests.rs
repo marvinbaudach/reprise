@@ -133,6 +133,33 @@ fn que_15_footer_names_its_scope() {
     );
 }
 
+/// `QUE-15`: the row action is not the table's unrated dash. It keeps its
+/// allocation but is revealed only by row hover or keyboard focus, and its
+/// accessible name states the destructive queue action.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn que_15_remove_control_is_a_named_revealed_cross() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (row, _, remove, _) = build_row_widgets();
+    let window = gtk4::Window::builder().child(&row).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(remove.label().as_deref(), Some("×"));
+    assert_eq!(remove.icon_name(), None);
+    assert_eq!(remove.tooltip_text().as_deref(), Some("Remove from queue"));
+    assert!(gtk4::test_accessible_has_property(
+        &remove,
+        gtk4::AccessibleProperty::Label
+    ));
+    let css = css();
+    assert!(css.contains(".reprise-up-next-remove { opacity: 0;"));
+    assert!(css.contains(".reprise-up-next-row-container:hover .reprise-up-next-remove"));
+    assert!(css.contains(".reprise-up-next-remove:focus-visible"));
+    window.close();
+}
+
 #[test]
 fn panel_drag_payload_and_edge_autoscroll_are_bounded() {
     assert_eq!(

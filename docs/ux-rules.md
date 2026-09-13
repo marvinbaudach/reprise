@@ -1718,7 +1718,10 @@ result.
   podcast or YouTube show context, the control disappears immediately.
 - **QUE-15** [active] [gtk] — The panel footer names its scope as
   "Up next · {count} tracks · {duration}" while retaining QUE-4's shared
-  count and duration formatting. Test: `que_15_footer_names_its_scope`
+  count and duration formatting. Each removable row carries a × control that
+  appears on row hover or keyboard focus and is named "Remove from queue".
+  Tests: `que_15_footer_names_its_scope`,
+  `que_15_remove_control_is_a_named_revealed_cross`
   (`ui/now_playing/up_next_panel_tests.rs`, `#[cfg(test)]`).
 
 ## K. Filter & search visibility
