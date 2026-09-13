@@ -171,14 +171,21 @@ impl EntryBuilder {
     }
 }
 
-fn field_for(name: &[u8]) -> Option<Field> {
+fn field_for(name: &str) -> Option<Field> {
     match name {
-        b"location" => Some(Field::Location),
-        b"rating" => Some(Field::Rating),
-        b"play-count" => Some(Field::PlayCount),
-        b"first-seen" => Some(Field::FirstSeen),
-        b"last-played" => Some(Field::LastPlayed),
+        "location" => Some(Field::Location),
+        "rating" => Some(Field::Rating),
+        "play-count" => Some(Field::PlayCount),
+        "first-seen" => Some(Field::FirstSeen),
+        "last-played" => Some(Field::LastPlayed),
         _ => None,
+    }
+}
+
+fn map_xml_error(error: quick_xml::Error) -> RhythmboxImportError {
+    match error {
+        quick_xml::Error::Encoding(error) => RhythmboxImportError::Encoding(error),
+        error => RhythmboxImportError::Xml(error),
     }
 }
 
@@ -201,17 +208,14 @@ pub fn parse_rhythmdb_with_source(
     let mut tracks = Vec::new();
 
     loop {
-        match reader.read_event_into(&mut buffer)? {
+        match reader.read_event_into(&mut buffer).map_err(map_xml_error)? {
             Event::Start(element) => {
                 depth += 1;
-                if element.name().as_ref() == b"entry" {
+                if element.name().as_ref() == "entry" {
                     let is_song = element.attributes().flatten().any(|attribute| {
-                        attribute.key.as_ref() == b"type"
+                        attribute.key.as_ref() == "type"
                             && attribute
-                                .decoded_and_normalized_value(
-                                    quick_xml::XmlVersion::Implicit1_0,
-                                    reader.decoder(),
-                                )
+                                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
                                 .is_ok_and(|value| value == "song")
                     });
                     entry = is_song.then(EntryBuilder::default);
@@ -222,27 +226,24 @@ pub fn parse_rhythmdb_with_source(
             }
             Event::Text(text) => {
                 if let (Some(entry), Some(field)) = (&mut entry, field) {
-                    let decoded = text.decode()?;
-                    entry.push(field, &decoded);
+                    entry.push(field, &text);
                 }
             }
             Event::CData(text) => {
                 if let (Some(entry), Some(field)) = (&mut entry, field) {
-                    let decoded = text.decode()?;
-                    entry.push(field, &decoded);
+                    entry.push(field, &text);
                 }
             }
             Event::GeneralRef(reference) => {
                 if let (Some(entry), Some(field)) = (&mut entry, field) {
-                    let reference = reference.decode()?;
-                    let escaped = format!("&{reference};");
+                    let escaped = format!("&{};", reference.as_ref());
                     let decoded = quick_xml::escape::unescape(&escaped)?;
                     entry.push(field, &decoded);
                 }
             }
             Event::End(element) => {
                 depth = depth.saturating_sub(1);
-                if element.name().as_ref() == b"entry" {
+                if element.name().as_ref() == "entry" {
                     if let Some(track) = entry.take().and_then(EntryBuilder::finish) {
                         tracks.push(track);
                     }
@@ -459,21 +460,18 @@ pub fn prescan_rhythmdb_with_source(
     let mut field: Option<Field> = None;
 
     loop {
-        match reader.read_event_into(&mut buffer)? {
+        match reader.read_event_into(&mut buffer).map_err(map_xml_error)? {
             Event::Start(element) => {
                 depth += 1;
-                if element.name().as_ref() == b"entry" {
+                if element.name().as_ref() == "entry" {
                     let entry_type = element
                         .attributes()
                         .flatten()
                         .find_map(|attr| {
-                            (attr.key.as_ref() == b"type").then(|| {
-                                attr.decoded_and_normalized_value(
-                                    quick_xml::XmlVersion::Implicit1_0,
-                                    reader.decoder(),
-                                )
-                                .ok()
-                                .map(std::borrow::Cow::into_owned)
+                            (attr.key.as_ref() == "type").then(|| {
+                                attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                                    .ok()
+                                    .map(std::borrow::Cow::into_owned)
                             })
                         })
                         .flatten();
@@ -495,27 +493,24 @@ pub fn prescan_rhythmdb_with_source(
             }
             Event::Text(text) => {
                 if let (Some(builder), Some(f)) = (&mut entry_builder, field) {
-                    let decoded = text.decode()?;
-                    builder.push(f, &decoded);
+                    builder.push(f, &text);
                 }
             }
             Event::CData(text) => {
                 if let (Some(builder), Some(f)) = (&mut entry_builder, field) {
-                    let decoded = text.decode()?;
-                    builder.push(f, &decoded);
+                    builder.push(f, &text);
                 }
             }
             Event::GeneralRef(reference) => {
                 if let (Some(builder), Some(f)) = (&mut entry_builder, field) {
-                    let reference = reference.decode()?;
-                    let escaped = format!("&{reference};");
+                    let escaped = format!("&{};", reference.as_ref());
                     let decoded = quick_xml::escape::unescape(&escaped)?;
                     builder.push(f, &decoded);
                 }
             }
             Event::End(element) => {
                 depth = depth.saturating_sub(1);
-                if element.name().as_ref() == b"entry" {
+                if element.name().as_ref() == "entry" {
                     if let Some(builder) = entry_builder.take() {
                         if let Some(track) = builder.finish() {
                             if track.rating.is_some() {
@@ -604,20 +599,18 @@ pub fn parse_playlists_with_source(
     let mut playlists = Vec::new();
 
     loop {
-        match reader.read_event_into(&mut buffer)? {
+        match reader.read_event_into(&mut buffer).map_err(map_xml_error)? {
             Event::Start(element) => {
                 depth += 1;
-                if element.name().as_ref() == b"playlist" {
+                if element.name().as_ref() == "playlist" {
                     let mut name = None;
                     let mut playlist_type = None;
                     for attribute in element.attributes().flatten() {
-                        let value = attribute.decoded_and_normalized_value(
-                            quick_xml::XmlVersion::Implicit1_0,
-                            reader.decoder(),
-                        )?;
+                        let value =
+                            attribute.normalized_value(quick_xml::XmlVersion::Implicit1_0)?;
                         match attribute.key.as_ref() {
-                            b"name" => name = Some(value.into_owned()),
-                            b"type" => playlist_type = Some(value.into_owned()),
+                            "name" => name = Some(value.into_owned()),
+                            "type" => playlist_type = Some(value.into_owned()),
                             _ => {}
                         }
                     }
@@ -630,30 +623,29 @@ pub fn parse_playlists_with_source(
                         }
                         _ => None,
                     };
-                } else if element.name().as_ref() == b"location" && playlist.is_some() {
+                } else if element.name().as_ref() == "location" && playlist.is_some() {
                     location = Some(String::new());
                 }
             }
             Event::Text(text) => {
                 if let Some(location) = &mut location {
-                    location.push_str(&text.decode()?);
+                    location.push_str(&text);
                 }
             }
             Event::CData(text) => {
                 if let Some(location) = &mut location {
-                    location.push_str(&text.decode()?);
+                    location.push_str(&text);
                 }
             }
             Event::GeneralRef(reference) => {
                 if let Some(location) = &mut location {
-                    let reference = reference.decode()?;
-                    let escaped = format!("&{reference};");
+                    let escaped = format!("&{};", reference.as_ref());
                     location.push_str(&quick_xml::escape::unescape(&escaped)?);
                 }
             }
             Event::End(element) => {
                 depth = depth.saturating_sub(1);
-                if element.name().as_ref() == b"location" {
+                if element.name().as_ref() == "location" {
                     if let (Some(playlist), Some(location)) = (&mut playlist, location.take()) {
                         if let Ok(url) = url::Url::parse(location.trim()) {
                             if let Ok(path) = url.to_file_path() {
@@ -661,7 +653,7 @@ pub fn parse_playlists_with_source(
                             }
                         }
                     }
-                } else if element.name().as_ref() == b"playlist" {
+                } else if element.name().as_ref() == "playlist" {
                     if let Some(playlist) = playlist.take() {
                         playlists.push(playlist);
                     }

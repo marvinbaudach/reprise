@@ -100,7 +100,7 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
         match reader.read_event().map_err(parse_error)? {
             Event::Start(element) => {
                 let name = local_name(element.name().as_ref()).to_owned();
-                handle_element(&reader, &name, &element, &mut episode, &mut image_url)?;
+                handle_element(&name, &element, &mut episode, &mut image_url)?;
                 if matches!(name.as_str(), "item" | "entry") {
                     episode = Some(EpisodeBuilder::default());
                 }
@@ -109,13 +109,13 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
             }
             Event::Empty(element) => {
                 let name = local_name(element.name().as_ref()).to_owned();
-                handle_element(&reader, &name, &element, &mut episode, &mut image_url)?;
+                handle_element(&name, &element, &mut episode, &mut image_url)?;
             }
             Event::Text(text) => {
-                text_buffer.push_str(&text.decode().map_err(parse_error)?);
+                text_buffer.push_str(&text);
             }
             Event::CData(text) => {
-                text_buffer.push_str(&text.decode().map_err(parse_error)?);
+                text_buffer.push_str(&text);
             }
             Event::GeneralRef(reference) => {
                 text_buffer.push_str(&resolve_reference(&reference)?);
@@ -169,13 +169,12 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
 }
 
 fn handle_element(
-    reader: &Reader<&[u8]>,
     name: &str,
     element: &BytesStart<'_>,
     episode: &mut Option<EpisodeBuilder>,
     image_url: &mut Option<String>,
 ) -> Result<(), PodcastError> {
-    let attributes = attributes(reader, element)?;
+    let attributes = attributes(element)?;
     match name {
         "enclosure" => {
             if let Some(builder) = episode {
@@ -298,8 +297,7 @@ fn resolve_reference(reference: &quick_xml::events::BytesRef<'_>) -> Result<Stri
     if let Some(value) = reference.resolve_char_ref().map_err(parse_error)? {
         return Ok(value.to_string());
     }
-    let name = reference.decode().map_err(parse_error)?;
-    Ok(match name.as_ref() {
+    Ok(match reference.as_ref() {
         "amp" => "&".to_owned(),
         "apos" => "'".to_owned(),
         "gt" => ">".to_owned(),
@@ -353,22 +351,18 @@ fn parse_published_at(value: &str) -> Option<i64> {
         .map(|date| date.timestamp())
 }
 
-fn local_name(name: &[u8]) -> &str {
-    let local = name.rsplit(|byte| *byte == b':').next().unwrap_or(name);
-    std::str::from_utf8(local).unwrap_or_default()
+fn local_name(name: &str) -> &str {
+    name.rsplit(':').next().unwrap_or(name)
 }
 
-fn attributes(
-    reader: &Reader<&[u8]>,
-    element: &BytesStart<'_>,
-) -> Result<Vec<(String, String)>, PodcastError> {
+fn attributes(element: &BytesStart<'_>) -> Result<Vec<(String, String)>, PodcastError> {
     element
         .attributes()
         .map(|attribute| {
             let attribute = attribute.map_err(parse_error)?;
             let key = local_name(attribute.key.as_ref()).to_owned();
             let value = attribute
-                .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder())
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
                 .map_err(parse_error)?
                 .into_owned();
             Ok((key, value))
@@ -436,6 +430,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(parsed.episodes[0].title, "Fish & Chips (After Dark)");
+    }
+
+    #[test]
+    fn item_titles_decode_named_numeric_and_cdata_segments_together() {
+        let parsed = parse_feed(
+            r#"<rss><channel><title>Show</title><item>
+              <title>AT&amp;T &#8211; <![CDATA[Live & Loud]]></title>
+              <enclosure url="https://example.test/live.mp3" type="audio/mpeg"/>
+            </item></channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.episodes[0].title, "AT&T – Live & Loud");
     }
 
     /// Real feeds carry undeclared HTML entities (`&nbsp;`, `&mdash;`, …) in
