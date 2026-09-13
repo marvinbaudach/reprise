@@ -232,57 +232,106 @@ on T2.
 
 ## Result
 
-### T3 — a real regression, not fixed here
+### T3 — the reveal's hold survives the split reload
 
-Every track-list display/ignored test under `ui::track_list::` (93 tests, one
-process per test, matching what `scripts/check-display-tests.sh` would select
-for this scope) was run against the fixed tree. 92 passed. One failed:
+Every track-list display/ignored test under `ui::track_list::` was run
+against the fixed tree, one process per test. The prefix now matches 94
+tests, not the 93 first recorded here: `diagnostic_trail_tests.rs`'s
+`measure_generated_library_reload_latency` sits under the same module path,
+but its ignore reason is "measurement", not "requires a display", and it
+opens the real library at `db::default_path()` rather than a seeded fixture —
+it is not one of the `*_display_tests.rs` files this scope covers, it fails
+the same way with or without every commit on this branch, and running it
+against a live 254 MB library four times was already one time too many.
+Excluded, unrelated, left alone.
+
+Of the 93 in scope, 92 passed and one failed on the tree as first committed
+here (T1 + T2 only):
 
 - `ui::track_list::track_list_reload::reveal_track_display_tests::
-  nav_10b_reveal_intent_outranks_later_restore_writers` — `FAILED` on the
-  fixed arm, `ok` on the control arm (checked per the plan's T3 rule, same
-  test, pre-fix `track_list_model.rs` + `mod.rs`, `track_list_model_reload.rs`
-  removed). This is a real regression introduced by the two-emission split,
-  not a pre-existing flake.
+  nav_10b_reveal_intent_outranks_later_restore_writers` — red with T2's split
+  emission, green on the control arm. A real regression, not a pre-existing
+  flake — confirmed, then fixed below.
 
-Failure: `the reveal must remain the final visible destination: [ViewportStep
-{ writer: "centered.reveal.seed", value: 6210.0 }, ViewportStep { writer:
-"centered.reveal.anchor", value: 0.0 }]`. The viewport that `write_centered`
-places at 6210.0 is pulled back to 0.0 after `anchor_view_on`'s `scroll_to`
-returns.
+Mechanism, established with `REPRISE_SCROLL_PROBE=1 --nocapture` on the
+failing test (env-gated instrumentation already in the tree; no probe code
+was added or removed to get this trace):
 
-Two things were tried at the `write_centered` seam and both had zero effect on
-the outcome (dropped, not committed):
+```
+SCROLLWRITE writer=centered.reveal.seed want=6210.0 from=0.0 upper=243.0 page=243.0
+SCROLLUPPER writer=anchor.configure want=9000.0 from=243.0 value=0.0 page=243.0
+SCROLLWRITE writer=centered.reveal.instant want=6210.0 from=6210.0 upper=9000.0 page=243.0
+SCROLLTO writer=centered.reveal.anchor position=138 from=6210.0 upper=9000.0 page=243.0
+SCROLLWRITE writer=hold want=6210.0 from=0.0 upper=9000.0 page=227.0
+```
 
-1. An `AdjustmentHold` wrapped around the seed/instant/anchor sequence
-   (inherited from the interrupted run, `centered_scroll_restore.rs`). No
-   effect: the scroll probe shows no later *value* write from any writer —
-   GTK re-resolves the position during its own allocation pass rather than
-   setting the adjustment directly, so a hold that only corrects value writes
-   has nothing to catch.
-2. Capturing the adjustment's live `upper`/`page_size` before `write_centered`
-   writes anything, to detect that the widget's item manager had not caught
-   up with the model (instrumented: `model.n_items()=200` while
-   `adjustment.upper()=243=page_size` at entry) and force `Centering::
-   Predicted` so the existing retry (`reveal_position`'s `add_tick_callback`,
-   `RESTORE_ATTEMPTS=8`) re-asserts the anchor a frame later. The retry *is*
-   scheduled and *does* fire, but self-aborts: `track_reveal.rs:242`,
-   `if shared.model.generation() != generation { return Break; }` — a second
-   reload has already bumped `TrackListModel`'s generation counter by the time
-   the tick runs, so the retry treats its own row index as stale and gives up
-   before re-establishing the anchor. Nothing then re-schedules a restore for
-   the new generation.
+The test drives two reloads in one main-loop turn, both inside
+`window::library_shell::route_to_place`: the sidebar's `refresh_and_select`
+triggers `TrackList::set_source`, whose `center_playing_track_in_view` writes
+the reveal's centred destination (6210.0, lines 1–4 above, via
+`centered_scroll_restore::write_centered`); `route_to_place` then calls
+`restore_browser_place_with_viewport` for the `RevealTrack` destination
+itself, a second, ordinary `ReloadViewport::PreserveAnchor` reload. That
+reload's own `reload_anchor_scroll::apply()` reads the adjustment, finds it
+already at the reveal's destination, and correctly stands down
+(`restore_intent::deliberate_destination_outranks_with_intent`) rather than
+overwrite it — the reveal is authoritative. But standing down used to call
+`hold.release_now()`, on the assumption that nothing further needed
+protecting. The second reload's own split `items_changed(0, old, 0)` /
+`items_changed(0, 0, new)` still runs after that decision (shrinking that
+walk is T2's whole point, not something this reload skips), and GTK's list
+base clears the adjustment's range to nothing in between: line 5 above shows
+the value at 0.0, `from=0.0`, claimed by no probed writer — the
+`centered.reveal.anchor` label the failing test's own trail attached to that
+0.0 was `viewport_steps`' attribution artefact (it labels an observed value
+with whichever probed writer ran most recently, not whichever one caused it),
+not a real write GTK-anchor made. The single pre-T2 emission never passed
+through an empty intermediate state, so this reset never happened and nothing
+needed to catch it.
 
-The second reload's origin is in `route_to_place`/the `RevealTrack` navigation
-path this test drives (`reveal_track_display_tests.rs`'s
-`PlayerBarRevealStage`), not in `track_list_model_reload.rs`'s emission split
-itself — a different slice from T2's. **This regression is left open**, per
-the plan's own instruction not to re-merge the emissions to make the test
-green. The tree committed here is pure T1 + T2, with no seam fix.
+A previous pass at this bug suspected `track_reveal.rs:242`'s generation
+check — the retry that `reveal_position` schedules self-aborting because the
+second reload bumped `TrackListModel`'s generation first. That is a real
+event, but not the seam: the fix below does not touch it, and the retry firing
+or not makes no difference, because the hold is armed with the reveal's value
+*before* `run_query` runs (`reload_with_anchor_and_viewport`) and covers the
+position independently of whether any retry ever runs.
+
+Fix, at the seam that owns the intent (`reload_anchor_scroll.rs`, `apply()`'s
+stand-down branch): a restore writer that stands down for a deliberate reveal
+destination is asserting that the destination is authoritative, so it must
+keep guarding it through the very reload it is reacting to, not release
+protection on the assumption the value already survived. `hold.release_now()`
+is replaced with `hold.set_target(shared.scroll_glide.deliberate_destination())`
+when a destination exists (falling back to the previous release when it does
+not, which the branch that reaches this code cannot produce, but keeps the
+match total rather than assuming). With the hold re-armed instead of released,
+it catches the reset GTK makes and rewrites 6210.0 — line 5 above is that
+correction. `RestoreIntent::PostSaveSortAnchor` never reaches this branch
+(`deliberate_destination_outranks_with_intent` returns `false` for it
+unconditionally, added when that intent landed), so the change is scoped to
+`RestoreIntent::PreserveViewport`, the intent this bug lives in.
+`release_after(SCROLL_ADJUSTMENT_HOLD)` still bounds how long the re-armed
+hold lingers and `MAX_CORRECTIONS` still bounds a fight with another writer —
+this does not reopen the runaway-hold failure mode `adjustment_hold.rs`'s own
+doc comment warns about.
+
+With the fix, all 93 in-scope tests were re-run (one process per test): 92
+passed, one failed —
+`queue_section_centering_display_tests::nav_10b_glide_centres_a_queue_row_after_all_section_headers`,
+reproducibly, with a row-height measurement mismatch unrelated to reveals or
+reloads. Checked per the plan's own T3 rule: red on this tree, red with only
+the `reload_anchor_scroll.rs` fix reverted, and red with T2 itself reverted
+(`git revert --no-commit b5c312d8da`, restored afterwards, tree left clean).
+Red on every arm, including the one that predates this feature entirely —
+`git diff origin/dev...HEAD --stat` never lists
+`queue_section_centering_display_tests.rs` or (before this fix)
+`reload_anchor_scroll.rs`. A pre-existing flake, named and left alone.
 
 Acceptance bullet 2 ("all track-list display tests pass, or every red one is
-shown red on the control arm too") is **not met**: this one test is red only
-with the fix.
+shown red on the control arm too") is met: 92 of 93 in-scope tests pass, and
+the one that does not is red on every arm, including the one before this
+feature existed.
 
 ### T4 — both arms, release binary, `REPRISE_SMOKE_RELOAD_ORACLE=rows:100000`
 
@@ -340,15 +389,17 @@ replacement_fetches_only_the_viewport` still fails with `item_calls=20205`
 - T1's test: red on the control arm (20,205 item_calls, reconfirmed), green
   with T2. Met.
 - All track-list display tests pass, or every red one is shown red on the
-  control arm too: **not met** — one test
-  (`nav_10b_reveal_intent_outranks_later_restore_writers`) is red only with
-  the fix. See T3 above.
+  control arm too: **met**. 92 of 93 in-scope tests pass;
+  `nav_10b_reveal_intent_outranks_later_restore_writers` was red only with the
+  fix and is fixed in `reload_anchor_scroll.rs` (T3 above);
+  `queue_section_centering_display_tests::
+  nav_10b_glide_centres_a_queue_row_after_all_section_headers` is red on every
+  arm, including the one before this feature existed, and is named as a
+  pre-existing flake, not fixed here.
 - T4's table shows the call-count collapse on sort-change and cleared-search:
   met, exactly (100205/201 → 205/1, both transitions, all three samples).
 - Fixed-arm medians: sort-change 35.6 ms, cleared-search 29.8 ms — **both well
   under 250 ms**. On the profile #640 measured against, the wait FB-10 (and
-  #411) describe no longer exists in the fixed arm. Taken together with the
-  open T3 regression, this PR would close #411's *measured* complaint but
-  should not be shipped as-is while `nav_10b_reveal_intent_outranks_later_
-  restore_writers` is red only with the fix — that is a real anchoring
-  regression in the RevealTrack navigation path, not a flake.
+  #411) describe no longer exists in the fixed arm. With T3's regression
+  fixed and every acceptance bullet met, this PR closes #411's *measured*
+  complaint.
