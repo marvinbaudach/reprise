@@ -52,7 +52,7 @@ pub(in crate::ui) fn update(
                 ),
                 Err(error) => {
                     tracing::warn!(%error, "could not load library duration for filter row");
-                    bar.hide_result_count();
+                    bar.set_result_count(count, total);
                 }
             }
         }
@@ -167,5 +167,30 @@ mod tests {
             "1,881 tracks · 4 d 6 h"
         );
         assert_eq!(idle_library_caption(1, 3_600_000), "1 track · 0 d 1 h");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_10_duration_failure_keeps_the_known_count() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(seeded_conn());
+        let bar = BrowseBar::new(conn.clone());
+        crate::test_db::connection(&conn)
+            .execute_batch("DROP TABLE tracks")
+            .unwrap();
+
+        update(
+            &bar,
+            &conn,
+            &ViewSource::Library,
+            3,
+            "",
+            &BrowseFilter::default(),
+            false,
+            &[],
+        );
+
+        assert_eq!(bar.result_count(), Some((3, 3)));
     }
 }
