@@ -72,12 +72,12 @@ pub(super) fn build() -> UpdatesShell {
     loading_row.set_halign(gtk4::Align::Center);
     loading_row.set_valign(gtk4::Align::Center);
     loading_row.append(&loading_spinner);
-    let content_stack = gtk4::Stack::new();
-    content_stack.set_vexpand(true);
-    content_stack.set_size_request(-1, POPOVER_RESTING_HEIGHT);
-    content_stack.add_named(&list_page, Some("content"));
-    content_stack.add_named(&loading_row, Some("loading"));
-    content_stack.set_visible_child_name("content");
+    let popover_stack = gtk4::Stack::new();
+    popover_stack.set_vexpand(true);
+    popover_stack.set_size_request(-1, POPOVER_RESTING_HEIGHT);
+    popover_stack.add_named(&list_page, Some("content"));
+    popover_stack.add_named(&loading_row, Some("loading"));
+    popover_stack.set_visible_child_name("content");
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.set_size_request(POPOVER_WIDTH, -1);
@@ -85,7 +85,7 @@ pub(super) fn build() -> UpdatesShell {
     content.set_margin_bottom(10);
     content.set_margin_start(10);
     content.set_margin_end(10);
-    content.append(&content_stack);
+    content.append(&popover_stack);
     content.append(footer.widget());
     popover.set_child(Some(&content));
     button.set_popover(Some(&popover));
@@ -94,7 +94,7 @@ pub(super) fn build() -> UpdatesShell {
         button,
         badge,
         popover,
-        content_stack,
+        content_stack: popover_stack,
         loading_row,
         news_section,
         concerts_section,

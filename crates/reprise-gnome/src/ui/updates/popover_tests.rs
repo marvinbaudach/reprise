@@ -36,11 +36,11 @@ fn opening_the_popover_never_requests_navigation() {
     assert!(!effect.navigates);
 }
 
-/// `FB-13`: the Updates popover swaps its rows for a centred loading row and
+/// `FB-14`: the Updates popover swaps its rows for a centred loading row and
 /// retains the resting content height while the first model is pending.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_13_updates_popover_reserves_its_resting_height_while_loading() {
+fn fb_14_updates_popover_reserves_its_resting_height_while_loading() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());

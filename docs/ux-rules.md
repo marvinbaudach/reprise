@@ -1564,10 +1564,10 @@ result.
   subtitle itself before handing them to Pango; it does not construct the
   row and the guard does not flag it.
 
-- **FB-13** [active] [gtk] — A view waiting on data shows a loading row and
+- **FB-14** [active] [gtk] — A view waiting on data shows a loading row and
   never the previous view's rows; a popover reserves its resting height.
-  Tests: `fb_13_podcasts_show_a_loading_row_until_the_model_arrives`,
-  `fb_13_updates_popover_reserves_its_resting_height_while_loading`.
+  Tests: `fb_14_podcasts_show_a_loading_row_until_the_model_arrives`,
+  `fb_14_updates_popover_reserves_its_resting_height_while_loading`.
 
 ## H. File association & OS integration
 

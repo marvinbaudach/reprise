@@ -704,7 +704,8 @@ pub(in crate::ui) fn css() -> String {
            background: transparent; border: none; box-shadow: none; \
            padding: 5px 6px; }}\n\
          /* Hover, press and focus come from `style::buttons` (BTN-4). */\n\
-         .reprise-up-next-remove {{ opacity: 0; color: @reprise_secondary_fg_color; }}\n\
+         .reprise-up-next-remove {{ color: @reprise_secondary_fg_color; }}\n\
+         .reprise-up-next-row-container .reprise-up-next-remove {{ opacity: 0; }}\n\
          .reprise-up-next-row-container:hover .reprise-up-next-remove,\n\
          .reprise-up-next-remove:focus-visible {{ opacity: 1; }}\n\
          .reprise-up-next-remove:hover {{ color: @reprise_primary_fg_color; }}\n\

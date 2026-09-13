@@ -41,7 +41,7 @@ Writes only to:
 - `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-gnome/src/ui/queue/**`,
   `crates/reprise-gnome/src/ui/updates/**`
 - `crates/reprise-gnome/src/ui/strings.rs` — the status-bar constants only
-- `docs/ux-rules.md` sections G (append FB-13; FB-9 unchanged), J (append
+- `docs/ux-rules.md` sections G (append FB-14; FB-9 unchanged), J (append
   QUE-15), K (append FIL-10), U (append CONTRAST-2b, mark CONTRAST-2a
   `[replaced by CONTRAST-2b]`)
 
@@ -79,10 +79,10 @@ paint empty, black, or the previous view for one to three seconds.
    is requested and shows rows only after the first model delivery; the
    popover reserves its resting height so it never paints black. 150 ms is
    design intent, not asserted.
-2. New **FB-13** [active] [gtk]: "A view waiting on data shows a loading row
+2. New **FB-14** [active] [gtk]: "A view waiting on data shows a loading row
    and never the previous view's rows; a popover reserves its resting
-   height." Tests `fb_13_podcasts_show_a_loading_row_until_the_model_arrives`,
-   `fb_13_queue_…`, `fb_13_updates_popover_…`.
+   height." Tests `fb_14_podcasts_show_a_loading_row_until_the_model_arrives`,
+   `fb_14_queue_…`, `fb_14_updates_popover_…`.
 
 **B4 — Up Next remove control (decision 10).** The permanent "—" per row
 collides with "—" meaning unrated in the table. It becomes a hover- and

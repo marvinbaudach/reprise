@@ -6,12 +6,12 @@ use reprise_core::podcasts::store::{self, NewSubscription};
 
 use super::*;
 
-/// `FB-13`: requesting fresh podcast data replaces the previously rendered
+/// `FB-14`: requesting fresh podcast data replaces the previously rendered
 /// rows immediately. The loading row owns the stack until `refresh()` delivers
 /// the first replacement model, and its allocation is centred in that stack.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_13_podcasts_show_a_loading_row_until_the_model_arrives() {
+fn fb_14_podcasts_show_a_loading_row_until_the_model_arrives() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
