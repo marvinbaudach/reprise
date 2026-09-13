@@ -2,7 +2,7 @@
 slug: the-feeds-read-quick-xml-0-42
 worktree: /home/marvin/Projects/reprise-the-feeds-read-quick-xml-0-42
 branch: feature/the-feeds-read-quick-xml-0-42
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-13
 ---
