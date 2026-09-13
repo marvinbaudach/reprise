@@ -151,6 +151,7 @@ fn fb_10_full_replacement_fetches_only_the_viewport() {
         .expect("the sort reload must record a breakdown");
     let item_calls = diagnostic_payload_u64(&breakdown, "item_calls=")
         .expect("the breakdown must record item calls");
+    eprintln!("FB-10 full-replacement item_calls={item_calls}");
     assert!(
         item_calls < 1_000,
         "a full replacement fetched {item_calls} items instead of only the viewport: {breakdown}"

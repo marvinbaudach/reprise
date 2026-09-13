@@ -290,11 +290,16 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
     let stale_generation = model.generation().wrapping_sub(1);
 
     let changes = Rc::new(RefCell::new(Vec::new()));
+    let intermediate_n_items = Rc::new(Cell::new(None));
     let changes_for_signal = changes.clone();
-    model.connect_items_changed(move |_, position, removed, added| {
+    let intermediate_for_signal = intermediate_n_items.clone();
+    model.connect_items_changed(move |model, position, removed, added| {
         changes_for_signal
             .borrow_mut()
             .push((position, removed, added));
+        if changes_for_signal.borrow().len() == 1 {
+            intermediate_for_signal.set(Some(model.n_items()));
+        }
     });
 
     model.set_query_browsed_ai_changed(
@@ -318,9 +323,10 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
 
     assert_eq!(
         *changes.borrow(),
-        vec![(0, 3, 3)],
+        vec![(0, 3, 0), (0, 0, 3)],
         "a stale range must invalidate the whole model, not its own narrow slice"
     );
+    assert_eq!(intermediate_n_items.get(), Some(0));
 }
 
 #[test]
