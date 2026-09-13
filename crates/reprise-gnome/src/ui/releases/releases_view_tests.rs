@@ -152,6 +152,19 @@ fn nr_39_the_column_editor_lists_status_and_link_and_hides_them() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = ReleasesView::new(conn.clone(), PathBuf::new());
     let model = view.column_model();
+    assert_eq!(
+        super::super::releases_column_layout::column_contract()[0],
+        "Cover",
+        "the column metadata must keep naming the blank visual header"
+    );
+    let cover = view
+        .shared
+        .column_view
+        .columns()
+        .item(0)
+        .and_downcast::<gtk4::ColumnViewColumn>()
+        .expect("the Releases view owns a leading cover column");
+    assert_eq!(cover.title().as_deref(), Some(""));
     let ids = model
         .columns()
         .into_iter()
@@ -335,11 +348,15 @@ fn nr_33_releases_view_exposes_filters_seven_columns_and_footer() {
         cover.id().is_none(),
         "the pinned leading cover column must remain id-less"
     );
-    let cover_title = strings::text(strings::COLUMN_COVER);
     assert_eq!(
         cover.title().as_deref(),
-        Some(cover_title.as_str()),
-        "the id-less leading column must be the pinned cover"
+        Some(""),
+        "the pinned cover column must leave its visual header blank"
+    );
+    assert_eq!(
+        super::super::releases_column_layout::column_contract()[0],
+        strings::text(strings::COLUMN_COVER),
+        "the id-less leading column must keep its Cover metadata"
     );
     assert_eq!(
         columns

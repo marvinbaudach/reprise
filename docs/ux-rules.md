@@ -2851,8 +2851,9 @@ the panel).
 - **NR-39** [active] [gtk] — The Releases table's `Status` and `Link`
   columns are ordinary columns in the free band: hideable, movable, visible
   in the column editor, and visible by default. Only the `Cover` column stays
-  fixed. Hiding the `Link` column removes the visible route for opening a
-  release's purchase link; the header popover restores either column. A layout
+  fixed. Its column-editor name remains `Cover`, while its visual header
+  renders no text. Hiding the `Link` column removes the visible route for
+  opening a release's purchase link; the header popover restores either column. A layout
   saved before this change keeps both columns visible, while a saved layout
   that never mentioned them starts without them.
   Test: `nr_39_the_column_editor_lists_status_and_link_and_hides_them`
