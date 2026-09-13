@@ -3414,7 +3414,8 @@ property is set and yet nothing happens.
   and volume lie entirely within their allocation. Long titles and artists
   ellipsize within the left metadata zone and never push transport or
   waveform out of the window center. Scrollable content gives up space,
-  not the player bar. The minimum library-window height is 400 px.
+  not the player bar. At the enforced 600 × 400 minimum, the structural
+  player bar's bounds lie inside the window at its natural height.
 - **STYLE-6** [active] [gtk] — On strong horizontal shrinking, the track
   table temporarily collapses secondary visible columns; cover, title, and
   artist stay visible. This collapsing changes neither stored visibility,
