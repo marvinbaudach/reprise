@@ -74,6 +74,10 @@ pub(super) fn external_youtube_snapshot(
 ) -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
     let mut snapshot = external_episode_snapshot();
     snapshot.podcast_kind = Some(reprise_core::podcasts::PodcastKind::Youtube);
+    // A YouTube episode earns the music treatment through its stored category
+    // (AC-26), so the shared fixture carries the one that grants it. Tests
+    // about the category decision itself override this field.
+    snapshot.media_category = Some("Music".into());
     if let crate::ui::playback::external_media::ExternalMedia::Podcast { title, source, .. } =
         &mut snapshot.media
     {
@@ -171,7 +175,7 @@ fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_26_youtube_category_decides_whether_the_visual_page_stays() {
+fn ac_26_only_a_music_category_keeps_the_visual_page() {
     gtk4::init().unwrap();
     let (_window, panel) =
         super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalVisualVisibilityTest");
@@ -180,10 +184,21 @@ fn ac_26_youtube_category_decides_whether_the_visual_page_stays() {
     panel.set_external_snapshot(Some(external_youtube_snapshot()));
     assert!(panel.widgets.visual_page.is_visible());
 
-    let mut news = external_youtube_snapshot();
-    news.media_category = Some("News & Politics".into());
-    panel.set_external_snapshot(Some(news));
-    assert!(!panel.widgets.visual_page.is_visible());
+    for category in [Some("News & Politics"), Some("Entertainment"), None] {
+        let mut youtube = external_youtube_snapshot();
+        youtube.media_category = category.map(str::to_owned);
+        panel.set_external_snapshot(Some(youtube));
+        assert!(
+            !panel.widgets.visual_page.is_visible(),
+            "only a `Music` category keeps the Visual tab, not {category:?}"
+        );
+    }
+
+    panel.set_external_snapshot(Some(external_youtube_snapshot()));
+    assert!(
+        panel.widgets.visual_page.is_visible(),
+        "a category resolved to `Music` brings the tab back"
+    );
 
     panel.set_external_snapshot(Some(external_episode_snapshot()));
     assert!(!panel.widgets.visual_page.is_visible());

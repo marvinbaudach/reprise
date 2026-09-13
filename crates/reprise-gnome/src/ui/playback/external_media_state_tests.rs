@@ -292,7 +292,7 @@ fn removing_a_show_matches_only_its_active_podcast_session() {
 }
 
 #[test]
-fn ac_26_external_snapshots_follow_youtube_category_then_source_default() {
+fn ac_26_only_a_music_category_earns_a_youtube_episode_song_visuals() {
     let mut rss_session = podcast_session(None, None);
     rss_session.kind = PodcastKind::Rss;
     rss_session.media_category = Some("Music".into());
@@ -310,26 +310,16 @@ fn ac_26_external_snapshots_follow_youtube_category_then_source_default() {
         .unwrap()
         .carries_music());
 
-    youtube_session.media_category = Some("News & Politics".into());
-    assert!(!podcast_state(youtube_session.clone())
-        .snapshot()
-        .unwrap()
-        .carries_music());
-
-    youtube_session.media_category = Some("Entertainment".into());
-    assert!(podcast_state(youtube_session.clone())
-        .snapshot()
-        .unwrap()
-        .carries_music());
-
-    youtube_session.media_category = None;
-    assert!(
-        podcast_state(youtube_session)
-            .snapshot()
-            .unwrap()
-            .carries_music(),
-        "an unclassified YouTube episode keeps today's music default"
-    );
+    for category in [Some("News & Politics"), Some("Entertainment"), None] {
+        youtube_session.media_category = category.map(str::to_owned);
+        assert!(
+            !podcast_state(youtube_session.clone())
+                .snapshot()
+                .unwrap()
+                .carries_music(),
+            "only `Music` earns the bars, not {category:?}"
+        );
+    }
 
     let radio = radio_state().snapshot().unwrap();
     assert!(radio.carries_music(), "radio carries Song Visuals");
@@ -342,11 +332,11 @@ fn resolved_category_updates_only_the_matching_live_youtube_session() {
     let mut state = podcast_state(session);
     state.generation = 8;
 
-    assert!(!state.update_podcast_media_category(7, 7, Some("News & Politics".to_owned())));
-    assert!(state.snapshot().unwrap().carries_music());
-
-    assert!(state.update_podcast_media_category(8, 7, Some("News & Politics".to_owned())));
+    assert!(!state.update_podcast_media_category(7, 7, Some("Music".to_owned())));
     assert!(!state.snapshot().unwrap().carries_music());
+
+    assert!(state.update_podcast_media_category(8, 7, Some("Music".to_owned())));
+    assert!(state.snapshot().unwrap().carries_music());
 }
 
 #[test]
@@ -356,9 +346,16 @@ fn ac_26_spectrum_follows_the_external_snapshot_and_the_module_switch() {
 
     let mut youtube_session = podcast_session(None, None);
     youtube_session.kind = PodcastKind::Youtube;
-    let youtube = podcast_state(youtube_session);
+    youtube_session.media_category = Some("Music".into());
+    let youtube = podcast_state(youtube_session.clone());
     assert!(youtube.audio_reactive_enabled(true));
     assert!(!youtube.audio_reactive_enabled(false));
+
+    youtube_session.media_category = None;
+    assert!(
+        !podcast_state(youtube_session).audio_reactive_enabled(true),
+        "an unclassified YouTube episode runs no spectrum either"
+    );
 
     assert!(radio_state().audio_reactive_enabled(true));
     assert!(!radio_state().audio_reactive_enabled(false));
