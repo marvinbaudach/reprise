@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GP-2/GP-3/GP-4/FB-11: gtk4-rs idioms in the GTK frontend.
+# GP-2/GP-3/GP-4/FB-11/FB-13: gtk4-rs idioms in the GTK frontend.
 #
 # This gate greps. It is a tripwire, not a proof: it catches the shapes that
 # reviewers reject, and it reports counts so a rule can be switched to
@@ -114,6 +114,19 @@ toast_construction=$({
 [[ -z $toast_construction ]] || report_violation FB-11 \
   "direct toast construction leaves plain text in the default markup slot; use crate::ui::toasts::plain:
 $toast_construction"
+
+# FB-13 — every preference-row and banner title is plain text. Direct
+# construction silently keeps libadwaita's markup default and can discard
+# titles or subtitles containing &, < or >.
+row_type='(ActionRow|ExpanderRow|SwitchRow|ComboRow|EntryRow|PasswordEntryRow|ButtonRow|SpinRow|PreferencesRow|Banner)'
+row_construction_pattern="(^|[^[:alnum:]_])${row_type}::(new|builder)|(^|[^[:alnum:]_])${row_type}[[:space:]]+as[[:space:]]+[[:alnum:]_]+|(^|[^[:alnum:]_:])${row_type}(::)?[[:space:]]*$"
+row_construction=$({
+  production_rust_lines "$ui" | grep -E "$row_construction_pattern" || true
+} | { grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true; } \
+  | { grep -v "^$ui/ui/rows\.rs:" || true; })
+[[ -z $row_construction ]] || report_violation FB-13 \
+  "direct row or banner construction leaves plain text in the default markup slot; use crate::ui::rows::…:
+$row_construction"
 
 # GP-2 — blocking calls that must not sit on the main loop.
 blocking='(std::thread::sleep|\.blocking_recv\(\)|\.blocking_send\(|block_on\()'
