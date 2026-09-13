@@ -4851,14 +4851,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/trash/trash-5.2.6.crate",
-        "sha256": "7602e0c7d66ec2d92a8c917219fbc7894039efa2063b9064260110828a356f46",
-        "dest": "cargo/vendor/trash-5.2.6"
+        "url": "https://static.crates.io/crates/trash/trash-5.2.7.crate",
+        "sha256": "08676401d031c4a43b7022d90e1748ef4624fabb68ac2abf0cb5812f8c02d78e",
+        "dest": "cargo/vendor/trash-5.2.7"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"7602e0c7d66ec2d92a8c917219fbc7894039efa2063b9064260110828a356f46\", \"files\": {}}",
-        "dest": "cargo/vendor/trash-5.2.6",
+        "contents": "{\"package\": \"08676401d031c4a43b7022d90e1748ef4624fabb68ac2abf0cb5812f8c02d78e\", \"files\": {}}",
+        "dest": "cargo/vendor/trash-5.2.7",
         "dest-filename": ".cargo-checksum.json"
     },
     {
