@@ -230,7 +230,14 @@ impl StatsBandsCard {
 
         let bands_row = StatsBandsRow::new();
         bands_row.set_artist_image(&artist_image);
-        root.append(bands_row.widget());
+        bands_row.widget().set_width_request(900);
+        let bands_scroll = gtk4::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk4::PolicyType::Automatic)
+            .vscrollbar_policy(gtk4::PolicyType::Never)
+            .propagate_natural_width(false)
+            .child(bands_row.widget())
+            .build();
+        root.append(&bands_scroll);
 
         let reveal_button = gtk4::Button::with_label(&strings::stats_show_more_top_artists());
         reveal_button.add_css_class("flat");

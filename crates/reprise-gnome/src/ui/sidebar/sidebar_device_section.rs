@@ -175,6 +175,7 @@ pub(super) fn present_device_section_for_test(device: &DeviceView) -> gtk4::Box 
     let on_open: OpenCallback = Rc::new(|_, _| {});
     let on_cancel: CancelCallback = Rc::new(|_| {});
     let card = DeviceCard::new(device, &on_open, &on_cancel);
+    install_status_tail_yield(card.root());
     section.present.append(card.root());
     section.apply_layout(1, 0);
     section.root
@@ -235,6 +236,7 @@ fn render(
                 let on_cancel: CancelCallback =
                     Rc::new(move |device_id| cancel_runtime.cancel_current(&device_id));
                 let card = DeviceCard::new(device, on_open, &on_cancel);
+                install_status_tail_yield(card.root());
                 for target in card.context_menu_targets() {
                     menu::wire(target, runtime, &device.id);
                 }
@@ -254,12 +256,136 @@ fn render(
     apply_current(&registry, current_id.as_deref());
 }
 
+fn install_status_tail_yield(root: &impl IsA<gtk4::Widget>) {
+    let Some(label) = find_status_label(root.upcast_ref()) else {
+        return;
+    };
+    let full = Rc::new(RefCell::new(label.text().to_string()));
+    let applying = Rc::new(std::cell::Cell::new(false));
+    let refresh: Rc<dyn Fn()> = Rc::new({
+        let label = label.clone();
+        let full = full.clone();
+        let applying = applying.clone();
+        move || {
+            let full_text = full.borrow().clone();
+            let natural = label.create_pango_layout(Some(&full_text)).pixel_size().0;
+            let shown = if label.width() > 0 && natural > label.width() {
+                status_without_tail(&full_text).unwrap_or(&full_text)
+            } else {
+                &full_text
+            };
+            applying.set(true);
+            label.set_text(shown);
+            applying.set(false);
+        }
+    });
+    label.connect_map({
+        let refresh = refresh.clone();
+        move |label| {
+            label.add_tick_callback({
+                let refresh = refresh.clone();
+                move |label, _| {
+                    if label.width() <= 0 {
+                        return gtk4::glib::ControlFlow::Continue;
+                    }
+                    refresh();
+                    gtk4::glib::ControlFlow::Break
+                }
+            });
+        }
+    });
+    label.connect_notify_local(Some("width"), {
+        let refresh = refresh.clone();
+        move |_, _| refresh()
+    });
+    label.connect_label_notify({
+        let full = full.clone();
+        let applying = applying.clone();
+        let refresh = refresh.clone();
+        move |label| {
+            if applying.get() {
+                return;
+            }
+            *full.borrow_mut() = label.text().to_string();
+            refresh();
+        }
+    });
+}
+
+fn status_without_tail(status: &str) -> Option<&str> {
+    [" · syncing", " · synced"]
+        .into_iter()
+        .filter_map(|needle| status.find(needle))
+        .min()
+        .map(|index| &status[..index])
+}
+
+fn find_status_label(root: &gtk4::Widget) -> Option<gtk4::Label> {
+    if root.has_css_class("device-card-detail") {
+        return root.clone().downcast::<gtk4::Label>().ok();
+    }
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        if let Some(found) = find_status_label(&widget) {
+            return Some(found);
+        }
+        child = widget.next_sibling();
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::{present_and_remembered, DeviceSection};
     use crate::ui::device_sync_runtime::PlannedSyncPhase;
     use crate::ui::sidebar::sidebar_device_card::tests::view;
     use gtk4::prelude::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mtp_65_status_tail_yields_before_the_activity() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let mut device = view(PlannedSyncPhase::Idle);
+        device.contents_state =
+            reprise_core::device_sync::device_view::DeviceContentsState::Verified;
+        device.last_sync = Some(chrono::Utc::now() - chrono::Duration::minutes(12));
+        let section = super::present_device_section_for_test(&device);
+        let viewport = gtk4::ScrolledWindow::builder()
+            .width_request(150)
+            .propagate_natural_width(false)
+            .child(&section)
+            .build();
+        let window = gtk4::Window::builder()
+            .default_width(150)
+            .default_height(180)
+            .child(&viewport)
+            .build();
+        window.present();
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
+            quit.quit();
+        });
+        main_loop.run();
+        let detail = find_detail(section.upcast_ref()).expect("device status label");
+        assert_eq!(detail.text(), "Up to date");
+        window.close();
+    }
+
+    fn find_detail(root: &gtk4::Widget) -> Option<gtk4::Label> {
+        if root.has_css_class("device-card-detail") {
+            return root.clone().downcast::<gtk4::Label>().ok();
+        }
+        let mut child = root.first_child();
+        while let Some(widget) = child {
+            if let Some(found) = find_detail(&widget) {
+                return Some(found);
+            }
+            child = widget.next_sibling();
+        }
+        None
+    }
 
     #[test]
     fn mtp_50_connected_devices_stand_open_while_remembered_ones_wait_behind_the_heading() {

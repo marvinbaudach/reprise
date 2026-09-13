@@ -469,6 +469,51 @@ fn card_and_snapshot_with(artists: i64) -> (StatsBandsCard, StatsSnapshot) {
     snapshot_card(&conn)
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_24_card_titles_wrap_before_they_cut() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (card, snapshot) = card_and_snapshot_with(5);
+    card.set_data(&snapshot);
+    let window = gtk4::Window::builder()
+        .default_width(820)
+        .default_height(500)
+        .child(card.widget())
+        .build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let scroller = descendants(card.widget().upcast_ref())
+        .into_iter()
+        .find_map(|widget| widget.downcast::<gtk4::ScrolledWindow>().ok())
+        .expect("the top-artist card row scrolls below 900 px");
+    assert!(scroller.hadjustment().upper() > scroller.hadjustment().page_size());
+    for title in descendants(card.widget().upcast_ref())
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Label>().ok())
+        .filter(|label| {
+            label.has_css_class("stats-band-name") || label.has_css_class("stats-band-tile-name")
+        })
+    {
+        assert!(title.wraps());
+        assert_eq!(title.lines(), 2);
+        assert_eq!(title.ellipsize(), gtk4::pango::EllipsizeMode::End);
+    }
+    window.close();
+}
+
+fn descendants(root: &gtk4::Widget) -> Vec<gtk4::Widget> {
+    let mut found = Vec::new();
+    let mut child = root.first_child();
+    while let Some(widget) = child {
+        found.push(widget.clone());
+        found.extend(descendants(&widget));
+        child = widget.next_sibling();
+    }
+    found
+}
+
 fn insert_artist(
     conn: &reprise_core::db::Db,
     id: i64,

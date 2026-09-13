@@ -1115,6 +1115,9 @@ result.
   markup-safe name, selection, last verified sync, and the target size
   projected for the active profile, as well as, during a running sync, a
   progress bar and current smoothed MTP transfer rate.
+- **MTP-65** [active] [gtk] — When the device row is narrower than its natural
+  status text, the trailing "· syncing" or "· synced" detail yields before
+  the leading activity is hidden.
 
 ## F. Settings & modals
 
@@ -4114,6 +4117,9 @@ property is set and yet nothing happens.
   library filtered to the artist on click and on Enter or Space (regular history
   push). Where a group combines several spellings the unification hint from
   STATS-9 is retained; durations follow the compact format from STATS-11.
+- **STATS-24** [active] [gtk] — Top-artist card titles wrap to two lines before
+  ellipsizing. Below 900 px content width, the card row scrolls horizontally
+  instead of squeezing those titles.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;

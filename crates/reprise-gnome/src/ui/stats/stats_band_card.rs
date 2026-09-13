@@ -90,7 +90,10 @@ impl StatsBandCard {
         name_button.add_css_class("stats-band-name");
         name_button.set_halign(gtk4::Align::Start);
         let name = gtk4::Label::new(None);
+        name.add_css_class("stats-band-name");
         name.set_xalign(0.0);
+        name.set_wrap(true);
+        name.set_lines(2);
         name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         name_button.set_child(Some(&name));
         content.append(&name_button);

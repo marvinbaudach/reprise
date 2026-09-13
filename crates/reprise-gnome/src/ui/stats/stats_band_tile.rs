@@ -88,6 +88,8 @@ impl StatsBandTile {
         body.append(&rank);
         let name = label("", "stats-band-tile-name");
         name.set_xalign(0.0);
+        name.set_wrap(true);
+        name.set_lines(2);
         name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         body.append(&name);
         let figures = label("", "stats-item-subtitle");
