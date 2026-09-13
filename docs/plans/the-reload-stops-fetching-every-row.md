@@ -2,7 +2,7 @@
 slug: the-reload-stops-fetching-every-row
 worktree: /home/marvin/Projects/reprise-the-reload-stops-fetching-every-row
 branch: feature/the-reload-stops-fetching-every-row
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-13
 ---
