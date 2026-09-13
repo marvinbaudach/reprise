@@ -2914,6 +2914,9 @@ property is set and yet nothing happens.
   fail to appear is tested for effect (like TIP-1a/2a and SEARCH-2). If an
   interface is hidden in the test build (e.g. `SectionModel` via `cfg`),
   only the E2E evidence counts — "green" is structurally meaningless there.
+- **STYLE-14** [active] [gtk] — Numeric columns are right-aligned; the rating
+  column is wide enough for five stars whenever it is shown; columns collapse
+  in the order Rating, Year, Length, Album.
 ## T. Accessibility & Keyboard
 
 <!-- Section letter: S is the last section assigned on main; T follows

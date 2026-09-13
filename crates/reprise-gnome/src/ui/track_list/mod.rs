@@ -47,6 +47,7 @@ pub(in crate::ui) mod track_cover;
 pub(crate) mod track_list_activation;
 pub(in crate::ui) mod track_list_builder;
 pub(in crate::ui) mod track_list_callbacks;
+mod track_list_column_widths;
 pub(crate) mod track_list_columns;
 mod track_list_context_action_states;
 pub(in crate::ui) mod track_list_context_keys;

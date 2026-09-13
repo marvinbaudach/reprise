@@ -267,7 +267,7 @@ impl CellAlignment {
     fn xalign(self) -> f32 {
         match self {
             Self::Text => 0.0,
-            Self::Numeric => 0.5,
+            Self::Numeric => 1.0,
         }
     }
 
@@ -407,6 +407,9 @@ pub(in crate::ui) fn append_column(
     column.set_sorter(Some(&never_sorts));
 
     column_view.append_column(&column);
+    if sort_id == "play_count" {
+        super::track_list_column_widths::install(column_view);
+    }
     column
 }
 

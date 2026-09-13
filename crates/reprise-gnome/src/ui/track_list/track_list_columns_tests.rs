@@ -216,3 +216,69 @@ fn inst_10_ai_badge_shows_only_for_ai_tracks() {
     assert!(ai_badge_visible(true), "an AI track shows the badge");
     assert!(!ai_badge_visible(false), "a plain track shows no badge");
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_6_the_table_never_overflows_its_viewport() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    for viewport_width in [700, 1_000, 1_600] {
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let columns = super::super::track_list_column_widths::test_columns(&view);
+        super::super::track_list_column_widths::fit(&columns, viewport_width);
+        let scrolled = gtk4::ScrolledWindow::builder()
+            .width_request(viewport_width)
+            .height_request(120)
+            .child(&view)
+            .build();
+        let window = gtk4::Window::builder().child(&scrolled).build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let visible_width: i32 = columns
+            .iter()
+            .filter(|column| column.column.is_visible())
+            .map(|column| column.column.fixed_width())
+            .sum();
+        assert!(visible_width <= viewport_width);
+        assert_eq!(
+            scrolled.hadjustment().upper(),
+            scrolled.hadjustment().page_size()
+        );
+        let visible = |id| {
+            columns
+                .iter()
+                .find(|column| column.id == id)
+                .unwrap()
+                .column
+                .is_visible()
+        };
+        if viewport_width == 700 {
+            assert!(visible("cover"));
+            assert!(visible("title"));
+            assert!(visible("artist"));
+            assert!(!visible("rating"));
+            assert!(!visible("year"));
+            assert!(visible("duration_ms"));
+            assert!(visible("album"));
+        }
+        if viewport_width == 1_600 {
+            assert!(columns.iter().all(|column| column.column.is_visible()));
+            let rating = columns.iter().find(|column| column.id == "rating").unwrap();
+            let stars = gtk4::Label::new(Some("★★★★★"));
+            assert!(
+                rating.column.fixed_width() >= stars.measure(gtk4::Orientation::Horizontal, -1).1
+            );
+            for (id, widest_sample) in [("year", "2025"), ("duration_ms", "12:34")] {
+                let column = columns.iter().find(|column| column.id == id).unwrap();
+                let sample = gtk4::Label::new(Some(widest_sample));
+                assert!(
+                    column.column.fixed_width()
+                        >= sample.measure(gtk4::Orientation::Horizontal, -1).1
+                );
+            }
+        }
+        window.close();
+    }
+}
