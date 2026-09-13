@@ -5,6 +5,7 @@ use std::time::Duration;
 use crate::source_error::{SourceError, SourceErrorKind};
 
 pub mod channel_window;
+mod classify;
 pub mod config;
 pub mod discovery;
 mod download_claims;
@@ -16,7 +17,6 @@ pub mod fill_downloads;
 pub mod http;
 pub mod itunes;
 pub mod itunes_charts;
-mod classify;
 mod media_character;
 pub mod offline_add;
 pub mod pipeline;
@@ -34,8 +34,8 @@ pub mod ytdlp;
 mod ytdlp_download;
 pub mod ytdlp_search;
 
-pub use fill_downloads::{fill_downloads, FillSummary};
 pub use classify::{classify_youtube_episode, needs_classification, EpisodeClassification};
+pub use fill_downloads::{fill_downloads, FillSummary};
 pub use media_character::{character_from_category, MediaCharacter};
 
 #[cfg(test)]

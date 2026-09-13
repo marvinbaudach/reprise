@@ -172,6 +172,14 @@ impl PlayerController {
         let Some(database_path) = self.conn.path() else {
             return;
         };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| {
+                i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
+            });
+        if !podcasts::EpisodeClassification::claim_retry(&self.conn, episode_id, now) {
+            return;
+        }
         let task = crate::ui::one_shot_task::spawn("reprise-youtube-classify", move || {
             let db = Db::open_migrated(Some(&database_path)).map_err(|error| error.to_string())?;
             let config =

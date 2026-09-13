@@ -8,7 +8,7 @@ use std::time::Duration;
 
 const BASE_BACKOFF_SECONDS: u64 = 2;
 const MAX_BACKOFF_SECONDS: u64 = 60;
-const MAX_BACKOFF_ATTEMPTS: u32 = 3;
+pub(crate) const MAX_BACKOFF_ATTEMPTS: u32 = 3;
 
 /// Shared upper bound for feed, search, and provider requests.
 pub const SOURCE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);

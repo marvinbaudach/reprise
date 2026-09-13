@@ -50,6 +50,31 @@ impl YoutubeFetcher for RecordingFetcher {
     }
 }
 
+/// Fails every classification request, so a test can drive the retry path
+/// that a real yt-dlp error or timeout would take.
+#[derive(Default)]
+struct FailingFetcher;
+
+impl YoutubeFetcher for FailingFetcher {
+    fn list(
+        &self,
+        _url: &str,
+        _limit: usize,
+    ) -> Result<crate::podcasts::feed::ParsedFeed, PodcastError> {
+        unreachable!("classification never lists a channel")
+    }
+
+    fn download(&self, _url: &str, _destination: &Path) -> Result<(), PodcastError> {
+        unreachable!("classification never downloads")
+    }
+
+    fn classify(&self, _url: &str) -> Result<EpisodeClassification, PodcastError> {
+        Err(PodcastError::Transport(
+            "simulated worker failure".to_owned(),
+        ))
+    }
+}
+
 fn youtube_episode(db: &Db) -> i64 {
     let subscription_id = add_or_restore(
         db,
@@ -121,7 +146,10 @@ fn ac_26_a_classified_episode_costs_no_request() {
     set_category(&db, episode_id, Some("Education"));
     let fetcher = RecordingFetcher::answering(Some("Music"), Some(93));
 
-    assert_eq!(classify_youtube_episode(&db, &fetcher, episode_id).unwrap(), None);
+    assert_eq!(
+        classify_youtube_episode(&db, &fetcher, episode_id).unwrap(),
+        None
+    );
 
     assert!(
         fetcher.asked.borrow().is_empty(),
@@ -153,7 +181,10 @@ fn ac_26_an_extraction_that_knows_no_category_stores_nothing() {
     let episode_id = youtube_episode(&db);
     let fetcher = RecordingFetcher::answering(None, Some(93));
 
-    assert_eq!(classify_youtube_episode(&db, &fetcher, episode_id).unwrap(), None);
+    assert_eq!(
+        classify_youtube_episode(&db, &fetcher, episode_id).unwrap(),
+        None
+    );
 
     let stored = episode(&db, episode_id).unwrap().unwrap();
     assert_eq!(stored.media_category, None);
@@ -198,8 +229,39 @@ fn ac_26_an_rss_episode_is_never_classified() {
     .episode_id;
     let fetcher = RecordingFetcher::answering(Some("Music"), Some(93));
 
-    assert_eq!(classify_youtube_episode(&db, &fetcher, episode_id).unwrap(), None);
+    assert_eq!(
+        classify_youtube_episode(&db, &fetcher, episode_id).unwrap(),
+        None
+    );
     assert!(fetcher.asked.borrow().is_empty());
+}
+
+/// `AC-26`: the frontend claims the attempt before it ever spawns the
+/// worker (`PlayerController::classify_youtube_episode`); the worker's own
+/// call into `classify_youtube_episode` here is the *same* attempt failing,
+/// not a second one. One real failure must book exactly one attempt.
+#[test]
+fn ac_26_a_claimed_attempt_that_fails_books_exactly_one_attempt() {
+    let db = Db::open_in_memory().unwrap();
+    let episode_id = youtube_episode(&db);
+    let now = super::now_unix();
+
+    assert!(EpisodeClassification::claim_retry(&db, episode_id, now));
+
+    let fetcher = FailingFetcher;
+    assert!(classify_youtube_episode(&db, &fetcher, episode_id).is_err());
+
+    let retry = EpisodeClassification::pending_retry_for_test(&db, episode_id)
+        .expect("a failed attempt stays backed off");
+    assert_eq!(
+        retry.attempt(),
+        1,
+        "the claim's reservation is the only attempt one real failure books"
+    );
+    assert!(
+        retry.retry_at() <= now + 3,
+        "the deadline must stay attempt 1's delay, not attempt 2's"
+    );
 }
 
 #[test]

@@ -137,9 +137,8 @@ fn spectrum_is_on(switches: &Rc<RefCell<Vec<bool>>>) -> bool {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn ac_26_a_resolved_music_category_switches_the_spectrum_on() {
-    if gtk4::init().is_err() {
-        return;
-    }
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK display");
     let (controller, episode_id, switches) = playing_youtube_session(Some("Education"));
     assert!(
         !spectrum_is_on(&switches),
@@ -158,9 +157,8 @@ fn ac_26_a_resolved_music_category_switches_the_spectrum_on() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn ac_26_a_resolved_category_from_a_left_session_moves_nothing() {
-    if gtk4::init().is_err() {
-        return;
-    }
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK display");
     let (controller, episode_id, switches) = playing_youtube_session(Some("Education"));
     let generation = controller.external.borrow().generation;
 
@@ -180,20 +178,21 @@ fn ac_26_a_resolved_category_from_a_left_session_moves_nothing() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn ac_26_a_resolved_speech_category_leaves_the_spectrum_off() {
-    if gtk4::init().is_err() {
-        return;
-    }
-    let (controller, episode_id, switches) = playing_youtube_session(None);
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().expect("GTK display");
+    let (controller, episode_id, switches) = playing_youtube_session(Some("Music"));
+    assert!(
+        spectrum_is_on(&switches),
+        "the fixture must begin with the music spectrum on"
+    );
     let generation = controller.external.borrow().generation;
 
-    controller.apply_resolved_category(
-        generation,
-        episode_id,
-        Some("News & Politics".to_owned()),
-    );
+    controller.apply_resolved_category(generation, episode_id, Some("News & Politics".to_owned()));
 
     assert!(
         !spectrum_is_on(&switches),
         "classifying an episode as speech must not hand it a spectrum"
     );
+    let snapshot = controller.external.borrow().snapshot().unwrap();
+    assert_eq!(snapshot.media_category.as_deref(), Some("News & Politics"));
 }

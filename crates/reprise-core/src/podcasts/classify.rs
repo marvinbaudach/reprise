@@ -24,6 +24,14 @@ pub struct EpisodeClassification {
     pub duration_secs: Option<i64>,
 }
 
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| {
+            i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
+        })
+}
+
 /// Whether `episode` is one this module may spend a request on.
 ///
 /// An empty string counts as unclassified: the download path stores
@@ -51,26 +59,65 @@ pub fn classify_youtube_episode(
         return Err(PipelineError::EpisodeNotFound);
     };
     if !needs_classification(&episode) {
+        EpisodeClassification::clear_retry(db, episode_id);
         return Ok(None);
     }
-    let classification = youtube_fetcher.classify(&episode.audio_url)?;
+    let classification = match youtube_fetcher.classify(&episode.audio_url) {
+        Ok(classification) => classification,
+        Err(error) => {
+            EpisodeClassification::refresh_retry_deadline(db, episode_id, now_unix());
+            return Err(error.into());
+        }
+    };
     let category = classification
         .media_category
         .filter(|category| !category.trim().is_empty());
     let Some(category) = category else {
+        EpisodeClassification::refresh_retry_deadline(db, episode_id, now_unix());
         return Ok(None);
     };
     // The duration rides along because the extraction already carries it and
     // `save_youtube_resolution` only fills a duration that is still unknown.
     // Asking for it and then dropping it would be the wasteful half of a call
     // this module is spending anyway.
-    super::store::save_youtube_resolution(
+    if let Err(error) = super::store::save_youtube_resolution(
         db,
         episode_id,
         classification.duration_secs,
         Some(category.as_str()),
-    )?;
+    ) {
+        EpisodeClassification::refresh_retry_deadline(db, episode_id, now_unix());
+        return Err(error.into());
+    }
+    EpisodeClassification::clear_retry(db, episode_id);
     Ok(Some(category))
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+
+    #[test]
+    fn ac_26_an_empty_classification_waits_for_the_shared_retry_deadline() {
+        let db = Db::open_in_memory().unwrap();
+
+        assert!(EpisodeClassification::claim_retry(&db, 41, 100));
+        assert!(!EpisodeClassification::claim_retry(&db, 41, 100));
+        assert!(!EpisodeClassification::retry_due(&db, 41, 101));
+        assert!(EpisodeClassification::retry_due(&db, 41, 102));
+    }
+
+    #[test]
+    fn ac_26_the_frontend_and_worker_connections_share_the_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("classification.db");
+        let frontend = Db::open_migrated(Some(&path)).unwrap();
+        let worker = Db::open_migrated(Some(&path)).unwrap();
+
+        assert!(EpisodeClassification::claim_retry(&frontend, 42, 200));
+        assert!(!EpisodeClassification::retry_due(&worker, 42, 201));
+        assert!(EpisodeClassification::retry_due(&worker, 42, 202));
+    }
 }
 
 #[cfg(test)]

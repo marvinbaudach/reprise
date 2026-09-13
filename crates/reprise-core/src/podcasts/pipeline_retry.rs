@@ -15,6 +15,7 @@
 
 use std::{
     collections::HashMap,
+    hash::{Hash, Hasher},
     sync::{Mutex, MutexGuard, OnceLock},
 };
 
@@ -54,4 +55,97 @@ pub(super) fn set_retry(key: RetryKey, retry: Option<crate::podcasts::refresh::R
 
 pub(super) fn clear_retry(key: RetryKey) {
     set_retry(key, None);
+}
+
+fn classification_key(db: &crate::db::Db, episode_id: i64) -> RetryKey {
+    let connection = db.path().map_or_else(
+        || std::ptr::from_ref(db).addr(),
+        |path| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            path.hash(&mut hasher);
+            hasher.finish() as usize
+        },
+    );
+    RetryKey {
+        connection,
+        // SQLite episode ids are positive. Their negative namespace cannot
+        // collide with the subscription ids held in the same retry store.
+        subscription_id: episode_id.saturating_neg(),
+    }
+}
+
+impl crate::podcasts::EpisodeClassification {
+    /// Reserves the next classification attempt under the shared source retry
+    /// policy. The frontend calls this before it creates the worker, so a
+    /// replay during an outstanding or backed-off attempt creates no thread,
+    /// database handle, or yt-dlp process.
+    pub fn claim_retry(db: &crate::db::Db, episode_id: i64, now: i64) -> bool {
+        if !Self::retry_due(db, episode_id, now) {
+            return false;
+        }
+        Self::defer_retry(db, episode_id, now);
+        true
+    }
+
+    pub(crate) fn retry_due(db: &crate::db::Db, episode_id: i64, now: i64) -> bool {
+        pending_retry(classification_key(db, episode_id)).is_none_or(|retry| retry.is_due(now))
+    }
+
+    pub(crate) fn defer_retry(db: &crate::db::Db, episode_id: i64, now: i64) {
+        let key = classification_key(db, episode_id);
+        // An empty answer has no provider error of its own, but it is still a
+        // failed classification attempt. Keep it on the same bounded
+        // exponential schedule as transient source failures. Once the shared
+        // schedule reaches its cap, repeat its longest delay instead of
+        // falling back to every play.
+        let attempt = previous_attempt(key).min(crate::source_error::MAX_BACKOFF_ATTEMPTS - 1);
+        let retry = crate::podcasts::refresh::next_retry(
+            &crate::podcasts::PodcastError::Transport(
+                "classification learned no category".to_owned(),
+            ),
+            attempt,
+            now,
+        );
+        set_retry(key, retry);
+    }
+
+    /// Re-anchors a reservation's deadline at the moment the attempt it
+    /// covers actually failed, without booking a second attempt.
+    ///
+    /// The frontend's `claim_retry` bumps and books the attempt optimistically
+    /// — before the worker has even connected — so its deadline is measured
+    /// from claim time, not from failure time. A slow extraction can outlive
+    /// that short first delay and leave the reservation already expired by
+    /// the time the worker actually fails. This keeps the same attempt number
+    /// the claim reserved, but restarts its delay from `now`, so the backoff
+    /// still covers the failure that just happened. A call with no prior
+    /// claim (a caller that skipped `claim_retry`) still gets a first
+    /// reservation instead of silently retrying forever.
+    pub(crate) fn refresh_retry_deadline(db: &crate::db::Db, episode_id: i64, now: i64) {
+        let key = classification_key(db, episode_id);
+        let Some(reserved) = pending_retry(key) else {
+            Self::defer_retry(db, episode_id, now);
+            return;
+        };
+        let retry = crate::podcasts::refresh::next_retry(
+            &crate::podcasts::PodcastError::Transport(
+                "classification learned no category".to_owned(),
+            ),
+            reserved.attempt().saturating_sub(1),
+            now,
+        );
+        set_retry(key, retry);
+    }
+
+    pub(crate) fn clear_retry(db: &crate::db::Db, episode_id: i64) {
+        clear_retry(classification_key(db, episode_id));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_retry_for_test(
+        db: &crate::db::Db,
+        episode_id: i64,
+    ) -> Option<crate::podcasts::refresh::RefreshRetry> {
+        pending_retry(classification_key(db, episode_id))
+    }
 }
