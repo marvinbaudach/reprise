@@ -38,7 +38,6 @@ pub(in crate::ui) enum NavIcon {
     Youtube,
     Radio,
     MyStats,
-    TurnedOff,
 }
 
 impl NavIcon {
@@ -58,7 +57,6 @@ impl NavIcon {
             Self::Podcasts => "audio-input-microphone-symbolic",
             Self::Youtube => "video-x-generic-symbolic",
             Self::Radio => "reprise-radio-symbolic",
-            Self::TurnedOff => "system-shutdown-symbolic",
             Self::MyStats => "reprise-stats-symbolic",
         }
     }

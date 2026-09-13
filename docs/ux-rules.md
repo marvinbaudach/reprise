@@ -251,17 +251,16 @@ result.
   Success removes the row and offers a five-second Undo toast. If the place
   was open, Music becomes selected and the toast names that fallback; Undo
   restores the row and returns there only when this turn-off caused the
-  fallback. Otherwise the current place does not change. While any optional
-  place is off, a dimmed "{n} turned off" action at the end of Library opens
-  Plugins with every disabled module highlighted; it is never a session
-  source. Music, Queue, playlists, smart lists, and My Stats never offer the
-  menu. *Tests:* `nav_16_only_optional_module_rows_offer_turn_off`,
+  fallback. Otherwise the current place does not change. A turned-off place
+  leaves no trace in the sidebar; it comes back through Plugins in
+  Preferences, and a stored session that points at it opens Music instead.
+  Music, Queue, playlists, smart lists, and My Stats never offer the menu.
+  *Tests:* `nav_16_only_optional_module_rows_offer_turn_off`,
   `nav_16_turn_off_dispatches_the_clicked_module_once`,
   `nav_16_module_settings_dispatches_the_clicked_module`,
-  `nav_16_turned_off_row_tracks_every_disabled_optional_module`,
   `nav_16_secondary_click_turns_off_the_row_and_falls_back_to_music`,
   `nav_16_turn_off_posts_undo_and_restores_the_active_module`,
-  `nav_16_turned_off_row_is_not_a_restorable_session_source`.
+  `nav_16_a_turned_off_module_is_not_a_restorable_session_source`.
 - **NAV-17** [active] [gtk] — **A Shift selection starts at an anchor, not at
   the beginning of the list.** The user sets the anchor with the last click
   without Shift. If no such anchor exists after a fresh load, sort change, or
