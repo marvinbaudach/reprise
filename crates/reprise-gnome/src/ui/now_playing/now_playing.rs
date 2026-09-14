@@ -27,6 +27,7 @@ use crate::ui::style::tokens;
 use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
+const FOOTER_MAX_WIDTH_CHARS: i32 = 28;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
@@ -156,7 +157,13 @@ fn build_widgets_for_session(
     list_rule.set_can_target(false);
     list_rule.set_height_request(1);
 
-    let footer = gtk4::Label::new(None);
+    let footer = gtk4::Label::builder()
+        .xalign(0.5)
+        .wrap(false)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .max_width_chars(FOOTER_MAX_WIDTH_CHARS)
+        .hexpand(false)
+        .build();
     footer.add_css_class("reprise-now-playing-footer");
     let footers = Rc::new(RefCell::new(TabFooters {
         up_next: super::up_next_panel::format_up_next_footer(&[]),
