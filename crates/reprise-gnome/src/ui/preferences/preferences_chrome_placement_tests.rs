@@ -481,6 +481,12 @@ fn set_19_pages_scroll_inside_a_short_window() {
     let parent = adw::ApplicationWindow::new(&app);
     parent.set_size_request(900, 720);
     parent.present();
+    settle_layout();
+    assert_eq!(
+        parent.height(),
+        720,
+        "the short-window fixture must actually be allocated at 720 px"
+    );
     crate::ui::style::install();
 
     let pages: std::rc::Rc<dyn Fn(PageId) -> adw::PreferencesPage> = std::rc::Rc::new(|id| {
