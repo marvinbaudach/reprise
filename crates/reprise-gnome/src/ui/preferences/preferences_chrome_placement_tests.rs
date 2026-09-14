@@ -479,9 +479,16 @@ fn set_19_pages_scroll_inside_a_short_window() {
         .build();
     app.register(None::<&gio::Cancellable>).unwrap();
     let parent = adw::ApplicationWindow::new(&app);
-    parent.set_size_request(900, 720);
+    // Without a window manager GTK's client-side shadow consumes five pixels
+    // on each vertical edge. Request the surface size that gives the window
+    // widget the 720 px allocation whose dialog geometry this test exercises.
+    parent.set_default_size(900, 730);
+    parent.set_size_request(900, 730);
     parent.present();
-    settle_layout();
+    let allocated = std::time::Instant::now();
+    while parent.height() != 720 && allocated.elapsed() < std::time::Duration::from_secs(5) {
+        settle_for(std::time::Duration::from_millis(25));
+    }
     assert_eq!(
         parent.height(),
         720,
