@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::gio::prelude::*;
+use gtk4::glib;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_view::columns::{layout, ColumnKey, Layout, Pin};
@@ -19,6 +20,40 @@ pub(in crate::ui) struct TableKeys {
 
 type Labeler<K> = Rc<dyn Fn(K) -> String>;
 type WidthPolicy<K> = Rc<dyn Fn(K) -> i32>;
+
+struct PreferredVisibility {
+    column: glib::WeakRef<gtk4::ColumnViewColumn>,
+    visible: bool,
+}
+
+thread_local! {
+    static PREFERRED_VISIBILITY: RefCell<HashMap<usize, PreferredVisibility>> =
+        RefCell::new(HashMap::new());
+}
+
+fn remember_preferred_visibility(column: &gtk4::ColumnViewColumn, visible: bool) {
+    PREFERRED_VISIBILITY.with(|preferences| {
+        let mut preferences = preferences.borrow_mut();
+        preferences.retain(|_, preference| preference.column.upgrade().is_some());
+        preferences.insert(
+            column.as_ptr() as usize,
+            PreferredVisibility {
+                column: column.downgrade(),
+                visible,
+            },
+        );
+    });
+}
+
+/// Returns the latest visibility explicitly applied by a generic table
+/// registry, without making responsive consumers infer intent from GTK state.
+pub(in crate::ui) fn preferred_visibility(column: &gtk4::ColumnViewColumn) -> Option<bool> {
+    PREFERRED_VISIBILITY.with(|preferences| {
+        let preferences = preferences.borrow();
+        let preference = preferences.get(&(column.as_ptr() as usize))?;
+        (preference.column.upgrade().as_ref() == Some(column)).then_some(preference.visible)
+    })
+}
 
 pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
     view: &gtk4::ColumnView,
@@ -147,11 +182,15 @@ impl<K: ColumnKey> ColumnRegistry<K> {
             .and_then(layout::parse::<K>)
             .unwrap_or_default();
         let canonical = layout::serialize(&layout);
+        let columns = columns.into_iter().collect::<HashMap<_, _>>();
+        for (key, column) in &columns {
+            remember_preferred_visibility(column, layout.visible.contains(key));
+        }
         let registry = Rc::new(Self {
             view: view.clone(),
             conn,
             keys,
-            columns: columns.into_iter().collect(),
+            columns,
             syncing_order: Rc::new(Cell::new(false)),
             syncing_width: Rc::new(Cell::new(false)),
             current_layout: RefCell::new(layout),
@@ -174,7 +213,9 @@ impl<K: ColumnKey> ColumnRegistry<K> {
         // Visibility is a property flip, never a removal: selection,
         // horizontal scroll and the active sort widget remain intact.
         for (key, column) in &self.columns {
-            column.set_visible(layout.visible.contains(key));
+            let visible = layout.visible.contains(key);
+            remember_preferred_visibility(column, visible);
+            column.set_visible(visible);
         }
         match sort_fallback {
             SortFallback::Keep => {}

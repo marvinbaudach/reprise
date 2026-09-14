@@ -29,9 +29,10 @@ fn width(id: &str) -> Option<i32> {
 
 pub(super) fn fit(columns: &[FittedColumn], viewport_width: i32) {
     for column in columns {
-        let expected_visible = column.preferred_visible.get() && !column.collapsed.get();
-        if column.column.is_visible() != expected_visible {
-            column.preferred_visible.set(column.column.is_visible());
+        if let Some(preferred_visible) =
+            crate::ui::table_columns::registry::preferred_visibility(&column.column)
+        {
+            column.preferred_visible.set(preferred_visible);
         }
         column.collapsed.set(false);
         column.column.set_visible(column.preferred_visible.get());

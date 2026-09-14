@@ -387,3 +387,48 @@ fn style_6_remapping_does_not_freeze_a_responsive_collapse() {
     );
     wide_window.close();
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn hiding_an_auto_collapsed_column_survives_widening() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    let registry = crate::ui::table_columns::registry::ColumnRegistry::new(
+        &view,
+        Rc::new(crate::test_db::open().unwrap()),
+        crate::ui::table_columns::registry::TableKeys {
+            layout: "test.collapsed-visibility.layout",
+            widths: "test.collapsed-visibility.widths",
+        },
+        columns
+            .iter()
+            .map(|column| {
+                let id = reprise_view::columns::ColumnId::from_sort_field(column.id)
+                    .or_else(|| reprise_view::columns::ColumnId::parse(column.id))
+                    .unwrap();
+                (id, column.column.clone())
+            })
+            .collect(),
+    );
+    let rating = columns.iter().find(|column| column.id == "rating").unwrap();
+
+    super::super::track_list_column_widths::fit(&columns, 700);
+    assert!(
+        !rating.column.is_visible(),
+        "the narrow viewport must auto-collapse Rating before the preference changes"
+    );
+
+    crate::ui::table_columns::EditorModel::set_visible(
+        registry.as_ref(),
+        reprise_view::columns::ColumnId::Rating.as_str(),
+        false,
+    );
+    super::super::track_list_column_widths::fit(&columns, 1_600);
+
+    assert!(
+        !rating.column.is_visible(),
+        "a user-hidden Rating column must not return when the viewport widens"
+    );
+}
