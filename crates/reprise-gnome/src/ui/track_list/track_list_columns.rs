@@ -267,13 +267,23 @@ impl CellAlignment {
     fn xalign(self) -> f32 {
         match self {
             Self::Text => 0.0,
-            Self::Numeric => 0.5,
+            Self::Numeric => 1.0,
         }
     }
 
     fn uses_tabular_figures(self) -> bool {
         matches!(self, Self::Numeric)
     }
+}
+
+fn build_text_cell_label(alignment: CellAlignment) -> gtk4::Label {
+    let label = gtk4::Label::new(None);
+    track_list_row_interaction::expand_to_cell(&label);
+    label.set_xalign(alignment.xalign());
+    if alignment.uses_tabular_figures() {
+        label.add_css_class("numeric");
+    }
+    label
 }
 
 #[cfg(test)]
@@ -283,7 +293,7 @@ mod cell_alignment_tests;
 /// Builds one `ColumnViewColumn` bound to a `SignalListItemFactory` that
 /// renders a single `gtk::Label` per cell. `sort_id` is a whitelisted
 /// `queries` sort field name, stashed on the column via `set_id` so header
-/// clicks can be mapped back to it. Numeric alignment centers the value and
+/// clicks can be mapped back to it. Numeric alignment right-aligns the value and
 /// marks the label with the "numeric" style class for tabular figures. Returns
 /// the built column so `TrackList::new` can set the initial sort indicator
 /// on the artist column. `shared`/`column_view` are threaded through to
@@ -310,12 +320,7 @@ pub(in crate::ui) fn append_column(
             tracing::warn!("track list column setup: object is not a ListItem");
             return;
         };
-        let label = gtk4::Label::new(None);
-        track_list_row_interaction::expand_to_cell(&label);
-        label.set_xalign(alignment.xalign());
-        if alignment.uses_tabular_figures() {
-            label.add_css_class("numeric");
-        }
+        let label = build_text_cell_label(alignment);
         track_list_context_menu::wire_context_menu_gesture(
             &label,
             item,
@@ -407,6 +412,9 @@ pub(in crate::ui) fn append_column(
     column.set_sorter(Some(&never_sorts));
 
     column_view.append_column(&column);
+    if sort_id == "play_count" {
+        super::track_list_column_widths::install(column_view);
+    }
     column
 }
 

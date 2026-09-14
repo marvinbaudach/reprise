@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use crate::ui::first_run::FirstRunDecision;
 
-const MIN_WIDTH: i32 = 600;
-const MIN_HEIGHT: i32 = 400;
+pub(super) const MIN_WIDTH: i32 = 600;
+pub(super) const MIN_HEIGHT: i32 = 400;
 
 pub(super) struct Bootstrap {
     pub window: adw::ApplicationWindow,

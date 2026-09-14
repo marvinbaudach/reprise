@@ -32,7 +32,10 @@ impl LibraryPlayerBarShell {
 
         let bar_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         bar_box.set_hexpand(true);
+        bar_box.set_vexpand(false);
         if let Some(player_bar) = player_bar {
+            player_bar.set_vexpand(false);
+            player_bar.set_valign(gtk4::Align::Start);
             bar_box.append(player_bar);
         }
 

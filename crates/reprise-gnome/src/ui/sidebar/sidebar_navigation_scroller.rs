@@ -3,10 +3,23 @@
 
 use gtk4::prelude::*;
 
-pub(super) fn build_navigation_scroller(listbox: &gtk4::ListBox) -> gtk4::ScrolledWindow {
+const LIBRARY_HEADING_HEIGHT: i32 = 36;
+const LIBRARY_ROW_HEIGHT: i32 = 38;
+const LIBRARY_ROW_COUNT: i32 = 5;
+const LIBRARY_BLOCK_MIN_HEIGHT: i32 =
+    LIBRARY_HEADING_HEIGHT + LIBRARY_ROW_HEIGHT * LIBRARY_ROW_COUNT;
+
+pub(super) fn build_navigation_scroller(
+    listbox: &gtk4::ListBox,
+    device_section: &impl IsA<gtk4::Widget>,
+) -> gtk4::ScrolledWindow {
+    let places = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    places.append(listbox);
+    places.append(device_section);
     let scrolled = gtk4::ScrolledWindow::builder()
-        .child(listbox)
+        .child(&places)
         .vexpand(true)
+        .min_content_height(LIBRARY_BLOCK_MIN_HEIGHT)
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
         .build();
@@ -34,6 +47,22 @@ pub(super) fn build_navigation_scroller(listbox: &gtk4::ListBox) -> gtk4::Scroll
             update_navigation_scrollbar(&scrolled, &adjustment);
         }
     });
+    // input-parity: ACC-8 keyboard=scrolled-window-navigation
+    let scroll = gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
+    scroll.connect_scroll({
+        let adjustment = adjustment.clone();
+        move |_, _, dy| {
+            let step = if dy.abs() < f64::EPSILON {
+                0.0
+            } else {
+                adjustment.step_increment().max(24.0) * dy.signum()
+            };
+            let maximum = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+            adjustment.set_value((adjustment.value() + step).clamp(adjustment.lower(), maximum));
+            gtk4::glib::Propagation::Stop
+        }
+    });
+    scrolled.add_controller(scroll);
     update_navigation_scrollbar(&scrolled, &adjustment);
     scrolled
 }

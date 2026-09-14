@@ -8,20 +8,15 @@ use super::sidebar_issues_section::build_issues_section;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SidebarRootChild {
     Navigation,
-    Activity,
     Issues,
 }
 
-pub(super) fn sidebar_root_order() -> [SidebarRootChild; 3] {
-    [
-        SidebarRootChild::Navigation,
-        SidebarRootChild::Activity,
-        SidebarRootChild::Issues,
-    ]
+pub(super) fn sidebar_root_order() -> [SidebarRootChild; 2] {
+    [SidebarRootChild::Navigation, SidebarRootChild::Issues]
 }
 
-/// Assembles the scrolling navigation above the transient activity slot and
-/// keeps the issues list pinned to the bottom edge (FB-2a).
+/// Assembles the scrolling navigation above the issues and running-job region.
+/// Resting device state is already part of `scrolled` (NAV-20).
 pub(super) fn build_root(
     scrolled: &gtk4::ScrolledWindow,
     activity_slot: &SidebarActivitySlot,
@@ -33,7 +28,6 @@ pub(super) fn build_root(
     for child in sidebar_root_order() {
         match child {
             SidebarRootChild::Navigation => root.append(scrolled),
-            SidebarRootChild::Activity => root.append(activity_slot.widget()),
             SidebarRootChild::Issues => root.append(&issues_section),
         }
     }

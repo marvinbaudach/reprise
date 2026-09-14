@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use gtk4::prelude::*;
 
 pub(super) struct SidebarActivitySlot {
-    /// Persistent device state remains independent from Issues/progress.
+    /// Resting device state scrolls with the places (NAV-20); only progress stays pinned.
     root: gtk4::Box,
     /// Long-running cards, pinned below the Issues block (FB-8, amended).
     progress_root: gtk4::Box,
@@ -27,8 +27,15 @@ pub(super) struct SidebarActivitySlot {
 impl SidebarActivitySlot {
     pub(super) fn new() -> Self {
         let progress_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        // Accept the parent's spare allocation so End alignment can dock every
+        // card at one bottom edge; non-Fill alignment keeps the root itself at
+        // its painted natural height (DOC-5e and FB-8).
+        progress_root.set_vexpand(true);
+        progress_root.set_valign(gtk4::Align::End);
         let progress_spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        progress_spacer.set_vexpand(true);
+        // This is an ordering anchor only. It must never absorb height that a
+        // running card does not paint (FB-8).
+        progress_spacer.set_vexpand(false);
         progress_root.append(&progress_spacer);
         Self {
             root: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
@@ -364,7 +371,10 @@ mod tests {
             .first_child()
             .expect("progress root must reserve flexible space above its cards");
         assert!(spacer.is_visible());
-        assert!(spacer.vexpands());
+        assert!(
+            !spacer.vexpands(),
+            "the spacer must not claim height that the running cards do not paint"
+        );
         assert_eq!(spacer.next_sibling().as_ref(), Some(scan.upcast_ref()));
         assert_eq!(
             slot.progress_widget().last_child().as_ref(),

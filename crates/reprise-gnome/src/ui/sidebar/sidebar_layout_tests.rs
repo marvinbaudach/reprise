@@ -226,14 +226,6 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
     sidebar.append_doctor_card(&doctor);
     assert!(!relink.is_visible());
     assert!(!doctor.is_visible());
-    // FB-8, amended: the cards no longer occupy a stack page of their own, so
-    // the progress root does not have to fight for an allocation — the bottom
-    // region is what hugs the sidebar's bottom edge, with the Issues block above
-    // the cards and both visible at once.
-    assert!(
-        !sidebar.activity_slot.progress_widget().vexpands(),
-        "the progress root rides along with the bottom region instead of expanding"
-    );
     let root = sidebar.widget();
     let page = adw::NavigationPage::builder()
         .title("Library")
@@ -266,6 +258,11 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
         .widget()
         .compute_bounds(root)
         .expect("scanner root bounds");
+    let progress_bounds = sidebar
+        .activity_slot
+        .progress_widget()
+        .compute_bounds(root)
+        .expect("progress root bounds");
     let scanner_bottom = scanner_bounds.y() + scanner_bounds.height();
     assert_eq!(page.height(), split.height());
     assert_eq!(root.height(), page.height());
@@ -279,22 +276,27 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
         "scanner bottom={scanner_bottom}, root height={}",
         root.height()
     );
+    assert_eq!(
+        progress_bounds.height(),
+        scanner_bounds.height(),
+        "the progress root must paint only the visible card height"
+    );
     window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_8_idle_job_cards_leave_devices_on_sidebar_floor() {
-    assert_idle_job_cards_leave_devices_on_sidebar_floor(false);
+fn fb_8_idle_job_cards_leave_devices_in_scrolling_places() {
+    assert_idle_job_cards_leave_devices_in_scrolling_places(false);
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn fb_8_drifted_idle_job_card_leaves_devices_on_sidebar_floor() {
-    assert_idle_job_cards_leave_devices_on_sidebar_floor(true);
+fn fb_8_drifted_idle_job_card_leaves_devices_in_scrolling_places() {
+    assert_idle_job_cards_leave_devices_in_scrolling_places(true);
 }
 
-fn assert_idle_job_cards_leave_devices_on_sidebar_floor(force_scan_visible: bool) {
+fn assert_idle_job_cards_leave_devices_in_scrolling_places(force_scan_visible: bool) {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     libadwaita::init().unwrap();
     crate::ui::style::install();
@@ -337,14 +339,24 @@ fn assert_idle_job_cards_leave_devices_on_sidebar_floor(force_scan_visible: bool
         0,
         "three idle job cards must leave the bottom region at 0px"
     );
-    let devices = device_section
-        .compute_bounds(root)
-        .expect("the visible Devices section is allocated");
-    let devices_bottom = devices.y() + devices.height() + device_section.margin_bottom() as f32;
+    let scrolled = root
+        .first_child()
+        .and_downcast::<gtk4::ScrolledWindow>()
+        .expect("the navigation scroller leads the sidebar");
     assert!(
-        (devices_bottom - root.height() as f32).abs() < 1.0,
-        "Devices bottom plus margin={devices_bottom}, root height={}",
-        root.height()
+        device_section.is_ancestor(&scrolled),
+        "idle cards must not pull Devices out of the scrolling places"
+    );
+    let adjustment = scrolled.vadjustment();
+    adjustment.set_value(adjustment.upper() - adjustment.page_size());
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(50));
+    let devices = device_section
+        .compute_bounds(&scrolled)
+        .expect("the visible Devices section is allocated");
+    assert!(
+        devices.y() < scrolled.height() as f32
+            && devices.y() + devices.height() + device_section.margin_bottom() as f32 > 0.0,
+        "Devices must be reachable at the bottom of the scrolling places"
     );
 
     window.close();
@@ -476,6 +488,176 @@ fn diagnostic_job_card(title: &str, carries_open_action: bool) -> gtk4::Revealer
 
 fn drain_display_events() {
     while gtk4::glib::MainContext::default().iteration(false) {}
+}
+
+fn sidebar_geometry_fixture() -> (Sidebar, adw::ApplicationWindow, gtk4::Box, gtk4::Revealer) {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::library::playlists::create(&conn, "Road trip").unwrap();
+    for index in 0..6 {
+        reprise_core::library::playlists::create_smart(
+            &conn,
+            &format!("Smart {index}"),
+            "[]",
+            "title",
+            "asc",
+            None,
+        )
+        .unwrap();
+    }
+
+    let window = adw::ApplicationWindow::builder()
+        .default_width(240)
+        .default_height(660)
+        .build();
+    let sidebar = Sidebar::new(conn, &window, || 0);
+    sidebar.widget().set_size_request(240, -1);
+
+    let device = crate::ui::sidebar::sidebar_device_card::tests::view(
+        crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+    );
+    let device_section =
+        crate::ui::sidebar::sidebar_device_section::present_device_section_for_test(&device);
+    sidebar.activity_slot.set_device_section(&device_section);
+
+    let issue = sidebar_presentation::build_issue_nav_row(
+        "Missing files",
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
+    );
+    sidebar.shared.issues_listbox.append(&issue);
+    sidebar.shared.issues_listbox.set_visible(true);
+
+    let active = diagnostic_job_card("Checking tracks…", false);
+    sidebar.append_doctor_card(&active);
+    active.set_reveal_child(true);
+    let finished = diagnostic_job_card("Finished", false);
+    sidebar.append_relink_card(&finished);
+    finished.set_reveal_child(false);
+
+    window.set_content(Some(sidebar.widget()));
+    window.present();
+    drain_display_events();
+    (sidebar, window, device_section, active)
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_8_pinned_block_holds_only_what_it_paints() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    libadwaita::init().unwrap();
+    crate::ui::style::install();
+    let (sidebar, window, _device_section, _active) = sidebar_geometry_fixture();
+    let root = sidebar.widget();
+    let scrolled = root
+        .first_child()
+        .and_downcast::<gtk4::ScrolledWindow>()
+        .expect("navigation scroller leads the sidebar");
+    let pinned = root.last_child().expect("pinned region ends the sidebar");
+
+    let visible_natural_height: i32 =
+        std::iter::successors(pinned.first_child(), gtk4::prelude::WidgetExt::next_sibling)
+            .filter(gtk4::prelude::WidgetExt::is_visible)
+            .map(|child| child.measure(gtk4::Orientation::Vertical, root.width()).1)
+            .sum();
+    assert_eq!(pinned.height(), visible_natural_height);
+
+    let pinned_top = pinned
+        .compute_bounds(root)
+        .expect("pinned region bounds")
+        .y();
+    let viewport_bottom = scrolled
+        .compute_bounds(root)
+        .expect("navigation viewport bounds")
+        .y()
+        + scrolled.height() as f32;
+    assert!(viewport_bottom <= pinned_top + 1.0);
+    let last_visible_row = (0..)
+        .map_while(|index| sidebar.shared.listbox.row_at_index(index))
+        .filter_map(|row| row.compute_bounds(root).map(|bounds| (row, bounds)))
+        .filter(|(_, bounds)| bounds.y() + bounds.height() <= viewport_bottom + 1.0)
+        .max_by(|(_, left), (_, right)| left.y().total_cmp(&right.y()))
+        .expect("at least one complete navigation row fits in the viewport");
+    assert!(
+        last_visible_row.1.y() + last_visible_row.1.height() <= pinned_top + 1.0,
+        "the last visible navigation row must end before the pinned region: row={:?}, pinned_top={pinned_top}",
+        last_visible_row.1
+    );
+
+    let adjustment = scrolled.vadjustment();
+    assert!(adjustment.upper() > adjustment.page_size());
+    assert!(scrolled.vscrollbar().is_visible());
+    assert!(scrolled.vscrollbar().can_target());
+    adjustment.set_value(adjustment.upper() - adjustment.page_size());
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(50));
+    let stats = find_row(
+        &sidebar.shared,
+        &reprise_core::view_source::ViewSource::MyStats,
+    )
+    .expect("My Stats row");
+    let stats_bounds = stats
+        .compute_bounds(&scrolled)
+        .expect("My Stats must intersect the viewport after scrolling");
+    assert!(
+        stats_bounds.y() < scrolled.height() as f32
+            && stats_bounds.y() + stats_bounds.height() > 0.0,
+        "My Stats bounds {:?} do not intersect the {}px viewport at adjustment {} of {}",
+        stats_bounds,
+        scrolled.height(),
+        adjustment.value(),
+        adjustment.upper()
+    );
+
+    adjustment.set_value(0.0);
+    let controllers = scrolled.observe_controllers();
+    let controller = (0..controllers.n_items())
+        .find_map(|index| {
+            controllers
+                .item(index)?
+                .downcast::<gtk4::EventControllerScroll>()
+                .ok()
+        })
+        .expect("the navigation scroller exposes a scroll controller");
+    assert!(controller.emit_by_name::<bool>("scroll", &[&0.0_f64, &1.0_f64]));
+    drain_display_events();
+    assert!(
+        adjustment.value() > 0.0,
+        "scroll input must move the viewport"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nav_20_devices_scrolls_and_library_keeps_its_floor() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    libadwaita::init().unwrap();
+    crate::ui::style::install();
+    let (sidebar, window, device_section, _active) = sidebar_geometry_fixture();
+    let root = sidebar.widget();
+    let scrolled = root
+        .first_child()
+        .and_downcast::<gtk4::ScrolledWindow>()
+        .expect("navigation scroller leads the sidebar");
+    assert!(scrolled.min_content_height() > 0);
+    assert!(
+        device_section.is_ancestor(&scrolled),
+        "resting device status must be part of the scrolling places"
+    );
+
+    let library_heading = sidebar.shared.listbox.row_at_index(0).unwrap();
+    let queue = find_row(
+        &sidebar.shared,
+        &reprise_core::view_source::ViewSource::Queue,
+    )
+    .unwrap();
+    let library_floor = queue.compute_bounds(&sidebar.shared.listbox).unwrap().y()
+        + queue.height() as f32
+        - library_heading
+            .compute_bounds(&sidebar.shared.listbox)
+            .unwrap()
+            .y();
+    assert!(scrolled.height() as f32 >= library_floor);
+    window.close();
 }
 
 fn assert_card_below_issues(sidebar: &Sidebar, card: &impl IsA<gtk4::Widget>, kind: &str) {

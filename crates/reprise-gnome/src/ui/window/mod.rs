@@ -26,6 +26,8 @@ mod window_content_pages;
 pub(in crate::ui) mod window_decoration_strings;
 pub(in crate::ui) mod window_decorations;
 mod window_header;
+#[cfg(test)]
+mod window_layout_tests;
 pub(in crate::ui) mod window_navigation;
 pub(in crate::ui) mod window_now_playing_wiring;
 #[cfg(test)]

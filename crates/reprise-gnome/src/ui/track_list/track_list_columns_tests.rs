@@ -216,3 +216,219 @@ fn inst_10_ai_badge_shows_only_for_ai_tracks() {
     assert!(ai_badge_visible(true), "an AI track shows the badge");
     assert!(!ai_badge_visible(false), "a plain track shows no badge");
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_6_the_table_never_overflows_its_viewport() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    for viewport_width in [700, 1_000, 1_600] {
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let columns = super::super::track_list_column_widths::test_columns(&view);
+        for (column, width) in columns.iter().zip([41, 161, 201, 221, 65, 73, 89]) {
+            column.column.set_fixed_width(width);
+            column.column.set_expand(column.id == "title");
+        }
+        let widths_before = columns
+            .iter()
+            .map(|column| column.column.fixed_width())
+            .collect::<Vec<_>>();
+        let expands_before = columns
+            .iter()
+            .map(|column| column.column.expands())
+            .collect::<Vec<_>>();
+        super::super::track_list_column_widths::fit(&columns, viewport_width);
+        assert_eq!(
+            columns
+                .iter()
+                .map(|column| column.column.fixed_width())
+                .collect::<Vec<_>>(),
+            widths_before,
+            "responsive fitting must preserve registry-owned widths"
+        );
+        assert_eq!(
+            columns
+                .iter()
+                .map(|column| column.column.expands())
+                .collect::<Vec<_>>(),
+            expands_before,
+            "responsive fitting must preserve the registry-owned filler"
+        );
+        let scrolled = gtk4::ScrolledWindow::builder()
+            .width_request(viewport_width)
+            .height_request(120)
+            .child(&view)
+            .build();
+        let window = gtk4::Window::builder().child(&scrolled).build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let visible_width: i32 = columns
+            .iter()
+            .filter(|column| column.column.is_visible())
+            .map(|column| column.column.fixed_width())
+            .sum();
+        assert!(visible_width <= viewport_width);
+        assert_eq!(
+            scrolled.hadjustment().upper(),
+            scrolled.hadjustment().page_size()
+        );
+        let visible = |id| {
+            columns
+                .iter()
+                .find(|column| column.id == id)
+                .unwrap()
+                .column
+                .is_visible()
+        };
+        if viewport_width == 700 {
+            assert!(visible("cover"));
+            assert!(visible("title"));
+            assert!(visible("artist"));
+            assert!(!visible("rating"));
+            assert!(!visible("year"));
+            assert!(visible("duration_ms"));
+            assert!(visible("album"));
+        }
+        if viewport_width == 1_600 {
+            assert!(columns.iter().all(|column| column.column.is_visible()));
+            let rating = columns.iter().find(|column| column.id == "rating").unwrap();
+            let stars = gtk4::Label::new(Some("★★★★★"));
+            assert!(
+                rating.column.fixed_width() >= stars.measure(gtk4::Orientation::Horizontal, -1).1
+            );
+            for (id, widest_sample) in [("year", "2025"), ("duration_ms", "12:34")] {
+                let column = columns.iter().find(|column| column.id == id).unwrap();
+                let sample = gtk4::Label::new(Some(widest_sample));
+                assert!(
+                    column.column.fixed_width()
+                        >= sample.measure(gtk4::Orientation::Horizontal, -1).1
+                );
+            }
+        }
+        window.close();
+    }
+
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    let registry = crate::ui::table_columns::registry::ColumnRegistry::new(
+        &view,
+        Rc::new(crate::test_db::open().unwrap()),
+        crate::ui::table_columns::registry::TableKeys {
+            layout: reprise_core::library::settings::COLUMN_LAYOUT_KEY,
+            widths: reprise_core::library::settings::COLUMN_WIDTHS_KEY,
+        },
+        columns
+            .iter()
+            .map(|column| {
+                let id = reprise_view::columns::ColumnId::from_sort_field(column.id)
+                    .or_else(|| reprise_view::columns::ColumnId::parse(column.id))
+                    .unwrap();
+                (id, column.column.clone())
+            })
+            .collect(),
+    );
+    super::super::track_list_column_widths::fit(&columns, 1_600);
+    let album = columns.iter().find(|column| column.id == "album").unwrap();
+    let hidden_album = reprise_view::columns::layout::set_visible(
+        &registry.layout(),
+        reprise_view::columns::ColumnId::Album,
+        false,
+    );
+    registry.apply(&hidden_album);
+    super::super::track_list_column_widths::fit(&columns, 700);
+    super::super::track_list_column_widths::fit(&columns, 1_600);
+    assert!(
+        !album.column.is_visible(),
+        "a registry-hidden column must stay hidden when the viewport changes"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_6_remapping_does_not_freeze_a_responsive_collapse() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    super::super::track_list_column_widths::install(&view);
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(700)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(columns.iter().any(|column| !column.column.is_visible()));
+
+    window.set_child(None::<&gtk4::Widget>);
+    window.close();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    scrolled.set_width_request(-1);
+    let wide_window = gtk4::Window::builder()
+        .width_request(1_600)
+        .height_request(120)
+        .child(&scrolled)
+        .build();
+    wide_window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(
+        columns.iter().all(|column| column.column.is_visible()),
+        "a remap while narrow must not make responsive hiding permanent; view width={}, hidden={:?}",
+        view.width(),
+        columns
+            .iter()
+            .filter(|column| !column.column.is_visible())
+            .map(|column| column.id)
+            .collect::<Vec<_>>()
+    );
+    wide_window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn hiding_an_auto_collapsed_column_survives_widening() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    let registry = crate::ui::table_columns::registry::ColumnRegistry::new(
+        &view,
+        Rc::new(crate::test_db::open().unwrap()),
+        crate::ui::table_columns::registry::TableKeys {
+            layout: "test.collapsed-visibility.layout",
+            widths: "test.collapsed-visibility.widths",
+        },
+        columns
+            .iter()
+            .map(|column| {
+                let id = reprise_view::columns::ColumnId::from_sort_field(column.id)
+                    .or_else(|| reprise_view::columns::ColumnId::parse(column.id))
+                    .unwrap();
+                (id, column.column.clone())
+            })
+            .collect(),
+    );
+    let rating = columns.iter().find(|column| column.id == "rating").unwrap();
+
+    super::super::track_list_column_widths::fit(&columns, 700);
+    assert!(
+        !rating.column.is_visible(),
+        "the narrow viewport must auto-collapse Rating before the preference changes"
+    );
+
+    crate::ui::table_columns::EditorModel::set_visible(
+        registry.as_ref(),
+        reprise_view::columns::ColumnId::Rating.as_str(),
+        false,
+    );
+    super::super::track_list_column_widths::fit(&columns, 1_600);
+
+    assert!(
+        !rating.column.is_visible(),
+        "a user-hidden Rating column must not return when the viewport widens"
+    );
+}

@@ -284,6 +284,9 @@ result.
   visible, activating **any** source entry routes into it — including the
   source that was last visible (BROWSE-3); activating the entry of the already
   visible placeless view does nothing.
+- **NAV-20** [active] [gtk] — The navigation list never yields below its
+  LIBRARY block. DEVICES scrolls with the places. ISSUES and running cards stay
+  pinned and hold exactly the height they paint.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -1112,6 +1115,9 @@ result.
   markup-safe name, selection, last verified sync, and the target size
   projected for the active profile, as well as, during a running sync, a
   progress bar and current smoothed MTP transfer rate.
+- **MTP-65** [active] [gtk] — When the device row is narrower than its natural
+  status text, the trailing "· syncing" or "· synced" detail yields before
+  the leading activity is hidden.
 
 ## F. Settings & modals
 
@@ -1313,6 +1319,9 @@ result.
   curve remains stored and labels the row “Custom”; it never becomes a menu
   entry. The profile list is not enumerated anywhere.
 
+- **SET-19** [active] [gtk] — Preferences pages scroll inside a short window;
+  the dialog stays within a 720 px window and every page reaches its last row.
+
 ## G. Feedback vocabulary
 
 - **SET-18** [active] [gtk] — The Preferences dialog's head carries the page
@@ -1408,8 +1417,8 @@ result.
   occupy no space; only active or still-fading-out cards take part in
   the layout. The bottom edge of the visible card block sits directly
   above the player bar, while all free sidebar height stays above the
-  block. Persistent device status remains visible independently of
-  this.
+  block. Resting device status scrolls with the places; a running sync card
+  stays pinned.
   *Amended 2026-08-07.* Until then a visible card **replaced** the whole
   Issues block. That made starting any scan take the `ISSUES` section away,
   including the Library Doctor's own result row — so the entry that says
@@ -2911,6 +2920,9 @@ property is set and yet nothing happens.
   fail to appear is tested for effect (like TIP-1a/2a and SEARCH-2). If an
   interface is hidden in the test build (e.g. `SectionModel` via `cfg`),
   only the E2E evidence counts — "green" is structurally meaningless there.
+- **STYLE-14** [active] [gtk] — Numeric columns are right-aligned; the rating
+  column is wide enough for five stars whenever it is shown; columns collapse
+  in the order Rating, Year, Length, Album.
 ## T. Accessibility & Keyboard
 
 <!-- Section letter: S is the last section assigned on main; T follows
@@ -3402,7 +3414,8 @@ property is set and yet nothing happens.
   and volume lie entirely within their allocation. Long titles and artists
   ellipsize within the left metadata zone and never push transport or
   waveform out of the window center. Scrollable content gives up space,
-  not the player bar.
+  not the player bar. At the enforced 600 × 400 minimum, the structural
+  player bar's bounds lie inside the window at its natural height.
 - **STYLE-6** [active] [gtk] — On strong horizontal shrinking, the track
   table temporarily collapses secondary visible columns; cover, title, and
   artist stay visible. This collapsing changes neither stored visibility,
@@ -4105,6 +4118,9 @@ property is set and yet nothing happens.
   library filtered to the artist on click and on Enter or Space (regular history
   push). Where a group combines several spellings the unification hint from
   STATS-9 is retained; durations follow the compact format from STATS-11.
+- **STATS-24** [active] [gtk] — Top-artist card titles wrap to two lines before
+  ellipsizing. Below 900 px content width, the card row scrolls horizontally
+  instead of squeezing those titles.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;
