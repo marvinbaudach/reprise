@@ -226,14 +226,6 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
     sidebar.append_doctor_card(&doctor);
     assert!(!relink.is_visible());
     assert!(!doctor.is_visible());
-    // FB-8, amended: the cards no longer occupy a stack page of their own, so
-    // the progress root does not have to fight for an allocation — the bottom
-    // region is what hugs the sidebar's bottom edge, with the Issues block above
-    // the cards and both visible at once.
-    assert!(
-        !sidebar.activity_slot.progress_widget().vexpands(),
-        "the progress root rides along with the bottom region instead of expanding"
-    );
     let root = sidebar.widget();
     let page = adw::NavigationPage::builder()
         .title("Library")
@@ -266,6 +258,11 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
         .widget()
         .compute_bounds(root)
         .expect("scanner root bounds");
+    let progress_bounds = sidebar
+        .activity_slot
+        .progress_widget()
+        .compute_bounds(root)
+        .expect("progress root bounds");
     let scanner_bottom = scanner_bounds.y() + scanner_bounds.height();
     assert_eq!(page.height(), split.height());
     assert_eq!(root.height(), page.height());
@@ -278,6 +275,11 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
         (scanner_bottom - root.height() as f32).abs() < 1.0,
         "scanner bottom={scanner_bottom}, root height={}",
         root.height()
+    );
+    assert_eq!(
+        progress_bounds.height(),
+        scanner_bounds.height(),
+        "the progress root must paint only the visible card height"
     );
     window.close();
 }

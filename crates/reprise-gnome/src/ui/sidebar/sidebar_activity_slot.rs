@@ -27,6 +27,11 @@ pub(super) struct SidebarActivitySlot {
 impl SidebarActivitySlot {
     pub(super) fn new() -> Self {
         let progress_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        // Accept the parent's spare allocation so End alignment can dock every
+        // card at one bottom edge; non-Fill alignment keeps the root itself at
+        // its painted natural height (DOC-5e and FB-8).
+        progress_root.set_vexpand(true);
+        progress_root.set_valign(gtk4::Align::End);
         let progress_spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         // This is an ordering anchor only. It must never absorb height that a
         // running card does not paint (FB-8).
