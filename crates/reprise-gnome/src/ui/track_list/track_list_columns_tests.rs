@@ -344,3 +344,46 @@ fn style_6_the_table_never_overflows_its_viewport() {
         "a registry-hidden column must stay hidden when the viewport changes"
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_6_remapping_does_not_freeze_a_responsive_collapse() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    super::super::track_list_column_widths::install(&view);
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(700)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(columns.iter().any(|column| !column.column.is_visible()));
+
+    window.set_child(None::<&gtk4::Widget>);
+    window.close();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    scrolled.set_width_request(-1);
+    let wide_window = gtk4::Window::builder()
+        .width_request(1_600)
+        .height_request(120)
+        .child(&scrolled)
+        .build();
+    wide_window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(
+        columns.iter().all(|column| column.column.is_visible()),
+        "a remap while narrow must not make responsive hiding permanent; view width={}, hidden={:?}",
+        view.width(),
+        columns
+            .iter()
+            .filter(|column| !column.column.is_visible())
+            .map(|column| column.id)
+            .collect::<Vec<_>>()
+    );
+    wide_window.close();
+}

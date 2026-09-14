@@ -67,13 +67,34 @@ fn collapse_width(column: &FittedColumn) -> i32 {
 }
 
 pub(super) fn install(view: &gtk4::ColumnView) {
-    let view = view.clone();
-    view.connect_map(move |view| {
-        let columns = fitted_columns(view);
-        fit(&columns, view.width());
-        let columns = Rc::new(columns);
-        view.connect_notify_local(Some("width"), move |view, _| fit(&columns, view.width()));
+    let columns = Rc::new(fitted_columns(view));
+    let fitting = Rc::new(Cell::new(false));
+    view.connect_map({
+        let columns = columns.clone();
+        let fitting = fitting.clone();
+        move |view| {
+            fit_once(&columns, &fitting, view.width());
+            let view = view.downgrade();
+            let columns = columns.clone();
+            let fitting = fitting.clone();
+            gtk4::glib::idle_add_local_once(move || {
+                if let Some(view) = view.upgrade() {
+                    fit_once(&columns, &fitting, view.width());
+                }
+            });
+        }
     });
+    view.connect_notify_local(Some("width"), move |view, _| {
+        fit_once(&columns, &fitting, view.width());
+    });
+}
+
+fn fit_once(columns: &[FittedColumn], fitting: &Cell<bool>, viewport_width: i32) {
+    if fitting.replace(true) {
+        return;
+    }
+    fit(columns, viewport_width);
+    fitting.set(false);
 }
 
 fn fitted_columns(view: &gtk4::ColumnView) -> Vec<FittedColumn> {
