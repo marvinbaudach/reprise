@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use gtk4::prelude::*;
 
 pub(super) struct SidebarActivitySlot {
-    /// Persistent device state remains independent from Issues/progress.
+    /// Resting device state scrolls with the places (NAV-20); only progress stays pinned.
     root: gtk4::Box,
     /// Long-running cards, pinned below the Issues block (FB-8, amended).
     progress_root: gtk4::Box,
