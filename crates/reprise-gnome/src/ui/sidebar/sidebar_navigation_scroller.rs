@@ -47,6 +47,7 @@ pub(super) fn build_navigation_scroller(
             update_navigation_scrollbar(&scrolled, &adjustment);
         }
     });
+    // input-parity: ACC-8 keyboard=scrolled-window-navigation
     let scroll = gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
     scroll.connect_scroll({
         let adjustment = adjustment.clone();
