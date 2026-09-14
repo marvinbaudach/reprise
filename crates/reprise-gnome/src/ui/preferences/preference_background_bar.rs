@@ -83,42 +83,62 @@ impl JobRowState {
 /// without a widget in sight, so the rules are testable on their own.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::ui) struct BarState {
-    /// Whether online-job chrome has anything truthful to show. The scan slot
-    /// is independent and may still keep the widget visible.
-    pub(in crate::ui) visible: bool,
     pub(in crate::ui) rows: Vec<JobRowState>,
     /// `None` while nothing runs: the draft asks for no badge at all then,
     /// rather than a badge reading zero.
     pub(in crate::ui) count_badge: Option<String>,
     /// The stand-in shown instead of rows while the gate is off.
     pub(in crate::ui) empty_notice: Option<String>,
+    scan_running: bool,
 }
 
-pub(in crate::ui) fn bar_state(jobs: &[Option<JobRowState>], online_enabled: bool) -> BarState {
+impl BarState {
+    pub(in crate::ui) fn row_count(&self) -> usize {
+        self.rows.len() + usize::from(self.scan_running)
+    }
+}
+
+pub(in crate::ui) fn bar_state(
+    jobs: &[Option<JobRowState>],
+    online_enabled: bool,
+    scan_running: bool,
+) -> BarState {
     let rows = jobs.iter().flatten().cloned().collect::<Vec<_>>();
-    if rows.is_empty() {
+    if rows.is_empty() && !scan_running {
         return BarState {
-            visible: false,
             rows,
             count_badge: None,
-            empty_notice: None,
+            empty_notice: Some(crate::i18n::gettext("No background activity")),
+            scan_running,
         };
     }
-    // Only replace activity that would otherwise be visible. With no job,
-    // "No online jobs" would itself keep an otherwise empty footer alive.
+    // The online-content gate never suppresses the independent library scan.
+    // If stale online progress is still present while a scan runs, the scan is
+    // the one truthful row the dialog can report.
     if !online_enabled {
+        if scan_running {
+            return BarState {
+                rows: Vec::new(),
+                count_badge: Some("1".to_owned()),
+                empty_notice: None,
+                scan_running,
+            };
+        }
+        // Only replace activity that would otherwise be visible. With no job,
+        // the resting notice above is more useful than a gate warning.
         return BarState {
-            visible: true,
             rows: Vec::new(),
             count_badge: None,
             empty_notice: Some(strings::text(strings::BACKGROUND_NO_ONLINE_JOBS)),
+            scan_running,
         };
     }
+    let row_count = rows.len() + usize::from(scan_running);
     BarState {
-        visible: true,
-        count_badge: (!rows.is_empty()).then(|| rows.len().to_string()),
+        count_badge: (row_count > 0).then(|| row_count.to_string()),
         empty_notice: None,
         rows,
+        scan_running,
     }
 }
 
@@ -197,7 +217,6 @@ impl BackgroundBar {
 
         root.append(&header);
         root.append(&rows_box);
-        root.append(&scan_slot);
         root.append(&empty);
 
         let inner = Rc::new(BackgroundBarInner {
@@ -233,6 +252,8 @@ impl BackgroundBar {
         chip.set_halign(gtk4::Align::Start);
         chip.set_margin_top(0);
         chip.set_margin_end(0);
+        chip.remove_css_class("scan-chip");
+        chip.add_css_class("reprise-background-scan-row");
         self.inner.scan_slot.append(line);
         self.inner.scan_slot.append(chip);
         self.inner
@@ -302,7 +323,11 @@ impl BackgroundBarInner {
     }
 
     fn state(&self) -> BarState {
-        bar_state(&self.jobs.borrow(), self.online_enabled.get())
+        bar_state(
+            &self.jobs.borrow(),
+            self.online_enabled.get(),
+            self.scan_visible(),
+        )
     }
 
     fn render(self: &Rc<Self>) {
@@ -313,7 +338,10 @@ impl BackgroundBarInner {
         for row in &state.rows {
             self.rows_box.append(&self.job_row(row));
         }
-        self.rows_box.set_visible(!state.rows.is_empty());
+        if state.scan_running {
+            self.rows_box.append(&self.scan_slot);
+        }
+        self.rows_box.set_visible(state.row_count() > 0);
         match &state.count_badge {
             Some(text) => {
                 self.count.set_label(text);
@@ -330,9 +358,9 @@ impl BackgroundBarInner {
         }
         // The slot is only a container: it opens with the scan chrome inside
         // it and closes with it, so an idle scan leaves no spacing behind.
-        let scan_visible = self.scan_visible();
-        self.scan_slot.set_visible(scan_visible);
-        self.root.set_visible(state.visible || scan_visible);
+        self.scan_slot.set_visible(state.scan_running);
+        // FB-9's reserved-space choice keeps the resting notice visible.
+        self.root.set_visible(true);
     }
 
     fn job_row(self: &Rc<Self>, state: &JobRowState) -> gtk4::Box {

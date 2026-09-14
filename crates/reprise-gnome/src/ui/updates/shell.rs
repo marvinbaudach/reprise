@@ -9,11 +9,14 @@ use super::badge;
 use super::concerts_section::ConcertsSection;
 
 const POPOVER_WIDTH: i32 = 380;
+const POPOVER_RESTING_HEIGHT: i32 = 260;
 
 pub(super) struct UpdatesShell {
     pub button: gtk4::MenuButton,
     pub badge: gtk4::Label,
     pub popover: gtk4::Popover,
+    pub content_stack: gtk4::Stack,
+    pub loading_row: gtk4::Box,
     pub news_section: gtk4::Box,
     pub concerts_section: ConcertsSection,
     pub list: gtk4::ListBox,
@@ -64,13 +67,25 @@ pub(super) fn build() -> UpdatesShell {
     list_page.append(concerts_section.root());
     let footer = FeedFooter::new();
 
+    let loading_spinner = gtk4::Spinner::new();
+    let loading_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    loading_row.set_halign(gtk4::Align::Center);
+    loading_row.set_valign(gtk4::Align::Center);
+    loading_row.append(&loading_spinner);
+    let popover_stack = gtk4::Stack::new();
+    popover_stack.set_vexpand(true);
+    popover_stack.set_size_request(-1, POPOVER_RESTING_HEIGHT);
+    popover_stack.add_named(&list_page, Some("content"));
+    popover_stack.add_named(&loading_row, Some("loading"));
+    popover_stack.set_visible_child_name("content");
+
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.set_size_request(POPOVER_WIDTH, -1);
     content.set_margin_top(10);
     content.set_margin_bottom(10);
     content.set_margin_start(10);
     content.set_margin_end(10);
-    content.append(&list_page);
+    content.append(&popover_stack);
     content.append(footer.widget());
     popover.set_child(Some(&content));
     button.set_popover(Some(&popover));
@@ -79,6 +94,8 @@ pub(super) fn build() -> UpdatesShell {
         button,
         badge,
         popover,
+        content_stack: popover_stack,
+        loading_row,
         news_section,
         concerts_section,
         list,

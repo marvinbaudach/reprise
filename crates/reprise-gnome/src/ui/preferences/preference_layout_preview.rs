@@ -31,7 +31,6 @@ const PREVIEW_HEIGHT: i32 = 290;
 const TITLEBAR_HEIGHT: i32 = 26;
 const PLAYER_BAR_HEIGHT: i32 = 38;
 const FILTER_BAR_HEIGHT: i32 = 30;
-const STATUS_BAR_HEIGHT: i32 = 20;
 const SIDEBAR_WIDTH: i32 = 96;
 const DETAILS_WIDTH: i32 = 104;
 /// Hidden side regions keep a narrow strip, hidden bars a low one, so the
@@ -50,7 +49,6 @@ pub(in crate::ui) struct LayoutPreviewState {
     pub(in crate::ui) sidebar: bool,
     pub(in crate::ui) browse: bool,
     pub(in crate::ui) info: bool,
-    pub(in crate::ui) status: bool,
 }
 
 impl LayoutPreviewState {
@@ -61,7 +59,6 @@ impl LayoutPreviewState {
             sidebar: true,
             browse: true,
             info: true,
-            status: true,
         }
     }
 }
@@ -74,7 +71,6 @@ pub(in crate::ui) enum LayoutRegion {
     NavigationSidebar,
     FilterBar,
     DetailsSidebar,
-    StatusBar,
 }
 
 /// What a click on `region` asks for. Pure, so the page's wiring is testable
@@ -103,10 +99,6 @@ pub(in crate::ui) fn state_after_click(
             info: !state.info,
             ..state
         },
-        LayoutRegion::StatusBar => LayoutPreviewState {
-            status: !state.status,
-            ..state
-        },
     }
 }
 
@@ -119,8 +111,6 @@ fn region_tooltip(region: LayoutRegion, visible: bool) -> String {
         (LayoutRegion::FilterBar, false) => visual_strings::SHOW_FILTER_BAR,
         (LayoutRegion::DetailsSidebar, true) => visual_strings::HIDE_DETAILS_SIDEBAR,
         (LayoutRegion::DetailsSidebar, false) => visual_strings::SHOW_DETAILS_SIDEBAR,
-        (LayoutRegion::StatusBar, true) => visual_strings::HIDE_STATUS_BAR,
-        (LayoutRegion::StatusBar, false) => visual_strings::SHOW_STATUS_BAR,
     };
     visual_strings::text(message)
 }
@@ -325,20 +315,6 @@ impl LayoutPreview {
         }
         content.append(&filters);
         content.append(&track_list());
-        let status = self.zone(state, LayoutRegion::StatusBar, state.status);
-        status.set_height_request(if state.status {
-            STATUS_BAR_HEIGHT
-        } else {
-            GHOST_BAR_HEIGHT
-        });
-        if state.status {
-            let label = bar_label(visual_strings::STATUS_BAR);
-            label.set_halign(gtk4::Align::Start);
-            status.set_child(Some(&label));
-        } else {
-            status.set_child(Some(&ghost_child(visual_strings::STATUS_BAR, true)));
-        }
-        content.append(&status);
         body.append(&content);
 
         let details = self.zone(state, LayoutRegion::DetailsSidebar, state.info);
@@ -417,7 +393,6 @@ mod tests {
             sidebar: true,
             browse: true,
             info: true,
-            status: true,
         }
     }
 
@@ -430,11 +405,11 @@ mod tests {
             state_after_click(moved, LayoutRegion::PlayerBar).bar,
             PlayerBarPosition::Bottom
         );
-        assert!(moved.sidebar && moved.browse && moved.info && moved.status);
+        assert!(moved.sidebar && moved.browse && moved.info);
     }
 
     #[test]
-    fn set_16_clicking_a_region_toggles_exactly_that_region() {
+    fn set_16a_clicking_a_region_toggles_exactly_that_region() {
         for (region, read) in [
             (
                 LayoutRegion::NavigationSidebar,
@@ -442,7 +417,6 @@ mod tests {
             ),
             (LayoutRegion::FilterBar, |state| state.browse),
             (LayoutRegion::DetailsSidebar, |state| state.info),
-            (LayoutRegion::StatusBar, |state| state.status),
         ] {
             let hidden = state_after_click(all_on(), region);
 
@@ -460,7 +434,7 @@ mod tests {
         let defaults = LayoutPreviewState::defaults();
 
         assert_eq!(defaults.bar, PlayerBarPosition::Bottom);
-        assert!(defaults.sidebar && defaults.browse && defaults.info && defaults.status);
+        assert!(defaults.sidebar && defaults.browse && defaults.info);
     }
 
     #[test]
@@ -475,7 +449,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn set_16_the_bar_sits_at_the_clicked_edge_and_the_body_keeps_its_order() {
+    fn set_16a_the_bar_sits_at_the_clicked_edge_and_the_body_keeps_its_order() {
         if gtk4::init().is_err() {
             return;
         }
@@ -505,7 +479,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn set_16_a_hidden_region_renders_its_ghost_and_clicking_it_asks_for_the_region_back() {
+    fn set_16a_a_hidden_region_renders_its_ghost_and_clicking_it_asks_for_the_region_back() {
         if gtk4::init().is_err() {
             return;
         }

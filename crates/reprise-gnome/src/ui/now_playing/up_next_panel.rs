@@ -56,7 +56,11 @@ pub(super) fn format_up_next_footer(durations_ms: &[i64]) -> String {
 
 fn format_up_next_footer_total(count: usize, total_duration_ms: i64) -> String {
     let duration = reprise_core::format::format_total_duration(total_duration_ms);
-    super::strings::up_next_footer(count, &duration)
+    format!(
+        "{} · {}",
+        crate::i18n::gettext("Up next"),
+        super::strings::up_next_footer(count, &duration)
+    )
 }
 
 type OnJump = Rc<dyn Fn(QueueRow)>;
@@ -563,12 +567,14 @@ fn build_row_widgets() -> (gtk4::Box, gtk4::Button, gtk4::Button, RowWidgets) {
         .hexpand(true)
         .build();
     crate::ui::style::buttons::arm(&jump_button, crate::ui::style::buttons::TERTIARY_CLASS);
+    let remove_label = super::strings::remove_from_queue_label(1);
     let remove_button = gtk4::Button::builder()
-        .icon_name("list-remove-symbolic")
-        .tooltip_text(super::strings::remove_from_queue_label(1))
+        .label("×")
+        .tooltip_text(&remove_label)
         .css_classes(["flat", "circular", "reprise-up-next-remove"])
         .valign(gtk4::Align::Center)
         .build();
+    remove_button.update_property(&[gtk4::accessible::Property::Label(&remove_label)]);
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
     row.add_css_class("reprise-up-next-row-container");
     row.append(&jump_button);
@@ -699,6 +705,9 @@ pub(in crate::ui) fn css() -> String {
            padding: 5px 6px; }}\n\
          /* Hover, press and focus come from `style::buttons` (BTN-4). */\n\
          .reprise-up-next-remove {{ color: @reprise_secondary_fg_color; }}\n\
+         .reprise-up-next-row-container .reprise-up-next-remove {{ opacity: 0; }}\n\
+         .reprise-up-next-row-container:hover .reprise-up-next-remove,\n\
+         .reprise-up-next-remove:focus-visible {{ opacity: 1; }}\n\
          .reprise-up-next-remove:hover {{ color: @reprise_primary_fg_color; }}\n\
          .reprise-up-next-cover {{ border-radius: {RADIUS_SURFACE}; }}\n\
          .reprise-up-next-title {{ \

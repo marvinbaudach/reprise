@@ -12,6 +12,7 @@ struct RefreshFeedbackGuard(std::rc::Weak<PodcastsView>);
 impl Drop for RefreshFeedbackGuard {
     fn drop(&mut self) {
         if let Some(view) = self.0.upgrade() {
+            view.end_model_wait();
             view.end_refresh_feedback();
         }
     }
@@ -200,6 +201,7 @@ impl PodcastsView {
         if !queued {
             return false;
         }
+        self.begin_model_wait();
         self.begin_refresh_feedback();
         self.footer_spinner.start();
         self.footer_status

@@ -387,13 +387,6 @@ pub fn fetch_progress(done: u64, total: u64) -> String {
     format!("{done} of {total}")
 }
 
-// Status bar (src/ui/status_bar.rs).
-pub const STATUS_TRACK_SINGULAR: &str = N_!("track");
-pub const STATUS_TRACK_PLURAL: &str = N_!("tracks");
-/// Middle-dot separator between the track count and total duration, per the
-/// design mockup (e.g. "1,704 tracks · 4 days, 6 hours and 28 minutes").
-pub const STATUS_SEPARATOR: &str = N_!(" · ");
-
 // Track list column headers (src/ui/track_list.rs).
 pub const COLUMN_TITLE: &str = N_!("Title");
 pub const COLUMN_COVER: &str = N_!("Cover");
@@ -550,8 +543,7 @@ pub fn import_error_retry_failed_toast() -> String {
 }
 
 /// Toast for the "Add to queue" context-menu action — plural-correct
-/// (reuses `STATUS_TRACK_SINGULAR`/`STATUS_TRACK_PLURAL` rather than
-/// hardcoding "track"/"tracks" a second time).
+/// Uses the shared translation vocabulary for track-count pluralisation.
 pub fn tracks_added_to_queue_toast(count: usize) -> String {
     let count_text = count.to_string();
     plural(

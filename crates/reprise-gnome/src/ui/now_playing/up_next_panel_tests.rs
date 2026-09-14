@@ -121,13 +121,43 @@ fn que_2_two_sections_headers_conditional() {
 }
 
 #[test]
-fn footer_formats_track_count_and_remaining_duration() {
-    assert_eq!(format_up_next_footer(&[]), "0 tracks · 0 minutes");
-    assert_eq!(format_up_next_footer(&[90_000]), "1 track · 1 minute");
+fn que_15_footer_names_its_scope() {
+    assert_eq!(format_up_next_footer(&[]), "Up next · 0 tracks · 0 minutes");
+    assert_eq!(
+        format_up_next_footer(&[90_000]),
+        "Up next · 1 track · 1 minute"
+    );
     assert_eq!(
         format_up_next_footer(&[90_000, 330_000]),
-        "2 tracks · 7 minutes"
+        "Up next · 2 tracks · 7 minutes"
     );
+}
+
+/// `QUE-15`: the row action is not the table's unrated dash. It keeps its
+/// allocation but is revealed only by row hover or keyboard focus, and its
+/// accessible name states the destructive queue action.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn que_15_remove_control_is_a_named_revealed_cross() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (row, _, remove, _) = build_row_widgets();
+    let window = gtk4::Window::builder().child(&row).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(remove.label().as_deref(), Some("×"));
+    assert_eq!(remove.icon_name(), None);
+    assert_eq!(remove.tooltip_text().as_deref(), Some("Remove from queue"));
+    assert!(gtk4::test_accessible_has_property(
+        &remove,
+        gtk4::AccessibleProperty::Label
+    ));
+    let css = css();
+    assert!(css.contains(".reprise-up-next-remove { opacity: 0;"));
+    assert!(css.contains(".reprise-up-next-row-container:hover .reprise-up-next-remove"));
+    assert!(css.contains(".reprise-up-next-remove:focus-visible"));
+    window.close();
 }
 
 #[test]

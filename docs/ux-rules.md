@@ -1297,7 +1297,7 @@ result.
   Concerts or online sources never makes the stored location or radius
   unreadable and never suppresses the app-wide location-change announcement.
 
-- **SET-16** [active] [gtk] — The Layout page opens with one interactive
+- **SET-16** [replaced by SET-16a] [gtk] — The Layout page opens with one interactive
   preview of the library window instead of static choice cards. Every region is
   drawn in place and is itself the control: Player Bar (click moves it between
   the top and bottom edge), Navigation Sidebar (left), Filter Bar (above the
@@ -1322,8 +1322,6 @@ result.
 - **SET-19** [active] [gtk] — Preferences pages scroll inside a short window;
   the dialog stays within a 720 px window and every page reaches its last row.
 
-## G. Feedback vocabulary
-
 - **SET-18** [active] [gtk] — The Preferences dialog's head carries the page
   title and the search, and nothing else: no toast, banner or progress is ever
   hung into it or laid over it. Background work has one fixed place instead —
@@ -1344,6 +1342,20 @@ result.
   footer. The main window's own scan
   card stays where it is, in its own layer under the dialog, and is never
   reparented into it (`docs/plans/plugins-online-content-master-hierarchy.md`).
+
+- **SET-16a** [active] [gtk] — The Layout page keeps SET-16's one interactive
+  preview and single save path for the regions that still exist: Player Bar,
+  Navigation Sidebar, Filter Bar and Details Sidebar. The removed Status Bar
+  has no preview region, switch or live control; its persisted visibility key
+  may remain unread. Tests: `set_16a_clicking_a_region_toggles_exactly_that_region`,
+  `set_16a_the_bar_sits_at_the_clicked_edge_and_the_body_keeps_its_order`,
+  `set_16a_a_hidden_region_renders_its_ghost_and_clicking_it_asks_for_the_region_back`,
+  and `set_16a_a_rejected_save_keeps_the_previous_state`
+  (`ui/preferences/preference_layout_preview.rs`,
+  `ui/preferences/preference_layout.rs`, `#[cfg(test)]`).
+
+## G. Feedback vocabulary
+
 - **FB-1** [planned] [core] — Two-class toasts (pill, bottom-centered,
   one line, max 1 action button, 4 s / 10 s with Undo; only for
   completed actions or events): Actionless event toasts replace one
@@ -1553,6 +1565,13 @@ result.
   subtitle itself before handing them to Pango; it does not construct the
   row and the guard does not flag it.
 
+- **FB-14** [active] [gtk] — A view waiting on data shows a loading row and
+  never the previous view's rows; a popover reserves its resting height.
+  The Queue is exempt: its model is built synchronously and never shows stale
+  rows.
+  Tests: `fb_14_podcasts_show_a_loading_row_until_the_model_arrives`,
+  `fb_14_updates_popover_reserves_its_resting_height_while_loading`.
+
 ## H. File association & OS integration
 
 - **OS-1** [planned] [e2e] — A file opened (double-click in the file
@@ -1700,6 +1719,13 @@ result.
 - **QUE-14** [active] [gtk] — The Up Next panel's remove control follows its
   bound row's live position. When a model shift moves that row into a read-only
   podcast or YouTube show context, the control disappears immediately.
+- **QUE-15** [active] [gtk] — The panel footer names its scope as
+  "Up next · {count} tracks · {duration}" while retaining QUE-4's shared
+  count and duration formatting. Each removable row carries a × control that
+  appears on row hover or keyboard focus and is named "Remove from queue".
+  Tests: `que_15_footer_names_its_scope`,
+  `que_15_remove_control_is_a_named_revealed_cross`
+  (`ui/now_playing/up_next_panel_tests.rs`, `#[cfg(test)]`).
 
 ## K. Filter & search visibility
 
@@ -1782,11 +1808,9 @@ result.
   click). The row's hide preference only governs the idle state — with
   an active restriction the row always appears (force-show; the shift
   is a direct consequence of the user's own input, P-4-compliant). The
-  status overlay in the bottom right always shows the neutral library
-  statistic; its "X of Y" variant is dropped — the filter row speaks
-  about the view, the overlay about the library. Clarification: outside
-  the Library the overlay doesn't appear at all — there the filter row
-  is the only counting (decided 2026-07-17). The counting base is always
+  idle Library caption also carries the neutral library duration; there is no
+  second status overlay. The filter row is the only counting in every view.
+  The counting base is always
   the current place: inside an Artist, Album or Genre page "X of Y"
   relates to that place's own total, never to the whole library — the
   same way a playlist reports its own length. The row is visible when a
@@ -1889,6 +1913,12 @@ result.
   a query changes with every keystroke and paid for the centering far more
   often than a facet click does. “Clear all” with an active query follows
   SEARCH-16; without a query, clearing facets remains governed by FIL-9.
+
+- **FIL-10** [active] [gtk] — With no restriction, the Library filter row's
+  neutral dim caption reads "{count} tracks · {days} d {hours} h". With a
+  restriction it remains FIL-2a's "{shown} of {total} tracks" and does not add
+  duration. Test: `fil_10_idle_caption_carries_count_and_duration`
+  (`ui/browse/browse_filter_count.rs`, `#[cfg(test)]`).
 
 ## L. Tag editor
 
@@ -3567,7 +3597,7 @@ property is set and yet nothing happens.
   a top hairline. It reserves its own space and never covers a track row;
   only against this fixed surface is its secondary-text contrast
   determined.
-- **CONTRAST-2a** [active] [gtk] — The "N tracks · duration" status line
+- **CONTRAST-2a** [replaced by CONTRAST-2b] [gtk] — The "N tracks · duration" status line
   is a compact pill overlay with a defined surface, rounding, and hairline
   at the bottom right of the track table. It reserves no full-width row.
   If the right info column opens, the pill stays at the same distance from
@@ -3745,6 +3775,12 @@ property is set and yet nothing happens.
   that places cover art near type, every reacting cover-derived layer ends
   above the text block and fades to zero before that boundary. The text remains
   on the flat surface whose contrast is owned by the stylesheet.
+
+- **CONTRAST-2b** [active] [gtk] — No status overlay covers the track table;
+  the filter row is the only counting in every view. The list therefore owns
+  the complete content allocation without an overlaid sibling. Test:
+  `contrast_2b_no_overlay_covers_a_row`
+  (`ui/track_list/track_content.rs`, `#[cfg(test)]`).
 
 ## V. My Stats
 
