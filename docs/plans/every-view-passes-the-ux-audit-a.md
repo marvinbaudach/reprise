@@ -2,7 +2,7 @@
 slug: every-view-passes-the-ux-audit-a
 worktree: /home/marvin/Projects/reprise-every-view-passes-the-ux-audit-a
 branch: feature/every-view-passes-the-ux-audit-a
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-13
 ---
