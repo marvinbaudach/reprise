@@ -56,7 +56,7 @@ fn fb_14_updates_popover_reserves_its_resting_height_while_loading() {
         .expect("resting content is allocated inside the popover");
 
     state.show_loading();
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    crate::ui::test_settle::settle_until_mapped(&state.loading_row);
     let loading = state
         .content_stack
         .compute_bounds(&state.popover)
@@ -70,7 +70,9 @@ fn fb_14_updates_popover_reserves_its_resting_height_while_loading() {
         state.content_stack.visible_child_name().as_deref(),
         Some("loading")
     );
+    assert!(resting.height() > 0.0 && loading.height() > 0.0);
     assert_eq!(loading.height(), resting.height());
+    assert!(row.width() > 0.0 && row.height() > 0.0);
     assert!((row.center().x() - loading.width() / 2.0).abs() <= 1.0);
     assert!((row.center().y() - loading.height() / 2.0).abs() <= 1.0);
     state.popover.popdown();
