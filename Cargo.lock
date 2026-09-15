@@ -2809,7 +2809,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reprise-android-ffi"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "reprise-core",
  "reprise-view",
@@ -2823,7 +2823,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-cli"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "chrono",
  "clap",
@@ -2839,7 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-core"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2868,7 +2868,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-gnome"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2894,7 +2894,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-mcp"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "chrono",
  "reprise-core",
@@ -2913,7 +2913,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-platform-linux"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "async-channel",
  "gio",
@@ -2931,7 +2931,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-runtime-protocol"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "serde",
  "serde_json",
@@ -2940,7 +2940,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-stems"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "dirs",
  "flacenc",
@@ -2956,7 +2956,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-view"
-version = "0.1.201"
+version = "0.1.202"
 dependencies = [
  "reprise-core",
 ]
@@ -3095,9 +3095,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.42"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c54fcab019b409d04215d3a17cb438fd7fbf192ee61461f20f4fe18704bc138"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "log",
  "once_cell",
@@ -3119,9 +3119,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "ring",
  "rustls-pki-types",

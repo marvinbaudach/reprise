@@ -1229,7 +1229,9 @@ result.
   "Online content" leaves the card list and becomes the bracket above it: it
   stands free, with a larger title, a state badge that counts its children
   ("N of M plugins on", "all M plugins off"), its description over the full
-  width, and a switch visibly larger than a child's. The whole row is
+  width ("Turn off to keep Reprise offline: none of these plugins run, nothing
+  is requested, and their sidebar entries are hidden."), and a switch visibly
+  larger than a child's. The whole row is
   clickable. Its children sit in **one** card below, indented behind a slim
   vertical rail — the indent and the rail say who obeys whom — separated by
   hairlines, not by gaps. Off dims that card but keeps it readable and stops it
@@ -2849,8 +2851,9 @@ the panel).
 - **NR-39** [active] [gtk] — The Releases table's `Status` and `Link`
   columns are ordinary columns in the free band: hideable, movable, visible
   in the column editor, and visible by default. Only the `Cover` column stays
-  fixed. Hiding the `Link` column removes the visible route for opening a
-  release's purchase link; the header popover restores either column. A layout
+  fixed. Its column-editor name remains `Cover`, while its visual header
+  renders no text. Hiding the `Link` column removes the visible route for
+  opening a release's purchase link; the header popover restores either column. A layout
   saved before this change keeps both columns visible, while a saved layout
   that never mentioned them starts without them.
   Test: `nr_39_the_column_editor_lists_status_and_link_and_hides_them`
@@ -7032,6 +7035,11 @@ committee published on 2026-05-29.
   comments.
 - **GP-20** [active] [core] — No dead code: no unused items, and no
   `#[allow(dead_code)]` without a stated reason on the same or preceding line.
+- **GP-21** [active] [gtk] — Labels, titles, menu items and status badges use
+  HIG header capitalisation; descriptions and status lines use sentence case.
+  The Plugins count badge keeps its uppercase rendering. The Releases badges
+  are `Upcoming`, `Missing` and `Incomplete`; sidebar row labels follow in a
+  later change.
 
 ## AJ. Showroom (public site)
 
