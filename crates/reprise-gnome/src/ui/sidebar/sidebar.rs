@@ -243,6 +243,8 @@ pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
     pub(super) activity_slot: SidebarActivitySlot,
+    #[cfg(test)]
+    navigation_scroller: gtk4::ScrolledWindow,
 }
 
 impl Sidebar {
@@ -333,6 +335,8 @@ impl Sidebar {
             shared,
             root,
             activity_slot,
+            #[cfg(test)]
+            navigation_scroller: scrolled,
         }
     }
 
@@ -340,6 +344,25 @@ impl Sidebar {
     /// page content.
     pub fn widget(&self) -> &gtk4::Box {
         &self.root
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn navigation_scroller_for_test(&self) -> gtk4::ScrolledWindow {
+        self.navigation_scroller.clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn activity_slot_for_test(&self) -> gtk4::Box {
+        self.activity_slot.progress_widget().clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn present_device_for_layout_test(&self) {
+        let device = super::sidebar_device_card::tests::view(
+            crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+        );
+        let section = super::sidebar_device_section::present_device_section_for_test(&device);
+        self.activity_slot.set_device_section(&section);
     }
 
     /// Sets the callback invoked whenever the selected source changes.

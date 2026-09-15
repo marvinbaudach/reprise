@@ -28,7 +28,7 @@ pub(super) fn bottom_region_placement() -> BottomRegionPlacement {
 pub(super) fn build_issues_section(
     activity_slot: &SidebarActivitySlot,
     issues_listbox: &gtk4::ListBox,
-) -> gtk4::Box {
+) -> gtk4::ScrolledWindow {
     let issues = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let heading = sidebar_presentation::problem_header();
     issues_listbox
@@ -48,5 +48,12 @@ pub(super) fn build_issues_section(
     // The cards keep their own Revealer fade; the section above them no longer
     // moves out of the way, so nothing has to be switched atomically.
     region.append(activity_slot.progress_widget());
-    region
+    gtk4::ScrolledWindow::builder()
+        .child(&region)
+        .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .propagate_natural_height(true)
+        .vexpand(false)
+        .valign(gtk4::Align::End)
+        .build()
 }

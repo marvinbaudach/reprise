@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use crate::ui::first_run::FirstRunDecision;
 
-pub(super) const MIN_WIDTH: i32 = 600;
-pub(super) const MIN_HEIGHT: i32 = 400;
+pub(super) use reprise_core::library::session::{
+    MIN_WINDOW_HEIGHT as MIN_HEIGHT, MIN_WINDOW_WIDTH as MIN_WIDTH,
+};
 
 pub(super) struct Bootstrap {
     pub window: adw::ApplicationWindow,

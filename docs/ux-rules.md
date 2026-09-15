@@ -1431,8 +1431,8 @@ result.
   occupy no space; only active or still-fading-out cards take part in
   the layout. The bottom edge of the visible card block sits directly
   above the player bar, while all free sidebar height stays above the
-  block. Resting device status scrolls with the places; a running sync card
-  stays pinned.
+  block, measured on the composed window, not a fixture. Resting device status
+  scrolls with the places; a running sync card stays pinned.
   *Amended 2026-08-07.* Until then a visible card **replaced** the whole
   Issues block. That made starting any scan take the `ISSUES` section away,
   including the Library Doctor's own result row — so the entry that says
@@ -1573,6 +1573,11 @@ result.
   rows.
   Tests: `fb_14_podcasts_show_a_loading_row_until_the_model_arrives`,
   `fb_14_updates_popover_reserves_its_resting_height_while_loading`.
+
+- **FB-15** [active] [gtk] — The pinned block never claims more than it paints
+  and never raises the window's minimum: below the room the LIBRARY floor
+  leaves, the block scrolls inside itself. At the minimum window the ISSUES
+  heading, one row and one running card are visible.
 
 ## H. File association & OS integration
 
@@ -3447,14 +3452,17 @@ property is set and yet nothing happens.
   and volume lie entirely within their allocation. Long titles and artists
   ellipsize within the left metadata zone and never push transport or
   waveform out of the window center. Scrollable content gives up space,
-  not the player bar. At the enforced 600 × 400 minimum, the structural
-  player bar's bounds lie inside the window at its natural height.
+  not the player bar. At the enforced 600 × 550 minimum, the structural player
+  bar's bounds lie inside the window at its natural height, the LIBRARY block
+  is whole, and the pinned block shows its ISSUES heading, first row and first
+  running card.
 - **STYLE-6** [active] [gtk] — On strong horizontal shrinking, the track
   table temporarily collapses secondary visible columns; cover, title, and
   artist stay visible. This collapsing changes neither stored visibility,
   order, or widths nor the sort. "Show columns" restores the user's
   configuration in the narrow window; additional width is then scrolled
-  exclusively horizontally within the table.
+  exclusively horizontally within the table. Tests include
+  `style_6_the_real_table_never_overflows_at_1280` against the composed window.
 - **STYLE-7** [active] [gtk] — The left library sidebar is a structural
   column, not a responsive one: no window width closes it, hides it, or
   turns it into an overlay over the content. If the library window is

@@ -511,6 +511,17 @@ pub fn build(
         &youtube_view,
         &radio_view,
     );
+    #[cfg(test)]
+    super::window_layout_test_hook::publish(
+        &window,
+        &split_view,
+        &sidebar_page,
+        &sidebar,
+        &library_player_bar,
+        player_bar_widget,
+        &content_nav,
+        &track_list,
+    );
     let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
     super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel);
     tracing::info!("main window built");
