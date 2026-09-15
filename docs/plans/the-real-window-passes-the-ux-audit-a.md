@@ -128,4 +128,3 @@ Verification inside A: the five tests through the isolated runner, the
 existing sidebar/window/track-list display suites, `cargo test -p
 reprise-core library::session`, traceability. The tour comparison against
 the control arm is post-merge.
-
