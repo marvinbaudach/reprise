@@ -110,4 +110,3 @@ Verification inside B: `cargo test -p reprise-core podcasts db queries`,
 `cargo test -p reprise-gnome` for the named tests plus preferences,
 sidebar strings, up-next suites; `scripts/tests/gettext-catalogs.sh` rc
 read directly; traceability.
-
