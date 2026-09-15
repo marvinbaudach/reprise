@@ -212,7 +212,7 @@ fn migrate_v2_to_v3_creates_playlist_tables_and_seeds_smart_playlists() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(name1, "Recently played");
+    assert_eq!(name1, "Recently Played");
     assert_eq!(rules1, r#"[{"field":"last_played_at","op":"not-null"}]"#);
 
     // Second migration must be idempotent (no duplicate inserts).

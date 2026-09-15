@@ -127,7 +127,7 @@ mod tests {
         // no-op cannot strand the Missing query in the header entry.
         search.activate_source(
             &reprise_core::view_source::ViewSource::Missing,
-            "Missing files",
+            "Missing Files",
         );
         search.set_query(SearchScope::Missing, "missing");
         assert_eq!(entry.text(), "missing");

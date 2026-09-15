@@ -2927,7 +2927,7 @@
     "x": 80,
     "y": 0
    },
-   "label": "Recently played",
+   "label": "Recently Played",
    "parent_index": 1,
    "role": "list item",
    "selected": false
@@ -2943,7 +2943,7 @@
     "x": 80,
     "y": 0
    },
-   "label": "Top rated",
+   "label": "Top Rated",
    "parent_index": 1,
    "role": "list item",
    "selected": false
@@ -2959,7 +2959,7 @@
     "x": 80,
     "y": 0
    },
-   "label": "Recently added",
+   "label": "Recently Added",
    "parent_index": 1,
    "role": "list item",
    "selected": false

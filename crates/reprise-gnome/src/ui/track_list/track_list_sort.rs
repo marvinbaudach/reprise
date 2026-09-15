@@ -299,7 +299,7 @@ mod default_sort_for_source_tests {
         let db = reprise_core::db::Db::open_in_memory().unwrap();
         let smart_lists = reprise_core::library::playlists::list_smart(&db).unwrap();
 
-        for name in ["Recently played", "Recently added", "Top rated"] {
+        for name in ["Recently Played", "Recently Added", "Top Rated"] {
             let smart = smart_lists.iter().find(|smart| smart.name == name).unwrap();
             assert_eq!(
                 default_sort_for_source(&db, &ViewSource::Smart(smart.id)),

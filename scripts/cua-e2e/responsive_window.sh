@@ -173,7 +173,7 @@ run_responsive_window_scenario() {
 
   cua_resize_window "$APP_PID" "$WINDOW_ID" 1600 760 responsive-wide-panels
   wide_path="$CUA_E2E_OUT_DIR/responsive-wide-panels-after-resize.json"
-  assert_snapshot_contains "$wide_path" "Recently played"
+  assert_snapshot_contains "$wide_path" "Recently Played"
   cua_click_label \
     "$APP_PID" "$WINDOW_ID" "Toggle Now Playing panel" responsive-open-wide-panel
   wait_for_label "$APP_PID" "$WINDOW_ID" "Up Next" responsive-wide-panel-open >/dev/null
@@ -182,16 +182,16 @@ run_responsive_window_scenario() {
   panels_closed_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Side panels were closed to fit the window" \
     responsive-side-panels-toast)
-  assert_snapshot_absent "$panels_closed_path" "Recently played"
+  assert_snapshot_absent "$panels_closed_path" "Recently Played"
   assert_snapshot_absent "$panels_closed_path" "Up Next"
   assert_snapshot_contains "$panels_closed_path" "Undo"
 
   cua_click_label "$APP_PID" "$WINDOW_ID" "Undo" responsive-undo-side-panels
   wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Recently played" responsive-sidebar-restored >/dev/null
+    "$APP_PID" "$WINDOW_ID" "Recently Played" responsive-sidebar-restored >/dev/null
   panels_restored_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Up Next" responsive-now-playing-restored)
-  assert_snapshot_contains "$panels_restored_path" "Recently played"
+  assert_snapshot_contains "$panels_restored_path" "Recently Played"
   cua_click_label \
     "$APP_PID" "$WINDOW_ID" "Toggle Now Playing panel" responsive-close-restored-panel
   cua_click_label "$APP_PID" "$WINDOW_ID" "Toggle sidebar" responsive-close-restored-sidebar

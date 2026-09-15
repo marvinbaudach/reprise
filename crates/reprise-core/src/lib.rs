@@ -69,6 +69,7 @@ mod db_recent_test_support;
 mod db_recently_added;
 mod db_release_discography;
 mod db_releases_view_scope;
+mod db_smart_playlist_names;
 mod db_sort_indexes;
 mod db_spectrogram;
 mod db_sync_log;

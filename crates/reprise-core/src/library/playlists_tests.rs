@@ -731,9 +731,9 @@ fn list_smart_returns_seeded_playlists() {
 
     // Check by name
     let names: Vec<&str> = playlists.iter().map(|p| p.name.as_str()).collect();
-    assert!(names.contains(&"Recently played"));
-    assert!(names.contains(&"Top rated"));
-    assert!(names.contains(&"Recently added"));
+    assert!(names.contains(&"Recently Played"));
+    assert!(names.contains(&"Top Rated"));
+    assert!(names.contains(&"Recently Added"));
 }
 
 #[test]
@@ -742,7 +742,7 @@ fn list_smart_recently_played_seed() {
     let playlists = list_smart(&conn).unwrap();
     let recently_played = playlists
         .iter()
-        .find(|p| p.name == "Recently played")
+        .find(|p| p.name == "Recently Played")
         .unwrap();
     assert_eq!(
         recently_played.rules_json,
@@ -757,7 +757,7 @@ fn list_smart_recently_played_seed() {
 fn list_smart_top_rated_seed() {
     let conn = seeded_conn();
     let playlists = list_smart(&conn).unwrap();
-    let top_rated = playlists.iter().find(|p| p.name == "Top rated").unwrap();
+    let top_rated = playlists.iter().find(|p| p.name == "Top Rated").unwrap();
     assert_eq!(
         top_rated.rules_json,
         r#"[{"field":"rating","op":">=","value":4}]"#
@@ -773,7 +773,7 @@ fn list_smart_recently_added_seed() {
     let playlists = list_smart(&conn).unwrap();
     let recently_added = playlists
         .iter()
-        .find(|p| p.name == "Recently added")
+        .find(|p| p.name == "Recently Added")
         .unwrap();
     assert_eq!(recently_added.rules_json, "[]");
     assert_eq!(recently_added.sort_field, "added_at");

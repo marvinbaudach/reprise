@@ -212,7 +212,7 @@ fn compact_page_projects_profile_playlist_sizes_deduplicated_delta_and_storage()
         assert!(page
             .playlists
             .iter()
-            .any(|row| row.smart && row.name.as_deref() == Some("Recently added")));
+            .any(|row| row.smart && row.name.as_deref() == Some("Recently Added")));
         assert!(page.controls.editable);
         assert!(page.controls.can_start);
         assert!(!page.controls.can_cancel);
@@ -241,10 +241,10 @@ fn mtp_14_playlists_are_selectable_while_device_storage_is_still_being_checked()
                 .map(|row| row.name.as_deref())
                 .collect::<Vec<_>>(),
             [
-                Some("Recently added"),
-                Some("Recently played"),
+                Some("Recently Added"),
+                Some("Recently Played"),
                 Some("Road"),
-                Some("Top rated")
+                Some("Top Rated")
             ]
         );
         assert!(device.page.controls.editable);

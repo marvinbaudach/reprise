@@ -554,7 +554,7 @@ mod tests {
         let nav_row = build_nav_row("My Stats", None, NavIcon::MyStats);
         listbox.append(&nav_row);
         let issue_row = build_issue_nav_row(
-            "Missing files",
+            "Missing Files",
             issue_row_presentation(2, NavIcon::Missing),
             NavIcon::Missing,
         );
