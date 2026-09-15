@@ -109,6 +109,12 @@ class NowPlayingGesturesTest {
 
         compose.runOnUiThread {
             interactions.cancelDrag()
+        }
+        compose.waitForIdle()
+
+        assertEquals(20_000f, slider.progress(), 0.5f)
+
+        compose.runOnUiThread {
             playback.value = playback.value.copy(positionMs = 30_000)
         }
         compose.waitForIdle()
@@ -147,7 +153,7 @@ class NowPlayingGesturesTest {
         val newTrackId = 831L
         surfaceState.dragTo(outgoingTrackId, positionMs = 60_000)
 
-        surfaceState.releaseScrub(newTrackId)
+        surfaceState.cancelScrub(newTrackId)
 
         val newHead = surfaceState.seekPosition(newTrackId, fallbackPositionMs = 40_000)
         assertEquals(40_000L, newHead.positionMs)

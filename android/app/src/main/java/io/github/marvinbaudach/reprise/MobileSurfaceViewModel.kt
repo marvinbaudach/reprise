@@ -429,6 +429,11 @@ internal class MobileSurfaceViewModel : ViewModel() {
         return released
     }
 
+    fun cancelScrub(trackId: Long) {
+        if (scrubTrackId != trackId) return
+        scrubPosition = checkNotNull(scrubPosition).cancel()
+    }
+
     override fun onCleared() {
         val backfill = artistPhotoBackfillBinding
         artistPhotoBackfillBinding = null

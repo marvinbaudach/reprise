@@ -520,7 +520,7 @@ internal fun SpectralSeekSlider(
     LaunchedEffect(sliderInteractionSource, trackId) {
         sliderInteractionSource.interactions.collect { interaction ->
             if (interaction is DragInteraction.Cancel) {
-                surfaceState.releaseScrub(trackId)
+                surfaceState.cancelScrub(trackId)
             }
         }
     }

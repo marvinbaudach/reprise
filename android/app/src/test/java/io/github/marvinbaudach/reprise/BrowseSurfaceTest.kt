@@ -37,6 +37,21 @@ class BrowseSurfaceTest {
     }
 
     @Test
+    fun aCancelledScrubShowsTheLastSnapshotNotTheAbandonedValue() {
+        val dragging = SeekPositionState.fromSnapshot(12_000)
+            .dragTo(48_000)
+            .acceptSnapshot(13_000)
+
+        val cancelled = dragging.cancel()
+        assertEquals(13_000, cancelled.positionMs)
+        assertFalse(cancelled.isDragging)
+
+        val released = dragging.release()
+        assertEquals(48_000, released.positionMs)
+        assertFalse(released.isDragging)
+    }
+
+    @Test
     fun fullArtworkHasItsOwnLazyCacheEntry() {
         val track = testBrowseTrack("title")
         val port = RecordingBrowsePort()
