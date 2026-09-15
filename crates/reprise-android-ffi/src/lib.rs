@@ -33,6 +33,8 @@ mod play_recorder_writer;
 pub mod playback;
 mod playback_session;
 mod playback_settings;
+mod queue_persister;
+mod queue_snapshot_file;
 #[cfg(test)]
 mod read_during_scan_tests;
 pub mod source;

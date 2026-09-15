@@ -210,6 +210,7 @@ fn queue_saves_leave_unrelated_desktop_session_fields_untouched() {
     session
         .play_tracks(vec![tracks[0].id], vec![tracks[0].path.clone()], 0)
         .unwrap();
+    session.flush_queue_persistence();
     drop(session);
 
     let database = reprise_core::db::Db::open_ready(&database_path).unwrap();

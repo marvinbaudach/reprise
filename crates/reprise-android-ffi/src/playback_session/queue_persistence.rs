@@ -1,12 +1,15 @@
 //! Core session persistence adapted to Android's stable track/URI playback state.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use reprise_core::db::Db;
 use reprise_core::library::session;
 use reprise_core::queries::{self, QueueItemMetadata};
 use reprise_core::queue::{Queue, QueueSnapshotError};
 use reprise_core::up_next::QueueItem;
+
+use crate::queue_snapshot_file::QueueSnapshotFile;
 
 const RESTORE_WINDOW_LIMIT: i64 = 500;
 
@@ -17,7 +20,7 @@ pub(super) struct RestoredQueue {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum QueuePersistenceError {
+pub(crate) enum QueuePersistenceError {
     #[error("queue query failed: {detail}")]
     Query { detail: String },
     #[error("session error: {0}")]
@@ -26,8 +29,19 @@ pub(super) enum QueuePersistenceError {
     Snapshot(#[from] QueueSnapshotError),
 }
 
-pub(super) fn restore(db: &Db) -> Result<RestoredQueue, QueuePersistenceError> {
-    let snapshot = session::load(db).queue;
+pub(super) fn restore(
+    db: &Db,
+    database_path: &Path,
+) -> Result<RestoredQueue, QueuePersistenceError> {
+    let file_queue = QueueSnapshotFile::new(database_path)
+        .map_err(|error| error.to_string())
+        .and_then(|file| {
+            file.read()
+                .ok_or_else(|| "snapshot absent or damaged".to_owned())
+        })
+        .ok()
+        .map(|(_, queue)| queue);
+    let snapshot = file_queue.map_or_else(|| session::load(db).queue, |queue| queue.snapshot());
     let mut queue = Queue::new();
     queue.restore_snapshot(snapshot.clone())?;
 
@@ -72,7 +86,7 @@ pub(super) fn restore(db: &Db) -> Result<RestoredQueue, QueuePersistenceError> {
     })
 }
 
-pub(super) fn save(db: &Db, queue: &Queue) -> Result<(), QueuePersistenceError> {
+pub(crate) fn save(db: &Db, queue: &Queue) -> Result<(), QueuePersistenceError> {
     let mut state = session::load(db);
     state.queue = queue.snapshot();
     session::save(db, &state)?;

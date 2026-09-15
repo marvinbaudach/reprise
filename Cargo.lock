@@ -2813,6 +2813,8 @@ version = "0.1.203"
 dependencies = [
  "reprise-core",
  "reprise-view",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tracing",
