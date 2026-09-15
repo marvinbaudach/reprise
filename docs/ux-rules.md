@@ -1665,7 +1665,7 @@ result.
   list. Every ColumnView section header shares one uniform height; the
   plain title row grows to the authored button-row floor rather than
   shrinking the real Clear button's target.
-- **QUE-2** [active] [gtk] — The panel divides the future into exactly
+- **QUE-2** [replaced by QUE-2a] — The panel divides the future into exactly
   two conditional sections: **Next in Queue** for manually enqueued
   tracks and **Continuing from "<Album/Playlist>"** for the automatic
   context from `play_origin`. A header appears only if its section has
@@ -1673,6 +1673,11 @@ result.
   Their visible order is also the playback order; as long as something
   is playing, the queue never shows two empty sections. QUE-10 owns the
   direct-episode variant of the named context section.
+- **QUE-2a** [active] [gtk] — The panel divides the future into exactly
+  two conditional sections. The context section is titled **Playing from
+  <place> · N tracks** through `queue_context_tail`; the manual section stays
+  **Next in Queue**. A header appears only when its section has entries, and
+  their visible order is the playback order.
 - **QUE-3** [active] [core] — Played manual entries silently disappear
   from "Next in Queue" on queue-item change: no strikethrough and no
   lingering. The section contains only the still-pending future.
