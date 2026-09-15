@@ -2,7 +2,7 @@
 slug: android-queue-persistence-never-waits-for-the-writer
 worktree: /home/marvin/Projects/reprise-android-queue-persistence-never-waits-for-the-writer
 branch: feature/android-queue-persistence-never-waits-for-the-writer
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-15
 ---
