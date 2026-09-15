@@ -385,6 +385,35 @@ fn style_6_the_viewport_page_size_drives_responsive_fitting() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn style_6_an_unmapped_table_disconnects_viewport_fitting() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    super::super::track_list_column_widths::install(&view);
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(1_600)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(columns.iter().all(|column| column.column.is_visible()));
+
+    window.set_child(None::<&gtk4::Widget>);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    scrolled.hadjustment().set_page_size(700.0);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(
+        columns.iter().all(|column| column.column.is_visible()),
+        "an outlived viewport adjustment must not refit an unmapped table"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn play_17_the_playing_row_is_one_highlight() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

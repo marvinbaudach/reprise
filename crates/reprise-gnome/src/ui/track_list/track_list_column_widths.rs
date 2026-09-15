@@ -7,6 +7,8 @@ use gtk4::prelude::*;
 
 const COLLAPSE_ORDER: [&str; 4] = ["rating", "year", "duration_ms", "album"];
 
+type ViewportSignal = Rc<RefCell<Option<(gtk4::Adjustment, gtk4::glib::SignalHandlerId)>>>;
+
 pub(super) struct FittedColumn {
     pub(super) id: &'static str,
     pub(super) column: gtk4::ColumnViewColumn,
@@ -73,8 +75,7 @@ fn collapse_width(column: &FittedColumn) -> i32 {
 pub(super) fn install(view: &gtk4::ColumnView) {
     let columns = Rc::new(fitted_columns(view));
     let fitting = Rc::new(Cell::new(false));
-    let viewport_signal: Rc<RefCell<Option<(gtk4::Adjustment, gtk4::glib::SignalHandlerId)>>> =
-        Rc::new(RefCell::new(None));
+    let viewport_signal: ViewportSignal = Rc::new(RefCell::new(None));
     view.connect_map({
         let columns = columns.clone();
         let fitting = fitting.clone();
@@ -86,9 +87,7 @@ pub(super) fn install(view: &gtk4::ColumnView) {
                 &fitting,
                 viewport_width(adjustment.as_ref(), view.width()),
             );
-            if let Some((old_adjustment, old_signal)) = viewport_signal.borrow_mut().take() {
-                old_adjustment.disconnect(old_signal);
-            }
+            disconnect_viewport_signal(&viewport_signal);
             if let Some(adjustment) = adjustment {
                 let columns_for_viewport = columns.clone();
                 let fitting_for_viewport = fitting.clone();
@@ -116,6 +115,10 @@ pub(super) fn install(view: &gtk4::ColumnView) {
             });
         }
     });
+    view.connect_unmap({
+        let viewport_signal = viewport_signal.clone();
+        move |_| disconnect_viewport_signal(&viewport_signal)
+    });
     view.connect_notify_local(Some("width"), {
         move |view, _| {
             fit_once(
@@ -125,6 +128,12 @@ pub(super) fn install(view: &gtk4::ColumnView) {
             );
         }
     });
+}
+
+fn disconnect_viewport_signal(viewport_signal: &ViewportSignal) {
+    if let Some((adjustment, signal)) = viewport_signal.borrow_mut().take() {
+        adjustment.disconnect(signal);
+    }
 }
 
 fn viewport_adjustment(view: &gtk4::ColumnView) -> Option<gtk4::Adjustment> {
