@@ -16,6 +16,9 @@ mod test_support;
 #[path = "playback_reader_lock_tests.rs"]
 mod reader_lock_tests;
 #[cfg(test)]
+#[path = "playback_writer_lock_tests.rs"]
+mod writer_lock_tests;
+#[cfg(test)]
 #[path = "playback_tests.rs"]
 mod tests;
 
