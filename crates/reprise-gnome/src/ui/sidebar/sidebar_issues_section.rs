@@ -8,6 +8,7 @@
 //! and the cards sit at the very bottom beneath them. That is what this builds.
 
 use gtk4::prelude::*;
+use std::rc::Rc;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_presentation;
@@ -28,7 +29,7 @@ pub(super) fn bottom_region_placement() -> BottomRegionPlacement {
 pub(super) fn build_issues_section(
     activity_slot: &SidebarActivitySlot,
     issues_listbox: &gtk4::ListBox,
-) -> gtk4::ScrolledWindow {
+) -> gtk4::Box {
     let issues = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let heading = sidebar_presentation::problem_header();
     issues_listbox
@@ -48,12 +49,52 @@ pub(super) fn build_issues_section(
     // The cards keep their own Revealer fade; the section above them no longer
     // moves out of the way, so nothing has to be switched atomically.
     region.append(activity_slot.progress_widget());
-    gtk4::ScrolledWindow::builder()
+    region
+}
+
+pub(super) fn build_scrollable_issues_section(
+    activity_slot: &SidebarActivitySlot,
+    issues_listbox: &gtk4::ListBox,
+) -> gtk4::ScrolledWindow {
+    let region = build_issues_section(activity_slot, issues_listbox);
+    let scrolled = gtk4::ScrolledWindow::builder()
         .child(&region)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .propagate_natural_height(true)
         .vexpand(false)
         .valign(gtk4::Align::End)
-        .build()
+        .build();
+    let sync_visibility: Rc<dyn Fn()> = Rc::new({
+        let scrolled = scrolled.downgrade();
+        let issues_listbox = issues_listbox.downgrade();
+        let progress = activity_slot.progress_widget().downgrade();
+        move || {
+            if let (Some(scrolled), Some(issues_listbox), Some(progress)) = (
+                scrolled.upgrade(),
+                issues_listbox.upgrade(),
+                progress.upgrade(),
+            ) {
+                scrolled.set_visible(
+                    issues_listbox.property::<bool>("visible")
+                        || progress_has_visible_card(&progress),
+                );
+            }
+        }
+    });
+    issues_listbox.connect_visible_notify({
+        let sync_visibility = sync_visibility.clone();
+        move |_| sync_visibility()
+    });
+    sync_visibility();
+    scrolled
+}
+
+pub(super) fn progress_has_visible_card(progress: &gtk4::Box) -> bool {
+    std::iter::successors(
+        progress.first_child(),
+        gtk4::prelude::WidgetExt::next_sibling,
+    )
+    .filter_map(|child| child.downcast::<gtk4::Revealer>().ok())
+    .any(|card| card.property::<bool>("visible"))
 }

@@ -75,7 +75,7 @@ use super::sidebar_navigation_scroller::build_navigation_scroller;
 use super::sidebar_place::SidebarPlace;
 #[cfg(test)]
 use super::sidebar_place::{find_row, has_sidebar_row, resolve_select_source};
-use super::sidebar_root::build_root;
+use super::sidebar_root::{build_production_root, build_root};
 #[cfg(test)]
 use super::sidebar_root::{sidebar_root_order, SidebarRootChild};
 use reprise_core::view_source::ViewSource;
@@ -243,6 +243,7 @@ pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
     pub(super) activity_slot: SidebarActivitySlot,
+    pub(super) pinned_scroller: Option<gtk4::ScrolledWindow>,
     #[cfg(test)]
     navigation_scroller: gtk4::ScrolledWindow,
 }
@@ -288,7 +289,16 @@ impl Sidebar {
 
         let activity_slot = SidebarActivitySlot::new();
         let scrolled = build_navigation_scroller(&listbox, activity_slot.widget());
-        let root = build_root(&scrolled, &activity_slot, &issues_listbox);
+        let (root, pinned_scroller) = if defer_initial_build {
+            let root = build_production_root(&scrolled, &activity_slot, &issues_listbox);
+            let pinned = root
+                .last_child()
+                .and_downcast::<gtk4::ScrolledWindow>()
+                .expect("the production sidebar ends in its pinned scroller");
+            (root, Some(pinned))
+        } else {
+            (build_root(&scrolled, &activity_slot, &issues_listbox), None)
+        };
 
         let shared = Rc::new(Shared {
             conn,
@@ -335,6 +345,7 @@ impl Sidebar {
             shared,
             root,
             activity_slot,
+            pinned_scroller,
             #[cfg(test)]
             navigation_scroller: scrolled,
         }

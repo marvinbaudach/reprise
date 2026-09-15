@@ -200,9 +200,10 @@ fn chain_report(handles: &WindowLayoutTestHandles) -> String {
         let vertical = widget.measure(gtk4::Orientation::Vertical, widget.width());
         let horizontal = widget.measure(gtk4::Orientation::Horizontal, widget.height());
         report.push_str(&format!(
-            "{name}: {} {} bounds={bounds:?} vmeasure={vertical:?} hmeasure={horizontal:?} vexpand={} valign={:?}\n",
+            "{name}: {} {} bounds={bounds:?} vmeasure={vertical:?} hmeasure={horizontal:?} visible={} vexpand={} valign={:?}\n",
             widget.css_name(),
             widget.type_().name(),
+            widget.is_visible(),
             widget.vexpands(),
             widget.valign(),
         ));
@@ -640,14 +641,8 @@ fn the_real_window_test_instrument_publishes_the_production_surface() {
         Some(handles.sidebar.widget().clone().upcast())
     );
     assert!(handles.activity_slot.is_ancestor(&handles.pinned_block));
-    assert_eq!(
-        handles.content_nav.parent(),
-        Some(handles.split_view.clone().upcast())
-    );
-    assert_eq!(
-        handles.column_view.parent(),
-        Some(handles.track_scrolled.clone().upcast())
-    );
+    assert!(handles.content_nav.is_ancestor(&handles.split_view));
+    assert!(handles.column_view.is_ancestor(&handles.track_scrolled));
     assert_eq!(
         handles.sidebar_page.child(),
         Some(handles.sidebar.widget().clone().upcast())

@@ -369,16 +369,16 @@ fn style_6_the_viewport_page_size_drives_responsive_fitting() {
     while gtk4::glib::MainContext::default().iteration(false) {}
     assert!(columns.iter().all(|column| column.column.is_visible()));
 
-    scrolled
-        .hadjustment()
-        .configure(0.0, 0.0, 1_000.0, 1.0, 10.0, 700.0);
+    scrolled.set_width_request(700);
+    window.set_size_request(700, 120);
     gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
         std::time::Duration::from_millis(20),
     ));
     while gtk4::glib::MainContext::default().iteration(false) {}
     assert!(
         columns.iter().any(|column| !column.column.is_visible()),
-        "a viewport narrower than the ColumnView allocation must refit immediately"
+        "a narrowed real viewport must refit immediately; page_size={}",
+        scrolled.hadjustment().page_size()
     );
     window.close();
 }
