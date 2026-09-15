@@ -117,7 +117,7 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
                 text_buffer.push_str(&text);
             }
             Event::CData(text) => {
-                text_buffer.push_str(&text);
+                text_buffer.push_str(&super::feed_text::decode_html_entities(&text));
             }
             Event::GeneralRef(reference) => {
                 text_buffer.push_str(&resolve_reference(&reference)?);
@@ -231,8 +231,6 @@ fn handle_text(
     image_url: &mut Option<String>,
 ) {
     let current = path.last().map(String::as_str).unwrap_or_default();
-    let decoded = super::feed_text::decode_html_entities(value);
-    let value = decoded.as_ref();
     if let Some(builder) = episode {
         match current {
             "title" => {
@@ -462,6 +460,36 @@ mod tests {
         assert_eq!(parsed.author.as_deref(), Some("Gülsha ’ Maja"));
         assert_eq!(parsed.description.as_deref(), Some("Talk Ä more & more"));
         assert_eq!(parsed.episodes[0].title, "Rock & Roll ’ forever");
+    }
+
+    #[test]
+    fn plain_xml_text_is_decoded_once_while_cdata_entities_are_decoded_once() {
+        let parsed = parse_feed(
+            r#"<rss><channel>
+              <title>5 &amp;amp; 10</title>
+              <author><![CDATA[Gülsha &amp; Maja]]></author>
+            </channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.title.as_deref(), Some("5 &amp; 10"));
+        assert_eq!(parsed.author.as_deref(), Some("Gülsha & Maja"));
+    }
+
+    #[test]
+    fn illegal_numeric_references_stay_literal_in_xml_and_cdata() {
+        let parsed = parse_feed(
+            r#"<rss><channel>
+              <title>XML&#0;title</title>
+              <author><![CDATA[CDATA&#x1f;author]]></author>
+            </channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.title.as_deref(), Some("XML&#0;title"));
+        assert_eq!(parsed.author.as_deref(), Some("CDATA&#x1f;author"));
     }
 
     /// Real feeds carry undeclared HTML entities (`&nbsp;`, `&mdash;`, …) in

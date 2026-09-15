@@ -2,6 +2,8 @@
 
 use std::borrow::Cow;
 
+const MAX_REFERENCE_LENGTH: usize = 32;
+
 /// Decodes one layer of XML and HTML4 Latin-1 character references.
 #[must_use]
 pub fn decode_html_entities(value: &str) -> Cow<'_, str> {
@@ -11,16 +13,29 @@ pub fn decode_html_entities(value: &str) -> Cow<'_, str> {
 
     while let Some(relative_amp) = value[scan..].find('&') {
         let amp = scan + relative_amp;
-        let Some(relative_end) = value[amp + 1..].find(';') else {
-            break;
+        let tail = &value[amp + 1..];
+        let search_length = tail.len().min(MAX_REFERENCE_LENGTH + 1);
+        let Some(relative_end) = tail.as_bytes()[..search_length]
+            .iter()
+            .position(|byte| *byte == b';')
+        else {
+            scan = amp + 1;
+            continue;
         };
         let end = amp + 1 + relative_end;
+        if let Some(nested_amp) = tail.as_bytes()[..relative_end]
+            .iter()
+            .position(|byte| *byte == b'&')
+        {
+            scan = amp + 1 + nested_amp;
+            continue;
+        }
         let reference = &value[amp + 1..end];
         if !reference
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || character == '#')
         {
-            scan = amp + 1;
+            scan = end + 1;
             continue;
         }
         if let Some(character) = decode_reference(reference) {
@@ -47,8 +62,18 @@ pub(super) fn decode_reference(reference: &str) -> Option<char> {
             .strip_prefix('x')
             .or_else(|| decimal.strip_prefix('X'))
             .map_or((decimal, 10), |hex| (hex, 16));
+        let digits_are_valid = !digits.is_empty()
+            && digits.chars().all(|digit| match radix {
+                10 => digit.is_ascii_digit(),
+                16 => digit.is_ascii_hexdigit(),
+                _ => false,
+            });
+        if !digits_are_valid {
+            return None;
+        }
         return u32::from_str_radix(digits, radix)
             .ok()
+            .filter(|codepoint| is_xml_display_codepoint(*codepoint))
             .and_then(char::from_u32);
     }
 
@@ -167,9 +192,15 @@ pub(super) fn decode_reference(reference: &str) -> Option<char> {
     })
 }
 
+fn is_xml_display_codepoint(codepoint: u32) -> bool {
+    matches!(codepoint, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF)
+        && !matches!(codepoint, 0x7F..=0x9F)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn decoded_text_is_borrowed_when_there_is_nothing_to_change() {
@@ -186,5 +217,31 @@ mod tests {
             "&amp; &unknown;"
         );
         assert_eq!(decode_html_entities("A & B &amp; C"), "A & B & C");
+    }
+
+    #[test]
+    fn hostile_invalid_reference_input_is_bounded() {
+        let hostile = format!("{};", "&".repeat(100_000));
+        let started = Instant::now();
+
+        assert_eq!(decode_html_entities(&hostile), hostile);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "hostile input took {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn xml_illegal_numeric_references_stay_literal() {
+        for reference in ["#0", "#x0", "#1", "#x1f", "#127", "#x80", "#x9f"] {
+            assert_eq!(decode_reference(reference), None, "{reference}");
+            let encoded = format!("&{reference};");
+            assert_eq!(decode_html_entities(&encoded), encoded, "{reference}");
+        }
+
+        for (reference, expected) in [("#9", '\t'), ("#10", '\n'), ("#13", '\r')] {
+            assert_eq!(decode_reference(reference), Some(expected), "{reference}");
+        }
     }
 }
