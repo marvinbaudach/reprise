@@ -81,6 +81,17 @@ class NowPlayingGesturesTest {
     }
 
     @Test
+    fun theGestureLayerDoesNotClaimADragThatStartsOnTheSeekNode() {
+        assertSeekDragIsOwnedBySlider(SurfaceLayout.STACKED)
+    }
+
+    @Test
+    @Config(qualifiers = "w916dp-h412dp-land")
+    fun theWideShortGestureLayerDoesNotClaimADragThatStartsOnTheSeekNode() {
+        assertSeekDragIsOwnedBySlider(SurfaceLayout.WIDE_SHORT)
+    }
+
+    @Test
     fun aCancelledSeekGestureReturnsTheHeadToThePlaybackPosition() {
         val playback = mutableStateOf(gesturePlayback())
         val surfaceState = MobileSurfaceViewModel()
@@ -411,6 +422,7 @@ class NowPlayingGesturesTest {
         controller: AmbientMotionController = AmbientMotionController(),
         track: LibraryTrack = gestureTrack(),
         playback: PlaybackUiState = gesturePlayback(),
+        surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
         close: () -> Unit = {},
     ) {
         val theme = MobileThemeSelection(
@@ -428,6 +440,7 @@ class NowPlayingGesturesTest {
                 NowPlayingSheet(
                     track = track,
                     playback = playback,
+                    surfaceLayout = surfaceLayout,
                     close = close,
                 )
             }
@@ -462,6 +475,30 @@ class NowPlayingGesturesTest {
             .getOrNull(SemanticsProperties.ProgressBarRangeInfo)
             ?.current
             ?: error("No progress semantics")
+
+    private fun assertSeekDragIsOwnedBySlider(surfaceLayout: SurfaceLayout) {
+        val controls = GestureRecordingControls()
+        var closed = false
+        compose.setContent {
+            testNowPlayingSheet(
+                controls = controls,
+                surfaceLayout = surfaceLayout,
+                close = { closed = true },
+            )
+        }
+
+        compose.onNodeWithTag("now-playing-seek").performTouchInput {
+            down(Offset(width * 0.2f, centerY))
+            moveTo(Offset(width * 0.6f, centerY))
+            up()
+        }
+
+        val seekPosition = controls.seekPositions.single()
+        assertTrue(kotlin.math.abs(seekPosition - 60_000) <= 6_000)
+        assertEquals(0, controls.nextCalls)
+        assertEquals(0, controls.previousCalls)
+        assertFalse(closed)
+    }
 }
 
 private class RecordingSeekInteractionSource : MutableInteractionSource {

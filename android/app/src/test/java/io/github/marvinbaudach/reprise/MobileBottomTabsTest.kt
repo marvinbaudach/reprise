@@ -1,6 +1,7 @@
 package io.github.marvinbaudach.reprise
 
 import android.os.Looper
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.unit.dp
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -130,7 +132,33 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onNodeWithTag("library-navigation-bar").assertIsNotDisplayed()
 
-        compose.onNodeWithTag("now-playing-gestures").performTouchInput { swipeLeft() }
+        val gestures = compose.onNodeWithTag("now-playing-gestures")
+        gestures.performTouchInput {
+            val y = height * 0.3f
+            down(Offset(width * 0.8f, y))
+            moveTo(Offset(width * 0.2f, y))
+            up()
+        }
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
+        compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-TITLES").assertIsSelected()
+
+        gestures.performTouchInput {
+            val y = height * 0.70f
+            down(Offset(width * 0.8f, y))
+            moveTo(Offset(width * 0.2f, y))
+            up()
+        }
+        compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
+        compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-TITLES").assertIsSelected()
+
+        gestures.performTouchInput {
+            val y = height - 40.dp.toPx()
+            down(Offset(width * 0.8f, y))
+            moveTo(Offset(width * 0.2f, y))
+            up()
+        }
 
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()

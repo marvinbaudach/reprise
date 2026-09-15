@@ -271,6 +271,7 @@ internal fun NowPlayingScene(
     visualizerOpacity: Float = 0f,
     cueRevision: Int = 0,
     onCoverBounds: (Rect) -> Unit = {},
+    onSeekBounds: (Rect) -> Unit = {},
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
 ) {
@@ -364,6 +365,7 @@ internal fun NowPlayingScene(
             surfaceState = surfaceState,
             cueRevision = cueRevision,
             animationsEnabled = motion.sceneAnimationsEnabled,
+            onSeekBounds = onSeekBounds,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(y = maxHeight * 0.69f)
@@ -750,6 +752,7 @@ private fun SceneProgress(
     surfaceState: MobileSurfaceViewModel,
     cueRevision: Int,
     animationsEnabled: Boolean,
+    onSeekBounds: (Rect) -> Unit,
     modifier: Modifier,
 ) {
     Box(modifier.padding(horizontal = 24.dp)) {
@@ -759,6 +762,7 @@ private fun SceneProgress(
             surfaceState,
             cueRevision = cueRevision,
             animationsEnabled = animationsEnabled,
+            onSeekBounds = onSeekBounds,
         )
     }
 }

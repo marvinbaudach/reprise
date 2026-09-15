@@ -96,12 +96,12 @@ works the moment the drag reaches the slider — no thumb is needed for that.
    value range by half the thumb width, so `SpectralSeekTrack`'s fraction
    maths would have to follow). Out of scope; a follow-up plan if the user
    still misses a handle to *see* once grabbing works.
-4. **The seek exclusion band stays fraction-based.** `AXIS_LOCK_DISTANCE` is
-   8 px, far below the slider's slop, so in any band where the parent is
-   allowed to drag it would win the race. The band keeps the parent out of the
-   seek row; task 3 checks the band actually covers the seek node in both
-   layouts (`STACKED` and `WIDE_SHORT`) instead of trusting the constants.
-   Measured bounds only if that check fails — and then as its own decision.
+4. **Measured seek bounds replace the fraction band.** Task 3 found the
+   `WIDE_SHORT` seek centre at 0.248 of the gesture node's height, outside the
+   planned 0.64…0.76 band. `SpectralSeekSlider` therefore reports its bounds
+   in the gesture node's coordinate frame. A down inside those bounds, with an
+   8 dp vertical touch margin, is eligible for neither parent axis. The
+   transport-height exclusion remains in place for vertical drags.
 5. **Device proof after the merge, by the orchestrator.** Build, install and
    the five gestures from the table, under `device-lock`. Agreed in the grill;
    no further question before doing it.
@@ -122,6 +122,10 @@ In the event loop, replace the unconditional `change.consume()` with
 // siblings behind a hit node (MobileBottomTabsTest proves it per band).
 if (state.axis != PlayGestureAxis.NONE) change.consume()
 ```
+
+The same modifier receives the measured seek bounds. It refuses both parent
+axes when the down lies inside the seek rectangle expanded vertically by 8 dp;
+no layout fraction remains.
 
 Nothing else in the loop changes: `childConsumed`, `dragBy` guarded by
 `!change.isConsumed`, the tap and double-tap branch and the `finally` stay.
@@ -232,18 +236,12 @@ transport displayed:
 Use explicit `down/moveTo/up` at those y's rather than the centre-anchored
 `swipeLeft()`, so the band is what is being tested.
 
-Then the exclusion band versus the seek node, in `NowPlayingGesturesTest`:
-`theSeekNodeLiesInsideTheVerticalExclusionBand` mounts the sheet, reads
-`now-playing-seek`'s bounds relative to `now-playing-gestures`
-(`fetchSemanticsNode().boundsInRoot`) and asserts its vertical centre lies
-within 0.64…0.76 of the gesture node's height. Once for `STACKED` (class
-default) and once for `WIDE_SHORT`: give `testNowPlayingSheet` a
-`surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED` parameter passed
-through to `NowPlayingSheet`, and put a method-level
-`@Config(qualifiers = "w916dp-h412dp-land")` on the second test so the wide
-metrics measure against a wide screen. If the wide-short seek row lies
-outside the band, **stop and report** — widening the band is a decision for
-the review, not a silent constant change.
+In `NowPlayingGesturesTest`, prove the measured boundary through behavior in
+both layouts. Down on `now-playing-seek` at 20 % width, move to 60 %, and
+release. The one seek must land near 60 % of the duration, the current track
+must not change, and the sheet must not close. Keep the method-level
+`@Config(qualifiers = "w916dp-h412dp-land")` on the `WIDE_SHORT` case and the
+`surfaceLayout` parameter on `testNowPlayingSheet`.
 
 ### Task 4 — a cancel returns the head to the last snapshot
 
@@ -277,8 +275,7 @@ Redirect both logs to `$SCRATCH/<name>.log` and answer from `grep`, never
 - Both task-1 tests were red before task 2 and are green after it.
 - The parent's own gestures (task 2 list) and the pager guards (task 3, three
   bands) are green.
-- The exclusion-band test is green in both layouts, or the report names the
-  layout where it is not.
+- The measured-bounds ownership test is green in both layouts.
 - Task 4's two assertions are green.
 - `check-android-suite.sh` reports ≥ 334 executed tests, all passed, and
   `npm --prefix android run lint` is clean.
@@ -289,9 +286,6 @@ Redirect both logs to `$SCRATCH/<name>.log` and answer from `grep`, never
 ## Out of scope
 
 - A visible thumb (decision 3).
-- Rewriting the exclusion band as measured bounds (`coverBounds`-style) —
-  only if task 3 finds the wide-short row outside the band, as its own
-  decision.
 - The desktop `WaveformSeek`; it has no such parent.
 
 ## Parallelität

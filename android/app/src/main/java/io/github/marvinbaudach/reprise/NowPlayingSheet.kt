@@ -30,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -44,6 +45,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -102,6 +105,11 @@ internal fun NowPlayingSheet(
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
     val coverBounds = remember { mutableStateOf(Rect.Zero) }
+    val gestureBoundsInRoot = remember { mutableStateOf(Rect.Zero) }
+    val seekBoundsInRoot = remember { mutableStateOf(Rect.Zero) }
+    val seekBounds = remember {
+        derivedStateOf { seekBoundsInRoot.value.relativeTo(gestureBoundsInRoot.value) }
+    }
     val visualizerVisible = remember(visualizerPreference) {
         mutableStateOf(
             runCatching(visualizerPreference::visualizerSetting)
@@ -215,6 +223,7 @@ internal fun NowPlayingSheet(
     Surface(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { gestureBoundsInRoot.value = it.boundsInRoot() }
             .onSizeChanged { size ->
                 val width = size.width.toFloat()
                 if (screenWidthPx == width) return@onSizeChanged
@@ -224,6 +233,7 @@ internal fun NowPlayingSheet(
             .testTag("now-playing-gestures")
             .nowPlayingGestures(
                 animationsEnabled = motion.sceneAnimationsEnabled,
+                seekBounds = seekBounds,
                 currentIndex = currentIndex,
                 firstIndex = panelWindow.firstIndex,
                 lastIndex = panelWindow.lastIndex,
@@ -302,6 +312,7 @@ internal fun NowPlayingSheet(
                 playback = playback,
                 surfaceState = surfaceState,
                 metrics = metrics,
+                onSeekBounds = { seekBoundsInRoot.value = it },
                 onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
                 onNext = { settleTrack(PlayGestureDecision.NEXT) },
             )
@@ -317,6 +328,7 @@ internal fun NowPlayingSheet(
                     visualizerOpacity = visualizerOpacity.value,
                     cueRevision = cueRevision,
                     onCoverBounds = { coverBounds.value = it },
+                    onSeekBounds = { seekBoundsInRoot.value = it },
                     onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
                     onNext = { settleTrack(PlayGestureDecision.NEXT) },
                 )
@@ -383,6 +395,7 @@ private fun WideShortNowPlayingContent(
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
     metrics: NowPlayingMetrics,
+    onSeekBounds: (Rect) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -455,7 +468,12 @@ private fun WideShortNowPlayingContent(
                 // menu now uses.
                 NowPlayingTrackContextMenu(track)
             }
-            SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            SpectralSeekSlider(
+                trackId = track.id,
+                playback = playback,
+                surfaceState = surfaceState,
+                onSeekBounds = onSeekBounds,
+            )
             playback.error?.let { message ->
                 Text(
                     text = message,
@@ -495,6 +513,7 @@ internal fun SpectralSeekSlider(
     interactionSource: MutableInteractionSource? = null,
     cueRevision: Int = 0,
     animationsEnabled: Boolean = true,
+    onSeekBounds: (Rect) -> Unit = {},
 ) {
     val seekTo = LocalPlaybackControls.current::seekTo
     val sliderInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
@@ -516,7 +535,9 @@ internal fun SpectralSeekSlider(
         modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true },
     ) {
         Slider(
-            modifier = Modifier.testTag("now-playing-seek"),
+            modifier = Modifier
+                .onGloballyPositioned { onSeekBounds(it.boundsInRoot()) }
+                .testTag("now-playing-seek"),
             value = displayed.toFloat(),
             onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
             onValueChangeFinished = {
@@ -556,6 +577,13 @@ internal fun SpectralSeekSlider(
         }
     }
 }
+
+private fun Rect.relativeTo(parent: Rect): Rect = Rect(
+    left = left - parent.left,
+    top = top - parent.top,
+    right = right - parent.left,
+    bottom = bottom - parent.top,
+)
 
 @Composable
 private fun PlaybackActions(

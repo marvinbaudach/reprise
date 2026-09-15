@@ -4,6 +4,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -105,6 +107,7 @@ internal fun rememberPlayPanelWindow(
 
 internal fun Modifier.nowPlayingGestures(
     animationsEnabled: Boolean,
+    seekBounds: State<Rect>,
     currentIndex: Int,
     firstIndex: Int,
     lastIndex: Int,
@@ -137,6 +140,7 @@ internal fun Modifier.nowPlayingGestures(
     val latestOnTap by rememberUpdatedState(onTap)
     pointerInput(animationsEnabled) {
     val transportHeight = TRANSPORT_EXCLUSION_DP.dp.toPx()
+    val seekTouchMargin = SEEK_TOUCH_MARGIN_DP.dp.toPx()
     val doubleTapDistance = DOUBLE_TAP_DISTANCE_DP.dp.toPx()
     coroutineScope {
         var lastTapTime = Long.MIN_VALUE
@@ -146,9 +150,11 @@ internal fun Modifier.nowPlayingGestures(
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
             val startY = down.position.y
-            val horizontalAllowed = startY <= size.height * COVER_GESTURE_FRACTION
-            val verticalAllowed = startY !in (size.height * SEEK_EXCLUSION_START)..
-                (size.height * SEEK_EXCLUSION_END) && startY < size.height - transportHeight
+            val startsOnSeek = seekBounds.value
+                .expandedVertically(seekTouchMargin)
+                .contains(down.position)
+            val horizontalAllowed = !startsOnSeek && startY <= size.height * COVER_GESTURE_FRACTION
+            val verticalAllowed = !startsOnSeek && startY < size.height - transportHeight
             val state = PlayGestureState(
                 width = size.width.toFloat(),
                 height = size.height.toFloat(),
@@ -255,9 +261,15 @@ internal fun gestureVelocityPxPerSecond(displacement: Offset, elapsedMs: Long): 
     return displacement / seconds
 }
 
+private fun Rect.expandedVertically(margin: Float): Rect = Rect(
+    left = left,
+    top = top - margin,
+    right = right,
+    bottom = bottom + margin,
+)
+
 private const val COVER_GESTURE_FRACTION = 0.62f
-private const val SEEK_EXCLUSION_START = 0.64f
-private const val SEEK_EXCLUSION_END = 0.76f
+private const val SEEK_TOUCH_MARGIN_DP = 8
 private const val TRANSPORT_EXCLUSION_DP = 132
 private const val DOUBLE_TAP_TIMEOUT_MS = 300L
 private const val DOUBLE_TAP_DISTANCE_DP = 48
