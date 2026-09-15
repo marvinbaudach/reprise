@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -42,6 +43,42 @@ import uniffi.reprise_android_ffi.AndroidVisualizerChoice
 class NowPlayingGesturesTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun aSlowDragOnTheSeekBarMovesTheHeadAndSeeksOnRelease() {
+        val controls = GestureRecordingControls()
+        compose.setContent { testNowPlayingSheet(controls = controls) }
+        val slider = compose.onNodeWithTag("now-playing-seek")
+
+        slider.performTouchInput {
+            down(Offset(width * 0.2f, centerY))
+            moveBy(Offset(4f, 0f))
+            moveBy(Offset(4f, 0f))
+            moveBy(Offset(4f, 0f))
+            moveTo(Offset(width * 0.6f, centerY))
+            up()
+        }
+
+        val seekPosition = controls.seekPositions.single()
+        assertTrue(kotlin.math.abs(seekPosition - 60_000) <= 6_000)
+        compose.onNodeWithTag("now-playing-position")
+            .assertTextEquals(formatDuration(seekPosition))
+    }
+
+    @Test
+    fun aTapWithAWobbleStillSeeks() {
+        val controls = GestureRecordingControls()
+        compose.setContent { testNowPlayingSheet(controls = controls) }
+
+        compose.onNodeWithTag("now-playing-seek").performTouchInput {
+            down(Offset(width * 0.5f, centerY))
+            moveBy(Offset(3f, 0f))
+            up()
+        }
+
+        val seekPosition = controls.seekPositions.single()
+        assertTrue(kotlin.math.abs(seekPosition - 50_000) <= 2_000)
+    }
 
     @Test
     fun aCancelledSeekGestureReturnsTheHeadToThePlaybackPosition() {
