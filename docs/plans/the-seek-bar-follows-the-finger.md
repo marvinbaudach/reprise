@@ -2,7 +2,7 @@
 slug: the-seek-bar-follows-the-finger
 worktree: /home/marvin/Projects/reprise-the-seek-bar-follows-the-finger
 branch: feature/the-seek-bar-follows-the-finger
-phase: planned
+phase: coded
 codex_session:
 created: 2026-09-15
 ---
@@ -269,6 +269,15 @@ would not reach).
 
 Redirect both logs to `$SCRATCH/<name>.log` and answer from `grep`, never
 `cat` a log back.
+
+### Task 5 verification — 2026-09-15
+
+- `scripts/check-android-suite.sh`: 104 suites, 625 tests executed, 0 skipped,
+  0 failures, and 0 errors; the debug APK assembled successfully.
+- `npm --prefix android run lint`: successful with 0 errors and 0 warnings.
+  Its two informational autoboxing hints predate this branch.
+- The five-row physical-device check remains assigned to the orchestrator
+  after merge, as decision 5 requires.
 
 ## Done when
 
