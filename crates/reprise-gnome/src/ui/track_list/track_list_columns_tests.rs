@@ -416,6 +416,7 @@ fn play_17_the_playing_row_is_one_highlight() {
     let cell = cell.borrow().clone().expect("the row cell is realised");
     let row = enclosing_row(&cell).expect("the cell belongs to a GTK row");
     toggle_now_playing_cell(&cell, true, true);
+    toggle_class(&row, NOW_PLAYING_ROW_CLASS, true);
     while gtk4::glib::MainContext::default().iteration(false) {}
     assert!(cell.has_css_class(NOW_PLAYING_CLASS));
     assert!(row.has_css_class(NOW_PLAYING_ROW_CLASS));
@@ -433,10 +434,96 @@ fn play_17_the_playing_row_is_one_highlight() {
     );
 
     toggle_now_playing_cell(&cell, false, true);
+    toggle_class(&row, NOW_PLAYING_ROW_CLASS, false);
     while gtk4::glib::MainContext::default().iteration(false) {}
     assert!(!cell.has_css_class(NOW_PLAYING_CLASS));
     assert!(!cell.has_css_class(NOW_PLAYING_LEADING_CLASS));
     assert!(!row.has_css_class(NOW_PLAYING_ROW_CLASS));
+    window.set_child(None::<&gtk4::Widget>);
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_17_an_episode_row_has_one_episode_aware_highlight() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO podcast_subscriptions
+             (id, kind, feed_url, title, added_at)
+             VALUES (1, 'rss', 'https://example.test/feed', 'Systems Weekly', 0);
+             INSERT INTO podcast_episodes
+             (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+             VALUES
+             (7, 1, 'episode-seven', 'Episode Seven',
+              'https://example.test/seven.mp3', 90, 0);",
+        )
+        .unwrap();
+    let queue = super::super::queue_sections::compose(
+        Some(reprise_core::up_next::QueueItem::Episode(7)),
+        &[],
+        &[],
+        None,
+    );
+    let track_list = super::super::TrackList::new(
+        conn,
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        move || queue.clone(),
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    track_list.set_source(reprise_core::view_source::ViewSource::Queue);
+    let window = gtk4::Window::builder()
+        .default_width(1_200)
+        .default_height(320)
+        .child(track_list.widget())
+        .build();
+    window.present();
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || track_list.shared.model.n_items() == 1
+    ));
+
+    track_list.shared.model.invalidate_cached_metadata(0, 1);
+    track_list.set_playing_episode(Some(crate::ui::podcasts::EpisodeMark::new(7, true)));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let widgets = std::iter::successors(
+        track_list.shared.column_view.first_child(),
+        gtk4::prelude::WidgetExt::next_sibling,
+    )
+    .flat_map(|root| {
+        let mut found = Vec::new();
+        let mut pending = vec![root];
+        while let Some(widget) = pending.pop() {
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                pending.push(current.clone());
+                child = current.next_sibling();
+            }
+            found.push(widget);
+        }
+        found
+    })
+    .collect::<Vec<_>>();
+    let marked_cells = widgets
+        .iter()
+        .filter(|widget| widget.has_css_class(NOW_PLAYING_CLASS))
+        .collect::<Vec<_>>();
+    assert!(
+        marked_cells.len() >= 3,
+        "the precondition needs several independently bound episode cells; got {}",
+        marked_cells.len()
+    );
+    let row = enclosing_row(marked_cells[0]).expect("the marked episode cell belongs to a row");
+    assert!(
+        row.has_css_class(NOW_PLAYING_ROW_CLASS),
+        "the episode-aware shared playback state must decide the row highlight"
+    );
+
     window.set_child(None::<&gtk4::Widget>);
     window.close();
 }

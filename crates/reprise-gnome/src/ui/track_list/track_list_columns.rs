@@ -74,13 +74,27 @@ pub(in crate::ui) fn toggle_now_playing_cell(
     if leading {
         toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
     }
-    let cell = cell.upcast_ref::<gtk4::Widget>().downgrade();
+}
+
+pub(super) fn sync_now_playing_row(
+    coordinator: &impl gtk4::prelude::IsA<gtk4::Widget>,
+    item: &QueueItemMetadata,
+    shared: std::rc::Weak<Shared>,
+) {
+    let item = item.clone();
+    let coordinator = coordinator.upcast_ref::<gtk4::Widget>().downgrade();
     gtk4::glib::idle_add_local_once(move || {
-        if let Some(cell) = cell.upgrade() {
-            if let Some(row) = enclosing_row(&cell) {
-                if row.has_css_class(NOW_PLAYING_ROW_CLASS) != playing {
-                    toggle_class(&row, NOW_PLAYING_ROW_CLASS, playing);
-                }
+        let (Some(shared), Some(coordinator)) = (shared.upgrade(), coordinator.upgrade()) else {
+            return;
+        };
+        let playing = super::queue_item_presentation::is_now_playing(
+            &item,
+            shared.playing_track_id.get(),
+            shared.playing_episode.get(),
+        );
+        if let Some(row) = enclosing_row(&coordinator) {
+            if row.has_css_class(NOW_PLAYING_ROW_CLASS) != playing {
+                toggle_class(&row, NOW_PLAYING_ROW_CLASS, playing);
             }
         }
     });
@@ -150,7 +164,8 @@ pub(in crate::ui) fn apply_now_playing(
     shared: &Shared,
     leading: bool,
 ) -> bool {
-    let playing = shared.playing_track_id.get() == Some(track_id);
+    let playing =
+        shared.playing_episode.get().is_none() && shared.playing_track_id.get() == Some(track_id);
     toggle_now_playing_cell(cell, playing, leading);
     playing
 }
@@ -203,7 +218,8 @@ fn cover_link_presentation(item: &QueueItemMetadata) -> CoverLinkPresentation {
             &[("album", &track.album)],
         ),
         target: Some(CoverAlbumTarget {
-            track_id: track.id,
+            track_id: super::queue_item_presentation::rating_track_id(item)
+                .expect("a track album link has a track id"),
             album: track.album.clone(),
             album_artist: track.album_artist.clone(),
         }),
@@ -385,7 +401,7 @@ pub(in crate::ui) fn append_column(
             render.as_ref(),
             &shared_for_bind,
         );
-        let track_id = super::queue_item_presentation::rating_track_id(&metadata);
+        let rendered_metadata = metadata.clone();
         let rendered_metadata_generation = Cell::new(shared_for_bind.model.metadata_generation());
         let weak_item = item.downgrade();
         now_playing_marker::register_cell(&shared_for_bind, item, {
@@ -394,9 +410,7 @@ pub(in crate::ui) fn append_column(
             move |shared| {
                 let metadata_generation = shared.model.metadata_generation();
                 if metadata_generation == rendered_metadata_generation.get() {
-                    let playing = track_id
-                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                    toggle_now_playing_cell(&label, playing, false);
+                    apply_now_playing_item(&label, &rendered_metadata, shared, false);
                     return;
                 }
                 let Some(item) = weak_item.upgrade() else {
@@ -558,13 +572,11 @@ pub(in crate::ui) fn append_cover_column(
                 }),
             );
             apply_now_playing_item(&cover, &metadata, &shared, true);
-            let track_id = super::queue_item_presentation::rating_track_id(&metadata);
+            let rendered_metadata = metadata.clone();
             now_playing_marker::register_cell(&shared, item, {
                 let cover = cover.clone();
                 move |shared| {
-                    let playing = track_id
-                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                    toggle_now_playing_cell(&cover, playing, true);
+                    apply_now_playing_item(&cover, &rendered_metadata, shared, true);
                 }
             });
 
