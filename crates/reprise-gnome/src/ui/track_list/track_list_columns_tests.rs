@@ -347,6 +347,102 @@ fn style_6_the_table_never_overflows_its_viewport() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn style_6_the_viewport_page_size_drives_responsive_fitting() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    for (column, width) in columns.iter().zip([41, 161, 201, 221, 65, 73, 89]) {
+        column.column.set_fixed_width(width);
+    }
+    super::super::track_list_column_widths::install(&view);
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(1_000)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(20),
+    ));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(columns.iter().all(|column| column.column.is_visible()));
+
+    scrolled
+        .hadjustment()
+        .configure(0.0, 0.0, 1_000.0, 1.0, 10.0, 700.0);
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(20),
+    ));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(
+        columns.iter().any(|column| !column.column.is_visible()),
+        "a viewport narrower than the ColumnView allocation must refit immediately"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_17_the_playing_row_is_one_highlight() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let cell = Rc::new(RefCell::new(None));
+    let factory = gtk4::SignalListItemFactory::new();
+    factory.connect_setup({
+        let cell = cell.clone();
+        move |_, object| {
+            let item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+            let label = gtk4::Label::new(Some("Track"));
+            super::super::track_list_row_interaction::expand_to_cell(&label);
+            item.set_child(Some(&label));
+            cell.replace(Some(label));
+        }
+    });
+    let model = gtk4::StringList::new(&["Track"]);
+    let selection = gtk4::NoSelection::new(Some(model));
+    let view = gtk4::ColumnView::new(Some(selection));
+    view.append_column(&gtk4::ColumnViewColumn::new(Some("Title"), Some(factory)));
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(320)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let cell = cell.borrow().clone().expect("the row cell is realised");
+    let row = enclosing_row(&cell).expect("the cell belongs to a GTK row");
+    toggle_now_playing_cell(&cell, true, true);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(cell.has_css_class(NOW_PLAYING_CLASS));
+    assert!(row.has_css_class(NOW_PLAYING_ROW_CLASS));
+    let css = super::super::track_list_row_interaction::css();
+    let parse_errors = crate::ui::style::css_parse_errors(&css);
+    assert!(
+        parse_errors.is_empty(),
+        "playing-row CSS must parse: {parse_errors:?}"
+    );
+    assert!(css.contains("row.now-playing-row"));
+    assert!(css.contains("background-color: @reprise_now_playing_tint"));
+    assert!(
+        !css.contains(".reprise-track-cell.now-playing"),
+        "individual cells must carry no background rule"
+    );
+
+    toggle_now_playing_cell(&cell, false, true);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(!cell.has_css_class(NOW_PLAYING_CLASS));
+    assert!(!cell.has_css_class(NOW_PLAYING_LEADING_CLASS));
+    assert!(!row.has_css_class(NOW_PLAYING_ROW_CLASS));
+    window.set_child(None::<&gtk4::Widget>);
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn style_6_remapping_does_not_freeze_a_responsive_collapse() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

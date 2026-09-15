@@ -15,7 +15,7 @@ use reprise_core::queries::QueueItemMetadata;
 use super::now_playing_marker;
 use super::track_list_columns::{
     ai_badge_visible, apply_missing_title, apply_now_playing_item, build_playing_marker,
-    clear_missing_title, toggle_class, NOW_PLAYING_CLASS, NOW_PLAYING_TITLE_CLASS,
+    clear_missing_title, toggle_class, toggle_now_playing_cell, NOW_PLAYING_TITLE_CLASS,
 };
 use super::{
     queue_item_presentation, strings, track_list_context_menu, track_list_dnd,
@@ -143,7 +143,7 @@ pub(in crate::ui) fn append_title_column(
             move |shared| {
                 let playing = track_id
                     .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                toggle_class(&row, NOW_PLAYING_CLASS, playing);
+                toggle_now_playing_cell(&row, playing, false);
                 eq.set_visible(playing);
                 toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
             }

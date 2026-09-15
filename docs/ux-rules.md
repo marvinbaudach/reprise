@@ -438,6 +438,9 @@ result.
   a non-text accent-surface control. In dark appearance the app-accent pairing
   measures 1.69:1; light appearance uses the derived contrast-safe playback
   accent. The exemption records the dark cost rather than hiding it.
+- **PLAY-17** [active] [gtk] — The playing row is highlighted as one row: one
+  tint across the full row width with no seams between cells, plus the leading
+  accent.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

@@ -28,9 +28,10 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::models::{MissingReason, Track};
 use reprise_core::queries::QueueItemMetadata;
 
-/// Marker class carried by every cell of the currently-playing row — drives
-/// the accent row background. See `track_list_row_interaction.rs`'s CSS.
-pub(super) const NOW_PLAYING_CLASS: &str = "now-playing";
+/// Marker class carried by every cell of the currently-playing row. The cells
+/// keep this state marker while the enclosing GTK row paints the shared tint.
+pub(in crate::ui) const NOW_PLAYING_CLASS: &str = "now-playing";
+pub(in crate::ui) const NOW_PLAYING_ROW_CLASS: &str = "now-playing-row";
 /// Extra class on the leading (cover) cell only, carrying the 2 px left-edge
 /// accent indicator so it sits at the row's left edge without a per-row hunt.
 const NOW_PLAYING_LEADING_CLASS: &str = "now-playing-leading";
@@ -51,6 +52,38 @@ pub(super) fn toggle_class(
     } else {
         widget.remove_css_class(class);
     }
+}
+
+fn enclosing_row(cell: &impl gtk4::prelude::IsA<gtk4::Widget>) -> Option<gtk4::Widget> {
+    let mut parent = cell.parent();
+    while let Some(widget) = parent {
+        if widget.css_name() == "row" {
+            return Some(widget);
+        }
+        parent = widget.parent();
+    }
+    None
+}
+
+pub(in crate::ui) fn toggle_now_playing_cell(
+    cell: &impl gtk4::prelude::IsA<gtk4::Widget>,
+    playing: bool,
+    leading: bool,
+) {
+    toggle_class(cell, NOW_PLAYING_CLASS, playing);
+    if leading {
+        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
+    }
+    let cell = cell.upcast_ref::<gtk4::Widget>().downgrade();
+    gtk4::glib::idle_add_local_once(move || {
+        if let Some(cell) = cell.upgrade() {
+            if let Some(row) = enclosing_row(&cell) {
+                if row.has_css_class(NOW_PLAYING_ROW_CLASS) != playing {
+                    toggle_class(&row, NOW_PLAYING_ROW_CLASS, playing);
+                }
+            }
+        }
+    });
 }
 
 /// Keeps the title factory on the one shared NAV-10b marker constructor even
@@ -118,10 +151,7 @@ pub(in crate::ui) fn apply_now_playing(
     leading: bool,
 ) -> bool {
     let playing = shared.playing_track_id.get() == Some(track_id);
-    toggle_class(cell, NOW_PLAYING_CLASS, playing);
-    if leading {
-        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
-    }
+    toggle_now_playing_cell(cell, playing, leading);
     playing
 }
 
@@ -136,10 +166,7 @@ pub(super) fn apply_now_playing_item(
         shared.playing_track_id.get(),
         shared.playing_episode.get(),
     );
-    toggle_class(cell, NOW_PLAYING_CLASS, playing);
-    if leading {
-        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
-    }
+    toggle_now_playing_cell(cell, playing, leading);
     playing
 }
 
@@ -369,7 +396,7 @@ pub(in crate::ui) fn append_column(
                 if metadata_generation == rendered_metadata_generation.get() {
                     let playing = track_id
                         .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                    toggle_class(&label, NOW_PLAYING_CLASS, playing);
+                    toggle_now_playing_cell(&label, playing, false);
                     return;
                 }
                 let Some(item) = weak_item.upgrade() else {
@@ -537,8 +564,7 @@ pub(in crate::ui) fn append_cover_column(
                 move |shared| {
                     let playing = track_id
                         .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                    toggle_class(&cover, NOW_PLAYING_CLASS, playing);
-                    toggle_class(&cover, NOW_PLAYING_LEADING_CLASS, playing);
+                    toggle_now_playing_cell(&cover, playing, true);
                 }
             });
 
