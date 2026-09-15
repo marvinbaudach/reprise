@@ -46,7 +46,7 @@ impl NavIcon {
             Self::Library => "folder-music-symbolic",
             Self::Queue | Self::GenericSmart => "view-list-symbolic",
             Self::Playlist => "media-playlist-consecutive-symbolic",
-            Self::RecentlyAdded => "list-add-symbolic",
+            Self::RecentlyAdded => "document-new-symbolic",
             Self::RecentlyPlayed => "document-open-recent-symbolic",
             Self::TopRated => "starred-symbolic",
             Self::ImportErrors => "dialog-warning-symbolic",
@@ -424,39 +424,25 @@ mod tests {
 
     #[test]
     fn icons_match_each_mockup_navigation_kind() {
-        assert_eq!(NavIcon::Library.icon_name(), "folder-music-symbolic");
-        assert_eq!(NavIcon::Queue.icon_name(), "view-list-symbolic");
-        assert_eq!(
-            NavIcon::Playlist.icon_name(),
-            "media-playlist-consecutive-symbolic"
-        );
-        assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
-        assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
-        assert_eq!(NavIcon::MyStats.icon_name(), "reprise-stats-symbolic");
-        assert_eq!(
-            NavIcon::MyStats.fallback_icon_name(),
-            "reprise-stats-symbolic"
-        );
-        assert_eq!(
-            resolved_icon_name(NavIcon::MyStats, false),
-            "reprise-stats-symbolic"
-        );
-        assert_eq!(NavIcon::Releases.icon_name(), "star-new-symbolic");
-        assert_eq!(NavIcon::Concerts.icon_name(), "ticket-symbolic");
-        assert_eq!(
-            NavIcon::Podcasts.icon_name(),
-            "audio-input-microphone-symbolic"
-        );
-        assert_eq!(NavIcon::Youtube.icon_name(), "video-x-generic-symbolic");
-        assert_eq!(NavIcon::Radio.icon_name(), "reprise-radio-symbolic");
-        assert_eq!(
-            NavIcon::Radio.fallback_icon_name(),
-            "reprise-radio-symbolic"
-        );
-        assert_eq!(
-            resolved_icon_name(NavIcon::Radio, false),
-            "reprise-radio-symbolic"
-        );
+        for (icon, name) in [
+            (NavIcon::Library, "folder-music-symbolic"),
+            (NavIcon::Queue, "view-list-symbolic"),
+            (NavIcon::Playlist, "media-playlist-consecutive-symbolic"),
+            (NavIcon::ImportErrors, "dialog-warning-symbolic"),
+            (NavIcon::Missing, "edit-delete-symbolic"),
+            (NavIcon::MyStats, "reprise-stats-symbolic"),
+            (NavIcon::Releases, "star-new-symbolic"),
+            (NavIcon::Concerts, "ticket-symbolic"),
+            (NavIcon::Podcasts, "audio-input-microphone-symbolic"),
+            (NavIcon::Youtube, "video-x-generic-symbolic"),
+            (NavIcon::Radio, "reprise-radio-symbolic"),
+        ] {
+            assert_eq!(icon.icon_name(), name);
+        }
+        for icon in [NavIcon::MyStats, NavIcon::Radio] {
+            assert_eq!(icon.fallback_icon_name(), icon.icon_name());
+            assert_eq!(resolved_icon_name(icon, false), icon.icon_name());
+        }
         assert_eq!(NavIcon::Releases.fallback_icon_name(), "starred-symbolic");
         assert_eq!(
             NavIcon::Concerts.fallback_icon_name(),
@@ -492,6 +478,19 @@ mod tests {
         assert_eq!(smart_icon("rating"), NavIcon::TopRated);
         assert_eq!(smart_icon("added_at"), NavIcon::RecentlyAdded);
         assert_eq!(smart_icon("custom_field"), NavIcon::GenericSmart);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn recently_added_wears_no_add_glyph() {
+        gtk4::init().unwrap();
+        let icon_name = NavIcon::RecentlyAdded.icon_name();
+
+        assert_ne!(icon_name, "list-add-symbolic");
+        assert!(
+            gtk4::IconTheme::for_display(&gtk4::gdk::Display::default().unwrap())
+                .has_icon(icon_name)
+        );
     }
 
     #[test]
