@@ -5442,6 +5442,11 @@ means deterministic and high-confidence, never „without review".
   history entry. Album, Artist, and Genre drills continue carrying the query
   under SEARCH-8a.
 
+- **BROWSE-15** [active] [core] [gtk] — **A smart list opens in the order its
+  definition names.** Recently Played opens newest play first, Recently Added
+  newest first, and Top Rated best first. A column sort applies until the
+  place changes.
+
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
   existing directory represented by the live track paths of that album, but

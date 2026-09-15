@@ -51,7 +51,7 @@ use crate::ui::track_list::track_list_empty_state::{
 };
 use crate::ui::track_list::track_list_model_change::ModelChange;
 use crate::ui::track_list::Shared;
-use crate::ui::track_list_sort::resolve_sort_on_switch;
+use crate::ui::track_list_sort::{apply_direct_source_sort, apply_route_default_sort};
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
@@ -484,8 +484,7 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: &ViewSou
     shared.pre_search.set(super::PreSearch::default());
     *shared.browse_filter.borrow_mut() = BrowseFilter::default();
     shared.browse_bar.restore_filter(&BrowseFilter::default());
-    let new_sort = resolve_sort_on_switch(&Default::default(), source);
-    *shared.sort.borrow_mut() = new_sort;
+    apply_direct_source_sort(shared, source);
     *shared.source.borrow_mut() = source.clone();
     shared.browse_bar.set_source_context(source);
     shared.selection.unselect_all();
@@ -526,6 +525,7 @@ pub(in crate::ui) fn reload_with_anchor_and_viewport(
     model_change: Option<ModelChange>,
     current_ids: Option<Vec<i64>>,
 ) {
+    apply_route_default_sort(shared);
     if !shared.startup_load.request() {
         return;
     }

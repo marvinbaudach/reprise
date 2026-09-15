@@ -229,3 +229,36 @@ pub(super) fn query_track_ids_smart(
     let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_id)?;
     rows.collect()
 }
+
+#[cfg(test)]
+mod browse_15_tests {
+    use super::*;
+
+    #[test]
+    fn member_order_survives_when_the_view_sort_equals_it() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        for (id, added_at) in [(1, 10), (2, 30), (3, 20)] {
+            conn.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, '', ?4)",
+                rusqlite::params![id, format!("/{id}.flac"), format!("Track {id}"), added_at],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO smart_playlists (name, rules_json, sort_field, sort_dir, limit_count) \
+             VALUES ('Newest', '[]', 'added_at', 'desc', 2)",
+            [],
+        )
+        .unwrap();
+        let smart_id = conn.last_insert_rowid();
+
+        let rows = query_track_window_smart(conn, smart_id, ("added_at", "desc"), "", 0, 10, false)
+            .unwrap();
+
+        assert_eq!(
+            rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+            [2, 3]
+        );
+    }
+}
