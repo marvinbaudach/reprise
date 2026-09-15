@@ -1322,7 +1322,8 @@ result.
   `reprise_core::equalizer::EqualizerPreset::ALL`. The ten band controls sit
   beneath it in an `AdwExpanderRow` that starts collapsed. A manually adjusted
   curve remains stored and labels the row “Custom”; it never becomes a menu
-  entry. The profile list is not enumerated anywhere.
+  entry. The profile list is not enumerated anywhere. The profile row and the
+  bands are insensitive while the equalizer is off.
 
 - **SET-19** [active] [gtk] — Preferences pages scroll inside a short window;
   the dialog stays within a 720 px window and every page reaches its last row.

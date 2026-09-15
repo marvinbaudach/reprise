@@ -50,6 +50,10 @@ fn equalizer_presets_are_bounded_and_flat_is_zero() {
 }
 
 fn equalizer_controls_for_test(conn: Rc<Db>) -> EqualizerControls {
+    equalizer_controls_with_state_for_test(conn, true)
+}
+
+fn equalizer_controls_with_state_for_test(conn: Rc<Db>, enabled: bool) -> EqualizerControls {
     let bands = settings::get_equalizer_bands(&conn);
     let on_enabled: Rc<dyn Fn(bool)> = Rc::new(|_| {});
     let preset_conn = conn.clone();
@@ -61,7 +65,7 @@ fn equalizer_controls_for_test(conn: Rc<Db>) -> EqualizerControls {
         bands[index] = value;
         settings::set_equalizer_bands(&band_conn, bands).unwrap();
     });
-    build_equalizer_controls(bands, true, on_enabled, &on_preset, on_band)
+    build_equalizer_controls(bands, enabled, on_enabled, &on_preset, on_band)
 }
 
 #[test]
@@ -143,11 +147,21 @@ fn set_17_the_bands_start_collapsed_behind_the_profile() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn disabling_the_equalizer_dims_the_collapsed_bands() {
+fn set_17_the_profile_row_follows_the_switch() {
     gtk4::init().unwrap();
-    let controls = equalizer_controls_for_test(Rc::new(Db::open_in_memory().unwrap()));
+    let controls =
+        equalizer_controls_with_state_for_test(Rc::new(Db::open_in_memory().unwrap()), false);
+
+    assert!(!controls.preset_row.is_sensitive());
+    assert!(!controls.root.is_sensitive());
+
+    controls.enabled.set_active(true);
+
+    assert!(controls.preset_row.is_sensitive());
+    assert!(controls.root.is_sensitive());
 
     controls.enabled.set_active(false);
 
+    assert!(!controls.preset_row.is_sensitive());
     assert!(!controls.root.is_sensitive());
 }
