@@ -191,6 +191,31 @@ fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
 }
 
 #[test]
+fn pod_27_refresh_repairs_a_stored_entity_title() {
+    let conn = conn();
+    let id = add_subscription(conn.conn(), "https://example.test/entities", false);
+    store::update_subscription_details(&conn, id, Some("Gülsha &amp; Maja Podcast"), None).unwrap();
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![Ok(Response {
+            body:
+                "<rss><channel><title><![CDATA[Gülsha &amp; Maja Podcast]]></title></channel></rss>"
+                    .to_owned(),
+            etag: None,
+            last_modified: None,
+        })]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, R::force(), directory.path()).unwrap();
+
+    assert_eq!(
+        store::subscription(&conn, id).unwrap().unwrap().title,
+        "Gülsha & Maja Podcast"
+    );
+}
+
+#[test]
 fn future_only_baseline_skips_known_guids_and_keeps_importing_new_ones() {
     let conn = conn();
     let id = add_subscription(conn.conn(), "https://example.test/feed", false);

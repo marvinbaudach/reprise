@@ -6841,6 +6841,9 @@ listening statistics.
   provider failure is best-effort: the station is still added and `RAD-7`
   supplies its visible fallback. An explicitly supplied HTTP(S) favicon or
   homepage is stored without lookup.
+- **POD-27** [active] [core] — Feed text never keeps an HTML entity: titles,
+  authors and descriptions are decoded once at parse time, CDATA included, and
+  a refresh repairs a stored title.
 
 ## AG. Runtime service (headless control)
 

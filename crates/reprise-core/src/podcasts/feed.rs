@@ -10,6 +10,7 @@ use super::PodcastError;
 pub struct ParsedFeed {
     pub title: Option<String>,
     pub author: Option<String>,
+    pub description: Option<String>,
     pub image_url: Option<String>,
     pub episodes: Vec<ParsedEpisode>,
 }
@@ -86,6 +87,7 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     let mut path = Vec::<String>::new();
     let mut title = None;
     let mut author = None;
+    let mut description = None;
     let mut image_url = None;
     let mut episode = None::<EpisodeBuilder>;
     let mut episodes = Vec::new();
@@ -129,6 +131,7 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
                         text.trim(),
                         &mut title,
                         &mut author,
+                        &mut description,
                         &mut episode,
                         &mut image_url,
                     );
@@ -161,6 +164,9 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     Ok(ParsedFeed {
         title: Some(title),
         author: author
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty()),
+        description: description
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty()),
         image_url,
@@ -220,10 +226,13 @@ fn handle_text(
     value: &str,
     title: &mut Option<String>,
     author: &mut Option<String>,
+    description: &mut Option<String>,
     episode: &mut Option<EpisodeBuilder>,
     image_url: &mut Option<String>,
 ) {
     let current = path.last().map(String::as_str).unwrap_or_default();
+    let decoded = super::feed_text::decode_html_entities(value);
+    let value = decoded.as_ref();
     if let Some(builder) = episode {
         match current {
             "title" => {
@@ -260,6 +269,9 @@ fn handle_text(
         "author" => {
             author.get_or_insert_with(|| value.to_owned());
         }
+        "description" => {
+            description.get_or_insert_with(|| value.to_owned());
+        }
         "name"
             if path
                 .iter()
@@ -294,32 +306,16 @@ fn handle_text(
 /// actually turn up in titles are resolved, and anything else is kept verbatim
 /// as it was written — visible if it ever does land in a title, but never fatal.
 fn resolve_reference(reference: &quick_xml::events::BytesRef<'_>) -> Result<String, PodcastError> {
-    if let Some(value) = reference.resolve_char_ref().map_err(parse_error)? {
-        return Ok(value.to_string());
-    }
-    Ok(match reference.as_ref() {
-        "amp" => "&".to_owned(),
-        "apos" => "'".to_owned(),
-        "gt" => ">".to_owned(),
-        "lt" => "<".to_owned(),
-        "quot" => "\"".to_owned(),
-        "nbsp" => "\u{a0}".to_owned(),
-        "mdash" => "—".to_owned(),
-        "ndash" => "–".to_owned(),
-        "hellip" => "…".to_owned(),
-        "lsquo" => "‘".to_owned(),
-        "rsquo" => "’".to_owned(),
-        "ldquo" => "“".to_owned(),
-        "rdquo" => "”".to_owned(),
-        "bull" => "•".to_owned(),
-        "copy" => "©".to_owned(),
-        "reg" => "®".to_owned(),
-        "trade" => "™".to_owned(),
-        other => {
-            tracing::debug!(entity = %other, "feed uses an undeclared XML entity; kept verbatim");
-            format!("&{other};")
-        }
-    })
+    Ok(
+        match super::feed_text::decode_reference(reference.as_ref()) {
+            Some(value) => value.to_string(),
+            None => {
+                let other = reference.as_ref();
+                tracing::debug!(entity = %other, "feed uses an undeclared XML entity; kept verbatim");
+                format!("&{other};")
+            }
+        },
+    )
 }
 
 #[must_use]
@@ -444,6 +440,28 @@ mod tests {
         .unwrap();
 
         assert_eq!(parsed.episodes[0].title, "AT&T – Live & Loud");
+    }
+
+    #[test]
+    fn pod_27_titles_never_keep_an_entity() {
+        let parsed = parse_feed(
+            r#"<rss><channel>
+              <title><![CDATA[Gülsha &amp; Maja Podcast]]></title>
+              <author><![CDATA[Gülsha &#8217; Maja]]></author>
+              <description><![CDATA[Talk &Auml; more &amp; more]]></description>
+              <item>
+                <title><![CDATA[Rock &amp; Roll &#8217; forever]]></title>
+                <enclosure url="https://example.test/episode.mp3" type="audio/mpeg"/>
+              </item>
+            </channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.title.as_deref(), Some("Gülsha & Maja Podcast"));
+        assert_eq!(parsed.author.as_deref(), Some("Gülsha ’ Maja"));
+        assert_eq!(parsed.description.as_deref(), Some("Talk Ä more & more"));
+        assert_eq!(parsed.episodes[0].title, "Rock & Roll ’ forever");
     }
 
     /// Real feeds carry undeclared HTML entities (`&nbsp;`, `&mdash;`, …) in

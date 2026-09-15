@@ -186,6 +186,7 @@ impl YoutubeFetcher for ChannelWithNewestVideo {
         Ok(ParsedFeed {
             title: Some("VOID PREACHER".to_owned()),
             author: Some("VOID PREACHER".to_owned()),
+            description: None,
             image_url: Some("https://yt3.googleusercontent.com/ytc/AIdro=s900".to_owned()),
             episodes: vec![ParsedEpisode {
                 guid: self.newest.to_owned(),
@@ -305,6 +306,7 @@ fn youtube_rss_refresh_never_promotes_the_playlist_title() {
     let videos_feed = ParsedFeed {
         title: Some("Videos".to_owned()),
         author: Some("HOLLOW FALLEN".to_owned()),
+        description: None,
         image_url: None,
         episodes: Vec::new(),
     };
@@ -316,6 +318,7 @@ fn youtube_rss_refresh_never_promotes_the_playlist_title() {
     let authorless = ParsedFeed {
         title: Some("Videos".to_owned()),
         author: Some("   ".to_owned()),
+        description: None,
         image_url: None,
         episodes: Vec::new(),
     };
@@ -351,6 +354,7 @@ impl YoutubeFetcher for DatedYoutubeListing {
         Ok(ParsedFeed {
             title: Some("Channel".to_owned()),
             author: None,
+            description: None,
             image_url: None,
             episodes: vec![ParsedEpisode {
                 guid: "video".to_owned(),

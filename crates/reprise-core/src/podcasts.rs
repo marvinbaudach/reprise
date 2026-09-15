@@ -13,6 +13,7 @@ pub mod download_state;
 pub mod downloads;
 pub mod episode_tags;
 pub mod feed;
+mod feed_text;
 pub mod fill_downloads;
 pub mod http;
 pub mod itunes;

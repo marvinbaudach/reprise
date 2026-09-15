@@ -81,6 +81,7 @@ impl YoutubeFetcher for CountingYoutube {
             ListingResult::Duration(duration_secs) => Ok(ParsedFeed {
                 title: Some("Channel".to_owned()),
                 author: Some("Channel".to_owned()),
+                description: None,
                 image_url: None,
                 episodes: vec![ParsedEpisode {
                     guid: self.guid.to_owned(),

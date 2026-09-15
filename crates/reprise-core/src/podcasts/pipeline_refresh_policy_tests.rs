@@ -36,6 +36,7 @@ impl YoutubeFetcher for CountingYoutube {
         Ok(ParsedFeed {
             title: Some("Channel".to_owned()),
             author: None,
+            description: None,
             image_url: None,
             episodes: Vec::new(),
         })
