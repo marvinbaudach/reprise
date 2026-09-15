@@ -46,6 +46,7 @@ mod track_analysis;
 mod visualizer;
 #[cfg(test)]
 mod visualizer_tests;
+mod writer_backoff;
 pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
