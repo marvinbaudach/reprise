@@ -44,12 +44,18 @@ impl QueueSnapshotFile {
         };
         let bytes = serde_json::to_vec(&record).map_err(io::Error::other)?;
         let temporary = self.path.with_file_name(TEMP_FILE_NAME);
-        let mut file = File::create(&temporary)?;
-        file.write_all(&bytes)?;
-        file.sync_data()?;
-        drop(file);
-        fs::rename(temporary, &self.path)?;
-        sync_directory_of(&self.path)
+        let result = (|| {
+            let mut file = File::create(&temporary)?;
+            file.write_all(&bytes)?;
+            file.sync_data()?;
+            drop(file);
+            fs::rename(&temporary, &self.path)?;
+            sync_directory_of(&self.path)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result
     }
 
     pub(super) fn read(&self) -> Option<(u64, Queue)> {
@@ -205,5 +211,16 @@ mod tests {
 
         file.remove_if_sequence(8);
         assert!(file.read().is_none());
+    }
+
+    #[test]
+    fn a_failed_replace_removes_its_temporary_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = snapshot_file(directory.path());
+        fs::create_dir(directory.path().join(FILE_NAME)).unwrap();
+
+        assert!(file.write(1, &queue(vec![1], 0)).is_err());
+
+        assert!(!directory.path().join(TEMP_FILE_NAME).exists());
     }
 }

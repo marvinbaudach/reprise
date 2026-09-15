@@ -17,6 +17,7 @@ pub(super) struct RestoredQueue {
     pub(super) queue: Queue,
     pub(super) track_ids: Vec<i64>,
     pub(super) uris: Vec<String>,
+    pub(super) snapshot_sequence: Option<u64>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -33,15 +34,16 @@ pub(super) fn restore(
     db: &Db,
     database_path: &Path,
 ) -> Result<RestoredQueue, QueuePersistenceError> {
-    let file_queue = QueueSnapshotFile::new(database_path)
+    let file_snapshot = QueueSnapshotFile::new(database_path)
         .map_err(|error| error.to_string())
         .and_then(|file| {
             file.read()
                 .ok_or_else(|| "snapshot absent or damaged".to_owned())
         })
-        .ok()
-        .map(|(_, queue)| queue);
-    let snapshot = file_queue.map_or_else(|| session::load(db).queue, |queue| queue.snapshot());
+        .ok();
+    let snapshot_sequence = file_snapshot.as_ref().map(|(sequence, _)| *sequence);
+    let snapshot =
+        file_snapshot.map_or_else(|| session::load(db).queue, |(_, queue)| queue.snapshot());
     let mut queue = Queue::new();
     queue.restore_snapshot(snapshot.clone())?;
 
@@ -83,6 +85,7 @@ pub(super) fn restore(
         queue,
         track_ids,
         uris,
+        snapshot_sequence,
     })
 }
 

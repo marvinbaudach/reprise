@@ -91,8 +91,8 @@ discarded with a `tracing::warn!`, never propagated).
 
 - File `android-queue-snapshot.v1`. One record: `sequence: u64` + the queue,
   encoded with the same serde type `session::save` uses for the queue inside
-  `ui.session.v1` — no second wire format. The record carries that type's
-  version tag; a mismatch counts as damage.
+  `ui.session.v1` — no second wire format. The record wrapper carries
+  `queue_snapshot_file.rs`'s `FORMAT_VERSION` tag; a mismatch counts as damage.
 - `write(sequence, &Queue)`: atomic replace. One small file + fsync,
   single-digit ms on flash; the play journal already pays this per play on
   the same thread.
