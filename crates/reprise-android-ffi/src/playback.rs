@@ -16,6 +16,10 @@ mod test_support;
 #[path = "playback_reader_lock_tests.rs"]
 mod reader_lock_tests;
 #[cfg(test)]
+#[rustfmt::skip]
+#[path = "playback_writer_lock_tests.rs"]
+mod writer_lock_tests;
+#[cfg(test)]
 #[path = "playback_tests.rs"]
 mod tests;
 
@@ -30,6 +34,10 @@ mod terminal_event_tests;
 #[cfg(test)]
 #[path = "queue_boundary_tests.rs"]
 mod queue_boundary_tests;
+
+#[cfg(test)]
+#[path = "queue_persister_tests.rs"]
+mod queue_persister_tests;
 
 #[cfg(test)]
 #[path = "play_track_ids_tests.rs"]

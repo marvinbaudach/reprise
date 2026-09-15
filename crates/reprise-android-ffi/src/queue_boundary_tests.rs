@@ -605,6 +605,7 @@ fn moving_and_removing_identity_checked_rows_changes_the_next_window() {
     assert!(session
         .move_upcoming_track(2, track("Third").id, 0)
         .unwrap());
+    session.flush_queue_persistence();
     let database =
         reprise_core::db::Db::open_ready(&directory.path().join(crate::DATABASE_FILE_NAME))
             .unwrap();

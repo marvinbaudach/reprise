@@ -1,6 +1,7 @@
 //! Core session persistence adapted to Android's stable track/URI playback state.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use reprise_core::db::Db;
 use reprise_core::library::session;
@@ -8,16 +9,19 @@ use reprise_core::queries::{self, QueueItemMetadata};
 use reprise_core::queue::{Queue, QueueSnapshotError};
 use reprise_core::up_next::QueueItem;
 
+use crate::queue_snapshot_file::QueueSnapshotFile;
+
 const RESTORE_WINDOW_LIMIT: i64 = 500;
 
 pub(super) struct RestoredQueue {
     pub(super) queue: Queue,
     pub(super) track_ids: Vec<i64>,
     pub(super) uris: Vec<String>,
+    pub(super) snapshot_sequence: Option<u64>,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum QueuePersistenceError {
+pub(crate) enum QueuePersistenceError {
     #[error("queue query failed: {detail}")]
     Query { detail: String },
     #[error("session error: {0}")]
@@ -26,8 +30,20 @@ pub(super) enum QueuePersistenceError {
     Snapshot(#[from] QueueSnapshotError),
 }
 
-pub(super) fn restore(db: &Db) -> Result<RestoredQueue, QueuePersistenceError> {
-    let snapshot = session::load(db).queue;
+pub(super) fn restore(
+    db: &Db,
+    database_path: &Path,
+) -> Result<RestoredQueue, QueuePersistenceError> {
+    let file_snapshot = QueueSnapshotFile::new(database_path)
+        .map_err(|error| error.to_string())
+        .and_then(|file| {
+            file.read()
+                .ok_or_else(|| "snapshot absent or damaged".to_owned())
+        })
+        .ok();
+    let snapshot_sequence = file_snapshot.as_ref().map(|(sequence, _)| *sequence);
+    let snapshot =
+        file_snapshot.map_or_else(|| session::load(db).queue, |(_, queue)| queue.snapshot());
     let mut queue = Queue::new();
     queue.restore_snapshot(snapshot.clone())?;
 
@@ -69,10 +85,11 @@ pub(super) fn restore(db: &Db) -> Result<RestoredQueue, QueuePersistenceError> {
         queue,
         track_ids,
         uris,
+        snapshot_sequence,
     })
 }
 
-pub(super) fn save(db: &Db, queue: &Queue) -> Result<(), QueuePersistenceError> {
+pub(crate) fn save(db: &Db, queue: &Queue) -> Result<(), QueuePersistenceError> {
     let mut state = session::load(db);
     state.queue = queue.snapshot();
     session::save(db, &state)?;

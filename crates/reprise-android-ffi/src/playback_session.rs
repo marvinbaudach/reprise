@@ -11,10 +11,11 @@ use crate::play_recorder::PlayRecorder;
 use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
+use crate::queue_persister::QueuePersister;
 
 mod history;
 mod queue_boundary;
-mod queue_persistence;
+pub(crate) mod queue_persistence;
 mod stream_events;
 mod trash_boundary;
 
@@ -317,6 +318,7 @@ struct SessionInner {
     library: Arc<crate::MusicLibrary>,
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Arc<dyn AndroidPlaybackListener>,
+    queue: QueuePersister,
     plays: PlayRecorder,
     listen_exports: ListenExportRecorder,
 }
@@ -337,15 +339,11 @@ impl SessionInner {
     }
 
     fn persist_queue(&self, queue: &Queue) -> Result<(), AndroidPlaybackError> {
-        let database = self
-            .library
-            .writer()
+        self.queue
+            .persist(queue)
             .map_err(|error| AndroidPlaybackError::Backend {
-                detail: error.to_string(),
-            })?;
-        queue_persistence::save(&database, queue).map_err(|error| AndroidPlaybackError::Backend {
-            detail: format!("could not save the playback queue: {error}"),
-        })
+                detail: format!("could not save the playback queue: {error}"),
+            })
     }
 
     fn notify(&self) {
@@ -428,11 +426,14 @@ impl AndroidPlaybackSession {
             .map_err(|error| AndroidPlaybackError::Backend {
                 detail: format!("could not read the playback database: {error}"),
             })?;
-        let restored = queue_persistence::restore(&database).map_err(|error| {
-            AndroidPlaybackError::Backend {
-                detail: format!("could not restore the playback queue: {error}"),
-            }
-        })?;
+        let restored =
+            queue_persistence::restore(&database, &library.database_path).map_err(|error| {
+                AndroidPlaybackError::Backend {
+                    detail: format!("could not restore the playback queue: {error}"),
+                }
+            })?;
+        let restored_queue = restored.queue.clone();
+        let restored_snapshot_sequence = restored.snapshot_sequence;
         let playback_settings = crate::AndroidPlaybackSettings::load(&database);
         let transition = reprise_core::library::settings::get_track_transition(&database);
         let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);
@@ -445,11 +446,26 @@ impl AndroidPlaybackSession {
         drop(database);
         let listener: Arc<dyn AndroidPlaybackListener> = Arc::from(listener);
         let report_listener = Arc::clone(&listener);
+        let queue = QueuePersister::spawn(
+            &library.database_path,
+            library.writer_handle(),
+            restored_snapshot_sequence,
+        )
+        .map_err(|error| AndroidPlaybackError::Backend {
+            detail: format!("could not start playback queue persistence: {error}"),
+        })?;
+        if let Err(error) = queue.persist(&restored_queue) {
+            tracing::warn!(
+                %error,
+                "could not preserve the restored Android playback queue; playback will continue",
+            );
+        }
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::from_restored(restored)),
             library: Arc::clone(&library),
             backend: OnceLock::new(),
             listener,
+            queue,
             plays: PlayRecorder::spawn(
                 library.database_path.clone(),
                 library.writer_handle(),
@@ -670,6 +686,13 @@ impl AndroidPlaybackSession {
         )?;
         backend.set_transition(transition, crossfade_seconds);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl AndroidPlaybackSession {
+    pub(crate) fn flush_queue_persistence(&self) {
+        self.inner.queue.flush();
     }
 }
 
