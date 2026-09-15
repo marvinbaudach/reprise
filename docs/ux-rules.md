@@ -254,6 +254,8 @@ result.
   fallback. Otherwise the current place does not change. A turned-off place
   leaves no trace in the sidebar; it comes back through Plugins in
   Preferences, and a stored session that points at it opens Music instead.
+  Releases and Concerts sit in the SMART group but are module places and
+  offer the menu; the rows built from `smart_playlists` do not.
   Music, Queue, playlists, smart lists, and My Stats never offer the menu.
   *Tests:* `nav_16_only_optional_module_rows_offer_turn_off`,
   `nav_16_turn_off_dispatches_the_clicked_module_once`,
