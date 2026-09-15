@@ -194,9 +194,13 @@ internal fun Modifier.nowPlayingGestures(
                     }
                     upTime = change.uptimeMillis
                     upPosition = change.position
-                    // This parent observes children first, then consumes the remainder so
-                    // the library pager behind the sheet never receives the same stream.
-                    change.consume()
+                    // Consume only what this layer owns. Until an axis is chosen the stream
+                    // belongs to whichever child wants it — the seek slider's drag and tap
+                    // detectors abort during their slop window as soon as anyone else has
+                    // consumed the event. The pager behind the sheet needs no consume: the
+                    // sheet is the hit sibling in front of it, and Compose stops hit-testing
+                    // siblings behind a hit node (MobileBottomTabsTest proves it per band).
+                    if (state.axis != PlayGestureAxis.NONE) change.consume()
                     if (!change.pressed) break
                 }
 
