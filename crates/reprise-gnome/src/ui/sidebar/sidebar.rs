@@ -75,7 +75,7 @@ use super::sidebar_navigation_scroller::build_navigation_scroller;
 use super::sidebar_place::SidebarPlace;
 #[cfg(test)]
 use super::sidebar_place::{find_row, has_sidebar_row, resolve_select_source};
-use super::sidebar_root::{build_production_root, build_root};
+use super::sidebar_root::build_root;
 #[cfg(test)]
 use super::sidebar_root::{sidebar_root_order, SidebarRootChild};
 use reprise_core::view_source::ViewSource;
@@ -243,7 +243,7 @@ pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
     pub(super) activity_slot: SidebarActivitySlot,
-    pub(super) pinned_scroller: Option<gtk4::ScrolledWindow>,
+    pub(super) pinned_scroller: gtk4::ScrolledWindow,
     #[cfg(test)]
     navigation_scroller: gtk4::ScrolledWindow,
 }
@@ -289,16 +289,11 @@ impl Sidebar {
 
         let activity_slot = SidebarActivitySlot::new();
         let scrolled = build_navigation_scroller(&listbox, activity_slot.widget());
-        let (root, pinned_scroller) = if defer_initial_build {
-            let root = build_production_root(&scrolled, &activity_slot, &issues_listbox);
-            let pinned = root
-                .last_child()
-                .and_downcast::<gtk4::ScrolledWindow>()
-                .expect("the production sidebar ends in its pinned scroller");
-            (root, Some(pinned))
-        } else {
-            (build_root(&scrolled, &activity_slot, &issues_listbox), None)
-        };
+        let root = build_root(&scrolled, &activity_slot, &issues_listbox);
+        let pinned_scroller = root
+            .last_child()
+            .and_downcast::<gtk4::ScrolledWindow>()
+            .expect("the sidebar ends in its pinned scroller");
 
         let shared = Rc::new(Shared {
             conn,
@@ -365,6 +360,16 @@ impl Sidebar {
     #[cfg(test)]
     pub(in crate::ui) fn activity_slot_for_test(&self) -> gtk4::Box {
         self.activity_slot.progress_widget().clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn has_device_for_layout_test(&self) -> bool {
+        self.activity_slot.widget().first_child().is_some()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn library_block_min_height_for_test() -> i32 {
+        super::sidebar_navigation_scroller::LIBRARY_BLOCK_MIN_HEIGHT
     }
 
     #[cfg(test)]

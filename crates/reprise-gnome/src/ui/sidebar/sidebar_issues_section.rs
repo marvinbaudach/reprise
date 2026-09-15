@@ -96,5 +96,5 @@ pub(super) fn progress_has_visible_card(progress: &gtk4::Box) -> bool {
         gtk4::prelude::WidgetExt::next_sibling,
     )
     .filter_map(|child| child.downcast::<gtk4::Revealer>().ok())
-    .any(|card| card.property::<bool>("visible"))
+    .any(|card| card.reveals_child() || card.is_child_revealed())
 }

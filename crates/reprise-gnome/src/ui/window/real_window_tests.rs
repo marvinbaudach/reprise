@@ -123,8 +123,20 @@ fn build_real_window(width: i32, height: i32, seed: SidebarSeed) -> WindowLayout
     );
     let handles = super::window_layout_test_hook::take()
         .expect("window composition publishes layout test handles");
+    // Reproduce the tour's startup transition explicitly: the production
+    // split is constructed hidden, then restored to the shown state once the
+    // window/session wiring has run.
+    handles.split_view.set_show_sidebar(false);
+    assert!(!handles.split_view.shows_sidebar());
     seed_sidebar(&handles, seed);
+    if seed.device {
+        assert!(
+            handles.sidebar.has_device_for_layout_test(),
+            "the real-window seed must include the tour's device section"
+        );
+    }
     handles.split_view.set_show_sidebar(true);
+    assert!(handles.split_view.shows_sidebar());
     // The isolated display runner deliberately has no window manager. GTK's
     // client-side shadow consumes five pixels on every edge there, so pin the
     // surface ten pixels larger and assert against the window widget's actual
@@ -132,34 +144,35 @@ fn build_real_window(width: i32, height: i32, seed: SidebarSeed) -> WindowLayout
     handles.window.set_size_request(width + 10, height + 10);
 
     let deadline = Instant::now() + Duration::from_secs(5);
-    while (!handles.window.is_mapped()
-        || handles.window.width() != width
-        || handles.window.height() != height)
-        && Instant::now() < deadline
-    {
-        gtk4::glib::MainContext::default().iteration(true);
-    }
-    assert!(handles.window.is_mapped(), "the production window must map");
-    assert_eq!(
-        (handles.window.width(), handles.window.height()),
-        (width, height)
+    let reached_window_size = pump_until(deadline, || {
+        handles.window.is_mapped()
+            && handles.window.width() == width
+            && handles.window.height() == height
+    });
+    assert!(
+        reached_window_size,
+        "the production window did not reach {width}x{height} before the deadline; actual={}x{} mapped={}\n{}",
+        handles.window.width(),
+        handles.window.height(),
+        handles.window.is_mapped(),
+        chain_report(&handles),
     );
     gtk4::glib::MainContext::default()
         .block_on(gtk4::glib::timeout_future(Duration::from_millis(50)));
     if seed.track_rows > 0 {
         let deadline = Instant::now() + Duration::from_secs(5);
-        while handles
-            .column_view
-            .model()
-            .is_none_or(|model| model.n_items() < seed.track_rows as u32)
-            && Instant::now() < deadline
-        {
-            gtk4::glib::MainContext::default().iteration(true);
-        }
-        assert_eq!(
+        let loaded_rows = pump_until(deadline, || {
+            handles
+                .column_view
+                .model()
+                .is_some_and(|model| model.n_items() >= seed.track_rows as u32)
+        });
+        assert!(
+            loaded_rows,
+            "the production table did not load {} seeded tracks before the deadline; loaded={:?}\n{}",
+            seed.track_rows,
             handles.column_view.model().map(|model| model.n_items()),
-            Some(seed.track_rows as u32),
-            "the production table must load every seeded track"
+            chain_report(&handles),
         );
         gtk4::glib::MainContext::default()
             .block_on(gtk4::glib::timeout_future(Duration::from_millis(50)));
@@ -170,6 +183,15 @@ fn build_real_window(width: i32, height: i32, seed: SidebarSeed) -> WindowLayout
         super::window_bootstrap::MIN_HEIGHT,
     );
     handles
+}
+
+fn pump_until(deadline: Instant, condition: impl Fn() -> bool) -> bool {
+    let context = gtk4::glib::MainContext::default();
+    while !condition() && Instant::now() < deadline {
+        context.iteration(false);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    condition()
 }
 
 fn chain_report(handles: &WindowLayoutTestHandles) -> String {
@@ -310,7 +332,11 @@ fn assert_pinned_essentials_visible(
     pinned: &gtk4::ScrolledWindow,
     report: &str,
 ) {
-    let region = pinned.child().expect("the pinned region exists");
+    let region = pinned
+        .child()
+        .and_downcast::<gtk4::Viewport>()
+        .and_then(|viewport| viewport.child())
+        .expect("the pinned viewport contains its region");
     let issues = region.first_child().expect("the issues block exists");
     let heading = issues.first_child().expect("the ISSUES heading exists");
     let first_issue = handles
@@ -430,6 +456,23 @@ fn fb_15_three_running_cards_never_raise_the_window_minimum() {
     let library_bounds = library_floor
         .compute_bounds(&handles.sidebar_page)
         .expect("the Library floor is allocated");
+    let library_heading = handles
+        .sidebar
+        .shared
+        .listbox
+        .row_at_index(0)
+        .expect("the Library heading exists");
+    let heading_bounds = library_heading
+        .compute_bounds(&handles.navigation_scroller)
+        .expect("the Library heading is allocated");
+    let measured_library_height =
+        (library_bounds.y() + library_bounds.height() - heading_bounds.y()).round() as i32
+            + crate::ui::sidebar_presentation::SIDEBAR_SURFACE_INSET;
+    assert_eq!(
+        measured_library_height,
+        crate::ui::sidebar::Sidebar::library_block_min_height_for_test(),
+        "FB-15: the stylesheet-inclusive Library floor drifted from its guarded minimum\n{report}"
+    );
     let vertical_minimum = handles
         .window
         .measure(

@@ -209,8 +209,12 @@ fn fb_8_a_visible_progress_card_no_longer_hides_the_issues_block() {
     assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
     let region = root
         .last_child()
+        .and_then(|widget| widget.downcast::<gtk4::ScrolledWindow>().ok())
+        .and_then(|scrolled| scrolled.child())
+        .and_then(|widget| widget.downcast::<gtk4::Viewport>().ok())
+        .and_then(|viewport| viewport.child())
         .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
-        .expect("the sidebar must end in one bottom region");
+        .expect("the sidebar's pinned viewport must contain one bottom region");
     assert!(!region.vexpands());
     assert_eq!(region.valign(), gtk4::Align::End);
 

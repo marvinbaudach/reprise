@@ -6,7 +6,7 @@ use gtk4::prelude::*;
 // The production stylesheet adds six pixels around the heading-and-five-row
 // block beyond the rows' authored heights. Measure the composed block rather
 // than reconstructing a value that silently clips its last row.
-const LIBRARY_BLOCK_MIN_HEIGHT: i32 = 232;
+pub(super) const LIBRARY_BLOCK_MIN_HEIGHT: i32 = 232;
 
 pub(super) fn build_navigation_scroller(
     listbox: &gtk4::ListBox,

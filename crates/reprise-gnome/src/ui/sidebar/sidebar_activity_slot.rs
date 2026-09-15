@@ -129,11 +129,8 @@ fn sync_revealer_visibility(revealer: &gtk4::Revealer) {
 
 impl super::Sidebar {
     fn wire_pinned_card_visibility(&self, card: &impl IsA<gtk4::Widget>) {
-        let Some(scrolled) = &self.pinned_scroller else {
-            return;
-        };
         let sync = {
-            let scrolled = scrolled.downgrade();
+            let scrolled = self.pinned_scroller.downgrade();
             let issues = self.shared.issues_listbox.downgrade();
             let progress = self.activity_slot.progress_widget().downgrade();
             move || {
