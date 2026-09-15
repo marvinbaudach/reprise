@@ -67,16 +67,20 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reprise_core::db::Db;
 
 use crate::play_journal::{JournalEntry, PlayJournal};
-use crate::play_recorder_retry::{with_busy_retries, GaveUp};
-use crate::play_recorder_writer::{with_shared_writer_retries, SharedWriteError};
+use crate::play_recorder_retry::GaveUp;
+use crate::play_recorder_writer::{
+    record_unjournaled_play, with_shared_writer_retries, SharedWriteError,
+};
+
+const RETRY_WAKEUP: Duration = Duration::from_secs(1);
 
 /// One counted play, timestamped where it happened rather than where it lands,
 /// so a queued write cannot back-date `last_played_at` to the drain.
@@ -214,21 +218,31 @@ fn write_queued_plays(
     };
     let Some(mut journal) = journal else {
         for play in queued {
-            let Ok(database) = writer.lock() else {
-                tracing::warn!(
-                    track_id = play.track_id,
-                    "dropped an Android play count: the shared writer was poisoned",
-                );
-                continue;
-            };
-            record_unjournaled_play(&database, play, shutting_down);
+            record_unjournaled_play(writer, play, shutting_down);
         }
         return;
     };
     drain_shared_journal(writer, &mut journal, shutting_down);
-    for play in queued {
-        if append_or_warn(&mut journal, play) {
-            drain_shared_journal(writer, &mut journal, shutting_down);
+    loop {
+        if journal.front().is_some() {
+            match queued.recv_timeout(RETRY_WAKEUP) {
+                Ok(play) => {
+                    if append_or_warn(&mut journal, play) {
+                        drain_shared_journal(writer, &mut journal, shutting_down);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    drain_shared_journal(writer, &mut journal, shutting_down);
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        } else {
+            let Ok(play) = queued.recv() else {
+                return;
+            };
+            if append_or_warn(&mut journal, play) {
+                drain_shared_journal(writer, &mut journal, shutting_down);
+            }
         }
     }
 }
@@ -312,6 +326,18 @@ fn record_play_with_retries(
         }
         Err(GaveUp {
             attempts,
+            error: SharedWriteError::WriterBusy,
+        }) => {
+            tracing::warn!(
+                track_id = entry.play.track_id,
+                sequence = entry.sequence,
+                attempts,
+                "kept an Android play count in its journal: the shared writer was busy",
+            );
+            false
+        }
+        Err(GaveUp {
+            attempts,
             error: SharedWriteError::WriterPoisoned,
         }) => {
             tracing::warn!(
@@ -322,36 +348,6 @@ fn record_play_with_retries(
             );
             false
         }
-    }
-}
-
-/// Counts one play with no journal behind it, because there is no journal to
-/// have.
-///
-/// This is what the writer did before M8, and it is deliberately what it falls
-/// back to: a play written straight to the library is lost only if the process
-/// dies in the seconds before SQLite commits, while a play held back because
-/// the durability mechanism is broken is lost every single time. The weaker
-/// promise is named in the log so nobody reads a rising count as the strong
-/// one.
-fn record_unjournaled_play(db: &Db, play: RecordedPlay, shutting_down: &AtomicBool) {
-    let written = with_busy_retries(
-        shutting_down,
-        play.track_id,
-        reprise_core::library::stats::is_database_busy,
-        || reprise_core::library::stats::record_play(db, play.track_id, play.at_unix),
-    );
-    match written {
-        Ok(()) => tracing::debug!(
-            track_id = play.track_id,
-            "counted an Android play without a journal: it would not survive a kill",
-        ),
-        Err(GaveUp { attempts, error }) => tracing::warn!(
-            %error,
-            track_id = play.track_id,
-            attempts,
-            "dropped an Android play count: no journal was open to keep it",
-        ),
     }
 }
 
@@ -772,3 +768,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "play_recorder_shutdown_tests.rs"]
+mod shutdown_tests;
