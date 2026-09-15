@@ -1679,7 +1679,8 @@ result.
   two conditional sections. The context section is titled **Playing from
   <place> · N tracks** through `queue_context_tail`; the manual section stays
   **Next in Queue**. A header appears only when its section has entries, and
-  their visible order is the playback order.
+  their visible order is the playback order; as long as something is playing,
+  the queue never shows two empty sections.
 - **QUE-3** [active] [core] — Played manual entries silently disappear
   from "Next in Queue" on queue-item change: no strikethrough and no
   lingering. The section contains only the still-pending future.
@@ -7065,8 +7066,8 @@ committee published on 2026-05-29.
 - **GP-21** [active] [gtk] — Labels, titles, menu items and status badges use
   HIG header capitalisation; descriptions and status lines use sentence case.
   The Plugins count badge keeps its uppercase rendering. The Releases badges
-  are `Upcoming`, `Missing` and `Incomplete`; sidebar row labels follow in a
-  later change.
+  are `Upcoming`, `Missing` and `Incomplete`. Sidebar row labels and the seeded
+  smart lists are header case.
 
 ## AJ. Showroom (public site)
 
