@@ -1,7 +1,7 @@
 ---
 slug: volume-keys-skip-tracks-with-the-screen-off
-worktree:
-branch:
+worktree: /home/marvin/Projects/reprise-volume-keys-skip-tracks-with-the-screen-off
+branch: feature/volume-keys-skip-tracks-with-the-screen-off
 phase: planned
 codex_session:
 created: 2026-09-02
@@ -18,6 +18,12 @@ the same day as #810.
 Findings that produced this plan: `docs/plans/media3-remote-volume-findings.md`.
 Original design, whose rejection of this route is now the cost to design around:
 `docs/superpowers/specs/2026-09-01-android-volume-keys-track-switch-design.md`.
+
+Amended 2026-09-15, after task 1 stopped on the tap-versus-hold trade and a
+survey of other players (section below): the hold signal is the repeat gap,
+the skip restores the stray steps, there is a settings switch, and the skip
+gives a haptic tick. Decisions 3 and 10, tasks 2–4, verification and risks
+carry the change; everything else stands as grilled.
 
 ## The premise this plan does not assume
 
@@ -63,11 +69,16 @@ Full measurements, including the bytecode: `docs/plans/media3-remote-volume-find
    `DeviceInfo` that follows the foreground — that would rebuild the volume
    provider on every app switch. In an open activity every callback still
    applies a volume step, so hold-to-ramp survives there by construction.
-3. **Apply the first step at once and keep it.** On the hold, the track skips
-   and the one already-applied step stays. No delay on short presses, no visible
-   undo. The price is one stray step (1/25) per skip.
+3. **Apply every step at once; the skip restores them.** No delay on a short
+   press and no stray volume after a skip. Spike 5 showed the hold is only
+   unambiguous at its third callback, so two steps are already applied when
+   the skip fires; the skip puts `STREAM_MUSIC` back to where it stood before
+   the hold's key-down. The undo coincides with the track change and hides
+   behind it. *(2026-09-15; replaces "apply one step and keep it", which rested
+   on a second callback that measurement found inseparable from a fast
+   triple-tap.)*
 4. **Exactly one skip per hold.** Further callbacks in the same hold are
-   swallowed until a gap longer than `releaseAfterMs` ends it. A second skip
+   swallowed until a gap longer than `repeatGapMaxMs` ends it. A second skip
    would be the accidental eight-track skip #806 designed against.
 5. **`REMOTE` only while playback is actually running**, `LOCAL` otherwise. This
    keeps the window in which a bug can kill the volume keys as small as
@@ -76,6 +87,52 @@ Full measurements, including the bytecode: `docs/plans/media3-remote-volume-find
 6. **No `land.sh` before the device run is done.** #806 landed on a green gate
    alone and was reverted the same day.
 7. **One strand.**
+8. **A switch, on by default.** Settings › Audio, beside Gapless: "Hold volume
+   keys to skip tracks", subtitle naming the conditions (screen off or app in
+   the background, only while playing). Off means `DeviceInfo` stays `LOCAL`
+   and nothing below runs — today's behaviour exactly. The 2026-09-01 spec
+   argued against a switch because there was no playback settings page; there
+   is one now, and the remote slider plus the lost hold-to-ramp in the
+   background are worth an exit.
+9. **A haptic tick on the skip.** From the service, only on the skip path,
+   never on a step or a swallow. With the screen off it is the only
+   confirmation before the next track becomes audible. No other player
+   documents feedback here; this is our choice, not a convention.
+10. **The hold signal is the repeat gap, not a count.** One constant,
+    `repeatGapMaxMs ≈ 100`: a callback that close to the previous
+    same-direction callback is a key repeat (measured 48–50 ms); a human tap
+    is never closer than 156 ms. The ~250 ms lead-in is *not* a signal — it is
+    exactly the value spike 5 found unsafe.
+
+## What other players do (survey, 2026-09-15)
+
+Asked because the user wanted the gesture modelled on existing players. The
+answer is that there is nothing to copy:
+
+- **No surveyed player does this through a public API.** The one demonstrated
+  screen-off path in the wild is the privileged
+  `SET_VOLUME_KEY_LONG_PRESS_LISTENER` grant, obtainable only via `adb shell pm
+  grant`. Poweramp ships it ("for very power users only" — maxmp) and its forum
+  documents it breaking on Android 11 Pixels, across MIUI updates and against
+  LineageOS's built-in equivalent. Button Mapper needs the same grant despite
+  being an AccessibilityService app — which independently confirms the
+  2026-09-01 spec's rejection of that route. Symfonium refused the feature over
+  the adb step; Neutron says stock Android delivers no long press to apps;
+  Auxio (#1064) redirects users to ROM settings. Musicolet, BlackPlayer, Pulsar,
+  Retro, Gramophone (source checked): nothing.
+- **Scope convention matches decision 2.** Where the gesture exists it is a
+  background/screen-off gesture; GoneMAD's foreground-only variant is called
+  unreliable by its own developer.
+- **Threshold, stray-step handling and feedback are undocumented everywhere.**
+  Decisions 3, 9 and 10 are ours.
+- **Expect misattributed bug reports.** ROM-level implementations fire for
+  whichever player is running, and users file the result against the app
+  (Auxio #1064). A report that "holding skips even with the switch off" is
+  probably the ROM.
+
+Sources are in the session that produced this amendment; the load-bearing ones
+are forum.powerampapp.com topics 16929 and 21716, Auxio issue #1064,
+support.symfonium.app/t/3392 and setup.buttonmapper.app.
 
 ## Task 1 — the decisive measurement (gate for everything below)
 
@@ -124,18 +181,20 @@ available=true` before each. Cadence at the player: **first repeat ~234 ms after
 key-down, then ~50 ms** — identical to the framework's, so the looper hop costs
 nothing and the caution about bunching below is settled, not pending.
 
-`holdThreshold` is a call count, not a duration; the ~234 ms is the gap a
-`releaseAfterMs` would have to sit under, and the ~50 ms is what makes `Swallow`
-load-bearing — a one-second hold is 16 calls, 15 of them swallowed.
+The ~50 ms is what makes `Swallow` load-bearing — a one-second hold is 16
+calls, 14 of them swallowed once the third has skipped. The ~234 ms lead-in is
+the gap decision 10 deliberately does not key on.
 
-**And that gap is where decision 3 breaks.** A second run measured repeated taps at 156–227 ms
-apart against a hold's first repeat at 250 ms — a 23 ms window, on one hand, one
-session. `releaseAfterMs` cannot separate a fast triple-tap from a hold, so
-`holdThreshold = 2` would skip on tapping. The robust signal is the *second* gap
-(48–50 ms, an order of magnitude below any tap), i.e. the **third** call ~300 ms
-after key-down, at the price of two stray volume steps instead of one. Task 2
-cannot start until that trade is decided. Screen-off and the short press are
-both measured and both fine; see "Spike 5" in the findings.
+**And that gap is where the original decision 3 broke.** A second run measured
+repeated taps at 156–227 ms apart against a hold's first repeat at 250 ms — a
+23 ms window, on one hand, one session. No release timeout can separate a fast
+triple-tap from a hold, so keying the skip to the second call would skip on
+tapping. The robust signal is the *second* gap (48–50 ms, an order of
+magnitude below any tap), i.e. the **third** call ~300 ms after key-down, at
+the price of two stray volume steps instead of one. **Decided 2026-09-15:** the
+third call it is, and the skip restores both steps (decisions 3 and 10).
+Screen-off and the short press are both measured and both fine; see "Spike 5"
+in the findings.
 
 **Still unmeasured: the SystemUI slider drag** — the basis for "a drag must
 never skip". No shell path reaches it; it needs a finger on the real slider.
@@ -146,8 +205,8 @@ Details, including three corrections these runs force:
 **Stop conditions.**
 
 - **Repeated calls at the player while holding** → the route carries. Continue
-  to task 2, and derive `holdThreshold` and `releaseAfterMs` from the measured
-  **player-side** interval, not from the framework's ~50 ms.
+  to task 2, and derive `repeatGapMaxMs` from the measured **player-side**
+  interval, not from the framework's ~50 ms.
 - **Exactly one call per press, hold or not** → there is no hold signal. Stop.
   Reopen the choice between an `AccessibilityService` and dropping the feature.
   Do not synthesise a hold from a single call.
@@ -163,7 +222,14 @@ whether it is buildable.
 
 ## Task 2 — `RemoteVolumeHold`, the decision as a pure object
 
-Only if task 1 says the route carries.
+**Precondition, on the device, before writing a line:** screen off, then
+`dumpsys media_session` shows our session at `state=PLAYING(3)`. Spike 5 saw
+`PAUSED(2)` after `input keyevent 26` and left it unexplained. Nothing in the
+code pauses on screen-off (`MainActivity.onStop` only unbinds; the service keeps
+playing) and spike 5 measured holds with the screen already off, so the
+expectation is that the synthetic power key caused it — but the findings say
+check, so check, and write down which it was. If playback really stops when the
+screen goes off, stop here: the feature has no window.
 
 New file beside `CoreControlledPlayer.kt`. Plain Kotlin, no Android types, so
 its tests need no Robolectric.
@@ -174,55 +240,102 @@ internal enum class VolumeDirection { UP, DOWN }
 internal sealed interface RemoteVolumeAction {
     /** Apply one step to STREAM_MUSIC. */
     data class Step(val direction: VolumeDirection) : RemoteVolumeAction
-    data object SkipNext : RemoteVolumeAction
-    data object SkipPrevious : RemoteVolumeAction
+    /** Restore STREAM_MUSIC to [restoreVolume], then skip, then tick. */
+    data class Skip(val direction: VolumeDirection, val restoreVolume: Int) : RemoteVolumeAction
     /** This hold already skipped; swallow the rest of it. */
     data object Swallow : RemoteVolumeAction
 }
 
 internal class RemoteVolumeHold(
-    private val holdThreshold: Int,
-    private val releaseAfterMs: Long,
+    private val repeatGapMaxMs: Long,
+    private val leadInMaxMs: Long,
     private val isForeground: () -> Boolean,
     private val now: () -> Long,
-)  {
-    fun onAdjust(direction: VolumeDirection): RemoteVolumeAction
+) {
+    /** [currentVolume] is the live STREAM_MUSIC index before this call's step. */
+    fun onAdjust(direction: VolumeDirection, currentVolume: Int): RemoteVolumeAction
 }
 ```
+
+State: the last two calls' times and the last call's direction (updated on
+every call, whatever the result), whether this press has already skipped, and
+the volume *before* each of the last two steps (`beforeLast`, `beforePrev`) —
+both **nullable, never defaulted to a number**. A `Skip` with `beforePrev`
+unset restores `beforeLast`; there is always a `beforeLast`, because the first
+call ever is a fresh key-down by definition. A default of `0` here would be
+`setStreamVolume(…, 0, 0)` on the first hold — the volume-hostage failure the
+whole plan is built to avoid.
 
 Rules, in order:
 
 | Condition | Result |
 | --- | --- |
-| gap since the last call > `releaseAfterMs` | new press: count = 1, not yet skipped → `Step(direction)` |
-| direction differs from the running hold | treated as a new press, same as above |
+| direction differs from the last call, or gap since the last call > `repeatGapMaxMs` | a fresh key-down: skipped = false; `beforePrev ← beforeLast`, `beforeLast ← currentVolume` → `Step(direction)` |
 | `isForeground()` | `Step(direction)` — never skip in an open activity (decision 2) |
-| this hold already skipped | `Swallow` |
-| count reaches `holdThreshold` | mark skipped → `SkipNext` (UP) / `SkipPrevious` (DOWN) |
-| otherwise | `Step(direction)` |
+| this press already skipped | `Swallow` |
+| otherwise (a key repeat) | mark skipped → `Skip(direction, restoreVolume)`, where `restoreVolume = beforePrev` if the previous call followed *its* predecessor within `leadInMaxMs` (and `beforePrev` is set), else `beforeLast` |
 
-`holdThreshold = 2` is the value decision 3 implies: the first call applies a
-step, the second skips, so exactly one stray step per skip. Both constants come
-from task 1's measured interval, not from a guess.
+Why `beforePrev`: a hold produces the key-down (call 1, `Step`), the first
+repeat ~250 ms later (call 2 — a gap above `repeatGapMaxMs`, so it reads as a
+fresh key-down and applies a `Step`), the second repeat ~50 ms after that (call
+3 — the first gap under the limit, so `Skip`). At call 3, `beforeLast` is the
+volume before call 2 and `beforePrev` the volume before call 1: the hold's own
+key-down. That is what gets restored. A tap 251 ms before the hold (measured in
+spike 5's log) is call 0; its step has left the two-deep history and stays. The
+hold owns exactly its key-down and its first repeat, nothing before.
+
+Why `leadInMaxMs`: `beforePrev` is the right target only when the previous
+call really was the hold's lead-in — call 2 following call 1 by the ~250 ms
+repeat delay. On a device whose repeat delay is *under* `repeatGapMaxMs`, call 2
+is already the skip, and `beforePrev` then points at some unrelated earlier
+press — minutes old, or unset. The guard is the gap between the two previous
+calls: at most `leadInMaxMs = 500` (Android's default long-press timeout, above
+any key-repeat delay a user can set) and the previous call is the lead-in;
+above it, the hold owns only the previous call and restores `beforeLast`. The
+soft failure left is a tap under 500 ms before a hold on such a device, whose
+step the restore also undoes — one lost step, never a stale volume.
+
+`repeatGapMaxMs = 100` sits between the measured 48–50 ms repeat and the 156 ms
+fastest tap; `leadInMaxMs = 500` only decides what a skip restores, never
+whether it fires. A fast triple-tap (gaps ≥ 156 ms) is three `Step`s and never a
+`Skip`. A hold skips once, at ~300 ms, and every later repeat is `Swallow`.
+Releasing the key ends the repeats, so the next call — whenever it comes — is
+more than 100 ms away and starts a fresh press: the latch needs no timer, and
+the press-release-press race of the earlier draft (a release-and-press faster
+than the fastest measured tap) cannot occur in practice. It still gets a
+boundary test at `repeatGapMaxMs` exactly and one millisecond either side.
 
 `VolumeKeyTrackSwitch` from #806 (recoverable from that commit) is the ancestor
 and its decision table is still right, but it **cannot be reused**: it cleared
-its latch on a real key-up. There is none here, so the latch is released by a
-timeout — which creates a failure mode #806 never had: press, release, press
-again inside `releaseAfterMs` reads as one hold. That case gets its own test.
+its latch on a real key-up. There is none here; the gap does that job.
 
 **A skip from this feature must never change the playback state.** Paused stays
 paused. Decision 5 means the gesture cannot fire while paused anyway, but the
 rule is written down so it survives any later loosening of that gate.
+
+**The constants are device-measured, not universal.** The repeat cadence is
+the input dispatcher's key-repeat setting, which Android 15+ lets the user
+change under physical-keyboard settings. Both are named constants with the
+measurement beside them. If a device repeats slower than ~100 ms the gesture
+degrades to "never skips", never to "skips on taps"; if it leads in faster than
+100 ms the skip fires one call earlier and `leadInMaxMs` keeps the restore
+honest — both the right direction to fail in.
 
 ## Task 3 — wire it into `CoreControlledPlayer`
 
 The wrapper already routes transport into the core; the volume overrides belong
 in the same place.
 
-- `getDeviceInfo()` → `PLAYBACK_TYPE_REMOTE` **only while playback runs**,
-  `LOCAL` otherwise (decision 5); `minVolume = 0`,
-  `maxVolume = getStreamMaxVolume(STREAM_MUSIC)`.
+- `getDeviceInfo()` → `PLAYBACK_TYPE_REMOTE` **only while playback runs and
+  the switch is on** (decisions 5 and 8), `LOCAL` otherwise; `minVolume = 0`,
+  `maxVolume = getStreamMaxVolume(STREAM_MUSIC)`. Flipping the switch while
+  playing goes through the same `DeviceInfo` change as play/pause does — one
+  mechanism, two triggers. **Fallback if the `DeviceInfo` check below fails:**
+  the adjust handlers read the switch too, and off means every callback is a
+  `Step`. That keeps the switch behaviourally correct even if the session never
+  re-reads `DeviceInfo`, at the price of the remote slider staying while
+  playing. Implement the read in the handlers regardless — it is one line and
+  the belt to the buckle.
 - `getAvailableCommands()` → `super` plus the five device-volume commands.
   Without them Media3 silently builds no volume provider — measured, and it
   fails with no error at all.
@@ -236,8 +349,25 @@ in the same place.
 - `getDeviceVolume()` → the live `STREAM_MUSIC` volume; `isDeviceMuted()` → the
   live mute state.
 - `increaseDeviceVolume(flags)` / `decreaseDeviceVolume(flags)` **and their
-  no-flag twins** → ask `RemoteVolumeHold`, then either `adjustStreamVolume` or
-  `commands.next()` / `commands.previousInQueueOrder()`.
+  no-flag twins** → read the live `STREAM_MUSIC` index, ask `RemoteVolumeHold`,
+  then: `Step` → `adjustStreamVolume(STREAM_MUSIC, direction, FLAG_SHOW_UI)`;
+  `Skip` → `setStreamVolume(STREAM_MUSIC, restoreVolume, 0)` (no UI flag — the
+  panel must not flash the undo), then `commands.next()` /
+  `commands.previousInQueueOrder()`, then the tick; `Swallow` → nothing.
+- **The tick** goes through the `Commands` interface as `fun hapticTick()`,
+  beside `isActivityInForeground()`, so the wrapper never sees an Android type
+  and the tests below can count calls on the fake. `ReprisePlaybackService`
+  owns the implementation: `Vibrator` via `VibratorManager` (API 31+) or
+  `getSystemService(Vibrator)` below; `VibrationEffect.createPredefined(
+  EFFECT_TICK)` on API 29+, `createOneShot(20, DEFAULT_AMPLITUDE)` on 26–28.
+  `VIBRATE` is already in the manifest; `QueueHaptics.kt` is the UI-side
+  precedent and stays untouched — the service has no `View`.
+- **The switch:** persist it exactly the way `gaplessEnabled` is persisted
+  (`PlaybackSettingsScreen.kt:65,102,128`) — follow that path end to end rather
+  than opening a second preference store. The service reads it through the
+  existing `Commands` interface, like the foreground flag below. Title "Hold
+  volume keys to skip tracks", subtitle "With the screen off or another app
+  in front, while playing. Volume up skips forward, volume down back."
 - `setDeviceVolume(volume, flags)` → `setStreamVolume`, so the panel's slider
   still works.
 - **`flags` cannot separate a key press from a slider drag.** Measured: the
@@ -270,13 +400,26 @@ when playback starts, decision 5 is not implementable as written and the choice
 returns to the user. Expect this to fail silently if it fails — check it
 explicitly rather than inferring it from the feature working.
 
+**Check, in the same run, whether the remote slider follows the stream.** Media3
+mirrors `getDeviceVolume()` into the remote slider on `onDeviceVolumeChanged`;
+a computed getter does not emit it. If the slider goes stale after a forwarded
+adjust, emit the event after each one. Cosmetic while the screen is off, visible
+on the lock screen — decide from what the run shows, do not guess.
+
 ## Task 4 — tests
 
-- `RemoteVolumeHold`, plain JUnit: one call → `Step`; the `holdThreshold`-th
-  call inside the window → `SkipNext`/`SkipPrevious`; further calls → `Swallow`;
-  a call after `releaseAfterMs` → a fresh `Step`, not a continuation; a
-  direction change mid-hold → a new press; `isForeground()` true → `Step` even
-  at and beyond the threshold, never a skip; and the press-release-press race.
+- `RemoteVolumeHold`, plain JUnit, with a fake clock: one call → `Step`; a
+  second 250 ms later → `Step`; a third 50 ms later → `Skip` whose
+  `restoreVolume` is the volume before the **first** call; every further call
+  at 50 ms → `Swallow`; a call > `repeatGapMaxMs` after the last swallow → a
+  fresh `Step`, latch cleared; a direction change mid-hold → `Step`;
+  `isForeground()` true → `Step` on every repeat, never a skip or a swallow;
+  a triple-tap at 156 ms gaps → three `Step`s; a tap 251 ms before a hold →
+  the skip restores to the volume *after* the tap, not before it; the very
+  first call ever followed by a repeat 50 ms later → `Skip` restores that first
+  call's volume, never `0` or a default; a repeat whose two predecessors are
+  `leadInMaxMs` + 1 apart → restores `beforeLast`; and the boundary at
+  `repeatGapMaxMs` − 1, 0 and + 1 ms.
 - `CoreControlledPlayer` under Robolectric, beside `PlaybackServiceLifetimeTest`
   and using its `CorelessPlaybackService` pattern: `getDeviceInfo()` reports
   remote while playing and local otherwise; `getAvailableCommands()` contains
@@ -285,10 +428,16 @@ explicitly rather than inferring it from the feature working.
   hangs off that one answer, and its absence is silent everywhere else; a
   sequence of `increaseDeviceVolume(0)` calls produces exactly one `next()` on
   the fake commands; and `setDeviceVolume(volume, flags)` never produces one.
+  Plus, from the amendment: with the switch off, `getDeviceInfo()` is `LOCAL`
+  while playing; a `Skip` calls `setStreamVolume` with the restore value
+  *before* `next()` on the fake commands, and fires the tick exactly once;
+  a `Step` and a `Swallow` never touch the vibrator.
 - **Mutation check.** #806's review found by mutation that its two
   "consume without a side effect" branches had no test and could be broken with
   the suite staying green. `Swallow` is the same shape here. Prove by mutation
-  that breaking it turns the suite red; do not infer it from reading.
+  that breaking it turns the suite red; do not infer it from reading. The
+  restore is the second such shape: drop the `setStreamVolume` and the suite
+  must go red, not stay green.
 
 ## Task 5 — gate
 
@@ -304,6 +453,9 @@ Robolectric cannot see.
 **Manual, on the device, mandatory before landing** (decision 6), with
 `state=PLAYING(3)` confirmed in `dumpsys media_session` before each step:
 
+0. Task 2's precondition, if not already written down: screen off, session
+   still `PLAYING(3)`.
+
 1. Screen off, hold `VOLUME_UP` → next track; `VOLUME_DOWN` → previous.
 2. Screen off, short press → one volume step, no skip.
 3. **App in the foreground, hold → volume ramps as normal, no skip.** This is
@@ -311,6 +463,16 @@ Robolectric cannot see.
 4. Another app in front, playback running, hold → skip.
 5. Paused: both keys behave exactly as stock Android, including hold-to-ramp.
 6. The volume panel's slider still moves the volume by drag.
+7. After a hold-skip, `cmd audio get-volume`/the panel show the volume from
+   before the hold — not one or two steps off.
+8. The tick is felt on the skip and on nothing else.
+9. Switch off, playing, screen off: hold ramps like stock Android, the panel
+   shows the stock slider, nothing skips. Switch on again: back to 1.
+10. Last track of the queue, repeat off, screen off, hold volume up: `next()`
+    has nothing to do, so the only visible effect is the tick and the volume
+    undo. Note whether that reads as broken; if it does, the fix is the
+    wrapper asking `commands` whether a next exists before it ticks, not a
+    change to the decision object.
 
 ## Risks
 
@@ -325,11 +487,19 @@ Robolectric cannot see.
   playback start/stop is rare and slow, an app switch is frequent and fast — but
   it is the same mechanism, and the task-3 check above is where it is proven or
   found wanting.
-- **The timeout has no key-up to correct it.** Press-release-press faster than
-  `releaseAfterMs` reads as one hold. Named constant, own test.
+- **The repeat cadence is a device setting.** `repeatGapMaxMs` is derived from
+  one device's 48–50 ms; a slower repeat setting makes the gesture stop
+  skipping, a faster tap than 156 ms is physiologically out of reach. Both
+  fail towards "no skip". Named constant, measurement beside it.
+- **The restore races the panel.** Two steps are applied and undone within
+  ~300 ms; with the screen on and the app in the background the remote slider
+  may visibly twitch. Accepted; the undo carries no UI flag.
 - **The system panel shows a remote slider** while the session is remote.
   Mirroring `maxVolume` and `getDeviceVolume()` onto `STREAM_MUSIC` keeps it
   meaningful, but it is not the stock panel.
+- **ROM-level implementations will be blamed on us.** LineageOS and others
+  skip on volume-hold regardless of the player; a report that the gesture
+  fires with the switch off is a ROM feature (see the survey).
 
 ## Parallelität
 
