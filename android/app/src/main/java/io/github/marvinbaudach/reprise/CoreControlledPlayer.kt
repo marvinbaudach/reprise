@@ -6,9 +6,13 @@ import android.os.SystemClock
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import java.util.concurrent.CopyOnWriteArraySet
 
 /** Routes MediaSession transport commands back through the Core session. */
+// ForwardingPlayer and its overrides are unstable in media3 1.11; one opt-in
+// covers the class instead of a baseline entry per override.
+@androidx.annotation.OptIn(UnstableApi::class)
 @Suppress("DEPRECATION")
 internal class CoreControlledPlayer(
     player: Player,
