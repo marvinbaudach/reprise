@@ -470,11 +470,8 @@ pub(super) fn reconcile_after_write(conn: &Connection, id: i64, path: &Path) -> 
     let carried = crate::db_spectrogram::snapshot_render_data(conn, id)
         .map_err(|error| format!("could not preserve rendering data: {error}"))?;
     prepare_reconciliation(conn, id, path)?;
-    match crate::library::scanner::scan_folder_in(conn, path) {
-        Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => {
-            crate::db_spectrogram::restore_render_data(conn, id, &carried)
-                .map_err(|error| format!("could not restore rendering data: {error}"))
-        }
+    let scan_result = match crate::library::scanner::scan_folder_in(conn, path) {
+        Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => Ok(()),
         Ok(ScanOutcome::Completed(scan)) => Err(format!(
             "tag reconciliation reported {} error(s)",
             scan.errors
@@ -484,6 +481,14 @@ pub(super) fn reconcile_after_write(conn: &Connection, id: i64, path: &Path) -> 
             root.display()
         )),
         Err(error) => Err(format!("tag reconciliation failed: {error}")),
+    };
+    let restore_result = crate::db_spectrogram::restore_render_data(conn, id, &carried)
+        .map_err(|error| format!("could not restore rendering data: {error}"));
+    match (scan_result, restore_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(scan), Ok(())) => Err(scan),
+        (Ok(()), Err(restore)) => Err(restore),
+        (Err(scan), Err(restore)) => Err(format!("{scan}; {restore}")),
     }
 }
 
