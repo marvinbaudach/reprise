@@ -63,6 +63,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.marvinbaudach.reprise.ui.theme.AmbientTrueBlack
 import io.github.marvinbaudach.reprise.ui.theme.NowPlayingOnBackdrop
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
@@ -106,6 +107,7 @@ internal fun NowPlayingSheet(
     var screenWidthPx by remember { mutableFloatStateOf(0f) }
     var draggingTrack by remember { mutableStateOf(false) }
     var settlingTargetIndex by remember { mutableStateOf<Int?>(null) }
+    var settleJob by remember { mutableStateOf<Job?>(null) }
     val positionReconciler = remember { NowPlayingPositionReconciler() }
     val cueGate = remember { TrackChangeCueGate() }
     var cueRevision by remember { mutableIntStateOf(0) }
@@ -192,7 +194,10 @@ internal fun NowPlayingSheet(
         }
         val targetIndex = requestedIndex.coerceIn(panelWindow.firstIndex, panelWindow.lastIndex)
         val changesTrack = targetIndex != currentIndex
-        gestureScope.launch {
+        // One settle at a time: a newer swipe or button press supersedes the
+        // wait of the previous one, so no stale snap-back can fire under it.
+        settleJob?.cancel()
+        settleJob = gestureScope.launch {
             val target = targetIndex * screenWidthPx
             if (changesTrack && motion.sceneAnimationsEnabled) {
                 settlingTargetIndex = targetIndex

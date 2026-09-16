@@ -351,7 +351,7 @@ impl VisualEngine {
     }
 
     pub fn accent2(&self) -> (f32, f32, f32) {
-        hue_shift(self.accent, FALLBACK_ACCENT2_HUE_SHIFT)
+        accent2_of(self.accent)
     }
 
     fn make_ctx(&self, width: f32, height: f32, accent: (f32, f32, f32)) -> ModeCtx<'_> {
@@ -361,7 +361,7 @@ impl VisualEngine {
             bass_impact: self.glow,
             bass_aura: self.pressure.aura,
             accent,
-            accent2: hue_shift(accent, FALLBACK_ACCENT2_HUE_SHIFT),
+            accent2: accent2_of(accent),
             width,
             height,
         }
@@ -406,6 +406,12 @@ pub(crate) fn lively_engine() -> VisualEngine {
         Duration::from_micros(16_667),
     ));
     engine
+}
+
+/// The secondary accent every scene derives from its primary one, whether the
+/// engine's own or a tint asked for by a mirroring panel.
+fn accent2_of(accent: (f32, f32, f32)) -> (f32, f32, f32) {
+    hue_shift(accent, FALLBACK_ACCENT2_HUE_SHIFT)
 }
 
 #[cfg(test)]

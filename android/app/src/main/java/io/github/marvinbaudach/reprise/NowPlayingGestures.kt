@@ -114,13 +114,13 @@ internal fun rememberPlayPanelWindow(
     controls: PlaybackControls,
 ): PlayPanelWindow {
     var generation by remember { mutableStateOf(0L) }
-    var loadedFor by remember { mutableStateOf<Pair<Long, Int>?>(null) }
+    var loadedFor by remember { mutableStateOf<Triple<Long, Int, PlaybackControls>?>(null) }
     var window by remember {
         mutableStateOf(placeholderPlayPanelWindow(track, currentIndex))
     }
     LaunchedEffect(currentTrackId, track.id, currentIndex, controls) {
         window = window.withCurrentPanel(track, currentIndex, currentTrackId)
-        val request = currentTrackId to currentIndex
+        val request = Triple(currentTrackId, currentIndex, controls)
         if (loadedFor == request) return@LaunchedEffect
         loadedFor = request
         val requestGeneration = ++generation

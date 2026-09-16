@@ -217,8 +217,9 @@ internal fun nowPlayingVisualBlend(
  * the crossfade.
  *
  * The captured scene counts off the live slot too. The outgoing panel keeps
- * the bars it drew while live, and a neighbour that mirrored the live scene
- * during the swipe keeps those: in visualizer mode no panel falls back to its
+ * the bars it drew while live until the new engine speaks, then mirrors that
+ * one on its way out; a neighbour that mirrored the live scene during the
+ * swipe keeps that picture. In visualizer mode no panel falls back to its
  * cover for want of data, which is what used to flash the covers up mid-swipe.
  */
 internal fun panelHasVisualData(
@@ -231,7 +232,9 @@ internal fun panelHasVisualData(
  *
  * A neighbour without a stored spectrogram has no scene of its own — its
  * engine hears nothing — so while the swipe carries it onto the screen it
- * mirrors the live engine, tinted in its own accent. Off the screen
+ * mirrors the live engine, tinted in its own accent. The panel that has just
+ * lost the live slot is such a neighbour too: it slides out with the bars of
+ * what is playing rather than a frozen picture of what was. Off the screen
  * (`near == 0`) nothing is mirrored, so a resting neighbour costs no render;
  * a stored spectrogram is the panel's own picture and wins; the live panel is
  * the source, not a mirror.
