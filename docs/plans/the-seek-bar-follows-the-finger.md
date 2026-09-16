@@ -2,7 +2,7 @@
 slug: the-seek-bar-follows-the-finger
 worktree: /home/marvin/Projects/reprise-the-seek-bar-follows-the-finger
 branch: feature/the-seek-bar-follows-the-finger
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-15
 ---
