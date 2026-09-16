@@ -45,19 +45,37 @@ internal fun placeholderPlayPanelWindow(
     lastIndex = currentIndex,
 )
 
+/**
+ * Re-centres the window on [currentIndex] without waiting for the row reload.
+ *
+ * [currentTrackId] is the transport's answer and arrives together with the
+ * index; [track] is the row the sheet has read for it and lags by one
+ * database read. In that gap the two disagree, and the stale row must not be
+ * seated at the new index: the panel already sitting there is the prefetched
+ * neighbour for exactly this track, and replacing it disposed its subtree --
+ * engine, frozen scene, decoded cover -- so the old cover popped into the
+ * centre and the new track came back from scratch a moment later. When
+ * nothing was prefetched for the new index the centre stays empty until the
+ * row arrives: a slot that fills is quieter than a wrong cover that pops.
+ */
 internal fun PlayPanelWindow.withCurrentPanel(
     track: LibraryTrack,
     currentIndex: Int,
+    currentTrackId: Long = track.id,
 ): PlayPanelWindow {
     val indexIsKnown = currentIndex in firstIndex..lastIndex
+    val neighbours = panels.filter { panel ->
+        panel.index != currentIndex && abs(panel.index - currentIndex) <= 1
+    }
+    val seated = panels.firstOrNull { panel -> panel.index == currentIndex }
+    val centre = when {
+        track.id == currentTrackId -> PlayPanel(currentIndex, track)
+        seated != null && seated.track.id == currentTrackId -> seated
+        else -> null
+    }
+    val centred = listOfNotNull(centre)
     return PlayPanelWindow(
-        panels = if (indexIsKnown) {
-            (panels.filter { panel ->
-                panel.index != currentIndex && abs(panel.index - currentIndex) <= 1
-            } + PlayPanel(currentIndex, track)).sortedBy(PlayPanel::index)
-        } else {
-            listOf(PlayPanel(currentIndex, track))
-        },
+        panels = if (indexIsKnown) (neighbours + centred).sortedBy(PlayPanel::index) else centred,
         firstIndex = if (indexIsKnown) firstIndex else currentIndex,
         lastIndex = if (indexIsKnown) lastIndex else currentIndex,
     )
@@ -80,23 +98,36 @@ internal fun playPanelWindow(
     )
 }
 
+/**
+ * The rendered panel window, re-centred as the transport moves.
+ *
+ * [currentTrackId] is the transport's track and moves with [currentIndex];
+ * [track] is the answered row and follows a read later. The rows are reloaded
+ * once per transport move, not again when the answered row catches up -- that
+ * second update only re-seats the centre through [withCurrentPanel].
+ */
 @Composable
 internal fun rememberPlayPanelWindow(
     track: LibraryTrack,
     currentIndex: Int,
+    currentTrackId: Long,
     controls: PlaybackControls,
 ): PlayPanelWindow {
     var generation by remember { mutableStateOf(0L) }
+    var loadedFor by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var window by remember {
         mutableStateOf(placeholderPlayPanelWindow(track, currentIndex))
     }
-    LaunchedEffect(track.id, currentIndex, controls) {
+    LaunchedEffect(currentTrackId, track.id, currentIndex, controls) {
+        window = window.withCurrentPanel(track, currentIndex, currentTrackId)
+        val request = currentTrackId to currentIndex
+        if (loadedFor == request) return@LaunchedEffect
+        loadedFor = request
         val requestGeneration = ++generation
-        window = window.withCurrentPanel(track, currentIndex)
         controls.loadUpcomingTracks(LibraryWindowRange(-2, 3)) { outcome ->
             if (generation != requestGeneration) return@loadUpcomingTracks
             outcome.getOrNull()?.rows?.let { rows ->
-                window = playPanelWindow(currentIndex, track.id, rows).takeIf {
+                window = playPanelWindow(currentIndex, currentTrackId, rows).takeIf {
                     it.panels.isNotEmpty()
                 } ?: window
             }

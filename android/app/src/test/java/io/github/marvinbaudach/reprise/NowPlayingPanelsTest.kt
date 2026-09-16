@@ -63,6 +63,57 @@ class NowPlayingPanelsTest {
     }
 
     @Test
+    fun an_index_that_arrives_before_its_track_keeps_the_prefetched_centre() {
+        val previous = panelTrack(20)
+        val current = panelTrack(21)
+        val next = panelTrack(22)
+        val window = playPanelWindow(4, current.id, listOf(previous, current, next))
+
+        // The transport has moved to index 5 (track 22) but the sheet's answered
+        // track still reads 21: the row for 22 is being read off the main thread.
+        val advanced = window.withCurrentPanel(current, currentIndex = 5, currentTrackId = next.id)
+
+        assertEquals(listOf(4, 5), advanced.panels.map { panel -> panel.index })
+        assertEquals(listOf(21L, 22L), advanced.panels.map { panel -> panel.track.id })
+        assertEquals(3, advanced.firstIndex)
+        assertEquals(5, advanced.lastIndex)
+    }
+
+    @Test
+    fun a_stale_row_never_fills_a_centre_nothing_was_prefetched_for() {
+        val previous = panelTrack(20)
+        val current = panelTrack(21)
+        val window = playPanelWindow(4, current.id, listOf(previous, current))
+
+        // Index 5 is outside the known window and no neighbour was prefetched:
+        // the centre stays empty until the row arrives rather than showing the
+        // row the transport has already left.
+        val jumped = window.withCurrentPanel(current, currentIndex = 5, currentTrackId = 30L)
+        assertTrue(jumped.panels.isEmpty())
+        assertEquals(5, jumped.firstIndex)
+        assertEquals(5, jumped.lastIndex)
+
+        val answered = jumped.withCurrentPanel(panelTrack(30), currentIndex = 5, currentTrackId = 30L)
+        assertEquals(listOf(5), answered.panels.map { panel -> panel.index })
+        assertEquals(listOf(30L), answered.panels.map { panel -> panel.track.id })
+    }
+
+    @Test
+    fun two_transport_moves_before_the_row_answers_keep_only_what_was_prefetched() {
+        val rows = (20L..25L).map(::panelTrack)
+        val window = playPanelWindow(4, 22L, rows)
+        assertEquals(listOf(3, 4, 5), window.panels.map { panel -> panel.index })
+
+        val once = window.withCurrentPanel(panelTrack(22), currentIndex = 5, currentTrackId = 23L)
+        assertEquals(listOf(4 to 22L, 5 to 23L), once.panels.map { it.index to it.track.id })
+
+        val twice = once.withCurrentPanel(panelTrack(22), currentIndex = 6, currentTrackId = 24L)
+        assertEquals(listOf(5 to 23L), twice.panels.map { it.index to it.track.id })
+        assertEquals(2, twice.firstIndex)
+        assertEquals(7, twice.lastIndex)
+    }
+
+    @Test
     fun the_prefetch_window_keeps_two_warm_but_only_renders_one_neighbour_per_side() {
         val rows = (30L..34L).map(::panelTrack)
 

@@ -90,7 +90,12 @@ internal fun NowPlayingSheet(
     val motion = LocalAmbientMotionController.current
     val visualizerPreference = LocalVisualizerPreference.current
     val currentIndex = playback.currentIndex ?: 0
-    val panelWindow = rememberPlayPanelWindow(track, currentIndex, controls)
+    val panelWindow = rememberPlayPanelWindow(
+        track,
+        currentIndex,
+        currentTrackId = playback.currentTrackId ?: track.id,
+        controls,
+    )
     val positionPx = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
     val gestureScope = rememberCoroutineScope()

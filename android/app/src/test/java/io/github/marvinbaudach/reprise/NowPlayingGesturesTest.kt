@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -182,7 +183,12 @@ class NowPlayingGesturesTest {
         val track = mutableStateOf(gestureTrack())
         val currentIndex = mutableIntStateOf(1)
         compose.setContent {
-            val window = rememberPlayPanelWindow(track.value, currentIndex.intValue, controls)
+            val window = rememberPlayPanelWindow(
+                track.value,
+                currentIndex.intValue,
+                currentTrackId = track.value.id,
+                controls,
+            )
             Text(window.panels.joinToString(",") { panel -> panel.track.id.toString() })
         }
         compose.waitForIdle()
@@ -195,6 +201,37 @@ class NowPlayingGesturesTest {
         compose.waitForIdle()
 
         compose.onNodeWithText("830,831").assertIsDisplayed()
+    }
+
+    @Test
+    fun an_index_that_arrives_before_its_row_keeps_the_prefetched_neighbour_in_the_centre() {
+        val controls = DelayedPanelWindowControls()
+        val track = mutableStateOf(gestureTrack())
+        val currentTrackId = mutableLongStateOf(830)
+        val currentIndex = mutableIntStateOf(1)
+        compose.setContent {
+            val window = rememberPlayPanelWindow(
+                track.value,
+                currentIndex.intValue,
+                currentTrackId = currentTrackId.longValue,
+                controls,
+            )
+            Text(window.panels.joinToString(",") { panel -> "${panel.index}:${panel.track.id}" })
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("0:829,1:830,2:831").assertIsDisplayed()
+
+        // The transport moves first; the answered row is still being read.
+        compose.runOnUiThread {
+            currentTrackId.longValue = 831
+            currentIndex.intValue = 2
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
+
+        compose.runOnUiThread { track.value = gestureTrack(id = 831, title = "Next song") }
+        compose.waitForIdle()
+        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
     }
 
     @Test
