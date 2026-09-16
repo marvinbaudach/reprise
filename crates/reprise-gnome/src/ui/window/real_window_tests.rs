@@ -10,6 +10,9 @@ use libadwaita::prelude::NavigationPageExt;
 
 use super::window_layout_test_hook::WindowLayoutTestHandles;
 
+#[path = "real_window_sidebar_report.rs"]
+mod real_window_sidebar_report;
+
 static NEXT_APPLICATION_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -98,6 +101,16 @@ fn seed_sidebar(handles: &WindowLayoutTestHandles, seed: SidebarSeed) {
 }
 
 fn build_real_window(width: i32, height: i32, seed: SidebarSeed) -> WindowLayoutTestHandles {
+    build_real_window_with_db(width, height, seed).0
+}
+
+/// Same as [`build_real_window`], but also returns the `Db` handle backing
+/// the composed window so a caller can seed rows into it after the map.
+fn build_real_window_with_db(
+    width: i32,
+    height: i32,
+    seed: SidebarSeed,
+) -> (WindowLayoutTestHandles, std::rc::Rc<reprise_core::db::Db>) {
     gtk4::init().expect("GTK test display");
     let sequence = NEXT_APPLICATION_ID.fetch_add(1, Ordering::Relaxed);
     let app = adw::Application::builder()
@@ -182,7 +195,7 @@ fn build_real_window(width: i32, height: i32, seed: SidebarSeed) -> WindowLayout
         super::window_bootstrap::MIN_WIDTH,
         super::window_bootstrap::MIN_HEIGHT,
     );
-    handles
+    (handles, db)
 }
 
 fn pump_until(deadline: Instant, condition: impl Fn() -> bool) -> bool {
@@ -231,6 +244,10 @@ fn chain_report(handles: &WindowLayoutTestHandles) -> String {
         ));
     }
     report
+}
+
+fn sidebar_report(handles: &WindowLayoutTestHandles) -> String {
+    real_window_sidebar_report::sidebar_report(handles)
 }
 
 fn bottom_in(widget: &gtk4::Widget, ancestor: &impl IsA<gtk4::Widget>) -> f32 {
@@ -669,26 +686,43 @@ fn style_6_the_real_table_never_overflows_at_1280() {
 fn the_real_window_test_instrument_publishes_the_production_surface() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let handles = build_real_window(800, 600, SidebarSeed::default());
+    let report = sidebar_report(&handles);
 
     assert_eq!(
         handles.split_view.parent(),
-        Some(handles.player_bar_shell.widget().clone().upcast())
+        Some(handles.player_bar_shell.widget().clone().upcast()),
+        "the split view must belong to the player-bar shell\n{report}"
     );
-    assert!(handles.player_bar.is_some());
+    assert!(
+        handles.player_bar.is_some(),
+        "the composed window must publish its player bar\n{report}"
+    );
     assert_eq!(
         handles.navigation_scroller.parent(),
-        Some(handles.sidebar.widget().clone().upcast())
+        Some(handles.sidebar.widget().clone().upcast()),
+        "the navigation scroller must belong to the sidebar\n{report}"
     );
     assert_eq!(
         handles.pinned_block.parent(),
-        Some(handles.sidebar.widget().clone().upcast())
+        Some(handles.sidebar.widget().clone().upcast()),
+        "the pinned block must belong to the sidebar\n{report}"
     );
-    assert!(handles.activity_slot.is_ancestor(&handles.pinned_block));
-    assert!(handles.content_nav.is_ancestor(&handles.split_view));
-    assert!(handles.column_view.is_ancestor(&handles.track_scrolled));
+    assert!(
+        handles.activity_slot.is_ancestor(&handles.pinned_block),
+        "the activity slot must live inside the pinned block\n{report}"
+    );
+    assert!(
+        handles.content_nav.is_ancestor(&handles.split_view),
+        "content navigation must live inside the split view\n{report}"
+    );
+    assert!(
+        handles.column_view.is_ancestor(&handles.track_scrolled),
+        "the column view must live inside the track scroller\n{report}"
+    );
     assert_eq!(
         handles.sidebar_page.child(),
-        Some(handles.sidebar.widget().clone().upcast())
+        Some(handles.sidebar.widget().clone().upcast()),
+        "the sidebar page must publish the production sidebar\n{report}"
     );
 
     handles.window.close();
