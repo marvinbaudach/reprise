@@ -357,11 +357,27 @@ fn forty_items_use_an_estimate_two_leases_per_batch_and_one_tail_lease() {
     };
     let source = item_source(directory.path(), 40);
 
-    let outcome =
-        scan_folder_with_writer_and_progress(&source, &writer, directory.path(), |_| {}).unwrap();
+    let mut on_progress = |_| {};
+    let mut progress = BatchProgress::new(Some(&mut on_progress));
+    let mut metrics = LeaseMetrics::default();
+    let outcome = scan_folder_inner(
+        &source,
+        &writer,
+        directory.path(),
+        &mut progress,
+        &mut metrics,
+    )
+    .unwrap();
 
     assert_eq!(super::tests::completed(outcome).added, 40);
-    assert_eq!(writer.leases.load(Ordering::SeqCst), 8);
+    assert_eq!(
+        (
+            writer.leases.load(Ordering::SeqCst),
+            metrics.count,
+            u8::from(metrics.estimate),
+        ),
+        (8, 7, 1)
+    );
 }
 
 #[test]
