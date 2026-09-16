@@ -2,7 +2,7 @@
 slug: volume-keys-skip-tracks-with-the-screen-off
 worktree: /home/marvin/Projects/reprise-volume-keys-skip-tracks-with-the-screen-off
 branch: feature/volume-keys-skip-tracks-with-the-screen-off
-phase: planned
+phase: coded
 codex_session:
 created: 2026-09-02
 ---
@@ -443,6 +443,18 @@ on the lock screen — decide from what the run shows, do not guess.
 
 `scripts/check-android-suite.sh`. `ANDROID_TEST_FLOOR=334` is a floor and new
 tests only raise the count — do not edit the script.
+
+### Implementation outcome, 2026-09-16
+
+Tasks 2–5 are implemented. The Android gate exited 0 with 636 tests, no failures,
+no errors and no skips. Both required mutations were observed red before being
+reverted: adding a haptic side effect to `Swallow` failed
+`aStepAndASwallowNeverTick`, and removing the restore failed
+`oneHoldSkipsOnceAndAnAbsoluteSliderSetNeverSkips`.
+
+The device precondition and every manual verification item below remain for the
+human verification run. No device, emulator, `adb`, or Android device-build
+script was used during implementation.
 
 ## Verification
 

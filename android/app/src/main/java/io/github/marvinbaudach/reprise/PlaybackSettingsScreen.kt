@@ -68,6 +68,7 @@ internal data class PlaybackSettingsUiState(
     val error: String? = null,
     val equalizerCurve: List<EqualizerCurvePoint> = emptyList(),
     val equalizerPresets: List<EqualizerPresetUi> = emptyList(),
+    val volumeKeyTrackSwitchEnabled: Boolean = true,
 )
 
 /**
@@ -101,6 +102,7 @@ internal fun PlaybackSettingsScreen(
     replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> Unit,
     setGaplessEnabled: (Boolean) -> Unit,
     selectTheme: (MobileTheme) -> Unit,
+    setVolumeKeyTrackSwitchEnabled: (Boolean) -> Unit = {},
     pageTitle: String = "Audio",
     backContentDescription: String = "Back to Library",
 ) {
@@ -129,6 +131,15 @@ internal fun PlaybackSettingsScreen(
                     supporting = "Move between supported tracks without an added pause.",
                     checked = state.gaplessEnabled,
                     onCheckedChange = setGaplessEnabled,
+                )
+            }
+            item {
+                SettingsSwitchRow(
+                    title = "Hold volume keys to skip tracks",
+                    supporting = "With the screen off or another app in front, while playing. " +
+                        "Volume up skips forward, volume down back.",
+                    checked = state.volumeKeyTrackSwitchEnabled,
+                    onCheckedChange = setVolumeKeyTrackSwitchEnabled,
                 )
             }
             item { HorizontalDivider() }

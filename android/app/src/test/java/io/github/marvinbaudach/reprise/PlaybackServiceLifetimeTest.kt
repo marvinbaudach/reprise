@@ -218,6 +218,8 @@ class PlaybackServiceLifetimeTest {
  */
 private class CorelessPlaybackService : ReprisePlaybackService() {
     override fun openCoreSession(port: Media3PlaybackPort): AndroidPlaybackSession? = null
+
+    override fun readVolumeKeyTrackSwitchEnabled(): Boolean = true
 }
 
 private fun aTrack() = LibraryTrack(

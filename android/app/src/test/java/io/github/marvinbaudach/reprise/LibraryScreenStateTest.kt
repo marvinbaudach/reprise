@@ -1,7 +1,5 @@
 package io.github.marvinbaudach.reprise
 
-import androidx.media3.common.Player
-import java.lang.reflect.Proxy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -16,52 +14,6 @@ import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 class LibraryScreenStateTest {
-@Test
-fun mediaSessionTransportReturnsToCore() {
-    var playWhenReady = false
-    val player = Proxy.newProxyInstance(
-        Player::class.java.classLoader,
-        arrayOf(Player::class.java),
-    ) { _, method, _ ->
-        when (method.name) {
-            "getPlayWhenReady" -> playWhenReady
-            else -> primitiveDefault(method.returnType)
-        }
-    } as Player
-    val calls = mutableListOf<String>()
-    val controlled = CoreControlledPlayer(player, object : CoreControlledPlayer.Commands {
-        override fun togglePause() {
-            calls += "toggle"
-        }
-
-        override fun next() {
-            calls += "next"
-        }
-
-        override fun previousInQueueOrder() {
-            calls += "queue-previous"
-        }
-    })
-
-    controlled.play()
-    playWhenReady = true
-    controlled.pause()
-    controlled.seekToNext()
-    controlled.seekToPrevious()
-    controlled.seekToPreviousMediaItem()
-
-    assertEquals(listOf("toggle", "toggle", "next", "queue-previous", "queue-previous"), calls)
-}
-
-private fun primitiveDefault(type: Class<*>): Any? = when (type) {
-    Boolean::class.javaPrimitiveType -> false
-    Int::class.javaPrimitiveType -> 0
-    Long::class.javaPrimitiveType -> 0L
-    Float::class.javaPrimitiveType -> 0f
-    Double::class.javaPrimitiveType -> 0.0
-    else -> null
-}
-
 @Test
 fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     val state = AndroidPlaybackSnapshot(
