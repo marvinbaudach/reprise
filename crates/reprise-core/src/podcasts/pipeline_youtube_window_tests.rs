@@ -75,6 +75,7 @@ impl YoutubeFetcher for ExtendedYoutube {
         Ok(ParsedFeed {
             title: Some("Channel".to_owned()),
             author: None,
+            description: None,
             image_url: None,
             episodes: (1..=end)
                 .map(|index| ParsedEpisode {

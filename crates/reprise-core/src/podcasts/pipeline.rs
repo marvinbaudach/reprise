@@ -176,6 +176,7 @@ pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usiz
     ParsedFeed {
         title: channel.clone(),
         author: channel,
+        description: None,
         // Was a hard `None` until 2026-08-18, which is why
         // `podcast_subscriptions.image_url` could never hold a channel avatar.
         image_url: listing.image_url,

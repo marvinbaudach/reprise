@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-09-14 07:34+0200\n"
+"POT-Creation-Date: 2026-09-15 22:02+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -1052,7 +1052,7 @@ msgid "Music"
 msgstr "Música"
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:14
-msgid "Recently added"
+msgid "Recently Added"
 msgstr "Añadidas recientemente"
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:15
@@ -1110,11 +1110,11 @@ msgid "New playlist"
 msgstr "Lista de reproducción nueva"
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:30
-msgid "Import errors"
+msgid "Import Errors"
 msgstr "Errores de importación"
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:31
-msgid "Missing files"
+msgid "Missing Files"
 msgstr "Archivos ausentes"
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:32
@@ -2843,9 +2843,9 @@ msgid ""
 "Turn off to keep Reprise offline: none of these plugins run, nothing is "
 "requested, and their sidebar entries are hidden."
 msgstr ""
-"Desactívalo para que Reprise siga sin conexión: ninguno de estos complementos se "
-"ejecuta, no se realiza ninguna solicitud y sus entradas de la barra lateral "
-"quedan ocultas."
+"Desactívalo para que Reprise siga sin conexión: ninguno de estos "
+"complementos se ejecuta, no se realiza ninguna solicitud y sus entradas de "
+"la barra lateral quedan ocultas."
 
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:17
 #, rust-format
@@ -6556,6 +6556,15 @@ msgstr "Decoración del lado del cliente"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
+
+#~ msgid "Recently added"
+#~ msgstr "Añadidas recientemente"
+
+#~ msgid "Import errors"
+#~ msgstr "Errores de importación"
+
+#~ msgid "Missing files"
+#~ msgstr "Archivos ausentes"
 
 #~ msgid "track"
 #~ msgstr "pista"

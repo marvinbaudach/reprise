@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-09-14 07:34+0200\n"
+"POT-Creation-Date: 2026-09-15 22:02+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1026,7 +1026,7 @@ msgid "Music"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:14
-msgid "Recently added"
+msgid "Recently Added"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:15
@@ -1084,11 +1084,11 @@ msgid "New playlist"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:30
-msgid "Import errors"
+msgid "Import Errors"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:31
-msgid "Missing files"
+msgid "Missing Files"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:32

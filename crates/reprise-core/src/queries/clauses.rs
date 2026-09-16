@@ -33,7 +33,7 @@ pub(crate) const MISSING: &str = "missing_since IS NOT NULL AND removed_at IS NU
 /// resolves to valid SQL (`pt.position`) inside a query that actually joins
 /// `playlist_tracks AS pt` — see the module doc's `Playlist(id)` section for
 /// why that's safe (only `ViewSource::Playlist` queries ever pass it).
-const SORT_WHITELIST: [(&str, &str); 12] = [
+const SORT_WHITELIST: [(&str, &str); 13] = [
     ("title", "title COLLATE NOCASE"),
     (
         "artist",
@@ -46,6 +46,7 @@ const SORT_WHITELIST: [(&str, &str); 12] = [
     ("duration_ms", "duration_ms"),
     ("rating", "rating"),
     ("play_count", "play_count"),
+    ("last_played_at", "last_played_at"),
     ("added_at", "added_at"),
     (
         "album_canonical",
@@ -70,6 +71,7 @@ pub fn sort_key_columns(sort_field: &str) -> &'static [&'static str] {
         "duration_ms" => &["duration_ms"],
         "rating" => &["rating"],
         "play_count" => &["play_count"],
+        "last_played_at" => &["last_played_at"],
         "added_at" => &["added_at"],
         "album_canonical" => &["disc_no", "track_no", "path", "id"],
         "playlist_order" => &["position"],

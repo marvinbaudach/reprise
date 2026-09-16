@@ -56,6 +56,31 @@ pub(in crate::ui) fn sort_by_column(
     crate::ui::table_columns::single_sort_indicator::sync_primary_sort_indicator(view);
 }
 
+/// Mirrors a query sort in the header when that sort has a column. Definition-
+/// only fields such as `last_played_at` clear the indicator instead of
+/// pointing at an unrelated visible column.
+pub(in crate::ui) fn reflect_sort_in_header(view: &gtk4::ColumnView, sort: &SortState) {
+    let order = if sort.dir == "desc" {
+        gtk4::SortType::Descending
+    } else {
+        gtk4::SortType::Ascending
+    };
+    let columns = view.columns();
+    let column = (0..columns.n_items()).find_map(|index| {
+        columns
+            .item(index)
+            .and_downcast::<gtk4::ColumnViewColumn>()
+            .filter(|column| column.id().as_deref() == Some(sort.field.as_str()))
+    });
+    match column {
+        Some(column) => sort_by_column(view, &column, order),
+        None => {
+            view.sort_by_column(None::<&gtk4::ColumnViewColumn>, order);
+            crate::ui::table_columns::single_sort_indicator::sync_primary_sort_indicator(view);
+        }
+    }
+}
+
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
 /// them back to a whitelisted sort field + direction, then reloads.
 pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
@@ -162,7 +187,10 @@ pub(in crate::ui) fn restore_playlist_order(shared: &Rc<Shared>, order: gtk4::So
 /// playlist for any other source must reset it back to `SortState::
 /// default()` rather than silently keep sorting by a column expression the
 /// new source's query doesn't select.
-fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
+pub(in crate::ui) fn default_sort_for_source(
+    db: &reprise_core::db::Db,
+    source: &ViewSource,
+) -> Option<SortState> {
     match source {
         ViewSource::Playlist(_) => Some(SortState {
             field: PLAYLIST_ORDER_SORT_FIELD.to_string(),
@@ -172,8 +200,20 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
             field: "added_at".to_string(),
             dir: "desc".to_string(),
         }),
+        ViewSource::Smart(id) => match reprise_core::library::playlists::list_smart(db) {
+            Ok(playlists) => playlists
+                .into_iter()
+                .find(|playlist| playlist.id == *id)
+                .map(|playlist| SortState {
+                    field: playlist.sort_field,
+                    dir: playlist.sort_dir,
+                }),
+            Err(error) => {
+                tracing::warn!(%error, smart_id = id, "smart-list sort lookup failed");
+                None
+            }
+        },
         ViewSource::Library
-        | ViewSource::Smart(_)
         | ViewSource::Queue
         | ViewSource::Missing
         | ViewSource::Album { .. }
@@ -205,17 +245,72 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
 /// - otherwise → `current` is kept as-is; a column-header click's sort
 ///   deliberately survives source switches (matching pre-Stage-3 behavior
 ///   for Library/Missing/… hops).
-pub(in crate::ui) fn resolve_sort_on_switch(current: &SortState, target: &ViewSource) -> SortState {
-    match default_sort_for_source(target) {
+pub(in crate::ui) fn resolve_sort_on_switch(
+    db: &reprise_core::db::Db,
+    current: &SortState,
+    target: &ViewSource,
+) -> SortState {
+    match default_sort_for_source(db, target) {
         Some(sort) => sort,
         None if current.field == PLAYLIST_ORDER_SORT_FIELD => SortState::default(),
         None => current.clone(),
     }
 }
 
+/// Applies a source-owned sort only when a route has changed the model's
+/// source. Header clicks therefore remain effective for reloads within the
+/// same place.
+pub(in crate::ui) fn apply_route_default_sort(shared: &Rc<Shared>) {
+    let source = shared.source.borrow().clone();
+    let already_queried_source = (shared.model.generation() != 0)
+        .then(|| shared.model.query_signature().0)
+        .is_some_and(|previous| previous == source);
+    if already_queried_source {
+        return;
+    }
+    let Some(sort) = default_sort_for_source(&shared.conn, &source) else {
+        return;
+    };
+
+    *shared.sort.borrow_mut() = sort.clone();
+    let was_restoring = shared.restoring_view.replace(true);
+    reflect_sort_in_header(&shared.column_view, &sort);
+    shared.restoring_view.set(was_restoring);
+}
+
+pub(in crate::ui) fn apply_direct_source_sort(shared: &Rc<Shared>, source: &ViewSource) {
+    let sort = resolve_sort_on_switch(&shared.conn, &SortState::default(), source);
+    *shared.sort.borrow_mut() = sort.clone();
+    let was_restoring = shared.restoring_view.replace(true);
+    reflect_sort_in_header(&shared.column_view, &sort);
+    shared.restoring_view.set(was_restoring);
+}
+
 #[cfg(test)]
 mod default_sort_for_source_tests {
     use super::*;
+
+    fn test_db() -> reprise_core::db::Db {
+        reprise_core::db::Db::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn smart_definition_supplies_the_route_default() {
+        let db = reprise_core::db::Db::open_in_memory().unwrap();
+        let smart_lists = reprise_core::library::playlists::list_smart(&db).unwrap();
+
+        for name in ["Recently Played", "Recently Added", "Top Rated"] {
+            let smart = smart_lists.iter().find(|smart| smart.name == name).unwrap();
+            assert_eq!(
+                default_sort_for_source(&db, &ViewSource::Smart(smart.id)),
+                Some(SortState {
+                    field: smart.sort_field.clone(),
+                    dir: smart.sort_dir.clone(),
+                }),
+                "{name} must open in its definition's order"
+            );
+        }
+    }
 
     /// CRITICAL fix (review round 1): a `Playlist` source must always
     /// resolve to the `"playlist_order"` sentinel/asc, regardless of the id
@@ -227,7 +322,7 @@ mod default_sort_for_source_tests {
     fn playlist_always_defaults_to_playlist_order_ascending() {
         for id in [1, 2, 42] {
             assert_eq!(
-                default_sort_for_source(&ViewSource::Playlist(id)),
+                default_sort_for_source(&test_db(), &ViewSource::Playlist(id)),
                 Some(SortState {
                     field: "playlist_order".to_string(),
                     dir: "asc".to_string(),
@@ -242,20 +337,34 @@ mod default_sort_for_source_tests {
     /// this case, not this function.
     #[test]
     fn non_playlist_sources_have_no_forced_default() {
-        assert_eq!(default_sort_for_source(&ViewSource::Library), None);
-        assert_eq!(default_sort_for_source(&ViewSource::Smart(1)), None);
-        assert_eq!(default_sort_for_source(&ViewSource::Queue), None);
-        assert_eq!(default_sort_for_source(&ViewSource::Missing), None);
-        assert_eq!(default_sort_for_source(&ViewSource::ImportErrors), None);
         assert_eq!(
-            default_sort_for_source(&ViewSource::Album {
-                album: "Blue".into(),
-                album_artist: "Joni Mitchell".into(),
-            }),
+            default_sort_for_source(&test_db(), &ViewSource::Library),
             None
         );
         assert_eq!(
-            default_sort_for_source(&ViewSource::Artist("Björk".into())),
+            default_sort_for_source(&test_db(), &ViewSource::Queue),
+            None
+        );
+        assert_eq!(
+            default_sort_for_source(&test_db(), &ViewSource::Missing),
+            None
+        );
+        assert_eq!(
+            default_sort_for_source(&test_db(), &ViewSource::ImportErrors),
+            None
+        );
+        assert_eq!(
+            default_sort_for_source(
+                &test_db(),
+                &ViewSource::Album {
+                    album: "Blue".into(),
+                    album_artist: "Joni Mitchell".into(),
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            default_sort_for_source(&test_db(), &ViewSource::Artist("Björk".into())),
             None
         );
     }
@@ -267,11 +376,12 @@ mod default_sort_for_source_tests {
             dir: "desc".into(),
         };
         assert_eq!(
-            default_sort_for_source(&ViewSource::RecentlyAdded),
+            default_sort_for_source(&test_db(), &ViewSource::RecentlyAdded),
             Some(expected.clone())
         );
         assert_eq!(
             resolve_sort_on_switch(
+                &test_db(),
                 &SortState {
                     field: PLAYLIST_ORDER_SORT_FIELD.into(),
                     dir: "asc".into(),
@@ -283,6 +393,10 @@ mod default_sort_for_source_tests {
     }
 }
 
+#[cfg(test)]
+#[path = "track_list_sort_browse_tests.rs"]
+mod browse_15_display_tests;
+
 /// The full source-switch sort matrix for `resolve_sort_on_switch` — the
 /// exact logic `set_source_and_reload` applies to `shared.sort` before
 /// every reload, including the previously-untested leaving-a-playlist
@@ -290,6 +404,10 @@ mod default_sort_for_source_tests {
 #[cfg(test)]
 mod resolve_sort_on_switch_tests {
     use super::*;
+
+    fn test_db() -> reprise_core::db::Db {
+        reprise_core::db::Db::open_in_memory().unwrap()
+    }
 
     fn playlist_order_sort() -> SortState {
         SortState {
@@ -308,7 +426,7 @@ mod resolve_sort_on_switch_tests {
     #[test]
     fn library_to_playlist_forces_playlist_order() {
         assert_eq!(
-            resolve_sort_on_switch(&SortState::default(), &ViewSource::Playlist(1)),
+            resolve_sort_on_switch(&test_db(), &SortState::default(), &ViewSource::Playlist(1)),
             playlist_order_sort()
         );
     }
@@ -319,11 +437,11 @@ mod resolve_sort_on_switch_tests {
         // any header-click override from the first playlist is dropped —
         // the second playlist starts in its own default order).
         assert_eq!(
-            resolve_sort_on_switch(&playlist_order_sort(), &ViewSource::Playlist(2)),
+            resolve_sort_on_switch(&test_db(), &playlist_order_sort(), &ViewSource::Playlist(2)),
             playlist_order_sort()
         );
         assert_eq!(
-            resolve_sort_on_switch(&header_click_sort(), &ViewSource::Playlist(2)),
+            resolve_sort_on_switch(&test_db(), &header_click_sort(), &ViewSource::Playlist(2)),
             playlist_order_sort()
         );
     }
@@ -335,7 +453,7 @@ mod resolve_sort_on_switch_tests {
     #[test]
     fn playlist_to_library_resets_sentinel_to_default() {
         assert_eq!(
-            resolve_sort_on_switch(&playlist_order_sort(), &ViewSource::Library),
+            resolve_sort_on_switch(&test_db(), &playlist_order_sort(), &ViewSource::Library),
             SortState::default()
         );
     }
@@ -344,7 +462,6 @@ mod resolve_sort_on_switch_tests {
     fn playlist_sentinel_resets_for_every_non_playlist_target() {
         for target in [
             ViewSource::Library,
-            ViewSource::Smart(1),
             ViewSource::Queue,
             ViewSource::Missing,
             ViewSource::ImportErrors,
@@ -355,7 +472,7 @@ mod resolve_sort_on_switch_tests {
             ViewSource::Artist("Björk".into()),
         ] {
             assert_eq!(
-                resolve_sort_on_switch(&playlist_order_sort(), &target),
+                resolve_sort_on_switch(&test_db(), &playlist_order_sort(), &target),
                 SortState::default(),
                 "sentinel must not leak into {target:?}"
             );
@@ -365,7 +482,7 @@ mod resolve_sort_on_switch_tests {
     #[test]
     fn library_to_missing_keeps_current_sort() {
         assert_eq!(
-            resolve_sort_on_switch(&SortState::default(), &ViewSource::Missing),
+            resolve_sort_on_switch(&test_db(), &SortState::default(), &ViewSource::Missing),
             SortState::default()
         );
     }
@@ -377,11 +494,11 @@ mod resolve_sort_on_switch_tests {
     #[test]
     fn header_click_override_survives_leaving_a_playlist() {
         assert_eq!(
-            resolve_sort_on_switch(&header_click_sort(), &ViewSource::Library),
+            resolve_sort_on_switch(&test_db(), &header_click_sort(), &ViewSource::Library),
             header_click_sort()
         );
         assert_eq!(
-            resolve_sort_on_switch(&header_click_sort(), &ViewSource::Queue),
+            resolve_sort_on_switch(&test_db(), &header_click_sort(), &ViewSource::Queue),
             header_click_sort()
         );
     }

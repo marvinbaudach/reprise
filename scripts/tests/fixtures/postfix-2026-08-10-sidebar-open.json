@@ -3403,7 +3403,7 @@
     "y": 283.0
    },
    "geometry_trusted": true,
-   "label": "Recently played",
+   "label": "Recently Played",
    "parent_index": 1,
    "role": "list item",
    "selected": false
@@ -3421,7 +3421,7 @@
     "y": 321.0
    },
    "geometry_trusted": true,
-   "label": "Top rated",
+   "label": "Top Rated",
    "parent_index": 1,
    "role": "list item",
    "selected": false
@@ -3439,7 +3439,7 @@
     "y": 359.0
    },
    "geometry_trusted": true,
-   "label": "Recently added",
+   "label": "Recently Added",
    "parent_index": 1,
    "role": "list item",
    "selected": false

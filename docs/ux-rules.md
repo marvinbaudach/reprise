@@ -254,6 +254,8 @@ result.
   fallback. Otherwise the current place does not change. A turned-off place
   leaves no trace in the sidebar; it comes back through Plugins in
   Preferences, and a stored session that points at it opens Music instead.
+  Releases and Concerts sit in the SMART group but are module places and
+  offer the menu; the rows built from `smart_playlists` do not.
   Music, Queue, playlists, smart lists, and My Stats never offer the menu.
   *Tests:* `nav_16_only_optional_module_rows_offer_turn_off`,
   `nav_16_turn_off_dispatches_the_clicked_module_once`,
@@ -1322,7 +1324,8 @@ result.
   `reprise_core::equalizer::EqualizerPreset::ALL`. The ten band controls sit
   beneath it in an `AdwExpanderRow` that starts collapsed. A manually adjusted
   curve remains stored and labels the row “Custom”; it never becomes a menu
-  entry. The profile list is not enumerated anywhere.
+  entry. The profile list is not enumerated anywhere. The profile row and the
+  bands are insensitive while the equalizer is off.
 
 - **SET-19** [active] [gtk] — Preferences pages scroll inside a short window;
   the dialog stays within a 720 px window and every page reaches its last row.
@@ -1664,7 +1667,7 @@ result.
   list. Every ColumnView section header shares one uniform height; the
   plain title row grows to the authored button-row floor rather than
   shrinking the real Clear button's target.
-- **QUE-2** [active] [gtk] — The panel divides the future into exactly
+- **QUE-2** [replaced by QUE-2a] — The panel divides the future into exactly
   two conditional sections: **Next in Queue** for manually enqueued
   tracks and **Continuing from "<Album/Playlist>"** for the automatic
   context from `play_origin`. A header appears only if its section has
@@ -1672,6 +1675,12 @@ result.
   Their visible order is also the playback order; as long as something
   is playing, the queue never shows two empty sections. QUE-10 owns the
   direct-episode variant of the named context section.
+- **QUE-2a** [active] [gtk] — The panel divides the future into exactly
+  two conditional sections. The context section is titled **Playing from
+  <place> · N tracks** through `queue_context_tail`; the manual section stays
+  **Next in Queue**. A header appears only when its section has entries, and
+  their visible order is the playback order; as long as something is playing,
+  the queue never shows two empty sections.
 - **QUE-3** [active] [core] — Played manual entries silently disappear
   from "Next in Queue" on queue-item change: no strikethrough and no
   lingering. The section contains only the still-pending future.
@@ -5441,6 +5450,11 @@ means deterministic and high-confidence, never „without review".
   history entry. Album, Artist, and Genre drills continue carrying the query
   under SEARCH-8a.
 
+- **BROWSE-15** [active] [core] [gtk] — **A smart list opens in the order its
+  definition names.** Recently Played opens newest play first, Recently Added
+  newest first, and Top Rated best first. A column sort applies until the
+  place changes.
+
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
   existing directory represented by the live track paths of that album, but
@@ -6840,6 +6854,9 @@ listening statistics.
   provider failure is best-effort: the station is still added and `RAD-7`
   supplies its visible fallback. An explicitly supplied HTTP(S) favicon or
   homepage is stored without lookup.
+- **POD-27** [active] [core] — Feed text never keeps an HTML entity: titles,
+  authors and descriptions are decoded once at parse time, CDATA included, and
+  a refresh repairs a stored title.
 
 ## AG. Runtime service (headless control)
 
@@ -7049,8 +7066,8 @@ committee published on 2026-05-29.
 - **GP-21** [active] [gtk] — Labels, titles, menu items and status badges use
   HIG header capitalisation; descriptions and status lines use sentence case.
   The Plugins count badge keeps its uppercase rendering. The Releases badges
-  are `Upcoming`, `Missing` and `Incomplete`; sidebar row labels follow in a
-  later change.
+  are `Upcoming`, `Missing` and `Incomplete`. Sidebar row labels and the seeded
+  smart lists are header case.
 
 ## AJ. Showroom (public site)
 

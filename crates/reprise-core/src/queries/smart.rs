@@ -211,7 +211,8 @@ pub(super) fn query_track_ids_smart(
     let next_idx = params.len() as u8 + 1;
     let mut inner_sql = format!(
         "SELECT id, title, artist, album, year, track_no, genre, duration_ms, \
-         rating, play_count, added_at FROM tracks WHERE {PRESENT} AND ({rules_frag})"
+         rating, play_count, added_at, last_played_at \
+         FROM tracks WHERE {PRESENT} AND ({rules_frag})"
     );
     if has_filter {
         inner_sql.push_str(&filter_clause(true, next_idx));
@@ -228,4 +229,70 @@ pub(super) fn query_track_ids_smart(
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_id)?;
     rows.collect()
+}
+
+#[cfg(test)]
+mod browse_15_tests {
+    use super::*;
+
+    #[test]
+    fn member_order_survives_when_the_view_sort_equals_it() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        for (id, added_at) in [(1, 10), (2, 30), (3, 20)] {
+            conn.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, '', ?4)",
+                rusqlite::params![id, format!("/{id}.flac"), format!("Track {id}"), added_at],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO smart_playlists (name, rules_json, sort_field, sort_dir, limit_count) \
+             VALUES ('Newest', '[]', 'added_at', 'desc', 2)",
+            [],
+        )
+        .unwrap();
+        let smart_id = conn.last_insert_rowid();
+
+        let rows = query_track_window_smart(conn, smart_id, ("added_at", "desc"), "", 0, 10, false)
+            .unwrap();
+
+        assert_eq!(
+            rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+            [2, 3]
+        );
+    }
+
+    #[test]
+    fn browse_15_recently_played_queries_return_the_newest_play_first() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        for (id, title, last_played_at) in [(1, "Zulu", 10), (2, "Alpha", 30), (3, "Mike", 20)] {
+            conn.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at, last_played_at) \
+                 VALUES (?1, ?2, ?3, '', 1, ?4)",
+                rusqlite::params![id, format!("/{id}.flac"), title, last_played_at],
+            )
+            .unwrap();
+        }
+        let smart_id = conn
+            .query_row(
+                "SELECT id FROM smart_playlists \
+                 WHERE rules_json = '[{\"field\":\"last_played_at\",\"op\":\"not-null\"}]'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+
+        let rows =
+            query_track_window_smart(conn, smart_id, ("last_played_at", "desc"), "", 0, 10, false)
+                .unwrap();
+        let ids = query_track_ids_smart(conn, smart_id, "last_played_at", "desc", "").unwrap();
+
+        assert_eq!(
+            rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+            [2, 3, 1]
+        );
+        assert_eq!(ids, [2, 3, 1]);
+    }
 }

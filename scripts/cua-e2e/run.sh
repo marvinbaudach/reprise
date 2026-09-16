@@ -269,8 +269,8 @@ run_populated_library_scenario() {
   # of the same keyboard-only inventory sweep.
   rm -- "$fixture_dir/sine_02.flac"
   missing_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Missing files" populated-missing)
-  assert_snapshot_contains "$missing_path" "Missing files"
+    "$APP_PID" "$WINDOW_ID" "Missing Files" populated-missing)
+  assert_snapshot_contains "$missing_path" "Missing Files"
 
   CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
   CUA_E2E_APP_PID="$APP_PID" \
@@ -338,7 +338,7 @@ run_android_sync_page_scenario() {
     -metadata album="Android Sync" \
     -c:a flac "$fixture_dir/simulated_sync.flac"
   REPRISE_SMOKE_DEVICE_ROOT="$device_root" \
-  REPRISE_SMOKE_DEVICE_PLAYLIST="Recently added" \
+  REPRISE_SMOKE_DEVICE_PLAYLIST="Recently Added" \
   REPRISE_SMOKE_DEVICE_UI_ONLY=1 \
     start_scenario_app \
       android-sync-page "$fixture_dir" "" 25
@@ -357,7 +357,7 @@ run_android_sync_page_scenario() {
     "$APP_PID" "$WINDOW_ID" "Transfer profile" android-sync-page)
   for label in \
     "Playlists" \
-    "Recently added" \
+    "Recently Added" \
     "Sync overview" \
     "Next synchronization" \
     "Never synchronized"; do
@@ -373,7 +373,7 @@ run_android_sync_page_scenario() {
   assert_snapshot_absent "$page_path" "Device files"
   assert_snapshot_absent "$page_path" "Entire library"
   cua_click_label \
-    "$APP_PID" "$WINDOW_ID" "Recently added" android-sync-select-playlist
+    "$APP_PID" "$WINDOW_ID" "Recently Added" android-sync-select-playlist
   wait_for_label \
     "$APP_PID" "$WINDOW_ID" "1 unique track · 2.4 MiB on device" \
     android-sync-playlist-selected \

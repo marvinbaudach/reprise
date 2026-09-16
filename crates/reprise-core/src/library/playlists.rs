@@ -13,7 +13,7 @@ mod api;
 pub use super::playlist_delete::delete;
 pub use api::*;
 
-pub const RECENTLY_ADDED_NAME: &str = "Recently added";
+pub const RECENTLY_ADDED_NAME: &str = "Recently Added";
 pub const RECENTLY_ADDED_ROLE: &str = "recently_added";
 
 /// Summary of a manual playlist (name, id, track count).

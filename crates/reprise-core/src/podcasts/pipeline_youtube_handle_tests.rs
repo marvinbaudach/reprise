@@ -32,6 +32,7 @@ impl YoutubeFetcher for HandleYoutube {
         Ok(ParsedFeed {
             title: None,
             author: None,
+            description: None,
             image_url: None,
             episodes: Vec::new(),
         })
@@ -318,6 +319,7 @@ impl YoutubeFetcher for DatedFlatPlaylist {
         Ok(ParsedFeed {
             title: Some("Channel".to_owned()),
             author: None,
+            description: None,
             image_url: None,
             episodes: vec![ParsedEpisode {
                 guid: "fallback".to_owned(),

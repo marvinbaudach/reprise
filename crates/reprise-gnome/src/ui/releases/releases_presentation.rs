@@ -369,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn gp_21_labels_use_header_case() {
+    fn gp_21_sidebar_labels_use_header_case() {
         assert_eq!(
             release_status_label(&entry("2027", LibraryPresence::Complete, false), today()),
             "In library"
@@ -394,6 +394,30 @@ mod tests {
             "Missing"
         );
         assert_eq!(release_type_label("ep"), "EP");
+
+        assert_eq!(strings::text(strings::SIDEBAR_MUSIC), "Music");
+        assert_eq!(
+            strings::text(strings::SIDEBAR_RECENTLY_ADDED),
+            "Recently Added"
+        );
+        assert_eq!(strings::text(strings::SIDEBAR_QUEUE), "Queue");
+        assert_eq!(
+            strings::text(strings::SIDEBAR_IMPORT_ERRORS),
+            "Import Errors"
+        );
+        assert_eq!(
+            strings::text(strings::SIDEBAR_MISSING_FILES),
+            "Missing Files"
+        );
+        assert_eq!(strings::text(strings::SIDEBAR_MY_STATS), "My Stats");
+
+        let db = reprise_core::db::Db::open_in_memory().unwrap();
+        let names = reprise_core::library::playlists::list_smart(&db)
+            .unwrap()
+            .into_iter()
+            .map(|playlist| playlist.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Recently Played", "Top Rated", "Recently Added"]);
     }
 
     #[test]

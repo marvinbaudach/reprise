@@ -212,7 +212,7 @@ done
 for android_sync_contract in \
   '"Simulated MTP Phone"' \
   '"Transfer profile"' \
-  '"Recently added"' \
+  '"Recently Added"' \
   '"Sync overview"' \
   '"Next synchronization"' \
   '"Never synchronized"' \
@@ -445,7 +445,7 @@ for pattern in \
   'assert_focus_evidence_label "$state_path" "Toggle sidebar"' \
   'assert_snapshot_contains "$state_path" "Music"' \
   '"$pid" "$window_id" "Music" acc-issues-main-collection' \
-  '"$pid" "$window_id" "Missing files" down acc-issues-focus' \
+  '"$pid" "$window_id" "Missing Files" down acc-issues-focus' \
   '"$pid" "$window_id" "Music" acc-stats-main-collection' \
   '"$pid" "$window_id" "My Stats" down acc-stats-focus' \
   'cua_hotkey_focused "$pid" "$window_id" acc-device-close ctrl w' \

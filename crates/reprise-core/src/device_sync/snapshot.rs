@@ -106,6 +106,7 @@ fn smart_member_order(sort_field: &str, sort_dir: &str) -> String {
         "duration_ms" => "duration_ms",
         "rating" => "rating",
         "play_count" => "play_count",
+        "last_played_at" => "last_played_at",
         "added_at" => "added_at",
         "album_canonical" => {
             "CASE WHEN disc_no IS NULL THEN 1 ELSE disc_no END, \
