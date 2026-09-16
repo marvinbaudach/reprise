@@ -2,7 +2,7 @@
 slug: the-scan-leases-the-writer-per-batch
 worktree: /home/marvin/Projects/reprise-the-scan-leases-the-writer-per-batch
 branch: feature/the-scan-leases-the-writer-per-batch
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-16
 ---
