@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,8 +64,11 @@ import io.github.marvinbaudach.reprise.ui.theme.AmbientTrueBlack
 import io.github.marvinbaudach.reprise.ui.theme.NowPlayingOnBackdrop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.AndroidStoredVisualizer
@@ -107,6 +111,7 @@ internal fun NowPlayingSheet(
     var cueRevision by remember { mutableIntStateOf(0) }
     val haptics = rememberQueueHaptics()
     val latestCurrentIndex by rememberUpdatedState(currentIndex)
+    val latestDraggingTrack by rememberUpdatedState(draggingTrack)
     var seekMarker by remember { mutableStateOf<String?>(null) }
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -214,11 +219,14 @@ internal fun NowPlayingSheet(
                     },
                     snap = positionPx::snapTo,
                 )
-                if (
-                    changesTrack &&
-                    latestCurrentIndex == currentIndex
-                ) {
-                    positionPx.snapTo(currentIndex * screenWidthPx)
+                if (changesTrack) {
+                    holdSettledPositionUntilTheTransportAnswers(
+                        answered = snapshotFlow {
+                            latestCurrentIndex != currentIndex || latestDraggingTrack
+                        },
+                        graceMs = NOW_PLAYING_ANSWER_GRACE_MS.toLong(),
+                        snapBack = { positionPx.snapTo(currentIndex * screenWidthPx) },
+                    )
                 }
             } finally {
                 if (settlingTargetIndex == targetIndex) settlingTargetIndex = null
@@ -381,6 +389,26 @@ internal fun NowPlayingSheet(
     }
 }
 
+/**
+ * Keeps a committed swipe on its target card until the transport has spoken.
+ *
+ * `next()` is fire-and-forget and its answer -- the new index in the playback
+ * snapshot -- can land later than the 480 ms settle on a loaded phone. Snapping
+ * back the moment the slide ended without an answer read a late transport as
+ * a refusing one: the card slid in, jumped back, and slid in again when the
+ * answer arrived. So the card now waits for [answered] to turn true -- the
+ * index moved, or a new drag took the position over -- and only a transport
+ * that stays silent for [graceMs] takes the old card back through [snapBack].
+ */
+internal suspend fun holdSettledPositionUntilTheTransportAnswers(
+    answered: Flow<Boolean>,
+    graceMs: Long,
+    snapBack: suspend () -> Unit,
+) {
+    val answer = withTimeoutOrNull(graceMs) { answered.first { it } }
+    if (answer == null) snapBack()
+}
+
 internal suspend fun settleNowPlayingPosition(
     target: Float,
     animationsEnabled: Boolean,
@@ -392,6 +420,7 @@ internal suspend fun settleNowPlayingPosition(
 
 internal const val VISUALIZER_CROSSFADE_MS = 220
 internal const val NOW_PLAYING_SETTLE_MS = 480
+internal const val NOW_PLAYING_ANSWER_GRACE_MS = 1_500
 internal val NOW_PLAYING_SETTLE_EASING = CubicBezierEasing(0.22f, 1.06f, 0.32f, 1f)
 private const val NOW_PLAYING_VISUALIZER_TAG = "RepriseVisualizer"
 

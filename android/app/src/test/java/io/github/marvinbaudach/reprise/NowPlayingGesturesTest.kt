@@ -235,6 +235,42 @@ class NowPlayingGesturesTest {
     }
 
     @Test
+    fun a_committed_swipe_holds_the_next_card_while_the_transport_is_still_answering() {
+        // The transport answers a `next()` asynchronously and, on a loaded phone,
+        // later than the 480 ms settle. The settled card used to snap back to
+        // the old track the moment the slide ended without an answer, and slide
+        // forward again when the answer came: slide in, jump back, slide in.
+        val controls = GestureRecordingControls(
+            upcomingRows = (828L..833L).map { id -> gestureTrack(id, "Song $id") },
+        )
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            testNowPlayingSheet(
+                controls = controls,
+                track = gestureTrack(830, "Song 830"),
+                playback = gesturePlayback().copy(currentIndex = 2, currentTrackId = 830),
+            )
+        }
+        compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS * 4)
+        val restLeft = compose.onNodeWithText("Song 830").fetchSemanticsNode().boundsInRoot.left
+
+        compose.onNodeWithTag("now-playing-gestures").performTouchInput {
+            down(Offset(width * 0.75f, height * 0.3f))
+            moveTo(Offset(width * 0.35f, height * 0.3f))
+            up()
+        }
+        assertEquals(1, controls.nextCalls)
+        compose.mainClock.advanceTimeBy(NOW_PLAYING_SETTLE_MS + DISPLAY_FRAME_MS * 8)
+
+        val heldLeft = compose.onNodeWithText("Song 831").fetchSemanticsNode().boundsInRoot.left
+        assertEquals("the next card must stay where the settle put it", restLeft, heldLeft, 1f)
+
+        compose.mainClock.advanceTimeBy(NOW_PLAYING_ANSWER_GRACE_MS + DISPLAY_FRAME_MS * 8)
+        val returnedLeft = compose.onNodeWithText("Song 830").fetchSemanticsNode().boundsInRoot.left
+        assertEquals("a transport that never answers takes the old card back", restLeft, returnedLeft, 1f)
+    }
+
+    @Test
     fun externalAdvanceMidDragReanchorsBeforeTheFingerCommitsForward() {
         val controls = GestureRecordingControls(
             upcomingRows = (828L..833L).map { id -> gestureTrack(id, "Song $id") },
@@ -696,6 +732,8 @@ private class GestureRecordingControls(
         )
     }
 }
+
+private const val DISPLAY_FRAME_MS = 16L
 
 private fun gesturePlayback() = PlaybackUiState(
     ready = true,
