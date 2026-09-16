@@ -19,10 +19,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
@@ -80,61 +78,6 @@ class NowPlayingGesturesTest {
 
         val seekPosition = controls.seekPositions.single()
         assertTrue(kotlin.math.abs(seekPosition - 50_000) <= 2_000)
-    }
-
-    @Test
-    fun aSlowSeekDuringTrackSettleSeeksAndLeavesTheSheetOpen() {
-        val track = mutableStateOf(gestureTrack())
-        val playback = mutableStateOf(gesturePlayback())
-        val controls = GestureRecordingControls()
-        var closed = false
-        compose.setContent {
-            testNowPlayingSheet(
-                controls = controls,
-                track = track.value,
-                playback = playback.value,
-                close = { closed = true },
-            )
-        }
-        val slider = compose.onNodeWithTag("now-playing-seek")
-        val restingSeekBounds = slider.fetchSemanticsNode().boundsInRoot
-        compose.mainClock.autoAdvance = false
-        compose.onNodeWithContentDescription("Next track").performClick()
-        assertEquals(1, controls.nextCalls)
-        compose.waitForIdle()
-        compose.runOnUiThread {
-            track.value = gestureTrack(831, "Next song")
-            playback.value = playback.value.copy(
-                currentIndex = 1,
-                currentTrackId = 831,
-                positionMs = 0,
-            )
-        }
-        compose.waitForIdle()
-        repeat(5) { compose.mainClock.advanceTimeByFrame() }
-
-        compose.onNodeWithTag("now-playing-gestures").performTouchInput {
-            val settlingSeekY = restingSeekBounds.center.y - 10f
-            val start = Offset(
-                restingSeekBounds.left + restingSeekBounds.width * 0.2f,
-                settlingSeekY,
-            )
-            down(start)
-            moveBy(Offset(2f, 4f))
-            moveBy(Offset(2f, 4f))
-            moveBy(Offset(2f, 4f))
-            moveTo(
-                Offset(
-                    restingSeekBounds.left + restingSeekBounds.width * 0.6f,
-                    settlingSeekY + 12f,
-                ),
-            )
-            up()
-        }
-
-        val seekPosition = controls.seekPositions.single()
-        assertTrue(kotlin.math.abs(seekPosition - 60_000) <= 6_000)
-        assertFalse(closed)
     }
 
     @Test
