@@ -552,10 +552,18 @@ fn fb_8_pinned_block_holds_only_what_it_paints() {
         .first_child()
         .and_downcast::<gtk4::ScrolledWindow>()
         .expect("navigation scroller leads the sidebar");
-    let pinned = root.last_child().expect("pinned region ends the sidebar");
+    let pinned = root
+        .last_child()
+        .and_downcast::<gtk4::ScrolledWindow>()
+        .expect("the real pinned scroller ends every sidebar assembly");
 
+    let region = pinned
+        .child()
+        .and_downcast::<gtk4::Viewport>()
+        .and_then(|viewport| viewport.child())
+        .expect("the pinned scroller's viewport contains its region");
     let visible_natural_height: i32 =
-        std::iter::successors(pinned.first_child(), gtk4::prelude::WidgetExt::next_sibling)
+        std::iter::successors(region.first_child(), gtk4::prelude::WidgetExt::next_sibling)
             .filter(gtk4::prelude::WidgetExt::is_visible)
             .map(|child| child.measure(gtk4::Orientation::Vertical, root.width()).1)
             .sum();

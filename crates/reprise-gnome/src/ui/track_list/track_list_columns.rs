@@ -28,9 +28,10 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::models::{MissingReason, Track};
 use reprise_core::queries::QueueItemMetadata;
 
-/// Marker class carried by every cell of the currently-playing row — drives
-/// the accent row background. See `track_list_row_interaction.rs`'s CSS.
-pub(super) const NOW_PLAYING_CLASS: &str = "now-playing";
+/// Marker class carried by every cell of the currently-playing row. The cells
+/// keep this state marker while the enclosing GTK row paints the shared tint.
+pub(in crate::ui) const NOW_PLAYING_CLASS: &str = "now-playing";
+pub(in crate::ui) const NOW_PLAYING_ROW_CLASS: &str = "now-playing-row";
 /// Extra class on the leading (cover) cell only, carrying the 2 px left-edge
 /// accent indicator so it sits at the row's left edge without a per-row hunt.
 const NOW_PLAYING_LEADING_CLASS: &str = "now-playing-leading";
@@ -51,6 +52,52 @@ pub(super) fn toggle_class(
     } else {
         widget.remove_css_class(class);
     }
+}
+
+fn enclosing_row(cell: &impl gtk4::prelude::IsA<gtk4::Widget>) -> Option<gtk4::Widget> {
+    let mut parent = cell.parent();
+    while let Some(widget) = parent {
+        if widget.css_name() == "row" {
+            return Some(widget);
+        }
+        parent = widget.parent();
+    }
+    None
+}
+
+pub(in crate::ui) fn toggle_now_playing_cell(
+    cell: &impl gtk4::prelude::IsA<gtk4::Widget>,
+    playing: bool,
+    leading: bool,
+) {
+    toggle_class(cell, NOW_PLAYING_CLASS, playing);
+    if leading {
+        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
+    }
+}
+
+pub(super) fn sync_now_playing_row(
+    coordinator: &impl gtk4::prelude::IsA<gtk4::Widget>,
+    item: &QueueItemMetadata,
+    shared: std::rc::Weak<Shared>,
+) {
+    let item = item.clone();
+    let coordinator = coordinator.upcast_ref::<gtk4::Widget>().downgrade();
+    gtk4::glib::idle_add_local_once(move || {
+        let (Some(shared), Some(coordinator)) = (shared.upgrade(), coordinator.upgrade()) else {
+            return;
+        };
+        let playing = super::queue_item_presentation::is_now_playing(
+            &item,
+            shared.playing_track_id.get(),
+            shared.playing_episode.get(),
+        );
+        if let Some(row) = enclosing_row(&coordinator) {
+            if row.has_css_class(NOW_PLAYING_ROW_CLASS) != playing {
+                toggle_class(&row, NOW_PLAYING_ROW_CLASS, playing);
+            }
+        }
+    });
 }
 
 /// Keeps the title factory on the one shared NAV-10b marker constructor even
@@ -117,11 +164,9 @@ pub(in crate::ui) fn apply_now_playing(
     shared: &Shared,
     leading: bool,
 ) -> bool {
-    let playing = shared.playing_track_id.get() == Some(track_id);
-    toggle_class(cell, NOW_PLAYING_CLASS, playing);
-    if leading {
-        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
-    }
+    let playing =
+        shared.playing_episode.get().is_none() && shared.playing_track_id.get() == Some(track_id);
+    toggle_now_playing_cell(cell, playing, leading);
     playing
 }
 
@@ -136,10 +181,7 @@ pub(super) fn apply_now_playing_item(
         shared.playing_track_id.get(),
         shared.playing_episode.get(),
     );
-    toggle_class(cell, NOW_PLAYING_CLASS, playing);
-    if leading {
-        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
-    }
+    toggle_now_playing_cell(cell, playing, leading);
     playing
 }
 
@@ -176,7 +218,8 @@ fn cover_link_presentation(item: &QueueItemMetadata) -> CoverLinkPresentation {
             &[("album", &track.album)],
         ),
         target: Some(CoverAlbumTarget {
-            track_id: track.id,
+            track_id: super::queue_item_presentation::rating_track_id(item)
+                .expect("a track album link has a track id"),
             album: track.album.clone(),
             album_artist: track.album_artist.clone(),
         }),
@@ -358,7 +401,7 @@ pub(in crate::ui) fn append_column(
             render.as_ref(),
             &shared_for_bind,
         );
-        let track_id = super::queue_item_presentation::rating_track_id(&metadata);
+        let rendered_metadata = metadata.clone();
         let rendered_metadata_generation = Cell::new(shared_for_bind.model.metadata_generation());
         let weak_item = item.downgrade();
         now_playing_marker::register_cell(&shared_for_bind, item, {
@@ -367,9 +410,7 @@ pub(in crate::ui) fn append_column(
             move |shared| {
                 let metadata_generation = shared.model.metadata_generation();
                 if metadata_generation == rendered_metadata_generation.get() {
-                    let playing = track_id
-                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                    toggle_class(&label, NOW_PLAYING_CLASS, playing);
+                    apply_now_playing_item(&label, &rendered_metadata, shared, false);
                     return;
                 }
                 let Some(item) = weak_item.upgrade() else {
@@ -531,14 +572,11 @@ pub(in crate::ui) fn append_cover_column(
                 }),
             );
             apply_now_playing_item(&cover, &metadata, &shared, true);
-            let track_id = super::queue_item_presentation::rating_track_id(&metadata);
+            let rendered_metadata = metadata.clone();
             now_playing_marker::register_cell(&shared, item, {
                 let cover = cover.clone();
                 move |shared| {
-                    let playing = track_id
-                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                    toggle_class(&cover, NOW_PLAYING_CLASS, playing);
-                    toggle_class(&cover, NOW_PLAYING_LEADING_CLASS, playing);
+                    apply_now_playing_item(&cover, &rendered_metadata, shared, true);
                 }
             });
 

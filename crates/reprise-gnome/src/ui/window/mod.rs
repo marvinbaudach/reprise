@@ -6,6 +6,8 @@ pub(in crate::ui) mod library_shell;
 pub(in crate::ui) mod metadata_navigation;
 mod player_backends;
 pub(in crate::ui) mod podcast_refresh_scheduler;
+#[cfg(test)]
+mod real_window_tests;
 pub(in crate::ui) mod responsive_side_panels;
 pub(in crate::ui) mod search_popover;
 pub(in crate::ui) mod section_search;
@@ -27,7 +29,7 @@ pub(in crate::ui) mod window_decoration_strings;
 pub(in crate::ui) mod window_decorations;
 mod window_header;
 #[cfg(test)]
-mod window_layout_tests;
+mod window_layout_test_hook;
 pub(in crate::ui) mod window_navigation;
 pub(in crate::ui) mod window_now_playing_wiring;
 #[cfg(test)]

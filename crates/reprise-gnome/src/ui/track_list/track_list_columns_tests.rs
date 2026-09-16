@@ -347,6 +347,218 @@ fn style_6_the_table_never_overflows_its_viewport() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn style_6_the_viewport_page_size_drives_responsive_fitting() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    for (column, width) in columns.iter().zip([41, 161, 201, 221, 65, 73, 89]) {
+        column.column.set_fixed_width(width);
+    }
+    super::super::track_list_column_widths::install(&view);
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(1_000)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(20),
+    ));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(columns.iter().all(|column| column.column.is_visible()));
+
+    scrolled.set_width_request(700);
+    window.set_size_request(700, 120);
+    gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+        std::time::Duration::from_millis(20),
+    ));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(
+        columns.iter().any(|column| !column.column.is_visible()),
+        "a narrowed real viewport must refit immediately; page_size={}",
+        scrolled.hadjustment().page_size()
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_6_an_unmapped_table_disconnects_viewport_fitting() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+    let columns = super::super::track_list_column_widths::test_columns(&view);
+    super::super::track_list_column_widths::install(&view);
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(1_600)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(columns.iter().all(|column| column.column.is_visible()));
+
+    window.set_child(None::<&gtk4::Widget>);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    scrolled.hadjustment().set_page_size(700.0);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(
+        columns.iter().all(|column| column.column.is_visible()),
+        "an outlived viewport adjustment must not refit an unmapped table"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_17_the_playing_row_is_one_highlight() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let cell = Rc::new(RefCell::new(None));
+    let factory = gtk4::SignalListItemFactory::new();
+    factory.connect_setup({
+        let cell = cell.clone();
+        move |_, object| {
+            let item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+            let label = gtk4::Label::new(Some("Track"));
+            super::super::track_list_row_interaction::expand_to_cell(&label);
+            item.set_child(Some(&label));
+            cell.replace(Some(label));
+        }
+    });
+    let model = gtk4::StringList::new(&["Track"]);
+    let selection = gtk4::NoSelection::new(Some(model));
+    let view = gtk4::ColumnView::new(Some(selection));
+    view.append_column(&gtk4::ColumnViewColumn::new(Some("Title"), Some(factory)));
+    let scrolled = gtk4::ScrolledWindow::builder()
+        .width_request(320)
+        .height_request(120)
+        .child(&view)
+        .build();
+    let window = gtk4::Window::builder().child(&scrolled).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let cell = cell.borrow().clone().expect("the row cell is realised");
+    let row = enclosing_row(&cell).expect("the cell belongs to a GTK row");
+    toggle_now_playing_cell(&cell, true, true);
+    toggle_class(&row, NOW_PLAYING_ROW_CLASS, true);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(cell.has_css_class(NOW_PLAYING_CLASS));
+    assert!(row.has_css_class(NOW_PLAYING_ROW_CLASS));
+    let css = super::super::track_list_row_interaction::css();
+    let parse_errors = crate::ui::style::css_parse_errors(&css);
+    assert!(
+        parse_errors.is_empty(),
+        "playing-row CSS must parse: {parse_errors:?}"
+    );
+    assert!(css.contains("row.now-playing-row"));
+    assert!(css.contains("background-color: @reprise_now_playing_tint"));
+    assert!(
+        !css.contains(".reprise-track-cell.now-playing"),
+        "individual cells must carry no background rule"
+    );
+
+    toggle_now_playing_cell(&cell, false, true);
+    toggle_class(&row, NOW_PLAYING_ROW_CLASS, false);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(!cell.has_css_class(NOW_PLAYING_CLASS));
+    assert!(!cell.has_css_class(NOW_PLAYING_LEADING_CLASS));
+    assert!(!row.has_css_class(NOW_PLAYING_ROW_CLASS));
+    window.set_child(None::<&gtk4::Widget>);
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_17_an_episode_row_has_one_episode_aware_highlight() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO podcast_subscriptions
+             (id, kind, feed_url, title, added_at)
+             VALUES (1, 'rss', 'https://example.test/feed', 'Systems Weekly', 0);
+             INSERT INTO podcast_episodes
+             (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+             VALUES
+             (7, 1, 'episode-seven', 'Episode Seven',
+              'https://example.test/seven.mp3', 90, 0);",
+        )
+        .unwrap();
+    let queue = super::super::queue_sections::compose(
+        Some(reprise_core::up_next::QueueItem::Episode(7)),
+        &[],
+        &[],
+        None,
+    );
+    let track_list = super::super::TrackList::new(
+        conn,
+        Box::new(|_, _, _, _| {}),
+        |_, _, _, _| {},
+        move || queue.clone(),
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    track_list.set_source(reprise_core::view_source::ViewSource::Queue);
+    let window = gtk4::Window::builder()
+        .default_width(1_200)
+        .default_height(320)
+        .child(track_list.widget())
+        .build();
+    window.present();
+    assert!(crate::ui::test_settle::settle_until(
+        crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+        || track_list.shared.model.n_items() == 1
+    ));
+
+    track_list.shared.model.invalidate_cached_metadata(0, 1);
+    track_list.set_playing_episode(Some(crate::ui::podcasts::EpisodeMark::new(7, true)));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let widgets = std::iter::successors(
+        track_list.shared.column_view.first_child(),
+        gtk4::prelude::WidgetExt::next_sibling,
+    )
+    .flat_map(|root| {
+        let mut found = Vec::new();
+        let mut pending = vec![root];
+        while let Some(widget) = pending.pop() {
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                pending.push(current.clone());
+                child = current.next_sibling();
+            }
+            found.push(widget);
+        }
+        found
+    })
+    .collect::<Vec<_>>();
+    let marked_cells = widgets
+        .iter()
+        .filter(|widget| widget.has_css_class(NOW_PLAYING_CLASS))
+        .collect::<Vec<_>>();
+    assert!(
+        marked_cells.len() >= 3,
+        "the precondition needs several independently bound episode cells; got {}",
+        marked_cells.len()
+    );
+    let row = enclosing_row(marked_cells[0]).expect("the marked episode cell belongs to a row");
+    assert!(
+        row.has_css_class(NOW_PLAYING_ROW_CLASS),
+        "the episode-aware shared playback state must decide the row highlight"
+    );
+
+    window.set_child(None::<&gtk4::Widget>);
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn style_6_remapping_does_not_freeze_a_responsive_collapse() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

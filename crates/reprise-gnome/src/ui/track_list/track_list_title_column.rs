@@ -15,7 +15,7 @@ use reprise_core::queries::QueueItemMetadata;
 use super::now_playing_marker;
 use super::track_list_columns::{
     ai_badge_visible, apply_missing_title, apply_now_playing_item, build_playing_marker,
-    clear_missing_title, toggle_class, NOW_PLAYING_CLASS, NOW_PLAYING_TITLE_CLASS,
+    clear_missing_title, sync_now_playing_row, toggle_class, NOW_PLAYING_TITLE_CLASS,
 };
 use super::{
     queue_item_presentation, strings, track_list_context_menu, track_list_dnd,
@@ -130,20 +130,21 @@ pub(in crate::ui) fn append_title_column(
             label.set_text(queue_item_presentation::title(&metadata));
         }
         let playing = apply_now_playing_item(&row, &metadata, &shared_for_bind, false);
+        let row_shared = Rc::downgrade(&shared_for_bind);
+        sync_now_playing_row(&row, &metadata, row_shared.clone());
         eq.set_visible(playing);
         toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
         if let Some(ai_badge) = label.next_sibling() {
             ai_badge.set_visible(track.is_some_and(|track| ai_badge_visible(track.is_ai)));
         }
-        let track_id = queue_item_presentation::rating_track_id(&metadata);
+        let rendered_metadata = metadata.clone();
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let row = row.clone();
             let eq = eq.clone();
             let label = label.clone();
             move |shared| {
-                let playing = track_id
-                    .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                toggle_class(&row, NOW_PLAYING_CLASS, playing);
+                let playing = apply_now_playing_item(&row, &rendered_metadata, shared, false);
+                sync_now_playing_row(&row, &rendered_metadata, row_shared.clone());
                 eq.set_visible(playing);
                 toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
             }

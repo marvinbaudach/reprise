@@ -1,11 +1,13 @@
 //! Live, non-persistent width policy for the default music table.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 
 const COLLAPSE_ORDER: [&str; 4] = ["rating", "year", "duration_ms", "album"];
+
+type ViewportSignal = Rc<RefCell<Option<(gtk4::Adjustment, gtk4::glib::SignalHandlerId)>>>;
 
 pub(super) struct FittedColumn {
     pub(super) id: &'static str,
@@ -35,11 +37,10 @@ pub(super) fn fit(columns: &[FittedColumn], viewport_width: i32) {
             column.preferred_visible.set(preferred_visible);
         }
         column.collapsed.set(false);
-        column.column.set_visible(column.preferred_visible.get());
     }
     let mut used: i32 = columns
         .iter()
-        .filter(|column| column.column.is_visible())
+        .filter(|column| column.preferred_visible.get())
         .map(collapse_width)
         .sum();
     for id in COLLAPSE_ORDER {
@@ -48,13 +49,17 @@ pub(super) fn fit(columns: &[FittedColumn], viewport_width: i32) {
         }
         let Some(column) = columns
             .iter()
-            .find(|column| column.id == id && column.column.is_visible())
+            .find(|column| column.id == id && column.preferred_visible.get())
         else {
             continue;
         };
-        column.column.set_visible(false);
         column.collapsed.set(true);
         used -= collapse_width(column);
+    }
+    for column in columns {
+        column
+            .column
+            .set_visible(column.preferred_visible.get() && !column.collapsed.get());
     }
 }
 
@@ -70,24 +75,81 @@ fn collapse_width(column: &FittedColumn) -> i32 {
 pub(super) fn install(view: &gtk4::ColumnView) {
     let columns = Rc::new(fitted_columns(view));
     let fitting = Rc::new(Cell::new(false));
+    let viewport_signal: ViewportSignal = Rc::new(RefCell::new(None));
     view.connect_map({
         let columns = columns.clone();
         let fitting = fitting.clone();
+        let viewport_signal = viewport_signal.clone();
         move |view| {
-            fit_once(&columns, &fitting, view.width());
+            let adjustment = viewport_adjustment(view);
+            fit_once(
+                &columns,
+                &fitting,
+                viewport_width(adjustment.as_ref(), view.width()),
+            );
+            disconnect_viewport_signal(&viewport_signal);
+            if let Some(adjustment) = adjustment {
+                let columns_for_viewport = columns.clone();
+                let fitting_for_viewport = fitting.clone();
+                let view_for_viewport = view.downgrade();
+                let signal =
+                    adjustment.connect_notify_local(Some("page-size"), move |adjustment, _| {
+                        if let Some(view) = view_for_viewport.upgrade() {
+                            let viewport_width = viewport_width(Some(adjustment), view.width());
+                            fit_once(&columns_for_viewport, &fitting_for_viewport, viewport_width);
+                        }
+                    });
+                viewport_signal.replace(Some((adjustment, signal)));
+            }
             let view = view.downgrade();
             let columns = columns.clone();
             let fitting = fitting.clone();
             gtk4::glib::idle_add_local_once(move || {
                 if let Some(view) = view.upgrade() {
-                    fit_once(&columns, &fitting, view.width());
+                    fit_once(
+                        &columns,
+                        &fitting,
+                        viewport_width(viewport_adjustment(&view).as_ref(), view.width()),
+                    );
                 }
             });
         }
     });
-    view.connect_notify_local(Some("width"), move |view, _| {
-        fit_once(&columns, &fitting, view.width());
+    view.connect_unmap({
+        let viewport_signal = viewport_signal.clone();
+        move |_| disconnect_viewport_signal(&viewport_signal)
     });
+    view.connect_notify_local(Some("width"), {
+        move |view, _| {
+            fit_once(
+                &columns,
+                &fitting,
+                viewport_width(viewport_adjustment(view).as_ref(), view.width()),
+            );
+        }
+    });
+}
+
+fn disconnect_viewport_signal(viewport_signal: &ViewportSignal) {
+    if let Some((adjustment, signal)) = viewport_signal.borrow_mut().take() {
+        adjustment.disconnect(signal);
+    }
+}
+
+fn viewport_adjustment(view: &gtk4::ColumnView) -> Option<gtk4::Adjustment> {
+    view.parent()
+        .and_then(|parent| parent.downcast::<gtk4::ScrolledWindow>().ok())
+        .map(|scrolled| scrolled.hadjustment())
+        .or_else(|| view.hadjustment())
+}
+
+fn viewport_width(adjustment: Option<&gtk4::Adjustment>, fallback: i32) -> i32 {
+    let page_size = adjustment.map_or(0, |adjustment| adjustment.page_size().floor() as i32);
+    if page_size > 0 {
+        page_size
+    } else {
+        fallback
+    }
 }
 
 fn fit_once(columns: &[FittedColumn], fitting: &Cell<bool>, viewport_width: i32) {

@@ -128,20 +128,46 @@ fn sync_revealer_visibility(revealer: &gtk4::Revealer) {
 }
 
 impl super::Sidebar {
+    fn wire_pinned_card_visibility(&self, card: &impl IsA<gtk4::Widget>) {
+        let sync = {
+            let scrolled = self.pinned_scroller.downgrade();
+            let issues = self.shared.issues_listbox.downgrade();
+            let progress = self.activity_slot.progress_widget().downgrade();
+            move || {
+                if let (Some(scrolled), Some(issues), Some(progress)) =
+                    (scrolled.upgrade(), issues.upgrade(), progress.upgrade())
+                {
+                    scrolled.set_visible(
+                        issues.property::<bool>("visible")
+                            || super::sidebar_issues_section::progress_has_visible_card(&progress),
+                    );
+                }
+            }
+        };
+        card.connect_visible_notify({
+            let sync = sync.clone();
+            move |_| sync()
+        });
+        sync();
+    }
+
     /// Places the scan-progress card in the shared bottom activity slot.
     /// Called once at window build time (after sidebar and scan controls exist).
     pub fn append_scan_card(&self, widget: &impl IsA<gtk4::Widget>) {
         self.activity_slot.set_scan_card(widget);
+        self.wire_pinned_card_visibility(widget);
     }
 
     /// Places Locate's relink-search card in the same bottom activity slot.
     pub fn append_relink_card(&self, widget: &impl IsA<gtk4::Widget>) {
         self.activity_slot.set_relink_card(widget);
+        self.wire_pinned_card_visibility(widget);
     }
 
     /// Places the one Library Doctor job card in the shared activity slot.
     pub fn append_doctor_card(&self, widget: &impl IsA<gtk4::Widget>) {
         self.activity_slot.set_doctor_card(widget);
+        self.wire_pinned_card_visibility(widget);
     }
 }
 
