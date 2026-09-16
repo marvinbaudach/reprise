@@ -2,7 +2,7 @@
 slug: volume-keys-skip-tracks-with-the-screen-off
 worktree: /home/marvin/Projects/reprise-volume-keys-skip-tracks-with-the-screen-off
 branch: feature/volume-keys-skip-tracks-with-the-screen-off
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-09-02
 ---
