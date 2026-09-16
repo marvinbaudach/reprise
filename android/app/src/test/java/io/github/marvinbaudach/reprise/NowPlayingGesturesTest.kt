@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -44,6 +45,53 @@ class NowPlayingGesturesTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun aSlowDragOnTheSeekBarMovesTheHeadAndSeeksOnRelease() {
+        val controls = GestureRecordingControls()
+        compose.setContent { testNowPlayingSheet(controls = controls) }
+        val slider = compose.onNodeWithTag("now-playing-seek")
+
+        slider.performTouchInput {
+            down(Offset(width * 0.2f, centerY))
+            moveBy(Offset(4f, 0f))
+            moveBy(Offset(4f, 0f))
+            moveBy(Offset(4f, 0f))
+            moveTo(Offset(width * 0.6f, centerY))
+            up()
+        }
+
+        val seekPosition = controls.seekPositions.single()
+        assertTrue(kotlin.math.abs(seekPosition - 60_000) <= 6_000)
+        compose.onNodeWithTag("now-playing-position")
+            .assertTextEquals(formatDuration(seekPosition))
+    }
+
+    @Test
+    fun aTapWithAWobbleStillSeeks() {
+        val controls = GestureRecordingControls()
+        compose.setContent { testNowPlayingSheet(controls = controls) }
+
+        compose.onNodeWithTag("now-playing-seek").performTouchInput {
+            down(Offset(width * 0.5f, centerY))
+            moveBy(Offset(3f, 0f))
+            up()
+        }
+
+        val seekPosition = controls.seekPositions.single()
+        assertTrue(kotlin.math.abs(seekPosition - 50_000) <= 2_000)
+    }
+
+    @Test
+    fun aDragStartingOnTheSeekBarSeeksAndLeavesTheSheetAlone() {
+        assertSeekDragIsOwnedBySlider(SurfaceLayout.STACKED)
+    }
+
+    @Test
+    @Config(qualifiers = "w916dp-h412dp-land")
+    fun aDragStartingOnTheSeekBarSeeksAndLeavesTheSheetAloneInTheWideShortLayout() {
+        assertSeekDragIsOwnedBySlider(SurfaceLayout.WIDE_SHORT)
+    }
+
+    @Test
     fun aCancelledSeekGestureReturnsTheHeadToThePlaybackPosition() {
         val playback = mutableStateOf(gesturePlayback())
         val surfaceState = MobileSurfaceViewModel()
@@ -61,6 +109,12 @@ class NowPlayingGesturesTest {
 
         compose.runOnUiThread {
             interactions.cancelDrag()
+        }
+        compose.waitForIdle()
+
+        assertEquals(20_000f, slider.progress(), 0.5f)
+
+        compose.runOnUiThread {
             playback.value = playback.value.copy(positionMs = 30_000)
         }
         compose.waitForIdle()
@@ -99,7 +153,7 @@ class NowPlayingGesturesTest {
         val newTrackId = 831L
         surfaceState.dragTo(outgoingTrackId, positionMs = 60_000)
 
-        surfaceState.releaseScrub(newTrackId)
+        surfaceState.cancelScrub(newTrackId)
 
         val newHead = surfaceState.seekPosition(newTrackId, fallbackPositionMs = 40_000)
         assertEquals(40_000L, newHead.positionMs)
@@ -374,6 +428,7 @@ class NowPlayingGesturesTest {
         controller: AmbientMotionController = AmbientMotionController(),
         track: LibraryTrack = gestureTrack(),
         playback: PlaybackUiState = gesturePlayback(),
+        surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
         close: () -> Unit = {},
     ) {
         val theme = MobileThemeSelection(
@@ -391,6 +446,7 @@ class NowPlayingGesturesTest {
                 NowPlayingSheet(
                     track = track,
                     playback = playback,
+                    surfaceLayout = surfaceLayout,
                     close = close,
                 )
             }
@@ -425,6 +481,31 @@ class NowPlayingGesturesTest {
             .getOrNull(SemanticsProperties.ProgressBarRangeInfo)
             ?.current
             ?: error("No progress semantics")
+
+    private fun assertSeekDragIsOwnedBySlider(surfaceLayout: SurfaceLayout) {
+        val controls = GestureRecordingControls()
+        var closed = false
+        compose.setContent {
+            testNowPlayingSheet(
+                controls = controls,
+                surfaceLayout = surfaceLayout,
+                close = { closed = true },
+            )
+        }
+
+        compose.onNodeWithTag("now-playing-seek").performTouchInput {
+            down(Offset(width * 0.2f, centerY))
+            moveTo(Offset(width * 0.6f, centerY))
+            up()
+        }
+
+        val seekPosition = controls.seekPositions.single()
+        assertTrue(kotlin.math.abs(seekPosition - 60_000) <= 6_000)
+        compose.onNodeWithText("Song").assertIsDisplayed()
+        assertEquals(0, controls.nextCalls)
+        assertEquals(0, controls.previousCalls)
+        assertFalse(closed)
+    }
 }
 
 private class RecordingSeekInteractionSource : MutableInteractionSource {

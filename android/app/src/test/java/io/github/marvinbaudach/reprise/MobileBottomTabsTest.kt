@@ -1,6 +1,8 @@
 package io.github.marvinbaudach.reprise
 
 import android.os.Looper
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
@@ -12,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.unit.dp
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -59,6 +62,17 @@ class MobileBottomTabsTest {
     @Test
     fun swipingLeftShowsTheNextPageAndMovesTheDestinationSelection() {
         compose.onNodeWithTag("library-destination-pager").performTouchInput { swipeLeft() }
+
+        compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
+        compose.onNodeWithTag("library-destination-TITLES").assertIsNotSelected()
+        compose.onNodeWithTag("library-destination-ARTISTS").assertIsSelected()
+    }
+
+    @Test
+    fun thePagerBandSwipeMovesToArtistsWhenTheSheetIsClosed() {
+        val pager = compose.onNodeWithTag("library-destination-pager")
+
+        swipeLeftAt(pager, pager.height() * 0.3f)
 
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
         compose.onNodeWithTag("library-destination-TITLES").assertIsNotSelected()
@@ -130,12 +144,32 @@ class MobileBottomTabsTest {
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onNodeWithTag("library-navigation-bar").assertIsNotDisplayed()
 
-        compose.onNodeWithTag("now-playing-gestures").performTouchInput { swipeLeft() }
+        val gestures = compose.onNodeWithTag("now-playing-gestures")
+        val height = gestures.height()
+        swipeLeftAt(gestures, height * 0.3f)
+        assertSelectionUnchanged()
+        swipeLeftAt(gestures, height * 0.70f)
+        assertSelectionUnchanged()
+        swipeLeftAt(gestures, height - with(compose.density) { 40.dp.toPx() })
+        assertSelectionUnchanged()
+    }
 
+    private fun swipeLeftAt(node: SemanticsNodeInteraction, y: Float) {
+        node.performTouchInput {
+            down(Offset(width * 0.8f, y))
+            moveTo(Offset(width * 0.2f, y))
+            up()
+        }
+    }
+
+    private fun assertSelectionUnchanged() {
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
         compose.onNodeWithTag("library-page-TITLES").assertIsDisplayed()
         compose.onNodeWithTag("library-destination-TITLES").assertIsSelected()
     }
+
+    private fun SemanticsNodeInteraction.height(): Float =
+        fetchSemanticsNode().boundsInRoot.height
 }
 
 internal class MobileBottomTabsApplication : ConfigurationTestApplication() {

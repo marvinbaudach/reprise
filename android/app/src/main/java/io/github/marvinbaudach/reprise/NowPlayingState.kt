@@ -70,6 +70,7 @@ internal fun cycleRepeatMode(mode: AndroidRepeatMode): AndroidRepeatMode = when 
 internal data class SeekPositionState(
     val positionMs: Long,
     val isDragging: Boolean,
+    val snapshotPositionMs: Long = positionMs,
 ) {
     fun fractionOf(durationMs: Long): Float = if (durationMs > 0) {
         (positionMs.toDouble() / durationMs.toDouble()).coerceIn(0.0, 1.0).toFloat()
@@ -78,14 +79,15 @@ internal data class SeekPositionState(
     }
 
     fun acceptSnapshot(positionMs: Long): SeekPositionState =
-        if (isDragging) this else fromSnapshot(positionMs)
+        if (isDragging) copy(snapshotPositionMs = positionMs.coerceAtLeast(0))
+        else fromSnapshot(positionMs)
 
-    fun dragTo(positionMs: Long): SeekPositionState = SeekPositionState(
-        positionMs = positionMs.coerceAtLeast(0),
-        isDragging = true,
-    )
+    fun dragTo(positionMs: Long): SeekPositionState =
+        copy(positionMs = positionMs.coerceAtLeast(0), isDragging = true)
 
     fun release(): SeekPositionState = copy(isDragging = false)
+
+    fun cancel(): SeekPositionState = fromSnapshot(snapshotPositionMs)
 
     companion object {
         fun fromSnapshot(positionMs: Long): SeekPositionState = SeekPositionState(
