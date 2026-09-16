@@ -188,6 +188,7 @@ fn run_tracked_scan(
     tracing::debug!(
         longest_lease_ms = leases.longest.as_millis() as u64,
         leases = leases.count,
+        estimate_lease = u8::from(leases.estimate),
         "scan writer leases"
     );
     result
@@ -235,9 +236,20 @@ impl<'a> BatchProgress<'a> {
 struct LeaseMetrics {
     longest: Duration,
     count: u64,
+    estimate: bool,
 }
 
 impl LeaseMetrics {
+    fn run_estimate(
+        &mut self,
+        writer: &dyn ScanWriter,
+        work: &mut dyn FnMut(&Connection) -> Result<(), ScanError>,
+    ) -> Result<(), ScanError> {
+        let result = writer.lease(work);
+        self.estimate = true;
+        result
+    }
+
     fn run(
         &mut self,
         writer: &dyn ScanWriter,
@@ -583,7 +595,7 @@ fn scan_folder_inner(
             failed: HashSet::new(),
         },
     };
-    writer.lease(&mut |conn| progress.initialize(conn, root))?;
+    leases.run_estimate(writer, &mut |conn| progress.initialize(conn, root))?;
     batches::walk_root_in_batches(
         source,
         writer,
