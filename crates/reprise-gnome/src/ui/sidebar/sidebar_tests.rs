@@ -261,9 +261,9 @@ fn acc_3_sidebar_uses_the_available_page_height_before_scrolling() {
         "Queue",
         "New playlist",
         "Import playlist",
-        "Recently played",
-        "Top rated",
-        "Recently added",
+        "Recently Played",
+        "Top Rated",
+        "Recently Added",
         "My Stats",
     ] {
         list.append(&gtk4::Label::new(Some(label)));
@@ -575,7 +575,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
     gtk4::init().unwrap();
     let shared = test_shared();
 
-    // Seed five present tracks; the default "Recently added" smart list has an
+    // Seed five present tracks; the default "Recently Added" smart list has an
     // empty rule set, so it matches every present track — the badge must read 5.
     let _smart_id = {
         let conn = &shared.conn;
@@ -595,7 +595,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
         }
         crate::test_db::connection(conn)
             .query_row(
-                "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+                "SELECT id FROM smart_playlists WHERE name = 'Recently Added'",
                 [],
                 |r| r.get::<_, i64>(0),
             )
@@ -605,7 +605,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
     rebuild(&shared, None, "test build");
 
     let row = find_row(&shared, &ViewSource::RecentlyAdded)
-        .expect("the 'Recently added' smart list must have a sidebar row");
+        .expect("the 'Recently Added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),
         Some("5".to_string()),
@@ -625,7 +625,7 @@ fn empty_smart_playlist_shows_no_badge() {
         let conn = &shared.conn;
         crate::test_db::connection(conn)
             .query_row(
-                "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+                "SELECT id FROM smart_playlists WHERE name = 'Recently Added'",
                 [],
                 |r| r.get::<_, i64>(0),
             )
@@ -635,7 +635,7 @@ fn empty_smart_playlist_shows_no_badge() {
     rebuild(&shared, None, "test build");
 
     let row = find_row(&shared, &ViewSource::RecentlyAdded)
-        .expect("the 'Recently added' smart list must have a sidebar row");
+        .expect("the 'Recently Added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),
         None,
