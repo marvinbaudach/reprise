@@ -1446,6 +1446,19 @@ result.
   and `Missing files` disappeared for the duration of an unrelated scan. The
   design shows both at once; coexistence is the rule now. Do not restore the
   replacement.
+  *Amended 2026-09-16.* The block's bottom edge sits above the player bar at
+  every moment it is visible, including when it appears after the window is
+  already laid out — the normal case, since the start-up scan reports import
+  errors and job cards reveal seconds after the map. On `1f808182f1`, the
+  Relink and Library Doctor cards were docked while the block was still hidden
+  and kept GTK's default `visible` flag because the sync compared against the
+  ancestor-aware `is_visible`; when the block appeared, they reserved 170 px
+  of crossfade height without painting (162 px in the 1280×720 headless tour
+  of 2026-09-16). The sync now writes the widget's own flag. Tests:
+  `fb_8_the_real_sidebar_leaves_no_band_under_the_pinned_block` covers cards
+  docked into a visible block, and
+  `fb_8_a_card_docked_behind_a_hidden_block_reserves_no_height` covers cards
+  docked behind the hidden block before it appears after the map.
   Card: spinner + title + % on the right (tabular) + 3px bar +
   ellipsized detail line. Clicking the card → Missing files; the visible
   Cancel button checks for abort before each audio file. Modal dialogs
