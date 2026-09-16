@@ -8,6 +8,9 @@ use reprise_core::db::Db;
 use super::{PlayRecorder, RecordedPlay};
 use crate::log_capture::CapturedLogs;
 use crate::play_journal::FILE_NAME as JOURNAL_FILE_NAME;
+use crate::play_recorder_retry::{retry_after, BUSY_ATTEMPTS};
+
+const RETRY_TEST_MARGIN: Duration = Duration::from_secs(1);
 
 fn seeded_database(directory: &Path) -> (PathBuf, i64) {
     let music = directory.join("music");
@@ -82,14 +85,25 @@ fn wait_until(timeout: Duration, condition: impl FnMut() -> bool) {
     );
 }
 
+fn busy_retry_schedule_with_margin() -> Duration {
+    (1..=BUSY_ATTEMPTS)
+        .filter_map(|attempt| retry_after(true, attempt))
+        .sum::<Duration>()
+        + RETRY_TEST_MARGIN
+}
+
 #[test]
 fn drop_while_the_writer_is_held_returns_and_keeps_the_journaled_play() {
     let held_directory = tempfile::tempdir().unwrap();
     let (held_database_path, held_track_id) = seeded_database(held_directory.path());
     let held_writer = shared_writer(&held_database_path);
     let writer_guard = held_writer.lock().unwrap();
-    let held_recorder =
-        PlayRecorder::spawn(held_database_path.clone(), Arc::clone(&held_writer), 0);
+    let logs = CapturedLogs::default();
+    let held_recorder = captured_recorder(
+        held_database_path.clone(),
+        Arc::clone(&held_writer),
+        logs.clone(),
+    );
     held_recorder.record(RecordedPlay {
         track_id: held_track_id,
         at_unix: 1_700_000_000,
@@ -98,20 +112,30 @@ fn drop_while_the_writer_is_held_returns_and_keeps_the_journaled_play() {
     wait_until(Duration::from_secs(3), || {
         std::fs::read(&held_journal).is_ok_and(|contents| !contents.is_empty())
     });
+    wait_until(Duration::from_secs(3), || {
+        let logged = logs.joined();
+        logged.contains("offering an Android play count again") && logged.contains("attempt=3")
+    });
 
     let started = Instant::now();
-    drop(held_recorder);
-    let elapsed = started.elapsed();
+    let (dropped, wait_for_drop) = mpsc::channel();
+    let drop_worker = std::thread::spawn(move || {
+        drop(held_recorder);
+        dropped.send(()).unwrap();
+    });
+    let drop_result = wait_for_drop.recv_timeout(Duration::from_millis(500));
 
     assert!(
-        elapsed < Duration::from_millis(500),
-        "dropping the recorder waited {elapsed:?} for the held writer",
+        drop_result.is_ok(),
+        "dropping the recorder waited {:?} for the held writer",
+        started.elapsed(),
     );
     assert!(
         !std::fs::read(&held_journal).unwrap().is_empty(),
         "the play must remain durable when shutdown cannot reach the writer",
     );
     drop(writer_guard);
+    drop_worker.join().unwrap();
 
     let free_directory = tempfile::tempdir().unwrap();
     let (free_database_path, free_track_id) = seeded_database(free_directory.path());
@@ -165,6 +189,39 @@ fn journaled_play_retries_after_the_writer_is_released_without_another_play() {
 }
 
 #[test]
+fn non_retryable_journal_failure_does_not_keep_waking_the_worker() {
+    let directory = tempfile::tempdir().unwrap();
+    let (database_path, track_id) = seeded_database(directory.path());
+    let writer = shared_writer(&database_path);
+    let poison_writer = Arc::clone(&writer);
+    let poisoner = std::thread::spawn(move || {
+        let _guard = poison_writer.lock().unwrap();
+        panic!("poison the shared writer for the test");
+    });
+    assert!(poisoner.join().is_err());
+
+    let logs = CapturedLogs::default();
+    let recorder = captured_recorder(database_path, writer, logs.clone());
+    recorder.record(RecordedPlay {
+        track_id,
+        at_unix: 1_700_000_000,
+    });
+    let warning = "kept an Android play count in its journal: the shared writer was poisoned";
+    wait_until(Duration::from_millis(500), || {
+        logs.joined().contains(warning)
+    });
+
+    std::thread::sleep(Duration::from_millis(2_500));
+
+    assert_eq!(
+        logs.joined().matches(warning).count(),
+        1,
+        "a failure that retrying cannot fix must wait for another play",
+    );
+    drop(recorder);
+}
+
+#[test]
 fn unjournaled_play_gives_up_and_shutdown_does_not_wait_for_the_writer() {
     let directory = tempfile::tempdir().unwrap();
     let (database_path, track_id) = seeded_database(directory.path());
@@ -181,9 +238,10 @@ fn unjournaled_play_gives_up_and_shutdown_does_not_wait_for_the_writer() {
         track_id,
         at_unix: 1_700_000_000,
     });
-    let warned_before_shutdown = wait_for(Duration::from_secs(3), || {
-        logs.joined()
-            .contains("dropped an Android play count: no journal was open to keep it")
+    let busy_warning =
+        "dropped an Android play count: no journal was open and the library writer stayed busy";
+    let warned_before_shutdown = wait_for(busy_retry_schedule_with_margin(), || {
+        logs.joined().contains(busy_warning)
     });
     let (dropped, wait_for_drop) = mpsc::channel();
     let drop_worker = std::thread::spawn(move || {
@@ -210,7 +268,7 @@ fn unjournaled_play_gives_up_and_shutdown_does_not_wait_for_the_writer() {
     );
     let logged = logs.joined();
     assert!(
-        logged.contains("dropped an Android play count: no journal was open to keep it"),
+        logged.contains(busy_warning),
         "the degraded loss must be explicit, got {logged}",
     );
     assert!(

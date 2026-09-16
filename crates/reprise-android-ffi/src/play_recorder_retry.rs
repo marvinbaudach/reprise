@@ -33,9 +33,8 @@ pub(crate) fn with_busy_retries<E>(
             Ok(()) => return Ok(()),
             Err(error) => error,
         };
-        let wait = retry_after(is_busy(&error), attempt)
-            .filter(|_| !shutting_down.load(Ordering::Relaxed));
-        let Some(wait) = wait else {
+        let wait = retry_after(is_busy(&error), attempt);
+        let Some(wait) = wait.filter(|_| !shutting_down.load(Ordering::Relaxed)) else {
             return Err(GaveUp {
                 attempts: attempt,
                 error,
@@ -46,7 +45,15 @@ pub(crate) fn with_busy_retries<E>(
             attempt,
             "the library is busy; offering an Android play count again",
         );
-        std::thread::sleep(wait);
+        std::thread::park_timeout(wait);
+        // Teardown can free a short-lived competing writer before it wakes us.
+        // Preserve one immediate probe, but never inherit a longer backoff.
+        if attempt > 1 && shutting_down.load(Ordering::Relaxed) {
+            return Err(GaveUp {
+                attempts: attempt,
+                error,
+            });
+        }
         attempt += 1;
     }
 }

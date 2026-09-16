@@ -62,8 +62,8 @@
 //! Applying a later entry would move the applied mark past this one and make
 //! the play it describes unrecognisable as pending, so stopping is the only way
 //! to keep it replayable. A user would see a play count that stops rising while
-//! the log carries `kept an Android play count in its journal` for the same
-//! track over and over.
+//! each next play prompts another `kept an Android play count in its journal`
+//! warning for the same blocked track.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -81,6 +81,13 @@ use crate::play_recorder_writer::{
 };
 
 const RETRY_WAKEUP: Duration = Duration::from_secs(1);
+
+#[derive(Clone, Copy)]
+enum DrainOutcome {
+    Drained,
+    WriterBusy,
+    NonRetryable,
+}
 
 /// One counted play, timestamped where it happened rather than where it lands,
 /// so a queued write cannot back-date `last_played_at` to the drain.
@@ -192,6 +199,7 @@ impl Drop for PlayRecorder {
         self.shutting_down.store(true, Ordering::Relaxed);
         self.plays = None;
         if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
             if worker.join().is_err() {
                 tracing::warn!("the Android play-count writer thread panicked");
             }
@@ -222,17 +230,17 @@ fn write_queued_plays(
         }
         return;
     };
-    drain_shared_journal(writer, &mut journal, shutting_down);
+    let mut drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
     loop {
-        if journal.front().is_some() {
+        if matches!(drain_outcome, DrainOutcome::WriterBusy) {
             match queued.recv_timeout(RETRY_WAKEUP) {
                 Ok(play) => {
                     if append_or_warn(&mut journal, play) {
-                        drain_shared_journal(writer, &mut journal, shutting_down);
+                        drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    drain_shared_journal(writer, &mut journal, shutting_down);
+                    drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
                 }
                 Err(RecvTimeoutError::Disconnected) => return,
             }
@@ -241,14 +249,18 @@ fn write_queued_plays(
                 return;
             };
             if append_or_warn(&mut journal, play) {
-                drain_shared_journal(writer, &mut journal, shutting_down);
+                drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
             }
         }
     }
 }
 
-fn drain_shared_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
-    drain_journal(writer, journal, shutting_down);
+fn drain_shared_journal(
+    writer: &Mutex<Db>,
+    journal: &mut PlayJournal,
+    shutting_down: &AtomicBool,
+) -> DrainOutcome {
+    drain_journal(writer, journal, shutting_down)
 }
 
 fn append_or_warn(journal: &mut PlayJournal, play: RecordedPlay) -> bool {
@@ -265,10 +277,15 @@ fn append_or_warn(journal: &mut PlayJournal, play: RecordedPlay) -> bool {
     }
 }
 
-fn drain_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
+fn drain_journal(
+    writer: &Mutex<Db>,
+    journal: &mut PlayJournal,
+    shutting_down: &AtomicBool,
+) -> DrainOutcome {
     while let Some(entry) = journal.front() {
-        if !record_play_with_retries(writer, entry, shutting_down) {
-            return;
+        match record_play_with_retries(writer, entry, shutting_down) {
+            DrainOutcome::Drained => {}
+            stopped => return stopped,
         }
         if let Err(error) = journal.remove_front() {
             // Not a reason to stop. The entry is counted and its sequence is at
@@ -284,6 +301,7 @@ fn drain_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &
             );
         }
     }
+    DrainOutcome::Drained
 }
 
 /// Writes one journal entry, offering it again while the only thing in the way
@@ -293,7 +311,7 @@ fn record_play_with_retries(
     writer: &Mutex<Db>,
     entry: JournalEntry,
     shutting_down: &AtomicBool,
-) -> bool {
+) -> DrainOutcome {
     let written = with_shared_writer_retries(
         writer,
         shutting_down,
@@ -310,7 +328,7 @@ fn record_play_with_retries(
         },
     );
     match written {
-        Ok(()) => true,
+        Ok(()) => DrainOutcome::Drained,
         Err(GaveUp {
             attempts,
             error: SharedWriteError::Database(error),
@@ -322,7 +340,7 @@ fn record_play_with_retries(
                 attempts,
                 "kept an Android play count in its journal after a write failure",
             );
-            false
+            DrainOutcome::NonRetryable
         }
         Err(GaveUp {
             attempts,
@@ -334,7 +352,7 @@ fn record_play_with_retries(
                 attempts,
                 "kept an Android play count in its journal: the shared writer was busy",
             );
-            false
+            DrainOutcome::WriterBusy
         }
         Err(GaveUp {
             attempts,
@@ -346,7 +364,7 @@ fn record_play_with_retries(
                 attempts,
                 "kept an Android play count in its journal: the shared writer was poisoned",
             );
-            false
+            DrainOutcome::NonRetryable
         }
     }
 }

@@ -67,7 +67,7 @@ pub(crate) fn record_unjournaled_play(
             %error,
             track_id = play.track_id,
             attempts,
-            "dropped an Android play count: no journal was open to keep it",
+            "dropped an Android play count: no journal was open and the write failed",
         ),
         Err(GaveUp {
             attempts,
@@ -75,7 +75,7 @@ pub(crate) fn record_unjournaled_play(
         }) => tracing::warn!(
             track_id = play.track_id,
             attempts,
-            "dropped an Android play count: no journal was open to keep it",
+            "dropped an Android play count: no journal was open and the library writer stayed busy",
         ),
         Err(GaveUp {
             attempts,
