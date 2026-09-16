@@ -80,18 +80,16 @@ class NowPlayingPanelsTest {
     }
 
     @Test
-    fun a_stale_row_never_fills_a_centre_nothing_was_prefetched_for() {
+    fun a_stale_row_fills_only_a_centre_nothing_was_prefetched_for() {
         val previous = panelTrack(20)
         val current = panelTrack(21)
         val window = playPanelWindow(4, current.id, listOf(previous, current))
 
         // Index 5 is outside the known window and no neighbour was prefetched:
-        // the centre stays empty until the row arrives rather than showing the
-        // row the transport has already left.
+        // the play view keeps its last answered row until the new one arrives.
         val jumped = window.withCurrentPanel(current, currentIndex = 5, currentTrackId = 30L)
-        assertTrue(jumped.panels.isEmpty())
-        assertEquals(5, jumped.firstIndex)
-        assertEquals(5, jumped.lastIndex)
+        assertEquals(listOf(5), jumped.panels.map { panel -> panel.index })
+        assertEquals(listOf(21L), jumped.panels.map { panel -> panel.track.id })
 
         val answered = jumped.withCurrentPanel(panelTrack(30), currentIndex = 5, currentTrackId = 30L)
         assertEquals(listOf(5), answered.panels.map { panel -> panel.index })
@@ -99,7 +97,7 @@ class NowPlayingPanelsTest {
     }
 
     @Test
-    fun two_transport_moves_before_the_row_answers_keep_only_what_was_prefetched() {
+    fun two_transport_moves_before_the_row_answers_keep_what_was_prefetched() {
         val rows = (20L..25L).map(::panelTrack)
         val window = playPanelWindow(4, 22L, rows)
         assertEquals(listOf(3, 4, 5), window.panels.map { panel -> panel.index })
@@ -107,8 +105,10 @@ class NowPlayingPanelsTest {
         val once = window.withCurrentPanel(panelTrack(22), currentIndex = 5, currentTrackId = 23L)
         assertEquals(listOf(4 to 22L, 5 to 23L), once.panels.map { it.index to it.track.id })
 
+        // The second move outruns the prefetch: the neighbour stays, the
+        // stale row holds the centre until the reload answers.
         val twice = once.withCurrentPanel(panelTrack(22), currentIndex = 6, currentTrackId = 24L)
-        assertEquals(listOf(5 to 23L), twice.panels.map { it.index to it.track.id })
+        assertEquals(listOf(5 to 23L, 6 to 22L), twice.panels.map { it.index to it.track.id })
         assertEquals(2, twice.firstIndex)
         assertEquals(7, twice.lastIndex)
     }

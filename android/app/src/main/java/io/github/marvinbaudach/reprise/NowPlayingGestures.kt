@@ -54,9 +54,10 @@ internal fun placeholderPlayPanelWindow(
  * seated at the new index: the panel already sitting there is the prefetched
  * neighbour for exactly this track, and replacing it disposed its subtree --
  * engine, frozen scene, decoded cover -- so the old cover popped into the
- * centre and the new track came back from scratch a moment later. When
- * nothing was prefetched for the new index the centre stays empty until the
- * row arrives: a slot that fills is quieter than a wrong cover that pops.
+ * centre and the new track came back from scratch a moment later. Only when
+ * nothing was prefetched for the new index does the stale row fill the
+ * centre: the play view keeps its last answered row rather than going blank
+ * (`MainActivityPlayViewStabilityTest`), and the row arrives a read later.
  */
 internal fun PlayPanelWindow.withCurrentPanel(
     track: LibraryTrack,
@@ -71,11 +72,10 @@ internal fun PlayPanelWindow.withCurrentPanel(
     val centre = when {
         track.id == currentTrackId -> PlayPanel(currentIndex, track)
         seated != null && seated.track.id == currentTrackId -> seated
-        else -> null
+        else -> PlayPanel(currentIndex, track)
     }
-    val centred = listOfNotNull(centre)
     return PlayPanelWindow(
-        panels = if (indexIsKnown) (neighbours + centred).sortedBy(PlayPanel::index) else centred,
+        panels = if (indexIsKnown) (neighbours + centre).sortedBy(PlayPanel::index) else listOf(centre),
         firstIndex = if (indexIsKnown) firstIndex else currentIndex,
         lastIndex = if (indexIsKnown) lastIndex else currentIndex,
     )
