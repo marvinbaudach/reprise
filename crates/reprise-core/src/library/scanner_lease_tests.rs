@@ -348,7 +348,7 @@ fn completed_batches_are_visible_before_the_walk_ends() {
 }
 
 #[test]
-fn forty_items_use_two_leases_per_batch_and_one_tail_lease() {
+fn forty_items_use_an_estimate_two_leases_per_batch_and_one_tail_lease() {
     let directory = tempfile::tempdir().unwrap();
     let (_, database) = file_database(&directory);
     let writer = CountingWriter {
