@@ -2,7 +2,7 @@
 slug: the-real-window-passes-the-ux-audit-a
 worktree: /home/marvin/Projects/reprise-the-real-window-passes-the-ux-audit-a
 branch: feature/the-real-window-passes-the-ux-audit-a
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-09-15
 ---
