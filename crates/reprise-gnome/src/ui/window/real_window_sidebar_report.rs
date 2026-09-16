@@ -227,3 +227,108 @@ pub(super) fn sidebar_report(handles: &WindowLayoutTestHandles) -> String {
     report.push_str("gap = see gap_painted (the headline value); gap_raw flags a leaf painting below the sidebar page itself\n");
     report
 }
+
+pub(super) fn assert_fb_8_geometry(handles: &WindowLayoutTestHandles) {
+    let report = sidebar_report(handles);
+    let root = handles.sidebar.widget();
+    let sidebar_page = handles.sidebar_page.upcast_ref::<gtk4::Widget>();
+    let pinned = handles
+        .pinned_block
+        .clone()
+        .downcast::<gtk4::ScrolledWindow>()
+        .expect("the pinned block is a scroller");
+    let viewport = pinned
+        .child()
+        .and_downcast::<gtk4::Viewport>()
+        .expect("the pinned scroller owns a viewport");
+    let region = viewport
+        .child()
+        .expect("the pinned viewport owns its region");
+    let children = std::iter::successors(
+        handles.activity_slot.first_child(),
+        gtk4::prelude::WidgetExt::next_sibling,
+    )
+    .collect::<Vec<_>>();
+    for revealer in children
+        .iter()
+        .filter_map(|child| child.downcast_ref::<gtk4::Revealer>())
+        .filter(|revealer| !revealer.reveals_child() && !revealer.is_child_revealed())
+    {
+        assert!(
+            !revealer.get_visible(),
+            "FB-8: every inactive revealer must clear its own visible flag\n{report}"
+        );
+    }
+
+    assert_eq!(
+        root.height(),
+        sidebar_page.height(),
+        "FB-8: the sidebar root must fill its page\n{report}"
+    );
+    let pinned_bounds = pinned
+        .compute_bounds(sidebar_page)
+        .expect("the pinned block shares the sidebar coordinate space");
+    assert_eq!(
+        pinned_bounds.y() + pinned_bounds.height(),
+        sidebar_page.height() as f32,
+        "FB-8: the pinned block must meet the sidebar-page bottom\n{report}"
+    );
+    assert_eq!(
+        pinned.height(),
+        pinned
+            .measure(gtk4::Orientation::Vertical, pinned.width())
+            .1,
+        "FB-8: the pinned block must occupy exactly its natural height\n{report}"
+    );
+    let region_bounds = region
+        .compute_bounds(sidebar_page)
+        .expect("the pinned region shares the sidebar coordinate space");
+    assert_eq!(
+        region_bounds.y() + region_bounds.height(),
+        pinned_bounds.y() + pinned_bounds.height(),
+        "FB-8: the progress region must meet the pinned-block bottom\n{report}"
+    );
+    assert_eq!(
+        handles.navigation_scroller.height(),
+        sidebar_page.height() - pinned.height(),
+        "FB-8: navigation must receive all height not painted by the pinned block\n{report}"
+    );
+
+    let visible_height: i32 = children
+        .iter()
+        .filter(|child| child.get_visible())
+        .map(|child| {
+            child
+                .measure(gtk4::Orientation::Vertical, handles.activity_slot.width())
+                .1
+        })
+        .sum();
+    assert_eq!(
+        handles.activity_slot.height(),
+        visible_height,
+        "FB-8: the progress root must equal its visible children's height\n{report}"
+    );
+
+    let first_row_height = handles
+        .issues_listbox
+        .row_at_index(0)
+        .expect("the import-errors row exists")
+        .height() as f32;
+    let page_bottom = sidebar_page
+        .compute_bounds(&handles.window)
+        .map(|bounds| bounds.y() + bounds.height())
+        .expect("the sidebar page is allocated");
+    let painted_bottom = deepest_leaf(&handles.sidebar_page, &handles.window, Some(page_bottom))
+        .map(|(_, bottom)| bottom)
+        .expect("the sidebar paints at least one leaf");
+    let player_y = handles
+        .player_bar
+        .as_ref()
+        .and_then(|bar| bar.compute_bounds(&handles.window))
+        .map(|bounds| bounds.y())
+        .expect("the player bar is allocated");
+    assert!(
+        player_y - painted_bottom <= first_row_height,
+        "FB-8: the painted gap must be no taller than one issue row\n{report}"
+    );
+}

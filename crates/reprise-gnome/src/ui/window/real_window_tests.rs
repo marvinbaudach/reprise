@@ -445,6 +445,74 @@ fn fb_8_the_real_sidebar_leaves_no_band_under_the_pinned_block() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn fb_8_a_card_docked_behind_a_hidden_block_reserves_no_height() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let (handles, db) = build_real_window_with_db(1280, 720, SidebarSeed::default());
+    handles.window.set_size_request(1290, 730);
+    let sized = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        handles.window.width() == 1280 && handles.window.height() == 720
+    });
+    assert!(
+        sized,
+        "the post-map fixture must remain 1280x720\n{}",
+        sidebar_report(&handles)
+    );
+
+    let scan = crate::ui::scan::scan_progress::ScanProgressView::new();
+    handles.sidebar.append_scan_card(scan.widget());
+    handles.sidebar.append_relink_card(&handles.relink_card);
+    assert!(
+        !handles.pinned_block.get_visible(),
+        "the pinned block must still be hidden while cards are docked\n{}",
+        sidebar_report(&handles)
+    );
+
+    crate::test_db::connection(&db)
+        .execute(
+            "INSERT INTO import_errors(path, reason_kind, reason_detail, first_seen, last_seen) \
+             VALUES ('/test/broken.flac', 'unreadable_tags', 'test', 0, 0)",
+            [],
+        )
+        .expect("seed one import error");
+    handles.sidebar.refresh("import errors found");
+    let visible = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        handles.issues_listbox.is_visible()
+    });
+    assert!(
+        visible,
+        "the import-errors row must reveal the pinned block\n{}",
+        sidebar_report(&handles)
+    );
+    crate::ui::test_settle::settle_for(Duration::from_millis(200));
+
+    scan.widget().set_reveal_child(true);
+    let revealed = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        scan.widget().is_child_revealed()
+    });
+    assert!(
+        revealed,
+        "the scan card must finish revealing\n{}",
+        sidebar_report(&handles)
+    );
+    crate::ui::test_settle::settle_for(Duration::from_millis(300));
+    real_window_sidebar_report::assert_fb_8_geometry(&handles);
+
+    scan.widget().set_reveal_child(false);
+    let hidden = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        !scan.widget().is_child_revealed()
+    });
+    assert!(
+        hidden,
+        "the scan card must finish hiding\n{}",
+        sidebar_report(&handles)
+    );
+    crate::ui::test_settle::settle_for(Duration::from_millis(300));
+    real_window_sidebar_report::assert_fb_8_geometry(&handles);
+    handles.window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn fb_15_three_running_cards_never_raise_the_window_minimum() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let handles = build_real_window(
