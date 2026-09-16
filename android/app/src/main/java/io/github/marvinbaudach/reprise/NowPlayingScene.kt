@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.preferredFrameRate
@@ -365,15 +367,11 @@ internal fun NowPlayingScene(
             surfaceState = surfaceState,
             cueRevision = cueRevision,
             animationsEnabled = motion.sceneAnimationsEnabled,
+            transform = progressTransform,
             onSeekBounds = onSeekBounds,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .offset(y = maxHeight * 0.69f)
-                .graphicsLayer {
-                    translationY = progressTransform.translationY
-                    alpha = progressTransform.opacity
-                    scaleX = progressTransform.scaleX
-                },
+                .offset(y = maxHeight * 0.69f),
         )
 
         SceneTransport(
@@ -752,19 +750,61 @@ private fun SceneProgress(
     surfaceState: MobileSurfaceViewModel,
     cueRevision: Int,
     animationsEnabled: Boolean,
+    transform: NowPlayingProgressTransform,
     onSeekBounds: (Rect) -> Unit,
     modifier: Modifier,
 ) {
-    Box(modifier.padding(horizontal = 24.dp)) {
-        SpectralSeekSlider(
-            track.id,
-            playback,
-            surfaceState,
-            cueRevision = cueRevision,
-            animationsEnabled = animationsEnabled,
-            onSeekBounds = onSeekBounds,
-        )
+    var layoutBounds by remember { mutableStateOf(Rect.Zero) }
+    var seekSize by remember { mutableStateOf(IntSize.Zero) }
+    val horizontalPaddingPx = with(LocalDensity.current) { 24.dp.toPx() }
+    val reportedSeekBounds = transformedSeekBounds(
+        layoutBounds = layoutBounds,
+        seekSize = seekSize,
+        horizontalPaddingPx = horizontalPaddingPx,
+        transform = transform,
+    )
+    SideEffect { onSeekBounds(reportedSeekBounds) }
+
+    Box(
+        modifier = modifier.onGloballyPositioned { layoutBounds = it.boundsInRoot() },
+    ) {
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    translationY = transform.translationY
+                    alpha = transform.opacity
+                    scaleX = transform.scaleX
+                }
+                .padding(horizontal = 24.dp),
+        ) {
+            SpectralSeekSlider(
+                track.id,
+                playback,
+                surfaceState,
+                cueRevision = cueRevision,
+                animationsEnabled = animationsEnabled,
+                onSeekSize = { seekSize = it },
+            )
+        }
     }
+}
+
+internal fun transformedSeekBounds(
+    layoutBounds: Rect,
+    seekSize: IntSize,
+    horizontalPaddingPx: Float,
+    transform: NowPlayingProgressTransform,
+): Rect {
+    if (layoutBounds == Rect.Zero || seekSize == IntSize.Zero) return Rect.Zero
+    val untransformedLeft = layoutBounds.left + horizontalPaddingPx
+    val pivotX = layoutBounds.center.x
+    return Rect(
+        left = pivotX + (untransformedLeft - pivotX) * transform.scaleX,
+        top = layoutBounds.top + transform.translationY,
+        right = pivotX +
+            (untransformedLeft + seekSize.width - pivotX) * transform.scaleX,
+        bottom = layoutBounds.top + seekSize.height + transform.translationY,
+    )
 }
 
 @Composable

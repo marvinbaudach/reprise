@@ -55,6 +55,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -514,6 +515,7 @@ internal fun SpectralSeekSlider(
     cueRevision: Int = 0,
     animationsEnabled: Boolean = true,
     onSeekBounds: (Rect) -> Unit = {},
+    onSeekSize: (IntSize) -> Unit = {},
 ) {
     val seekTo = LocalPlaybackControls.current::seekTo
     val sliderInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
@@ -536,7 +538,10 @@ internal fun SpectralSeekSlider(
     ) {
         Slider(
             modifier = Modifier
-                .onGloballyPositioned { onSeekBounds(it.boundsInRoot()) }
+                .onGloballyPositioned {
+                    onSeekBounds(it.boundsInRoot())
+                    onSeekSize(it.size)
+                }
                 .testTag("now-playing-seek"),
             value = displayed.toFloat(),
             onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
