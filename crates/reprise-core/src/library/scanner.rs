@@ -429,9 +429,9 @@ fn decide_outcome(
     });
     if root_unavailable {
         // Root-Guard case (b): see `scan_folder_inner`'s `## Root guard` doc
-        // section. The upserts the walk itself produced (normally none,
-        // since `audio_files_seen == 0`, but a traversal error is still
-        // possible) still commit below — only the mark phase is skipped.
+        // section. Walk batches have already committed. This tail still
+        // commits the mobile-sync changes applied above; only the vanish and
+        // event-log phase is skipped.
         tracing::warn!(
             root = %root.display(),
             candidate_count = evidence.guard_evidence.map_or(0, |e| e.len()),
@@ -517,8 +517,9 @@ fn decide_outcome(
 /// really is the one previously scanned — proceed to mark normally
 /// (Root-Guard case (c): a real, provable deletion). If no such evidence
 /// exists, mark nothing and return [`ScanOutcome::RootUnavailable`] instead
-/// (Root-Guard case (b)) — the transaction still commits whatever the
-/// (empty) walk itself produced, but the mark phase never runs.
+/// (Root-Guard case (b)) — the walk's batches have already committed, and the
+/// tail still commits any mobile-sync changes applied before the guard, but
+/// the vanish and event-log phase never runs.
 ///
 /// This evidence set is deliberately wider than the mark phase's own
 /// `PRESENT`-only candidate list (`scanner_vanish::present_candidates_under_

@@ -2,11 +2,15 @@
 slug: the-scan-leases-the-writer-per-batch
 worktree: /home/marvin/Projects/reprise-the-scan-leases-the-writer-per-batch
 branch: feature/the-scan-leases-the-writer-per-batch
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-09-16
 ---
 # The scan leases the writer per batch
+
+**Hypothesis.** The scan held the writer for the whole walk; leasing it once
+per batch with source reads outside the lease bounds each hold to database
+work, while a separate tail lease keeps final reconciliation atomic.
 
 ## Problem
 
@@ -217,7 +221,8 @@ the end. No `ScanReport` field, no uniffi change.
      items whose `open_read` for item 33 blocks on a channel; a second
      connection to the same file sees 32 rows while blocked. Control arm on
      `origin/dev`: sees 0.
-   - **lease count** = 2 per batch + 1 tail for a 40-item source (7 leases).
+   - **lease count** = 1 estimate + 2 per batch + 1 tail for a 40-item source
+     (8 leases; the estimate is excluded from longest-batch timing).
    - **partial failure**: the fake writer returns `ScanError` on lease B of
      batch 2: batch 1's rows present, `missing_since` NULL everywhere,
      outcome is the error.
@@ -245,6 +250,16 @@ the end. No `ScanReport` field, no uniffi change.
    whole walk; a lease per batch with the tag read outside bounds the hold to
    DB work, the tail stays atomic.
 
+## Control arm
+
+The branch-only entry point cannot compile on `63408d1487`, so the old behavior
+was established by review of its single whole-walk transaction: while item 33
+is blocked, no batch can have committed (`completed_batches_are_visible_before_
+the_walk_ends` would read 0 rather than 32 rows); the writer is leased once
+rather than seven batch/tail leases; and Android's `try_lock` necessarily
+returns `None` while that whole-walk guard is held. The refactored 40-item scan
+now adds a separate progress-estimate lease, so its current count is eight.
+
 ## Risks
 
 - **Batch memory.** Phase 2 holds up to 16 `TrackMeta` results at once —
@@ -256,6 +271,10 @@ the end. No `ScanReport` field, no uniffi change.
   plan forbids editing it except the one rollback assertion D6 names.
 - **Partial commits** (D6) are a behaviour change on the desktop too. Named,
   accepted, tested.
+- **Minimum scan cost.** A non-empty single-batch scan takes four writer
+  leases: progress estimate, classify, apply, and tail. Three of those leases
+  open and commit write transactions; the estimate is read-only. The desktop
+  tag-edit reconciliation path pays this synchronously after every edit.
 - **`Mutex<Db>` in core** couples core to the Android locking model by one
   impl. It is 10 lines and keeps `Db::conn()` crate-private; the alternative
   (a `pub fn conn()`) leaks more.
