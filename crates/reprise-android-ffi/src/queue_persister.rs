@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Condvar, Mutex, TryLockError};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use std::{io, path::Path};
@@ -12,6 +12,7 @@ use reprise_core::queue::Queue;
 
 use crate::playback_session::queue_persistence;
 use crate::queue_snapshot_file::QueueSnapshotFile;
+use crate::writer_backoff::try_lock_writer;
 
 const RETRY_BACKOFFS: [Duration; 3] = [
     Duration::from_millis(250),
@@ -313,10 +314,10 @@ fn try_commit_latest(
 }
 
 fn try_commit(writer: &Mutex<Db>, snapshot: &PendingSnapshot) -> CommitOutcome {
-    let database = match writer.try_lock() {
-        Ok(database) => database,
-        Err(TryLockError::WouldBlock) => return CommitOutcome::RetryableFailure,
-        Err(TryLockError::Poisoned(_)) => {
+    let database = match try_lock_writer(writer) {
+        Ok(Some(database)) => database,
+        Ok(None) => return CommitOutcome::RetryableFailure,
+        Err(_) => {
             tracing::warn!(
                 sequence = snapshot.sequence,
                 "kept an Android queue snapshot: the shared writer was poisoned",
