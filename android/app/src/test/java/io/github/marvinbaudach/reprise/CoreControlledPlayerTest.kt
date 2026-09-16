@@ -127,7 +127,7 @@ class CoreControlledPlayerTest {
         controlled.increaseDeviceVolume(0)
 
         assertTrue(commands.events.isEmpty())
-        assertTrue(audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 10)
+        assertEquals(13, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
     }
 
     @Test
@@ -166,10 +166,10 @@ class CoreControlledPlayerTest {
         controlled.decreaseDeviceVolume()
         clock.advance(50)
         controlled.decreaseDeviceVolume()
-        assertEquals(1, commands.events.count { it == "tick" })
+        assertEquals(listOf("previous:10", "tick"), commands.events)
         clock.advance(50)
         controlled.decreaseDeviceVolume()
-        assertEquals(1, commands.events.count { it == "tick" })
+        assertEquals(listOf("previous:10", "tick"), commands.events)
     }
 
     private fun controlledPlayer(
