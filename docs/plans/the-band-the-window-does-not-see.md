@@ -2,7 +2,7 @@
 slug: the-band-the-window-does-not-see
 worktree: /home/marvin/Projects/reprise-the-band-the-window-does-not-see
 branch: feature/the-band-the-window-does-not-see
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-16
 ---
