@@ -62,7 +62,7 @@ impl EntryOutcome {
 /// The filesystem facts one entry contributes, read once before any tag work.
 /// `has_file_stat` is false only when the metadata query itself failed, which
 /// is what disqualifies the entry from move detection.
-struct FileFacts {
+pub(super) struct FileFacts {
     mtime: i64,
     file_size: i64,
     identity: Option<(i64, i64)>,
@@ -104,8 +104,9 @@ fn file_facts(
 }
 
 /// What the catalog already records for this exact path.
-#[derive(Clone, Copy, Default)]
-struct KnownRow {
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct KnownRow {
+    exists: bool,
     mtime: Option<i64>,
     missing: bool,
     removed: bool,
@@ -124,6 +125,7 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
         )
         .ok();
     KnownRow {
+        exists: known.is_some(),
         mtime: known.map(|(file_mtime, ..)| file_mtime),
         missing: known.is_some_and(|(_, missing_since, ..)| missing_since.is_some()),
         // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
@@ -175,25 +177,44 @@ fn restore_present_row(
     Ok(EntryOutcome::Restored { healed })
 }
 
-pub(super) fn scan_entry(
+pub(super) enum EntryPlan {
+    Skip(EntryOutcome),
+    Import {
+        path: std::path::PathBuf,
+        path_str: String,
+        facts: FileFacts,
+        known: KnownRow,
+    },
+}
+
+impl EntryPlan {
+    pub(super) fn import_path(&self) -> Option<&Path> {
+        match self {
+            Self::Skip(_) => None,
+            Self::Import { path, .. } => Some(path),
+        }
+    }
+}
+
+pub(super) fn classify_entry(
     scan: &mut EntryScan<'_, '_, '_>,
     path: &Path,
     metadata: Option<LibraryPathMetadata>,
-) -> Result<EntryOutcome, ScanError> {
+) -> Result<EntryPlan, ScanError> {
     if !super::is_audio_file(path) {
-        return Ok(EntryOutcome::NotAudio);
+        return Ok(EntryPlan::Skip(EntryOutcome::NotAudio));
     }
     let path_str = path.to_string_lossy().to_string();
     let facts = file_facts(scan.source, path, metadata);
     if exclusions::matches_file(scan.tx, path, facts.device, facts.inode)? {
-        return Ok(EntryOutcome::Excluded);
+        return Ok(EntryPlan::Skip(EntryOutcome::Excluded));
     }
     let known = known_row(scan.tx, &path_str);
     if known.mtime == Some(facts.mtime) && !known.untagged {
         if known.missing || known.removed {
-            return restore_present_row(scan, path, &path_str, known);
+            return restore_present_row(scan, path, &path_str, known).map(EntryPlan::Skip);
         }
-        return Ok(EntryOutcome::Unchanged);
+        return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
     }
     // Dismiss-skip fast path: a `stat`, not a tag parse. Must run BEFORE
     // `read_meta` — see `check_dismissed`'s doc comment. An `untagged` row
@@ -209,9 +230,14 @@ pub(super) fn scan_entry(
             super::now_unix(),
         )?
     {
-        return Ok(EntryOutcome::Dismissed);
+        return Ok(EntryPlan::Skip(EntryOutcome::Dismissed));
     }
-    import_entry(scan, path, &path_str, &facts, known.mtime.is_some())
+    Ok(EntryPlan::Import {
+        path: path.to_path_buf(),
+        path_str,
+        facts,
+        known,
+    })
 }
 
 fn read_import_meta(
@@ -441,21 +467,32 @@ fn import_readable_entry(
     Ok(EntryOutcome::Imported { is_update, healed })
 }
 
-fn import_entry(
+pub(super) fn apply_entry(
     scan: &mut EntryScan<'_, '_, '_>,
-    path: &Path,
-    path_str: &str,
-    facts: &FileFacts,
-    is_update: bool,
+    plan: EntryPlan,
+    meta_result: Result<track_meta::MetaOutcome, ScanError>,
 ) -> Result<EntryOutcome, ScanError> {
-    match track_meta::read_meta_with_fallback(scan.source, path) {
-        Ok(outcome) => import_readable_entry(scan, path, path_str, facts, is_update, outcome),
+    let EntryPlan::Import {
+        path,
+        path_str,
+        facts,
+        known,
+    } = plan
+    else {
+        unreachable!("only import plans need metadata")
+    };
+    if known_row(scan.tx, &path_str) != known {
+        return Ok(EntryOutcome::Unchanged);
+    }
+    let is_update = known.exists;
+    match meta_result {
+        Ok(outcome) => import_readable_entry(scan, &path, &path_str, &facts, is_update, outcome),
         Err(ScanError::Import { kind, detail }) => {
             // Both passes failed: `kind`/`detail` are pass 2's
             // classification (see `read_meta_with_fallback`'s doc
             // comment). Episode upsert — see `record_error`'s doc
             // comment.
-            import_errors::record_error(scan.tx, path_str, kind, &detail, super::now_unix())?;
+            import_errors::record_error(scan.tx, &path_str, kind, &detail, super::now_unix())?;
             Ok(EntryOutcome::ImportFailed)
         }
         // `read_meta_with_fallback` only ever produces `Import`;

@@ -22,6 +22,8 @@ pub enum ScanError {
     },
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
+    #[error("scan writer mutex was poisoned by an earlier panic")]
+    WriterPoisoned,
     #[error("relink target {track_id} is no longer an active missing track")]
     RelinkTargetChanged { track_id: i64 },
 }
@@ -75,8 +77,8 @@ pub struct ScanReport {
 #[derive(Debug)]
 pub enum ScanOutcome {
     /// The walk ran (even if it found nothing) and, unless the root guard
-    /// tripped, the vanish-mark phase ran too, in the same transaction as
-    /// the walk's own upserts.
+    /// tripped, its atomic tail applied mobile-sync metadata and vanish
+    /// decisions after all bounded walk batches committed.
     Completed(ScanReport),
     /// Nothing was written — not even an "unmounted" mark — because the
     /// root guard tripped: see `scan_folder_inner`'s doc comment.
