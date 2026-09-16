@@ -2,7 +2,7 @@
 slug: volume-keys-skip-tracks-with-the-screen-off
 worktree: /home/marvin/Projects/reprise-volume-keys-skip-tracks-with-the-screen-off
 branch: feature/volume-keys-skip-tracks-with-the-screen-off
-phase: shipped
+phase: reverted
 codex_session:
 created: 2026-09-02
 ---
@@ -18,6 +18,22 @@ the same day as #810.
 Findings that produced this plan: `docs/plans/media3-remote-volume-findings.md`.
 Original design, whose rejection of this route is now the cost to design around:
 `docs/superpowers/specs/2026-09-01-android-volume-keys-track-switch-design.md`.
+
+**Reverted 2026-09-16.** Landed as #974 (`772f8075`) with decision 6 — device
+run before landing — deliberately overridden; the device run afterwards showed
+the headline case cannot work: with the screen off the media-session service
+delivers one `ACTION_DOWN` (`pkg=android, uid=1000`) and an `ACTION_UP` with
+`direction=0` per hold, no key repeats at all, for holds from 1.8 s to 8.5 s
+(§ 6.1 in the handoff). Key repeats are synthesised only for a focused window,
+and with the device non-interactive there is none. The one surviving path
+(another app in front) over-skipped 2–3 tracks per hold because the skip's own
+~200 ms of work on the player thread exceeded `repeatGapMaxMs = 100`. Verdict,
+per-step table and the logcat excerpts:
+`HANDOFF-2026-09-16-volume-keys-device-run.md` and
+`volume-keys-device-run-2026-09-16.txt`. The revert keeps the plan text as
+landed so the decisions stay readable; the findings document's claim that
+"screen off behaves exactly like screen on" is contradicted by this run and
+should be treated as an artefact until a logcat reproduces it.
 
 Amended 2026-09-15, after task 1 stopped on the tap-versus-hold trade and a
 survey of other players (section below): the hold signal is the repeat gap,

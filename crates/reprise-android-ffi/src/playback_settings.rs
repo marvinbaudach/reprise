@@ -101,7 +101,6 @@ pub struct AndroidPlaybackSettings {
     pub equalizer_enabled: bool,
     pub equalizer_curve: Vec<AndroidEqualizerPoint>,
     pub gapless_enabled: bool,
-    pub volume_key_track_switch_enabled: bool,
 }
 
 impl AndroidPlaybackSettings {
@@ -114,7 +113,6 @@ impl AndroidPlaybackSettings {
                 .map(AndroidEqualizerPoint::from)
                 .collect(),
             gapless_enabled: settings::get_gapless_enabled(db),
-            volume_key_track_switch_enabled: settings::get_volume_key_track_switch_enabled(db),
         }
     }
 }
@@ -163,12 +161,6 @@ impl MusicLibrary {
     pub fn set_gapless_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
         let writer = self.writer()?;
         settings::set_gapless_enabled(&writer, enabled).map_err(|error| database_error(&error))
-    }
-
-    pub fn set_volume_key_track_switch_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
-        let writer = self.writer()?;
-        settings::set_volume_key_track_switch_enabled(&writer, enabled)
-            .map_err(|error| database_error(&error))
     }
 }
 

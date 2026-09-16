@@ -3,13 +3,9 @@ package io.github.marvinbaudach.reprise
 import android.content.Intent
 import android.net.Uri
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -33,7 +29,6 @@ import uniffi.reprise_android_ffi.TrashAction
 /** Owns Media3 for background playback, notifications and external controls. */
 open class ReprisePlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
-    private var controlledPlayer: CoreControlledPlayer? = null
     private var playbackPort: Media3PlaybackPort? = null
     private var coreSession: AndroidPlaybackSession? = null
     private val mutablePlaybackSnapshots = MutableStateFlow<AndroidPlaybackSnapshot?>(null)
@@ -48,10 +43,6 @@ open class ReprisePlaybackService : MediaSessionService() {
     private val localBinder = LocalBinder()
     private val livePcmSink = LivePcmBufferSink()
     private var liveVisualEngine: NativeVisualSceneEngine? = null
-    @Volatile
-    private var activityInForeground = false
-    @Volatile
-    private var volumeKeyTrackSwitchEnabled = true
 
     /**
      * The core's own callback, and the one place that learns playback has run
@@ -83,17 +74,10 @@ open class ReprisePlaybackService : MediaSessionService() {
         override fun next() = this@ReprisePlaybackService.next()
 
         override fun previousInQueueOrder() = this@ReprisePlaybackService.previousInQueueOrder()
-
-        override fun isActivityInForeground(): Boolean = activityInForeground
-
-        override fun volumeKeyTrackSwitchEnabled(): Boolean = volumeKeyTrackSwitchEnabled
-
-        override fun hapticTick() = this@ReprisePlaybackService.hapticTick()
     }
 
     override fun onCreate() {
         super.onCreate()
-        volumeKeyTrackSwitchEnabled = readVolumeKeyTrackSwitchEnabled()
         val player = ExoPlayer.Builder(
             this,
             LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink)),
@@ -131,9 +115,10 @@ open class ReprisePlaybackService : MediaSessionService() {
             publish = { state -> mutableSleepTimerStates.value = state },
         )
         mutableSleepTimerStates.value = sleepTimer.state()
-        val sessionPlayer = CoreControlledPlayer(player, mediaSessionCommands, this)
-        controlledPlayer = sessionPlayer
-        val session = MediaSession.Builder(this, sessionPlayer).build()
+        val session = MediaSession.Builder(
+            this,
+            CoreControlledPlayer(player, mediaSessionCommands),
+        ).build()
         mediaSession = session
         // Handing the session to the service is what puts Media3 in charge of
         // the notification and of the foreground lifetime. `addSession` is the
@@ -185,7 +170,6 @@ open class ReprisePlaybackService : MediaSessionService() {
             session.release()
         }
         mediaSession = null
-        controlledPlayer = null
         playbackPort?.release()
         playbackPort = null
         livePcmSink.detachAll()
@@ -266,31 +250,7 @@ open class ReprisePlaybackService : MediaSessionService() {
     }
 
     internal fun reloadPlaybackSettings() {
-        volumeKeyTrackSwitchEnabled = readVolumeKeyTrackSwitchEnabled()
-        controlledPlayer?.refreshDeviceInfo()
         coreSession().reloadPlaybackSettings()
-    }
-
-    internal fun setActivityInForeground(foreground: Boolean) {
-        activityInForeground = foreground
-    }
-
-    internal open fun readVolumeKeyTrackSwitchEnabled(): Boolean =
-        sharedMusicLibrary().playbackSettings().volumeKeyTrackSwitchEnabled
-
-    internal open fun hapticTick() {
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            getSystemService(VibratorManager::class.java)?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            getSystemService(Vibrator::class.java)
-        } ?: return
-        val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-        } else {
-            VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE)
-        }
-        vibrator.vibrate(effect)
     }
 
     internal fun equalizerSnapshot(): AndroidEqualizerSnapshot? =
