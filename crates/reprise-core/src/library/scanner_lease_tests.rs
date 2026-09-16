@@ -50,6 +50,36 @@ struct FailingWriter {
     fail_on: usize,
 }
 
+struct SqlFailingWriter {
+    database: Db,
+    leases: AtomicUsize,
+    fail_on: usize,
+}
+
+impl ScanWriter for SqlFailingWriter {
+    fn lease(
+        &self,
+        work: &mut dyn FnMut(&Connection) -> Result<(), ScanError>,
+    ) -> Result<(), ScanError> {
+        let lease = self.leases.fetch_add(1, Ordering::SeqCst) + 1;
+        if lease != self.fail_on {
+            return work(self.database.conn());
+        }
+        self.database.conn().execute_batch(
+            "CREATE TEMP TRIGGER fail_track_insert
+                 BEFORE INSERT ON tracks
+                 BEGIN
+                   SELECT RAISE(FAIL, 'injected batch write failure');
+                 END;",
+        )?;
+        let result = work(self.database.conn());
+        self.database
+            .conn()
+            .execute_batch("DROP TRIGGER fail_track_insert")?;
+        result
+    }
+}
+
 impl ScanWriter for FailingWriter {
     fn lease(
         &self,
@@ -223,10 +253,46 @@ fn source_io_runs_without_a_writer_lease() {
     };
     let source = ObservedSource::plain(item_source(directory.path(), 17), held);
 
+    let callback_held = Arc::clone(&writer.held);
+    let outcome =
+        scan_folder_with_writer_and_progress(&source, &writer, directory.path(), move |_| {
+            assert!(
+                !callback_held.load(Ordering::SeqCst),
+                "progress callbacks must run after the writer lease is released"
+            );
+        })
+        .unwrap();
+
+    assert_eq!(super::tests::completed(outcome).added, 17);
+}
+
+#[test]
+fn mobile_sync_metadata_is_read_without_a_writer_lease() {
+    use crate::device_sync::track_metadata_list::{TrackMetadataList, FILE_NAME};
+
+    let directory = tempfile::tempdir().unwrap();
+    let (_, database) = file_database(&directory);
+    let held = Arc::new(AtomicBool::new(false));
+    let writer = HeldWriter {
+        database,
+        held: Arc::clone(&held),
+    };
+    let track = directory.path().join("track.flac");
+    let list = directory.path().join(FILE_NAME);
+    let fixture = fixture_bytes();
+    let encoded = TrackMetadataList::new(Vec::new()).encode().unwrap();
+    let source = ScriptedSource::new(vec![
+        scripted_virtual_file(&track, fixture.len() as u64),
+        scripted_virtual_file(&list, encoded.len() as u64),
+    ])
+    .with_content(track, fixture)
+    .with_content(list, encoded);
+    let source = ObservedSource::plain(source, held);
+
     let outcome =
         scan_folder_with_writer_and_progress(&source, &writer, directory.path(), |_| {}).unwrap();
 
-    assert_eq!(super::tests::completed(outcome).added, 17);
+    assert_eq!(super::tests::completed(outcome).added, 1);
 }
 
 #[test]
@@ -273,7 +339,7 @@ fn forty_items_use_two_leases_per_batch_and_one_tail_lease() {
         scan_folder_with_writer_and_progress(&source, &writer, directory.path(), |_| {}).unwrap();
 
     assert_eq!(super::tests::completed(outcome).added, 40);
-    assert_eq!(writer.leases.load(Ordering::SeqCst), 7);
+    assert_eq!(writer.leases.load(Ordering::SeqCst), 8);
 }
 
 #[test]
@@ -283,13 +349,40 @@ fn a_failed_later_batch_keeps_earlier_commits_without_marking_missing() {
     let writer = FailingWriter {
         database,
         leases: AtomicUsize::new(0),
-        fail_on: 4,
+        fail_on: 5,
     };
     let source = item_source(directory.path(), 40);
 
     let result = scan_folder_with_writer_and_progress(&source, &writer, directory.path(), |_| {});
 
     assert!(matches!(result, Err(ScanError::Io(_))));
+    assert_eq!(row_count(&writer.database), 16);
+    let marked_missing: i64 = writer
+        .database
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM tracks WHERE missing_since IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(marked_missing, 0);
+}
+
+#[test]
+fn a_sql_failure_inside_a_later_batch_rolls_that_batch_back_only() {
+    let directory = tempfile::tempdir().unwrap();
+    let (_, database) = file_database(&directory);
+    let writer = SqlFailingWriter {
+        database,
+        leases: AtomicUsize::new(0),
+        fail_on: 5,
+    };
+    let source = item_source(directory.path(), 40);
+
+    let result = scan_folder_with_writer_and_progress(&source, &writer, directory.path(), |_| {});
+
+    assert!(matches!(result, Err(ScanError::Sqlite(_))));
     assert_eq!(row_count(&writer.database), 16);
     let marked_missing: i64 = writer
         .database

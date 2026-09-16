@@ -29,6 +29,7 @@ enum PreparedAction {
     },
 }
 
+// These independent scanner services stay explicit so their mutable lease-bound lifetimes remain visible.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn walk_root_in_batches<'source>(
     source: &'source dyn LibrarySource,
@@ -84,6 +85,7 @@ pub(super) fn walk_root_in_batches<'source>(
     Ok(())
 }
 
+// These independent scanner services stay explicit so their mutable lease-bound lifetimes remain visible.
 #[allow(clippy::too_many_arguments)]
 fn process_batch<'source>(
     mut items: Vec<LibraryWalkItem>,
@@ -98,7 +100,6 @@ fn process_batch<'source>(
 ) -> Result<(), ScanError> {
     let mut prepared = Vec::with_capacity(items.len());
     leases.run(writer, &mut |conn| {
-        progress.initialize(conn, root)?;
         let tx = conn.unchecked_transaction()?;
         let mut scan = entry::EntryScan {
             source,
@@ -149,6 +150,7 @@ fn process_batch<'source>(
         }
     }
 
+    let mut advanced_paths = Vec::new();
     leases.run(writer, &mut |conn| {
         let tx = conn.unchecked_transaction()?;
         let mut scan = entry::EntryScan {
@@ -184,12 +186,16 @@ fn process_batch<'source>(
             };
             if outcome.examined_audio_file() {
                 if let Some(path) = path {
-                    progress.advance(path);
+                    advanced_paths.push(path.to_path_buf());
                 }
             }
             state.record(&outcome);
         }
         tx.commit()?;
         Ok(())
-    })
+    })?;
+    for path in advanced_paths {
+        progress.advance(&path);
+    }
+    Ok(())
 }

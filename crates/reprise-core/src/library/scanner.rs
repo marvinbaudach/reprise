@@ -357,13 +357,13 @@ fn guard_root_before_walk(source: &dyn LibrarySource, root: &Path) -> Option<Sca
 /// tail transaction together with sidecar registration and vanish decisions.
 fn apply_mobile_sync(
     mobile_sync: &mobile_sync::MobileSyncDiscovery,
-    source: &dyn LibrarySource,
+    metadata: Option<&crate::device_sync::track_metadata_list::TrackMetadataList>,
     tx: &rusqlite::Transaction,
     report: &mut ScanReport,
 ) -> Result<(), ScanError> {
     report.updated = report
         .updated
-        .saturating_add(mobile_sync.apply_metadata(source, tx)?);
+        .saturating_add(mobile_sync.apply_metadata(metadata, tx)?);
     mobile_sync.register_analysis_sidecars(tx)?;
     mobile_sync.register_device_paths(tx)?;
     Ok(())
@@ -582,6 +582,7 @@ fn scan_folder_inner(
             failed: HashSet::new(),
         },
     };
+    writer.lease(&mut |conn| progress.initialize(conn, root))?;
     batches::walk_root_in_batches(
         source,
         writer,
@@ -592,10 +593,16 @@ fn scan_folder_inner(
         progress,
         leases,
     )?;
+    let synced_metadata = mobile_sync.read_metadata(source);
     let mut outcome = None;
     leases.run(writer, &mut |conn| {
         let tx = conn.unchecked_transaction()?;
-        apply_mobile_sync(&mobile_sync, source, &tx, &mut state.report)?;
+        apply_mobile_sync(
+            &mobile_sync,
+            synced_metadata.as_ref(),
+            &tx,
+            &mut state.report,
+        )?;
         let evidence = gather_vanish_evidence(&tx, root, std::mem::take(&mut state.trace))?;
         outcome = Some(decide_outcome(
             source,
