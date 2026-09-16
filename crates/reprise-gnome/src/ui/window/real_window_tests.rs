@@ -460,7 +460,7 @@ fn fb_8_a_card_docked_behind_a_hidden_block_reserves_no_height() {
 
     let scan = crate::ui::scan::scan_progress::ScanProgressView::new();
     handles.sidebar.append_scan_card(scan.widget());
-    handles.sidebar.append_relink_card(&handles.relink_card);
+    real_window_sidebar_report::assert_production_relink_card_is_docked_and_hidden(&handles);
     assert!(
         !handles.pinned_block.get_visible(),
         "the pinned block must still be hidden while cards are docked\n{}",

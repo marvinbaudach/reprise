@@ -28,7 +28,7 @@ fn widget_line(
     let bounds = widget.compute_bounds(window);
     let (min, natural, _, _) = widget.measure(gtk4::Orientation::Vertical, widget.width());
     format!(
-        "depth={depth} {label}: type={} classes={:?} bounds={} measure_v=(min={min}, nat={natural}) vexpand={} compute_expand_v={} valign={:?} visible={} child_visible={} mapped={}\n",
+        "depth={depth} {label}: type={} classes={:?} bounds={} measure_v=(min={min}, nat={natural}) vexpand={} compute_expand_v={} valign={:?} visible={} own_visible={} child_visible={} mapped={}\n",
         widget.type_().name(),
         widget.css_classes(),
         format_bounds(bounds),
@@ -36,6 +36,7 @@ fn widget_line(
         widget.compute_expand(gtk4::Orientation::Vertical),
         widget.valign(),
         widget.is_visible(),
+        widget.get_visible(),
         widget.is_child_visible(),
         widget.is_mapped(),
     )
@@ -294,19 +295,31 @@ pub(super) fn assert_fb_8_geometry(handles: &WindowLayoutTestHandles) {
         "FB-8: navigation must receive all height not painted by the pinned block\n{report}"
     );
 
-    let visible_height: i32 = children
+    // GtkBox itself determines this stack footprint, so this is a documented
+    // allocation consistency check rather than an independent discriminator.
+    // The last child's bottom includes CSS margins between allocations; unlike
+    // measure(), its height is the actual 85 px card allocation. The independent
+    // regression guard is each inactive revealer's own visible flag above; that
+    // assertion was red before the FB-8 fix.
+    let visible_bottom = children
         .iter()
         .filter(|child| child.get_visible())
         .map(|child| {
-            child
-                .measure(gtk4::Orientation::Vertical, handles.activity_slot.width())
-                .1
+            let bounds = child
+                .compute_bounds(&handles.activity_slot)
+                .expect("a visible progress child shares its parent's coordinates");
+            assert_eq!(
+                bounds.height(),
+                child.height() as f32,
+                "FB-8: child bounds must report the allocated height\n{report}"
+            );
+            bounds.y() + child.height() as f32
         })
-        .sum();
+        .fold(0.0_f32, f32::max);
     assert_eq!(
-        handles.activity_slot.height(),
-        visible_height,
-        "FB-8: the progress root must equal its visible children's height\n{report}"
+        handles.activity_slot.height() as f32,
+        visible_bottom,
+        "FB-8: the progress root must equal its visible children's allocated footprint\n{report}"
     );
 
     let first_row_height = handles
@@ -330,5 +343,23 @@ pub(super) fn assert_fb_8_geometry(handles: &WindowLayoutTestHandles) {
     assert!(
         player_y - painted_bottom <= first_row_height,
         "FB-8: the painted gap must be no taller than one issue row\n{report}"
+    );
+}
+
+pub(super) fn assert_production_relink_card_is_docked_and_hidden(
+    handles: &WindowLayoutTestHandles,
+) {
+    let report = sidebar_report(handles);
+    assert!(
+        handles.relink_card.is_ancestor(&handles.activity_slot),
+        "the production composition must already dock the relink card\n{report}"
+    );
+    assert!(
+        !handles.relink_card.reveals_child(),
+        "the production relink card must remain unrevealed\n{report}"
+    );
+    assert!(
+        !handles.relink_card.get_visible(),
+        "the unrevealed production relink card must clear its own visible flag\n{report}"
     );
 }
