@@ -2,7 +2,7 @@
 slug: the-play-journal-closes-during-a-scan
 worktree: /home/marvin/Projects/reprise-the-play-journal-closes-during-a-scan
 branch: feature/the-play-journal-closes-during-a-scan
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-15
 ---
