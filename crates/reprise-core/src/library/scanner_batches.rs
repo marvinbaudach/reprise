@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::entry::{self, EntryOutcome, EntryPlan};
+use super::entry::{self, EntryOutcome, EntryPlan, ImportPlan};
 use super::source::{
     self, LibraryEntry, LibrarySource, LibraryWalkControl, LibraryWalkError, LibraryWalkItem,
     LibraryWalkOrder,
@@ -24,7 +24,7 @@ enum PreparedAction {
     Error(LibraryWalkError),
     Skip(EntryOutcome),
     Import {
-        plan: EntryPlan,
+        plan: ImportPlan,
         meta: Box<Option<Result<super::track_meta::MetaOutcome, ScanError>>>,
     },
 }
@@ -122,7 +122,7 @@ fn process_batch<'source>(
                     let action = if is_file {
                         match entry::classify_entry(&mut scan, &path, metadata)? {
                             EntryPlan::Skip(outcome) => PreparedAction::Skip(outcome),
-                            plan @ EntryPlan::Import { .. } => PreparedAction::Import {
+                            EntryPlan::Import(plan) => PreparedAction::Import {
                                 plan,
                                 meta: Box::new(None),
                             },
@@ -143,9 +143,7 @@ fn process_batch<'source>(
 
     for item in &mut prepared {
         if let PreparedAction::Import { plan, meta } = &mut item.action {
-            let path = plan
-                .import_path()
-                .expect("an import plan always carries its source path");
+            let path = plan.path();
             **meta = Some(super::track_meta::read_meta_with_fallback(source, path));
         }
     }

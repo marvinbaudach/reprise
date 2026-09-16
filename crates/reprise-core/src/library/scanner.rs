@@ -614,7 +614,9 @@ fn scan_folder_inner(
         tx.commit()?;
         Ok(())
     })?;
-    Ok(outcome.expect("the tail writer lease runs its work exactly once"))
+    outcome.ok_or(ScanError::InternalInvariant(
+        "the tail writer lease skipped its work",
+    ))
 }
 
 /// Whether a completed scan changed anything a consumer's view reflects — any

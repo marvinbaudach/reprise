@@ -24,6 +24,8 @@ pub enum ScanError {
     Io(#[from] std::io::Error),
     #[error("scan writer mutex was poisoned by an earlier panic")]
     WriterPoisoned,
+    #[error("scanner invariant failed: {0}")]
+    InternalInvariant(&'static str),
     #[error("relink target {track_id} is no longer an active missing track")]
     RelinkTargetChanged { track_id: i64 },
 }

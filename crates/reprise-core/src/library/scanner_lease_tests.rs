@@ -32,6 +32,17 @@ struct HeldWriter {
     held: Arc<AtomicBool>,
 }
 
+struct SkippingWriter;
+
+impl ScanWriter for SkippingWriter {
+    fn lease(
+        &self,
+        _work: &mut dyn FnMut(&Connection) -> Result<(), ScanError>,
+    ) -> Result<(), ScanError> {
+        Ok(())
+    }
+}
+
 impl ScanWriter for HeldWriter {
     fn lease(
         &self,
@@ -264,6 +275,17 @@ fn source_io_runs_without_a_writer_lease() {
         .unwrap();
 
     assert_eq!(super::tests::completed(outcome).added, 17);
+}
+
+#[test]
+fn a_writer_that_skips_lease_work_returns_an_invariant_error() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = item_source(directory.path(), 1);
+
+    let result =
+        scan_folder_with_writer_and_progress(&source, &SkippingWriter, directory.path(), |_| {});
+
+    assert!(matches!(result, Err(ScanError::InternalInvariant(_))));
 }
 
 #[test]

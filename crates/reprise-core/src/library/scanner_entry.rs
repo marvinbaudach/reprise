@@ -179,20 +179,19 @@ fn restore_present_row(
 
 pub(super) enum EntryPlan {
     Skip(EntryOutcome),
-    Import {
-        path: std::path::PathBuf,
-        path_str: String,
-        facts: FileFacts,
-        known: KnownRow,
-    },
+    Import(ImportPlan),
 }
 
-impl EntryPlan {
-    pub(super) fn import_path(&self) -> Option<&Path> {
-        match self {
-            Self::Skip(_) => None,
-            Self::Import { path, .. } => Some(path),
-        }
+pub(super) struct ImportPlan {
+    path: std::path::PathBuf,
+    path_str: String,
+    facts: FileFacts,
+    known: KnownRow,
+}
+
+impl ImportPlan {
+    pub(super) fn path(&self) -> &Path {
+        &self.path
     }
 }
 
@@ -232,12 +231,12 @@ pub(super) fn classify_entry(
     {
         return Ok(EntryPlan::Skip(EntryOutcome::Dismissed));
     }
-    Ok(EntryPlan::Import {
+    Ok(EntryPlan::Import(ImportPlan {
         path: path.to_path_buf(),
         path_str,
         facts,
         known,
-    })
+    }))
 }
 
 fn read_import_meta(
@@ -469,18 +468,15 @@ fn import_readable_entry(
 
 pub(super) fn apply_entry(
     scan: &mut EntryScan<'_, '_, '_>,
-    plan: EntryPlan,
+    plan: ImportPlan,
     meta_result: Result<track_meta::MetaOutcome, ScanError>,
 ) -> Result<EntryOutcome, ScanError> {
-    let EntryPlan::Import {
+    let ImportPlan {
         path,
         path_str,
         facts,
         known,
-    } = plan
-    else {
-        unreachable!("only import plans need metadata")
-    };
+    } = plan;
     if known_row(scan.tx, &path_str) != known {
         return Ok(EntryOutcome::Unchanged);
     }
