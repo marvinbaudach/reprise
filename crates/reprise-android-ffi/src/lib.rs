@@ -1,7 +1,7 @@
 //! Minimal Android library surface over `reprise-core`.
 
 use reprise_core::db::Db;
-use reprise_core::library::scanner::{scan_folder_with_source_and_progress, ScanOutcome};
+use reprise_core::library::scanner::{scan_folder_with_writer_and_progress, ScanOutcome};
 use reprise_core::library::settings;
 use reprise_core::queries;
 use source::{BridgedSource, SafSource};
@@ -46,6 +46,8 @@ mod track_analysis;
 mod visualizer;
 #[cfg(test)]
 mod visualizer_tests;
+#[cfg(test)]
+mod write_during_scan_tests;
 mod writer_backoff;
 pub use appearance::*;
 pub use browse::{
@@ -171,12 +173,15 @@ impl MusicLibrary {
         &self,
         progress: Box<dyn ScanProgressListener>,
     ) -> Result<ScanSummary, LibraryError> {
-        let writer = self.writer()?;
         let (tree_uri, source) = self.configured_tree()?;
-        let outcome =
-            scan_folder_with_source_and_progress(source.as_ref(), &writer, &tree_uri, |event| {
+        let outcome = scan_folder_with_writer_and_progress(
+            source.as_ref(),
+            &*self.writer,
+            &tree_uri,
+            |event| {
                 progress.on_progress(event.into());
-            });
+            },
+        );
         drop(progress);
         let outcome = outcome.map_err(|error| LibraryError::Scan {
             detail: error.to_string(),

@@ -97,6 +97,52 @@ fn a_tag_write_keeps_the_rendering_data_it_did_not_invalidate() {
 }
 
 #[test]
+fn a_tail_failure_after_reconciliation_keeps_rendering_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let (conn, id, path) = seeded_track(dir.path(), "tail-failure.flac");
+    let spectrogram = TrackSpectrogram::from_cells(vec![5; 48]).unwrap();
+    crate::db::set_waveform_peaks(&conn, id, &[3, 4, 5]).unwrap();
+    crate::db::set_track_spectrogram(&conn, id, current_fingerprint(&conn, id), &spectrogram)
+        .unwrap();
+    let prepared = prepare_tag_mutation(
+        conn.conn(),
+        id,
+        &path,
+        &TagPatch {
+            title: Some("Retagged before tail failure".into()),
+            ..TagPatch::default()
+        },
+    )
+    .unwrap()
+    .unwrap();
+    conn.conn()
+        .execute_batch(
+            "CREATE TRIGGER reject_scan_event
+             BEFORE INSERT ON change_log
+             WHEN NEW.entity = 'library' AND NEW.op = 'scan'
+             BEGIN
+               SELECT RAISE(FAIL, 'injected tail failure');
+             END;",
+        )
+        .unwrap();
+
+    let error = commit_tag_mutation(conn.conn(), &prepared, false).unwrap_err();
+
+    assert!(error.file_written);
+    assert!(error.error.contains("injected tail failure"));
+    assert_eq!(
+        crate::db::get_waveform_peaks(&conn, id).unwrap(),
+        Some(vec![3, 4, 5]),
+        "a committed reconciliation must not lose its carried waveform when the tail fails"
+    );
+    assert_eq!(
+        crate::db::get_track_spectrogram(&conn, id).unwrap(),
+        Some(spectrogram),
+        "a committed reconciliation must not lose its carried spectrogram when the tail fails"
+    );
+}
+
+#[test]
 fn a_replaced_file_still_loses_its_rendering_data() {
     let dir = tempfile::tempdir().unwrap();
     let (conn, id, _path) = seeded_track(dir.path(), "replaced.flac");
