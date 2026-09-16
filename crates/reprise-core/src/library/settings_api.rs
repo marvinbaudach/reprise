@@ -10,18 +10,19 @@ use super::{
     get_new_releases_last_completed_at_in, get_onboarding_completed_in, get_player_bar_position_in,
     get_replay_gain_mode_in, get_seek_colouring_in, get_seek_legend_seen_in, get_setting_in,
     get_sidebar_collapsed_in, get_sidebar_visible_in, get_status_visible_in,
-    get_track_transition_in, get_window_decoration_mode_in, get_window_view_mode_in,
-    set_auto_clean_armed_at_in, set_bool_in, set_browse_visible_in, set_color_scheme_in,
-    set_compact_always_on_top_in, set_compact_layout_in, set_crossfade_seconds_in,
-    set_equalizer_bands_in, set_equalizer_curve_in, set_equalizer_enabled_in,
-    set_gapless_enabled_in, set_info_panel_visible_in, set_last_viewed_import_errors_in,
-    set_last_viewed_missing_in, set_library_root_in, set_missing_auto_clean_in,
-    set_new_releases_fetch_completed_in, set_new_releases_last_completed_at_in,
-    set_onboarding_completed_in, set_player_bar_position_in, set_replay_gain_mode_in,
-    set_seek_colouring_in, set_seek_legend_seen_in, set_setting_in, set_sidebar_collapsed_in,
-    set_sidebar_visible_in, set_status_visible_in, set_window_decoration_mode_in,
-    set_window_view_mode_in, AutoCleanSetting, CompactLayout, PlayerBarPosition, ReplayGainMode,
-    SeekColouring, TrackTransition, WindowDecorationMode, WindowViewMode,
+    get_track_transition_in, get_volume_key_track_switch_enabled_in, get_window_decoration_mode_in,
+    get_window_view_mode_in, set_auto_clean_armed_at_in, set_bool_in, set_browse_visible_in,
+    set_color_scheme_in, set_compact_always_on_top_in, set_compact_layout_in,
+    set_crossfade_seconds_in, set_equalizer_bands_in, set_equalizer_curve_in,
+    set_equalizer_enabled_in, set_gapless_enabled_in, set_info_panel_visible_in,
+    set_last_viewed_import_errors_in, set_last_viewed_missing_in, set_library_root_in,
+    set_missing_auto_clean_in, set_new_releases_fetch_completed_in,
+    set_new_releases_last_completed_at_in, set_onboarding_completed_in, set_player_bar_position_in,
+    set_replay_gain_mode_in, set_seek_colouring_in, set_seek_legend_seen_in, set_setting_in,
+    set_sidebar_collapsed_in, set_sidebar_visible_in, set_status_visible_in,
+    set_volume_key_track_switch_enabled_in, set_window_decoration_mode_in, set_window_view_mode_in,
+    AutoCleanSetting, CompactLayout, PlayerBarPosition, ReplayGainMode, SeekColouring,
+    TrackTransition, WindowDecorationMode, WindowViewMode,
 };
 
 pub fn get_setting(db: &Db, key: &str) -> Result<Option<String>, rusqlite::Error> {
@@ -269,6 +270,16 @@ pub fn get_gapless_enabled(db: &Db) -> bool {
 pub fn set_gapless_enabled(db: &Db, enabled: bool) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     set_gapless_enabled_in(conn, enabled)
+}
+
+pub fn get_volume_key_track_switch_enabled(db: &Db) -> bool {
+    let conn = db.conn();
+    get_volume_key_track_switch_enabled_in(conn)
+}
+
+pub fn set_volume_key_track_switch_enabled(db: &Db, enabled: bool) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_volume_key_track_switch_enabled_in(conn, enabled)
 }
 
 pub fn get_track_transition(db: &Db) -> TrackTransition {

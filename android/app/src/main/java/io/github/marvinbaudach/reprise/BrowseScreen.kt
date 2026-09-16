@@ -150,6 +150,7 @@ internal fun BrowseScreen(
     artistPhotoOfferSettled: Boolean = true,
     downloadArtistPhotos: () -> Unit = {},
     declineArtistPhotos: () -> Unit = {},
+    setVolumeKeyTrackSwitchEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
@@ -1090,6 +1091,9 @@ internal fun BrowseScreen(
                         },
                         setGaplessEnabled = { enabled ->
                             updateSettings { setGaplessEnabled(enabled) }
+                        },
+                        setVolumeKeyTrackSwitchEnabled = { enabled ->
+                            updateSettings { setVolumeKeyTrackSwitchEnabled(enabled) }
                         },
                         selectTheme = selectTheme,
                     )
