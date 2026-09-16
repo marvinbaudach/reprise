@@ -10,6 +10,9 @@ use libadwaita::prelude::NavigationPageExt;
 
 use super::window_layout_test_hook::WindowLayoutTestHandles;
 
+#[path = "real_window_sidebar_report.rs"]
+mod real_window_sidebar_report;
+
 static NEXT_APPLICATION_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -98,6 +101,16 @@ fn seed_sidebar(handles: &WindowLayoutTestHandles, seed: SidebarSeed) {
 }
 
 fn build_real_window(width: i32, height: i32, seed: SidebarSeed) -> WindowLayoutTestHandles {
+    build_real_window_with_db(width, height, seed).0
+}
+
+/// Same as [`build_real_window`], but also returns the `Db` handle backing
+/// the composed window so a caller can seed rows into it after the map.
+fn build_real_window_with_db(
+    width: i32,
+    height: i32,
+    seed: SidebarSeed,
+) -> (WindowLayoutTestHandles, std::rc::Rc<reprise_core::db::Db>) {
     gtk4::init().expect("GTK test display");
     let sequence = NEXT_APPLICATION_ID.fetch_add(1, Ordering::Relaxed);
     let app = adw::Application::builder()
@@ -182,7 +195,7 @@ fn build_real_window(width: i32, height: i32, seed: SidebarSeed) -> WindowLayout
         super::window_bootstrap::MIN_WIDTH,
         super::window_bootstrap::MIN_HEIGHT,
     );
-    handles
+    (handles, db)
 }
 
 fn pump_until(deadline: Instant, condition: impl Fn() -> bool) -> bool {
@@ -231,6 +244,10 @@ fn chain_report(handles: &WindowLayoutTestHandles) -> String {
         ));
     }
     report
+}
+
+fn sidebar_report(handles: &WindowLayoutTestHandles) -> String {
+    real_window_sidebar_report::sidebar_report(handles)
 }
 
 fn bottom_in(widget: &gtk4::Widget, ancestor: &impl IsA<gtk4::Widget>) -> f32 {
@@ -423,6 +440,74 @@ fn fb_8_the_real_sidebar_leaves_no_band_under_the_pinned_block() {
         &report,
     );
 
+    handles.window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_8_a_card_docked_behind_a_hidden_block_reserves_no_height() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let (handles, db) = build_real_window_with_db(1280, 720, SidebarSeed::default());
+    handles.window.set_size_request(1290, 730);
+    let sized = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        handles.window.width() == 1280 && handles.window.height() == 720
+    });
+    assert!(
+        sized,
+        "the post-map fixture must remain 1280x720\n{}",
+        sidebar_report(&handles)
+    );
+
+    let scan = crate::ui::scan::scan_progress::ScanProgressView::new();
+    handles.sidebar.append_scan_card(scan.widget());
+    real_window_sidebar_report::assert_production_relink_card_is_docked_and_hidden(&handles);
+    assert!(
+        !handles.pinned_block.get_visible(),
+        "the pinned block must still be hidden while cards are docked\n{}",
+        sidebar_report(&handles)
+    );
+
+    crate::test_db::connection(&db)
+        .execute(
+            "INSERT INTO import_errors(path, reason_kind, reason_detail, first_seen, last_seen) \
+             VALUES ('/test/broken.flac', 'unreadable_tags', 'test', 0, 0)",
+            [],
+        )
+        .expect("seed one import error");
+    handles.sidebar.refresh("import errors found");
+    let visible = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        handles.issues_listbox.is_visible()
+    });
+    assert!(
+        visible,
+        "the import-errors row must reveal the pinned block\n{}",
+        sidebar_report(&handles)
+    );
+    crate::ui::test_settle::settle_for(Duration::from_millis(200));
+
+    scan.widget().set_reveal_child(true);
+    let revealed = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        scan.widget().is_child_revealed()
+    });
+    assert!(
+        revealed,
+        "the scan card must finish revealing\n{}",
+        sidebar_report(&handles)
+    );
+    crate::ui::test_settle::settle_for(Duration::from_millis(300));
+    real_window_sidebar_report::assert_fb_8_geometry(&handles);
+
+    scan.widget().set_reveal_child(false);
+    let hidden = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
+        !scan.widget().is_child_revealed()
+    });
+    assert!(
+        hidden,
+        "the scan card must finish hiding\n{}",
+        sidebar_report(&handles)
+    );
+    crate::ui::test_settle::settle_for(Duration::from_millis(300));
+    real_window_sidebar_report::assert_fb_8_geometry(&handles);
     handles.window.close();
 }
 
@@ -669,26 +754,43 @@ fn style_6_the_real_table_never_overflows_at_1280() {
 fn the_real_window_test_instrument_publishes_the_production_surface() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let handles = build_real_window(800, 600, SidebarSeed::default());
+    let report = sidebar_report(&handles);
 
     assert_eq!(
         handles.split_view.parent(),
-        Some(handles.player_bar_shell.widget().clone().upcast())
+        Some(handles.player_bar_shell.widget().clone().upcast()),
+        "the split view must belong to the player-bar shell\n{report}"
     );
-    assert!(handles.player_bar.is_some());
+    assert!(
+        handles.player_bar.is_some(),
+        "the composed window must publish its player bar\n{report}"
+    );
     assert_eq!(
         handles.navigation_scroller.parent(),
-        Some(handles.sidebar.widget().clone().upcast())
+        Some(handles.sidebar.widget().clone().upcast()),
+        "the navigation scroller must belong to the sidebar\n{report}"
     );
     assert_eq!(
         handles.pinned_block.parent(),
-        Some(handles.sidebar.widget().clone().upcast())
+        Some(handles.sidebar.widget().clone().upcast()),
+        "the pinned block must belong to the sidebar\n{report}"
     );
-    assert!(handles.activity_slot.is_ancestor(&handles.pinned_block));
-    assert!(handles.content_nav.is_ancestor(&handles.split_view));
-    assert!(handles.column_view.is_ancestor(&handles.track_scrolled));
+    assert!(
+        handles.activity_slot.is_ancestor(&handles.pinned_block),
+        "the activity slot must live inside the pinned block\n{report}"
+    );
+    assert!(
+        handles.content_nav.is_ancestor(&handles.split_view),
+        "content navigation must live inside the split view\n{report}"
+    );
+    assert!(
+        handles.column_view.is_ancestor(&handles.track_scrolled),
+        "the column view must live inside the track scroller\n{report}"
+    );
     assert_eq!(
         handles.sidebar_page.child(),
-        Some(handles.sidebar.widget().clone().upcast())
+        Some(handles.sidebar.widget().clone().upcast()),
+        "the sidebar page must publish the production sidebar\n{report}"
     );
 
     handles.window.close();

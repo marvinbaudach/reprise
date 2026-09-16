@@ -104,7 +104,9 @@ impl SidebarActivitySlot {
     /// natural height, so the sidebar would reserve room for cards nobody can
     /// see. Keep both the child and its container in step with the reveal state;
     /// that is all this tracking has to do now that the Issues block above it no
-    /// longer moves out of the way (FB-8, amended).
+    /// longer moves out of the way (FB-8, amended). The initial sync must read
+    /// each widget's own `visible` flag: ancestor-aware `is_visible` made it a
+    /// no-op for cards docked behind the still-hidden pinned block.
     fn track_progress_visibility(card: &gtk4::Widget) {
         if let Some(revealer) = card.downcast_ref::<gtk4::Revealer>() {
             revealer.add_css_class("sidebar-job-card-dock");
@@ -118,11 +120,11 @@ impl SidebarActivitySlot {
 fn sync_revealer_visibility(revealer: &gtk4::Revealer) {
     let should_be_visible = revealer.reveals_child() || revealer.is_child_revealed();
     if let Some(child) = revealer.child() {
-        if child.is_visible() != should_be_visible {
+        if child.get_visible() != should_be_visible {
             child.set_visible(should_be_visible);
         }
     }
-    if revealer.is_visible() != should_be_visible {
+    if revealer.get_visible() != should_be_visible {
         revealer.set_visible(should_be_visible);
     }
 }
