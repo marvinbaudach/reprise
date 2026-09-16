@@ -500,16 +500,26 @@ impl AndroidVisualEngine {
     /// Returns the scene in the flat format documented by this module.
     pub fn scene(&self, width: f32, height: f32) -> Vec<u8> {
         let state = self.lock();
-        if !state.has_ingested
-            || !width.is_finite()
-            || !height.is_finite()
-            || width <= 0.0
-            || height <= 0.0
-        {
+        if !scene_is_drawable(&state, width, height) {
             return Vec::new();
         }
         encode_scene(&state.engine.scene(width, height))
     }
+
+    /// The same scene as [`Self::scene`], painted in the given accent instead
+    /// of the engine's own. Empty under exactly the same conditions.
+    pub fn scene_tinted(&self, width: f32, height: f32, red: f32, green: f32, blue: f32) -> Vec<u8> {
+        let state = self.lock();
+        if !scene_is_drawable(&state, width, height) {
+            return Vec::new();
+        }
+        let accent = (finite_unit(red), finite_unit(green), finite_unit(blue));
+        encode_scene(&state.engine.scene_with_accent(width, height, accent))
+    }
+}
+
+fn scene_is_drawable(state: &VisualState, width: f32, height: f32) -> bool {
+    state.has_ingested && width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0
 }
 
 fn silent_pressure() -> BassPressure {

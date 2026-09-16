@@ -228,29 +228,41 @@ class NowPlayingPanelsTest {
         // engine has actually captured a real frame.
         assertFalse(
             "a live panel must not claim visual data before its engine captured a real frame",
-            panelHasVisualData(storedFrameCount = 0, isLivePanel = true, hasCapturedLiveScene = false),
+            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = false),
         )
     }
 
     @Test
     fun a_live_panel_opens_its_bars_once_its_engine_captured_a_real_frame() {
         assertTrue(
-            panelHasVisualData(storedFrameCount = 0, isLivePanel = true, hasCapturedLiveScene = true),
+            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = true),
         )
     }
 
     @Test
     fun a_stored_spectrogram_grants_visual_data_even_off_the_live_slot() {
         assertTrue(
-            panelHasVisualData(storedFrameCount = 5, isLivePanel = false, hasCapturedLiveScene = false),
+            panelHasVisualData(storedFrameCount = 5, hasCapturedLiveScene = false),
         )
     }
 
     @Test
-    fun a_non_live_panel_never_has_visual_data_from_a_live_scene_alone() {
-        assertFalse(
-            panelHasVisualData(storedFrameCount = 0, isLivePanel = false, hasCapturedLiveScene = true),
+    fun a_captured_scene_counts_off_the_live_slot_too() {
+        // The outgoing panel keeps the bars it drew while live, and a neighbour
+        // that mirrored the live scene during the swipe keeps those -- in
+        // visualizer mode no panel falls back to its cover for want of data.
+        assertTrue(
+            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = true),
         )
+    }
+
+    @Test
+    fun a_visible_neighbour_mirrors_the_live_scene_and_a_resting_one_does_not() {
+        assertTrue(panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = true))
+        assertFalse("at rest the neighbour is off the screen", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0f, liveSceneAvailable = true))
+        assertFalse("a stored spectrogram is the panel's own scene", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 3, near = 0.4f, liveSceneAvailable = true))
+        assertFalse("the live panel is the source, not a mirror", panelMirrorsLiveScene(isLivePanel = true, storedFrameCount = 0, near = 1f, liveSceneAvailable = true))
+        assertFalse("nothing to mirror before the live engine exists", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = false))
     }
 
     @Test
@@ -259,7 +271,7 @@ class NowPlayingPanelsTest {
             "the live panel must keep polling until it has ever captured a scene",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 1f,
-                isLivePanel = true,
+                drawsLiveScene = true,
                 hasCapturedLiveScene = false,
             ),
         )
@@ -267,15 +279,15 @@ class NowPlayingPanelsTest {
             "cover mode must never pay for a scene it will not draw",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 0f,
-                isLivePanel = true,
+                drawsLiveScene = true,
                 hasCapturedLiveScene = false,
             ),
         )
         assertFalse(
-            "a non-live panel never polls for the live scene",
+            "a panel that neither owns nor mirrors the live scene never polls for it",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 1f,
-                isLivePanel = false,
+                drawsLiveScene = false,
                 hasCapturedLiveScene = false,
             ),
         )
@@ -283,7 +295,7 @@ class NowPlayingPanelsTest {
             "once a real frame landed, the live panel stops polling",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 1f,
-                isLivePanel = true,
+                drawsLiveScene = true,
                 hasCapturedLiveScene = true,
             ),
         )

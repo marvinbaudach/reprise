@@ -354,21 +354,29 @@ impl VisualEngine {
         hue_shift(self.accent, FALLBACK_ACCENT2_HUE_SHIFT)
     }
 
-    fn make_ctx(&self, width: f32, height: f32) -> ModeCtx<'_> {
+    fn make_ctx(&self, width: f32, height: f32, accent: (f32, f32, f32)) -> ModeCtx<'_> {
         ModeCtx {
             peaks: &self.bands_peaks,
             bars: &self.display_bands,
             bass_impact: self.glow,
             bass_aura: self.pressure.aura,
-            accent: self.accent,
-            accent2: self.accent2(),
+            accent,
+            accent2: hue_shift(accent, FALLBACK_ACCENT2_HUE_SHIFT),
             width,
             height,
         }
     }
 
     pub fn scene(&self, width: f32, height: f32) -> Scene {
-        let ctx = self.make_ctx(width, height);
+        self.scene_with_accent(width, height, self.accent)
+    }
+
+    /// The same scene painted in another accent, without touching the engine's
+    /// own. A surface that mirrors one engine's motion into several panels --
+    /// the neighbours during a swipe -- reads it this way, each in its own
+    /// cover's colour, while the engine keeps the live panel's.
+    pub fn scene_with_accent(&self, width: f32, height: f32, accent: (f32, f32, f32)) -> Scene {
+        let ctx = self.make_ctx(width, height, accent);
         let level = self.display_bands.iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
         let mut shapes = vec![Shape {
             geom: Geom::RadialGlow {
@@ -402,7 +410,7 @@ pub(crate) fn lively_engine() -> VisualEngine {
 
 #[cfg(test)]
 pub(crate) fn test_ctx(engine: &VisualEngine, width: f32, height: f32) -> ModeCtx<'_> {
-    engine.make_ctx(width, height)
+    engine.make_ctx(width, height, engine.accent)
 }
 
 #[cfg(test)]
@@ -746,6 +754,22 @@ mod tests {
         let want = (color::rgb_hue((0.8, 0.2, 0.2)) + 42.0) % 360.0;
         let delta = (ctx_hue - want).abs().min(360.0 - (ctx_hue - want).abs());
         assert!(delta < 3.0);
+    }
+
+    #[test]
+    fn a_tinted_scene_paints_the_given_accent_and_leaves_the_engine_s_own_alone() {
+        let mut engine = lively_engine();
+        engine.set_accent((0.8, 0.2, 0.2));
+        let own = engine.scene(548.0, 300.0);
+        let tinted = engine.scene_with_accent(548.0, 300.0, (0.1, 0.3, 0.9));
+
+        let Fill::Solid(own_glow) = own.shapes[0].fill;
+        let Fill::Solid(tinted_glow) = tinted.shapes[0].fill;
+        assert_eq!((own_glow.r, own_glow.g, own_glow.b), (0.8, 0.2, 0.2));
+        assert_eq!((tinted_glow.r, tinted_glow.g, tinted_glow.b), (0.1, 0.3, 0.9));
+        assert_eq!(own_glow.a, tinted_glow.a);
+        assert_eq!(own.shapes.len(), tinted.shapes.len());
+        assert_eq!(engine.accent, (0.8, 0.2, 0.2));
     }
 
     #[test]

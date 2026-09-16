@@ -39,6 +39,19 @@ internal interface VisualSceneEngine : AutoCloseable {
         "VisualSceneEngine.scene() is a test seam; use sceneBytes()",
     )
     fun sceneBytes(width: Float, height: Float): ByteArray = scene(width, height).toFloatBytes()
+
+    /**
+     * The same scene as [sceneBytes], painted in the given accent instead of the
+     * engine's own. A neighbour panel mirrors the live panel's engine this way
+     * during a swipe, in its own cover's colour, without a second analysis.
+     */
+    fun sceneBytesTinted(
+        width: Float,
+        height: Float,
+        red: Float,
+        green: Float,
+        blue: Float,
+    ): ByteArray = sceneBytes(width, height)
 }
 
 internal data class VisualBassPressure(
@@ -127,6 +140,14 @@ internal class NativeVisualSceneEngine(
 
     override fun sceneBytes(width: Float, height: Float): ByteArray =
         native.scene(width, height).also { logDroppedAudioFrames() }
+
+    override fun sceneBytesTinted(
+        width: Float,
+        height: Float,
+        red: Float,
+        green: Float,
+        blue: Float,
+    ): ByteArray = native.sceneTinted(width, height, red, green, blue)
 
     private fun logDroppedAudioFrames() {
         if (sceneCallsUntilCounterLog > 0) {

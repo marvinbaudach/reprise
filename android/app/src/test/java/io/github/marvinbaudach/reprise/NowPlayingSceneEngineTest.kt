@@ -121,6 +121,36 @@ class NowPlayingSceneEngineTest {
         )
     }
 
+    @Test
+    fun a_neighbour_without_a_spectrogram_mirrors_the_live_scene_while_the_swipe_shows_it() {
+        // In visualizer mode the neighbour used to show its cover for the whole
+        // swipe: its own engine has no audio and no stored spectrogram, so
+        // `panelHasVisualData` stayed false. It now reads the live panel's
+        // engine, tinted in its own accent, for as long as it is on the screen.
+        val factory = RecordingSceneEngineFactory()
+        val analysis = UnanalysedSpectrogramAnalysis()
+        val surfaceState = MobileSurfaceViewModel()
+        var positionPx by mutableStateOf(0f)
+
+        compose.setContent {
+            SwipeScene(factory, analysis, surfaceState, positionPx, withNeighbour = true)
+        }
+        compose.waitForIdle()
+        val sceneNode = compose.onNodeWithTag("now-playing-scene")
+        sceneNode.captureToImage()
+        assertEquals("at rest the neighbour is off the screen and mirrors nothing", 0, factory.engine.tintedCalls)
+
+        val widthPx = sceneNode.fetchSemanticsNode().size.width.toFloat()
+        positionPx = widthPx * 0.5f
+        compose.waitForIdle()
+        sceneNode.captureToImage()
+
+        assertTrue(
+            "the neighbour on the screen must draw the live scene in its own accent",
+            factory.engine.tintedCalls > 0,
+        )
+    }
+
     @Composable
     private fun CoverScene(
         factory: RecordingSceneEngineFactory,
@@ -153,6 +183,7 @@ class NowPlayingSceneEngineTest {
         analysis: TrackAnalysisPort,
         surfaceState: MobileSurfaceViewModel,
         positionPx: Float,
+        withNeighbour: Boolean = false,
     ) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
@@ -166,13 +197,18 @@ class NowPlayingSceneEngineTest {
                 LocalTrackAnalysis provides analysis,
             ) {
                 val track = sceneEngineTrack()
+                val panels = if (withNeighbour) {
+                    listOf(PlayPanel(0, track), PlayPanel(1, sceneEngineTrack(id = 9002)))
+                } else {
+                    listOf(PlayPanel(0, track))
+                }
                 NowPlayingScene(
                     track = track,
                     playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
                     surfaceState = surfaceState,
                     positionPx = positionPx,
                     currentIndex = 0,
-                    panels = listOf(PlayPanel(0, track)),
+                    panels = panels,
                     visualizerOpacity = 1f,
                 )
             }
@@ -229,6 +265,8 @@ private class RecordingSceneEngine : VisualSceneEngine {
         private set
     var sceneCalls = 0
         private set
+    var tintedCalls = 0
+        private set
 
     override fun setAccent(red: Float, green: Float, blue: Float) = Unit
     override fun setPlaying(playing: Boolean) = Unit
@@ -241,12 +279,22 @@ private class RecordingSceneEngine : VisualSceneEngine {
         sceneCalls += 1
         return emptyList()
     }
+    override fun sceneBytesTinted(
+        width: Float,
+        height: Float,
+        red: Float,
+        green: Float,
+        blue: Float,
+    ): ByteArray {
+        tintedCalls += 1
+        return ByteArray(0)
+    }
     override fun close() = Unit
 }
 
-private fun sceneEngineTrack() = LibraryTrack(
-    id = 17,
-    uri = "content://provider/song.flac",
+private fun sceneEngineTrack(id: Long = 17) = LibraryTrack(
+    id = id,
+    uri = "content://provider/song-$id.flac",
     title = "Song",
     artist = "Artist",
     album = "Album",
