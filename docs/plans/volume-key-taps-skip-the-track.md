@@ -2,7 +2,7 @@
 slug: volume-key-taps-skip-the-track
 worktree: /home/marvin/Projects/reprise-volume-key-taps-skip-the-track
 branch: feature/volume-key-taps-skip-the-track
-phase: planned
+phase: coded
 codex_session:
 created: 2026-09-17
 ---
