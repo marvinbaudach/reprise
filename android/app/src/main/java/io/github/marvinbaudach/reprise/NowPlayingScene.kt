@@ -222,40 +222,58 @@ internal fun nowPlayingVisualBlend(
  * swipe keeps that picture. In visualizer mode no panel falls back to its
  * cover for want of data, which is what used to flash the covers up mid-swipe.
  *
- * A panel currently mirroring the live engine ([panelMirrorsLiveScene]) counts
- * too, even before its own stored spectrogram has finished loading and before
- * [FrozenSceneBytes] has latched a frame of its own: it is not drawing its own
- * data, it is drawing the live panel's, which is already on screen. Without
- * this a mirroring neighbour whose spectrogram was still an async cache miss
- * showed its cover for the first frames of the swipe instead of the bars it
- * was actually mirroring. This stays a pure rule change — the live panel
- * itself never mirrors ([panelMirrorsLiveScene] is false for it), so it keeps
- * requiring a real captured frame, exactly as before.
+ * A panel that *could* mirror the live engine ([panelCanMirrorLiveScene])
+ * counts too, even at rest and even before its own stored spectrogram has
+ * finished loading and before [FrozenSceneBytes] has latched a frame of its
+ * own: whether it is on screen yet is a render-cost question
+ * ([panelMirrorsLiveScene]'s `near` gate), not a data-availability one. Gating
+ * this on `near` instead used to leave `dataAvailability` resting at 0 for a
+ * neighbour without its own spectrogram, so the first drag pixel that turned
+ * `near` positive flipped the target to 1 and the crossfade tween flashed the
+ * cover up for its own duration at the start of every swipe. This stays a
+ * pure rule change — the live panel itself never mirrors
+ * ([panelCanMirrorLiveScene] is false for it), so it keeps requiring a real
+ * captured frame, exactly as before.
  */
 internal fun panelHasVisualData(
     storedFrameCount: Int,
     hasCapturedLiveScene: Boolean,
-    isMirroringLiveScene: Boolean,
-): Boolean = storedFrameCount > 0 || hasCapturedLiveScene || isMirroringLiveScene
+    canMirrorLiveScene: Boolean,
+): Boolean = storedFrameCount > 0 || hasCapturedLiveScene || canMirrorLiveScene
 
 /**
- * Whether a neighbour draws the live panel's scene instead of its own.
+ * Whether a neighbour *could* draw the live panel's scene instead of its own,
+ * regardless of whether it is currently on screen.
  *
  * A neighbour without a stored spectrogram has no scene of its own — its
- * engine hears nothing — so while the swipe carries it onto the screen it
+ * engine hears nothing — so once the swipe carries it onto the screen it
  * mirrors the live engine, tinted in its own accent. The panel that has just
  * lost the live slot is such a neighbour too: it slides out with the bars of
- * what is playing rather than a frozen picture of what was. Off the screen
- * (`near == 0`) nothing is mirrored, so a resting neighbour costs no render;
- * a stored spectrogram is the panel's own picture and wins; the live panel is
- * the source, not a mirror.
+ * what is playing rather than a frozen picture of what was. A stored
+ * spectrogram is the panel's own picture and wins; the live panel is the
+ * source, not a mirror.
+ */
+internal fun panelCanMirrorLiveScene(
+    isLivePanel: Boolean,
+    storedFrameCount: Int,
+    liveSceneAvailable: Boolean,
+): Boolean = !isLivePanel && storedFrameCount == 0 && liveSceneAvailable
+
+/**
+ * Whether a neighbour is actually drawing the live panel's scene right now.
+ *
+ * Same eligibility as [panelCanMirrorLiveScene], plus `near > 0f`: off the
+ * screen nothing is mirrored, so a resting neighbour costs no render. This
+ * gate is a render-cost decision only — it must not gate [panelHasVisualData]
+ * too, or a panel eligible to mirror once dragged onscreen would flash its
+ * cover for the first frames of every swipe while `near` catches up.
  */
 internal fun panelMirrorsLiveScene(
     isLivePanel: Boolean,
     storedFrameCount: Int,
     near: Float,
     liveSceneAvailable: Boolean,
-): Boolean = !isLivePanel && storedFrameCount == 0 && near > 0f && liveSceneAvailable
+): Boolean = panelCanMirrorLiveScene(isLivePanel, storedFrameCount, liveSceneAvailable) && near > 0f
 
 /**
  * Whether a newly created live engine should adopt the outgoing live engine's
@@ -479,13 +497,18 @@ private fun NowPlayingPanelLayer(
     val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
     val near = max(0f, 1f - min(1f, distance))
     val frozenScene = rememberFrozenSceneBytes(panel.track.id)
+    val canMirrorLiveScene = panelCanMirrorLiveScene(
+        isLivePanel,
+        frames.frameCount,
+        liveSceneAvailable = liveScene.engine != null,
+    )
     val mirroredEngine = liveScene.engine.takeIf {
         panelMirrorsLiveScene(isLivePanel, frames.frameCount, near, liveSceneAvailable = it != null)
     }
     val hasVisualData = panelHasVisualData(
         frames.frameCount,
         frozenScene.hasCapturedScene,
-        isMirroringLiveScene = mirroredEngine != null,
+        canMirrorLiveScene = canMirrorLiveScene,
     )
     val dataAvailability by animateFloatAsState(
         targetValue = if (hasVisualData) 1f else 0f,

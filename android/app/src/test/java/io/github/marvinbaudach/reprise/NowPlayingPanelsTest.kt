@@ -253,7 +253,7 @@ class NowPlayingPanelsTest {
             panelHasVisualData(
                 storedFrameCount = 0,
                 hasCapturedLiveScene = false,
-                isMirroringLiveScene = false,
+                canMirrorLiveScene = false,
             ),
         )
     }
@@ -264,7 +264,7 @@ class NowPlayingPanelsTest {
             panelHasVisualData(
                 storedFrameCount = 0,
                 hasCapturedLiveScene = true,
-                isMirroringLiveScene = false,
+                canMirrorLiveScene = false,
             ),
         )
     }
@@ -275,7 +275,7 @@ class NowPlayingPanelsTest {
             panelHasVisualData(
                 storedFrameCount = 5,
                 hasCapturedLiveScene = false,
-                isMirroringLiveScene = false,
+                canMirrorLiveScene = false,
             ),
         )
     }
@@ -289,7 +289,7 @@ class NowPlayingPanelsTest {
             panelHasVisualData(
                 storedFrameCount = 0,
                 hasCapturedLiveScene = true,
-                isMirroringLiveScene = false,
+                canMirrorLiveScene = false,
             ),
         )
     }
@@ -307,11 +307,32 @@ class NowPlayingPanelsTest {
             panelHasVisualData(
                 storedFrameCount = 0,
                 hasCapturedLiveScene = false,
-                isMirroringLiveScene = true,
+                canMirrorLiveScene = true,
             ),
         )
         val blend = nowPlayingVisualBlend(visualizerOpacity = 1f, dataAvailability = 1f)
         assertEquals(0f, blend.coverOpacity, 0f)
+    }
+
+    @Test
+    fun a_resting_neighbour_eligible_to_mirror_already_counts_as_pictured() {
+        // Regression: `panelHasVisualData`'s third argument used to be
+        // `near > 0f && liveSceneAvailable` (`isMirroringLiveScene`), so
+        // `dataAvailability` rested at 0 for a spectrogram-less neighbour until
+        // `near` turned positive on the first drag pixel -- the 220ms crossfade
+        // then flashed the cover up at the start of every swipe. Eligibility to
+        // mirror must not depend on `near`: that gate belongs to
+        // `panelMirrorsLiveScene` alone, which decides only whether the mirror
+        // is actually drawn (a render-cost question), not whether data is
+        // available.
+        assertTrue(
+            "a neighbour that would mirror the live scene once dragged onscreen already has data at rest",
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = false,
+                canMirrorLiveScene = true,
+            ),
+        )
     }
 
     @Test
@@ -320,7 +341,7 @@ class NowPlayingPanelsTest {
             panelHasVisualData(
                 storedFrameCount = 0,
                 hasCapturedLiveScene = false,
-                isMirroringLiveScene = false,
+                canMirrorLiveScene = false,
             ),
         )
     }
