@@ -455,8 +455,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        boundService.value?.setActivityInForeground(false)
         super.onPause()
+        boundService.value?.setActivityInForeground(false)
     }
 
     override fun onStop() {
