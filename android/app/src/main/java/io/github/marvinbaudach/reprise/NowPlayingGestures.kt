@@ -114,13 +114,15 @@ internal fun rememberPlayPanelWindow(
     controls: PlaybackControls,
 ): PlayPanelWindow {
     var generation by remember { mutableStateOf(0L) }
-    var loadedFor by remember { mutableStateOf<Triple<Long, Int, PlaybackControls>?>(null) }
+    // Keyed on the controls so a new transport reloads once, without holding a reference to it
+    // inside composition state.
+    var loadedFor by remember(controls) { mutableStateOf<Pair<Long, Int>?>(null) }
     var window by remember {
         mutableStateOf(placeholderPlayPanelWindow(track, currentIndex))
     }
     LaunchedEffect(currentTrackId, track.id, currentIndex, controls) {
         window = window.withCurrentPanel(track, currentIndex, currentTrackId)
-        val request = Triple(currentTrackId, currentIndex, controls)
+        val request = currentTrackId to currentIndex
         if (loadedFor == request) return@LaunchedEffect
         loadedFor = request
         val requestGeneration = ++generation

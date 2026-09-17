@@ -151,6 +151,43 @@ class NowPlayingSceneEngineTest {
         )
     }
 
+    @Test
+    fun the_outgoing_panel_mirrors_the_new_live_engine_on_its_way_out() {
+        // The panel that just lost the live slot has a picture of its own — the last scene it
+        // drew while live, kept in FrozenSceneBytes across the engine swap. That picture is not
+        // what slides out: bars are not track-identifiable, and a frozen frame next to a moving
+        // one reads as a stutter, so the outgoing panel mirrors the engine that is now live,
+        // tinted in its own accent, exactly like a neighbour that never had a picture. This is a
+        // design choice, not an accident of the rule ignoring the captured scene.
+        val factory = RecordingSceneEngineFactory(sceneRecord = FLAT_RECT_RECORD)
+        val analysis = UnanalysedSpectrogramAnalysis()
+        val surfaceState = MobileSurfaceViewModel()
+        var positionPx by mutableStateOf(0f)
+        var currentIndex by mutableStateOf(0)
+
+        compose.setContent {
+            SwipeScene(factory, analysis, surfaceState, positionPx, withNeighbour = true, currentIndex = currentIndex)
+        }
+        compose.waitForIdle()
+        val sceneNode = compose.onNodeWithTag("now-playing-scene")
+        sceneNode.captureToImage()
+        assertTrue("the live panel captured a picture of its own first", factory.engine.sceneCalls > 0)
+        assertEquals("at rest nothing mirrors", 0, factory.engine.tintedCalls)
+
+        val widthPx = sceneNode.fetchSemanticsNode().size.width.toFloat()
+        currentIndex = 1
+        positionPx = widthPx * 0.5f
+        compose.waitForIdle()
+        sceneNode.captureToImage()
+
+        // Panel 1 is live now and draws through sceneBytes; the only panel left to tint is the
+        // outgoing panel 0, captured picture and all.
+        assertTrue(
+            "the outgoing panel must mirror the new live engine, not replay its frozen picture",
+            factory.engine.tintedCalls > 0,
+        )
+    }
+
     @Composable
     private fun CoverScene(
         factory: RecordingSceneEngineFactory,
@@ -184,6 +221,7 @@ class NowPlayingSceneEngineTest {
         surfaceState: MobileSurfaceViewModel,
         positionPx: Float,
         withNeighbour: Boolean = false,
+        currentIndex: Int = 0,
     ) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
@@ -207,7 +245,7 @@ class NowPlayingSceneEngineTest {
                     playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
                     surfaceState = surfaceState,
                     positionPx = positionPx,
-                    currentIndex = 0,
+                    currentIndex = currentIndex,
                     panels = panels,
                     visualizerOpacity = 1f,
                 )
@@ -249,8 +287,10 @@ private class UnanalysedSpectrogramAnalysis : TrackAnalysisPort {
         deliver(SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = ByteArray(0)))
 }
 
-private class RecordingSceneEngineFactory : VisualSceneEngineFactory {
-    val engine = RecordingSceneEngine()
+private class RecordingSceneEngineFactory(
+    sceneRecord: List<Float> = emptyList(),
+) : VisualSceneEngineFactory {
+    val engine = RecordingSceneEngine(sceneRecord)
     var created = 0
         private set
 
@@ -260,7 +300,10 @@ private class RecordingSceneEngineFactory : VisualSceneEngineFactory {
     }
 }
 
-private class RecordingSceneEngine : VisualSceneEngine {
+/** Records the calls; [sceneRecord] is what `scene()` hands back, empty by default. */
+private class RecordingSceneEngine(
+    private val sceneRecord: List<Float> = emptyList(),
+) : VisualSceneEngine {
     var ticks = 0
         private set
     var sceneCalls = 0
@@ -277,7 +320,7 @@ private class RecordingSceneEngine : VisualSceneEngine {
     }
     override fun scene(width: Float, height: Float): List<Float> {
         sceneCalls += 1
-        return emptyList()
+        return sceneRecord
     }
     override fun sceneBytesTinted(
         width: Float,
@@ -304,3 +347,6 @@ private fun sceneEngineTrack(id: Long = 17) = LibraryTrack(
 )
 
 private const val DISPLAY_FRAME_MS = 16L
+
+/** One well-formed rectangle record, `[kind, r, g, b, a, width, glow, pointCount, x, y, w, h]`. */
+private val FLAT_RECT_RECORD = listOf(0f, 1f, 1f, 1f, 1f, 0f, 0f, 4f, 0f, 0f, 10f, 10f)
