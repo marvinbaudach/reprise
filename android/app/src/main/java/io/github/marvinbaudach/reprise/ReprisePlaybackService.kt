@@ -116,6 +116,12 @@ open class ReprisePlaybackService : MediaSessionService() {
         override fun next() = this@ReprisePlaybackService.next()
 
         override fun previousInQueueOrder() = this@ReprisePlaybackService.previousInQueueOrder()
+
+        override fun isActivityInForeground(): Boolean = false
+
+        override fun volumeKeySkipGestureEnabled(): Boolean = false
+
+        override fun hapticTick() = Unit
     }
 
     override fun onCreate() {
@@ -159,7 +165,7 @@ open class ReprisePlaybackService : MediaSessionService() {
         mutableSleepTimerStates.value = sleepTimer.state()
         val session = MediaSession.Builder(
             this,
-            CoreControlledPlayer(player, mediaSessionCommands),
+            CoreControlledPlayer(player, mediaSessionCommands, this),
         ).build()
         mediaSession = session
         // Handing the session to the service is what puts Media3 in charge of
