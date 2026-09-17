@@ -158,10 +158,10 @@ impl Smoother {
     /// seeds only its own bars; longer input is truncated by `zip`.
     pub(super) fn seed_shape(&mut self, bars: &[f32]) {
         for (previous, bar) in self.previous.iter_mut().zip(bars.iter()) {
-            *previous = bar.clamp(0.0, 1.0);
+            *previous = (if bar.is_finite() { *bar } else { 0.0 }).clamp(0.0, 1.0);
         }
         for (peak, bar) in self.peaks.iter_mut().zip(bars.iter()) {
-            *peak = bar.clamp(0.0, 1.0);
+            *peak = (if bar.is_finite() { *bar } else { 0.0 }).clamp(0.0, 1.0);
         }
     }
 

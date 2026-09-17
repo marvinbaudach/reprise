@@ -33,10 +33,10 @@ internal interface VisualSceneEngine : AutoCloseable {
 
     /**
      * The engine's currently displayed bar values. A panel taking over the
-     * live slot during a swipe reads this off the engine it replaces and
-     * hands it to [adoptShape] on its own, freshly created engine, so the new
-     * engine's first frames continue from there instead of climbing from
-     * zero (see [shouldAdoptLiveShape]).
+     * live slot during a swipe gets a new lease over the shared live engine.
+     * Its explicit `noteTrackChanged()` resets that engine's CAVA history;
+     * reading before the reset and passing the shape to [adoptShape] carries
+     * the displayed bars across it (see [shouldAdoptLiveShape]).
      */
     fun currentBands(): FloatArray = FloatArray(0)
 

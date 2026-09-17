@@ -334,6 +334,16 @@ fn reset_stream_clears_the_fft_window_so_a_different_track_does_not_bleed_in() {
     );
 }
 
+#[test]
+fn hostile_shape_seed_produces_only_finite_bars() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 4)).unwrap();
+    processor.seed_shape(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.5]);
+
+    let bars = processor.process(&vec![0.0; 512]);
+
+    assert!(bars.iter().all(|bar| bar.is_finite()), "bars: {bars:?}");
+}
+
 fn test_transient_processor() -> CavaBarProcessor {
     let mut config = CavaConfig::new(44_100, 8);
     config.low_cutoff_hz = 1_000;

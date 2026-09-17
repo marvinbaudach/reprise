@@ -250,14 +250,16 @@ internal fun panelMirrorsLiveScene(
  * Whether a newly created live engine should adopt the outgoing live engine's
  * bar shape instead of starting from zero.
  *
- * A swipe hands the live slot to a brand-new engine (see
- * [visualSceneFactoryForPanel]), which otherwise shows a bare peak cap with
- * no bars underneath for one frame while its own CAVA history is empty. Only
- * the panel taking over the live slot adopts anything — a non-live panel's
- * engine never scenes live audio, and a panel that keeps the live slot across
- * a recomposition has no `previous` to speak of (`created` did not change) —
- * and only from a genuinely different engine, guarding against the
- * degenerate case where [previous] and [created] are the same instance.
+ * Production gives each panel a new lease over one shared live engine (see
+ * [visualSceneFactoryForPanel]). The explicit `noteTrackChanged()` call resets
+ * that engine's CAVA history, which otherwise leaves a bare peak cap with no
+ * bars underneath for one frame; the seed carries the displayed shape across
+ * that reset. Only the panel taking over the live slot adopts anything — a
+ * non-live panel's engine never scenes live audio, and a panel that keeps the
+ * live slot across a recomposition has no `previous` to speak of (`created`
+ * did not change). In production `previous !== created` is always true
+ * because every `create()` returns a new lease; it only guards test doubles
+ * that return the same engine instance.
  */
 internal fun shouldAdoptLiveShape(
     live: Boolean,
@@ -601,6 +603,8 @@ private fun rememberVisualSceneEngine(
     // the time effects run, the outgoing panel's own `DisposableEffect(engine)
     // { onDispose { engine?.close() } }` may already have closed
     // `previousLiveEngine`, and reading a closed native engine throws.
+    // This native read deliberately happens during composition, before that outgoing lease closes.
+    // It is idempotent, for the same reason `factory.create()` belongs in this `remember` block.
     val adoptedBands = remember(factory) {
         val created = engine
         if (created != null && shouldAdoptLiveShape(live, previousLiveEngine, created)) {
