@@ -316,22 +316,52 @@ class NowPlayingPanelsTest {
 
     @Test
     fun a_resting_neighbour_eligible_to_mirror_already_counts_as_pictured() {
-        // Regression: `panelHasVisualData`'s third argument used to be
-        // `near > 0f && liveSceneAvailable` (`isMirroringLiveScene`), so
-        // `dataAvailability` rested at 0 for a spectrogram-less neighbour until
-        // `near` turned positive on the first drag pixel -- the 220ms crossfade
-        // then flashed the cover up at the start of every swipe. Eligibility to
-        // mirror must not depend on `near`: that gate belongs to
-        // `panelMirrorsLiveScene` alone, which decides only whether the mirror
-        // is actually drawn (a render-cost question), not whether data is
-        // available.
+        // Regression: `panelHasVisualData`'s third argument used to be fed
+        // `panelMirrorsLiveScene(..., near, ...)` directly, so `dataAvailability`
+        // rested at 0 for a spectrogram-less neighbour until `near` turned
+        // positive on the first drag pixel -- the 220ms crossfade then flashed
+        // the cover up at the start of every swipe. Eligibility to mirror must
+        // not depend on `near`: that gate belongs to `panelMirrorsLiveScene`
+        // alone, which decides only whether the mirror is actually drawn (a
+        // render-cost question), not whether data is available.
+        val eligible = panelCanMirrorLiveScene(
+            isLivePanel = false,
+            storedFrameCount = 0,
+            liveSceneAvailable = true,
+        )
+        assertTrue("eligibility to mirror does not depend on near", eligible)
+        assertFalse(
+            "at rest the mirror is not actually drawn",
+            panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0f, liveSceneAvailable = true),
+        )
+        // The discriminator: feeding the OLD wiring (`near == 0` through
+        // `panelMirrorsLiveScene`) into this same slot would report false --
+        // exactly the bug. The fix is that `hasVisualData` is fed `eligible`,
+        // not the near-gated draw decision.
         assertTrue(
-            "a neighbour that would mirror the live scene once dragged onscreen already has data at rest",
-            panelHasVisualData(
-                storedFrameCount = 0,
-                hasCapturedLiveScene = false,
-                canMirrorLiveScene = true,
-            ),
+            "yet the resting neighbour still counts as pictured",
+            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = false, canMirrorLiveScene = eligible),
+        )
+    }
+
+    @Test
+    fun a_live_panel_is_never_eligible_to_mirror_itself() {
+        assertFalse(
+            panelCanMirrorLiveScene(isLivePanel = true, storedFrameCount = 0, liveSceneAvailable = true),
+        )
+    }
+
+    @Test
+    fun a_stored_spectrogram_is_not_eligible_to_mirror_either() {
+        assertFalse(
+            panelCanMirrorLiveScene(isLivePanel = false, storedFrameCount = 3, liveSceneAvailable = true),
+        )
+    }
+
+    @Test
+    fun nothing_is_eligible_to_mirror_before_the_live_engine_exists() {
+        assertFalse(
+            panelCanMirrorLiveScene(isLivePanel = false, storedFrameCount = 0, liveSceneAvailable = false),
         )
     }
 
