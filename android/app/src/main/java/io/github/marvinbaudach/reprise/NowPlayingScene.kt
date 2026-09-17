@@ -221,11 +221,22 @@ internal fun nowPlayingVisualBlend(
  * one on its way out; a neighbour that mirrored the live scene during the
  * swipe keeps that picture. In visualizer mode no panel falls back to its
  * cover for want of data, which is what used to flash the covers up mid-swipe.
+ *
+ * A panel currently mirroring the live engine ([panelMirrorsLiveScene]) counts
+ * too, even before its own stored spectrogram has finished loading and before
+ * [FrozenSceneBytes] has latched a frame of its own: it is not drawing its own
+ * data, it is drawing the live panel's, which is already on screen. Without
+ * this a mirroring neighbour whose spectrogram was still an async cache miss
+ * showed its cover for the first frames of the swipe instead of the bars it
+ * was actually mirroring. This stays a pure rule change — the live panel
+ * itself never mirrors ([panelMirrorsLiveScene] is false for it), so it keeps
+ * requiring a real captured frame, exactly as before.
  */
 internal fun panelHasVisualData(
     storedFrameCount: Int,
     hasCapturedLiveScene: Boolean,
-): Boolean = storedFrameCount > 0 || hasCapturedLiveScene
+    isMirroringLiveScene: Boolean,
+): Boolean = storedFrameCount > 0 || hasCapturedLiveScene || isMirroringLiveScene
 
 /**
  * Whether a neighbour draws the live panel's scene instead of its own.
@@ -471,7 +482,11 @@ private fun NowPlayingPanelLayer(
     val mirroredEngine = liveScene.engine.takeIf {
         panelMirrorsLiveScene(isLivePanel, frames.frameCount, near, liveSceneAvailable = it != null)
     }
-    val hasVisualData = panelHasVisualData(frames.frameCount, frozenScene.hasCapturedScene)
+    val hasVisualData = panelHasVisualData(
+        frames.frameCount,
+        frozenScene.hasCapturedScene,
+        isMirroringLiveScene = mirroredEngine != null,
+    )
     val dataAvailability by animateFloatAsState(
         targetValue = if (hasVisualData) 1f else 0f,
         // Shares its timing with the visualizerOpacity toggle for a matching feel, not because it

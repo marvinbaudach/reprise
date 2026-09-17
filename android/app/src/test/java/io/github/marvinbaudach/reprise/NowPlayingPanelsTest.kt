@@ -250,21 +250,33 @@ class NowPlayingPanelsTest {
         // engine has actually captured a real frame.
         assertFalse(
             "a live panel must not claim visual data before its engine captured a real frame",
-            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = false),
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = false,
+                isMirroringLiveScene = false,
+            ),
         )
     }
 
     @Test
     fun a_live_panel_opens_its_bars_once_its_engine_captured_a_real_frame() {
         assertTrue(
-            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = true),
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = true,
+                isMirroringLiveScene = false,
+            ),
         )
     }
 
     @Test
     fun a_stored_spectrogram_grants_visual_data_even_off_the_live_slot() {
         assertTrue(
-            panelHasVisualData(storedFrameCount = 5, hasCapturedLiveScene = false),
+            panelHasVisualData(
+                storedFrameCount = 5,
+                hasCapturedLiveScene = false,
+                isMirroringLiveScene = false,
+            ),
         )
     }
 
@@ -274,7 +286,42 @@ class NowPlayingPanelsTest {
         // that mirrored the live scene during the swipe keeps those -- in
         // visualizer mode no panel falls back to its cover for want of data.
         assertTrue(
-            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = true),
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = true,
+                isMirroringLiveScene = false,
+            ),
+        )
+    }
+
+    @Test
+    fun a_mirroring_neighbour_has_visual_data_before_its_own_spectrogram_loads() {
+        // Regression: the stored spectrogram loads async (`rememberSpectrogram`,
+        // cache miss posts back later); until it lands, `storedFrameCount == 0`
+        // and `hasCapturedLiveScene == false` for a neighbour that has never
+        // been live. It is mirroring the live panel's engine right now, so it
+        // must count as having visual data instead of flashing its cover up
+        // for the frames before the cache answers (measured ~80 ms on device).
+        assertTrue(
+            "a mirroring neighbour must not fall back to its cover while data loads",
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = false,
+                isMirroringLiveScene = true,
+            ),
+        )
+        val blend = nowPlayingVisualBlend(visualizerOpacity = 1f, dataAvailability = 1f)
+        assertEquals(0f, blend.coverOpacity, 0f)
+    }
+
+    @Test
+    fun a_non_mirroring_panel_still_has_no_visual_data_with_nothing_captured() {
+        assertFalse(
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = false,
+                isMirroringLiveScene = false,
+            ),
         )
     }
 
