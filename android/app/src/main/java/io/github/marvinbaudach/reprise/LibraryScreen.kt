@@ -42,7 +42,7 @@ internal fun LibraryScreen(
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
-    setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
+    setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState,
 ) {
     var state by remember { mutableStateOf(initialState) }
     DisposableEffect(surfaceState) {
