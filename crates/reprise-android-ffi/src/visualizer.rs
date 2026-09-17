@@ -325,6 +325,8 @@ impl AndroidVisualEngine {
             let stream_generation = self.current_stream_generation();
             reset_live_processor(&mut live_audio, stream_generation);
         }
+        // Kotlin calls this before adopting the shape for the same live-slot change.
+        *self.lock_pending_shape_seed() = None;
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         state.engine.note_track_changed();
@@ -470,6 +472,7 @@ impl AndroidVisualEngine {
             let stream_generation = self.current_stream_generation();
             reset_live_processor(&mut live_audio, stream_generation);
         }
+        *self.lock_pending_shape_seed() = None;
         if let Some(mut state) = self.try_lock() {
             let stream_generation = self.current_stream_generation();
             reset_live_presentation(&mut state, stream_generation, self.clock.now());
@@ -482,6 +485,7 @@ impl AndroidVisualEngine {
         // before display. Taking both before the generation changes keeps a
         // later reconciliation from mistaking this reset for a stream boundary.
         let mut live_audio = self.lock_live_audio();
+        *self.lock_pending_shape_seed() = None;
         let mut state = self.lock();
         let stream_generation = self.advance_stream_generation();
         reset_live_processor(&mut live_audio, stream_generation);

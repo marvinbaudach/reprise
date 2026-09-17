@@ -595,6 +595,24 @@ fn adopted_shape_holds_until_the_live_stream_speaks() {
 }
 
 #[test]
+fn a_track_change_discards_an_unconsumed_adopted_shape_seed() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.adopt_shape(vec![0.9; SPECTRUM_BAND_COUNT]);
+    engine.note_track_changed();
+    engine.set_playing(true);
+
+    let silent_pcm = vec![0; 8_192 * 2 * size_of::<i16>()];
+    ingest_one_live_block(&engine, &clock, &silent_pcm, 48_000);
+
+    let bands = engine.current_bands();
+    assert!(
+        bands.iter().all(|band| *band < 0.05),
+        "the next track inherited the stale adopted shape seed: {bands:?}"
+    );
+}
+
+#[test]
 // Regression test for the second half of the swipe bug: a panel taking over
 // the live slot used to start its brand-new engine from zero. `adopt_shape`
 // seeds that engine's smoother memory ahead of the first PCM block (see
