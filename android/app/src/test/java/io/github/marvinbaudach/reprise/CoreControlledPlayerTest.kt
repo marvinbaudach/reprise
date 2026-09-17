@@ -13,9 +13,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowAudioManager
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [36], shadows = [RecordingAudioManagerShadow::class])
 class CoreControlledPlayerTest {
     private val context = RuntimeEnvironment.getApplication()
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -149,10 +152,19 @@ class CoreControlledPlayerTest {
         val commands = RecordingCommands(audio)
         val controlled = controlledPlayer(commands = commands)
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, 10, 0)
+        RecordingAudioManagerShadow.lastAdjustment = null
 
         controlled.increaseDeviceVolume(0)
 
         assertEquals(11, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        assertEquals(
+            AudioAdjustment(
+                streamType = AudioManager.STREAM_MUSIC,
+                direction = AudioManager.ADJUST_RAISE,
+                flags = AudioManager.FLAG_SHOW_UI,
+            ),
+            RecordingAudioManagerShadow.lastAdjustment,
+        )
         assertFalse(commands.events.contains("tick"))
     }
 
@@ -203,6 +215,25 @@ class CoreControlledPlayerTest {
             else -> primitiveDefault(method.returnType)
         }
     } as Player
+}
+
+data class AudioAdjustment(
+    val streamType: Int,
+    val direction: Int,
+    val flags: Int,
+)
+
+@Implements(AudioManager::class)
+class RecordingAudioManagerShadow : ShadowAudioManager() {
+    @Implementation
+    override fun adjustStreamVolume(streamType: Int, direction: Int, flags: Int) {
+        lastAdjustment = AudioAdjustment(streamType, direction, flags)
+        super.adjustStreamVolume(streamType, direction, flags)
+    }
+
+    companion object {
+        var lastAdjustment: AudioAdjustment? = null
+    }
 }
 
 private class RecordingCommands(
