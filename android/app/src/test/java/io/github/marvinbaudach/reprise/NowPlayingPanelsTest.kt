@@ -40,6 +40,28 @@ class NowPlayingPanelsTest {
     }
 
     @Test
+    fun the_first_queue_position_has_no_panel_before_it() {
+        val current = panelTrack(20)
+        val next = panelTrack(21)
+
+        val window = playPanelWindow(0, current.id, listOf(current, next))
+
+        assertEquals(0, window.firstIndex)
+        assertFalse(window.panels.any { panel -> panel.index == -1 })
+    }
+
+    @Test
+    fun the_last_queue_position_has_no_panel_after_it() {
+        val previous = panelTrack(20)
+        val current = panelTrack(21)
+
+        val window = playPanelWindow(4, current.id, listOf(previous, current))
+
+        assertEquals(4, window.lastIndex)
+        assertFalse(window.panels.any { panel -> panel.index == 5 })
+    }
+
+    @Test
     fun an_unknown_window_claims_no_neighbour_in_either_direction() {
         val window = placeholderPlayPanelWindow(panelTrack(20), currentIndex = 7)
 

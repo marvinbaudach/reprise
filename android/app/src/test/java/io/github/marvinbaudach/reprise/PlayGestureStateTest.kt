@@ -75,6 +75,34 @@ class PlayGestureStateTest {
     }
 
     @Test
+    fun a_rightward_drag_at_the_first_index_is_rubber_banded_and_never_settles_to_previous() {
+        val state = state(currentIndex = 0, firstIndex = 0, lastIndex = 4).apply {
+            begin(horizontalAllowed = true, verticalAllowed = true)
+            dragBy(100f, 0f)
+        }
+
+        // Raw delta would put the position at -100px; the rubber band damps
+        // it to -30px, so it moves less than the raw delta and stays on the
+        // near side of the anchor rather than crossing past it.
+        assertEquals(-30f, state.positionPx, 0.000_01f)
+        assertEquals(PlayGestureDecision.SPRING_BACK, state.settle(velocityX = 600f, velocityY = 0f))
+    }
+
+    @Test
+    fun a_leftward_drag_at_the_last_index_is_rubber_banded_and_never_settles_to_next() {
+        val state = state(currentIndex = 4, firstIndex = 0, lastIndex = 4).apply {
+            begin(horizontalAllowed = true, verticalAllowed = true)
+            dragBy(-100f, 0f)
+        }
+
+        // Raw delta would put the position at 1_700px; the rubber band damps
+        // it to 1_630px, so it moves less than the raw delta and stays on the
+        // near side of the anchor rather than crossing past it.
+        assertEquals(1_630f, state.positionPx, 0.000_01f)
+        assertEquals(PlayGestureDecision.SPRING_BACK, state.settle(velocityX = -600f, velocityY = 0f))
+    }
+
+    @Test
     fun drag_below_every_threshold_springs_back() {
         val state = state().apply {
             begin(horizontalAllowed = true, verticalAllowed = true)
