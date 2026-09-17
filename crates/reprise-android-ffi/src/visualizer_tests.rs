@@ -448,6 +448,45 @@ fn resume_history_reset_preserves_live_scene_until_pcm_restarts_or_expires() {
 }
 
 #[test]
+// Regression test for the swipe bug this fix addresses: `reset_audio_history`
+// used to fully reset the CAVA processor (`CavaBarProcessor::reset`), so the
+// next analyzed live-PCM block reported near-zero bars for one frame while
+// the peak caps stayed at their old height — a visible flash of bare caps
+// with no bars underneath. `LiveAudioState::reset` now calls
+// `reset_stream()`, which keeps the smoother's shape, so the next block
+// falls from the previous bars instead of climbing back up from zero.
+fn reset_audio_history_keeps_bars_on_screen_through_the_next_live_block() {
+    // Device-sized ticks (~800 samples @ 48 kHz, the `withFrameNanos` cadence
+    // documented on `Smoother::apply`'s tests), not one giant block: the CAVA
+    // main FFT window is 4_096 samples wide, so only a device tick's worth of
+    // real signal lands in it right after a reset, while the rest is still
+    // the zero fill the reset left behind. That partial refill is exactly
+    // what makes this test depend on the smoother's retained bar shape
+    // instead of on the window having already refilled with real audio.
+    const DEVICE_TICK_FRAMES: usize = 800;
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playback_intended(true);
+    engine.set_playing(true);
+    for chunk in 0..200 {
+        let pcm = stereo_sine_pcm16(200.0, 48_000, chunk, DEVICE_TICK_FRAMES);
+        ingest_one_live_block(&engine, &clock, &pcm, 48_000);
+    }
+    let before = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(before > 0, "warm-up should already show bars on screen");
+
+    engine.reset_audio_history();
+    let pcm = stereo_sine_pcm16(200.0, 48_000, 200, DEVICE_TICK_FRAMES);
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
+
+    let after = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(
+        after * 2 >= before,
+        "bars dropped to near zero right after reset_audio_history: before={before}, after={after}"
+    );
+}
+
+#[test]
 fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
     let clock = Arc::new(FakeMonotonicClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());
@@ -471,6 +510,91 @@ fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
     assert_eq!(
         main_bar_segments(&stale_scene, 272.0),
         main_bar_segments(&fallback_scene, 272.0),
+    );
+}
+
+#[test]
+fn current_bands_reports_the_engines_displayed_bars() {
+    let engine = AndroidVisualEngine::new();
+    engine.set_playing(true);
+    engine.ingest_bands(vec![0.4; 24]);
+
+    let bands = engine.current_bands();
+
+    assert_eq!(bands.len(), 64);
+    assert!(
+        bands.iter().all(|band| (band - 0.4).abs() < 1e-4),
+        "current_bands should mirror the ingested, interpolated bands: {bands:?}"
+    );
+}
+
+#[test]
+fn adopt_shape_draws_immediately_on_a_fresh_engine() {
+    // Production order, not the more convenient adopt-then-everything-else:
+    // `rememberVisualSceneEngine` runs `noteTrackChanged()` in a
+    // `DisposableEffect` keyed on the freshly created engine before the
+    // `adoptShape` effect that follows it, and only then does the
+    // `SideEffect` that reports `set_playing` run. `note_track_changed`
+    // clears `has_ingested`, so adopting before it would be wiped out; kept
+    // in the real order here so this test cannot pass for a reason
+    // production never provides.
+    let engine = AndroidVisualEngine::new();
+
+    engine.note_track_changed();
+    engine.adopt_shape(vec![0.8; 64]);
+    engine.set_playing(true);
+
+    let scene = decode_scene(&engine.scene(272.0, 272.0));
+    assert!(
+        !main_bar_segments(&scene, 272.0).is_empty(),
+        "adopt_shape should draw bars before any PCM has arrived"
+    );
+    let bands = engine.current_bands();
+    assert_eq!(bands.len(), 64);
+    assert!(
+        bands.iter().all(|band| (band - 0.8).abs() < 1e-4),
+        "current_bands should match the adopted seed: {bands:?}"
+    );
+    assert!(
+        !engine.has_live_audio(),
+        "adopt_shape must not mark the engine as having live audio"
+    );
+}
+
+#[test]
+fn adopt_shape_with_empty_bands_is_a_no_op() {
+    let engine = AndroidVisualEngine::new();
+    engine.set_playing(true);
+
+    engine.adopt_shape(Vec::new());
+
+    assert!(engine.scene(272.0, 272.0).is_empty());
+}
+
+#[test]
+// Regression test for the second half of the swipe bug: a panel taking over
+// the live slot used to start its brand-new engine from zero. `adopt_shape`
+// seeds that engine's smoother memory ahead of the first PCM block (see
+// `live_processor_for_stream`'s pending-seed handling), so the transition
+// from the adopted shape to the first real live frame does not itself drop
+// to zero either.
+fn adopt_shape_keeps_bars_on_screen_through_the_first_live_pcm_block() {
+    // Same production order as `adopt_shape_draws_immediately_on_a_fresh_engine`.
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.note_track_changed();
+    engine.adopt_shape(vec![0.8; 64]);
+    engine.set_playing(true);
+    let before = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(before > 0, "the adopted shape should already show bars");
+
+    let pcm = stereo_sine_pcm16(200.0, 48_000, 0, 8_192);
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
+
+    let after = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(
+        after * 2 >= before,
+        "the first live PCM block dropped the adopted shape to near zero: before={before}, after={after}"
     );
 }
 

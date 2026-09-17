@@ -231,6 +231,15 @@ impl VisualEngine {
         self.accent = rgb;
     }
 
+    /// The bars currently on screen, as last ingested — the live CAVA bands
+    /// while a live engine is ticking, the analyzed bands from stored
+    /// spectrogram data otherwise. Lets a fresh sibling engine (e.g. the
+    /// panel that has just become live during a swipe) adopt a starting
+    /// shape instead of climbing from zero.
+    pub fn current_bands(&self) -> &[f32; SPECTRUM_BAND_COUNT] {
+        &self.bands_current
+    }
+
     /// Clears the previous track's bar and peak-cap history.
     pub fn note_track_changed(&mut self) {
         self.bands_current = [0.0; SPECTRUM_BAND_COUNT];

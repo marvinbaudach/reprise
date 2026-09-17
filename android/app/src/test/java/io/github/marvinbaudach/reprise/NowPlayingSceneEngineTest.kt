@@ -12,7 +12,9 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -188,6 +190,74 @@ class NowPlayingSceneEngineTest {
         )
     }
 
+    @Test
+    fun the_new_live_panel_adopts_the_outgoing_engines_bar_shape() {
+        // A swipe hands the live slot to a brand-new engine (a fresh factory.create() call, see
+        // visualSceneFactoryForPanel) that otherwise starts from zero for one frame. The panel
+        // taking over the live slot must instead adopt the outgoing engine's bar shape — this is
+        // the only place the recording factory can observe both engines the live slot passes
+        // through, so it needs a distinct engine per create() call rather than the one shared
+        // instance the other tests above rely on.
+        val factory = RecordingSceneEngineFactory(distinctEngines = true)
+        val analysis = UnanalysedSpectrogramAnalysis()
+        val surfaceState = MobileSurfaceViewModel()
+        var currentIndex by mutableStateOf(0)
+
+        compose.setContent {
+            SwipeScene(
+                factory,
+                analysis,
+                surfaceState,
+                positionPx = 0f,
+                withNeighbour = true,
+                currentIndex = currentIndex,
+            )
+        }
+        compose.waitForIdle()
+        val outgoing = factory.createdEngines[0]
+        assertTrue(
+            "the first live engine has no predecessor and must not have adopted anything",
+            outgoing.adoptedShapes.isEmpty(),
+        )
+        outgoing.setCurrentBands(SEED_BANDS)
+
+        currentIndex = 1
+        compose.waitForIdle()
+
+        val incoming = factory.createdEngines[1]
+        assertArrayEquals(
+            "the new live engine must adopt the outgoing engine's reported bands",
+            SEED_BANDS,
+            incoming.adoptedShapes.single(),
+            0f,
+        )
+        assertEquals(
+            "adoptShape must land after noteTrackChanged, or the reset wipes the adopted shape",
+            listOf("noteTrackChanged", "adoptShape"),
+            incoming.callSequence,
+        )
+    }
+
+    @Test
+    fun shouldAdoptLiveShapeOnlyForANewLivePanelWithADifferentPredecessor() {
+        val previous = RecordingSceneEngine()
+        val created = RecordingSceneEngine()
+
+        assertTrue(shouldAdoptLiveShape(live = true, previous = previous, created = created))
+        assertFalse(
+            "a non-live panel never scenes live audio and must not adopt a shape",
+            shouldAdoptLiveShape(live = false, previous = previous, created = created),
+        )
+        assertFalse(
+            "a live panel with no predecessor has nothing to adopt",
+            shouldAdoptLiveShape(live = true, previous = null, created = created),
+        )
+        assertFalse(
+            "an engine must never adopt a shape from itself",
+            shouldAdoptLiveShape(live = true, previous = created, created = created),
+        )
+    }
+
     @Composable
     private fun CoverScene(
         factory: RecordingSceneEngineFactory,
@@ -287,16 +357,25 @@ private class UnanalysedSpectrogramAnalysis : TrackAnalysisPort {
         deliver(SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = ByteArray(0)))
 }
 
+/**
+ * [distinctEngines] hands out a fresh [RecordingSceneEngine] per [create] call instead of the one
+ * [engine] every other test above shares, so a test can tell apart the engines the live slot
+ * passes through across a swipe (see [createdEngines]).
+ */
 private class RecordingSceneEngineFactory(
-    sceneRecord: List<Float> = emptyList(),
+    private val sceneRecord: List<Float> = emptyList(),
+    private val distinctEngines: Boolean = false,
 ) : VisualSceneEngineFactory {
     val engine = RecordingSceneEngine(sceneRecord)
+    val createdEngines = mutableListOf<RecordingSceneEngine>()
     var created = 0
         private set
 
     override fun create(): VisualSceneEngine {
         created += 1
-        return engine
+        val instance = if (distinctEngines) RecordingSceneEngine(sceneRecord) else engine
+        createdEngines += instance
+        return instance
     }
 }
 
@@ -310,11 +389,32 @@ private class RecordingSceneEngine(
         private set
     var tintedCalls = 0
         private set
+    private var reportedBands: FloatArray = FloatArray(0)
+    val adoptedShapes = mutableListOf<FloatArray>()
+
+    /**
+     * Records [noteTrackChanged] and [adoptShape] calls in the order they land, so a test can pin
+     * that the real engine's `has_ingested`-clearing reset happens before the adopted shape is
+     * installed, not after (which would wipe it straight back out — see
+     * `rememberVisualSceneEngine`'s comment on effect declaration order).
+     */
+    val callSequence = mutableListOf<String>()
+
+    fun setCurrentBands(bands: FloatArray) {
+        reportedBands = bands
+    }
 
     override fun setAccent(red: Float, green: Float, blue: Float) = Unit
     override fun setPlaying(playing: Boolean) = Unit
-    override fun noteTrackChanged() = Unit
+    override fun noteTrackChanged() {
+        callSequence += "noteTrackChanged"
+    }
     override fun ingestBands(bands: FloatArray) = Unit
+    override fun currentBands(): FloatArray = reportedBands
+    override fun adoptShape(bands: FloatArray) {
+        callSequence += "adoptShape"
+        adoptedShapes += bands
+    }
     override fun tick() {
         ticks += 1
     }
@@ -350,3 +450,5 @@ private const val DISPLAY_FRAME_MS = 16L
 
 /** One well-formed rectangle record, `[kind, r, g, b, a, width, glow, pointCount, x, y, w, h]`. */
 private val FLAT_RECT_RECORD = listOf(0f, 1f, 1f, 1f, 1f, 0f, 0f, 4f, 0f, 0f, 10f, 10f)
+
+private val SEED_BANDS = floatArrayOf(0.2f, 0.5f, 0.8f)

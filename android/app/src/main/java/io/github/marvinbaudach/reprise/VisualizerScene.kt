@@ -30,6 +30,18 @@ internal interface VisualSceneEngine : AutoCloseable {
     fun setPlaying(playing: Boolean)
     fun noteTrackChanged()
     fun ingestBands(bands: FloatArray)
+
+    /**
+     * The engine's currently displayed bar values. A panel taking over the
+     * live slot during a swipe reads this off the engine it replaces and
+     * hands it to [adoptShape] on its own, freshly created engine, so the new
+     * engine's first frames continue from there instead of climbing from
+     * zero (see [shouldAdoptLiveShape]).
+     */
+    fun currentBands(): FloatArray = FloatArray(0)
+
+    /** Seeds a freshly created engine with another engine's [currentBands]. */
+    fun adoptShape(bands: FloatArray) = Unit
     fun hasLiveAudio(): Boolean = false
     fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
     fun tick()
@@ -99,6 +111,10 @@ internal class NativeVisualSceneEngine(
     override fun noteTrackChanged() = native.noteTrackChanged()
 
     override fun ingestBands(bands: FloatArray) = native.ingestBands(bands.asList())
+
+    override fun currentBands(): FloatArray = native.currentBands().toFloatArray()
+
+    override fun adoptShape(bands: FloatArray) = native.adoptShape(bands.asList())
 
     override fun setPlaybackIntent(playbackIntended: Boolean) =
         native.setPlaybackIntended(playbackIntended)

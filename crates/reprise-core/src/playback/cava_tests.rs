@@ -261,6 +261,79 @@ fn reset_restores_a_fresh_processor_state() {
     );
 }
 
+#[test]
+// Regression test for the swipe bug this fix addresses: a stream boundary
+// used to call the same full `reset()` a track change needs, which zeroed
+// the smoother's bar shape along with the FFT input buffer. The very next
+// analyzed block therefore reported bars near zero for one frame before
+// climbing back up — visible on the phone as the peak caps freezing with no
+// bars underneath. `reset_stream()` keeps the smoother's shape so the next
+// block instead falls from the previous loud bar through the smoother's
+// normal gravity. Control arm: the same fixture through the full `reset()`,
+// which does still drop to (near) zero, proving the assertion below actually
+// discriminates the two and is not vacuously true.
+fn reset_stream_keeps_the_bar_shape_a_full_reset_would_drop() {
+    let full_window = 8_192;
+    let tone: Vec<f32> = (0..full_window)
+        .map(|sample| {
+            (std::f32::consts::TAU * 200.0 * sample as f32 / 44_100.0).sin() * (20_000.0 / 65_535.0)
+        })
+        .collect();
+    // A short, quiet follow-up block: on its own it would never build up to
+    // the previous loud bar, so keeping close to it can only be explained by
+    // the retained smoother shape, not by the new block's own energy.
+    let quiet_follow_up = vec![0.0; 512];
+
+    let mut kept_shape = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    let loud_bar = kept_shape.process(&tone)[2];
+    kept_shape.reset_stream();
+    let after_reset_stream = kept_shape.process(&quiet_follow_up)[2];
+
+    let mut dropped_shape = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    dropped_shape.process(&tone);
+    dropped_shape.reset();
+    let after_full_reset = dropped_shape.process(&quiet_follow_up)[2];
+
+    assert!(loud_bar > 0.0, "fixture must actually produce a loud bar");
+    assert!(
+        after_reset_stream > loud_bar * 0.5,
+        "reset_stream should keep the bar shape: loud_bar={loud_bar}, \
+         after_reset_stream={after_reset_stream}"
+    );
+    assert!(
+        after_full_reset < loud_bar * 0.5,
+        "control arm: a full reset should still drop the bar, got \
+         after_full_reset={after_full_reset} against loud_bar={loud_bar}"
+    );
+}
+
+#[test]
+fn reset_stream_clears_the_fft_window_so_a_different_track_does_not_bleed_in() {
+    // noise_reduction = 0 disables the smoother's gravity/peak retention (see
+    // `gravity_mod` in `Smoother::apply`), so a bar here reflects only the
+    // current FFT window's own energy. That isolates the FFT input buffer's
+    // continuity from the smoother-shape retention the fix above adds —
+    // without this, the retained shape alone would keep the bar high and this
+    // test could not tell the two apart.
+    let mut config = CavaConfig::new(44_100, 10);
+    config.noise_reduction = 0.0;
+    let mut processor = CavaBarProcessor::new(config).unwrap();
+    for chunk in 0..40 {
+        processor.process(&sine_chunk(200.0, chunk));
+    }
+
+    processor.reset_stream();
+    // A short silent block after `reset_stream` must read as silence: if the
+    // FFT window still held the previous track's samples this would instead
+    // resonate with them.
+    let bars = processor.process(&vec![0.0; 512]);
+
+    assert!(
+        bars[2] < 0.05,
+        "reset_stream left the previous track's samples in the FFT window: {bars:?}"
+    );
+}
+
 fn test_transient_processor() -> CavaBarProcessor {
     let mut config = CavaConfig::new(44_100, 8);
     config.low_cutoff_hz = 1_000;

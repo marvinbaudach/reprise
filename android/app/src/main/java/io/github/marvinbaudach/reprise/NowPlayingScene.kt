@@ -247,6 +247,25 @@ internal fun panelMirrorsLiveScene(
 ): Boolean = !isLivePanel && storedFrameCount == 0 && near > 0f && liveSceneAvailable
 
 /**
+ * Whether a newly created live engine should adopt the outgoing live engine's
+ * bar shape instead of starting from zero.
+ *
+ * A swipe hands the live slot to a brand-new engine (see
+ * [visualSceneFactoryForPanel]), which otherwise shows a bare peak cap with
+ * no bars underneath for one frame while its own CAVA history is empty. Only
+ * the panel taking over the live slot adopts anything — a non-live panel's
+ * engine never scenes live audio, and a panel that keeps the live slot across
+ * a recomposition has no `previous` to speak of (`created` did not change) —
+ * and only from a genuinely different engine, guarding against the
+ * degenerate case where [previous] and [created] are the same instance.
+ */
+internal fun shouldAdoptLiveShape(
+    live: Boolean,
+    previous: VisualSceneEngine?,
+    created: VisualSceneEngine,
+): Boolean = live && previous != null && previous !== created
+
+/**
  * Whether a panel drawing the live scene still has to poll for its first one.
  *
  * `sceneBytes()` is the only place [FrozenSceneBytes] learns that real data
@@ -431,6 +450,7 @@ private fun NowPlayingPanelLayer(
         playback,
         accent,
         live = isLivePanel,
+        liveScene = liveScene,
     )
     if (isLivePanel) {
         DisposableEffect(liveScene, visualEngine) {
@@ -568,14 +588,39 @@ private fun rememberVisualSceneEngine(
     playback: PlaybackUiState,
     accent: Color,
     live: Boolean,
+    liveScene: LiveSceneHandle,
 ): VisualSceneEngine? {
     val factory = visualSceneFactoryForPanel(live, LocalVisualSceneEngineFactory.current)
+    // Read before the engine swap below: while the panel that is losing the
+    // live slot is still composing this same pass, `liveScene.engine` is
+    // still its outgoing engine — its DisposableEffect that would null this
+    // out has not run yet (see `shouldAdoptLiveShape`).
+    val previousLiveEngine = liveScene.engine
     val engine: VisualSceneEngine? = remember(factory) { factory.create() }
+    // Read alongside engine creation, not inside the adopt effect below: by
+    // the time effects run, the outgoing panel's own `DisposableEffect(engine)
+    // { onDispose { engine?.close() } }` may already have closed
+    // `previousLiveEngine`, and reading a closed native engine throws.
+    val adoptedBands = remember(factory) {
+        val created = engine
+        if (created != null && shouldAdoptLiveShape(live, previousLiveEngine, created)) {
+            previousLiveEngine!!.currentBands()
+        } else {
+            null
+        }
+    }
     DisposableEffect(engine) {
         onDispose { engine?.close() }
     }
     DisposableEffect(engine, trackId) {
         engine?.noteTrackChanged()
+        onDispose { }
+    }
+    // Declared after the `noteTrackChanged` effect above: that call clears
+    // `has_ingested` on the Rust side, which would otherwise wipe the shape
+    // this adopts right back out.
+    DisposableEffect(engine) {
+        adoptedBands?.let { engine?.adoptShape(it) }
         onDispose { }
     }
     SideEffect {
