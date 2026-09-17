@@ -49,6 +49,9 @@ internal data class MainActivitySurfaceDependencies(
     val animationsEnabled: () -> Boolean,
     val observeAmbientScheduling: (Boolean) -> Unit,
     val libraryPerformanceObserver: LibraryPerformanceObserver = NoOpLibraryPerformanceObserver,
+    val setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = {
+        loadPlaybackSettings()
+    },
 )
 
 internal fun <A, R> offMainLibraryRead(

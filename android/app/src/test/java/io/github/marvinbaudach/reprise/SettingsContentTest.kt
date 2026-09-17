@@ -41,6 +41,22 @@ class SettingsContentTest {
     }
 
     @Test
+    fun audioSettingsExposeThePersistedVolumeKeyRockSwitch() {
+        val changes = mutableListOf<Boolean>()
+        showSettings(onVolumeKeySkipGestureChanged = { changes += it })
+
+        compose.onNodeWithContentDescription("Open Audio").performClick()
+
+        compose.onNodeWithText("Skip tracks with the volume keys").assertIsDisplayed()
+        compose.onNodeWithText(
+            "Tap up then down for the next track, down then up for the previous one. " +
+                "Works with the screen off or another app in front, while playing.",
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Skip tracks with the volume keys").performClick()
+        assertEquals(listOf(false), changes)
+    }
+
+    @Test
     fun equalizerPresetsAreSelectableOnTheAudioRoute() {
         val flat = listOf(
             EqualizerCurvePoint(29.0, 0.0),
@@ -167,6 +183,7 @@ class SettingsContentTest {
         equalizerCurve: List<EqualizerCurvePoint> = emptyList(),
         equalizerPresets: List<EqualizerPresetUi> = emptyList(),
         onReplaceEqualizerCurve: (List<EqualizerCurvePoint>) -> Unit = {},
+        onVolumeKeySkipGestureChanged: (Boolean) -> Unit = {},
     ) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
@@ -194,6 +211,7 @@ class SettingsContentTest {
                     setEqualizerEnabled = {},
                     replaceEqualizerCurve = onReplaceEqualizerCurve,
                     setGaplessEnabled = {},
+                    setVolumeKeySkipGestureEnabled = onVolumeKeySkipGestureChanged,
                     selectTheme = {},
                 )
             }

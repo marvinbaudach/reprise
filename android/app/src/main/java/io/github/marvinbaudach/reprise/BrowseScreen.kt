@@ -146,6 +146,7 @@ internal fun BrowseScreen(
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
+    setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
@@ -1076,6 +1077,9 @@ internal fun BrowseScreen(
                     },
                     setGaplessEnabled = { enabled ->
                         updateSettings { setGaplessEnabled(enabled) }
+                    },
+                    setVolumeKeySkipGestureEnabled = { enabled ->
+                        updateSettings { setVolumeKeySkipGestureEnabled(enabled) }
                     },
                     selectTheme = selectTheme,
                 )
