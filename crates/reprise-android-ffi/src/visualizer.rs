@@ -222,6 +222,25 @@ struct VisualState {
     has_analysis: bool,
     has_adopted_shape: bool,
     has_live_audio: bool,
+    // Set by `reset_live_presentation` when it is called for a genuine
+    // decoded-stream boundary (`reset_audio_stream`, `note_track_changed`, or
+    // any state catching up to one of those through
+    // `reconcile_stream_generation`) — never for ordinary live-audio
+    // staleness (`expire_stale_live_audio`), which shares that same reset
+    // function but must keep its existing paused/idle fallback. Cleared the
+    // moment the new stream actually speaks — a live PCM block analyzed in
+    // `tick`, or a stored-analysis frame ingested via
+    // `ingest_bands`/`adopt_shape`. While set it counts as `has_audio` below,
+    // so the engine stays "playing" and its displayed bars simply hold
+    // instead of decaying into the idle/paused projection for the gap
+    // between the reset and the first new data — the alternative was a
+    // visible decay-then-pop. Bounded by `set_playing(false)`, which clears
+    // it: a real pause or stop must still fall back to the normal
+    // paused/idle projection rather than holding forever. Deliberately not
+    // bounded by a timer — a stall while playback is still intended keeps
+    // the last picture on screen, which reads better than decaying it away
+    // for a gap of unknown length.
+    awaiting_stream_after_reset: bool,
     last_live_audio_at: Option<Duration>,
     live_pressure: BassPressure,
     playing: bool,
@@ -290,8 +309,17 @@ impl AndroidVisualEngine {
             state.last_visual_tick_at = now;
         }
         state.playing = playing;
+        if !playing {
+            // A real pause or stop bounds the post-reset hold: nothing further
+            // is coming, so the normal paused/idle projection must take over
+            // instead of holding the pre-reset picture forever.
+            state.awaiting_stream_after_reset = false;
+        }
         expire_stale_live_audio(&mut state, now);
-        let has_audio = state.has_analysis || state.has_adopted_shape || state.has_live_audio;
+        let has_audio = state.has_analysis
+            || state.has_adopted_shape
+            || state.has_live_audio
+            || state.awaiting_stream_after_reset;
         state.set_engine_playing(playing && has_audio, now);
     }
 
@@ -335,7 +363,7 @@ impl AndroidVisualEngine {
         state.last_visual_tick_at = now;
         state.has_ingested = false;
         state.has_analysis = false;
-        reset_live_presentation(&mut state, stream_generation, now);
+        reset_live_presentation(&mut state, stream_generation, now, true);
     }
 
     /// Installs one already-smoothed spectrogram frame.
@@ -358,15 +386,20 @@ impl AndroidVisualEngine {
         state.engine.ingest(&frame);
         state.has_ingested = true;
         state.has_analysis = has_analysis;
+        if has_analysis {
+            state.awaiting_stream_after_reset = false;
+        }
     }
 
-    /// The engine's currently displayed bar values: the live CAVA bands while
-    /// live audio drives it, the ingested spectrogram bands otherwise.
+    /// The engine's currently displayed bar values — what is actually on
+    /// screen, decayed and idle-blended where applicable, not the raw
+    /// last-ingested bands (see [`VisualEngine::current_bands`]).
     ///
     /// A panel taking over the live slot during a swipe reads this off the
     /// engine it replaces and hands it to [`Self::adopt_shape`] on its own,
     /// freshly created engine, so the new engine's first frames continue from
-    /// the outgoing engine's shape instead of climbing from zero.
+    /// the shape the viewer actually saw instead of climbing from zero or
+    /// popping in energy the screen had already decayed away.
     pub fn current_bands(&self) -> Vec<f32> {
         self.lock().engine.current_bands().to_vec()
     }
@@ -408,6 +441,7 @@ impl AndroidVisualEngine {
         state.engine.ingest(&frame);
         state.has_ingested = true;
         state.has_adopted_shape = true;
+        state.awaiting_stream_after_reset = false;
     }
 
     /// Downmixes interleaved little-endian PCM16 into the live-audio ring buffer.
@@ -475,7 +509,7 @@ impl AndroidVisualEngine {
         *self.lock_pending_shape_seed() = None;
         if let Some(mut state) = self.try_lock() {
             let stream_generation = self.current_stream_generation();
-            reset_live_presentation(&mut state, stream_generation, self.clock.now());
+            reset_live_presentation(&mut state, stream_generation, self.clock.now(), true);
         }
     }
 
@@ -552,6 +586,7 @@ impl AndroidVisualEngine {
             state.engine.ingest(&frame);
             state.has_ingested = true;
             state.has_adopted_shape = false;
+            state.awaiting_stream_after_reset = false;
             state.has_live_audio = true;
             state.last_live_audio_at = Some(now);
             state.live_pressure = pressure;
@@ -592,20 +627,40 @@ fn silent_pressure() -> BassPressure {
     BassPressureDetector::new(1).observe(&[])
 }
 
-fn reset_live_presentation(state: &mut VisualState, stream_generation: u64, now: Duration) {
+/// Resets CAVA/bass-detector bookkeeping shared by two different callers: a
+/// genuine decoded-stream boundary (`reset_audio_stream`, `note_track_changed`,
+/// or any state catching up to one of those through
+/// [`reconcile_stream_generation`] — `reset_audio_history` deliberately does
+/// not go through here at all, so a later reconciliation cannot mistake its
+/// own generation bump for one) and ordinary live-audio staleness
+/// (`expire_stale_live_audio`), which bumps nothing and calls this with the
+/// same generation. Only the former holds the display
+/// (see `awaiting_stream_after_reset`'s doc): staleness during otherwise
+/// uninterrupted live playback keeps its existing paused/idle fallback
+/// instead, exactly as before this fix — a stall that never speaks again
+/// must not freeze the screen forever just because live audio happened to go
+/// quiet for one measurement.
+fn reset_live_presentation(
+    state: &mut VisualState,
+    stream_generation: u64,
+    now: Duration,
+    holds_display: bool,
+) {
     state.stream_generation = stream_generation;
     state.has_adopted_shape = false;
     state.has_live_audio = false;
     state.last_live_audio_at = None;
     state.live_pressure = silent_pressure();
     state.engine.set_retain_paused_live_shape(false);
-    let has_audio = state.has_analysis || state.has_adopted_shape;
+    state.awaiting_stream_after_reset = holds_display;
+    let has_audio =
+        state.has_analysis || state.has_adopted_shape || state.awaiting_stream_after_reset;
     state.set_engine_playing(state.playing && has_audio, now);
 }
 
 fn reconcile_stream_generation(state: &mut VisualState, stream_generation: u64, now: Duration) {
     if state.stream_generation != stream_generation {
-        reset_live_presentation(state, stream_generation, now);
+        reset_live_presentation(state, stream_generation, now, true);
     }
 }
 
@@ -643,7 +698,7 @@ fn live_processor_for_stream<'a>(
 
 fn expire_stale_live_audio(state: &mut VisualState, now: Duration) {
     if state.has_live_audio && !live_audio_is_current(state, now) {
-        reset_live_presentation(state, state.stream_generation, now);
+        reset_live_presentation(state, state.stream_generation, now, false);
     }
 }
 
@@ -673,6 +728,7 @@ impl AndroidVisualEngine {
                 has_analysis: false,
                 has_adopted_shape: false,
                 has_live_audio: false,
+                awaiting_stream_after_reset: false,
                 last_live_audio_at: None,
                 live_pressure: silent_pressure(),
                 playing: false,

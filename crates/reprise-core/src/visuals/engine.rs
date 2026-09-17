@@ -231,13 +231,17 @@ impl VisualEngine {
         self.accent = rgb;
     }
 
-    /// The bars currently on screen, as last ingested — the live CAVA bands
-    /// while a live engine is ticking, the analyzed bands from stored
-    /// spectrogram data otherwise. Lets a fresh sibling engine (e.g. the
-    /// panel that has just become live during a swipe) adopt a starting
-    /// shape instead of climbing from zero.
+    /// The bars actually on screen right now — `display_bands`, not the raw
+    /// last-ingested `bands_current`. Those two diverge the moment the engine
+    /// is not playing (AC-27's idle blend, or the paused-live projection):
+    /// reading the raw bands there would seed a fresh sibling engine with
+    /// energy the screen had already decayed away, reintroducing it as a
+    /// visible "pop" the instant the sibling adopts it. Lets a fresh sibling
+    /// engine (e.g. the panel that has just become live during a swipe)
+    /// adopt the shape the viewer actually saw instead of climbing from zero
+    /// or jumping from one it never saw.
     pub fn current_bands(&self) -> &[f32; SPECTRUM_BAND_COUNT] {
-        &self.bands_current
+        &self.display_bands
     }
 
     /// Clears the previous track's bar and peak-cap history.
@@ -599,6 +603,31 @@ mod tests {
         engine.set_playing(true);
 
         assert_eq!(engine.display_bands, live);
+    }
+
+    #[test]
+    fn current_bands_reports_the_displayed_bars_not_the_raw_ones() {
+        // Regression: `current_bands()` used to return `bands_current` — the
+        // raw last-ingested frame — while the screen draws `display_bands`,
+        // which the AC-27 paused-live blend has already pulled away from it.
+        // A fresh sibling engine adopting `current_bands()` at that point
+        // reintroduced energy the viewer had already watched decay away, a
+        // visible "pop". `paused_live_engine` plus enough ticks is the same
+        // setup the AC-27 tests above use to produce that divergence.
+        let mut engine = paused_live_engine();
+        let raw = engine.bands_current;
+        for _ in 0..120 {
+            engine.tick();
+        }
+        assert_ne!(
+            engine.display_bands, raw,
+            "test setup did not actually diverge display_bands from bands_current"
+        );
+        assert_eq!(
+            engine.current_bands(),
+            &engine.display_bands,
+            "current_bands must report what is on screen, not the raw ingested bands"
+        );
     }
 
     /// A stage light: the hit throws it to full, then it falls.
