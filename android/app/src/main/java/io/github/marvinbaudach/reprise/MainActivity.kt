@@ -186,9 +186,6 @@ class MainActivity : ComponentActivity() {
             playbackBindWatchdog?.cancel()
             playbackBindWatchdog = null
             boundService.value = service
-            service.setActivityInForeground(
-                lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
-            )
             visualSceneEngineFactory.value = service.visualSceneEngineFactory()
         }
 
@@ -290,8 +287,6 @@ class MainActivity : ComponentActivity() {
                                 setEqualizerEnabled = surface.setEqualizerEnabled,
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
                                 setGaplessEnabled = surface.setGaplessEnabled,
-                                setVolumeKeyTrackSwitchEnabled =
-                                    surface.setVolumeKeyTrackSwitchEnabled,
                                 onlineSourcesEnabled = onlineSourcesEnabled,
                                 artistPhotoOffer = artistPhotoOffer,
                                 setOnlineSourcesEnabled = {
@@ -411,7 +406,6 @@ class MainActivity : ComponentActivity() {
             setEqualizerEnabled = ::setEqualizerEnabled,
             replaceEqualizerCurve = ::replaceEqualizerCurve,
             setGaplessEnabled = ::setGaplessEnabled,
-            setVolumeKeyTrackSwitchEnabled = ::setVolumeKeyTrackSwitchEnabled,
             selectTheme = { current, palette -> themeController.select(current, palette) },
             onlineSourcesEnabled = {
                 runCatching { library.onlineSourcesEnabled() }
@@ -484,7 +478,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        boundService.value?.setActivityInForeground(true)
         if (!usesProductionSurface) return
         Thread {
             runCatching { session.autoScan() }
@@ -496,7 +489,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        boundService.value?.setActivityInForeground(false)
         super.onPause()
     }
 
@@ -694,7 +686,30 @@ class MainActivity : ComponentActivity() {
     private fun loadPlaybackSettings(): PlaybackSettingsUiState {
         val stored = library.playbackSettings()
         val snapshot = boundService.value?.equalizerSnapshot()
-        return playbackSettingsUiState(stored, snapshot, equalizerPresets)
+        val bands = snapshot?.bands.orEmpty().map { band ->
+            EqualizerBandUi(
+                frequencyHz = band.frequencyHz,
+                gainDb = band.gainDb,
+                minimumGainDb = band.minimumGainDb,
+                maximumGainDb = band.maximumGainDb,
+            )
+        }
+        return PlaybackSettingsUiState(
+            equalizerEnabled = stored.equalizerEnabled,
+            gaplessEnabled = stored.gaplessEnabled,
+            equalizerBands = bands,
+            equalizerCurve = stored.equalizerCurve.map { point ->
+                EqualizerCurvePoint(point.frequencyHz, point.gainDb)
+            },
+            equalizerPresets = equalizerPresets,
+            // A snapshot that reports no equalizer is a session we *have* asked:
+            // saying "start playback" there would be false while a track plays.
+            equalizerBandsAbsence = if (snapshot != null && !snapshot.available) {
+                EqualizerBandsAbsence.NO_EQUALIZER_ON_THIS_DEVICE
+            } else {
+                EqualizerBandsAbsence.NO_PLAYBACK_YET
+            },
+        )
     }
 
     private fun setEqualizerEnabled(enabled: Boolean): PlaybackSettingsUiState {
@@ -715,12 +730,6 @@ class MainActivity : ComponentActivity() {
 
     private fun setGaplessEnabled(enabled: Boolean): PlaybackSettingsUiState {
         library.setGaplessEnabled(enabled)
-        boundService.value?.reloadPlaybackSettings()
-        return loadPlaybackSettings()
-    }
-
-    private fun setVolumeKeyTrackSwitchEnabled(enabled: Boolean): PlaybackSettingsUiState {
-        library.setVolumeKeyTrackSwitchEnabled(enabled)
         boundService.value?.reloadPlaybackSettings()
         return loadPlaybackSettings()
     }

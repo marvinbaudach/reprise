@@ -45,7 +45,6 @@ internal fun LibraryScreen(
     artistPhotoOffer: ArtistPhotoOfferState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
-    setVolumeKeyTrackSwitchEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
 ) {
     var state by remember { mutableStateOf(initialState) }
     DisposableEffect(surfaceState) {
@@ -95,7 +94,6 @@ internal fun LibraryScreen(
             setEqualizerEnabled = setEqualizerEnabled,
             replaceEqualizerCurve = replaceEqualizerCurve,
             setGaplessEnabled = setGaplessEnabled,
-            setVolumeKeyTrackSwitchEnabled = setVolumeKeyTrackSwitchEnabled,
             onlineSourcesEnabled = onlineSourcesEnabled,
             setOnlineSourcesEnabled = setOnlineSourcesEnabled,
             artistPhotoOfferSettled = artistPhotoOffer.settled,
