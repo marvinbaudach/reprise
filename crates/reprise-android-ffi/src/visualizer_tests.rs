@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use reprise_core::playback::SPECTRUM_BAND_COUNT;
 use reprise_core::visuals::{Fill, Geom, Rgba, Scene, Shape};
 
 use crate::visualizer::{
@@ -569,6 +570,28 @@ fn adopt_shape_with_empty_bands_is_a_no_op() {
     engine.adopt_shape(Vec::new());
 
     assert!(engine.scene(272.0, 272.0).is_empty());
+}
+
+#[test]
+fn adopted_shape_holds_until_the_live_stream_speaks() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.note_track_changed();
+    engine.adopt_shape(vec![0.8; SPECTRUM_BAND_COUNT]);
+    engine.set_playing(true);
+    let before = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(before > 0, "the adopted shape should already show bars");
+
+    for _ in 0..15 {
+        clock.advance(Duration::from_millis(16));
+        engine.tick();
+    }
+
+    let after = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert_eq!(
+        after, before,
+        "the adopted shape decayed before live PCM arrived: before={before}, after={after}"
+    );
 }
 
 #[test]

@@ -220,6 +220,7 @@ struct VisualState {
     stream_generation: u64,
     has_ingested: bool,
     has_analysis: bool,
+    has_adopted_shape: bool,
     has_live_audio: bool,
     last_live_audio_at: Option<Duration>,
     live_pressure: BassPressure,
@@ -290,7 +291,7 @@ impl AndroidVisualEngine {
         }
         state.playing = playing;
         expire_stale_live_audio(&mut state, now);
-        let has_audio = state.has_analysis || state.has_live_audio;
+        let has_audio = state.has_analysis || state.has_adopted_shape || state.has_live_audio;
         state.set_engine_playing(playing && has_audio, now);
     }
 
@@ -404,6 +405,7 @@ impl AndroidVisualEngine {
         state.set_engine_playing(playing, now);
         state.engine.ingest(&frame);
         state.has_ingested = true;
+        state.has_adopted_shape = true;
     }
 
     /// Downmixes interleaved little-endian PCM16 into the live-audio ring buffer.
@@ -484,6 +486,7 @@ impl AndroidVisualEngine {
         let stream_generation = self.advance_stream_generation();
         reset_live_processor(&mut live_audio, stream_generation);
         state.stream_generation = stream_generation;
+        state.has_adopted_shape = false;
         state.last_live_audio_at = state.has_live_audio.then(|| self.clock.now());
         state.live_pressure = silent_pressure();
     }
@@ -544,6 +547,7 @@ impl AndroidVisualEngine {
             state.set_engine_playing(playing, now);
             state.engine.ingest(&frame);
             state.has_ingested = true;
+            state.has_adopted_shape = false;
             state.has_live_audio = true;
             state.last_live_audio_at = Some(now);
             state.live_pressure = pressure;
@@ -586,11 +590,13 @@ fn silent_pressure() -> BassPressure {
 
 fn reset_live_presentation(state: &mut VisualState, stream_generation: u64, now: Duration) {
     state.stream_generation = stream_generation;
+    state.has_adopted_shape = false;
     state.has_live_audio = false;
     state.last_live_audio_at = None;
     state.live_pressure = silent_pressure();
     state.engine.set_retain_paused_live_shape(false);
-    state.set_engine_playing(state.playing && state.has_analysis, now);
+    let has_audio = state.has_analysis || state.has_adopted_shape;
+    state.set_engine_playing(state.playing && has_audio, now);
 }
 
 fn reconcile_stream_generation(state: &mut VisualState, stream_generation: u64, now: Duration) {
@@ -661,6 +667,7 @@ impl AndroidVisualEngine {
                 stream_generation: 0,
                 has_ingested: false,
                 has_analysis: false,
+                has_adopted_shape: false,
                 has_live_audio: false,
                 last_live_audio_at: None,
                 live_pressure: silent_pressure(),
