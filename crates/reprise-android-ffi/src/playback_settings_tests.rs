@@ -157,3 +157,27 @@ fn the_bridge_offers_every_shared_preset() {
         .zip(EqualizerPreset::ALL)
         .all(|(definition, preset)| definition.preset == preset.into()));
 }
+
+#[test]
+fn volume_key_skip_gesture_uses_the_persisted_playback_settings_boundary() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+
+    assert!(
+        library
+            .playback_settings()
+            .unwrap()
+            .volume_key_skip_gesture_enabled
+    );
+    library.set_volume_key_skip_gesture_enabled(false).unwrap();
+    assert!(
+        !library
+            .playback_settings()
+            .unwrap()
+            .volume_key_skip_gesture_enabled
+    );
+}

@@ -235,6 +235,7 @@ pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
 pub const EQUALIZER_CURVE_KEY: &str = crate::db_equalizer::EQUALIZER_CURVE_KEY;
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
 pub const GAPLESS_ENABLED_KEY: &str = "playback.gapless_enabled";
+pub const VOLUME_KEY_SKIP_GESTURE_ENABLED_KEY: &str = "playback.volume_key_skip_gesture_enabled";
 pub const CROSSFADE_SECONDS_KEY: &str = "playback.crossfade_seconds";
 pub const COLOR_SCHEME_KEY: &str = "ui.color_scheme";
 
@@ -542,6 +543,19 @@ fn get_gapless_enabled_in(conn: &Connection) -> bool {
 
 fn set_gapless_enabled_in(conn: &Connection, enabled: bool) -> Result<(), rusqlite::Error> {
     set_bool_in(conn, GAPLESS_ENABLED_KEY, enabled)
+}
+
+/// Whether a volume-key rock skips tracks while playback owns remote volume.
+/// Default `true`; Android is currently the only surface that exposes it.
+fn get_volume_key_skip_gesture_enabled_in(conn: &Connection) -> bool {
+    get_bool_in(conn, VOLUME_KEY_SKIP_GESTURE_ENABLED_KEY, true).unwrap_or(true)
+}
+
+fn set_volume_key_skip_gesture_enabled_in(
+    conn: &Connection,
+    enabled: bool,
+) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, VOLUME_KEY_SKIP_GESTURE_ENABLED_KEY, enabled)
 }
 
 /// The effective transition mode, *derived* from the two independent playback

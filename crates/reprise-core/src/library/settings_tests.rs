@@ -330,6 +330,17 @@ fn track_transition_is_derived_from_gapless_and_crossfade() {
 }
 
 #[test]
+fn volume_key_skip_gesture_defaults_on_and_round_trips() {
+    let conn = migrated_conn();
+
+    assert!(get_volume_key_skip_gesture_enabled(&conn));
+    set_volume_key_skip_gesture_enabled(&conn, false).unwrap();
+    assert!(!get_volume_key_skip_gesture_enabled(&conn));
+    set_volume_key_skip_gesture_enabled(&conn, true).unwrap();
+    assert!(get_volume_key_skip_gesture_enabled(&conn));
+}
+
+#[test]
 fn crossfade_seconds_clamp_and_default() {
     let conn = migrated_conn();
     // Default: 0 (off).
