@@ -178,13 +178,26 @@ impl From<PortraitBackfillProgress> for ArtistPortraitProgressUpdate {
 /// Combines a portrait-run snapshot with the cover pass riding beside it
 /// into the one update Kotlin's listener sees (decision 9: "same handle,
 /// same progress").
+///
+/// The portrait state is `Complete` the instant the portraits finish, but
+/// the merged `total` grows again right after as the cover worklist lands —
+/// reporting `Complete` through that would read as a finished bar whose
+/// count then runs backwards. While the cover pass still has work left,
+/// this reports `Running` instead; the portrait state (including a real
+/// `Complete`, once covers have none left either) passes through untouched
+/// otherwise.
 fn merged_progress_update(
     portrait: PortraitBackfillProgress,
     covers: CoverBackfillProgress,
 ) -> ArtistPortraitProgressUpdate {
+    let state = if covers.total > 0 && covers.done < covers.total {
+        ArtistPortraitProgressState::Running
+    } else {
+        ArtistPortraitProgressState::from(portrait.state)
+    };
     ArtistPortraitProgressUpdate {
         run_id: portrait.run_id,
-        state: ArtistPortraitProgressState::from(portrait.state),
+        state,
         done: portrait.done,
         failed: portrait.failed,
         total: portrait.total,

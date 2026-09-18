@@ -705,3 +705,42 @@ fn the_cover_pass_starts_once_the_portrait_run_completes() {
         "local art settles the album without a request"
     );
 }
+
+/// A finished portrait run reports `Complete` — until the cover pass that
+/// rides beside it still has albums left, at which point the merged update
+/// must not look finished: a `Complete` bar with a `total` that keeps
+/// growing reads as a counter running backwards.
+#[test]
+fn a_portrait_completion_does_not_report_complete_while_covers_are_still_running() {
+    let portrait = reprise_core::artist_portrait::PortraitBackfillProgress {
+        run_id: 1,
+        state: PortraitBackfillState::Complete,
+        done: 200,
+        failed: 0,
+        total: 200,
+    };
+
+    let mid_run = merged_progress_update(
+        portrait,
+        CoverBackfillProgress {
+            done: 0,
+            total: 500,
+        },
+    );
+    assert_eq!(mid_run.state, ArtistPortraitProgressState::Running);
+
+    let covers_done_too = merged_progress_update(
+        portrait,
+        CoverBackfillProgress {
+            done: 500,
+            total: 500,
+        },
+    );
+    assert_eq!(covers_done_too.state, ArtistPortraitProgressState::Complete);
+
+    let no_covers_at_all = merged_progress_update(portrait, CoverBackfillProgress::default());
+    assert_eq!(
+        no_covers_at_all.state,
+        ArtistPortraitProgressState::Complete
+    );
+}
