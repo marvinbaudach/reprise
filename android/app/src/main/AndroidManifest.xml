@@ -29,6 +29,25 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!--
+        Since API 30 an app only sees the packages it declares here, plus
+        force-queryable system packages. Without this block Reprise cannot
+        resolve a launcher's controller package through PackageManager, so
+        media3 treats it as untrusted and hands it only read-only commands
+        (metadata, playback state) — a launcher's play/pause/next/previous
+        buttons then silently do nothing, even though the session, its
+        state and its advertised actions all look correct. Reprise's own
+        log names the exact failure: "Package … doesn't exist" (#982).
+        The notification-listener intent makes every app that exposes a
+        NotificationListenerService visible — exactly the set media3 trusts
+        among third-party controllers.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.service.notification.NotificationListenerService" />
+        </intent>
+    </queries>
+
+    <!--
         Android 26 and 27 otherwise permit cleartext traffic by default. The
         portrait client already enforces HTTPS; this pins the platform side as
         a second lock.
