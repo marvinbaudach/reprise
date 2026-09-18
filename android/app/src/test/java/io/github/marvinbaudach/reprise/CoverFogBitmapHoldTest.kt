@@ -46,20 +46,21 @@ class CoverFogBitmapHoldTest {
     }
 
     /**
-     * Cannot be exercised in this harness: see the finding recorded in the
-     * handoff for this task. A *second* `LaunchedEffect` that resumes through
-     * `withContext(Dispatchers.Default)` — after a first one already did, in
-     * the same composition — never resumes under Robolectric's paused main
-     * looper here. Reproduced with a composable that has nothing to do with
-     * fog or artwork (`remember { mutableStateOf(0) }` plus
-     * `LaunchedEffect(value) { state.value = withContext(Dispatchers.Default)
-     * { value } }`, retriggered by a second key change): the first dispatch
-     * always lands, the second never does within a 5 s `waitUntil`. Switching
-     * artwork from a cache hit to an uncached one, or between two uncached
-     * artworks, both need exactly that second dispatch to land — this is not
-     * a defect in [rememberCoverFogBitmap], which a plain recomposition test
-     * (`ImageBitmap` state switched with no [rememberCoverFogBitmap] in the
-     * tree) proves recomposes correctly on its own.
+     * Cannot be exercised in this harness. A *second* `LaunchedEffect` that
+     * resumes through `withContext(Dispatchers.Default)` — after a first one
+     * already did, in the same composition — never resumes under
+     * Robolectric's paused main looper here. Reproduced with a composable
+     * that has nothing to do with fog or artwork (`remember { mutableStateOf(0)
+     * }` plus `LaunchedEffect(value) { state.value =
+     * withContext(Dispatchers.Default) { value } }`, retriggered by a second
+     * key change): the first dispatch always lands, the second never does
+     * within a 5 s `waitUntil`, whether the key write happens on the raw test
+     * thread or through `runOnIdle` — both were tried. Switching artwork from
+     * a cache hit to an uncached one, or between two uncached artworks, both
+     * need exactly that second dispatch to land. This is not a defect in
+     * [rememberCoverFogBitmap], which a plain recomposition test (`ImageBitmap`
+     * state switched with no [rememberCoverFogBitmap] in the tree) proves
+     * recomposes correctly on its own.
      */
     @Ignore("second Dispatchers.Default resume through LaunchedEffect never lands under this harness")
     @Test
