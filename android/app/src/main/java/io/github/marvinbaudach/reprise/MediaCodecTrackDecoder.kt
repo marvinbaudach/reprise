@@ -4,8 +4,8 @@ import android.content.ContentResolver
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
-import android.net.Uri
 import android.os.Process
+import androidx.core.net.toUri
 import uniffi.reprise_android_ffi.AnalysisDecodeException
 import uniffi.reprise_android_ffi.AnalysisPcmSink
 import uniffi.reprise_android_ffi.TrackPcmDecoder
@@ -30,7 +30,7 @@ internal class MediaCodecTrackDecoder(
         var extractor: MediaExtractor? = null
         var codec: MediaCodec? = null
         try {
-            val descriptor = contentResolver.openFileDescriptor(Uri.parse(trackUri), "r")
+            val descriptor = contentResolver.openFileDescriptor(trackUri.toUri(), "r")
                 ?: throw AnalysisDecodeException.DecodeFailed(
                     "no file descriptor for $trackUri",
                 )
