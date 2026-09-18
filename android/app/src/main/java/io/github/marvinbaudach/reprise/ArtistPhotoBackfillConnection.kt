@@ -26,6 +26,14 @@ internal fun MobileSurfaceViewModel.connectArtistPhotoBackfill(
     )
 }
 
+/**
+ * One progress bar for both passes (decision 9, "same handle, same
+ * progress"): the cover pass that rides after the portraits (B3) has no
+ * field of its own on [ArtistPhotoProgress] — its counts are folded into
+ * `done`/`total` instead. Before the cover pass starts, `coversDone` and
+ * `coversTotal` are both `0`, so this is exactly the portrait-only progress
+ * the bar already showed.
+ */
 private fun ArtistPortraitProgressUpdate.toUiProgress() = ArtistPhotoProgress(
     runId = runId.toLong(),
     phase = when (state) {
@@ -34,7 +42,7 @@ private fun ArtistPortraitProgressUpdate.toUiProgress() = ArtistPhotoProgress(
         ArtistPortraitProgressState.PAUSED -> ArtistPhotoProgressPhase.PAUSED
         ArtistPortraitProgressState.COMPLETE -> ArtistPhotoProgressPhase.COMPLETE
     },
-    done = done.toLong(),
+    done = (done + coversDone).toLong(),
     failed = failed.toLong(),
-    total = total.toLong(),
+    total = (total + coversTotal).toLong(),
 )
