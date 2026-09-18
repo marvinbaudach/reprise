@@ -565,6 +565,143 @@ fn revoking_artwork_consent_stops_the_worker_before_the_next_artist() {
             done: 0,
             failed: 0,
             total: 0,
+            covers_done: 0,
+            covers_total: 0,
         }
+    );
+}
+
+/// A `SafSource` reading straight off the real filesystem, for tests that
+/// need a configured tree — the cover chain (B3) has no reason to run
+/// without one.
+struct ChainFsSource;
+
+impl crate::source::SafSource for ChainFsSource {
+    fn residence_token(&self, _uri: String) -> Result<Option<i64>, crate::source::SafSourceError> {
+        Ok(Some(1))
+    }
+
+    fn probe(
+        &self,
+        uri: String,
+        _follow_links: bool,
+    ) -> Result<Option<crate::source::SourceFacts>, crate::source::SafSourceError> {
+        let path = PathBuf::from(&uri);
+        Ok(path.exists().then(|| crate::source::SourceFacts {
+            display_name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned()),
+            is_file: path.is_file(),
+            is_directory: path.is_dir(),
+            size_bytes: path.metadata().ok().map(|metadata| metadata.len()),
+            modified_unix_ms: None,
+            document_id: uri,
+        }))
+    }
+
+    fn list_children(
+        &self,
+        uri: String,
+    ) -> Result<Vec<crate::source::SourceChild>, crate::source::SafSourceError> {
+        let Ok(entries) = std::fs::read_dir(&uri) else {
+            return Ok(Vec::new());
+        };
+        Ok(entries
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                Some(crate::source::SourceChild {
+                    uri: path.to_string_lossy().into_owned(),
+                    display_name: path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned()),
+                    is_file: path.is_file(),
+                    is_directory: path.is_dir(),
+                    size_bytes: path.metadata().ok().map(|metadata| metadata.len()),
+                    modified_unix_ms: None,
+                    document_id: path.to_string_lossy().into_owned(),
+                })
+            })
+            .collect())
+    }
+
+    fn open_read_fd(&self, uri: String) -> Result<i32, crate::source::SafSourceError> {
+        use std::os::fd::IntoRawFd;
+        std::fs::File::open(uri)
+            .map(IntoRawFd::into_raw_fd)
+            .map_err(|error| crate::source::SafSourceError::Io {
+                detail: error.to_string(),
+            })
+    }
+}
+
+struct NoopProgressListener;
+
+impl ArtistPortraitProgressListener for NoopProgressListener {
+    fn on_progress(&self, _update: ArtistPortraitProgressUpdate) {}
+}
+
+/// The chain B3 adds: once the portrait run this rides beside reports
+/// `Complete`, the cover pass starts on its own worklist and its progress
+/// merges into the same `ArtistPortraitProgressUpdate` Kotlin already reads.
+/// The one album here already has local art, so this never reaches the
+/// network — it only proves the chain runs.
+#[test]
+fn the_cover_pass_starts_once_the_portrait_run_completes() {
+    album_cover::reset_album_cover_state_for_tests();
+    let directory = tempfile::tempdir().unwrap();
+    let music = directory.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    let track_path = music.join("track.flac");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../android/app/src/main/assets/sine.flac");
+    std::fs::copy(fixture, &track_path).unwrap();
+    reprise_core::library::tag_edit::apply_patch_to_file(
+        &track_path,
+        &reprise_core::library::tag_edit::TagPatch {
+            title: Some("Track One".to_owned()),
+            artist: Some("Chain Band".to_owned()),
+            album: Some("Chain Album".to_owned()),
+            album_artist: Some("Chain Band".to_owned()),
+            year: None,
+            track_no: Some(Some(1)),
+            genre: None,
+        },
+    )
+    .unwrap();
+    // Local art: the cover pass must settle this album without a request.
+    std::fs::write(music.join("cover.png"), TINY_IMAGE).unwrap();
+
+    let library = MusicLibrary::open_with_portrait_fetch(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+        |_, _| Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound),
+    )
+    .unwrap();
+    open_gate(&library);
+    library
+        .set_tree_uri(
+            music.to_string_lossy().into_owned(),
+            Box::new(ChainFsSource),
+        )
+        .unwrap();
+    let writer = library.writer().unwrap();
+    reprise_core::library::scanner::scan_folder(&writer, &music).unwrap();
+    drop(writer);
+
+    library.start_artist_portrait_backfill(Box::new(NoopProgressListener));
+
+    let mut last = library.artist_portrait_backfill_progress();
+    for _ in 0..5_000 {
+        last = library.artist_portrait_backfill_progress();
+        if last.covers_total > 0 && last.covers_done == last.covers_total {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    assert_eq!(last.covers_total, 1, "one album, one representative track");
+    assert_eq!(
+        last.covers_done, 1,
+        "local art settles the album without a request"
     );
 }

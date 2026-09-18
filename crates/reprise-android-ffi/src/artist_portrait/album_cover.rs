@@ -21,12 +21,24 @@ fn attempted() -> &'static Mutex<Attempted> {
     ATTEMPTED.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// `cargo test` runs every test of the crate in one process, and this memo
-/// is a process-global `static`; every test touching this module calls this
-/// first so one test's memo cannot leak into the next.
+/// The cover pass that rides the artist-portrait backfill (B3): one handle
+/// for the process, the same rule as [`attempted`] and for the same reason
+/// — `MusicLibrary` gains no new field, and the FFI's forwarding closure in
+/// `start_artist_portrait_backfill` (`../artist_portrait.rs`) needs a handle
+/// that outlives any one call.
+pub(super) fn cover_backfill() -> &'static reprise_core::artist_portrait::CoverBackfill {
+    static COVER_BACKFILL: OnceLock<reprise_core::artist_portrait::CoverBackfill> = OnceLock::new();
+    COVER_BACKFILL.get_or_init(reprise_core::artist_portrait::CoverBackfill::new)
+}
+
+/// `cargo test` runs every test of the crate in one process, and this
+/// module's state is a process-global `static`; every test touching this
+/// module (and `artist_portrait_tests.rs`, which shares the same statics)
+/// calls this first so one test's state cannot leak into the next.
 #[cfg(test)]
 pub(crate) fn reset_album_cover_state_for_tests() {
     *attempted().lock().unwrap_or_else(PoisonError::into_inner) = HashMap::new();
+    cover_backfill().cancel();
 }
 
 #[uniffi::export]

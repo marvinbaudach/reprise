@@ -2,10 +2,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use reprise_core::artist_portrait::{
-    load_cached_from, verdict, PortraitBackfillListener as CorePortraitBackfillListener,
-    PortraitBackfillProgress, PortraitBackfillState, PortraitOutcome,
+    load_cached_from, verdict, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
+    PortraitBackfillListener as CorePortraitBackfillListener, PortraitBackfillProgress,
+    PortraitBackfillState, PortraitOutcome,
 };
 use reprise_core::cover::{self, CoverSource};
+use reprise_core::cover_download::{self, CoverFetchOutcome};
+use reprise_core::db::Db;
 use reprise_core::library::source::UnixLibrarySource;
 
 use crate::{AndroidArtworkSize, MusicLibrary};
@@ -139,6 +142,12 @@ pub struct ArtistPortraitProgressUpdate {
     pub done: u32,
     pub failed: u32,
     pub total: u32,
+    /// The cover pass that rides this same handle after the portraits
+    /// (B3): `0`/`0` before it has started, whether because the portrait
+    /// run is not `Complete` yet or because no tree was configured to fetch
+    /// covers through.
+    pub covers_done: u32,
+    pub covers_total: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -162,13 +171,25 @@ impl From<PortraitBackfillState> for ArtistPortraitProgressState {
 
 impl From<PortraitBackfillProgress> for ArtistPortraitProgressUpdate {
     fn from(progress: PortraitBackfillProgress) -> Self {
-        Self {
-            run_id: progress.run_id,
-            state: ArtistPortraitProgressState::from(progress.state),
-            done: progress.done,
-            failed: progress.failed,
-            total: progress.total,
-        }
+        merged_progress_update(progress, CoverBackfillProgress::default())
+    }
+}
+
+/// Combines a portrait-run snapshot with the cover pass riding beside it
+/// into the one update Kotlin's listener sees (decision 9: "same handle,
+/// same progress").
+fn merged_progress_update(
+    portrait: PortraitBackfillProgress,
+    covers: CoverBackfillProgress,
+) -> ArtistPortraitProgressUpdate {
+    ArtistPortraitProgressUpdate {
+        run_id: portrait.run_id,
+        state: ArtistPortraitProgressState::from(portrait.state),
+        done: portrait.done,
+        failed: portrait.failed,
+        total: portrait.total,
+        covers_done: covers.done,
+        covers_total: covers.total,
     }
 }
 
@@ -180,7 +201,10 @@ pub trait ArtistPortraitProgressListener: Send + Sync {
 #[uniffi::export]
 impl MusicLibrary {
     pub fn artist_portrait_backfill_progress(&self) -> ArtistPortraitProgressUpdate {
-        self.portrait_backfill.progress().into()
+        merged_progress_update(
+            self.portrait_backfill.progress(),
+            album_cover::cover_backfill().progress(),
+        )
     }
 
     pub fn start_artist_portrait_backfill(
@@ -201,8 +225,79 @@ impl MusicLibrary {
             return;
         }
 
+        let listener: Arc<dyn ArtistPortraitProgressListener> = Arc::from(listener);
+        let database_path = self.database_path.clone();
+        let cache_root = self.cache_root.clone();
+        // Only the FFI knows how to open a track's bytes (SAF); a
+        // MusicLibrary with no configured tree yet simply never chains a
+        // cover pass — the portrait run still proceeds on its own.
+        let tree_source = self.configured_tree().ok().map(|(_, source)| source);
+
+        let forward_listener = Arc::clone(&listener);
         let forward: Arc<CorePortraitBackfillListener> = Arc::new(move |progress| {
-            listener.on_progress(progress.into());
+            forward_listener.on_progress(progress.into());
+            let just_completed =
+                progress.state == PortraitBackfillState::Complete && progress.run_id != 0;
+            if !just_completed {
+                return;
+            }
+            let Some(source) = tree_source.clone() else {
+                return;
+            };
+
+            let fetch_cache_root = cache_root.clone();
+            let fetch_source = Arc::clone(&source);
+            let fetch: Arc<CoverBackfillFetch> =
+                Arc::new(move |album_artist, album, representative_uri| {
+                    let path = std::path::Path::new(representative_uri);
+                    let locally_resolved = cover::resolve_source_with_source(
+                        fetch_source.as_ref(),
+                        path,
+                        &fetch_cache_root,
+                    )
+                    .is_some();
+                    if locally_resolved {
+                        // Local art already resolves: settled without a
+                        // request (decision 9). The cover pass only counts
+                        // albums, it never reads this path back — a
+                        // placeholder marks "no fetch needed" rather than
+                        // claiming a made-up cache path is real.
+                        return CoverFetchOutcome::Downloaded(fetch_cache_root.clone());
+                    }
+                    let mbid =
+                        cover::read_cover_tag_with_source(fetch_source.as_ref(), path).release_mbid;
+                    cover_download::fetch_and_cache_in(
+                        &fetch_cache_root,
+                        album_artist,
+                        album,
+                        mbid.as_deref(),
+                        &[],
+                    )
+                });
+
+            let cover_listener_target = Arc::clone(&listener);
+            let portrait_snapshot = progress;
+            let cover_listener: Arc<CoverBackfillListener> = Arc::new(move |covers| {
+                cover_listener_target
+                    .on_progress(merged_progress_update(portrait_snapshot, covers));
+            });
+
+            let consent_database = database_path.clone();
+            let consent_allowed: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
+                Db::open_ready(&consent_database).is_ok_and(|db| {
+                    reprise_core::online_sources::network_allowed_or_off(
+                        &db,
+                        &reprise_core::modules::ARTWORK_MODULE,
+                    )
+                })
+            });
+
+            album_cover::cover_backfill().start(
+                database_path.clone(),
+                fetch,
+                cover_listener,
+                consent_allowed,
+            );
         });
         self.portrait_backfill.start(
             self.database_path.clone(),
@@ -214,6 +309,7 @@ impl MusicLibrary {
 
     pub fn cancel_artist_portrait_backfill(&self) {
         self.portrait_backfill.cancel();
+        album_cover::cover_backfill().cancel();
     }
 }
 
