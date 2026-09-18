@@ -40,6 +40,28 @@ class NowPlayingPanelsTest {
     }
 
     @Test
+    fun the_first_queue_position_has_no_panel_before_it() {
+        val current = panelTrack(20)
+        val next = panelTrack(21)
+
+        val window = playPanelWindow(0, current.id, listOf(current, next))
+
+        assertEquals(0, window.firstIndex)
+        assertFalse(window.panels.any { panel -> panel.index == -1 })
+    }
+
+    @Test
+    fun the_last_queue_position_has_no_panel_after_it() {
+        val previous = panelTrack(20)
+        val current = panelTrack(21)
+
+        val window = playPanelWindow(4, current.id, listOf(previous, current))
+
+        assertEquals(4, window.lastIndex)
+        assertFalse(window.panels.any { panel -> panel.index == 5 })
+    }
+
+    @Test
     fun an_unknown_window_claims_no_neighbour_in_either_direction() {
         val window = placeholderPlayPanelWindow(panelTrack(20), currentIndex = 7)
 
@@ -60,6 +82,57 @@ class NowPlayingPanelsTest {
         assertEquals("Answered track", advanced.panels.last().track.title)
         assertEquals(3, advanced.firstIndex)
         assertEquals(5, advanced.lastIndex)
+    }
+
+    @Test
+    fun an_index_that_arrives_before_its_track_keeps_the_prefetched_centre() {
+        val previous = panelTrack(20)
+        val current = panelTrack(21)
+        val next = panelTrack(22)
+        val window = playPanelWindow(4, current.id, listOf(previous, current, next))
+
+        // The transport has moved to index 5 (track 22) but the sheet's answered
+        // track still reads 21: the row for 22 is being read off the main thread.
+        val advanced = window.withCurrentPanel(current, currentIndex = 5, currentTrackId = next.id)
+
+        assertEquals(listOf(4, 5), advanced.panels.map { panel -> panel.index })
+        assertEquals(listOf(21L, 22L), advanced.panels.map { panel -> panel.track.id })
+        assertEquals(3, advanced.firstIndex)
+        assertEquals(5, advanced.lastIndex)
+    }
+
+    @Test
+    fun a_stale_row_fills_only_a_centre_nothing_was_prefetched_for() {
+        val previous = panelTrack(20)
+        val current = panelTrack(21)
+        val window = playPanelWindow(4, current.id, listOf(previous, current))
+
+        // Index 5 is outside the known window and no neighbour was prefetched:
+        // the play view keeps its last answered row until the new one arrives.
+        val jumped = window.withCurrentPanel(current, currentIndex = 5, currentTrackId = 30L)
+        assertEquals(listOf(5), jumped.panels.map { panel -> panel.index })
+        assertEquals(listOf(21L), jumped.panels.map { panel -> panel.track.id })
+
+        val answered = jumped.withCurrentPanel(panelTrack(30), currentIndex = 5, currentTrackId = 30L)
+        assertEquals(listOf(5), answered.panels.map { panel -> panel.index })
+        assertEquals(listOf(30L), answered.panels.map { panel -> panel.track.id })
+    }
+
+    @Test
+    fun two_transport_moves_before_the_row_answers_keep_what_was_prefetched() {
+        val rows = (20L..25L).map(::panelTrack)
+        val window = playPanelWindow(4, 22L, rows)
+        assertEquals(listOf(3, 4, 5), window.panels.map { panel -> panel.index })
+
+        val once = window.withCurrentPanel(panelTrack(22), currentIndex = 5, currentTrackId = 23L)
+        assertEquals(listOf(4 to 22L, 5 to 23L), once.panels.map { it.index to it.track.id })
+
+        // The second move outruns the prefetch: the neighbour stays, the
+        // stale row holds the centre until the reload answers.
+        val twice = once.withCurrentPanel(panelTrack(22), currentIndex = 6, currentTrackId = 24L)
+        assertEquals(listOf(5 to 23L, 6 to 22L), twice.panels.map { it.index to it.track.id })
+        assertEquals(2, twice.firstIndex)
+        assertEquals(7, twice.lastIndex)
     }
 
     @Test
@@ -177,29 +250,139 @@ class NowPlayingPanelsTest {
         // engine has actually captured a real frame.
         assertFalse(
             "a live panel must not claim visual data before its engine captured a real frame",
-            panelHasVisualData(storedFrameCount = 0, isLivePanel = true, hasCapturedLiveScene = false),
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = false,
+                canMirrorLiveScene = false,
+            ),
         )
     }
 
     @Test
     fun a_live_panel_opens_its_bars_once_its_engine_captured_a_real_frame() {
         assertTrue(
-            panelHasVisualData(storedFrameCount = 0, isLivePanel = true, hasCapturedLiveScene = true),
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = true,
+                canMirrorLiveScene = false,
+            ),
         )
     }
 
     @Test
     fun a_stored_spectrogram_grants_visual_data_even_off_the_live_slot() {
         assertTrue(
-            panelHasVisualData(storedFrameCount = 5, isLivePanel = false, hasCapturedLiveScene = false),
+            panelHasVisualData(
+                storedFrameCount = 5,
+                hasCapturedLiveScene = false,
+                canMirrorLiveScene = false,
+            ),
         )
     }
 
     @Test
-    fun a_non_live_panel_never_has_visual_data_from_a_live_scene_alone() {
-        assertFalse(
-            panelHasVisualData(storedFrameCount = 0, isLivePanel = false, hasCapturedLiveScene = true),
+    fun a_captured_scene_counts_off_the_live_slot_too() {
+        // The outgoing panel keeps the bars it drew while live, and a neighbour
+        // that mirrored the live scene during the swipe keeps those -- in
+        // visualizer mode no panel falls back to its cover for want of data.
+        assertTrue(
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = true,
+                canMirrorLiveScene = false,
+            ),
         )
+    }
+
+    @Test
+    fun a_mirroring_neighbour_has_visual_data_before_its_own_spectrogram_loads() {
+        // Regression: the stored spectrogram loads async (`rememberSpectrogram`,
+        // cache miss posts back later); until it lands, `storedFrameCount == 0`
+        // and `hasCapturedLiveScene == false` for a neighbour that has never
+        // been live. It is mirroring the live panel's engine right now, so it
+        // must count as having visual data instead of flashing its cover up
+        // for the frames before the cache answers (measured ~80 ms on device).
+        assertTrue(
+            "a mirroring neighbour must not fall back to its cover while data loads",
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = false,
+                canMirrorLiveScene = true,
+            ),
+        )
+        val blend = nowPlayingVisualBlend(visualizerOpacity = 1f, dataAvailability = 1f)
+        assertEquals(0f, blend.coverOpacity, 0f)
+    }
+
+    @Test
+    fun a_resting_neighbour_eligible_to_mirror_already_counts_as_pictured() {
+        // Regression: `panelHasVisualData`'s third argument used to be fed
+        // `panelMirrorsLiveScene(..., near, ...)` directly, so `dataAvailability`
+        // rested at 0 for a spectrogram-less neighbour until `near` turned
+        // positive on the first drag pixel -- the 220ms crossfade then flashed
+        // the cover up at the start of every swipe. Eligibility to mirror must
+        // not depend on `near`: that gate belongs to `panelMirrorsLiveScene`
+        // alone, which decides only whether the mirror is actually drawn (a
+        // render-cost question), not whether data is available.
+        val eligible = panelCanMirrorLiveScene(
+            isLivePanel = false,
+            storedFrameCount = 0,
+            liveSceneAvailable = true,
+        )
+        assertTrue("eligibility to mirror does not depend on near", eligible)
+        assertFalse(
+            "at rest the mirror is not actually drawn",
+            panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0f, liveSceneAvailable = true),
+        )
+        // The discriminator: feeding the OLD wiring (`near == 0` through
+        // `panelMirrorsLiveScene`) into this same slot would report false --
+        // exactly the bug. The fix is that `hasVisualData` is fed `eligible`,
+        // not the near-gated draw decision.
+        assertTrue(
+            "yet the resting neighbour still counts as pictured",
+            panelHasVisualData(storedFrameCount = 0, hasCapturedLiveScene = false, canMirrorLiveScene = eligible),
+        )
+    }
+
+    @Test
+    fun a_live_panel_is_never_eligible_to_mirror_itself() {
+        assertFalse(
+            panelCanMirrorLiveScene(isLivePanel = true, storedFrameCount = 0, liveSceneAvailable = true),
+        )
+    }
+
+    @Test
+    fun a_stored_spectrogram_is_not_eligible_to_mirror_either() {
+        assertFalse(
+            panelCanMirrorLiveScene(isLivePanel = false, storedFrameCount = 3, liveSceneAvailable = true),
+        )
+    }
+
+    @Test
+    fun nothing_is_eligible_to_mirror_before_the_live_engine_exists() {
+        assertFalse(
+            panelCanMirrorLiveScene(isLivePanel = false, storedFrameCount = 0, liveSceneAvailable = false),
+        )
+    }
+
+    @Test
+    fun a_non_mirroring_panel_still_has_no_visual_data_with_nothing_captured() {
+        assertFalse(
+            panelHasVisualData(
+                storedFrameCount = 0,
+                hasCapturedLiveScene = false,
+                canMirrorLiveScene = false,
+            ),
+        )
+    }
+
+    @Test
+    fun a_visible_neighbour_mirrors_the_live_scene_and_a_resting_one_does_not() {
+        assertTrue(panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = true))
+        assertFalse("at rest the neighbour is off the screen", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0f, liveSceneAvailable = true))
+        assertFalse("a stored spectrogram is the panel's own scene", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 3, near = 0.4f, liveSceneAvailable = true))
+        assertFalse("the live panel is the source, not a mirror", panelMirrorsLiveScene(isLivePanel = true, storedFrameCount = 0, near = 1f, liveSceneAvailable = true))
+        assertFalse("nothing to mirror before the live engine exists", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = false))
     }
 
     @Test
@@ -208,7 +391,7 @@ class NowPlayingPanelsTest {
             "the live panel must keep polling until it has ever captured a scene",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 1f,
-                isLivePanel = true,
+                drawsLiveScene = true,
                 hasCapturedLiveScene = false,
             ),
         )
@@ -216,15 +399,15 @@ class NowPlayingPanelsTest {
             "cover mode must never pay for a scene it will not draw",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 0f,
-                isLivePanel = true,
+                drawsLiveScene = true,
                 hasCapturedLiveScene = false,
             ),
         )
         assertFalse(
-            "a non-live panel never polls for the live scene",
+            "a panel that neither owns nor mirrors the live scene never polls for it",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 1f,
-                isLivePanel = false,
+                drawsLiveScene = false,
                 hasCapturedLiveScene = false,
             ),
         )
@@ -232,7 +415,7 @@ class NowPlayingPanelsTest {
             "once a real frame landed, the live panel stops polling",
             panelAwaitsFirstLiveScene(
                 visualizerOpacity = 1f,
-                isLivePanel = true,
+                drawsLiveScene = true,
                 hasCapturedLiveScene = true,
             ),
         )

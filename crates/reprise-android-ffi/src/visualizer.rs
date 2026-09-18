@@ -1,15 +1,9 @@
 //! Allocation-light Android boundary for the shared song visualizer.
 //!
-//! A scene is flattened as little-endian `f32` bytes, one record per shape:
-//! `[kind, r, g, b, a, width, glow, point_count, geometry...]`.
-//! `kind` is `0` for a rectangle (`x, y, w, h`), `1` for a polyline
-//! (`x1, y1, ...`), and `2` for a radial glow (`cx, cy, radius`). The rectangle
-//! and radial-glow `point_count` fields are respectively `4` and `3`, matching
-//! the number of geometry scalars rather than a literal number of points.
-//!
-//! The shared scene format also carries closed-path and dash metadata. Bars do
-//! not use either, so this boundary deliberately omits them rather than adding
-//! fields the phone would copy on every rendered frame.
+//! The flat byte layout a scene is encoded into lives in [`scene_encoding`],
+//! whose module doc describes the record format the phone reads.
+
+mod scene_encoding;
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,12 +14,10 @@ use reprise_core::playback::{
     BassPressure, BassPressureDetector, CavaBarProcessor, CavaConfig, SpectrumFrame,
     SPECTRUM_BAND_COUNT,
 };
-use reprise_core::visuals::{spectrum_frame_from_bands, Fill, Geom, Scene, VisualEngine};
+use reprise_core::visuals::{spectrum_frame_from_bands, VisualEngine};
 
-const RECT_KIND: f32 = 0.0;
-const POLYLINE_KIND: f32 = 1.0;
-const RADIAL_GLOW_KIND: f32 = 2.0;
-const RECORD_PREFIX_LEN: usize = 8;
+pub(crate) use scene_encoding::encode_scene;
+
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
 const LIVE_PCM_BUFFER_SECONDS: usize = 2;
 // This is the single tuning knob for the stable visual delay behind decoded PCM.
@@ -205,7 +197,12 @@ impl LiveAudioState {
     }
 
     fn reset(&mut self) {
-        self.processor.reset();
+        // A stream boundary must not mix a different track's samples into
+        // the FFT window, but it deliberately keeps the smoother's bar shape
+        // (see `CavaBarProcessor::reset_stream`): the next analyzed frame
+        // then falls from that shape instead of dropping to zero for one
+        // frame while the swipe's new panel has not shown anything yet.
+        self.processor.reset_stream();
         self.pressure_detector.reset();
         self.mono_samples.clear();
         self.pcm_buffer.clear();
@@ -223,7 +220,27 @@ struct VisualState {
     stream_generation: u64,
     has_ingested: bool,
     has_analysis: bool,
+    has_adopted_shape: bool,
     has_live_audio: bool,
+    // Set by `reset_live_presentation` when it is called for a genuine
+    // decoded-stream boundary (`reset_audio_stream`, `note_track_changed`, or
+    // any state catching up to one of those through
+    // `reconcile_stream_generation`) — never for ordinary live-audio
+    // staleness (`expire_stale_live_audio`), which shares that same reset
+    // function but must keep its existing paused/idle fallback. Cleared the
+    // moment the new stream actually speaks — a live PCM block analyzed in
+    // `tick`, or a stored-analysis frame ingested via
+    // `ingest_bands`/`adopt_shape`. While set it counts as `has_audio` below,
+    // so the engine stays "playing" and its displayed bars simply hold
+    // instead of decaying into the idle/paused projection for the gap
+    // between the reset and the first new data — the alternative was a
+    // visible decay-then-pop. Bounded by `set_playing(false)`, which clears
+    // it: a real pause or stop must still fall back to the normal
+    // paused/idle projection rather than holding forever. Deliberately not
+    // bounded by a timer — a stall while playback is still intended keeps
+    // the last picture on screen, which reads better than decaying it away
+    // for a gap of unknown length.
+    awaiting_stream_after_reset: bool,
     last_live_audio_at: Option<Duration>,
     live_pressure: BassPressure,
     playing: bool,
@@ -253,6 +270,12 @@ enum PlaybackIntent {
 pub struct AndroidVisualEngine {
     state: Mutex<VisualState>,
     live_audio: Mutex<Option<LiveAudioState>>,
+    // A shape [`AndroidVisualEngine::adopt_shape`] could not seed into a live
+    // processor yet because none exists (the engine is fresh and no PCM has
+    // arrived). Applied the moment `live_processor_for_stream` creates one.
+    // Lock order: `live_audio`, then this, then `state` — the same "audio
+    // before display" order the rest of this module already keeps.
+    pending_shape_seed: Mutex<Option<[f32; SPECTRUM_BAND_COUNT]>>,
     stream_generation: AtomicU64,
     dropped_audio_frames: AtomicU64,
     clock: Arc<dyn MonotonicClock>,
@@ -286,8 +309,17 @@ impl AndroidVisualEngine {
             state.last_visual_tick_at = now;
         }
         state.playing = playing;
+        if !playing {
+            // A real pause or stop bounds the post-reset hold: nothing further
+            // is coming, so the normal paused/idle projection must take over
+            // instead of holding the pre-reset picture forever.
+            state.awaiting_stream_after_reset = false;
+        }
         expire_stale_live_audio(&mut state, now);
-        let has_audio = state.has_analysis || state.has_live_audio;
+        let has_audio = state.has_analysis
+            || state.has_adopted_shape
+            || state.has_live_audio
+            || state.awaiting_stream_after_reset;
         state.set_engine_playing(playing && has_audio, now);
     }
 
@@ -321,6 +353,8 @@ impl AndroidVisualEngine {
             let stream_generation = self.current_stream_generation();
             reset_live_processor(&mut live_audio, stream_generation);
         }
+        // Kotlin calls this before adopting the shape for the same live-slot change.
+        *self.lock_pending_shape_seed() = None;
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         state.engine.note_track_changed();
@@ -329,7 +363,7 @@ impl AndroidVisualEngine {
         state.last_visual_tick_at = now;
         state.has_ingested = false;
         state.has_analysis = false;
-        reset_live_presentation(&mut state, stream_generation, now);
+        reset_live_presentation(&mut state, stream_generation, now, true);
     }
 
     /// Installs one already-smoothed spectrogram frame.
@@ -352,6 +386,62 @@ impl AndroidVisualEngine {
         state.engine.ingest(&frame);
         state.has_ingested = true;
         state.has_analysis = has_analysis;
+        if has_analysis {
+            state.awaiting_stream_after_reset = false;
+        }
+    }
+
+    /// The engine's currently displayed bar values — what is actually on
+    /// screen, decayed and idle-blended where applicable, not the raw
+    /// last-ingested bands (see [`VisualEngine::current_bands`]).
+    ///
+    /// A panel taking over the live slot during a swipe reads this off the
+    /// engine it replaces and hands it to [`Self::adopt_shape`] on its own,
+    /// freshly created engine, so the new engine's first frames continue from
+    /// the shape the viewer actually saw instead of climbing from zero or
+    /// popping in energy the screen had already decayed away.
+    pub fn current_bands(&self) -> Vec<f32> {
+        self.lock().engine.current_bands().to_vec()
+    }
+
+    /// Seeds a freshly created engine with another engine's bar shape.
+    ///
+    /// Installs the shape into the portable engine immediately — as an
+    /// ingested, track-loaded frame, playing according to this engine's own
+    /// `playing` flag, but deliberately not marked as live audio — so
+    /// [`Self::scene`] draws it at once instead of the empty pre-ingest
+    /// scene. It also seeds the live CAVA processor's bar-shape memory, so
+    /// the first frames analyzed from real PCM fall from this shape rather
+    /// than climbing from zero; the seed is applied immediately if a live
+    /// processor already exists, or held until the first PCM block creates
+    /// one otherwise (this engine has no live audio yet, so there is
+    /// normally nothing to seed immediately). Empty input is a no-op.
+    #[allow(clippy::needless_pass_by_value)] // UniFFI cannot export borrowed slices.
+    pub fn adopt_shape(&self, bands: Vec<f32>) {
+        if bands.is_empty() {
+            return;
+        }
+        let frame = spectrum_frame_from_bands(&bands);
+        let seed = *frame.bands();
+
+        {
+            let mut live_audio = self.lock_live_audio();
+            if let Some(live_audio) = live_audio.as_mut() {
+                live_audio.processor.seed_shape(&seed);
+            } else {
+                *self.lock_pending_shape_seed() = Some(seed);
+            }
+        }
+
+        let mut state = self.lock();
+        let now = self.clock.now();
+        state.engine.set_has_track(true);
+        let playing = state.playing;
+        state.set_engine_playing(playing, now);
+        state.engine.ingest(&frame);
+        state.has_ingested = true;
+        state.has_adopted_shape = true;
+        state.awaiting_stream_after_reset = false;
     }
 
     /// Downmixes interleaved little-endian PCM16 into the live-audio ring buffer.
@@ -383,9 +473,15 @@ impl AndroidVisualEngine {
             self.count_dropped_audio_frame();
             return false;
         };
-        let Some(live_audio) =
-            live_processor_for_stream(&mut live_audio_slot, stream_generation, sample_rate_hz)
-        else {
+        let Some(live_audio) = ({
+            let mut pending_shape_seed = self.lock_pending_shape_seed();
+            live_processor_for_stream(
+                &mut live_audio_slot,
+                stream_generation,
+                sample_rate_hz,
+                &mut pending_shape_seed,
+            )
+        }) else {
             return false;
         };
         live_audio.buffer_pcm_i16(&bytes[..byte_count], frame_bytes, channel_count);
@@ -410,9 +506,10 @@ impl AndroidVisualEngine {
             let stream_generation = self.current_stream_generation();
             reset_live_processor(&mut live_audio, stream_generation);
         }
+        *self.lock_pending_shape_seed() = None;
         if let Some(mut state) = self.try_lock() {
             let stream_generation = self.current_stream_generation();
-            reset_live_presentation(&mut state, stream_generation, self.clock.now());
+            reset_live_presentation(&mut state, stream_generation, self.clock.now(), true);
         }
     }
 
@@ -422,10 +519,12 @@ impl AndroidVisualEngine {
         // before display. Taking both before the generation changes keeps a
         // later reconciliation from mistaking this reset for a stream boundary.
         let mut live_audio = self.lock_live_audio();
+        *self.lock_pending_shape_seed() = None;
         let mut state = self.lock();
         let stream_generation = self.advance_stream_generation();
         reset_live_processor(&mut live_audio, stream_generation);
         state.stream_generation = stream_generation;
+        state.has_adopted_shape = false;
         state.last_live_audio_at = state.has_live_audio.then(|| self.clock.now());
         state.live_pressure = silent_pressure();
     }
@@ -486,6 +585,8 @@ impl AndroidVisualEngine {
             state.set_engine_playing(playing, now);
             state.engine.ingest(&frame);
             state.has_ingested = true;
+            state.has_adopted_shape = false;
+            state.awaiting_stream_after_reset = false;
             state.has_live_audio = true;
             state.last_live_audio_at = Some(now);
             state.live_pressure = pressure;
@@ -500,34 +601,66 @@ impl AndroidVisualEngine {
     /// Returns the scene in the flat format documented by this module.
     pub fn scene(&self, width: f32, height: f32) -> Vec<u8> {
         let state = self.lock();
-        if !state.has_ingested
-            || !width.is_finite()
-            || !height.is_finite()
-            || width <= 0.0
-            || height <= 0.0
-        {
+        if !scene_is_drawable(&state, width, height) {
             return Vec::new();
         }
         encode_scene(&state.engine.scene(width, height))
     }
+
+    /// The same scene as [`Self::scene`], painted in the given accent instead
+    /// of the engine's own. Empty under exactly the same conditions.
+    pub fn scene_tinted(&self, width: f32, height: f32, red: f32, green: f32, blue: f32) -> Vec<u8> {
+        let state = self.lock();
+        if !scene_is_drawable(&state, width, height) {
+            return Vec::new();
+        }
+        let accent = (finite_unit(red), finite_unit(green), finite_unit(blue));
+        encode_scene(&state.engine.scene_with_accent(width, height, accent))
+    }
+}
+
+fn scene_is_drawable(state: &VisualState, width: f32, height: f32) -> bool {
+    state.has_ingested && width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0
 }
 
 fn silent_pressure() -> BassPressure {
     BassPressureDetector::new(1).observe(&[])
 }
 
-fn reset_live_presentation(state: &mut VisualState, stream_generation: u64, now: Duration) {
+/// Resets CAVA/bass-detector bookkeeping shared by two different callers: a
+/// genuine decoded-stream boundary (`reset_audio_stream`, `note_track_changed`,
+/// or any state catching up to one of those through
+/// [`reconcile_stream_generation`] — `reset_audio_history` deliberately does
+/// not go through here at all, so a later reconciliation cannot mistake its
+/// own generation bump for one) and ordinary live-audio staleness
+/// (`expire_stale_live_audio`), which bumps nothing and calls this with the
+/// same generation. Only the former holds the display
+/// (see `awaiting_stream_after_reset`'s doc): staleness during otherwise
+/// uninterrupted live playback keeps its existing paused/idle fallback
+/// instead, exactly as before this fix — a stall that never speaks again
+/// must not freeze the screen forever just because live audio happened to go
+/// quiet for one measurement.
+fn reset_live_presentation(
+    state: &mut VisualState,
+    stream_generation: u64,
+    now: Duration,
+    holds_display: bool,
+) {
     state.stream_generation = stream_generation;
+    state.has_adopted_shape = false;
     state.has_live_audio = false;
     state.last_live_audio_at = None;
     state.live_pressure = silent_pressure();
     state.engine.set_retain_paused_live_shape(false);
-    state.set_engine_playing(state.playing && state.has_analysis, now);
+    state.awaiting_stream_after_reset = holds_display;
+    let has_audio =
+        state.has_analysis || state.has_adopted_shape || state.awaiting_stream_after_reset;
+    state.set_engine_playing(state.playing && has_audio, now);
 }
 
 fn reconcile_stream_generation(state: &mut VisualState, stream_generation: u64, now: Duration) {
     if state.stream_generation != stream_generation {
-        reset_live_presentation(state, stream_generation, now);
+        reset_live_presentation(state, stream_generation, now, true);
     }
 }
 
@@ -538,16 +671,22 @@ fn reset_live_processor(live_audio: &mut Option<LiveAudioState>, stream_generati
     }
 }
 
-fn live_processor_for_stream(
-    live_audio: &mut Option<LiveAudioState>,
+fn live_processor_for_stream<'a>(
+    live_audio: &'a mut Option<LiveAudioState>,
     stream_generation: u64,
     sample_rate_hz: u32,
-) -> Option<&mut LiveAudioState> {
+    pending_shape_seed: &mut Option<[f32; SPECTRUM_BAND_COUNT]>,
+) -> Option<&'a mut LiveAudioState> {
     let replace = live_audio
         .as_ref()
         .is_none_or(|state| state.sample_rate_hz != sample_rate_hz);
     if replace {
         *live_audio = LiveAudioState::new(stream_generation, sample_rate_hz);
+        if let Some(seed) = pending_shape_seed.take() {
+            if let Some(live_audio) = live_audio.as_mut() {
+                live_audio.processor.seed_shape(&seed);
+            }
+        }
     } else if live_audio
         .as_ref()
         .is_some_and(|state| state.stream_generation != stream_generation)
@@ -559,7 +698,7 @@ fn live_processor_for_stream(
 
 fn expire_stale_live_audio(state: &mut VisualState, now: Duration) {
     if state.has_live_audio && !live_audio_is_current(state, now) {
-        reset_live_presentation(state, state.stream_generation, now);
+        reset_live_presentation(state, state.stream_generation, now, false);
     }
 }
 
@@ -587,7 +726,9 @@ impl AndroidVisualEngine {
                 stream_generation: 0,
                 has_ingested: false,
                 has_analysis: false,
+                has_adopted_shape: false,
                 has_live_audio: false,
+                awaiting_stream_after_reset: false,
                 last_live_audio_at: None,
                 live_pressure: silent_pressure(),
                 playing: false,
@@ -595,6 +736,7 @@ impl AndroidVisualEngine {
                 last_visual_tick_at: now,
             }),
             live_audio: Mutex::new(None),
+            pending_shape_seed: Mutex::new(None),
             stream_generation: AtomicU64::new(0),
             dropped_audio_frames: AtomicU64::new(0),
             clock,
@@ -620,6 +762,12 @@ impl AndroidVisualEngine {
 
     fn lock_live_audio(&self) -> MutexGuard<'_, Option<LiveAudioState>> {
         self.live_audio
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn lock_pending_shape_seed(&self) -> MutexGuard<'_, Option<[f32; SPECTRUM_BAND_COUNT]>> {
+        self.pending_shape_seed
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
@@ -677,65 +825,6 @@ fn finite_unit(value: f32) -> f32 {
     } else {
         0.0
     }
-}
-
-pub(crate) fn encode_scene(scene: &Scene) -> Vec<u8> {
-    let geometry_len = scene
-        .shapes
-        .iter()
-        .map(|shape| match &shape.geom {
-            Geom::Rect { .. } => 4,
-            Geom::Polyline { points, .. } => points.len() * 2,
-            Geom::RadialGlow { .. } => 3,
-        })
-        .sum::<usize>();
-    let scalar_count = scene.shapes.len() * RECORD_PREFIX_LEN + geometry_len;
-    let mut buffer = Vec::with_capacity(scalar_count * size_of::<f32>());
-
-    for shape in &scene.shapes {
-        let Fill::Solid(color) = &shape.fill;
-        let (kind, point_count) = match &shape.geom {
-            Geom::Rect { .. } => (RECT_KIND, 4),
-            Geom::Polyline { points, .. } => (POLYLINE_KIND, points.len()),
-            Geom::RadialGlow { .. } => (RADIAL_GLOW_KIND, 3),
-        };
-        for value in [
-            kind,
-            color.r,
-            color.g,
-            color.b,
-            color.a,
-            shape.width,
-            shape.glow,
-            point_count as f32,
-        ] {
-            push_float_bytes(&mut buffer, value);
-        }
-        match &shape.geom {
-            Geom::Rect { x, y, w, h } => {
-                for value in [*x, *y, *w, *h] {
-                    push_float_bytes(&mut buffer, value);
-                }
-            }
-            Geom::Polyline { points, .. } => {
-                for (x, y) in points {
-                    push_float_bytes(&mut buffer, *x);
-                    push_float_bytes(&mut buffer, *y);
-                }
-            }
-            Geom::RadialGlow { cx, cy, r } => {
-                for value in [*cx, *cy, *r] {
-                    push_float_bytes(&mut buffer, value);
-                }
-            }
-        }
-    }
-
-    buffer
-}
-
-fn push_float_bytes(buffer: &mut Vec<u8>, value: f32) {
-    buffer.extend_from_slice(&value.to_le_bytes());
 }
 
 #[cfg(test)]

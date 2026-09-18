@@ -153,6 +153,18 @@ impl Smoother {
         self.memory.fill(0.0);
     }
 
+    /// Seeds `previous`/`peaks` from another shape, leaving `fall`, `memory`,
+    /// and the autosensitivity gain untouched. Shorter input than `bar_count`
+    /// seeds only its own bars; longer input is truncated by `zip`.
+    pub(super) fn seed_shape(&mut self, bars: &[f32]) {
+        for (previous, bar) in self.previous.iter_mut().zip(bars.iter()) {
+            *previous = (if bar.is_finite() { *bar } else { 0.0 }).clamp(0.0, 1.0);
+        }
+        for (peak, bar) in self.peaks.iter_mut().zip(bars.iter()) {
+            *peak = (if bar.is_finite() { *bar } else { 0.0 }).clamp(0.0, 1.0);
+        }
+    }
+
     fn update_framerate(&mut self, new_samples: usize, sample_rate_hz: u32) {
         if new_samples == 0 {
             self.frame_skip = self.frame_skip.saturating_add(1);

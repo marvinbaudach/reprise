@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -182,7 +183,12 @@ class NowPlayingGesturesTest {
         val track = mutableStateOf(gestureTrack())
         val currentIndex = mutableIntStateOf(1)
         compose.setContent {
-            val window = rememberPlayPanelWindow(track.value, currentIndex.intValue, controls)
+            val window = rememberPlayPanelWindow(
+                track.value,
+                currentIndex.intValue,
+                currentTrackId = track.value.id,
+                controls,
+            )
             Text(window.panels.joinToString(",") { panel -> panel.track.id.toString() })
         }
         compose.waitForIdle()
@@ -195,6 +201,73 @@ class NowPlayingGesturesTest {
         compose.waitForIdle()
 
         compose.onNodeWithText("830,831").assertIsDisplayed()
+    }
+
+    @Test
+    fun an_index_that_arrives_before_its_row_keeps_the_prefetched_neighbour_in_the_centre() {
+        val controls = DelayedPanelWindowControls()
+        val track = mutableStateOf(gestureTrack())
+        val currentTrackId = mutableLongStateOf(830)
+        val currentIndex = mutableIntStateOf(1)
+        compose.setContent {
+            val window = rememberPlayPanelWindow(
+                track.value,
+                currentIndex.intValue,
+                currentTrackId = currentTrackId.longValue,
+                controls,
+            )
+            Text(window.panels.joinToString(",") { panel -> "${panel.index}:${panel.track.id}" })
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("0:829,1:830,2:831").assertIsDisplayed()
+
+        // The transport moves first; the answered row is still being read.
+        compose.runOnUiThread {
+            currentTrackId.longValue = 831
+            currentIndex.intValue = 2
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
+
+        compose.runOnUiThread { track.value = gestureTrack(id = 831, title = "Next song") }
+        compose.waitForIdle()
+        compose.onNodeWithText("1:830,2:831").assertIsDisplayed()
+    }
+
+    @Test
+    fun a_committed_swipe_holds_the_next_card_while_the_transport_is_still_answering() {
+        // The transport answers a `next()` asynchronously and, on a loaded phone,
+        // later than the 480 ms settle. The settled card used to snap back to
+        // the old track the moment the slide ended without an answer, and slide
+        // forward again when the answer came: slide in, jump back, slide in.
+        val controls = GestureRecordingControls(
+            upcomingRows = (828L..833L).map { id -> gestureTrack(id, "Song $id") },
+        )
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            testNowPlayingSheet(
+                controls = controls,
+                track = gestureTrack(830, "Song 830"),
+                playback = gesturePlayback().copy(currentIndex = 2, currentTrackId = 830),
+            )
+        }
+        compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS * 4)
+        val restLeft = compose.onNodeWithText("Song 830").fetchSemanticsNode().boundsInRoot.left
+
+        compose.onNodeWithTag("now-playing-gestures").performTouchInput {
+            down(Offset(width * 0.75f, height * 0.3f))
+            moveTo(Offset(width * 0.35f, height * 0.3f))
+            up()
+        }
+        assertEquals(1, controls.nextCalls)
+        compose.mainClock.advanceTimeBy(NOW_PLAYING_SETTLE_MS + DISPLAY_FRAME_MS * 8)
+
+        val heldLeft = compose.onNodeWithText("Song 831").fetchSemanticsNode().boundsInRoot.left
+        assertEquals("the next card must stay where the settle put it", restLeft, heldLeft, 1f)
+
+        compose.mainClock.advanceTimeBy(NOW_PLAYING_ANSWER_GRACE_MS + DISPLAY_FRAME_MS * 8)
+        val returnedLeft = compose.onNodeWithText("Song 830").fetchSemanticsNode().boundsInRoot.left
+        assertEquals("a transport that never answers takes the old card back", restLeft, returnedLeft, 1f)
     }
 
     @Test
@@ -659,6 +732,8 @@ private class GestureRecordingControls(
         )
     }
 }
+
+private const val DISPLAY_FRAME_MS = 16L
 
 private fun gesturePlayback() = PlaybackUiState(
     ready = true,

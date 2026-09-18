@@ -208,35 +208,108 @@ internal fun nowPlayingVisualBlend(
 /**
  * Whether a panel has a real scene to draw as bars right now.
  *
- * A stored spectrogram always counts. The live panel additionally counts once
- * its own engine has actually captured a real, non-empty frame — never on the
- * mere fact of being live: a track the desktop never analysed starts with
- * nothing to scene, and this stays false until live audio produces that first
- * frame. Getting this wrong opened the bars slot the instant a panel became
- * live, before its engine had anything to show, which painted an empty (flat
- * or black) scene over the cover during the crossfade.
+ * A stored spectrogram always counts, and so does a scene the panel has
+ * actually captured — never the mere fact of being live: a track the desktop
+ * never analysed starts with nothing to scene, and this stays false until a
+ * real, non-empty frame has been drawn. Getting this wrong opened the bars
+ * slot the instant a panel became live, before its engine had anything to
+ * show, which painted an empty (flat or black) scene over the cover during
+ * the crossfade.
+ *
+ * The captured scene counts off the live slot too. The outgoing panel keeps
+ * the bars it drew while live until the new engine speaks, then mirrors that
+ * one on its way out; a neighbour that mirrored the live scene during the
+ * swipe keeps that picture. In visualizer mode no panel falls back to its
+ * cover for want of data, which is what used to flash the covers up mid-swipe.
+ *
+ * A panel that *could* mirror the live engine ([panelCanMirrorLiveScene])
+ * counts too, even at rest and even before its own stored spectrogram has
+ * finished loading and before [FrozenSceneBytes] has latched a frame of its
+ * own: whether it is on screen yet is a render-cost question
+ * ([panelMirrorsLiveScene]'s `near` gate), not a data-availability one. Gating
+ * this on `near` instead used to leave `dataAvailability` resting at 0 for a
+ * neighbour without its own spectrogram, so the first drag pixel that turned
+ * `near` positive flipped the target to 1 and the crossfade tween flashed the
+ * cover up for its own duration at the start of every swipe. This stays a
+ * pure rule change — the live panel itself never mirrors
+ * ([panelCanMirrorLiveScene] is false for it), so it keeps requiring a real
+ * captured frame, exactly as before.
  */
 internal fun panelHasVisualData(
     storedFrameCount: Int,
-    isLivePanel: Boolean,
     hasCapturedLiveScene: Boolean,
-): Boolean = storedFrameCount > 0 || (isLivePanel && hasCapturedLiveScene)
+    canMirrorLiveScene: Boolean,
+): Boolean = storedFrameCount > 0 || hasCapturedLiveScene || canMirrorLiveScene
 
 /**
- * Whether the live panel still has to poll for its first real scene.
+ * Whether a neighbour *could* draw the live panel's scene instead of its own,
+ * regardless of whether it is currently on screen.
+ *
+ * A neighbour without a stored spectrogram has no scene of its own — its
+ * engine hears nothing — so once the swipe carries it onto the screen it
+ * mirrors the live engine, tinted in its own accent. The panel that has just
+ * lost the live slot is such a neighbour too: it slides out with the bars of
+ * what is playing rather than a frozen picture of what was. A stored
+ * spectrogram is the panel's own picture and wins; the live panel is the
+ * source, not a mirror.
+ */
+internal fun panelCanMirrorLiveScene(
+    isLivePanel: Boolean,
+    storedFrameCount: Int,
+    liveSceneAvailable: Boolean,
+): Boolean = !isLivePanel && storedFrameCount == 0 && liveSceneAvailable
+
+/**
+ * Whether a neighbour is actually drawing the live panel's scene right now.
+ *
+ * Same eligibility as [panelCanMirrorLiveScene], plus `near > 0f`: off the
+ * screen nothing is mirrored, so a resting neighbour costs no render. This
+ * gate is a render-cost decision only — it must not gate [panelHasVisualData]
+ * too, or a panel eligible to mirror once dragged onscreen would flash its
+ * cover for the first frames of every swipe while `near` catches up.
+ */
+internal fun panelMirrorsLiveScene(
+    isLivePanel: Boolean,
+    storedFrameCount: Int,
+    near: Float,
+    liveSceneAvailable: Boolean,
+): Boolean = panelCanMirrorLiveScene(isLivePanel, storedFrameCount, liveSceneAvailable) && near > 0f
+
+/**
+ * Whether a newly created live engine should adopt the outgoing live engine's
+ * bar shape instead of starting from zero.
+ *
+ * Production gives each panel a new lease over one shared live engine (see
+ * [visualSceneFactoryForPanel]). The explicit `noteTrackChanged()` call resets
+ * that engine's CAVA history, which otherwise leaves a bare peak cap with no
+ * bars underneath for one frame; the seed carries the displayed shape across
+ * that reset. Only the panel taking over the live slot adopts anything — a
+ * non-live panel's engine never scenes live audio, and a panel that keeps the
+ * live slot across a recomposition has no `previous` to speak of (`created`
+ * did not change). In production `previous !== created` is always true
+ * because every `create()` returns a new lease; it only guards test doubles
+ * that return the same engine instance.
+ */
+internal fun shouldAdoptLiveShape(
+    live: Boolean,
+    previous: VisualSceneEngine?,
+    created: VisualSceneEngine,
+): Boolean = live && previous != null && previous !== created
+
+/**
+ * Whether a panel drawing the live scene still has to poll for its first one.
  *
  * `sceneBytes()` is the only place [FrozenSceneBytes] learns that real data
- * has landed, so the live panel must keep evaluating it even while
- * [panelHasVisualData] is still false — otherwise it could never leave that
- * state. Scoped to the live panel, and only while bars were actually asked
- * for, so a neighbour or a panel viewed in pure cover mode never pays for a
- * scene it will not draw.
+ * has landed, so a panel that owns or mirrors the live scene must keep
+ * evaluating it even while [panelHasVisualData] is still false — otherwise it
+ * could never leave that state. Only while bars were actually asked for, so a
+ * panel viewed in pure cover mode never pays for a scene it will not draw.
  */
 internal fun panelAwaitsFirstLiveScene(
     visualizerOpacity: Float,
-    isLivePanel: Boolean,
+    drawsLiveScene: Boolean,
     hasCapturedLiveScene: Boolean,
-): Boolean = visualizerOpacity > 0f && isLivePanel && !hasCapturedLiveScene
+): Boolean = visualizerOpacity > 0f && drawsLiveScene && !hasCapturedLiveScene
 
 internal fun shouldRequestHighVisualizerFrameRate(
     visualizerOpacity: Float,
@@ -299,6 +372,7 @@ internal fun NowPlayingScene(
             )
         }
         SideEffect { onCoverBounds(reportedCoverBounds) }
+        val liveScene = remember { LiveSceneHandle() }
         Box(Modifier.fillMaxSize().testTag("now-playing-scene")) {
             panels.forEach { panel ->
                 key(panel.track.id, panel.index) {
@@ -311,6 +385,7 @@ internal fun NowPlayingScene(
                         motion = motion,
                         visualizerOpacity = visualizerOpacity,
                         coverTop = coverTop,
+                        liveScene = liveScene,
                     )
                     SceneTitle(
                         track = panel.track,
@@ -387,6 +462,7 @@ private fun NowPlayingPanelLayer(
     motion: AmbientMotionController,
     visualizerOpacity: Float,
     coverTop: androidx.compose.ui.unit.Dp,
+    liveScene: LiveSceneHandle,
 ) {
     val artwork = rememberTrackArtworkVisual(
         panel.track.uri,
@@ -399,12 +475,20 @@ private fun NowPlayingPanelLayer(
     val state = remember(frames) { SceneState(frames) }
     val accent = artwork?.ambientColors?.first?.toComposeColor()
         ?: MaterialTheme.colorScheme.primary
+    val isLivePanel = panel.index == currentIndex
     val visualEngine = rememberVisualSceneEngine(
         panel.track.id,
         playback,
         accent,
-        live = panel.index == currentIndex,
+        live = isLivePanel,
+        liveScene = liveScene,
     )
+    if (isLivePanel) {
+        DisposableEffect(liveScene, visualEngine) {
+            liveScene.engine = visualEngine
+            onDispose { if (liveScene.engine === visualEngine) liveScene.engine = null }
+        }
+    }
     val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
     val drawRevision = DriveScene(frames, state, playback, motion, frameSink)
     val power = motion.sceneRenderPower()
@@ -413,8 +497,19 @@ private fun NowPlayingPanelLayer(
     val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
     val near = max(0f, 1f - min(1f, distance))
     val frozenScene = rememberFrozenSceneBytes(panel.track.id)
-    val isLivePanel = panel.index == currentIndex
-    val hasVisualData = panelHasVisualData(frames.frameCount, isLivePanel, frozenScene.hasCapturedScene)
+    val canMirrorLiveScene = panelCanMirrorLiveScene(
+        isLivePanel,
+        frames.frameCount,
+        liveSceneAvailable = liveScene.engine != null,
+    )
+    val mirroredEngine = liveScene.engine.takeIf {
+        panelMirrorsLiveScene(isLivePanel, frames.frameCount, near, liveSceneAvailable = it != null)
+    }
+    val hasVisualData = panelHasVisualData(
+        frames.frameCount,
+        frozenScene.hasCapturedScene,
+        canMirrorLiveScene = canMirrorLiveScene,
+    )
     val dataAvailability by animateFloatAsState(
         targetValue = if (hasVisualData) 1f else 0f,
         // Shares its timing with the visualizerOpacity toggle for a matching feel, not because it
@@ -489,10 +584,13 @@ private fun NowPlayingPanelLayer(
         }
         val awaitingFirstLiveScene = panelAwaitsFirstLiveScene(
             visualizerOpacity,
-            isLivePanel,
+            drawsLiveScene = isLivePanel || mirroredEngine != null,
             frozenScene.hasCapturedScene,
         )
-        if (visualEngine != null && (barsOpacity > 0f || awaitingFirstLiveScene)) {
+        // A resting neighbour sits off the screen: it draws no bars at all, so
+        // the frozen picture it keeps for the next swipe costs nothing per frame.
+        val onScreen = isLivePanel || near > 0f
+        if (visualEngine != null && onScreen && (barsOpacity > 0f || awaitingFirstLiveScene)) {
             Canvas(
                 Modifier
                     .size(COVER_SIZE_DP.dp)
@@ -500,10 +598,19 @@ private fun NowPlayingPanelLayer(
             ) {
                 observeSceneFrame(drawRevision)
                 val center = Offset(size.width / 2f, size.height / 2f)
+                val scene = when {
+                    mirroredEngine != null -> mirroredEngine.sceneBytesTinted(
+                        size.width,
+                        size.height,
+                        accent.red,
+                        accent.green,
+                        accent.blue,
+                    )
+                    isLivePanel || frames.frameCount > 0 -> visualEngine.sceneBytes(size.width, size.height)
+                    else -> ByteArray(0)
+                }
                 drawPlayedVisualizer(
-                    buffer = frozenScene.latestOrFrozen(
-                        visualEngine.sceneBytes(size.width, size.height),
-                    ),
+                    buffer = frozenScene.latestOrFrozen(scene),
                     center = center,
                     side = size.width,
                     radius = COVER_RADIUS_DP.dp.toPx(),
@@ -521,14 +628,41 @@ private fun rememberVisualSceneEngine(
     playback: PlaybackUiState,
     accent: Color,
     live: Boolean,
+    liveScene: LiveSceneHandle,
 ): VisualSceneEngine? {
     val factory = visualSceneFactoryForPanel(live, LocalVisualSceneEngineFactory.current)
+    // Read before the engine swap below: while the panel that is losing the
+    // live slot is still composing this same pass, `liveScene.engine` is
+    // still its outgoing engine — its DisposableEffect that would null this
+    // out has not run yet (see `shouldAdoptLiveShape`).
+    val previousLiveEngine = liveScene.engine
     val engine: VisualSceneEngine? = remember(factory) { factory.create() }
+    // Read alongside engine creation, not inside the adopt effect below: by
+    // the time effects run, the outgoing panel's own `DisposableEffect(engine)
+    // { onDispose { engine?.close() } }` may already have closed
+    // `previousLiveEngine`, and reading a closed native engine throws.
+    // This native read deliberately happens during composition, before that outgoing lease closes.
+    // It is idempotent, for the same reason `factory.create()` belongs in this `remember` block.
+    val adoptedBands = remember(factory) {
+        val created = engine
+        if (created != null && shouldAdoptLiveShape(live, previousLiveEngine, created)) {
+            previousLiveEngine!!.currentBands()
+        } else {
+            null
+        }
+    }
     DisposableEffect(engine) {
         onDispose { engine?.close() }
     }
     DisposableEffect(engine, trackId) {
         engine?.noteTrackChanged()
+        onDispose { }
+    }
+    // Declared after the `noteTrackChanged` effect above: that call clears
+    // `has_ingested` on the Rust side, which would otherwise wipe the shape
+    // this adopts right back out.
+    DisposableEffect(engine) {
+        adoptedBands?.let { engine?.adoptShape(it) }
         onDispose { }
     }
     SideEffect {
@@ -549,6 +683,18 @@ internal fun updateVisualSceneEngine(
 ) {
     engine.setPlaying(playback.visualizerActive)
     engine.setAccent(accent.red, accent.green, accent.blue)
+}
+
+/**
+ * The live panel's engine, published for the neighbours to mirror.
+ *
+ * Owned by the scene, written by whichever panel is live, read by a neighbour
+ * the swipe has carried onto the screen (see [panelMirrorsLiveScene]). It is
+ * only ever the current engine or null; a neighbour never keeps it past the
+ * frame it drew.
+ */
+internal class LiveSceneHandle {
+    var engine: VisualSceneEngine? by mutableStateOf(null)
 }
 
 @Composable

@@ -45,19 +45,37 @@ internal fun placeholderPlayPanelWindow(
     lastIndex = currentIndex,
 )
 
+/**
+ * Re-centres the window on [currentIndex] without waiting for the row reload.
+ *
+ * [currentTrackId] is the transport's answer and arrives together with the
+ * index; [track] is the row the sheet has read for it and lags by one
+ * database read. In that gap the two disagree, and the stale row must not be
+ * seated at the new index: the panel already sitting there is the prefetched
+ * neighbour for exactly this track, and replacing it disposed its subtree --
+ * engine, frozen scene, decoded cover -- so the old cover popped into the
+ * centre and the new track came back from scratch a moment later. Only when
+ * nothing was prefetched for the new index does the stale row fill the
+ * centre: the play view keeps its last answered row rather than going blank
+ * (`MainActivityPlayViewStabilityTest`), and the row arrives a read later.
+ */
 internal fun PlayPanelWindow.withCurrentPanel(
     track: LibraryTrack,
     currentIndex: Int,
+    currentTrackId: Long = track.id,
 ): PlayPanelWindow {
     val indexIsKnown = currentIndex in firstIndex..lastIndex
+    val neighbours = panels.filter { panel ->
+        panel.index != currentIndex && abs(panel.index - currentIndex) <= 1
+    }
+    val seated = panels.firstOrNull { panel -> panel.index == currentIndex }
+    val centre = when {
+        track.id == currentTrackId -> PlayPanel(currentIndex, track)
+        seated != null && seated.track.id == currentTrackId -> seated
+        else -> PlayPanel(currentIndex, track)
+    }
     return PlayPanelWindow(
-        panels = if (indexIsKnown) {
-            (panels.filter { panel ->
-                panel.index != currentIndex && abs(panel.index - currentIndex) <= 1
-            } + PlayPanel(currentIndex, track)).sortedBy(PlayPanel::index)
-        } else {
-            listOf(PlayPanel(currentIndex, track))
-        },
+        panels = if (indexIsKnown) (neighbours + centre).sortedBy(PlayPanel::index) else listOf(centre),
         firstIndex = if (indexIsKnown) firstIndex else currentIndex,
         lastIndex = if (indexIsKnown) lastIndex else currentIndex,
     )
@@ -80,23 +98,38 @@ internal fun playPanelWindow(
     )
 }
 
+/**
+ * The rendered panel window, re-centred as the transport moves.
+ *
+ * [currentTrackId] is the transport's track and moves with [currentIndex];
+ * [track] is the answered row and follows a read later. The rows are reloaded
+ * once per transport move, not again when the answered row catches up -- that
+ * second update only re-seats the centre through [withCurrentPanel].
+ */
 @Composable
 internal fun rememberPlayPanelWindow(
     track: LibraryTrack,
     currentIndex: Int,
+    currentTrackId: Long,
     controls: PlaybackControls,
 ): PlayPanelWindow {
     var generation by remember { mutableStateOf(0L) }
+    // Keyed on the controls so a new transport reloads once, without holding a reference to it
+    // inside composition state.
+    var loadedFor by remember(controls) { mutableStateOf<Pair<Long, Int>?>(null) }
     var window by remember {
         mutableStateOf(placeholderPlayPanelWindow(track, currentIndex))
     }
-    LaunchedEffect(track.id, currentIndex, controls) {
+    LaunchedEffect(currentTrackId, track.id, currentIndex, controls) {
+        window = window.withCurrentPanel(track, currentIndex, currentTrackId)
+        val request = currentTrackId to currentIndex
+        if (loadedFor == request) return@LaunchedEffect
+        loadedFor = request
         val requestGeneration = ++generation
-        window = window.withCurrentPanel(track, currentIndex)
         controls.loadUpcomingTracks(LibraryWindowRange(-2, 3)) { outcome ->
             if (generation != requestGeneration) return@loadUpcomingTracks
             outcome.getOrNull()?.rows?.let { rows ->
-                window = playPanelWindow(currentIndex, track.id, rows).takeIf {
+                window = playPanelWindow(currentIndex, currentTrackId, rows).takeIf {
                     it.panels.isNotEmpty()
                 } ?: window
             }

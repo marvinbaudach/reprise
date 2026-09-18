@@ -231,6 +231,19 @@ impl VisualEngine {
         self.accent = rgb;
     }
 
+    /// The bars actually on screen right now — `display_bands`, not the raw
+    /// last-ingested `bands_current`. Those two diverge the moment the engine
+    /// is not playing (AC-27's idle blend, or the paused-live projection):
+    /// reading the raw bands there would seed a fresh sibling engine with
+    /// energy the screen had already decayed away, reintroducing it as a
+    /// visible "pop" the instant the sibling adopts it. Lets a fresh sibling
+    /// engine (e.g. the panel that has just become live during a swipe)
+    /// adopt the shape the viewer actually saw instead of climbing from zero
+    /// or jumping from one it never saw.
+    pub fn current_bands(&self) -> &[f32; SPECTRUM_BAND_COUNT] {
+        &self.display_bands
+    }
+
     /// Clears the previous track's bar and peak-cap history.
     pub fn note_track_changed(&mut self) {
         self.bands_current = [0.0; SPECTRUM_BAND_COUNT];
@@ -351,24 +364,32 @@ impl VisualEngine {
     }
 
     pub fn accent2(&self) -> (f32, f32, f32) {
-        hue_shift(self.accent, FALLBACK_ACCENT2_HUE_SHIFT)
+        accent2_of(self.accent)
     }
 
-    fn make_ctx(&self, width: f32, height: f32) -> ModeCtx<'_> {
+    fn make_ctx(&self, width: f32, height: f32, accent: (f32, f32, f32)) -> ModeCtx<'_> {
         ModeCtx {
             peaks: &self.bands_peaks,
             bars: &self.display_bands,
             bass_impact: self.glow,
             bass_aura: self.pressure.aura,
-            accent: self.accent,
-            accent2: self.accent2(),
+            accent,
+            accent2: accent2_of(accent),
             width,
             height,
         }
     }
 
     pub fn scene(&self, width: f32, height: f32) -> Scene {
-        let ctx = self.make_ctx(width, height);
+        self.scene_with_accent(width, height, self.accent)
+    }
+
+    /// The same scene painted in another accent, without touching the engine's
+    /// own. A surface that mirrors one engine's motion into several panels --
+    /// the neighbours during a swipe -- reads it this way, each in its own
+    /// cover's colour, while the engine keeps the live panel's.
+    pub fn scene_with_accent(&self, width: f32, height: f32, accent: (f32, f32, f32)) -> Scene {
+        let ctx = self.make_ctx(width, height, accent);
         let level = self.display_bands.iter().sum::<f32>() / SPECTRUM_BAND_COUNT as f32;
         let mut shapes = vec![Shape {
             geom: Geom::RadialGlow {
@@ -400,9 +421,15 @@ pub(crate) fn lively_engine() -> VisualEngine {
     engine
 }
 
+/// The secondary accent every scene derives from its primary one, whether the
+/// engine's own or a tint asked for by a mirroring panel.
+fn accent2_of(accent: (f32, f32, f32)) -> (f32, f32, f32) {
+    hue_shift(accent, FALLBACK_ACCENT2_HUE_SHIFT)
+}
+
 #[cfg(test)]
 pub(crate) fn test_ctx(engine: &VisualEngine, width: f32, height: f32) -> ModeCtx<'_> {
-    engine.make_ctx(width, height)
+    engine.make_ctx(width, height, engine.accent)
 }
 
 #[cfg(test)]
@@ -578,6 +605,31 @@ mod tests {
         assert_eq!(engine.display_bands, live);
     }
 
+    #[test]
+    fn current_bands_reports_the_displayed_bars_not_the_raw_ones() {
+        // Regression: `current_bands()` used to return `bands_current` — the
+        // raw last-ingested frame — while the screen draws `display_bands`,
+        // which the AC-27 paused-live blend has already pulled away from it.
+        // A fresh sibling engine adopting `current_bands()` at that point
+        // reintroduced energy the viewer had already watched decay away, a
+        // visible "pop". `paused_live_engine` plus enough ticks is the same
+        // setup the AC-27 tests above use to produce that divergence.
+        let mut engine = paused_live_engine();
+        let raw = engine.bands_current;
+        for _ in 0..120 {
+            engine.tick();
+        }
+        assert_ne!(
+            engine.display_bands, raw,
+            "test setup did not actually diverge display_bands from bands_current"
+        );
+        assert_eq!(
+            engine.current_bands(),
+            &engine.display_bands,
+            "current_bands must report what is on screen, not the raw ingested bands"
+        );
+    }
+
     /// A stage light: the hit throws it to full, then it falls.
     #[test]
     fn ac_23_a_bass_hit_throws_the_glow_to_full_and_then_it_falls() {
@@ -746,6 +798,22 @@ mod tests {
         let want = (color::rgb_hue((0.8, 0.2, 0.2)) + 42.0) % 360.0;
         let delta = (ctx_hue - want).abs().min(360.0 - (ctx_hue - want).abs());
         assert!(delta < 3.0);
+    }
+
+    #[test]
+    fn a_tinted_scene_paints_the_given_accent_and_leaves_the_engine_s_own_alone() {
+        let mut engine = lively_engine();
+        engine.set_accent((0.8, 0.2, 0.2));
+        let own = engine.scene(548.0, 300.0);
+        let tinted = engine.scene_with_accent(548.0, 300.0, (0.1, 0.3, 0.9));
+
+        let Fill::Solid(own_glow) = own.shapes[0].fill;
+        let Fill::Solid(tinted_glow) = tinted.shapes[0].fill;
+        assert_eq!((own_glow.r, own_glow.g, own_glow.b), (0.8, 0.2, 0.2));
+        assert_eq!((tinted_glow.r, tinted_glow.g, tinted_glow.b), (0.1, 0.3, 0.9));
+        assert_eq!(own_glow.a, tinted_glow.a);
+        assert_eq!(own.shapes.len(), tinted.shapes.len());
+        assert_eq!(engine.accent, (0.8, 0.2, 0.2));
     }
 
     #[test]

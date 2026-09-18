@@ -736,5 +736,66 @@ fn stale_position_after_removal_is_reported_without_touching_the_new_occupant() 
     );
 }
 
+#[test]
+fn previous_in_queue_order_at_the_first_position_is_a_no_op() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
+    let (session, calls) = session_with_calls(directory.path());
+    session
+        .play_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            tracks.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+    let before = session.snapshot().unwrap();
+    assert_eq!(before.current_index, Some(0));
+    calls.lock().unwrap().clear();
+
+    session.previous_in_queue_order().unwrap();
+
+    let after = session.snapshot().unwrap();
+    assert_eq!(after.current_index, Some(0));
+    assert_eq!(after.current_track_id, before.current_track_id);
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "the first position must not ask the backend to start anything: {:?}",
+        calls.lock().unwrap(),
+    );
+}
+
+#[test]
+fn upcoming_tracks_at_the_first_position_starts_with_the_current_track() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            tracks.iter().map(|track| track.id).collect(),
+            tracks.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+    let current_track_id = session.snapshot().unwrap().current_track_id.unwrap();
+    assert_eq!(current_track_id, tracks[0].id);
+
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: -2,
+            limit: 3,
+        })
+        .unwrap();
+
+    // The negative offset asks for two rows before the current one, but
+    // there is nothing before position 0: the window clamps instead of
+    // shifting, so it starts with the current track and reaches only as far
+    // as the clamped span allows (here, one row past it).
+    assert_eq!(
+        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![tracks[0].id, tracks[1].id],
+        "the window must start with the current track, not a row before it",
+    );
+}
+
 #[path = "queue_persistence_boundary_tests.rs"]
 mod persistence_tests;
