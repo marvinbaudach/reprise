@@ -94,7 +94,11 @@ pub fn downloaded_dir() -> PathBuf {
     cover::cache_dir().join("downloaded")
 }
 
-pub(crate) fn downloaded_dir_in(cache_root: &Path) -> PathBuf {
+/// Like [`downloaded_dir`], but under a caller-supplied cache root. Exposed
+/// beyond this crate so a fake fetch (in a test, or a future platform) can
+/// place a cover exactly where [`fetch_and_cache_in`] and the resolver
+/// (`cover::resolve_source_with_source`) agree it lives.
+pub fn downloaded_dir_in(cache_root: &Path) -> PathBuf {
     cover::cache_dir_with_root(cache_root).join("downloaded")
 }
 

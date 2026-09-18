@@ -10,6 +10,8 @@ use reprise_core::library::source::UnixLibrarySource;
 
 use crate::{AndroidArtworkSize, MusicLibrary};
 
+mod album_cover;
+
 impl MusicLibrary {
     pub(crate) fn portrait_dir(&self) -> PathBuf {
         self.cache_root.join("artist-portraits")
