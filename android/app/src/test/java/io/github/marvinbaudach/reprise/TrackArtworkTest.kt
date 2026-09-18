@@ -321,6 +321,132 @@ class TrackArtworkTest {
             refused.message.orEmpty().contains(DESTROYED),
         )
     }
+
+    /** Lists never fetch (decision 9): a list request never sets `allowFetch`. */
+    @Test
+    fun aListRowNeverFetchesACover() {
+        val fetchCalls = AtomicInteger()
+        val answered = CountDownLatch(1)
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            resolveAlbumCoverFetched = { _, _ -> fetchCalls.incrementAndGet(); null },
+            decode = { _ -> null },
+            fallback = { _, _, _ -> Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888) },
+            onMainThread = { work -> work() },
+        )
+        val gate = ArtworkRequestGate()
+        val request = gate.begin("content://tracks/list-row", AndroidArtworkSize.LIST)
+
+        try {
+            artwork.load(request, gate) { answered.countDown() }
+            assertTrue(answered.await(WAIT_SECONDS, TimeUnit.SECONDS))
+        } finally {
+            artwork.shutdown()
+        }
+
+        assertEquals(0, fetchCalls.get())
+    }
+
+    @Test
+    fun theNowPlayingRungFetchesWhenLocalArtIsMissing() {
+        val fetchedCover = Bitmap.createBitmap(6, 6, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.rgb(10, 20, 30))
+        }
+        val answered = CountDownLatch(1)
+        var delivered: ArtworkVisual? = null
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            resolveAlbumCoverFetched = { _, _ -> "content://covers/fetched" },
+            decode = { path -> if (path == "content://covers/fetched") fetchedCover else null },
+            onMainThread = { work -> work() },
+        )
+        val gate = ArtworkRequestGate()
+        val request = gate.begin(
+            "content://tracks/now-playing-fetch",
+            AndroidArtworkSize.NOW_PLAYING,
+            allowFetch = true,
+        )
+
+        try {
+            artwork.loadVisual(request, gate) { visual ->
+                delivered = visual
+                answered.countDown()
+            }
+            assertTrue(answered.await(WAIT_SECONDS, TimeUnit.SECONDS))
+        } finally {
+            artwork.shutdown()
+        }
+
+        assertSame(fetchedCover, delivered?.image?.asAndroidBitmap())
+    }
+
+    @Test
+    fun theNowPlayingRungDoesNotFetchWhenLocalArtExists() {
+        val localCover = Bitmap.createBitmap(6, 6, Bitmap.Config.ARGB_8888)
+        val fetchCalls = AtomicInteger()
+        val answered = CountDownLatch(1)
+        var delivered: ArtworkVisual? = null
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> "content://covers/local" },
+            resolveAlbumCoverFetched = { _, _ -> fetchCalls.incrementAndGet(); null },
+            decode = { path -> if (path == "content://covers/local") localCover else null },
+            onMainThread = { work -> work() },
+        )
+        val gate = ArtworkRequestGate()
+        val request = gate.begin(
+            "content://tracks/now-playing-local",
+            AndroidArtworkSize.NOW_PLAYING,
+            allowFetch = true,
+        )
+
+        try {
+            artwork.loadVisual(request, gate) { visual ->
+                delivered = visual
+                answered.countDown()
+            }
+            assertTrue(answered.await(WAIT_SECONDS, TimeUnit.SECONDS))
+        } finally {
+            artwork.shutdown()
+        }
+
+        assertEquals(0, fetchCalls.get())
+        assertSame(localCover, delivered?.image?.asAndroidBitmap())
+    }
+
+    /**
+     * The risk named in the mother plan: `LibrarySession.artworkFor` memoises
+     * resolved paths, so a fetch that does not drop that memo would leave the
+     * placeholder on screen until the app restarts. Exercises the real
+     * `LibrarySession`, not just `TrackArtwork` — the memo this guards lives
+     * one layer up.
+     */
+    @Test
+    fun aFetchedCoverReplacesThePlaceholderWithoutARestart() {
+        var localArt: String? = null
+        var fetchedArt: String? = null
+        val session = LibrarySession(fakeLibrarySessionPort(
+            artworkFor = { _, _ -> localArt },
+            artworkFetched = { _, _ -> fetchedArt },
+        ))
+        val trackUri = "content://tracks/restart"
+
+        assertNull(session.artworkFor(trackUri, AndroidArtworkSize.NOW_PLAYING))
+
+        fetchedArt = "content://covers/fetched"
+        assertEquals(
+            "content://covers/fetched",
+            session.artworkFetched(trackUri, AndroidArtworkSize.NOW_PLAYING),
+        )
+
+        // As if the fetch that just landed also updated what local resolution
+        // finds — the only way `artworkFor` can see it without a restart is if
+        // `artworkFetched` dropped the earlier memoised miss.
+        localArt = "content://covers/fetched"
+        assertEquals(
+            "content://covers/fetched",
+            session.artworkFor(trackUri, AndroidArtworkSize.NOW_PLAYING),
+        )
+    }
 }
 
 private class QueuedDispatcher : CoroutineDispatcher() {
@@ -333,4 +459,43 @@ private class QueuedDispatcher : CoroutineDispatcher() {
     fun runAll() {
         while (work.isNotEmpty()) work.removeFirst().run()
     }
+}
+
+/**
+ * A [LibrarySessionPort] double answering nothing by default — every list
+ * and search call is an empty window. Shared with `AlbumCoverFetchTest`,
+ * which proves the same fetch path never runs from a list request.
+ */
+internal fun fakeLibrarySessionPort(
+    artworkFor: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
+    artworkFetched: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
+): LibrarySessionPort = object : LibrarySessionPort {
+    override fun rememberedTreeUri(): String? = null
+    override fun rememberTreeUri(treeUri: String) = Unit
+    override fun persistTreePermission(treeUri: String) = Unit
+    override fun isTreeReadable(treeUri: String): Boolean = false
+    override fun configureTree(treeUri: String) = Unit
+    override fun scan(report: (LibraryScreenState.Scanning) -> Unit) = Unit
+    override fun searchTracks(text: String, window: LibraryWindowRange) = LibraryWindow.empty<LibraryTrack>()
+    override fun searchAlbums(text: String, window: LibraryWindowRange) = LibraryWindow.empty<LibraryAlbum>()
+    override fun listArtists(window: LibraryWindowRange) = LibraryWindow.empty<LibraryArtist>()
+    override fun searchArtists(text: String, window: LibraryWindowRange) = LibraryWindow.empty<LibraryArtist>()
+    override fun listArtistAlbums(artist: String, window: LibraryWindowRange) =
+        LibraryWindow.empty<LibraryAlbum>()
+    override fun listArtistUntaggedTracks(artist: String, window: LibraryWindowRange) =
+        LibraryWindow.empty<LibraryTrack>()
+    override fun listArtistTracks(artist: String, window: LibraryWindowRange) =
+        LibraryWindow.empty<LibraryTrack>()
+    override fun listAlbumTracks(album: String, albumArtist: String, window: LibraryWindowRange) =
+        LibraryWindow.empty<LibraryTrack>()
+    override fun albumTrackIds(album: String, albumArtist: String): List<Long> = emptyList()
+    override fun trackById(trackId: Long): LibraryTrack? = null
+    override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? =
+        artworkFor(trackUri, size)
+    override fun artworkFetched(trackUri: String, size: AndroidArtworkSize): String? =
+        artworkFetched(trackUri, size)
+    override fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? = null
+    override fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? = null
+    override fun artistsMissingPortraits(limit: UInt): List<String> = emptyList()
+    override fun setFavourite(trackId: Long, favourite: Boolean) = Unit
 }

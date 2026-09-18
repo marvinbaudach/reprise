@@ -167,6 +167,13 @@ private fun AlbumLoadingPage(album: LibraryAlbum, closeAlbum: () -> Unit) {
 
 @Composable
 private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
+    val artwork = rememberTrackArtworkVisual(
+        album.representativeUri,
+        AndroidArtworkSize.ARTIST_DETAIL,
+        album.title,
+        album.artist,
+        allowFetch = true,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -175,6 +182,12 @@ private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MaterialSymbol("arrow_back", "Back")
+        ArtworkCover(
+            artwork,
+            size = 40,
+            modifier = Modifier.padding(horizontal = 8.dp),
+            decorative = true,
+        )
         Text(album.title, style = MaterialTheme.typography.titleLarge)
     }
     Text(

@@ -64,6 +64,10 @@ internal interface LibrarySessionPort {
 
     fun artworkFor(trackUri: String, size: AndroidArtworkSize): String?
 
+    /** Fetches an album cover on demand (decision 9). No fake implements
+     * this unless it has to — a plain miss is the harmless default. */
+    fun artworkFetched(trackUri: String, size: AndroidArtworkSize): String? = null
+
     fun artistPortraitCached(name: String, size: AndroidArtworkSize): String?
 
     fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String?
@@ -249,6 +253,29 @@ internal class LibrarySession(
         synchronized(artworkPaths) {
             if (artworkGeneration == startedInGeneration) {
                 artworkPaths[key] = path
+            }
+        }
+        return path
+    }
+
+    /**
+     * Fetches an album cover on demand and, on success, drops this track's
+     * memo entries so the next [artworkFor] resolves it instead of the
+     * placeholder path it remembered before the fetch. The generation bump
+     * — the same one [clearArtworkPaths] uses — matters as much as the
+     * removal: a call to [artworkFor] already in flight for this track
+     * still writes back after this returns, and without it that write would
+     * restore the stale `null` it started with.
+     */
+    fun artworkFetched(
+        trackUri: String,
+        size: AndroidArtworkSize = AndroidArtworkSize.NOW_PLAYING,
+    ): String? {
+        val path = port.artworkFetched(trackUri, size)
+        if (path != null) {
+            synchronized(artworkPaths) {
+                artworkPaths.keys.removeAll { it.trackUri == trackUri }
+                artworkGeneration++
             }
         }
         return path
