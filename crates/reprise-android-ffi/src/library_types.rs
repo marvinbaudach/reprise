@@ -1,5 +1,6 @@
 //! Owned library records and errors that form the Android FFI contract.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -8,6 +9,9 @@ use reprise_core::db::Db;
 use reprise_core::library::scanner::ScanProgress;
 
 use crate::source::BridgedSource;
+use crate::track_analysis::{
+    AnalysisContext, AnalysisInFlight, TrackAnalysisBackfill, TrackPcmDecoder,
+};
 
 pub(crate) const DATABASE_FILE_NAME: &str = "reprise.db";
 
@@ -30,6 +34,18 @@ pub struct MusicLibrary {
     pub(crate) database_path: PathBuf,
     pub(crate) portrait_fetch: Arc<PortraitFetch>,
     pub(crate) portrait_backfill: PortraitBackfill,
+    /// The platform PCM decoder Kotlin registers once at startup. `Arc`
+    /// rather than `Box`: the backfill worker and a foreground request can
+    /// each hold their own decode call in flight without contending on this
+    /// registration lock for the call's whole duration.
+    pub(crate) pcm_decoder: Arc<Mutex<Option<Arc<dyn TrackPcmDecoder>>>>,
+    /// Tracks currently being decoded, keyed by id, so two callers for the
+    /// same track share one decode instead of racing two.
+    pub(crate) analysis_in_flight: Arc<AnalysisInFlight>,
+    /// Tracks whose decode failed in this process; skipped by the backfill
+    /// until the next process start (decision 7 of the mother plan).
+    pub(crate) analysis_failed: Arc<Mutex<HashSet<i64>>>,
+    pub(crate) analysis_backfill: TrackAnalysisBackfill,
 }
 
 impl MusicLibrary {
@@ -62,6 +78,19 @@ impl MusicLibrary {
         })?;
         let tree = tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
         Ok((tree.uri.clone(), Arc::clone(&tree.source)))
+    }
+
+    /// Borrows every handle a track-analysis decode needs, without borrowing
+    /// `self` for as long as a decode call: every field here is already
+    /// `Arc`-backed, so the context can be built fresh for each call.
+    pub(crate) fn analysis_context(&self) -> AnalysisContext<'_> {
+        AnalysisContext {
+            reader: &self.reader,
+            writer: &self.writer,
+            decoder: &self.pcm_decoder,
+            in_flight: &self.analysis_in_flight,
+            failed: &self.analysis_failed,
+        }
     }
 }
 
