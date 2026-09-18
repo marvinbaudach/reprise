@@ -64,6 +64,16 @@ internal fun prepareCoverFogBitmap(source: Bitmap?, fallbackArgb: Int): CoverFog
 internal fun prepareFogTexture(source: Bitmap?, fallbackArgb: Int): Bitmap =
     repeatedBoxBlur(cropSquare(source, fallbackArgb), FOG_BLUR_RADIUS_PX)
 
+/**
+ * Never re-keyed: a track change used to reset this to the cache hit or
+ * `null`, and the canvases draw nothing for a `null` fog, so every artwork
+ * without a cache hit faded to black for however long the blur on
+ * [Dispatchers.Default] took. Holding the previous value here instead means
+ * only the very first composition — before any fog has ever landed — reads
+ * `null`. The [LaunchedEffect] below is still keyed on the artwork, so a
+ * result computed for an artwork that has since changed again is simply never
+ * written: it is cancelled before reaching its `prepared.value =` line.
+ */
 @Composable
 internal fun rememberCoverFogBitmap(
     artwork: ImageBitmap?,
@@ -71,9 +81,7 @@ internal fun rememberCoverFogBitmap(
     cache: ArtworkCache = SharedArtworkCache,
 ): CoverFogBitmap? {
     val fallbackArgb = fallback.toArgb()
-    val prepared = remember(artwork, fallbackArgb, cache) {
-        mutableStateOf(artwork?.let(cache::fog))
-    }
+    val prepared = remember { mutableStateOf<CoverFogBitmap?>(null) }
     LaunchedEffect(artwork, fallbackArgb) {
         prepared.value = artwork?.let(cache::fog) ?: withContext(Dispatchers.Default) {
             prepareCoverFogBitmap(artwork?.asAndroidBitmap(), fallbackArgb).also { fog ->
