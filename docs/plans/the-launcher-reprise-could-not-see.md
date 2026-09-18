@@ -2,7 +2,7 @@
 slug: the-launcher-reprise-could-not-see
 worktree: /home/marvin/Projects/reprise-the-launcher-reprise-could-not-see
 branch: feature/the-launcher-reprise-could-not-see
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-18
 ---
