@@ -6,6 +6,12 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.w3c.dom.Element
 
+/**
+ * Pins the manifest text only. Whether the query actually resolves a
+ * controller package on a device is proven by the plan's device run
+ * (docs/plans/the-launcher-reprise-could-not-see.md, "Post-landing"), not by
+ * this test.
+ */
 class ManifestControllerVisibilityTest {
     @Test
     fun manifestDeclaresTheNotificationListenerQuery() {

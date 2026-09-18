@@ -2,7 +2,7 @@
 slug: the-launcher-reprise-could-not-see
 worktree: /home/marvin/Projects/reprise-the-launcher-reprise-could-not-see
 branch: feature/the-launcher-reprise-could-not-see
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-18
 ---
@@ -164,6 +164,14 @@ Owned by the session, not by Codex; needs the phone on USB, unlocked, under
    `Package bitpit.launcher doesn't exist`. Control arm: the media keys
    still work; System UI's notification controls still work.
 4. Record the run on #982 and close it.
+
+**Result (2026-09-18).** Built 0.1.145 + this branch from the worktree via
+`build-apk.sh`, same debug certificate as the installed app (SHA-256
+`e594235b…`). `adb install -r` + `am force-stop`. `dumpsys package queries`
+then lists `bitpit.launcher` and `com.android.launcher3` under Reprise's
+component queries. Niagara: pause tap → `PAUSED(2)`, play tap →
+`PLAYING(3)`, next tap → next track, previous tap → previous track. No
+`Package … doesn't exist` in logcat. Control arm: media keys still work.
 
 ## Parallelität
 

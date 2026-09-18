@@ -35,8 +35,9 @@
         media3 treats it as untrusted and hands it only read-only commands
         (metadata, playback state) — a launcher's play/pause/next/previous
         buttons then silently do nothing, even though the session, its
-        state and its advertised actions all look correct. Reprise's own
-        log names the exact failure: "Package … doesn't exist" (#982).
+        state and its advertised actions all look correct. media3 logs
+        the exact failure inside Reprise's process under the tag
+        `MediaSessionManager`: "Package … doesn't exist" (#982).
         The notification-listener intent makes every app that exposes a
         NotificationListenerService visible — exactly the set media3 trusts
         among third-party controllers.
