@@ -3,12 +3,12 @@ package io.github.marvinbaudach.reprise
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
 import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
 class TrackAnalysisLoaderTest {
@@ -21,7 +21,7 @@ class TrackAnalysisLoaderTest {
         var reads = 0
         val expected = listOf(SpectralBar(false, 0.75f, 0.1, 0.2, 0.3))
         val loader = TrackAnalysisLoader(
-            importAnalysis = {},
+            importAnalysis = { AndroidAnalysisOutcome.IMPORTED },
             readBars = { _, _ ->
                 reads += 1
                 readStarted.countDown()
@@ -57,7 +57,7 @@ class TrackAnalysisLoaderTest {
         var reads = 0
         val expected = AndroidTrackSpectrogram(2u, 10u, byteArrayOf(1, 2))
         val loader = TrackAnalysisLoader(
-            importAnalysis = {},
+            importAnalysis = { AndroidAnalysisOutcome.IMPORTED },
             readBars = { _, _ -> null },
             readSpectrogram = {
                 reads += 1
@@ -97,6 +97,7 @@ class TrackAnalysisLoaderTest {
             importAnalysis = {
                 importStarted.countDown()
                 releaseImport.await()
+                AndroidAnalysisOutcome.IMPORTED
             },
             readBars = { _, _ -> null },
             readSpectrogram = {
@@ -137,7 +138,7 @@ class TrackAnalysisLoaderTest {
         val mainHops = ArrayDeque<() -> Unit>()
         val readsFinished = CountDownLatch(2)
         val loader = TrackAnalysisLoader(
-            importAnalysis = {},
+            importAnalysis = { AndroidAnalysisOutcome.IMPORTED },
             readBars = { _, _ ->
                 readsFinished.countDown()
                 null
@@ -167,7 +168,7 @@ class TrackAnalysisLoaderTest {
         val evictedRead = CountDownLatch(1)
         val reads = mutableMapOf<Long, Int>()
         val loader = TrackAnalysisLoader(
-            importAnalysis = {},
+            importAnalysis = { AndroidAnalysisOutcome.IMPORTED },
             readBars = { _, _ -> null },
             readSpectrogram = { trackId ->
                 reads[trackId] = reads.getOrDefault(trackId, 0) + 1
@@ -197,7 +198,7 @@ class TrackAnalysisLoaderTest {
         val readsFinished = CountDownLatch(5)
         val reads = mutableMapOf<Long, Int>()
         val loader = TrackAnalysisLoader(
-            importAnalysis = {},
+            importAnalysis = { AndroidAnalysisOutcome.IMPORTED },
             readBars = { trackId, count ->
                 assertEquals(64, count)
                 reads[trackId] = reads.getOrDefault(trackId, 0) + 1
@@ -219,33 +220,32 @@ class TrackAnalysisLoaderTest {
         assertTrue((1L..5L).all { trackId -> loader.warmth(trackId).bars })
     }
 
+    /**
+     * Import and read run on independent lanes (a slow import must never
+     * queue a bar read behind it, see [aSlowImportDoesNotBlockABarRead]);
+     * this test pins the invariant that survives the split: neither runs on
+     * the caller's own thread, and a worker never hands its result straight
+     * to the delivery callback — it always crosses back through
+     * `onMainThread`.
+     */
     @Test
-    fun importAndBarReadShareOneOffMainThreadLaneInThatOrder() {
+    fun importAndBarReadNeverRunOnTheCallerOrDeliverDirectly() {
         val caller = Thread.currentThread()
-        val operations = mutableListOf<String>()
         val workerThreads = mutableListOf<Thread>()
         val mainHops = ArrayDeque<() -> Unit>()
         val imported = CountDownLatch(1)
-        val inLane = AtomicInteger()
-        val peakInLane = AtomicInteger()
+        val read = CountDownLatch(1)
         var delivered: List<SpectralBar>? = null
         val expected = listOf(SpectralBar(false, 0.75f, 0.1, 0.2, 0.3))
-        fun enterLane() {
-            peakInLane.accumulateAndGet(inLane.incrementAndGet()) { seen, now -> maxOf(seen, now) }
-        }
         val loader = TrackAnalysisLoader(
-            importAnalysis = { trackId ->
-                enterLane()
-                operations += "import:$trackId"
+            importAnalysis = {
                 workerThreads += Thread.currentThread()
                 imported.countDown()
-                inLane.decrementAndGet()
+                AndroidAnalysisOutcome.IMPORTED
             },
-            readBars = { trackId, count ->
-                enterLane()
-                operations += "read:$trackId:$count"
+            readBars = { _, _ ->
                 workerThreads += Thread.currentThread()
-                inLane.decrementAndGet()
+                read.countDown()
                 expected
             },
             onMainThread = mainHops::add,
@@ -255,14 +255,98 @@ class TrackAnalysisLoaderTest {
         loader.loadBars(41, 64) { delivered = it }
 
         assertTrue("the import never ran", imported.await(2, TimeUnit.SECONDS))
+        assertTrue("the bar read never ran", read.await(2, TimeUnit.SECONDS))
         loader.shutdownForTest()
-        assertEquals(listOf("import:41", "read:41:64"), operations)
         assertTrue(workerThreads.all { it !== caller })
-        assertEquals("the lane ran two operations at once", 1, peakInLane.get())
         assertFalse("a worker callback changed UI state directly", delivered === expected)
 
         while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
         assertEquals(expected, delivered)
+    }
+
+    @Test
+    fun aSlowImportDoesNotBlockABarRead() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val importStarted = CountDownLatch(1)
+        val releaseImport = CountDownLatch(1)
+        val barRead = CountDownLatch(1)
+        val order = mutableListOf<String>()
+        val loader = TrackAnalysisLoader(
+            importAnalysis = { trackId ->
+                importStarted.countDown()
+                releaseImport.await()
+                order += "import:$trackId"
+                AndroidAnalysisOutcome.COMPUTED
+            },
+            readBars = { trackId, _ ->
+                order += "read:$trackId"
+                barRead.countDown()
+                null
+            },
+            onMainThread = mainHops::add,
+        )
+
+        loader.prepare(41)
+        assertTrue("the import never started", importStarted.await(2, TimeUnit.SECONDS))
+
+        loader.loadBars(41, 64) {}
+
+        assertTrue("the bar read never ran while the import was still blocked", barRead.await(2, TimeUnit.SECONDS))
+        assertEquals(listOf("read:41"), order)
+
+        releaseImport.countDown()
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+        assertEquals(listOf("read:41", "import:41"), order)
+    }
+
+    @Test
+    fun aComputedAnalysisRefreshesTheBars() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        var latch = CountDownLatch(1)
+        var barsAvailable = false
+        var reads = 0
+        val loader = TrackAnalysisLoader(
+            importAnalysis = { AndroidAnalysisOutcome.COMPUTED },
+            readBars = { _, _ ->
+                reads += 1
+                if (barsAvailable) {
+                    listOf(SpectralBar(silence = false, level = 0.5f, red = 0.0, green = 0.0, blue = 0.0))
+                } else {
+                    null
+                }
+            },
+            onMainThread = { work ->
+                mainHops.add(work)
+                latch.countDown()
+            },
+        )
+
+        var firstDelivered: List<SpectralBar>? = listOf(
+            SpectralBar(silence = true, level = 0f, red = 0.0, green = 0.0, blue = 0.0),
+        )
+        loader.loadBars(41, 64) { firstDelivered = it }
+        assertTrue("the first bar answer was never queued", latch.await(2, TimeUnit.SECONDS))
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+        assertEquals(null, firstDelivered)
+
+        barsAvailable = true
+        latch = CountDownLatch(1)
+        loader.prepare(41)
+        assertTrue("the import answer was never queued", latch.await(2, TimeUnit.SECONDS))
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+        assertEquals(1L, loader.revision)
+
+        latch = CountDownLatch(1)
+        var secondDelivered: List<SpectralBar>? = null
+        loader.loadBars(41, 64) { secondDelivered = it }
+        assertTrue("the second bar answer was never queued", latch.await(2, TimeUnit.SECONDS))
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        assertEquals(1, secondDelivered?.size)
+        assertEquals(2, reads)
+
+        loader.shutdownForTest()
     }
 }
 

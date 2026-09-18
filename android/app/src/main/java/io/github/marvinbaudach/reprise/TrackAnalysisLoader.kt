@@ -20,6 +20,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
 import uniffi.reprise_android_ffi.AndroidTrackRenderBar
 import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
@@ -76,23 +77,34 @@ internal interface TrackAnalysisPort {
 }
 
 /**
- * One ordered background lane for the lazy sidecar import and finished-bar read.
+ * Two independent background lanes: one for the lazy sidecar import/compute,
+ * one for the finished-bar and spectrogram read. A computed analysis can
+ * take seconds (decision 2 of
+ * `docs/plans/the-phone-analyses-its-own-music.md`); sharing one lane with
+ * it would queue every bar read on the seek bar behind that whole decode.
  *
- * Import and read share a worker because the read must observe the database
- * write that precedes it. The revision makes an early no-data read retry after
- * the import completes without ever blocking Compose or duplicating Rust's
- * shaping and colour work here.
+ * The two lanes never need to observe each other's writes directly: the read
+ * lane caches a `null` answer the same as a real one, and [invalidate] (run
+ * on the main thread, from the import lane's own completion) clears exactly
+ * that null entry so the next read on the same track is a real miss rather
+ * than a stale negative cache hit. The revision this bumps is what lets a
+ * read that started before the import finished retry once, without either
+ * lane ever blocking on the other.
  */
 internal class TrackAnalysisLoader(
-    private val importAnalysis: (Long) -> Unit,
+    private val importAnalysis: (Long) -> AndroidAnalysisOutcome,
     private val readBars: (Long, Int) -> List<SpectralBar>?,
     private val readSpectrogram: (Long) -> AndroidTrackSpectrogram? = { null },
     private val onMainThread: (() -> Unit) -> Unit,
-    private val dispatcher: CoroutineDispatcher = analysisLane(),
+    private val importDispatcher: CoroutineDispatcher = analysisImportLane(),
+    private val readDispatcher: CoroutineDispatcher = analysisReadLane(),
 ) : TrackAnalysisPort {
     private val accepting = AtomicBoolean(true)
     private val job = SupervisorJob()
-    private val scope = CoroutineScope(job + dispatcher + CoroutineName("reprise-analysis"))
+    private val importScope =
+        CoroutineScope(job + importDispatcher + CoroutineName("reprise-analysis-import"))
+    private val readScope =
+        CoroutineScope(job + readDispatcher + CoroutineName("reprise-analysis-read"))
     private val cacheLock = Any()
     private val barCache = mutableMapOf<BarCacheKey, List<SpectralBar>?>()
     private val barWaiters = mutableMapOf<BarCacheKey, MutableList<(List<SpectralBar>?) -> Unit>>()
@@ -109,13 +121,17 @@ internal class TrackAnalysisLoader(
         private set
 
     override fun prepare(trackId: Long) {
-        submit("import analysis for track $trackId") {
-            try {
+        submitImport("import analysis for track $trackId") {
+            val outcome = try {
                 importAnalysis(trackId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 Log.w(TAG, "Could not import analysis for track $trackId", error)
+                null
+            }
+            if (outcome == AndroidAnalysisOutcome.COMPUTED) {
+                Log.i(TAG, "Computed analysis for track $trackId")
             }
             onMainThread {
                 invalidate(trackId)
@@ -149,7 +165,7 @@ internal class TrackAnalysisLoader(
             if (cached.third) warmRetainedBars(count)
             return
         }
-        val submitted = submit("load analysis for track $trackId") {
+        val submitted = submitRead("load analysis for track $trackId") {
             val bars = try {
                 readBars(trackId, count)
             } catch (cancelled: CancellationException) {
@@ -187,7 +203,7 @@ internal class TrackAnalysisLoader(
             deliver(cached.second)
             return
         }
-        val submitted = submit("load spectrogram for track $trackId") {
+        val submitted = submitRead("load spectrogram for track $trackId") {
             val frames = try {
                 readSpectrogram(trackId)?.toSpectrogramFrames()
             } catch (cancelled: CancellationException) {
@@ -270,7 +286,17 @@ internal class TrackAnalysisLoader(
         trackIds.forEach { trackId -> loadBars(trackId, count) {} }
     }
 
-    private fun submit(description: String, work: suspend () -> Unit): Boolean {
+    private fun submitImport(description: String, work: suspend () -> Unit): Boolean =
+        submitTo(importScope, description, work)
+
+    private fun submitRead(description: String, work: suspend () -> Unit): Boolean =
+        submitTo(readScope, description, work)
+
+    private fun submitTo(
+        scope: CoroutineScope,
+        description: String,
+        work: suspend () -> Unit,
+    ): Boolean {
         if (!accepting.get() || !scope.isActive) {
             val rejected = RejectedExecutionException("analysis loader is shut down")
             Log.d(TAG, "Not attempting to $description: the library is closing", rejected)
@@ -280,7 +306,7 @@ internal class TrackAnalysisLoader(
         return true
     }
 
-    /** Stops accepting work and lets the already ordered import/read pair finish. */
+    /** Stops accepting work and lets both lanes' already started work finish. */
     fun shutdown(): Boolean {
         accepting.set(false)
         job.complete()
@@ -295,7 +321,10 @@ internal class TrackAnalysisLoader(
             Thread.currentThread().interrupt()
             false
         }
-        if (!drained) scope.cancel()
+        if (!drained) {
+            importScope.cancel()
+            readScope.cancel()
+        }
         unregisterActive(this)
         return drained
     }
@@ -323,7 +352,10 @@ internal class TrackAnalysisLoader(
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
-private fun analysisLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
+private fun analysisImportLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun analysisReadLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
 
 internal val LocalTrackAnalysis = staticCompositionLocalOf<TrackAnalysisPort> {
     object : TrackAnalysisPort {
