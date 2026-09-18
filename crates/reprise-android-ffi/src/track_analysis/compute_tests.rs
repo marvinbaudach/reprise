@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::os::fd::IntoRawFd;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -298,6 +298,56 @@ fn a_missing_sidecar_is_computed_and_stored() {
     let reader = library.reader().unwrap();
     let pending = reprise_core::db::pending_render_data_tracks(&reader).unwrap();
     assert!(!pending.iter().any(|pending| pending.track_id == track_id));
+}
+
+/// A decoder registration that only proves how long it lives: its `Drop`
+/// flips [`dropped`](Self::dropped) so the test can tell whether the last
+/// strong reference — the library's own `pcm_decoder` field — was ever
+/// released.
+struct DropSignalDecoder {
+    dropped: Arc<AtomicBool>,
+}
+
+impl TrackPcmDecoder for DropSignalDecoder {
+    fn decode(
+        &self,
+        _track_uri: String,
+        _sink: Arc<AnalysisPcmSink>,
+        _background: bool,
+    ) -> Result<(), AnalysisDecodeError> {
+        panic!("this decoder only proves its own lifetime; it must never be called");
+    }
+}
+
+impl Drop for DropSignalDecoder {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Regression test for the Android suite's `OutOfMemoryError`: the platform
+/// decoder Kotlin registers (`SharedMusicLibrary.kt`) is kept alive by a
+/// UniFFI foreign-callback handle for exactly as long as `pcm_decoder` holds
+/// it. If anything gave that registration a lifetime independent of the
+/// library — a process-wide static, or a second clone stashed outside this
+/// field — dropping the library would no longer be enough to release it,
+/// which is exactly the shape of leak that pinned a whole Kotlin
+/// `Application` graph (and its native library) across every Robolectric
+/// test that touched `sharedMusicLibrary()`.
+#[test]
+fn dropping_the_library_releases_the_registered_decoder() {
+    let (_directory, library, _track_id, _music) = library_with_one_track();
+    let dropped = Arc::new(AtomicBool::new(false));
+    library.register_track_pcm_decoder(Box::new(DropSignalDecoder {
+        dropped: Arc::clone(&dropped),
+    }));
+
+    drop(library);
+
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "the registered decoder must not outlive the library that registered it",
+    );
 }
 
 #[test]

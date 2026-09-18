@@ -134,7 +134,7 @@ impl TrackAnalysisBackfill {
         let listener: Arc<ProgressListener> =
             Arc::new(move |progress| listener.on_progress(progress));
         *worker = Some(std::thread::spawn(move || {
-            run_worker(&control, &handles, &listener)
+            run_worker(&control, &handles, &listener);
         }));
     }
 

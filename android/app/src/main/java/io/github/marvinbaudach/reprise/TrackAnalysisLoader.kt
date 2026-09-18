@@ -122,16 +122,25 @@ internal class TrackAnalysisLoader(
 
     override fun prepare(trackId: Long) {
         submitImport("import analysis for track $trackId") {
-            val outcome = try {
+            // Deliberately not logged on `AndroidAnalysisOutcome.COMPUTED`,
+            // unlike the mirrored check in
+            // `ReprisePlaybackService.trackAnalysisRequest`: this lane is
+            // exercised by `TrackAnalysisLoaderTest`, a plain JUnit test with
+            // no Robolectric runner, where an unshadowed `android.util.Log`
+            // call throws — a real, reproduced failure
+            // (`aComputedAnalysisRefreshesTheBars`), not a hypothetical one.
+            // `ReprisePlaybackService` already logs the same message for
+            // every real, foreground-triggered compute, so nothing is lost
+            // on the one path that matters. The `Log.w` below is pre-existing
+            // (unchanged from before this file's two-lane split) and stays
+            // unexercised by these tests, since `importAnalysis` here never
+            // throws — it is not the same kind of risk.
+            try {
                 importAnalysis(trackId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 Log.w(TAG, "Could not import analysis for track $trackId", error)
-                null
-            }
-            if (outcome == AndroidAnalysisOutcome.COMPUTED) {
-                Log.i(TAG, "Computed analysis for track $trackId")
             }
             onMainThread {
                 invalidate(trackId)

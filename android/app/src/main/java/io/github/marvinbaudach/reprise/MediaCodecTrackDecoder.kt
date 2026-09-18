@@ -6,6 +6,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.os.Process
 import androidx.core.net.toUri
+import java.lang.ref.WeakReference
 import uniffi.reprise_android_ffi.AnalysisDecodeException
 import uniffi.reprise_android_ffi.AnalysisPcmSink
 import uniffi.reprise_android_ffi.TrackPcmDecoder
@@ -18,11 +19,29 @@ import uniffi.reprise_android_ffi.TrackPcmDecoder
  * `docs/plans/the-phone-analyses-its-own-music.md`); this class only pumps
  * PCM. Not Robolectric-testable: the decode loop needs a real codec, so this
  * is verified on the device.
+ *
+ * Holds [contentResolver] weakly, not strongly: this decoder is registered
+ * once with the native `MusicLibrary` (`SharedMusicLibrary.kt`) and kept
+ * alive by a UniFFI foreign-callback handle for as long as that library
+ * lives. `ContentResolver` carries a private, strong `mContext` field back
+ * to the `Application` that created it — a strong field here would close a
+ * cycle (native handle → this decoder → resolver → `Application`) that no
+ * `WeakHashMap` can break, because the map's own value is what completes the
+ * cycle back to its key. On a real device the resolver lives exactly as
+ * long as the process, so this is a no-op there; it only matters where a
+ * process outlives one `Application` instance, such as Robolectric handing
+ * out a fresh one per test.
  */
 internal class MediaCodecTrackDecoder(
-    private val contentResolver: ContentResolver,
+    contentResolver: ContentResolver,
 ) : TrackPcmDecoder {
+    private val contentResolverRef = WeakReference(contentResolver)
+
     override fun decode(trackUri: String, sink: AnalysisPcmSink, background: Boolean) {
+        val contentResolver = contentResolverRef.get()
+            ?: throw AnalysisDecodeException.DecodeFailed(
+                "the content resolver is gone for $trackUri",
+            )
         val previousPriority = Process.getThreadPriority(Process.myTid())
         if (background) {
             Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
