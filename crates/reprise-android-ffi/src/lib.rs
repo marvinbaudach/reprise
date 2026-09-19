@@ -97,9 +97,7 @@ impl MusicLibrary {
         let writer = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
             detail: error.to_string(),
         })?;
-        online_sources::open_artwork_gate(&writer).map_err(|error| LibraryError::Database {
-            detail: error.to_string(),
-        })?;
+        online_sources::open_artwork_gate(&writer)?;
         // The migrating writer must establish the current schema before the
         // non-migrating reader asserts that the database is ready.
         let reader = Db::open_ready(&db_path).map_err(|error| LibraryError::Database {
