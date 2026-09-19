@@ -410,7 +410,7 @@ fn artists_missing_portraits_skips_those_already_cached() {
 }
 
 #[test]
-fn artists_missing_portraits_returns_nothing_when_the_switch_is_off() {
+fn artists_missing_portraits_returns_nothing_when_the_gate_is_closed() {
     let directory = tempfile::tempdir().unwrap();
     let library = MusicLibrary::open_with_portrait_fetch(
         directory.path().to_str().unwrap(),
