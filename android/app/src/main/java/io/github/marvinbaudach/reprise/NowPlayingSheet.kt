@@ -67,7 +67,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidArtworkSize
@@ -225,10 +228,31 @@ internal fun NowPlayingSheet(
                     snap = positionPx::snapTo,
                 )
                 if (changesTrack) {
+                    // `draggingTrack` can still read true here even though
+                    // `awaitEachGesture` is one sequential coroutine that
+                    // always writes false in its `finally` right after calling
+                    // `onSettle` (NowPlayingGestures.kt:206/253/285), before
+                    // this settle's own animation has even started. The gap is
+                    // `latestDraggingTrack`: it is `draggingTrack` mirrored
+                    // through `rememberUpdatedState`, which only updates on
+                    // this composable's own recomposition -- if that release
+                    // write, and a further write, land inside the same
+                    // snapshot apply-notification window (no recomposition in
+                    // between), the intermediate value is never observed and
+                    // `latestDraggingTrack` can still read the leading true.
+                    // newDragAnswered only reports a true that follows an
+                    // observed false for exactly that reason. Accepted narrow
+                    // miss: a release and a genuine new swipe that land inside
+                    // that same window are swallowed the same way, so this
+                    // degrades to the pre-fix behaviour for that one case --
+                    // `withTimeoutOrNull(graceMs)` below still calls snapBack()
+                    // once the grace period runs out, so it settles late
+                    // rather than staying stuck forward.
                     holdSettledPositionUntilTheTransportAnswers(
-                        answered = snapshotFlow {
-                            latestCurrentIndex != currentIndex || latestDraggingTrack
-                        },
+                        answered = merge(
+                            snapshotFlow { latestCurrentIndex != currentIndex }.filter { it },
+                            newDragAnswered(snapshotFlow { latestDraggingTrack }),
+                        ),
                         graceMs = NOW_PLAYING_ANSWER_GRACE_MS.toLong(),
                         snapBack = { positionPx.snapTo(currentIndex * screenWidthPx) },
                     )
@@ -413,6 +437,16 @@ internal suspend fun holdSettledPositionUntilTheTransportAnswers(
     val answer = withTimeoutOrNull(graceMs) { answered.first { it } }
     if (answer == null) snapBack()
 }
+
+/**
+ * A `dragging` flag that reads true from its very first observation is the
+ * trailing state of the gesture that just committed this settle -- its
+ * release simply has not been observed yet, this is not a new drag taking
+ * the position over. Drops that leading run of `true` values and reports
+ * only a `true` that follows an observed `false`.
+ */
+internal fun newDragAnswered(dragging: Flow<Boolean>): Flow<Boolean> =
+    dragging.dropWhile { it }.filter { it }
 
 internal suspend fun settleNowPlayingPosition(
     target: Float,
