@@ -196,7 +196,7 @@ private fun ArtistPhotoTrack(progress: ArtistPhotoProgress) {
     val trackColor = MaterialTheme.colorScheme.outlineVariant
     val doneColor = MaterialTheme.colorScheme.primary
     val failedColor = MaterialTheme.colorScheme.tertiary
-    val description = "Artist photos, ${progress.done} of ${progress.total} downloaded"
+    val description = "Artwork, ${progress.done} of ${progress.total} downloaded"
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -235,8 +235,8 @@ internal fun clampedArtistPhotoDoneFraction(
 
 private val ArtistPhotoProgress.label: String
     get() = when (phase) {
-        ArtistPhotoProgressPhase.PREPARING -> "Preparing artist photos"
-        ArtistPhotoProgressPhase.RUNNING -> "Downloading artist photos"
+        ArtistPhotoProgressPhase.PREPARING -> "Preparing artwork"
+        ArtistPhotoProgressPhase.RUNNING -> "Downloading artwork"
         ArtistPhotoProgressPhase.PAUSED -> "Waiting for a connection"
-        ArtistPhotoProgressPhase.COMPLETE -> "Artist photos complete"
+        ArtistPhotoProgressPhase.COMPLETE -> "Artwork complete"
     }
