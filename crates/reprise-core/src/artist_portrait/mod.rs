@@ -4,6 +4,7 @@
 
 pub mod backfill;
 mod cache;
+pub mod cover_backfill;
 pub(crate) mod deezer;
 mod placeholder;
 
@@ -18,6 +19,9 @@ pub use backfill::{
 };
 pub(crate) use cache::{cache_dir, IMAGE_EXTS};
 pub use cache::{verdict, CacheVerdict};
+pub use cover_backfill::{
+    CoverBackfill, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
+};
 
 use std::path::{Path, PathBuf};
 

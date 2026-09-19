@@ -49,10 +49,11 @@ private fun ArtistPhotoOfferBanner(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("Show artist photos?", style = MaterialTheme.typography.titleSmall)
+            Text("Show artwork?", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Reprise can download artist portraits from Deezer. " +
-                    "Only artist names are sent, and album covers work without this.",
+                "Reprise can download artist portraits from Deezer and album covers from " +
+                    "MusicBrainz and the Cover Art Archive, fetching a cover only for an " +
+                    "album that has none of its own.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -61,7 +62,7 @@ private fun ArtistPhotoOfferBanner(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = declineArtistPhotos) { Text("Not now") }
-                TextButton(onClick = downloadArtistPhotos) { Text("Download artist photos") }
+                TextButton(onClick = downloadArtistPhotos) { Text("Download artwork") }
             }
         }
     }

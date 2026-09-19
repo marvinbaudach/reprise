@@ -132,6 +132,11 @@ internal class AndroidLibrarySessionPort(
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? =
         library.trackArtwork(trackUri, size)
 
+    override fun artworkFetched(trackUri: String, size: AndroidArtworkSize): String? =
+        runCatching { library.albumCoverFetch(trackUri, size) }
+            .onFailure { error -> Log.w(TAG, "Could not fetch album cover", error) }
+            .getOrNull()
+
     override fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? =
         library.artistPortraitCached(name, size)
 

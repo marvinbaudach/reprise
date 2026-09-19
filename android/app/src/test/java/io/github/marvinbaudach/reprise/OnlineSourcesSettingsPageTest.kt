@@ -48,18 +48,32 @@ class OnlineSourcesSettingsPageTest {
     fun thePageExplainsLibraryWidePortraitPrefetch() {
         showPage(enabled = false)
 
-        compose.onNodeWithText("Fetch portraits after automatic scans, manual scans, or restores.")
+        compose.onNodeWithText(
+            "Fetch portraits and album covers after automatic scans, manual scans, or " +
+                "restores, and while an album without its own cover is playing.",
+        )
             .assertIsDisplayed()
         compose.onNodeWithText(
-            "Artist names in your library are sent to Deezer after an automatic scan, " +
-                "manual scan, or restore.",
+            "Artist names in your library are sent to Deezer for portraits, and " +
+                "album titles to MusicBrainz and the Cover Art Archive for covers",
+            substring = true,
+        )
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun thePageNamesTheCoverFetchPolicy() {
+        showPage(enabled = false)
+
+        compose.onNodeWithText(
+            "A cover is only fetched for an album that has none of its own",
             substring = true,
         )
             .assertIsDisplayed()
     }
 
     private fun switchNode() = compose.onNode(
-        hasText("Download artist photos") and isToggleable(),
+        hasText("Download artwork") and isToggleable(),
     )
 
     private fun showPage(

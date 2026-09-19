@@ -38,12 +38,14 @@ internal fun OnlineSourcesSettingsPage(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { SettingsSectionTitle("Artist photos") }
+            item { SettingsSectionTitle("Artwork") }
             item {
                 Column {
                     SettingsSwitchRow(
-                        title = "Download artist photos",
-                        supporting = "Fetch portraits after automatic scans, manual scans, or restores.",
+                        title = "Download artwork",
+                        supporting = "Fetch portraits and album covers after automatic scans, " +
+                            "manual scans, or restores, and while an album without its own " +
+                            "cover is playing.",
                         checked = enabled,
                         onCheckedChange = setEnabled,
                     )
@@ -56,10 +58,13 @@ internal fun OnlineSourcesSettingsPage(
             }
             item {
                 Text(
-                    "Artist names in your library are sent to Deezer after an automatic scan, " +
-                        "manual scan, or restore. " +
+                    "Artist names in your library are sent to Deezer for portraits, and " +
+                        "album titles to MusicBrainz and the Cover Art Archive for covers, " +
+                        "after an automatic scan, manual scan, or restore. " +
+                        "A cover is only fetched for an album that has none of its own — one " +
+                        "already showing art never triggers a request. " +
                         "The app sends nothing else to the internet. " +
-                        "With downloads off, album covers remain available.",
+                        "With this off, only artwork already in your files or folders shows.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )

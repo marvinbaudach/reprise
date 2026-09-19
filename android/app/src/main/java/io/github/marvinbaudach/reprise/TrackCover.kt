@@ -51,6 +51,7 @@ internal class TrackArtwork(
     private val resolve: (String, AndroidArtworkSize) -> String?,
     private val resolveArtistPortraitCached: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
     private val resolveArtistPortraitFetched: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
+    private val resolveAlbumCoverFetched: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
     private val decode: (String) -> android.graphics.Bitmap? = BitmapFactory::decodeFile,
     private val fallback: (String, String, Int) -> android.graphics.Bitmap = ::fallbackCoverBitmap,
     private val cache: ArtworkCache = SharedArtworkCache,
@@ -87,7 +88,12 @@ internal class TrackArtwork(
         gate: ArtworkRequestGate,
         deliver: (ArtworkVisual?) -> Unit,
     ) {
-        if (!request.refreshesArtistPortrait()) {
+        // An `allowFetch` request (artist or track) never trusts the cached
+        // placeholder: a miss it remembered permanently would make the B3
+        // backfill's later download, or a transient failure the FFI never
+        // memoises, unreachable from here. Re-resolving every time is safe —
+        // the FFI side already memoises a definitive miss per process.
+        if (!request.allowFetch) {
             cache.artwork(request)?.let { cached ->
                 if (gate.accepts(request)) deliver(cached)
                 return
@@ -199,7 +205,7 @@ internal class TrackArtwork(
     }
 
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
-        if (!request.refreshesArtistPortrait()) {
+        if (!request.allowFetch) {
             cache.artwork(request)?.let { return it }
         }
         val portraitPath = if (request.kind == ArtworkKind.ARTIST) {
@@ -218,9 +224,14 @@ internal class TrackArtwork(
         val bitmap = portrait ?: if (request.kind == ArtworkKind.ARTIST) {
             return generatedVisual(request, resolved = true)
         } else {
-            resolve(request.trackUri, request.size)?.let(decode)
-                ?: return cache.resolvedArtworkAcrossSizes(request)
-                    ?: generatedVisual(request, resolved = true)
+            val decoded = resolve(request.trackUri, request.size)?.let(decode)
+            if (decoded != null) {
+                decoded
+            } else {
+                cache.resolvedArtworkAcrossSizes(request)?.let { return it }
+                fetchedAlbumCoverBitmap(request)
+                    ?: return generatedVisual(request, resolved = true)
+            }
         }
         return ArtworkVisual(
             image = bitmap.asImageBitmap(),
@@ -230,6 +241,17 @@ internal class TrackArtwork(
                 null
             },
         ).also { visual -> cache.putArtwork(request, visual) }
+    }
+
+    /**
+     * The one network-shaped resolution step: only for a track request that
+     * asked for it (`allowFetch`, decision 9) — the now-playing rung and the
+     * album detail page, never a list row, since a list request never sets
+     * it (`ArtworkRequestGate.kt`).
+     */
+    private fun fetchedAlbumCoverBitmap(request: ArtworkRequest): android.graphics.Bitmap? {
+        if (!request.allowFetch) return null
+        return resolveAlbumCoverFetched(request.trackUri, request.size)?.let(decode)
     }
 
     private fun generatedVisual(request: ArtworkRequest, resolved: Boolean): ArtworkVisual {
@@ -316,17 +338,18 @@ internal fun rememberTrackArtworkVisual(
     artworkSize: AndroidArtworkSize,
     title: String = "",
     artist: String = "",
+    allowFetch: Boolean = false,
 ): ArtworkVisual? {
     val artwork = LocalTrackArtwork.current
     val gate = remember { ArtworkRequestGate() }
-    val request = remember(trackUri, artworkSize, title, artist) {
-        ArtworkRequest(trackUri, artworkSize, title, artist)
+    val request = remember(trackUri, artworkSize, title, artist, allowFetch) {
+        ArtworkRequest(trackUri, artworkSize, title, artist, allowFetch = allowFetch)
     }
     var visual by remember(request, artwork) {
         mutableStateOf(artwork?.seedVisual(request))
     }
     DisposableEffect(request, artwork) {
-        val admitted = gate.begin(trackUri, artworkSize, title, artist)
+        val admitted = gate.begin(trackUri, artworkSize, title, artist, allowFetch = allowFetch)
         artwork?.loadVisual(admitted, gate) { loaded -> visual = loaded }
         onDispose { gate.invalidate(admitted) }
     }
@@ -362,6 +385,11 @@ private fun artworkListLane(): CoroutineDispatcher = Dispatchers.IO.limitedParal
 @OptIn(ExperimentalCoroutinesApi::class)
 private fun artworkFullSizeLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
 
+/**
+ * Only an artist request that just fetched invalidates the portrait shelves
+ * ([ArtworkCache.invalidateArtistArtwork]) — the cache-bypass decision above
+ * is the wider `allowFetch` check, which also covers a track request.
+ */
 private fun ArtworkRequest.refreshesArtistPortrait(): Boolean =
     kind == ArtworkKind.ARTIST && allowFetch
 

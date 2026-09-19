@@ -469,6 +469,7 @@ private fun NowPlayingPanelLayer(
         AndroidArtworkSize.NOW_PLAYING,
         panel.track.title,
         panel.track.artist,
+        allowFetch = true,
     )
     val fog = rememberCoverFogBitmap(artwork?.image, AmbientTrueBlack)
     val frames = rememberSpectrogram(panel.track.id)

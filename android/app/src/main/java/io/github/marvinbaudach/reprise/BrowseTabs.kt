@@ -167,6 +167,18 @@ private fun AlbumLoadingPage(album: LibraryAlbum, closeAlbum: () -> Unit) {
 
 @Composable
 private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
+    // ARTIST_DETAIL, not LIST, despite the 40 dp slot below: `TrackArtwork`
+    // picks the coroutine lane from `size` before `allowFetch` is even
+    // read (`TrackCover.kt`'s `loadVisual`/`prefetch`), and only
+    // ARTIST_DETAIL/NOW_PLAYING route to the full-size lane a fetch is
+    // allowed to occupy (decision 9: "never on the list lane").
+    val artwork = rememberTrackArtworkVisual(
+        album.representativeUri,
+        AndroidArtworkSize.ARTIST_DETAIL,
+        album.title,
+        album.artist,
+        allowFetch = true,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -175,6 +187,12 @@ private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MaterialSymbol("arrow_back", "Back")
+        ArtworkCover(
+            artwork,
+            size = 40,
+            modifier = Modifier.padding(horizontal = 8.dp),
+            decorative = true,
+        )
         Text(album.title, style = MaterialTheme.typography.titleLarge)
     }
     Text(

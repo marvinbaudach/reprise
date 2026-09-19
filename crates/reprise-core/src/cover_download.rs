@@ -94,7 +94,11 @@ pub fn downloaded_dir() -> PathBuf {
     cover::cache_dir().join("downloaded")
 }
 
-pub(crate) fn downloaded_dir_in(cache_root: &Path) -> PathBuf {
+/// Like [`downloaded_dir`], but under a caller-supplied cache root. Exposed
+/// beyond this crate so a fake fetch (in a test, or a future platform) can
+/// place a cover exactly where [`fetch_and_cache_in`] and the resolver
+/// (`cover::resolve_source_with_source`) agree it lives.
+pub fn downloaded_dir_in(cache_root: &Path) -> PathBuf {
     cover::cache_dir_with_root(cache_root).join("downloaded")
 }
 
@@ -117,7 +121,11 @@ fn downloaded_cover_path_from_dir(dir: &Path, key: &str) -> Option<PathBuf> {
 
 /// Marker written when a lookup found nothing — temporarily stops re-querying.
 pub fn negative_marker_path(key: &str) -> PathBuf {
-    downloaded_dir().join(format!("{key}.notfound{NEGATIVE_MARKER_GENERATION}"))
+    negative_marker_path_in(&downloaded_dir(), key)
+}
+
+pub(crate) fn negative_marker_path_in(dir: &Path, key: &str) -> PathBuf {
+    dir.join(format!("{key}.notfound{NEGATIVE_MARKER_GENERATION}"))
 }
 
 pub(crate) fn musicbrainz_search_url(album_artist: &str, album: &str) -> String {
@@ -209,9 +217,9 @@ fn release_group_cover_state_at(mbid: &str, now: SystemTime) -> CoverState {
     cover_state_from(cached, marker_modified, now)
 }
 
-fn album_cover_state_at(key: &str, now: SystemTime) -> CoverState {
-    let cached = downloaded_cover_path(key);
-    let marker_modified = std::fs::metadata(negative_marker_path(key))
+fn album_cover_state_at_in(dir: &Path, key: &str, now: SystemTime) -> CoverState {
+    let cached = downloaded_cover_path_from_dir(dir, key);
+    let marker_modified = std::fs::metadata(negative_marker_path_in(dir, key))
         .and_then(|metadata| metadata.modified())
         .ok();
     cover_state_from(cached, marker_modified, now)
@@ -342,7 +350,53 @@ pub fn fetch_and_cache(
     )
 }
 
+/// Like [`fetch_and_cache`], but under a caller-supplied cache root instead
+/// of the XDG cache dir — the Android FFI has no XDG environment and passes
+/// its app cache directory here. The negative marker and the publish marker
+/// land under the same root as the cover.
+pub fn fetch_and_cache_in(
+    cache_root: &Path,
+    album_artist: &str,
+    album: &str,
+    mbid: Option<&str>,
+    album_dirs: &[PathBuf],
+) -> CoverFetchOutcome {
+    fetch_and_cache_with_in(
+        &downloaded_dir_in(cache_root),
+        album_artist,
+        album,
+        mbid,
+        album_dirs,
+        &mut mb_get,
+        &mut http_get_bytes,
+    )
+}
+
 fn fetch_and_cache_with<M, C>(
+    album_artist: &str,
+    album: &str,
+    mbid: Option<&str>,
+    album_dirs: &[PathBuf],
+    mb_fetch: &mut M,
+    caa_fetch: &mut C,
+) -> CoverFetchOutcome
+where
+    M: FnMut(&str) -> Option<String>,
+    C: FnMut(&str) -> CaaFetchResult,
+{
+    fetch_and_cache_with_in(
+        &downloaded_dir(),
+        album_artist,
+        album,
+        mbid,
+        album_dirs,
+        mb_fetch,
+        caa_fetch,
+    )
+}
+
+fn fetch_and_cache_with_in<M, C>(
+    dir: &Path,
     album_artist: &str,
     album: &str,
     mbid: Option<&str>,
@@ -356,7 +410,7 @@ where
 {
     let key = album_key(album_artist, album);
     // 1. Already resolved by a cached cover or a fresh marker -> no network.
-    match album_cover_state_at(&key, SystemTime::now()) {
+    match album_cover_state_at_in(dir, &key, SystemTime::now()) {
         CoverState::Cached(path) => return CoverFetchOutcome::Downloaded(path),
         CoverState::KnownMissing => return CoverFetchOutcome::NotFound,
         CoverState::Unknown => {}
@@ -372,7 +426,7 @@ where
                 ReleaseSearchResult::Match(ids) => ids,
                 ReleaseSearchResult::NoMatch => {
                     let Some(stripped) = strip_release_decoration(album) else {
-                        write_negative(&key);
+                        write_negative_in(dir, &key);
                         return CoverFetchOutcome::NotFound;
                     };
                     let Some(body) = mb_fetch(&musicbrainz_search_url(album_artist, &stripped))
@@ -382,7 +436,7 @@ where
                     match parse_best_release(&body, album_artist, &stripped) {
                         ReleaseSearchResult::Match(ids) => ids,
                         ReleaseSearchResult::NoMatch => {
-                            write_negative(&key);
+                            write_negative_in(dir, &key);
                             return CoverFetchOutcome::NotFound;
                         }
                         ReleaseSearchResult::Malformed => {
@@ -403,7 +457,7 @@ where
                 // Publish atomically under the download cache, then best-effort
                 // beside the album tracks. Folder writeback never changes
                 // download success.
-                return store_album_downloaded(&key, &bytes, ext, album_dirs).map_or(
+                return store_album_downloaded_in(dir, &key, &bytes, ext, album_dirs).map_or(
                     CoverFetchOutcome::TransientFailure,
                     CoverFetchOutcome::Downloaded,
                 );
@@ -415,7 +469,7 @@ where
     if saw_transient_failure {
         CoverFetchOutcome::TransientFailure
     } else {
-        write_negative(&key);
+        write_negative_in(dir, &key);
         CoverFetchOutcome::NotFound
     }
 }
@@ -534,8 +588,12 @@ pub(crate) fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
 }
 
 fn write_negative(key: &str) {
-    let _ = std::fs::create_dir_all(downloaded_dir());
-    let _ = std::fs::write(negative_marker_path(key), b"");
+    write_negative_in(&downloaded_dir(), key);
+}
+
+fn write_negative_in(dir: &Path, key: &str) {
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(negative_marker_path_in(dir, key), b"");
 }
 
 /// Bumped whenever a downloaded cover is published.
@@ -547,13 +605,17 @@ fn write_negative(key: &str) {
 /// than the directory's own mtime, so that anything else writing into the
 /// download cache does not invalidate every remembered cover in the library.
 pub fn publish_marker() -> PathBuf {
-    downloaded_dir().join(".published")
+    publish_marker_in(&downloaded_dir())
 }
 
-fn note_publication() {
-    let marker = publish_marker();
-    if let Some(dir) = marker.parent() {
-        if std::fs::create_dir_all(dir).is_err() {
+pub(crate) fn publish_marker_in(dir: &Path) -> PathBuf {
+    dir.join(".published")
+}
+
+fn note_publication_in(dir: &Path) {
+    let marker = publish_marker_in(dir);
+    if let Some(parent) = marker.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
             return;
         }
     }
@@ -561,8 +623,11 @@ fn note_publication() {
 }
 
 fn store_downloaded(key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
-    let dir = downloaded_dir();
-    std::fs::create_dir_all(&dir).ok()?;
+    store_downloaded_in(&downloaded_dir(), key, bytes, ext)
+}
+
+fn store_downloaded_in(dir: &Path, key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
+    std::fs::create_dir_all(dir).ok()?;
     let out = dir.join(format!("{key}.{ext}"));
     let tmp = dir.join(format!(".{key}-{}.{ext}.tmp", fastrand::u64(..)));
     if std::fs::write(&tmp, bytes).is_err() {
@@ -571,12 +636,17 @@ fn store_downloaded(key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
     }
     if std::fs::rename(&tmp, &out).is_err() {
         let _ = std::fs::remove_file(&tmp);
-        return downloaded_cover_path(key); // a concurrent writer may have published it
+        // a concurrent writer may have already published it
+        return downloaded_cover_path_from_dir(dir, key);
     }
-    note_publication();
+    note_publication_in(dir);
     Some(out)
 }
 
+// Only `cover_download_tests.rs` still calls these two under the global XDG
+// root; production code (`fetch_and_cache_with_in`) goes through the `_in`
+// siblings below directly.
+#[cfg(test)]
 fn store_album_downloaded(
     key: &str,
     bytes: &[u8],
@@ -592,6 +662,7 @@ fn store_album_downloaded(
     )
 }
 
+#[cfg(test)]
 fn store_album_downloaded_with(
     key: &str,
     bytes: &[u8],
@@ -599,7 +670,35 @@ fn store_album_downloaded_with(
     album_dirs: &[PathBuf],
     writeback: impl FnOnce(&[PathBuf], &[u8], &str) -> Vec<crate::cover_writeback::CoverWrite>,
 ) -> Option<PathBuf> {
-    let cached = store_downloaded(key, bytes, ext)?;
+    store_album_downloaded_with_in(&downloaded_dir(), key, bytes, ext, album_dirs, writeback)
+}
+
+fn store_album_downloaded_in(
+    dir: &Path,
+    key: &str,
+    bytes: &[u8],
+    ext: &str,
+    album_dirs: &[PathBuf],
+) -> Option<PathBuf> {
+    store_album_downloaded_with_in(
+        dir,
+        key,
+        bytes,
+        ext,
+        album_dirs,
+        crate::cover_writeback::write_album_cover,
+    )
+}
+
+fn store_album_downloaded_with_in(
+    dir: &Path,
+    key: &str,
+    bytes: &[u8],
+    ext: &str,
+    album_dirs: &[PathBuf],
+    writeback: impl FnOnce(&[PathBuf], &[u8], &str) -> Vec<crate::cover_writeback::CoverWrite>,
+) -> Option<PathBuf> {
+    let cached = store_downloaded_in(dir, key, bytes, ext)?;
     let _ = writeback(album_dirs, bytes, ext);
     Some(cached)
 }
