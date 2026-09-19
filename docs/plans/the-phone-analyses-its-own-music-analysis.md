@@ -2,7 +2,7 @@
 slug: the-phone-analyses-its-own-music-analysis
 worktree: /home/marvin/Projects/reprise-the-phone-analyses-its-own-music-analysis
 branch: feature/the-phone-analyses-its-own-music-analysis
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-18
 ---
