@@ -13,8 +13,15 @@ use std::path::{Path, PathBuf};
 pub enum CoverSource {
     /// A picture embedded in the audio file (via lofty).
     Embedded(Vec<u8>),
-    /// An image file sitting in the album folder (cover.*, folder.*).
+    /// An image file sitting in the album folder (cover.*, folder.*). It lives
+    /// in the library, so it is read through the library source — on Android
+    /// that is the document provider.
     FolderImage(PathBuf),
+    /// An image Reprise itself put in its cache — a downloaded cover, a
+    /// reduced artist portrait. It never lives in the library, so it is read
+    /// with plain file I/O no matter which library source is in play: a
+    /// document provider has no content for a path outside its tree.
+    CacheImage(PathBuf),
 }
 
 /// Canonical sidecar cover file stems and extensions, in priority order.
@@ -91,7 +98,7 @@ pub fn resolve_source_with_source(
     if let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref()) {
         let key = crate::cover_download::album_key(album_artist, album);
         if let Some(path) = crate::cover_download::downloaded_cover_path_in(cache_root, &key) {
-            return Some(CoverSource::FolderImage(path));
+            return Some(CoverSource::CacheImage(path));
         }
     }
     if let Some(bytes) = tag.picture {
@@ -337,6 +344,9 @@ fn source_bytes(
                 .read_to_end(&mut bytes)
                 .map_err(|error| CoverError::Io(error.to_string()))?;
             Ok(bytes)
+        }
+        CoverSource::CacheImage(path) => {
+            std::fs::read(path).map_err(|error| CoverError::Io(error.to_string()))
         }
     }
 }
