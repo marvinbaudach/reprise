@@ -148,6 +148,13 @@ pub enum AndroidAnalysisOutcome {
 /// the same track id.
 type AnalysisCell = Arc<(Mutex<Option<AndroidAnalysisOutcome>>, Condvar)>;
 
+/// The track id and sink of whichever item is currently decoding, published
+/// as a single atomic write right before the decode call starts (decision in
+/// finding review: splitting these into two independently-updated fields
+/// left a window where a preemption check saw a track id with no sink yet
+/// to cancel). `TrackAnalysisBackfill` owns the slot; `None` is idle.
+pub(crate) type CurrentDecodeSlot = Mutex<Option<(i64, Arc<AnalysisPcmSink>)>>;
+
 /// Deduplicates concurrent decodes of the same track: a second caller for a
 /// track already being decoded waits for that decode's result rather than
 /// starting a second one.
@@ -239,7 +246,7 @@ impl AnalysisContext<'_> {
         track_id: i64,
         background: bool,
         preempt: Option<&TrackAnalysisBackfill>,
-        sink_slot: Option<&Mutex<Option<Arc<AnalysisPcmSink>>>>,
+        current_slot: Option<&CurrentDecodeSlot>,
     ) -> Result<AndroidAnalysisOutcome, LibraryError> {
         if self.render_data_already_valid(track_id)? {
             return Ok(AndroidAnalysisOutcome::AlreadyImported);
@@ -250,7 +257,7 @@ impl AnalysisContext<'_> {
                 if let Some(backfill) = preempt {
                     backfill.preempt_current_unless(track_id);
                 }
-                let result = self.decode_one(track_id, background, sink_slot);
+                let result = self.decode_one(track_id, background, current_slot);
                 let outcome_for_waiters = *result
                     .as_ref()
                     .unwrap_or(&AndroidAnalysisOutcome::DecodeFailed);
@@ -275,7 +282,7 @@ impl AnalysisContext<'_> {
         &self,
         track_id: i64,
         background: bool,
-        sink_slot: Option<&Mutex<Option<Arc<AnalysisPcmSink>>>>,
+        current_slot: Option<&CurrentDecodeSlot>,
     ) -> Result<AndroidAnalysisOutcome, LibraryError> {
         let decoder = self.decoder.lock().map_err(poisoned)?.clone();
         let Some(decoder) = decoder else {
@@ -298,11 +305,16 @@ impl AnalysisContext<'_> {
         };
 
         let sink = AnalysisPcmSink::new();
-        if let Some(slot) = sink_slot {
-            *slot.lock().map_err(poisoned)? = Some(Arc::clone(&sink));
+        // `current_slot` gets the track id and the sink together, in one
+        // write, right before the decode call starts: this is the only
+        // point that publishes "this track is now decoding" to a foreground
+        // preemption check (`TrackAnalysisBackfill::preempt_current_unless`),
+        // so that check can never see a track id with no sink yet to cancel.
+        if let Some(slot) = current_slot {
+            *slot.lock().map_err(poisoned)? = Some((track_id, Arc::clone(&sink)));
         }
         let decode_result = decoder.decode(track_uri, Arc::clone(&sink), background);
-        if let Some(slot) = sink_slot {
+        if let Some(slot) = current_slot {
             *slot.lock().map_err(poisoned)? = None;
         }
 

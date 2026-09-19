@@ -10,7 +10,7 @@ use std::thread::JoinHandle;
 use reprise_core::db::Db;
 
 use crate::track_analysis::{
-    AnalysisContext, AnalysisInFlight, AnalysisPcmSink, AndroidAnalysisOutcome, TrackPcmDecoder,
+    AnalysisContext, AnalysisInFlight, AndroidAnalysisOutcome, CurrentDecodeSlot, TrackPcmDecoder,
 };
 use crate::MusicLibrary;
 
@@ -31,15 +31,19 @@ type ProgressListener = dyn Fn(TrackAnalysisProgress) + Send + Sync;
 struct Shared {
     active: bool,
     cancelled: bool,
-    current_track_id: Option<i64>,
     progress: TrackAnalysisProgress,
 }
 
 struct Control {
     shared: Mutex<Shared>,
-    /// The sink of whichever track is currently decoding, so a foreground
-    /// request can cancel it without a second channel back into the worker.
-    current_sink: Mutex<Option<Arc<AnalysisPcmSink>>>,
+    /// The `(track id, sink)` of whichever item is currently decoding,
+    /// written once, atomically, right before the decode call starts (see
+    /// `AnalysisContext::decode_one`), and read as a single lock everywhere
+    /// else. Splitting this into two independently-updated fields (a track
+    /// id set early, a sink installed later) left a window where a
+    /// foreground preemption check saw a track id with no sink yet to
+    /// cancel, silently failing to preempt.
+    current: CurrentDecodeSlot,
 }
 
 /// Every `Arc`-backed handle the worker thread needs, owned by the thread
@@ -78,10 +82,9 @@ impl TrackAnalysisBackfill {
                 shared: Mutex::new(Shared {
                     active: false,
                     cancelled: false,
-                    current_track_id: None,
                     progress: TrackAnalysisProgress::default(),
                 }),
-                current_sink: Mutex::new(None),
+                current: Mutex::new(None),
             }),
             worker: Mutex::new(None),
         }
@@ -119,9 +122,13 @@ impl TrackAnalysisBackfill {
             }
             shared.active = true;
             shared.cancelled = false;
-            shared.current_track_id = None;
             shared.progress = TrackAnalysisProgress::default();
         }
+        *self
+            .control
+            .current
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
 
         let control = Arc::clone(&self.control);
         let handles = Handles {
@@ -152,9 +159,9 @@ impl TrackAnalysisBackfill {
             }
             shared.cancelled = true;
         }
-        if let Some(sink) = self
+        if let Some((_, sink)) = self
             .control
-            .current_sink
+            .current
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
@@ -181,28 +188,19 @@ impl TrackAnalysisBackfill {
     }
 
     /// Cancels the current item's decode if the backfill is active on a
-    /// track other than `keep_track_id`. A no-op when idle or already on
-    /// `keep_track_id`.
+    /// track other than `keep_track_id`. A no-op when idle, or when the
+    /// current item's sink has not been installed yet (nothing to cancel),
+    /// or when it is already on `keep_track_id`. Read as a single lock so
+    /// this never observes a track id with no sink to cancel: `current` is
+    /// written once, atomically, right before the decode call starts.
     pub(crate) fn preempt_current_unless(&self, keep_track_id: i64) {
-        let current = {
-            let shared = self
-                .control
-                .shared
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if !shared.active {
-                return;
-            }
-            shared.current_track_id
-        };
-        if current.is_some() && current != Some(keep_track_id) {
-            if let Some(sink) = self
-                .control
-                .current_sink
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .as_ref()
-            {
+        let current = self
+            .control
+            .current
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some((track_id, sink)) = current.as_ref() {
+            if *track_id != keep_track_id {
                 sink.cancel();
             }
         }
@@ -221,7 +219,34 @@ impl Drop for TrackAnalysisBackfill {
     }
 }
 
+/// Resets the worker's idle state on drop — including on a panicking
+/// unwind, not only the loop's normal `break` paths. Without this, a panic
+/// inside `compute()` (anywhere in the decode/DB chain it reaches) leaves
+/// `shared.active` permanently `true`: the next `start()` call joins the
+/// finished thread, sees `active` still set, and silently no-ops forever.
+struct WorkerGuard<'a> {
+    control: &'a Control,
+}
+
+impl Drop for WorkerGuard<'_> {
+    fn drop(&mut self) {
+        let mut shared = self
+            .control
+            .shared
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        shared.active = false;
+        drop(shared);
+        *self
+            .control
+            .current
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+    }
+}
+
 fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListener>) {
+    let _guard = WorkerGuard { control };
     let mut done = 0_u32;
     let mut failed_count = 0_u32;
 
@@ -271,38 +296,28 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
             break;
         };
 
-        {
-            let mut shared = control
-                .shared
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if shared.cancelled {
-                break;
-            }
-            shared.current_track_id = Some(track.track_id);
+        if is_cancelled(control) {
+            break;
         }
 
-        let outcome =
-            handles
-                .context()
-                .compute(track.track_id, true, None, Some(&control.current_sink));
-
-        {
-            let mut shared = control
-                .shared
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            shared.current_track_id = None;
-        }
-        *control
-            .current_sink
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = None;
+        // `control.current` is written once, atomically, inside `compute`
+        // (`AnalysisContext::decode_one`) right before the decode call
+        // starts, and cleared right after it returns — never set here, so a
+        // foreground preemption check never observes this track id with no
+        // sink yet to cancel.
+        let outcome = handles
+            .context()
+            .compute(track.track_id, true, None, Some(&control.current));
 
         match outcome {
-            Ok(AndroidAnalysisOutcome::Cancelled) => {
-                // Not a failure and not progress: the track stays pending
-                // and is picked up again on the next loop iteration.
+            Ok(AndroidAnalysisOutcome::Cancelled | AndroidAnalysisOutcome::PhoneSourceChanged) => {
+                // Not a failure and not progress: `Cancelled` stored
+                // nothing because the sink was told to stop, and
+                // `PhoneSourceChanged` stored nothing because
+                // `set_track_render_data` found the file's fingerprint had
+                // changed mid-decode (`SpectrogramStoreOutcome::SourceChanged`).
+                // Either way the track stays pending and is picked up again
+                // on a later loop iteration.
             }
             Ok(AndroidAnalysisOutcome::DecodeFailed | AndroidAnalysisOutcome::NoDecoder) => {
                 failed_count += 1;
@@ -324,13 +339,6 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
             listener,
         );
     }
-
-    let mut shared = control
-        .shared
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    shared.active = false;
-    shared.current_track_id = None;
 }
 
 fn is_cancelled(control: &Control) -> bool {

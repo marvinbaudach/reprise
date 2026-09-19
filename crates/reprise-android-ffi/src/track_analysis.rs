@@ -3,11 +3,11 @@ mod compute;
 pub(crate) use backfill::TrackAnalysisBackfill;
 #[cfg(test)]
 pub(crate) use backfill::{TrackAnalysisProgress, TrackAnalysisProgressListener};
-#[cfg(test)]
-pub(crate) use compute::AnalysisDecodeError;
 pub(crate) use compute::{
-    AnalysisContext, AnalysisInFlight, AnalysisPcmSink, AndroidAnalysisOutcome, TrackPcmDecoder,
+    AnalysisContext, AnalysisInFlight, AndroidAnalysisOutcome, CurrentDecodeSlot, TrackPcmDecoder,
 };
+#[cfg(test)]
+pub(crate) use compute::{AnalysisDecodeError, AnalysisPcmSink};
 
 use reprise_core::db::{get_track_spectrogram, get_waveform_peaks};
 use reprise_core::queries::query_present_track_by_id;

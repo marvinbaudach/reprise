@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -337,6 +338,122 @@ fn a_foreground_request_preempts_the_worker() {
         "the foreground request's own track must still be stored"
     );
     assert!(reprise_core::db::get_track_spectrogram(&reader, a_id)
+        .unwrap()
+        .is_some());
+}
+
+/// Polls `library`'s backfill worker handle until the thread has actually
+/// finished (including a panicking unwind), the same way the sibling
+/// `PortraitBackfill` test suite does for the same class of race.
+fn wait_for_worker_to_finish(library: &MusicLibrary) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let finished = library
+            .analysis_backfill
+            .worker
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_none_or(std::thread::JoinHandle::is_finished);
+        if finished {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the backfill worker never finished"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// Waits for the first published progress snapshot, with no terminal-state
+/// predicate: unlike [`wait_until_done`], this only proves the worker loop
+/// ran and reached its first `publish` call at least once, which is exactly
+/// what a permanently-disabled backfill (the bug this pins) would never do.
+fn wait_for_any_progress(state: &WaitState) -> TrackAnalysisProgress {
+    let (lock, condvar) = &**state;
+    let guard = lock.lock().unwrap();
+    let (guard, timed_out) = condvar
+        .wait_timeout_while(guard, Duration::from_secs(10), |progress| {
+            progress.is_none()
+        })
+        .unwrap();
+    assert!(
+        !timed_out.timed_out(),
+        "the backfill worker never restarted after the panic"
+    );
+    guard.expect("the wait only exits once a progress snapshot is published")
+}
+
+#[test]
+fn a_panicking_worker_does_not_permanently_disable_the_backfill() {
+    let (_directory, library, _expected) = library_with_n_tracks(1);
+    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+        Arc::new(AtomicUsize::new(0)),
+        |_uri, _sink| -> Result<(), AnalysisDecodeError> { panic!("intentional decode panic") },
+    )));
+
+    library.start_track_analysis_backfill(Box::new(NoopListener));
+    wait_for_worker_to_finish(&library);
+
+    // Before the fix, a panic inside `compute()` left `shared.active`
+    // permanently `true`: this `start()` would join the already-finished
+    // thread, see `active` still set, and silently no-op forever — no new
+    // worker thread would ever spawn, and no further progress would ever be
+    // published.
+    let state: WaitState = Arc::new((Mutex::new(None), Condvar::new()));
+    library.start_track_analysis_backfill(Box::new(RecordingListener {
+        state: Arc::clone(&state),
+    }));
+    wait_for_any_progress(&state);
+}
+
+/// `PhoneSourceChanged` stores nothing (`set_track_render_data` found the
+/// file's fingerprint had changed mid-decode) and the track stays pending,
+/// so it must not be credited as `done` the way a real `Computed`/
+/// `AlreadyImported` outcome is — otherwise `done` climbs past the number of
+/// tracks the backfill ever actually finished.
+#[test]
+fn a_phone_source_change_is_not_counted_as_done() {
+    let (directory, library, expected) = library_with_n_tracks(1);
+    let music = directory.path().join("music");
+    let track_id = expected[0].0;
+    let changed_once = Arc::new(AtomicBool::new(false));
+    let changed_once_in_decode = Arc::clone(&changed_once);
+    let writer = library.writer_handle();
+    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+        Arc::new(AtomicUsize::new(0)),
+        move |_uri, sink| {
+            if !changed_once_in_decode.swap(true, Ordering::SeqCst) {
+                let song_path = music.join("track-0.flac");
+                let file = File::open(&song_path).unwrap();
+                file.set_modified(
+                    std::time::SystemTime::now() + std::time::Duration::from_secs(120),
+                )
+                .unwrap();
+                drop(file);
+                let db = writer.lock().unwrap();
+                scan_folder(&db, &music).unwrap();
+                drop(db);
+            }
+            assert!(sink.push_pcm_i16(valid_pcm_bytes(), 32_000, 1));
+            Ok(())
+        },
+    )));
+
+    let state: WaitState = Arc::new((Mutex::new(None), Condvar::new()));
+    library.start_track_analysis_backfill(Box::new(RecordingListener {
+        state: Arc::clone(&state),
+    }));
+    let progress = wait_until_done(&state);
+
+    assert_eq!(
+        progress.done, 1,
+        "only the eventual real store may count as done, not the earlier source change"
+    );
+    assert_eq!(progress.failed, 0);
+    let reader = library.reader().unwrap();
+    assert!(reprise_core::db::get_track_spectrogram(&reader, track_id)
         .unwrap()
         .is_some());
 }
