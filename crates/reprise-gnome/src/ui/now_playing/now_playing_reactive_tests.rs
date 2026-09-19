@@ -94,7 +94,11 @@ fn npp_18_the_drifting_clouds_survive_a_theme_switch() {
         4,
     )
     .upcast();
-    panel.widgets.cloud.set_cover(Some(&texture), 1);
+    panel.widgets.cloud.set_cover(
+        Some(&texture),
+        1,
+        crate::ui::podcasts::source_image::ArtworkStage::Primary,
+    );
     panel.widgets.cloud.set_frame_time(1_000_000);
     panel.widgets.cloud.set_frame_time(11_000_000);
     assert!(

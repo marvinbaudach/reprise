@@ -15,6 +15,7 @@ use reprise_core::cover::ThumbnailSize;
 use crate::ui::now_playing::cover_loader::CoverLoader;
 use crate::ui::now_playing::panel_state::*;
 use crate::ui::playback::external_media::ExternalMedia;
+use crate::ui::podcasts::source_image::ArtworkStage;
 use crate::ui::style::tokens;
 
 impl super::NowPlayingPanel {
@@ -83,22 +84,33 @@ impl super::NowPlayingPanel {
                 &reprise_core::modules::ARTWORK_MODULE,
             )
             .unwrap_or(false);
-            self.widgets.bloom.set_cover(None, generation);
-            self.widgets.cloud.set_cover(None, generation);
+            self.widgets
+                .bloom
+                .set_cover(None, generation, ArtworkStage::Primary);
+            self.widgets
+                .cloud
+                .set_cover(None, generation, ArtworkStage::Primary);
             // The bloom and the clouds want the very texture the cover shows,
             // so they observe that one load instead of starting a second one
             // for the same URL — see `SourceImage::new_observed`. A podcast
             // observes nothing: it keeps the cleared bloom above.
+            //
+            // The observer is fed on every publish the chain makes, not just
+            // the last one: a YouTube item legitimately publishes the
+            // show/channel fallback and then the episode's own primary image
+            // in the same generation (SRC-11), and the bloom/cloud caches key
+            // on `(generation, stage)` precisely so the second publish still
+            // lands instead of being mistaken for a repeat of the first.
             let observer = external.carries_music().then(|| {
                 let bloom = self.widgets.bloom.clone();
                 let cloud = self.widgets.cloud.clone();
                 let cover_generation = self.cover_generation.clone();
-                move |texture: &gtk4::gdk::Texture| {
+                move |texture: &gtk4::gdk::Texture, stage: ArtworkStage| {
                     if cover_generation.get() != generation {
                         return;
                     }
-                    bloom.set_cover(Some(texture), generation);
-                    cloud.set_cover(Some(texture), generation);
+                    bloom.set_cover(Some(texture), generation, stage);
+                    cloud.set_cover(Some(texture), generation, stage);
                 }
             });
             let source_image = crate::ui::podcasts::source_image::SourceImage::new_observed(
@@ -118,9 +130,9 @@ impl super::NowPlayingPanel {
                     },
                 ),
                 fallback_icon,
-                move |texture| {
+                move |texture, stage| {
                     if let Some(observer) = observer.as_ref() {
-                        observer(texture);
+                        observer(texture, stage);
                     }
                 },
             );
@@ -133,8 +145,14 @@ impl super::NowPlayingPanel {
         }
         self.widgets.cover_stack.set_visible_child_name("track");
         CoverLoader::set_placeholder(&self.widgets.cover);
-        self.widgets.bloom.set_cover(None, generation);
-        self.widgets.cloud.set_cover(None, generation);
+        // A track's own cover is never staged: it is always the one and only
+        // image for its generation, so it is always `Primary`.
+        self.widgets
+            .bloom
+            .set_cover(None, generation, ArtworkStage::Primary);
+        self.widgets
+            .cloud
+            .set_cover(None, generation, ArtworkStage::Primary);
         if let Some(track) = track {
             let bloom = self.widgets.bloom.clone();
             let cloud = self.widgets.cloud.clone();
@@ -157,11 +175,11 @@ impl super::NowPlayingPanel {
                             .paintable()
                             .and_downcast::<gtk4::gdk::Texture>()
                             .or_else(|| gtk4::gdk::Texture::from_filename(resolved_path).ok());
-                        bloom.set_cover(texture.as_ref(), generation);
+                        bloom.set_cover(texture.as_ref(), generation, ArtworkStage::Primary);
                         // Same texture, same generation: the clouds are cut
                         // from the same blur the bloom lies on, only masked
                         // into two fields. Nothing is decoded twice.
-                        cloud.set_cover(texture.as_ref(), generation);
+                        cloud.set_cover(texture.as_ref(), generation, ArtworkStage::Primary);
                     }
                     on_cover_resolved(resolved_path);
                 },
