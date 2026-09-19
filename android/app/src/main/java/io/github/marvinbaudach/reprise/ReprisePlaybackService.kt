@@ -6,6 +6,8 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -13,9 +15,16 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
@@ -24,7 +33,11 @@ import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.AndroidTrashReport
 import uniffi.reprise_android_ffi.AndroidVisualEngine
+import uniffi.reprise_android_ffi.TrackAnalysisProgress
+import uniffi.reprise_android_ffi.TrackAnalysisProgressListener
 import uniffi.reprise_android_ffi.TrashAction
+
+private const val TAG_ANALYSIS = "RepriseAnalysis"
 
 /** Owns Media3 for background playback, notifications and external controls. */
 open class ReprisePlaybackService : MediaSessionService() {
@@ -43,6 +56,34 @@ open class ReprisePlaybackService : MediaSessionService() {
     private val localBinder = LocalBinder()
     private val livePcmSink = LivePcmBufferSink()
     private var liveVisualEngine: NativeVisualSceneEngine? = null
+    private val analysisScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // A single-thread dispatcher, not the bare elastic `Dispatchers.IO`
+    // pool `analysisScope` above uses: `startAnalysisBackfill` and
+    // `cancelAnalysisBackfill` each launched independently, and a rapid
+    // transition (e.g. play -> power-save-on -> play) could issue a start
+    // immediately followed by a cancel with no relative ordering guarantee
+    // between the two coroutines, leaving the backfill durably wrong
+    // (running during power-save, or cancelled while it should be running)
+    // until the next real transition. A dedicated scope for just these two
+    // calls — not shared with `trackAnalysisRequest`, whose compute path can
+    // block for seconds and would otherwise queue a cancel behind it — keeps
+    // start/cancel in the order `handleTrackAnalysis`/`onDestroy` issued
+    // them, the same way `TrackAnalysisLoader` serializes its own lanes.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val analysisBackfillScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private var analysedTrackId: Long? = null
+    private var analysisBackfillRunning = false
+    private val analysisBackfillListener = object : TrackAnalysisProgressListener {
+        override fun onProgress(progress: TrackAnalysisProgress) {
+            Log.i(
+                TAG_ANALYSIS,
+                "Track analysis backfill: ${progress.done}/${progress.total} " +
+                    "(${progress.failed} failed)",
+            )
+        }
+    }
 
     /**
      * The core's own callback, and the one place that learns playback has run
@@ -54,6 +95,7 @@ open class ReprisePlaybackService : MediaSessionService() {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
+            handleTrackAnalysis(snapshot)
             if (snapshot.hasRunOut()) {
                 // The queue is empty, so this service has nothing left to keep
                 // alive. `stopSelf` only ends a service nobody is bound to, so
@@ -161,6 +203,16 @@ open class ReprisePlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         if (::sleepTimer.isInitialized) sleepTimer.close()
+        // Synchronous and direct rather than through the overridable,
+        // scope-launched `cancelAnalysisBackfill`: the scope is cancelled
+        // right below, which would race an async call and drop it.
+        try {
+            sharedMusicLibrary().cancelTrackAnalysisBackfill()
+        } catch (error: Exception) {
+            Log.w(TAG_ANALYSIS, "Could not cancel the track analysis backfill", error)
+        }
+        analysisScope.cancel()
+        analysisBackfillScope.cancel()
         coreSession?.close()
         coreSession = null
         mediaSession?.let { session ->
@@ -177,6 +229,60 @@ open class ReprisePlaybackService : MediaSessionService() {
         liveVisualEngine = null
         super.onDestroy()
     }
+
+    /**
+     * Requests analysis for the current track on every track change — never
+     * on a mere position tick — and starts or cancels the library-wide
+     * backfill on a playing/power-save transition (decision 5 of
+     * `docs/plans/the-phone-analyses-its-own-music.md`). This runs even when
+     * no activity is attached, which is the point: the current track is
+     * analysed regardless of whether anything is looking at it.
+     */
+    private fun handleTrackAnalysis(snapshot: AndroidPlaybackSnapshot) {
+        val currentTrackId = snapshot.currentTrackId
+        if (currentTrackId != null && currentTrackId != analysedTrackId) {
+            analysedTrackId = currentTrackId
+            trackAnalysisRequest(currentTrackId)
+        }
+        val shouldRun = analysisBackfillShouldRun(
+            playing = snapshot.state == AndroidPlaybackState.PLAYING,
+            powerSaveMode = isPowerSaveModeOn(),
+        )
+        if (shouldRun != analysisBackfillRunning) {
+            analysisBackfillRunning = shouldRun
+            if (shouldRun) startAnalysisBackfill() else cancelAnalysisBackfill()
+        }
+    }
+
+    /** Overridden in tests with a fake that counts calls instead of decoding. */
+    internal open fun trackAnalysisRequest(trackId: Long) {
+        analysisScope.launch {
+            requireOffMainThread("Track analysis import")
+            try {
+                val outcome = sharedMusicLibrary().importTrackAnalysis(trackId)
+                if (outcome == AndroidAnalysisOutcome.COMPUTED) {
+                    Log.i(TAG_ANALYSIS, "Computed analysis for track $trackId")
+                }
+            } catch (error: Exception) {
+                Log.w(TAG_ANALYSIS, "Could not import analysis for track $trackId", error)
+            }
+        }
+    }
+
+    internal open fun startAnalysisBackfill() {
+        analysisBackfillScope.launch {
+            sharedMusicLibrary().startTrackAnalysisBackfill(analysisBackfillListener)
+        }
+    }
+
+    internal open fun cancelAnalysisBackfill() {
+        analysisBackfillScope.launch {
+            sharedMusicLibrary().cancelTrackAnalysisBackfill()
+        }
+    }
+
+    private fun isPowerSaveModeOn(): Boolean =
+        (getSystemService(POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
     internal fun visualSceneEngineFactory(): VisualSceneEngineFactory =
         VisualSceneEngineFactory {

@@ -1,3 +1,14 @@
+mod backfill;
+mod compute;
+pub(crate) use backfill::TrackAnalysisBackfill;
+#[cfg(test)]
+pub(crate) use backfill::{TrackAnalysisProgress, TrackAnalysisProgressListener};
+pub(crate) use compute::{
+    AnalysisContext, AnalysisInFlight, AndroidAnalysisOutcome, CurrentDecodeSlot, TrackPcmDecoder,
+};
+#[cfg(test)]
+pub(crate) use compute::{AnalysisDecodeError, AnalysisPcmSink};
+
 use reprise_core::db::{get_track_spectrogram, get_waveform_peaks};
 use reprise_core::queries::query_present_track_by_id;
 use reprise_core::spectrogram::{SPECTROGRAM_BAND_COUNT, SPECTROGRAM_FRAME_RATE_HZ};
