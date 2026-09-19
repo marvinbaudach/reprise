@@ -34,6 +34,16 @@ fn open_gate(library: &MusicLibrary) {
         .unwrap();
 }
 
+/// `MusicLibrary::open` opens the artwork gate itself
+/// (`the-phone-always-downloads-its-artwork.md`), so a closed-gate test needs
+/// to close it back explicitly rather than rely on a fresh library's default.
+fn close_gate(library: &MusicLibrary) {
+    let writer = library.writer().unwrap();
+    reprise_core::online_sources::set_enabled(&writer, false).unwrap();
+    reprise_core::modules::set_enabled(&writer, &reprise_core::modules::ARTWORK_MODULE, false)
+        .unwrap();
+}
+
 fn scan_artists(directory: &Path, library: &MusicLibrary, names: &[&str]) {
     let music = directory.join("music");
     std::fs::create_dir(&music).unwrap();
@@ -297,6 +307,7 @@ fn net_1a_a_closed_gate_never_calls_the_fetcher_and_writes_no_file() {
         },
     )
     .unwrap();
+    close_gate(&library);
 
     assert!(matches!(
         library.artist_portrait_fetch("Band", crate::AndroidArtworkSize::List),
@@ -407,6 +418,7 @@ fn artists_missing_portraits_returns_nothing_when_the_switch_is_off() {
         |_, _| panic!("a closed gate must not fetch"),
     )
     .unwrap();
+    close_gate(&library);
     scan_artists(directory.path(), &library, &["First", "Second"]);
 
     assert!(library.artists_missing_portraits(10).unwrap().is_empty());

@@ -2813,6 +2813,7 @@ version = "0.1.215"
 dependencies = [
  "reprise-core",
  "reprise-view",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
