@@ -125,7 +125,12 @@ impl CoverBackfill {
     /// `reset_album_cover_state_for_tests`): stops any run still active,
     /// the same as `cancel`, and — unlike `cancel`, which is deliberately
     /// sticky — also drops a pending cancel a previous case may have left
-    /// set, so it cannot block the next case's `start`.
+    /// set, so it cannot block the next case's `start`. `cancel`'s own
+    /// early return for an already-finished run leaves `progress` at
+    /// whatever that run last reported — correct for `cancel` itself,
+    /// which a caller only reaches while a run is still meaningfully
+    /// active, but wrong here: a previous case's completed run must not
+    /// leak its `done`/`total` into the next case's fresh state.
     pub fn reset_for_tests(&self) {
         self.cancel();
         let mut shared = self
@@ -133,6 +138,7 @@ impl CoverBackfill {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         shared.cancel_requested = false;
+        shared.progress = CoverBackfillProgress::default();
     }
 
     #[must_use]
