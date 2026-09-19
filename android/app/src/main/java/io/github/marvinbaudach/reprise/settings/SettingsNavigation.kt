@@ -41,8 +41,6 @@ internal fun SettingsNavigation(
     artistCount: Long,
     folderName: String?,
     themeSelection: MobileThemeSelection,
-    onlineSourcesEnabled: Boolean = false,
-    setOnlineSourcesEnabled: (Boolean) -> Unit = {},
     artistPhotoProgress: ArtistPhotoProgress? = null,
     dismissArtistPhotoProgress: () -> Unit = {},
     close: () -> Unit,
@@ -91,7 +89,6 @@ internal fun SettingsNavigation(
             SettingsOverview(
                 titleCount = titleCount,
                 themeSelection = themeSelection,
-                onlineSourcesEnabled = onlineSourcesEnabled,
                 versionName = BuildConfig.VERSION_NAME,
                 error = state.error,
                 close = close,
@@ -144,8 +141,6 @@ internal fun SettingsNavigation(
         }
         page(SettingsRoute.ONLINE_SOURCES) {
             OnlineSourcesSettingsPage(
-                enabled = onlineSourcesEnabled,
-                setEnabled = setOnlineSourcesEnabled,
                 progress = artistPhotoProgress,
                 dismissProgress = dismissArtistPhotoProgress,
                 back = { navController.navigateUp() },

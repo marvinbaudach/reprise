@@ -40,9 +40,6 @@ internal fun LibraryScreen(
     setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
     replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
-    onlineSourcesEnabled: Boolean,
-    setOnlineSourcesEnabled: (Boolean) -> Unit,
-    artistPhotoOffer: ArtistPhotoOfferState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
 ) {
@@ -94,13 +91,6 @@ internal fun LibraryScreen(
             setEqualizerEnabled = setEqualizerEnabled,
             replaceEqualizerCurve = replaceEqualizerCurve,
             setGaplessEnabled = setGaplessEnabled,
-            onlineSourcesEnabled = onlineSourcesEnabled,
-            setOnlineSourcesEnabled = setOnlineSourcesEnabled,
-            artistPhotoOfferSettled = artistPhotoOffer.settled,
-            downloadArtistPhotos = {
-                artistPhotoOffer.downloadArtistPhotos { setOnlineSourcesEnabled(true) }
-            },
-            declineArtistPhotos = artistPhotoOffer::notNow,
             themeSelection = themeSelection,
             selectTheme = selectTheme,
         )

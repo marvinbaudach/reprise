@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Looper
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -530,14 +529,9 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
     }
     val ambientScheduleEvents = mutableListOf<Boolean>()
     var animationsEnabled = false
-    var onlineSourcesEnabled = false
-    var onlineSourcesWriteSucceeds = true
     @Volatile
     var artistListFailuresRemaining = 0
     val artistListAttempts = AtomicInteger()
-    val onlineSourcesWrites = Collections.synchronizedList(mutableListOf<Boolean>())
-    private var onlineSourcesWriteStarted: CountDownLatch? = null
-    private var onlineSourcesWriteGate: CountDownLatch? = null
     private var broadArtistSearchStarted: CountDownLatch? = null
     private var broadArtistSearchGate: CompletableDeferred<Unit>? = null
     private var broadArtistSearchFinished: CountDownLatch? = null
@@ -724,21 +718,6 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
         serviceController.destroy()
     }
 
-    fun blockOnlineSourcesWrites() {
-        onlineSourcesWrites.clear()
-        onlineSourcesWriteStarted = CountDownLatch(1)
-        onlineSourcesWriteGate = CountDownLatch(1)
-    }
-
-    fun awaitOnlineSourcesWrite(): Boolean =
-        checkNotNull(onlineSourcesWriteStarted).await(5, TimeUnit.SECONDS)
-
-    fun releaseOnlineSourcesWrites() {
-        onlineSourcesWriteGate?.countDown()
-        onlineSourcesWriteGate = null
-        onlineSourcesWriteStarted = null
-    }
-
     fun blockBroadArtistSearch() {
         broadArtistSearchCalls.set(0)
         broadArtistSearchStarted = CountDownLatch(1)
@@ -921,19 +900,6 @@ internal open class ConfigurationTestApplication : Application(), MainActivitySu
                 PlaybackSettingsUiState(false, enabled, emptyList())
             },
             selectTheme = { current, _ -> current },
-            onlineSourcesEnabled = { onlineSourcesEnabled },
-            setOnlineSourcesEnabled = { enabled ->
-                val writeGate = onlineSourcesWriteGate
-                onlineSourcesWrites += enabled
-                onlineSourcesWriteStarted?.countDown()
-                writeGate?.await()
-                if (onlineSourcesWriteSucceeds) {
-                    onlineSourcesEnabled = enabled
-                    Result.success(Unit)
-                } else {
-                    Result.failure(IllegalStateException("online source write failed"))
-                }
-            },
             animationsEnabled = { animationsEnabled },
             observeAmbientScheduling = ambientScheduleEvents::add,
         )

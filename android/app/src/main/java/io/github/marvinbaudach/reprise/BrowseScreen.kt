@@ -145,11 +145,6 @@ internal fun BrowseScreen(
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
-    onlineSourcesEnabled: Boolean = false,
-    setOnlineSourcesEnabled: (Boolean) -> Unit = {},
-    artistPhotoOfferSettled: Boolean = true,
-    downloadArtistPhotos: () -> Unit = {},
-    declineArtistPhotos: () -> Unit = {},
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
@@ -861,14 +856,9 @@ internal fun BrowseScreen(
                     ) {
                         playback.faultNotice?.let { BrowseErrorLine(it.text) }
                     }
-                    ArtistPhotoLibraryStatus(
-                        offerVisible = shouldOfferArtistPhotos(
-                            onlineSourcesEnabled, artistPhotoOfferSettled, state.artists.total,
-                        ),
-                        downloadArtistPhotos = downloadArtistPhotos,
-                        declineArtistPhotos = declineArtistPhotos,
+                    ArtistPhotoProgressBar(
                         progress = surfaceState.visibleArtistPhotoProgress,
-                        dismissProgress = surfaceState::dismissArtistPhotoProgress,
+                        dismiss = surfaceState::dismissArtistPhotoProgress,
                     )
                     HorizontalPager(
                         state = pagerState,
@@ -1075,8 +1065,6 @@ internal fun BrowseScreen(
                         artistCount = state.artists.total,
                         folderName = folderLabel(state.folderUri),
                         themeSelection = themeSelection,
-                        onlineSourcesEnabled = onlineSourcesEnabled,
-                        setOnlineSourcesEnabled = setOnlineSourcesEnabled,
                         artistPhotoProgress = surfaceState.visibleArtistPhotoProgress,
                         dismissArtistPhotoProgress = surfaceState::dismissArtistPhotoProgress,
                         close = { surfaceState.showSettings(false) },
