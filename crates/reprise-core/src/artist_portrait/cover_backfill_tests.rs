@@ -162,6 +162,54 @@ fn cancel_stops_the_cover_pass() {
 }
 
 #[test]
+fn a_cancel_before_start_is_honoured_once_start_finally_runs() {
+    // The window the FFI closure lives in for a moment on every real
+    // completion (B3 review findings 6/7): the run does not exist yet, so
+    // `active` is `false`, but a cancel that arrives right then must not
+    // be silently discarded by the `start()` that follows it.
+    let backfill = CoverBackfill::new();
+    let (_, listener) = updates();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let fetch: Arc<CoverBackfillFetch> = Arc::new(move |_, _, _| {
+        counted.fetch_add(1, Ordering::Relaxed);
+        CoverFetchOutcome::NotFound
+    });
+
+    backfill.cancel();
+    let started = backfill.start_prepared(
+        vec![("Band A".into(), "Album A".into(), "/a.flac".into())],
+        fetch,
+        listener,
+        always(),
+    );
+
+    assert!(!started, "a pending cancel must refuse the next launch");
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert_eq!(backfill.progress(), CoverBackfillProgress::default());
+
+    // The refusal is one-shot: an unrelated later start is not blocked by
+    // an already-consumed cancel.
+    let (_, listener) = updates();
+    let later_calls = Arc::new(AtomicUsize::new(0));
+    let counted_later = Arc::clone(&later_calls);
+    let fetch: Arc<CoverBackfillFetch> = Arc::new(move |_, _, _| {
+        counted_later.fetch_add(1, Ordering::Relaxed);
+        CoverFetchOutcome::NotFound
+    });
+    let started_later = backfill.start_prepared(
+        vec![("Band A".into(), "Album A".into(), "/a.flac".into())],
+        fetch,
+        listener,
+        always(),
+    );
+    wait_for_worker_to_finish(&backfill);
+
+    assert!(started_later, "a later, unrelated start must not stay blocked");
+    assert_eq!(later_calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn consent_withdrawn_mid_run_stops_the_pass() {
     let backfill = CoverBackfill::new();
     let (_, listener) = updates();

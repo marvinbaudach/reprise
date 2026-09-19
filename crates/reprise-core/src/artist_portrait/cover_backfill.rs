@@ -38,6 +38,15 @@ type ConsentAllowed = dyn Fn() -> bool + Send + Sync;
 struct Shared {
     active: bool,
     cancelled: bool,
+    /// Sticky, unlike `cancelled`: set by [`CoverBackfill::cancel`] even
+    /// while no run is active yet, and consumed by the next
+    /// [`CoverBackfill::launch`] rather than by the (possibly nonexistent)
+    /// worker `cancelled` gates. Exists for the window between the portrait
+    /// run reporting `Complete` and the FFI's forwarding closure actually
+    /// reaching `start()` — during that window `active` is `false` on both
+    /// sides, so a plain `active`-gated cancel is silently lost (B3 review
+    /// findings 6/7).
+    cancel_requested: bool,
     progress: CoverBackfillProgress,
     listener: Option<Arc<CoverBackfillListener>>,
 }
@@ -58,6 +67,7 @@ impl CoverBackfill {
             shared: Arc::new(Mutex::new(Shared {
                 active: false,
                 cancelled: false,
+                cancel_requested: false,
                 progress: CoverBackfillProgress::default(),
                 listener: None,
             })),
@@ -92,6 +102,12 @@ impl CoverBackfill {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if !shared.active {
+                // No run to stop yet — but one may still be about to start
+                // (the FFI's forwarding closure calls `start()` after this
+                // handle reports the portrait run `Complete`, not before),
+                // so the cancel must not simply vanish: the next `launch`
+                // consumes this instead of starting.
+                shared.cancel_requested = true;
                 return;
             }
             shared.cancelled = true;
@@ -101,6 +117,22 @@ impl CoverBackfill {
         if let Some(listener) = listener {
             listener(CoverBackfillProgress::default());
         }
+    }
+
+    /// Resets the handle to idle for a test harness that shares this one
+    /// process-global instance across many cases
+    /// (`crates/reprise-android-ffi/src/artist_portrait/album_cover.rs`'s
+    /// `reset_album_cover_state_for_tests`): stops any run still active,
+    /// the same as `cancel`, and — unlike `cancel`, which is deliberately
+    /// sticky — also drops a pending cancel a previous case may have left
+    /// set, so it cannot block the next case's `start`.
+    pub fn reset_for_tests(&self) {
+        self.cancel();
+        let mut shared = self
+            .shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        shared.cancel_requested = false;
     }
 
     #[must_use]
@@ -145,6 +177,15 @@ impl CoverBackfill {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if shared.active {
                 shared.listener = Some(listener);
+                return false;
+            }
+            if shared.cancel_requested {
+                // A cancel arrived while this run existed only as an
+                // in-flight FFI closure, before `start()` reached here —
+                // honour it instead of starting a pass the caller already
+                // tried to stop (B3 review findings 6/7). One-shot: an
+                // unrelated later `start()` is not blocked by it.
+                shared.cancel_requested = false;
                 return false;
             }
             shared.active = true;
@@ -320,12 +361,24 @@ fn finish_cancelled(shared: &Mutex<Shared>) {
 }
 
 fn finish_without_run(shared: &Mutex<Shared>) {
-    let mut shared = shared
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    shared.active = false;
-    shared.progress = CoverBackfillProgress::default();
-    shared.listener = None;
+    // Notifies the listener the same way `finish`/`finish_cancelled` do:
+    // the FFI's forwarding closure (`artist_portrait.rs`) may have just
+    // pushed a `Running` update in anticipation of this pass actually
+    // running (B3 review finding 1) — if `prepare()` fails and nothing
+    // ever follows that push, the listener must still hear about it, or
+    // Kotlin is left showing a spinner for a pass that silently never
+    // started.
+    let listener = {
+        let mut shared = shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        shared.active = false;
+        shared.progress = CoverBackfillProgress::default();
+        shared.listener.take()
+    };
+    if let Some(listener) = listener {
+        listener(CoverBackfillProgress::default());
+    }
 }
 
 fn reset_after_worker_exit(shared: &Mutex<Shared>) {
