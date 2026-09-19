@@ -199,22 +199,43 @@ Files: `settings/OnlineSourcesSettingsPage.kt`,
 - Content, top to bottom, same `LazyColumn` and spacing as today:
   1. `SettingsSectionTitle("Artwork")`
   2. body text: `"Reprise downloads artist portraits from Deezer and album
-     covers from MusicBrainz and the Cover Art Archive. It fetches after an
-     automatic scan, a manual scan or a restore, and while an album without a
-     cover of its own is playing. A cover is only fetched for an album that
-     has none — one already showing art never triggers a request."`
-  3. body text: `"For that, artist names from your library are sent to Deezer
-     and album titles to MusicBrainz. The app sends nothing else to the
-     internet."`
+     covers from MusicBrainz and the Cover Art Archive. It fetches on
+     launch, after an automatic scan, a manual scan or a restore, and while
+     an album without a cover of its own is playing. A cover is only
+     fetched for an album that has none — one already showing art never
+     triggers a request."`
+  3. body text: `"For that, artist names from your library are sent to
+     Deezer for portraits, and artist and album names are sent to
+     MusicBrainz to find each release. The Cover Art Archive then receives
+     that release's identifier, which comes from your file's own tags when
+     it has one and from the MusicBrainz search otherwise. Every request
+     identifies the app by name and version, as these services require —
+     nothing else leaves the phone."` (review finding, not the original
+     wording below — see "Where this plan was overridden")
   4. `ArtistPhotoProgressBar(progress, dismissProgress, inSettings = true)`
 - Tests, replacing the four in `OnlineSourcesSettingsPageTest.kt`:
   - `thePageHasNoSwitch` — no toggleable node;
   - `thePageNamesTheThreeSources` — "Deezer", "MusicBrainz", "Cover Art
     Archive" present;
+  - `thePageNamesTheCoverArtArchiveAsARecipient` — the Cover Art Archive is
+    named as a recipient of a release identifier in the second paragraph,
+    not only as a download source in the first;
   - `thePageNamesTheCoverFetchPolicy` — keep the existing assertion;
   - `thePageShowsARunningBackfill` — with a `progress` whose phase is
     running, the `artist-photo-progress` tag is present; with `null` it is
     absent.
+
+**Where this plan was overridden (accepted code-review findings, applied
+after the code phase):** the second paragraph above originally read `"For
+that, artist names from your library are sent to Deezer and album titles to
+MusicBrainz. The app sends nothing else to the internet."` Review found this
+inaccurate on three counts: the Cover Art Archive always receives a release
+MBID (not just MusicBrainz), that MBID search also sends the artist name
+(not just the album title), and every request carries a `User-Agent`
+identifying the app, so "nothing else" overstated the claim. The trigger
+list in the first paragraph also omitted "app launch", the actual trigger
+for the backfill `MainActivity.onCreate` starts. The wording above is the
+corrected version; the code and this plan now agree.
 
 ### Task 4 — gates
 
@@ -296,6 +317,14 @@ Holder of `device-lock`; release build.
 - A test fake somewhere still hands `onlineSourcesEnabled` to a surface
   constructor the compiler no longer accepts — the Kotlin build finds it; the
   fix is deleting the line, not keeping the parameter.
+- `open_artwork_gate` reaches through `online_sources::set_enabled`, the
+  app-wide network gate, not an artwork-only switch. On a fresh database its
+  one-shot first-enable seed writes `module.radio.enabled = true`
+  (`RADIO_MODULE.default_enabled` is `true`) and that value is left standing
+  — Radio has no Android FFI reader today, so this is latent, not live, but
+  it is now a documented and tested consequence (review finding M1) rather
+  than an accident. Not mitigated here: forcing Radio off would be a
+  behaviour change this FFI boundary does not own.
 
 ## Parallelität
 
