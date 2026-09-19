@@ -205,7 +205,10 @@ fn a_cancel_before_start_is_honoured_once_start_finally_runs() {
     );
     wait_for_worker_to_finish(&backfill);
 
-    assert!(started_later, "a later, unrelated start must not stay blocked");
+    assert!(
+        started_later,
+        "a later, unrelated start must not stay blocked"
+    );
     assert_eq!(later_calls.load(Ordering::Relaxed), 1);
 }
 

@@ -239,6 +239,12 @@ impl MusicLibrary {
     }
 }
 
+/// `(album_artist, album, mbid)` — the network-shaped step of a cover
+/// fetch, post local-resolution, the same shape as `album_cover.rs`'s
+/// `album_cover_fetch_with` takes (there as `&dyn Fn`; `Arc` here since
+/// this one outlives the call, held inside the `forward` closure).
+type NetworkCoverFetch = dyn Fn(&str, &str, Option<&str>) -> CoverFetchOutcome + Send + Sync;
+
 impl MusicLibrary {
     /// `start_artist_portrait_backfill` with its network-shaped step
     /// (post local-resolution, same shape as `album_cover_fetch_with`'s
@@ -249,7 +255,7 @@ impl MusicLibrary {
     fn start_artist_portrait_backfill_with(
         &self,
         listener: Box<dyn ArtistPortraitProgressListener>,
-        network_fetch: Arc<dyn Fn(&str, &str, Option<&str>) -> CoverFetchOutcome + Send + Sync>,
+        network_fetch: Arc<NetworkCoverFetch>,
     ) {
         let allowed = match self.reader() {
             Ok(reader) => reprise_core::online_sources::network_allowed_or_off(
