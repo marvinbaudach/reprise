@@ -2,7 +2,7 @@
 slug: the-phone-always-downloads-its-artwork
 worktree: /home/marvin/Projects/reprise-the-phone-always-downloads-its-artwork
 branch: feature/the-phone-always-downloads-its-artwork
-phase: planned
+phase: coded
 codex_session:
 created: 2026-09-19
 ---
