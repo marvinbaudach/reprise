@@ -42,7 +42,6 @@ private data class SettingsSection(
 internal fun SettingsOverview(
     titleCount: Long,
     themeSelection: MobileThemeSelection,
-    onlineSourcesEnabled: Boolean,
     versionName: String,
     error: String?,
     close: () -> Unit,
@@ -72,7 +71,7 @@ internal fun SettingsOverview(
             destination = SettingsRoute.ONLINE_SOURCES,
             symbol = "cloud",
             title = "Online sources",
-            subtitle = if (onlineSourcesEnabled) "On" else "Off",
+            subtitle = "Artwork from Deezer, MusicBrainz and the Cover Art Archive",
         ),
         SettingsSection(
             destination = SettingsRoute.ABOUT,

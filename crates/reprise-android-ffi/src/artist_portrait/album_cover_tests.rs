@@ -38,6 +38,16 @@ fn open_gate(library: &MusicLibrary) {
         .unwrap();
 }
 
+/// `MusicLibrary::open` opens the artwork gate itself
+/// (`the-phone-always-downloads-its-artwork.md`), so a closed-gate test needs
+/// to close it back explicitly rather than rely on a fresh library's default.
+fn close_gate(library: &MusicLibrary) {
+    let writer = library.writer().unwrap();
+    reprise_core::online_sources::set_enabled(&writer, false).unwrap();
+    reprise_core::modules::set_enabled(&writer, &reprise_core::modules::ARTWORK_MODULE, false)
+        .unwrap();
+}
+
 /// A `SafSource` that reads straight off the real filesystem — the uri
 /// passed around in these tests is a plain absolute path.
 struct RealFsSource;
@@ -145,7 +155,7 @@ fn the_gate_off_fetches_nothing() {
     let directory = tempfile::tempdir().unwrap();
     let album = unique_album("Gate Off");
     let (library, track_uri) = library_with_one_album(directory.path(), "Gate Off Band", &album);
-    // The gate is left off: the default for a freshly opened library.
+    close_gate(&library);
 
     let resolved = library
         .album_cover_fetch_with(&track_uri, AndroidArtworkSize::NowPlaying, &|_, _, _| {
