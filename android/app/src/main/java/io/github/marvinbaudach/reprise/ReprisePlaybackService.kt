@@ -17,6 +17,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,22 @@ open class ReprisePlaybackService : MediaSessionService() {
     private val livePcmSink = LivePcmBufferSink()
     private var liveVisualEngine: NativeVisualSceneEngine? = null
     private val analysisScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // A single-thread dispatcher, not the bare elastic `Dispatchers.IO`
+    // pool `analysisScope` above uses: `startAnalysisBackfill` and
+    // `cancelAnalysisBackfill` each launched independently, and a rapid
+    // transition (e.g. play -> power-save-on -> play) could issue a start
+    // immediately followed by a cancel with no relative ordering guarantee
+    // between the two coroutines, leaving the backfill durably wrong
+    // (running during power-save, or cancelled while it should be running)
+    // until the next real transition. A dedicated scope for just these two
+    // calls — not shared with `trackAnalysisRequest`, whose compute path can
+    // block for seconds and would otherwise queue a cancel behind it — keeps
+    // start/cancel in the order `handleTrackAnalysis`/`onDestroy` issued
+    // them, the same way `TrackAnalysisLoader` serializes its own lanes.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val analysisBackfillScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private var analysedTrackId: Long? = null
     private var analysisBackfillRunning = false
     private val analysisBackfillListener = object : TrackAnalysisProgressListener {
@@ -195,6 +212,7 @@ open class ReprisePlaybackService : MediaSessionService() {
             Log.w(TAG_ANALYSIS, "Could not cancel the track analysis backfill", error)
         }
         analysisScope.cancel()
+        analysisBackfillScope.cancel()
         coreSession?.close()
         coreSession = null
         mediaSession?.let { session ->
@@ -252,13 +270,13 @@ open class ReprisePlaybackService : MediaSessionService() {
     }
 
     internal open fun startAnalysisBackfill() {
-        analysisScope.launch {
+        analysisBackfillScope.launch {
             sharedMusicLibrary().startTrackAnalysisBackfill(analysisBackfillListener)
         }
     }
 
     internal open fun cancelAnalysisBackfill() {
-        analysisScope.launch {
+        analysisBackfillScope.launch {
             sharedMusicLibrary().cancelTrackAnalysisBackfill()
         }
     }
