@@ -314,7 +314,10 @@ therefore in neither strand's acceptance):
 
 Post-merge record (2026-09-19, both strands landed as #985 and #986; the
 mother plan is not done until cross-check 3 is complete): checks 1 and 2 ran
-green on `91b2c576c5`. Check 3 ran on the emulator `pixel10xl_api37` with
-synthetic fixtures and is **partial** — A3 and C1 pass, A1 and A4 are
-inconclusive, A2, A5, C2–C4 and the combined check never ran; the record is
+green on `91b2c576c5`. An afternoon re-run of check 3 has now covered every
+sub-check except A5 — A2, A3, C1, C3, and Combined pass, A1 fails its timing
+target for MP3/Opus on this x86_64 emulator (FLAC passes), A4 and C4 each
+pass their main claim with one sub-step left inconclusive, and C2 surfaced a
+genuine display defect (a downloaded cover caches correctly but is never
+shown); the record, both morning and afternoon, is
 `docs/plans/the-phone-analyses-its-own-music-device-run-2026-09-19.md`.
