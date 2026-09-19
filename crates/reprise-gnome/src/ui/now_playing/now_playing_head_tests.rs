@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use gtk4::prelude::*;
 
+use crate::ui::podcasts::source_image::ArtworkStage;
 use crate::ui::style::tokens;
 
 fn realized_panel(
@@ -121,7 +122,7 @@ fn npp_18_the_fades_hand_the_title_calm_ground_and_keep_the_list_edge_clean() {
     let band = tokens::NOW_PLAYING_ARTWORK_BAND;
     let cloud = super::super::cover_cloud::CoverCloud::new();
     let texture = saturated_cover();
-    cloud.set_cover(Some(&texture), 1);
+    cloud.set_cover(Some(&texture), 1, ArtworkStage::Primary);
     cloud.set_pinned(true);
 
     let render = |with_fades| {

@@ -293,3 +293,122 @@ fn ac_26_youtube_artwork_drives_the_bloom_while_an_rss_podcast_has_none() {
         "a late YouTube decode must not repaint a newer podcast session"
     );
 }
+
+/// An 8x8 solid-colour PNG, used to give the cover bloom a texture whose
+/// colour can be sampled back out — unlike [`TINY_PNG`], which is a single
+/// fixed swatch and cannot tell two artworks apart.
+fn solid_swatch_png_bytes(rgb: [u8; 3]) -> Vec<u8> {
+    let pixbuf =
+        gtk4::gdk_pixbuf::Pixbuf::new(gtk4::gdk_pixbuf::Colorspace::Rgb, true, 8, 8, 8).unwrap();
+    pixbuf.fill(u32::from_be_bytes([rgb[0], rgb[1], rgb[2], 0xff]));
+    pixbuf.save_to_bufferv("png", &[]).unwrap()
+}
+
+/// Seeds the disk artwork cache the same way a prior successful fetch would,
+/// so `source_image`'s load chain finds it on a cache lookup instead of
+/// reaching the network.
+fn cache_solid_swatch(url: &str, rgb: [u8; 3]) {
+    let outcome = reprise_core::remote_image::resolve(
+        Some(url),
+        reprise_core::remote_image::CacheScope::Persistent,
+        true,
+        &mut |_| Ok(solid_swatch_png_bytes(rgb)),
+    );
+    assert!(matches!(
+        outcome,
+        reprise_core::remote_image::ImageOutcome::Fetched(_)
+            | reprise_core::remote_image::ImageOutcome::Cached(_)
+    ));
+}
+
+/// The top-left pixel's colour, read back out of a decoded texture. The
+/// bloom's texture is a uniform-colour raster (no edges to blur away), so any
+/// pixel carries the source swatch's colour.
+///
+/// `Texture::download` always converts into Cairo's native `ARGB32` layout,
+/// which is premultiplied BGRA byte order on a little-endian host — the same
+/// fact `cover_bloom::texture_from_surface` documents on its own read of a
+/// Cairo surface — so the colour bytes come back blue-green-red, not
+/// red-green-blue.
+fn texture_rgb(texture: &gtk4::gdk::Texture) -> [u8; 3] {
+    let stride = texture.width() as usize * 4;
+    let mut pixels = vec![0u8; stride * texture.height() as usize];
+    texture.download(&mut pixels, stride);
+    [pixels[2], pixels[1], pixels[0]]
+}
+
+/// SRC-11 covers the case of missing/failed episode artwork keeping the show
+/// fallback (`src_11_failed_episode_artwork_keeps_the_show_fallback`). This is
+/// the opposite case: episode artwork *is* available, and once it lands the
+/// bloom must show it — not stay on the channel image it started with.
+///
+/// `source_image::artwork_chain` always publishes a fallback stage before a
+/// primary stage within the same generation when both are present. On a cold
+/// cache both loads are asynchronous and race across worker threads, so two
+/// warm-up renders — each requesting a single URL, so the bloom holding a
+/// cover proves that one URL is warm — bring both into the in-memory texture
+/// cache before any assertion runs. A third render with both URLs then hits
+/// that warm cache synchronously for both stages, in chain order: the channel
+/// fallback publishes first, then the episode's own primary image,
+/// deterministically reproducing the bug this test guards against.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_26_youtube_bloom_follows_the_episode_artwork_past_the_channel_fallback() {
+    gtk4::init().unwrap();
+    let episode_url = "https://images.test/ac-26-episode-bloom.png";
+    let channel_url = "https://images.test/ac-26-channel-bloom.png";
+    let episode_rgb = [0x10, 0x50, 0x90];
+    let channel_rgb = [0xe0, 0xa0, 0x60];
+    cache_solid_swatch(episode_url, episode_rgb);
+    cache_solid_swatch(channel_url, channel_rgb);
+
+    let (_window, panel) =
+        super::tests::test_panel("io.github.marvinbaudach.Reprise.ExternalBloomEpisodeArtworkTest");
+
+    let mut youtube = external_youtube_snapshot();
+    youtube.art_url = Some(episode_url.into());
+    youtube.fallback_art_url = Some(channel_url.into());
+
+    // A one-entry chain publishes exactly that URL, so the bloom holding a
+    // cover proves it landed in the in-memory texture cache at the panel's
+    // cover size — not merely that `remote_image::resolve` wrote it to disk,
+    // which says nothing about timing. Warming both this way, rather than
+    // guessing how long two async loads take, is what makes the render below
+    // deterministic instead of racing two worker threads.
+    for url in [channel_url, episode_url] {
+        let mut warm = youtube.clone();
+        warm.art_url = Some(url.into());
+        warm.fallback_art_url = None;
+        panel.set_external_snapshot(Some(warm));
+        assert!(
+            crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || { panel.widgets.bloom.has_cover_for_test() }
+            ),
+            "warming {url} never reached the cover bloom"
+        );
+    }
+
+    // Both URLs are now warm, so this render hits `cached_texture_at_any_size`
+    // and `cached_texture` synchronously for both stages, in chain order: the
+    // channel fallback publishes first, then the episode's own primary image
+    // — deterministically reproducing the bug this test guards against.
+    panel.set_external_snapshot(Some(youtube));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let (texture, (_, stage)) = panel
+        .widgets
+        .bloom
+        .accepted_cover_for_test()
+        .expect("the bloom must hold a cover after the synchronous second render");
+    assert_eq!(
+        stage,
+        crate::ui::podcasts::source_image::ArtworkStage::Primary,
+        "the bloom must end on the episode's own artwork, not the channel fallback"
+    );
+    assert_eq!(
+        texture_rgb(&texture),
+        episode_rgb,
+        "the bloom's colour must come from the episode artwork, not the channel's"
+    );
+}
