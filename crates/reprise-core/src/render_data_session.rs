@@ -21,6 +21,8 @@ pub enum RenderDataSessionError {
     RateOrChannelChanged,
     #[error("the audio stream had no samples")]
     EmptyStream,
+    #[error("the decoder reported an invalid sample rate or channel count")]
+    InvalidStreamConfig,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -69,12 +71,21 @@ impl RenderDataSession {
     /// The rate and channel count of the first call fix the stream's config;
     /// a later call with a different rate or channel count is rejected
     /// rather than silently mixing two configurations into one analysis.
+    ///
+    /// `sample_rate_hz == 0` or `channel_count == 0` is rejected outright: a
+    /// zero rate would leave `LinearResampler`'s ratio at `0.0`, so its
+    /// output-advance loop never terminates and grows `out` without bound
+    /// (e.g. a decoder that reports `KEY_SAMPLE_RATE == 0` when the platform
+    /// omits it from `MediaFormat`).
     pub fn push_pcm_i16(
         &mut self,
         samples: &[i16],
         sample_rate_hz: u32,
         channel_count: u32,
     ) -> Result<(), RenderDataSessionError> {
+        if sample_rate_hz == 0 || channel_count == 0 {
+            return Err(RenderDataSessionError::InvalidStreamConfig);
+        }
         let config = StreamConfig {
             sample_rate_hz,
             channel_count,
@@ -155,19 +166,34 @@ impl Default for RenderDataSession {
     }
 }
 
-/// Distributes per-frame `(sum_squares, count)` pairs over `buckets` the same
-/// way [`crate::waveform::WaveformAccumulator`] distributes samples over
-/// buckets, then applies its exact sqrt-normalization so a computed analysis
-/// and a desktop-decoded one read the same way.
+/// Distributes per-frame `(sum_squares, count)` pairs over `buckets`, then
+/// applies `WaveformAccumulator`'s exact sqrt-normalization so a computed
+/// analysis and a desktop-decoded one read the same way.
+///
+/// For each output bucket this sums every frame whose index falls in that
+/// bucket's `[start, end)` range of `frame_count / buckets` — the inverse of
+/// mapping each frame forward into one bucket, which leaves buckets empty
+/// (RMS 0, a comb of hard zeros in the waveform) for any track shorter than
+/// `buckets` frames (50 s at `SPECTROGRAM_FRAME_RATE_HZ`). When a bucket's
+/// range is empty (`frame_count < buckets`), it falls back to its nearest
+/// frame instead of staying at zero.
 fn rebucket_peaks(frames: &[(f64, u64)], buckets: usize) -> Vec<u8> {
-    let frame_count = frames.len() as u64;
+    let frame_count = frames.len();
     let mut sum_squares = vec![0.0_f64; buckets];
     let mut counts = vec![0_u64; buckets];
-    for (index, &(sum, count)) in frames.iter().enumerate() {
-        let bucket = ((index as u64 * buckets as u64) / frame_count).min(buckets as u64 - 1);
-        let bucket = bucket as usize;
-        sum_squares[bucket] += sum;
-        counts[bucket] += count;
+    for bucket in 0..buckets {
+        let start = (bucket * frame_count) / buckets;
+        let end = ((bucket + 1) * frame_count) / buckets;
+        if start < end {
+            for &(frame_sum, frame_samples) in &frames[start..end] {
+                sum_squares[bucket] += frame_sum;
+                counts[bucket] += frame_samples;
+            }
+        } else {
+            let (frame_sum, frame_samples) = frames[start.min(frame_count - 1)];
+            sum_squares[bucket] = frame_sum;
+            counts[bucket] = frame_samples;
+        }
     }
     finish_waveform_peaks(&sum_squares, &counts)
 }
@@ -363,5 +389,54 @@ mod tests {
         let result = session.finish();
 
         assert_eq!(result, Err(RenderDataSessionError::EmptyStream));
+    }
+
+    /// A zero `sample_rate_hz` (e.g. a decoder reporting `KEY_SAMPLE_RATE ==
+    /// 0` when the platform omits it) used to leave `LinearResampler`'s
+    /// ratio at `0.0`: its output-advance loop never terminated and grew
+    /// `out` without bound. This must return an error immediately instead.
+    #[test]
+    fn session_rejects_a_zero_sample_rate() {
+        let mut session = RenderDataSession::new();
+
+        let result = session.push_pcm_i16(&[0; 100], 0, 2);
+
+        assert_eq!(result, Err(RenderDataSessionError::InvalidStreamConfig));
+    }
+
+    #[test]
+    fn session_rejects_a_zero_channel_count() {
+        let mut session = RenderDataSession::new();
+
+        let result = session.push_pcm_i16(&[0; 100], 44_100, 0);
+
+        assert_eq!(result, Err(RenderDataSessionError::InvalidStreamConfig));
+    }
+
+    /// Below `STORED_PEAK_COUNT` frames (50 s at `SPECTROGRAM_FRAME_RATE_HZ`),
+    /// the old forward-only frame-to-bucket mapping skipped buckets entirely,
+    /// leaving them at RMS 0 — a comb of hard zeros instead of a continuous
+    /// waveform. A continuous tone has no reason to produce a silent bucket
+    /// anywhere in the interior.
+    #[test]
+    fn rebucket_peaks_has_no_zero_interior_bucket_for_a_short_track() {
+        let sample_rate_hz = SPECTROGRAM_SAMPLE_RATE_HZ;
+        let frame_count = 300; // 15 s: well inside the 10-30 s / 200-600 frame regime.
+        let total_samples = frame_count * SAMPLES_PER_FRAME;
+        let mono = sine_i16(sample_rate_hz, 440.0, total_samples, 0.5);
+
+        let mut session = RenderDataSession::new();
+        session
+            .push_pcm_i16(&mono, sample_rate_hz, 1)
+            .expect("push must succeed");
+        let peaks = session
+            .finish()
+            .expect("finish must succeed")
+            .waveform_peaks;
+
+        assert_eq!(peaks.len(), STORED_PEAK_COUNT);
+        for (index, &peak) in peaks.iter().enumerate().take(peaks.len() - 1).skip(1) {
+            assert!(peak > 0, "bucket {index} was silent: {peaks:?}");
+        }
     }
 }

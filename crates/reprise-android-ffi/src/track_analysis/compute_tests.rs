@@ -430,6 +430,33 @@ fn a_decoder_failure_is_reported_and_stores_nothing() {
         .is_none());
 }
 
+/// A decoder reporting `sample_rate_hz == 0` (e.g. Kotlin's `MediaCodec`
+/// when a format lacks `KEY_SAMPLE_RATE`) used to spin `RenderDataSession`'s
+/// resampler forever instead of erroring. The session now refuses the chunk,
+/// which `AnalysisPcmSink::push_pcm_i16` surfaces as `false` and
+/// `AnalysisContext::decode_one` reports through the same `refused` path a
+/// mid-stream rate change already used — this pins the whole flow, not just
+/// the session-level rejection.
+#[test]
+fn a_zero_sample_rate_chunk_is_refused_and_reported_as_decode_failed() {
+    let (_directory, library, track_id, _music) = library_with_one_track();
+    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+        Arc::new(AtomicUsize::new(0)),
+        |_uri, sink| {
+            assert!(!sink.push_pcm_i16(valid_pcm_bytes(), 0, 1));
+            Ok(())
+        },
+    )));
+
+    let outcome = library.import_track_analysis(track_id).unwrap();
+
+    assert_eq!(outcome, AndroidAnalysisOutcome::DecodeFailed);
+    let reader = library.reader().unwrap();
+    assert!(reprise_core::db::get_track_spectrogram(&reader, track_id)
+        .unwrap()
+        .is_none());
+}
+
 #[test]
 fn a_file_replaced_during_the_decode_is_not_stored() {
     let (_directory, library, track_id, music) = library_with_one_track();
