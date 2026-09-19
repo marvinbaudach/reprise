@@ -157,4 +157,13 @@ class NowPlayingPositionStateTest {
 
         assertEquals(listOf(true), answered)
     }
+
+    @Test
+    fun the_ordinary_case_a_drag_starting_from_not_dragging_is_a_new_drag() = runBlocking {
+        val dragging = flowOf(false, true)
+
+        val answered = newDragAnswered(dragging).toList()
+
+        assertEquals(listOf(true), answered)
+    }
 }

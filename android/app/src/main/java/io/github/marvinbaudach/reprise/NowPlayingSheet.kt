@@ -228,13 +228,26 @@ internal fun NowPlayingSheet(
                     snap = positionPx::snapTo,
                 )
                 if (changesTrack) {
-                    // `draggingTrack` can still read true here: the finger that
-                    // committed THIS settle may not yet have had its release
-                    // observed by the time this point runs (the settle
-                    // animation above takes its own frames to complete). That
-                    // leftover true is not a NEW drag taking the position
-                    // over -- newDragAnswered only reports one that follows
-                    // an observed release.
+                    // `draggingTrack` can still read true here even though
+                    // `awaitEachGesture` is one sequential coroutine that
+                    // always writes false in its `finally` right after calling
+                    // `onSettle` (NowPlayingGestures.kt:206/253/285), before
+                    // this settle's own animation has even started. The gap is
+                    // `latestDraggingTrack`: it is `draggingTrack` mirrored
+                    // through `rememberUpdatedState`, which only updates on
+                    // this composable's own recomposition -- if that release
+                    // write, and a further write, land inside the same
+                    // snapshot apply-notification window (no recomposition in
+                    // between), the intermediate value is never observed and
+                    // `latestDraggingTrack` can still read the leading true.
+                    // newDragAnswered only reports a true that follows an
+                    // observed false for exactly that reason. Accepted narrow
+                    // miss: a release and a genuine new swipe that land inside
+                    // that same window are swallowed the same way, so this
+                    // degrades to the pre-fix behaviour for that one case --
+                    // `withTimeoutOrNull(graceMs)` below still calls snapBack()
+                    // once the grace period runs out, so it settles late
+                    // rather than staying stuck forward.
                     holdSettledPositionUntilTheTransportAnswers(
                         answered = merge(
                             snapshotFlow { latestCurrentIndex != currentIndex }.filter { it },
