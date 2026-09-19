@@ -8,7 +8,7 @@
     <!--
         Artist portraits use Rust's bundled rustls + webpki-roots certificate
         chain, so they do not depend on Android's certificate store. No network
-        byte flows unless Download artist photos is enabled in Online sources.
+        byte flows unless Download artwork is enabled in Online sources.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!--

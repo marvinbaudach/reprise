@@ -56,7 +56,7 @@ class ArtistPhotoProgressBarTest {
     fun preparingHasNoCounterAndUsesIndeterminateProgress() {
         show(ArtistPhotoProgress(1, ArtistPhotoProgressPhase.PREPARING, 0, 0, 0))
 
-        compose.onNodeWithText("Preparing artist photos").assertIsDisplayed()
+        compose.onNodeWithText("Preparing artwork").assertIsDisplayed()
         compose.onNodeWithTag("artist-photo-progress-counter").assertDoesNotExist()
         compose.onNodeWithTag("artist-photo-progress-track").assertIsDisplayed()
     }
@@ -65,7 +65,7 @@ class ArtistPhotoProgressBarTest {
     fun runningShowsTheDownloadedCountAndDeterminateProgress() {
         show(ArtistPhotoProgress(2, ArtistPhotoProgressPhase.RUNNING, 128, 0, 412))
 
-        compose.onNodeWithText("Downloading artist photos").assertIsDisplayed()
+        compose.onNodeWithText("Downloading artwork").assertIsDisplayed()
         compose.onNodeWithText("128 / 412").assertIsDisplayed()
         compose.onNodeWithTag("artist-photo-progress-track")
             .assertProgress(128f / 412f)
@@ -79,7 +79,7 @@ class ArtistPhotoProgressBarTest {
             .assert(
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
-                    "Artist photos, 128 of 412 downloaded",
+                    "Artwork, 128 of 412 downloaded",
                 ),
             )
             .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
@@ -89,7 +89,7 @@ class ArtistPhotoProgressBarTest {
     fun successfulCompletionIsAllTealAndHasNoFailureLine() {
         show(ArtistPhotoProgress(3, ArtistPhotoProgressPhase.COMPLETE, 412, 0, 412))
 
-        compose.onNodeWithText("Artist photos complete").assertIsDisplayed()
+        compose.onNodeWithText("Artwork complete").assertIsDisplayed()
         compose.onNodeWithText("412 / 412").assertIsDisplayed()
         compose.onNodeWithTag("artist-photo-progress-track").assertProgress(1f)
         compose.onNodeWithTag("artist-photo-progress-failure").assertDoesNotExist()
@@ -353,7 +353,7 @@ class ArtistPhotoProgressBarTest {
             }
         }
 
-        compose.onNodeWithText("Downloading artist photos").assertIsDisplayed()
+        compose.onNodeWithText("Downloading artwork").assertIsDisplayed()
         compose.onNodeWithText("1 / 412").assertIsDisplayed()
     }
 
@@ -393,7 +393,7 @@ class ArtistPhotoProgressBarTest {
             }
         }
 
-        compose.onNodeWithText("Downloading artist photos").assertIsDisplayed()
+        compose.onNodeWithText("Downloading artwork").assertIsDisplayed()
         compose.onNodeWithText("1 / 412").assertIsDisplayed()
         compose.onNodeWithTag("library-destination-pager").assertIsDisplayed()
     }
