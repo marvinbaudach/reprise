@@ -269,7 +269,6 @@ class ArtistPhotoProgressBarTest {
         assertEquals(1, cancels)
 
         viewModel.startArtistPhotoBackfill()
-        viewModel.cancelArtistPhotoBackfill()
 
         assertEquals(0, starts)
         assertEquals(1, cancels)

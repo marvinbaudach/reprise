@@ -207,11 +207,6 @@ internal class MobileSurfaceViewModel : ViewModel() {
         binding.postToMain { acceptArtistPhotoProgress(snapshot) }
     }
 
-    fun cancelArtistPhotoBackfill() {
-        artistPhotoBackfillBinding?.cancel?.invoke()
-        artistPhotoProgress = null
-    }
-
     fun acceptArtistPhotoProgress(update: ArtistPhotoProgress) {
         if (update.runId != refreshedArtistPortraitRunId) {
             refreshedArtistPortraitRunId = update.runId
