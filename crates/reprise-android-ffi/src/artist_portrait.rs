@@ -224,6 +224,33 @@ impl MusicLibrary {
         &self,
         listener: Box<dyn ArtistPortraitProgressListener>,
     ) {
+        let cache_root = self.cache_root.clone();
+        self.start_artist_portrait_backfill_with(
+            listener,
+            Arc::new(move |album_artist, album, mbid| {
+                cover_download::fetch_and_cache_in(&cache_root, album_artist, album, mbid, &[])
+            }),
+        );
+    }
+
+    pub fn cancel_artist_portrait_backfill(&self) {
+        self.portrait_backfill.cancel();
+        album_cover::cover_backfill().cancel();
+    }
+}
+
+impl MusicLibrary {
+    /// `start_artist_portrait_backfill` with its network-shaped step
+    /// (post local-resolution, same shape as `album_cover_fetch_with`'s
+    /// `fetch`) injectable — a test-only seam so a test can prove the
+    /// chain never reaches the real MusicBrainz/CAA network for an album
+    /// that resolves locally (B3 review finding 2), the same seam
+    /// `album_cover_fetch` already has through `album_cover_fetch_with`.
+    fn start_artist_portrait_backfill_with(
+        &self,
+        listener: Box<dyn ArtistPortraitProgressListener>,
+        network_fetch: Arc<dyn Fn(&str, &str, Option<&str>) -> CoverFetchOutcome + Send + Sync>,
+    ) {
         let allowed = match self.reader() {
             Ok(reader) => reprise_core::online_sources::network_allowed_or_off(
                 &reader,
@@ -248,9 +275,27 @@ impl MusicLibrary {
 
         let forward_listener = Arc::clone(&listener);
         let forward: Arc<CorePortraitBackfillListener> = Arc::new(move |progress| {
-            forward_listener.on_progress(progress.into());
             let just_completed =
                 progress.state == PortraitBackfillState::Complete && progress.run_id != 0;
+            let will_chain = just_completed && tree_source.is_some();
+            if will_chain {
+                // A cover pass is about to start riding this same
+                // completion: pushing the raw `Complete` here would be
+                // revoked the instant that pass's own `Running` update
+                // lands, reading to Kotlin as a finished bar whose count
+                // then runs backwards (`merged_progress_update`'s own
+                // invariant, violated at exactly this call site — B3
+                // review finding 1). Report `Running` instead; the cover
+                // pass's own listener (below) reports the real terminal
+                // state once it actually knows one, including if `start`
+                // never gets to run at all (`finish_without_run`).
+                forward_listener.on_progress(ArtistPortraitProgressUpdate {
+                    state: ArtistPortraitProgressState::Running,
+                    ..progress.into()
+                });
+            } else {
+                forward_listener.on_progress(progress.into());
+            }
             if !just_completed {
                 return;
             }
@@ -260,6 +305,7 @@ impl MusicLibrary {
 
             let fetch_cache_root = cache_root.clone();
             let fetch_source = Arc::clone(&source);
+            let network_fetch = Arc::clone(&network_fetch);
             let fetch: Arc<CoverBackfillFetch> =
                 Arc::new(move |album_artist, album, representative_uri| {
                     let path = std::path::Path::new(representative_uri);
@@ -279,13 +325,7 @@ impl MusicLibrary {
                     }
                     let mbid =
                         cover::read_cover_tag_with_source(fetch_source.as_ref(), path).release_mbid;
-                    cover_download::fetch_and_cache_in(
-                        &fetch_cache_root,
-                        album_artist,
-                        album,
-                        mbid.as_deref(),
-                        &[],
-                    )
+                    network_fetch(album_artist, album, mbid.as_deref())
                 });
 
             let cover_listener_target = Arc::clone(&listener);
@@ -318,11 +358,6 @@ impl MusicLibrary {
             Arc::clone(&self.portrait_fetch),
             forward,
         );
-    }
-
-    pub fn cancel_artist_portrait_backfill(&self) {
-        self.portrait_backfill.cancel();
-        album_cover::cover_backfill().cancel();
     }
 }
 

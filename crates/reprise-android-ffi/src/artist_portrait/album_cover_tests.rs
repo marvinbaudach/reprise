@@ -2,8 +2,11 @@
 //!
 //! `cargo test` runs the whole crate's tests in one process, and the memo
 //! this module tests is a process-global `static`, so every test here starts
-//! with [`reset_album_cover_state_for_tests`] and uses its own album name —
-//! belt and braces against order-dependence.
+//! with `let _guard = ` [`reset_album_cover_state_for_tests`]`()`, held for
+//! the whole test body, and uses its own album name — belt and braces
+//! against order-dependence, and the guard against a concurrent test's
+//! reset or cancel landing mid-test under cargo's default parallel test
+//! threads (B3 review finding 3).
 
 use std::fs::File;
 use std::os::fd::IntoRawFd;
@@ -138,7 +141,7 @@ fn library_with_one_album(
 
 #[test]
 fn the_gate_off_fetches_nothing() {
-    reset_album_cover_state_for_tests();
+    let _guard = reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let album = unique_album("Gate Off");
     let (library, track_uri) = library_with_one_album(directory.path(), "Gate Off Band", &album);
@@ -155,7 +158,7 @@ fn the_gate_off_fetches_nothing() {
 
 #[test]
 fn local_art_is_never_replaced_by_a_download() {
-    reset_album_cover_state_for_tests();
+    let _guard = reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let album = unique_album("Local Art");
     let (library, track_uri) = library_with_one_album(directory.path(), "Local Art Band", &album);
@@ -173,7 +176,7 @@ fn local_art_is_never_replaced_by_a_download() {
 
 #[test]
 fn a_fetched_cover_is_found_by_the_resolver() {
-    reset_album_cover_state_for_tests();
+    let _guard = reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let album = unique_album("Fetched Cover");
     let (library, track_uri) = library_with_one_album(directory.path(), "Fetched Band", &album);
@@ -203,7 +206,7 @@ fn a_fetched_cover_is_found_by_the_resolver() {
 
 #[test]
 fn a_miss_is_remembered_for_the_process() {
-    reset_album_cover_state_for_tests();
+    let _guard = reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let album = unique_album("Remembered Miss");
     let (library, track_uri) =
@@ -230,7 +233,7 @@ fn a_miss_is_remembered_for_the_process() {
 
 #[test]
 fn a_transient_failure_is_retried() {
-    reset_album_cover_state_for_tests();
+    let _guard = reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let album = unique_album("Transient Retry");
     let (library, track_uri) =
@@ -257,7 +260,7 @@ fn a_transient_failure_is_retried() {
 
 #[test]
 fn the_reader_is_released_before_the_fetch() {
-    reset_album_cover_state_for_tests();
+    let _guard = reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let album = unique_album("Reader Released");
     let (library, track_uri) =

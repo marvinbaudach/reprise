@@ -31,14 +31,31 @@ pub(super) fn cover_backfill() -> &'static reprise_core::artist_portrait::CoverB
     COVER_BACKFILL.get_or_init(reprise_core::artist_portrait::CoverBackfill::new)
 }
 
+/// Serializes every test that touches [`attempted`] or [`cover_backfill`]
+/// against every other one: `cargo test` runs the whole crate's tests in
+/// parallel threads by default, and both statics are process-global, so a
+/// reset (or a `cancel`/`start` reaching them) from one test can otherwise
+/// land in the middle of another (B3 review finding 3).
+#[cfg(test)]
+fn test_guard() -> &'static Mutex<()> {
+    static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+    GUARD.get_or_init(|| Mutex::new(()))
+}
+
 /// `cargo test` runs every test of the crate in one process, and this
 /// module's state is a process-global `static`; every test touching this
 /// module (and `artist_portrait_tests.rs`, which shares the same statics)
-/// calls this first so one test's state cannot leak into the next.
+/// calls this first, binding the returned guard for the whole test body —
+/// `let _guard = reset_album_cover_state_for_tests();`, never
+/// `let _ = ...`, which would drop it immediately and provide no
+/// protection — so no other such test can run concurrently with it.
+#[must_use = "hold the guard for the whole test, or it provides no protection"]
 #[cfg(test)]
-pub(crate) fn reset_album_cover_state_for_tests() {
+pub(crate) fn reset_album_cover_state_for_tests() -> std::sync::MutexGuard<'static, ()> {
+    let guard = test_guard().lock().unwrap_or_else(PoisonError::into_inner);
     *attempted().lock().unwrap_or_else(PoisonError::into_inner) = HashMap::new();
-    cover_backfill().cancel();
+    cover_backfill().reset_for_tests();
+    guard
 }
 
 #[uniffi::export]
