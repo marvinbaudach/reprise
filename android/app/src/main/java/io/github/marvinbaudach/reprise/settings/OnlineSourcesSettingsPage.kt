@@ -38,11 +38,11 @@ internal fun OnlineSourcesSettingsPage(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { SettingsSectionTitle("Artist photos") }
+            item { SettingsSectionTitle("Artwork") }
             item {
                 Column {
                     SettingsSwitchRow(
-                        title = "Download artist photos",
+                        title = "Download artwork",
                         supporting = "Fetch portraits and album covers after automatic scans, " +
                             "manual scans, or restores, and while an album without its own " +
                             "cover is playing.",

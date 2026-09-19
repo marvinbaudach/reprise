@@ -73,7 +73,7 @@ class OnlineSourcesSettingsPageTest {
     }
 
     private fun switchNode() = compose.onNode(
-        hasText("Download artist photos") and isToggleable(),
+        hasText("Download artwork") and isToggleable(),
     )
 
     private fun showPage(

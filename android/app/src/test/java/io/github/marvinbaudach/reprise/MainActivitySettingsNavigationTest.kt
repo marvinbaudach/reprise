@@ -94,12 +94,12 @@ class MainActivitySettingsNavigationTest {
         openSettings()
         compose.onNodeWithContentDescription("Open Online sources").performClick()
 
-        compose.onNode(hasText("Download artist photos") and isToggleable())
+        compose.onNode(hasText("Download artwork") and isToggleable())
             .assertIsOff()
             .performClick()
 
         assertFalse(application.onlineSourcesEnabled)
-        compose.onNode(hasText("Download artist photos") and isToggleable()).assertIsOff()
+        compose.onNode(hasText("Download artwork") and isToggleable()).assertIsOff()
         compose.onNodeWithContentDescription("Back to Settings").performClick()
         compose.onNodeWithText("Off").assertIsDisplayed()
     }
@@ -109,7 +109,7 @@ class MainActivitySettingsNavigationTest {
         application.blockOnlineSourcesWrites()
         openSettings()
         compose.onNodeWithContentDescription("Open Online sources").performClick()
-        val toggle = compose.onNode(hasText("Download artist photos") and isToggleable())
+        val toggle = compose.onNode(hasText("Download artwork") and isToggleable())
 
         toggle.performClick()
         assertTrue(application.awaitOnlineSourcesWrite())
@@ -127,11 +127,11 @@ class MainActivitySettingsNavigationTest {
 
     @Test
     fun net_4b_downloadUsesTheSettingsEnablePathAndSettlesBeforeTheWrite() {
-        compose.onNodeWithText("Show artist photos?").assertIsDisplayed()
+        compose.onNodeWithText("Show artwork?").assertIsDisplayed()
 
-        compose.onNodeWithText("Download artist photos").performClick()
+        compose.onNodeWithText("Download artwork").performClick()
 
-        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
+        compose.onNodeWithText("Show artwork?").assertDoesNotExist()
         compose.waitUntil(timeoutMillis = 5_000) {
             application.onlineSourcesWrites == listOf(true)
         }

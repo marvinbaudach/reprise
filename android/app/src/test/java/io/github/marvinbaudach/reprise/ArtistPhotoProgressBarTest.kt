@@ -406,10 +406,10 @@ class ArtistPhotoProgressBarTest {
         val settled = mutableStateOf(false)
         showBrowseWithArtistOffer(settled) { settled.value = true }
 
-        compose.onNodeWithText("Show artist photos?").assertIsDisplayed()
+        compose.onNodeWithText("Show artwork?").assertIsDisplayed()
         compose.onNodeWithText("Not now").performClick()
 
-        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
+        compose.onNodeWithText("Show artwork?").assertDoesNotExist()
         compose.onNodeWithTag("library-destination-pager").assertIsDisplayed()
     }
 
@@ -425,10 +425,10 @@ class ArtistPhotoProgressBarTest {
             },
         )
 
-        compose.onNodeWithText("Download artist photos").performClick()
+        compose.onNodeWithText("Download artwork").performClick()
 
         assertEquals(1, downloads)
-        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
+        compose.onNodeWithText("Show artwork?").assertDoesNotExist()
     }
 
     private fun show(
