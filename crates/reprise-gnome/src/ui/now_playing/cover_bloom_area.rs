@@ -201,6 +201,11 @@ impl BloomArea {
         self.imp().texture.borrow().is_some()
     }
 
+    #[cfg(test)]
+    pub(super) fn texture_for_test(&self) -> Option<gdk::Texture> {
+        self.imp().texture.borrow().clone()
+    }
+
     /// One frame of the breath. Redraws only when something actually moved —
     /// a frame that would look identical is not worth invalidating for, and
     /// invalidation is what the remaining idle cost is made of.
