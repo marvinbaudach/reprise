@@ -2,7 +2,7 @@
 slug: the-phone-analyses-its-own-music-covers
 worktree: /home/marvin/Projects/reprise-the-phone-analyses-its-own-music-covers
 branch: feature/the-phone-analyses-its-own-music-covers
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-09-18
 ---
